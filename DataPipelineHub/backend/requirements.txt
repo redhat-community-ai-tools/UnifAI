@@ -10,3 +10,4 @@ docling
 Authlib
 PyJWT
 python-dotenv
+langchain-openai

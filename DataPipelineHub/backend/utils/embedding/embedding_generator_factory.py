@@ -21,8 +21,9 @@ class EmbeddingGeneratorFactory:
             Initialized embedding generator
         """
         generator_type = config.get("type", "sentence_transformer")
+        model_name = config.get("model_name", "all-MiniLM-L6-v2")
         
-        if generator_type == "sentence_transformer":
+        if generator_type == "sentence_transformer" and model_name == "all-MiniLM-L6-v2":
             return SentenceTransformerEmbedding(
                 model_name=config.get("model_name", "all-MiniLM-L6-v2"),
                 batch_size=config.get("batch_size", 32),

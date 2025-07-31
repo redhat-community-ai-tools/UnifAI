@@ -1,9 +1,13 @@
 import time
+import numpy as np
 from typing import Dict, List, Any, Optional
 from .embedding_generator import EmbeddingGenerator
 from shared.logger import logger
-import numpy as np
-from sentence_transformers import SentenceTransformer
+from langchain_openai import OpenAIEmbeddings
+from config.app_config import AppConfig
+# from sentence_transformers import SentenceTransformer
+
+config = AppConfig()
 
 class SentenceTransformerEmbedding(EmbeddingGenerator):
     """
@@ -39,18 +43,52 @@ class SentenceTransformerEmbedding(EmbeddingGenerator):
             return
 
         self.model_name = model_name
-        self.device = device
         
         # Initialize the model
-        logger.info(f"Loading SentenceTransformer model: {model_name}")
-        self.model = SentenceTransformer(model_name, device=device)
+        self.model = OpenAIEmbeddings(
+            model=config.embedding_model_name,
+            openai_api_base=config.embedding_model_base_url,
+            openai_api_key=config.embedding_model_api_key,
+            tiktoken_enabled=False
+        )
         
         # Set embedding dimension based on the loaded model
-        embedding_dim = self.model.get_sentence_embedding_dimension()
+        embedding_dim = 384
         super().__init__(batch_size, embedding_dim)
 
         logger.info(f"Initialized embedding generator with dimension: {embedding_dim}")
         self._initialized = True
+
+    # def __init__(
+    #     self, 
+    #     model_name: str = "all-MiniLM-L6-v2", 
+    #     batch_size: int = 32,
+    #     device: Optional[str] = None
+    # ):
+    #     """
+    #     Initialize the SentenceTransformer embedding generator.
+        
+    #     Args:
+    #         model_name: Name of the pre-trained sentence transformer model
+    #         batch_size: Number of chunks to process in a single batch
+    #         device: Device to run the model on (e.g., "cpu", "cuda"). None for auto.
+    #     """
+    #     if self._initialized:
+    #         return
+
+    #     self.model_name = model_name
+    #     self.device = device
+        
+    #     # Initialize the model
+    #     logger.info(f"Loading SentenceTransformer model: {model_name}")
+    #     self.model = SentenceTransformer(model_name, device=device)
+        
+    #     # Set embedding dimension based on the loaded model
+    #     embedding_dim = self.model.get_sentence_embedding_dimension()
+    #     super().__init__(batch_size, embedding_dim)
+
+    #     logger.info(f"Initialized embedding generator with dimension: {embedding_dim}")
+    #     self._initialized = True
 
     def generate_embeddings(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -79,8 +117,15 @@ class SentenceTransformerEmbedding(EmbeddingGenerator):
             # Extract text from chunks
             texts = [chunk["text"] for chunk in batch]
             
+            # Generate embeddings for the batch (old way with sentence_transformers library)
+            # embeddings = self.model.encode(texts, show_progress_bar=False)
+            
             # Generate embeddings for the batch
-            embeddings = self.model.encode(texts, show_progress_bar=False)
+            try:
+                embeddings = self.model.embed_documents(texts)
+            except Exception as e:
+                logger.info(f"Error generating embeddings for batch {batch_index}: {str(e)}")
+                continue
             
             # Add embeddings to chunks
             for i, chunk in enumerate(batch):
@@ -106,5 +151,5 @@ class SentenceTransformerEmbedding(EmbeddingGenerator):
         if not query:
             raise ValueError("Query text is empty")
         
-        embedding = self.model.encode(query)
+        embedding = self.model.embed_documents(query)
         return embedding
