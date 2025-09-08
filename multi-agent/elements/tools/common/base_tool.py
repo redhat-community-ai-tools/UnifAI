@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional, Type, Any, Union
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
@@ -24,9 +25,9 @@ class BaseTool(ABC):
         """
         raise NotImplementedError("run must be implemented by subclasses")
 
-    async def arun(self, *args: Any, **kwargs: Any) -> int:
-        # For asynchronous execution, we can just call run for now
-        return self.run(*args, **kwargs)
+    async def arun(self, *args: Any, **kwargs: Any) -> Any:
+        """Default async wrapper - runs sync method in thread pool."""
+        return await asyncio.to_thread(self.run, *args, **kwargs)
 
     def get_args_schema_json(self):
         return self.args_schema.model_json_schema()

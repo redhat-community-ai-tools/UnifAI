@@ -1,7 +1,40 @@
 description: |
-  mcp agent
+  A multi-agent pipeline that combines document retrieval, Slack context, and Jira tool execution to produce a single smart answer to user questions.
+
 name: |
-  one mcp agent
+  Slack, Docs & Jira Search
+
+# ----------------------------
+# Providers
+# ----------------------------
+providers:
+  - rid: mcp_server_rid
+    name: mcp
+    type: mcp_server
+    config:
+      type: mcp_server
+      sse_endpoint: http://10.46.254.131:8007/servers/mcp-atlassian/sse
+      tool_names:
+        - jira_get_issue
+        - jira_search
+        - jira_get_project_issues
+        - jira_create_issue
+        - jira_update_issue
+        - jira_link_to_epic
+
+# ----------------------------
+# LLM Definitions
+# ----------------------------
+llms:
+  - rid: openai_llm_rid
+    name: openai_llm
+    type: openai
+    config:
+      type: openai
+      model_name: gemini-2.5-flash-lite
+      api_key: AIzaSyC_Jt5v4wzPP6RDsHN_wR9iUsCsyO_7IoI
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai
+
 
 
 nodes:
@@ -17,7 +50,25 @@ nodes:
     config:
       type: final_answer_node
 
-  - rid: $ref:9ffc6c27fed449c588f5dbfb5e39506a
+  - rid: agent_with_jira_rid
+    name: Agent With Jira
+    type: custom_agent_node
+    config:
+      type: custom_agent_node
+      llm: openai_llm_rid
+      provider: mcp_server_rid
+      system_message: |
+        Your job is to investigate any user question as if it might be related to Jira. Do not wait for confirmation or clarification before acting.
+
+        When the user asks a question:
+        - Assume Jira might be relevant, even if it isn’t mentioned explicitly.
+        - Extract key terms or concepts from the question and begin exploring using your tools.
+        - Start with exploratory tool calls (e.g., search) to discover related content.
+        - When you get tool results, analyze them and decide whether additional tool calls are needed to clarify or deepen your understanding.
+        - Try different variations of search terms if the first attempts don’t produce useful insights.
+        - Only ask the user for clarification if, after genuine effort using multiple tools, you still lack enough information to proceed.
+
+        You must never say “I can’t help” without first investigating thoroughly using your tools. Your approach should be proactive, curious, and iterative: act first, reason through the data, and only then ask if needed.
 
 
 # ----------------------------
@@ -31,16 +82,17 @@ plan:
       description: |
         The user inputs a question or request.
 
-  - uid: mcp_agent
+  ##### JIRA ######
+  - uid: agent_with_jira
     after: user_input
-    node: 9ffc6c27fed449c588f5dbfb5e39506a
+    node: agent_with_jira_rid
     meta:
-      display_name: MCP Agent
+      display_name: Jira Agent
       description: |
-        MCP Agent
+        Get Jira data using JIRA tools
 
   - uid: finalize
-    after: mcp_agent
+    after: agent_with_jira
     node: final_answer_node_rid
     meta:
       display_name: Final Answer

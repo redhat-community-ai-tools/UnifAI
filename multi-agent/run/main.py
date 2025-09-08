@@ -198,7 +198,7 @@ if __name__ == "__main__":
     # raw = blueprint_loader.load("run/blueprint_SDJ.yml")
     blueprint_id = app.blueprint_service.save_draft(user_id="alice", draft_dict=raw)
     blueprint_spec = app.blueprint_service.load_resolved(blueprint_id=blueprint_id)
-    # run_test_new_version(app, blueprint_id=blueprint_id)
+    run_test_new_version(app, blueprint_id=blueprint_id)
 
     # Use the separate services - build with graph service, validate with validation service
     # plan = app.graph_service.build_plan(blueprint_spec)

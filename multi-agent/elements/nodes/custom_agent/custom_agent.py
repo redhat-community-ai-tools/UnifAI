@@ -58,9 +58,9 @@ class CustomAgentNode(
         """Main entry point - process all incoming TaskPackets."""
         # Initialize MCP tools if available
         if self.mcp_provider:
-            # Add MCP tools to the internal tools dictionary
+            # Add MCP tools using the proper tool management API
             for tool in self.mcp_provider.get_tools():
-                self._tools[tool.name] = tool
+                self.add_tool(tool)
 
         if self.tools:
             self._bind_tools(self.tools)
