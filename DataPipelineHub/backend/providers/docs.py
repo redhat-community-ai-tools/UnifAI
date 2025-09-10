@@ -1,13 +1,12 @@
 import base64
 import os
 import tempfile
-from typing import List
+from typing import List, Optional, Dict, Any
 from flask import jsonify
 from config.app_config import AppConfig
-from utils.storage.mongo.mongo_storage import MongoStorage
 from shared.logger import logger
 from global_utils.utils.util import get_mongo_url
-from werkzeug.utils import secure_filename
+from utils.documents import sanitize_filename
 from providers.data_sources import initialize_embedding_generator, initialize_vector_storage
 from config.constants import SourceType
 import pymongo
@@ -16,12 +15,11 @@ app_config = AppConfig.get_instance()
 upload_folder = app_config.upload_folder
 
 mongo_client = pymongo.MongoClient(get_mongo_url())
-data_source_repo = MongoStorage(get_mongo_url())
 
 def upload_docs(files):
     try:
         for file in files:
-            filename = secure_filename(file["name"])
+            filename = sanitize_filename(file["name"])
             content = base64.b64decode(file["content"])
             with open(os.path.join(upload_folder, filename), "wb") as f:
                 f.write(content)

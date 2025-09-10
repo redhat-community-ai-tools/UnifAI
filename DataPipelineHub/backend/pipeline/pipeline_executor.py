@@ -1,7 +1,7 @@
 from typing import Any
 from pipeline.pipeline_repository import PipelineRepository
 from config.constants import PipelineStatus
-from pipeline.decorators import pipeline_step
+from pipeline.decorators import pipeline_step, break_if_skipped, PipelineDuplicatedDocBreak
 from pipeline.pipeline_factory import Pipeline
 
 class PipelineExecutor:
@@ -28,6 +28,7 @@ class PipelineExecutor:
         return self.pipeline.orchestration()
 
     @pipeline_step(PipelineStatus.COLLECTING.value)
+    @break_if_skipped
     def _run_collect(self):
         return self.pipeline.collect_data()
 
@@ -57,19 +58,23 @@ class PipelineExecutor:
 
     def run(self) -> Any:
         self._run_orchestration()
+        try:
+            collected   = self._run_collect()
+            processed   = self._run_process(collected)
+            embeddings  = self._run_chunk_and_embed(processed)
+            stored      = self._run_store(embeddings)
         
-        collected   = self._run_collect()          
-        processed   = self._run_process(collected)   
-        embeddings  = self._run_chunk_and_embed(processed)
-        stored      = self._run_store(embeddings)
-        
-        self._run_clean_orchestration()
-        self.repo.update_pipeline_status(
-            pipeline=self.pipeline,
-            new_status=PipelineStatus.DONE.value
-        )
-        self.repo.register_data_source(
-            pipeline=self.pipeline,
-            summary=self.pipeline.summary()
-        )
-        return stored
+            self._run_clean_orchestration()
+            self.repo.update_pipeline_status(
+                pipeline=self.pipeline,
+                new_status=PipelineStatus.DONE.value
+            )
+                
+            self.repo.register_data_source(
+                pipeline=self.pipeline,
+                summary=self.pipeline.summary()
+            )
+            return stored
+        except PipelineDuplicatedDocBreak:
+            self._run_clean_orchestration()
+            return {}

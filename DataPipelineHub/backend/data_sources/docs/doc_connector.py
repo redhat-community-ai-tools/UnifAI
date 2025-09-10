@@ -1,12 +1,14 @@
 import os
 from typing import Dict, List, Any, Optional
 from pathlib import Path
+from utils.documents import compute_file_md5
 from shared.logger import logger
+from config.constants import SourceType
 from utils.data_connector import DataConnector
 from .doc_config_manager import DocConfigManager
 from .pdf_chunker_strategy import DoclingProcessingError
 
-from docling.document_converter import DocumentConverter, ConversionResult
+from docling.document_converter import DocumentConverter, ConversionResult  # type: ignore[import]
 
 class DocumentConnector(DataConnector):
     """
@@ -83,7 +85,7 @@ class DocumentConnector(DataConnector):
             
         try:
             logger.info(f"Processing document: {document_path}")
-            
+
             # Process the document with docling
             # Note: Docling's DocumentConverter.convert() doesn't accept custom parameters (those are stored in the configuration but don't passed to the method)
             logger.info(f"Using default docling conversion parameters (custom options not supported)")
@@ -107,14 +109,22 @@ class DocumentConnector(DataConnector):
                 "filename": os.path.basename(document_path),
             }
             
-            # Add metadata if requested
-            if self._config_manager.get_config_value("include_metadata"):
-                document_data["metadata"] = self._extract_metadata(result, upload_by, file_size_mb)
-                
+            # Compute MD5 of the extracted full text (post-conversion)
+            try:
+                text_md5 = compute_file_md5(text_content)
+                if text_md5:
+                    document_data.setdefault("metadata", {})["content_md5"] = text_md5
+            except Exception as e:
+                logger.warning(f"Failed computing text MD5: {e}")
+
+            document_data["metadata"] = self._extract_metadata(result, upload_by, file_size_mb, text_md5 or "")
+
             logger.info(f"Document processed successfully: {document_path}")
             return document_data
             
         except DoclingProcessingError:
+            raise
+        except DuplicateDocumentError:
             raise
         except Exception as e:
             logger.error(f"Error processing document {document_path}: {str(e)}")
@@ -188,36 +198,20 @@ class DocumentConnector(DataConnector):
         except Exception as e:
             logger.error(f"Error processing document from URL {document_url}: {str(e)}")
             return None
-    
-    def _extract_metadata(self, conversion_result: ConversionResult, upload_by="default", file_size=0) -> Dict[str, Any]:
+
+    def _extract_metadata(self, conversion_result: ConversionResult, upload_by: str = "default", file_size: float = 0.0, md5: str = "") -> Dict[str, Any]:
         """
         Extract metadata from a conversion result.
-        
-        Args:
-            conversion_result: The document conversion result
-            
-        Returns:
-            Dictionary containing document metadata
         """
-        metadata = {}
-        
+        metadata: Dict[str, Any] = {}
         try:
             doc = conversion_result.document
-            
-            # Extract basic document metadata
             if hasattr(doc, "metadata") and doc.metadata:
                 metadata.update(doc.metadata)
-
-            # Extract title
             metadata["title"] = doc.title if hasattr(doc, "title") else "Untitled"
-
-            # Extract uploader
             metadata["upload_by"] = upload_by
-            
-            # Extract file size
+            metadata["content_md5"] = md5
             metadata["file_size"] = f"{file_size:.2f} MB" if file_size > 0 else "Unknown size"
-                
-            # Extract structural information
             metadata["page_count"] = len(doc.pages) if hasattr(doc, "pages") else 1
             
             # Extract content statistics
@@ -232,12 +226,10 @@ class DocumentConnector(DataConnector):
             # Extract image information if available
             if hasattr(conversion_result, "images") and conversion_result.images:
                 metadata["image_count"] = len(conversion_result.images)
-                
         except Exception as e:
             logger.warning(f"Error extracting metadata: {str(e)}")
-            
         return metadata
-    
+
     def get_document_structure(self, document_path: str) -> Optional[Dict[str, Any]]:
         """
         Get the hierarchical structure of a document.
@@ -251,7 +243,6 @@ class DocumentConnector(DataConnector):
         if document_path not in self._conversion_results:
             logger.warning(f"Document not processed yet: {document_path}")
             return None
-            
         try:
             result = self._conversion_results[document_path]
             structure = {
@@ -268,9 +259,13 @@ class DocumentConnector(DataConnector):
                         "text": section.text if hasattr(section, "text") else "",
                     }
                     structure["sections"].append(section_data)
-            
             return structure
-            
         except Exception as e:
             logger.error(f"Error extracting document structure: {str(e)}")
             return None
+
+
+class DuplicateDocumentError(Exception):
+    def __init__(self, original_doc: Optional[Dict[str, Any]]):
+        super().__init__("Duplicate document content detected")
+        self.original_doc = original_doc

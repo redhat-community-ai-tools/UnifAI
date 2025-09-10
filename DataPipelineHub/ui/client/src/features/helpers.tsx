@@ -42,7 +42,6 @@ export function formatDate(dateStr: string): string {
 // Helper function to check if a pipeline is actively processing
 export function isEmbeddingActivelyProcessing(source: EmbedChannel | Document): boolean {
   const activeStatuses = [
-    PIPELINE_STATUS.PENDING,
     PIPELINE_STATUS.ACTIVE,
     PIPELINE_STATUS.COLLECTING,
     PIPELINE_STATUS.PROCESSING,

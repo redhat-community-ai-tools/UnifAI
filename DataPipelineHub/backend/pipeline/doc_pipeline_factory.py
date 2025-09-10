@@ -1,9 +1,12 @@
 from functools import cached_property
+from typing import Any
 from pipeline.pipeline_factory import PipelineFactory
+from pipeline.pipeline import Pipeline
 from data_sources.docs.doc_config_manager import DocConfigManager
 from data_sources.docs.doc_connector import DocumentConnector
 from data_sources.docs.document_processor import DocumentProcessor
 from data_sources.docs.pdf_chunker_strategy import PDFChunkerStrategy
+from data_sources.docs.docs_validator import DocumentValidator
 from shared.config import ChunkerConfig
 from config.constants import DataSource
 
@@ -31,4 +34,20 @@ class DocumentPipelineFactory(PipelineFactory):
         return PDFChunkerStrategy(
             max_tokens_per_chunk=self.doc_config._config["chunk_size"],
             overlap_tokens=self.doc_config._config["chunk_overlap"]
+        )
+
+    def _create_validator(self) -> DocumentValidator:
+        return DocumentValidator()
+
+    def create_pipeline(self, metadata: Any) -> Pipeline:
+        pipeline_cls = Pipeline.create(self.SOURCE_TYPE)
+        return pipeline_cls(
+            collector=self._create_collector(),
+            validator=self._create_validator(),
+            processor=self._create_processor(),
+            chunker=self._create_chunker(),
+            embedder=self._create_embedder(),
+            storage=self._create_storage(),
+            monitor=self._create_monitor(),
+            metadata=metadata,
         )

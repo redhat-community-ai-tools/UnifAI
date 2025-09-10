@@ -1,6 +1,6 @@
 from typing import Optional, Dict, List, Any
 from pymongo.collection import Collection
-from datetime import datetime
+from datetime import datetime, timezone
 from .utils import make_json_safe
 from shared.logger import logger
 
@@ -73,8 +73,11 @@ class SourcesRepository:
     def upsert_summary(self, source_id: str, source_name: str, source_type: str,
                        upload_by: str, pipeline_id: str, type_data: Optional[Dict[str, Any]] = None):
         """Create or update a source summary."""
-        now = datetime.utcnow()
-        update = {"last_sync_at": now}
+        now = datetime.now(timezone.utc)
+        update = {
+            "last_sync_at": now,
+            "last_updated": now,
+        }
         if type_data:
             update["type_data"] = type_data
 
@@ -94,15 +97,31 @@ class SourcesRepository:
             upsert=True
         )
 
-    def delete(self, source_id: str) -> Dict[str, Any]:
-        """Delete a source by ID."""
+    def delete(self, filter_query: Dict[str, Any]) -> Dict[str, Any]:
+        """Generic delete that accepts an arbitrary filter and deletes all matches."""
         try:
-            result = self.col.delete_one({"source_id": source_id})
+            result = self.col.delete_many(filter_query or {})
             return {
                 "success": True,
-                "source_deleted": result.deleted_count > 0,
                 "documents_deleted": result.deleted_count
             }
         except Exception as e:
-            logger.error(f"Error deleting source {source_id}: {e}")
-            return {"success": False, "error": str(e)} 
+            logger.error(f"Error deleting sources with filter {filter_query}: {e}")
+            return {"success": False, "error": str(e)}
+
+    def update(self, filter_query: Dict[str, Any], update_ops: Any, many: bool = False, upsert: bool = False) -> Dict[str, Any]:
+        """Generic update supporting dict or aggregation-pipeline updates."""
+        try:
+            if many:
+                result = self.col.update_many(filter_query or {}, update_ops, upsert=upsert)
+            else:
+                result = self.col.update_one(filter_query or {}, update_ops, upsert=upsert)
+            return {
+                "success": True,
+                "matched": result.matched_count if hasattr(result, "matched_count") else None,
+                "modified": result.modified_count if hasattr(result, "modified_count") else None,
+                "upserted_id": getattr(result, "upserted_id", None)
+            }
+        except Exception as e:
+            logger.error(f"Error updating sources with filter {filter_query}: {e}")
+            return {"success": False, "error": str(e)}

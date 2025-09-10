@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 
@@ -93,5 +93,5 @@ class SlackStatsProvider:
             apiCallsCount=counts.apiCallsCount,
             lastSyncAt=last_sync,
             totalEmbeddings=total_embeddings,
-            updatedAt=datetime.utcnow().isoformat() + "Z",
+            updatedAt=datetime.now(timezone.utc).isoformat() + "Z",
         )

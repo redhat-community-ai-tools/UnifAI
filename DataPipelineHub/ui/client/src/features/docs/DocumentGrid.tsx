@@ -75,22 +75,28 @@ export const DocumentGrid = ({paginatedDocuments, activeDoc, setActiveDoc, delet
       <Card className="bg-background-card shadow-card border-gray-800">
         <CardContent className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {paginatedDocuments.map((doc) => (
-              <DataCard
-                key={doc.pipeline_id}
-                iconRenderer={() => getFileIcon(doc.type_data.file_type)}
-                iconBgClass={fileByColors[doc.type_data.file_type]}
-                title={doc.source_name}
-                status={doc.status}
-                subtitle={getDataToDisplay(doc) || `${doc.type_data.page_count} pages | ${doc.type_data.file_type} | ${doc.type_data.file_size}`}
-                metadata={`Uploaded ${new Date(doc.created_at).toLocaleString("en-GB")} by ${doc.upload_by}`}
-                footer={getDataToDisplay(doc) || `${doc.pipeline_stats?.chunks_generated} chunks`}
-                selected={doc === activeDoc}
-                onClick={() => setActiveDoc(doc === activeDoc ? null : doc)}
-                // extraTopRight={getExtraTopRight(doc, handleRetry, retrying)}
-                actions={getActions(doc, activeDoc, setActiveDoc, deleteLoading, onDeleteConfirmed)}
-              />
-            ))}
+            {paginatedDocuments.map((doc) => {
+              return (
+                <DataCard
+                  key={doc.pipeline_id}
+                  iconRenderer={() => getFileIcon(doc.type_data.file_type)}
+                  iconBgClass={fileByColors[doc.type_data.file_type]}
+                  title={doc.source_name}
+                  status={doc.status}
+                  subtitle={getDataToDisplay(doc) || `${doc.type_data.page_count} pages | ${doc.type_data.file_type} | ${doc.type_data.file_size}`}
+                  metadata={
+                    Array.isArray(doc.upload_by)
+                      ? `Uploaded ${new Date(doc.last_updated || doc.created_at).toLocaleString("en-GB")} — by ${doc.upload_by.length} people`
+                      : `Uploaded ${new Date(doc.last_updated || doc.created_at).toLocaleString("en-GB")} by ${doc.upload_by}`
+                  }
+                  footer={getDataToDisplay(doc) || `${doc.pipeline_stats?.chunks_generated} chunks`}
+                  selected={doc === activeDoc}
+                  onClick={() => setActiveDoc(doc === activeDoc ? null : doc)}
+                  // extraTopRight={getExtraTopRight(doc, handleRetry, retrying)}
+                  actions={getActions(doc, activeDoc, setActiveDoc, deleteLoading, onDeleteConfirmed)}
+                />
+              );
+            })}
           </div>
 
           {footer && (

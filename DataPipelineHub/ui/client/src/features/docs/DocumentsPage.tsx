@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { FaTh, FaList } from "react-icons/fa";
-import { useState, useEffect } from "react";
+import { FaTh, FaList, FaClone } from "react-icons/fa";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Document } from "@/types";
 import { UploadTab } from "./UploadTab";
 import Sidebar from "@/components/layout/Sidebar";
@@ -12,6 +12,36 @@ import { DocumentTable } from "./DocumentsTable";
 import { PageLoader } from "@/components/shared/PageLoader";
 import { DocumentGrid } from "./DocumentGrid";
 import { deleteDoc, fetchDocuments } from "@/api/docs";
+import { useToast } from "@/hooks/use-toast";
+
+// Persist seen duplicate notices across page visits
+const SEEN_DUP_NOTICES_STORAGE_KEY = "seen-duplication-notices";
+
+function loadSeenDuplicateNoticeKeys(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(SEEN_DUP_NOTICES_STORAGE_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as string[];
+    return new Set(parsed);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistSeenDuplicateNoticeKey(key: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const current = loadSeenDuplicateNoticeKeys();
+    current.add(key);
+    window.localStorage.setItem(
+      SEEN_DUP_NOTICES_STORAGE_KEY,
+      JSON.stringify(Array.from(current))
+    );
+  } catch {
+    // no-op
+  }
+}
 
 export default function Documents() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -24,6 +54,8 @@ export default function Documents() {
   const [retrying, setRetrying] = useState(false);
 
   const { currentPage, setPage, resetPage, itemsPerPage, } = usePaginationStore();
+  const { toast } = useToast();
+  const shownDupNoticesRef = useRef<Set<string>>(new Set());
 
   const { data: documents = [], isLoading, isError, error } = useQuery<Document[]>({
     queryKey: ['documents'],
@@ -37,9 +69,42 @@ export default function Documents() {
     resetPage();
   }, []);
 
+  // Initialize in-memory set from localStorage so we don't re-show on fresh visits
+  useEffect(() => {
+    shownDupNoticesRef.current = loadSeenDuplicateNoticeKeys();
+  }, []);
+
   useEffect(() => {
     fetchDocuments();
   }, [showUploadModal, activeDoc])
+
+  // Show a one-time toast if any document was updated due to a duplicate upload
+  useEffect(() => {
+    if (!documents?.length) return;
+    for (const doc of documents) {
+      const notice = doc.duplication_notice;
+      if (notice) {
+        const key = `${doc.pipeline_id}:${notice.duplicate_at}`;
+        if (!shownDupNoticesRef.current.has(key)) {
+          shownDupNoticesRef.current.add(key);
+          persistSeenDuplicateNoticeKey(key);
+          const duplicateUploadedName = notice.duplicate_uploaded_name || "the uploaded file";
+          const existingName = notice.existing_name || doc.source_name;
+          toast({
+            className: "bg-white text-black border border-gray-200",
+            title: (
+              <span className="inline-flex items-center gap-2">
+                <FaClone className="text-red-500" />
+                Duplicate detected
+              </span>
+            ),
+            description: `"${duplicateUploadedName}" is already embedded as "${existingName}" and is now available.`,
+            duration: 10000,
+          });
+        }
+      }
+    }
+  }, [documents, toast]);
 
   const filteredDocuments = documents.filter((doc) => {
     const matchesType = fileTypeFilter === "all" || doc.type_data.file_type === fileTypeFilter;

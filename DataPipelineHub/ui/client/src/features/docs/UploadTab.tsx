@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import { FaFileAlt, FaUpload, FaTimes } from "react-icons/fa";
 import { Progress } from "@/components/ui/progress";
 import { ProcessingOptions } from "./ProcessingOptions";
-import { embedDocs, uploadDocs } from "@/api/docs";
+import { embedDocs, uploadDocs, fetchDocuments } from "@/api/docs";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface UploadTabProps {
     setShowUploadModal: (showUploadModal: boolean) => void;
@@ -19,7 +21,11 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [error, setError] = useState<string>("");
+    const [skippedDup, setSkippedDup] = useState<any>();
     
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+
     const handleDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
         setIsDragging(true);
@@ -83,7 +89,8 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     const startPipeline = async (docs: {source_name: string}[]) => {
         try {
             await embedDocs(docs)
-            console.log("API submission successful!");
+            queryClient.invalidateQueries({ queryKey: ['documents'] });
+            await fetchDocuments();
         } catch (error) {
             console.error(error);
             setError((error as Error).message);

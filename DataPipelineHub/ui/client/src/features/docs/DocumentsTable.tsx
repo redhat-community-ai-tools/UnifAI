@@ -51,7 +51,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
     {
       accessorKey: "upload_by",
       header: "Uploaded By",
-      cell: ({ row }) => row.original.upload_by,
+      cell: ({ row }) => Array.isArray(row.original.upload_by) ? `${row.original.upload_by.length} people` : row.original.upload_by,
       meta: { align: "left" },
     },
     {
@@ -77,7 +77,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
     {
       accessorKey: "file_type",
       header: "File Type",
-      cell: ({ row }) => row.original.type_data.file_type.toUpperCase(),
+      cell: ({ row }) => row.original.type_data.file_type?.toUpperCase(),
       meta: {
         align: "center",
         filterType: "select",
@@ -175,7 +175,9 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
         enableColumnFilters={true}
         enablePagination={true}
         expendedRow={activeDoc}
-        renderExpandedRow={(doc) => <DocumentData doc={doc} />}
+        renderExpandedRow={(doc) => {
+          return <DocumentData doc={doc} />
+        }}
       />
 
       {confirmDoc && (

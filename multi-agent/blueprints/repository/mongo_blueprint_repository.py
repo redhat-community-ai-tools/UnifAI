@@ -1,6 +1,6 @@
 import pymongo
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Mapping
 from pydantic import ValidationError
 from blueprints.models.blueprint import BlueprintSpec, BlueprintDraft
@@ -26,8 +26,8 @@ class MongoBlueprintRepository(BlueprintRepository):
         doc = {
             "blueprint_id": new_id,
             "user_id": user_id,
-            "created_at": getattr(spec, "created_at", datetime.utcnow()),
-            "updated_at": datetime.utcnow(),
+            "created_at": getattr(spec, "created_at", datetime.now(timezone.utc)),
+            "updated_at": datetime.now(timezone.utc),
             "spec_dict": spec.model_dump(mode="json"),
             "rid_refs": rid_refs
         }
@@ -46,7 +46,7 @@ class MongoBlueprintRepository(BlueprintRepository):
             {"$set": {
                 "spec_dict": spec.model_dump(mode="json"),
                 "rid_refs": rid_refs,
-                "updated_at": datetime.utcnow(),
+                "updated_at": datetime.now(timezone.utc),
             }}
         )
 

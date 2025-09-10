@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import uuid
 from pipeline.pipeline_repository import PipelineRepository
@@ -13,6 +14,7 @@ from shared.source_types import (
 from shared.logger import logger
 from config.constants import DataSource, PipelineStatus
 from utils.storage.mongo.mongo_helpers import get_mongo_storage
+from utils.documents import sanitize_filename
 
 app_config = AppConfig.get_instance()
 upload_folder = app_config.upload_folder
@@ -77,7 +79,7 @@ def register_sources_task(self, data_list: list, source_type: str, upload_by: st
                 
             elif source_type.upper() == DataSource.DOCUMENT.upper_name:
                 source_id = str(uuid.uuid4())
-                source_name = instance.get("source_name", "")
+                source_name = sanitize_filename(instance.get("source_name", ""))
                 doc_path = os.path.join(upload_folder, source_name)
                 pipeline_id = f"{DataSource.DOCUMENT.value}_{source_id}"
                 
@@ -174,7 +176,7 @@ def execute_pipeline_task(self, source_type: str, source_data: dict):
             logger.info(f"Document path: {metadata}")
         else:
             raise ValueError(f"Unsupported source type: {source_type}")
-        
+
         # Create factory and executor using the modular pipeline architecture
         factory = PipelineFactory.create(source_type)
         pipeline = factory.create_pipeline(metadata)

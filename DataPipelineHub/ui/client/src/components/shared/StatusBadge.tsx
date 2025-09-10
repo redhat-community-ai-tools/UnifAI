@@ -7,14 +7,13 @@ export function StatusBadge({
 }: { 
   status: EmbedChannel["status"] | Document["status"] | undefined;
 }) {
-  console.log(status)
   const { bgColor, textColor, label, isActive } = useMemo(() => {
     // Show "Pending" if there's no real pipeline status yet, even if actively embedding
     if (!status) {
       return {
         bgColor: "bg-grey-500/15",
         textColor: "text-grey-400",
-        label: "Pending",
+        label: "In queue",
         isActive: true,
       };
     }
@@ -48,6 +47,13 @@ export function StatusBadge({
           label: "Failed",
           isActive: false,
         };
+      case "SKIPPED":
+        return {
+          bgColor: "bg-slate-500/15",
+          textColor: "text-slate-400",
+          label: "Skipped",
+          isActive: false,
+        };
       case "ARCHIVED":
         return {
           bgColor: "bg-slate-600/10",
@@ -60,7 +66,7 @@ export function StatusBadge({
           bgColor: "bg-blue-500/15",
           textColor: "text-blue-400",
           label: "Pending",
-          isActive: true,
+          isActive: false,
         };
       // Handle all the processing statuses as active states
       case "CHUNKING_AND_EMBEDDING":

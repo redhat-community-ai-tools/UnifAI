@@ -38,7 +38,7 @@ class SourceDeletionManager:
         """
         logger.info(f"Step 2: Deleting from MongoDB - source {source_id}")
         try:
-            return self.mstore.sources.delete(source_id)
+            return self.mstore.delete_sources({"source_id": source_id})
         except Exception as e:
             logger.error(f"MongoDB deletion failed for source {source_id}: {e}")
             return {"success": False, "error": str(e), "source_deleted": False}
@@ -53,7 +53,7 @@ class SourceDeletionManager:
         pipeline_prefix = f"{source_type.lower()}_{source_id}" if source_type else source_id
         logger.info(f"Step 3: Pipeline cleanup for source {source_id}")
         try:
-            return self.mstore.pipelines.delete(pipeline_prefix)
+            return self.mstore.delete_pipelines({"pipeline_id": {"$regex": f"^{pipeline_prefix}"}})
         except Exception as e:
             logger.error(f"Pipeline deletion failed for source {source_id}: {e}")
             return {"success": False, "error": str(e), "pipelines_deleted": 0}
