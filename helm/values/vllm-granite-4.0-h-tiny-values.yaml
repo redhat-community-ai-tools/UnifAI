@@ -1,0 +1,122 @@
+# IBM Granite 4.0 H Tiny specific values file  
+# This file inherits from values.yaml and overrides only Granite 4.0 H Tiny specific parameters
+# Usage: helm install granite-tiny ./helm/shared-resources/vllm-serving-engine -f helm/values/vllm-granite-4.0-h-tiny-values.yaml
+
+# Model configuration - IBM Granite 4.0 H Tiny specific (7B params, 1B active, 128K context, optimized for single GPU)
+model:
+  name: "ibm-granite/granite-4.0-h-tiny"
+  localModelPath: "/models/.cache/models--ibm-granite-granite-4.0-h-tiny"
+  maxModelLen: "128000"  # 128K context length (conservative for single GPU)
+  quantization: ""  # No quantization for optimal quality
+  toolCallParser: "hermes"  # Use hermes parser (proven to work with Granite)
+  # Force download in initContainer to ensure model is cached
+  forceDownload: false
+  # Custom arguments optimized for Granite 4.0 H Tiny MoE architecture
+  customArgs:
+    - "--trust-remote-code"  # May be required for Granite models
+    - "--disable-log-stats"  # Reduce logging overhead
+    - "--enforce-eager"  # Disable CUDA graphs for compatibility
+    - "--enable-chunked-prefill"  # Optimize for long context processing
+    - "--max-num-seqs=8"  # Higher concurrency due to smaller model
+
+# Granite 4.0 H Tiny specific resource requirements
+# 7B total params but 1B active due to MoE - optimized for single GPU
+resources:
+  limits:
+    cpu: '4'
+    memory: 24Gi  # Conservative for 7B model
+    nvidia.com/gpu: 1  # Single GPU sufficient for 7B model
+  requests:
+    cpu: '2'
+    memory: 12Gi
+    nvidia.com/gpu: 1
+
+# GPU configuration for single GPU setup
+gpu:
+  count: 1
+
+vllm:
+  # vLLM settings optimized for Granite 4.0 H Tiny MoE architecture on single GPU
+  gpuMemoryUtilization: "0.90"  # Higher utilization for smaller model
+  tensorParallelSize: "1"  # Single GPU, no tensor parallelism needed
+  enableAutoToolChoice: true  # Granite has enhanced tool calling
+  disableLogRequests: false  # Keep logging for debugging initially
+
+# Health probe timing optimized for smaller 7B MoE model
+healthProbes:
+  readinessProbe:
+    initialDelaySeconds: 120  # 2 minutes - faster for smaller model
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 15
+  livenessProbe:
+    initialDelaySeconds: 180  # 3 minutes - single GPU small model
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 10
+
+# Environment variables - only Granite H Tiny specific overrides
+env:
+  # Standard timeout for smaller model
+  VLLM_ENGINE_ITERATION_TIMEOUT_S: "600"  # 10 minutes for 128K context
+  # Memory optimization for smaller MoE architecture
+  PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:256,expandable_segments:True"
+  CUDA_VISIBLE_DEVICES: "0"  # Single GPU
+  # Granite specific settings
+  VLLM_TRUST_REMOTE_CODE: "True"
+  # MoE specific optimizations
+  VLLM_MOE_PADDING: "True"  # Enable MoE padding optimizations
+  # Optimizations for single GPU setup
+  VLLM_ATTENTION_BACKEND: "FLASHINFER"
+
+# Volume configuration - smaller storage for 7B model
+volumes:
+  modelCache:
+    size: "50Gi"  # Smaller storage for 7B model (~15-20GB total)
+
+# Node affinity to ensure deployment on GPU nodes (flexible for smaller model)
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      preference:
+        matchExpressions:
+        - key: nvidia.com/gpu.product
+          operator: In
+          values:
+          - NVIDIA-A100-SXM4-40GB  # Prefer A100 GPUs
+          - NVIDIA-A100-SXM4-80GB  # Also support 80GB
+          - NVIDIA-H100-SXM5-80GB  # H100 for better performance
+          - NVIDIA-V100-SXM2-32GB  # V100 also sufficient for 7B model
+          - NVIDIA-T4             # Even T4 could work for 7B
+    - weight: 80
+      preference:
+        matchExpressions:
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values:
+          - p4d.24xlarge    # AWS A100 instances
+          - p3.8xlarge      # V100 instances  
+          - g4dn.xlarge     # T4 instances
+
+# Additional tolerations for various GPU types
+tolerations:
+  - key: high-memory-gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+# Security context optimized for OpenShift SCC compliance
+securityContext:
+  runAsNonRoot: true
+  # Let OpenShift assign user ID within allowed range
+  capabilities:
+    drop:
+    - ALL
+
+# Service annotations for monitoring
+service:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"

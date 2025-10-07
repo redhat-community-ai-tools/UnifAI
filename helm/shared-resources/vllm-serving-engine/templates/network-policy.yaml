@@ -1,0 +1,152 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "vllm-serving-engine.fullname" . }}
+  labels:
+    {{- include "vllm-serving-engine.labels" . | nindent 4 }}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "vllm-serving-engine.selectorLabels" . | nindent 6 }}
+  
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  # Ingress rules - allow incoming traffic
+  ingress:
+  # Allow traffic from OpenShift router/ingress
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: openshift-ingress
+    ports:
+    - protocol: TCP
+      port: {{ .Values.service.targetPort }}
+  
+  # Allow traffic from same namespace (for testing, monitoring)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: {{ .Values.namespace | default .Release.Namespace }}
+    ports:
+    - protocol: TCP
+      port: {{ .Values.service.targetPort }}
+  
+  # Allow health checks from OpenShift infrastructure
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: openshift-monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: openshift-network-operator
+    ports:
+    - protocol: TCP
+      port: {{ .Values.service.targetPort }}
+  
+  # Allow Prometheus scraping if monitoring is enabled
+  {{- if .Values.service.annotations }}
+  {{- if index .Values.service.annotations "prometheus.io/scrape" }}
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: openshift-monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: openshift-user-workload-monitoring
+    ports:
+    - protocol: TCP
+      port: {{ .Values.service.targetPort }}
+  {{- end }}
+  {{- end }}
+  
+  # Allow traffic from any namespace with specific labels (configurable)
+  {{- range .Values.networkPolicy.allowFromNamespaces }}
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          {{- toYaml .matchLabels | nindent 10 }}
+    {{- if .ports }}
+    ports:
+    {{- range .ports }}
+    - protocol: {{ .protocol | default "TCP" }}
+      port: {{ .port }}
+    {{- end }}
+    {{- else }}
+    ports:
+    - protocol: TCP
+      port: {{ $.Values.service.targetPort }}
+    {{- end }}
+  {{- end }}
+  
+  # Egress rules - allow outgoing traffic
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  
+  # Allow HTTPS for model downloads from HuggingFace
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  
+  # Allow HTTP for internal OpenShift communication
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 80
+  
+  # Allow NCCL communication between GPUs (if multi-GPU)
+  {{- if gt (int .Values.gpu.count) 1 }}
+  - to:
+    - podSelector:
+        matchLabels:
+          {{- include "vllm-serving-engine.selectorLabels" . | nindent 10 }}
+    ports:
+    # NCCL communication ports range
+    - protocol: TCP
+      port: 1024
+      endPort: 65535
+  {{- end }}
+  
+  # Allow specific egress destinations (configurable)
+  {{- range .Values.networkPolicy.allowEgressTo }}
+  - to:
+    {{- if .namespaceSelector }}
+    - namespaceSelector:
+        matchLabels:
+          {{- toYaml .namespaceSelector.matchLabels | nindent 10 }}
+    {{- end }}
+    {{- if .podSelector }}
+    - podSelector:
+        matchLabels:
+          {{- toYaml .podSelector.matchLabels | nindent 10 }}
+    {{- end }}
+    {{- if .ipBlock }}
+    - ipBlock:
+        cidr: {{ .ipBlock.cidr }}
+        {{- if .ipBlock.except }}
+        except:
+        {{- range .ipBlock.except }}
+        - {{ . }}
+        {{- end }}
+        {{- end }}
+    {{- end }}
+    {{- if .ports }}
+    ports:
+    {{- range .ports }}
+    - protocol: {{ .protocol | default "TCP" }}
+      port: {{ .port }}
+    {{- end }}
+    {{- end }}
+  {{- end }}
+
+{{- end }}

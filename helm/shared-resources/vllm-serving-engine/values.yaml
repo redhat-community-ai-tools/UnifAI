@@ -200,3 +200,25 @@ labels:
 serviceAccount:
   create: false
   name: ""
+
+# Network policy configuration
+networkPolicy:
+  enabled: true
+  # Allow ingress from these namespaces
+  allowFromNamespaces: []
+    # Example:
+    # - matchLabels:
+    #     name: "frontend-namespace"
+    #   ports:
+    #   - protocol: TCP
+    #     port: 8000
+  
+  # Allow egress to these destinations
+  allowEgressTo: []
+    # Example:
+    # - namespaceSelector:
+    #     matchLabels:
+    #       name: "database-namespace"
+    #   ports:
+    #   - protocol: TCP
+    #     port: 5432

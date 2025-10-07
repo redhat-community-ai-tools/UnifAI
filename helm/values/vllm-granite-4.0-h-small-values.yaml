@@ -1,0 +1,142 @@
+# IBM Granite 4.0 H Small specific values file
+# This file inherits from values.yaml and overrides only Granite 4.0 H Small specific parameters
+# Usage: helm install vllm-granite-4.0-h-small ./helm/shared-resources/vllm-serving-engine -f helm/values/vllm-granite-4.0-h-small-values.yaml
+
+# Model configuration - IBM Granite 4.0 H Small specific (32B params, 9B active, 64K context, no quantization, optimized for 2x 40GB GPUs)
+model:
+  name: "ibm-granite/granite-4.0-h-small"
+  localModelPath: "/models/.cache/models--ibm-granite-granite-4.0-h-small"
+  maxModelLen: "64000"  # Conservative context length for stable performance on 2x A100-40GB
+  quantization: ""  # No quantization - not compatible with tensor parallelism
+  toolCallParser: "hermes"  # Use hermes parser (works well with many models)
+  # Force download in initContainer to ensure model is cached
+  forceDownload: true
+  # Custom arguments optimized for Granite 4.0 H Small MoE architecture on 2-GPU setup
+  customArgs:
+    - "--trust-remote-code"  # May be required for Granite models
+    - "--disable-log-stats"  # Reduce logging overhead
+    - "--enforce-eager"  # Disable CUDA graphs for compatibility
+    - "--enable-chunked-prefill"  # Optimize for long context processing
+    - "--max-num-seqs=6"  # Balanced concurrency for 64K context
+
+# Granite 4.0 H Small specific resource requirements  
+# 32B total params but 9B active due to MoE - optimized for 2x 40GB GPUs
+resources:
+  limits:
+    cpu: '8'
+    memory: 48Gi  # Maximum allowed by cluster resource limits
+    nvidia.com/gpu: 2  # 2x GPUs for tensor parallelism (80GB total)
+  requests:
+    cpu: '4'
+    memory: 24Gi
+    nvidia.com/gpu: 2
+
+# GPU configuration for 2-GPU tensor parallel setup
+gpu:
+  count: 2
+
+vllm:
+  # vLLM settings optimized for Granite 4.0 H Small MoE architecture on 2x 40GB GPUs
+  gpuMemoryUtilization: "0.85"  # Conservative utilization for 64K context
+  tensorParallelSize: "2"  # 2-way tensor parallelism across 2 GPUs
+  enableAutoToolChoice: true  # Granite has enhanced tool calling
+  disableLogRequests: false  # Keep logging for debugging initially
+
+# Health probe timing optimized for 2-GPU 32B MoE model
+healthProbes:
+  readinessProbe:
+    initialDelaySeconds: 300  # 5 minutes - longer for 2-GPU tensor parallel initialization
+    periodSeconds: 15
+    timeoutSeconds: 10
+    failureThreshold: 20
+  livenessProbe:
+    initialDelaySeconds: 360  # 6 minutes - 2-GPU initialization takes longer
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 10
+
+# Environment variables - only Granite/MoE specific overrides
+env:
+  # Extended timeout for large model loading
+  VLLM_ENGINE_ITERATION_TIMEOUT_S: "900"  # 15 minutes for 64K context
+  # Memory optimization for MoE architecture on 2x 40GB GPUs
+  PYTORCH_CUDA_ALLOC_CONF: "max_split_size_mb:512,expandable_segments:True"
+  CUDA_VISIBLE_DEVICES: "0,1"  # 2 GPUs for tensor parallelism
+  # Granite specific settings
+  VLLM_TRUST_REMOTE_CODE: "True"
+  # MoE specific optimizations
+  VLLM_MOE_PADDING: "True"  # Enable MoE padding optimizations
+  # Multi-GPU communication settings
+  NCCL_TIMEOUT: "1800"
+  NCCL_IB_DISABLE: "1"  # Disable InfiniBand if not available
+  # Additional optimizations for 2-GPU setup
+  VLLM_ATTENTION_BACKEND: "FLASHINFER"
+
+# Volume configuration - only overrides for Granite model storage
+volumes:
+  modelCache:
+    size: "150Gi"  # Extra large storage for 32B model and cache
+
+# Node affinity to ensure deployment on appropriate GPU nodes
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      preference:
+        matchExpressions:
+        - key: nvidia.com/gpu.product
+          operator: In
+          values:
+          - NVIDIA-A100-SXM4-40GB  # Prefer A100-40GB GPUs
+          - NVIDIA-A100-SXM4-80GB  # Also support 80GB if available
+          - NVIDIA-H100-SXM5-80GB  # H100 also supported for better performance
+    - weight: 80
+      preference:
+        matchExpressions:
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values:
+          - p4d.24xlarge  # AWS instance with 8x A100 40GB
+          - p4de.24xlarge # AWS instance with 8x A100 80GB
+          - p5.48xlarge   # H100 instances
+
+# Tolerations required for GPU tenant access
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+  - key: tenant
+    operator: Equal
+    value: rh-jarvis-ai-a100
+    effect: NoSchedule
+  - key: tenant
+    operator: Equal
+    value: llmaas-a100
+    effect: NoSchedule
+  - key: tenant
+    operator: Equal
+    value: rh-jarvis-ai
+    effect: NoSchedule
+  - key: tenant
+    operator: Equal
+    value: llmaas
+    effect: NoSchedule
+  - key: high-memory-gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+# Security context optimized for OpenShift SCC compliance
+securityContext:
+  runAsNonRoot: true
+  # Let OpenShift assign user ID within allowed range [1004060000, 1004069999]
+  capabilities:
+    drop:
+    - ALL
+
+# Service annotations for monitoring
+service:
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
