@@ -8,6 +8,10 @@ env:
   BACKEND_ENV: "production"
   ROLE: "flask"
   SHARED_STORAGE: "/app/shared"
+  # Docling service configuration - will be overridden by shared-config ConfigMap if available
+  DOCLING_ENDPOINT_URL: "http://docling-service:5001"
+  DOCLING_API_VERSION: "v1alpha"
+  DOCLING_TIMEOUT: "300"
 
 debug: false
 
@@ -101,12 +105,16 @@ livenessProbe:
   httpGet:
     path: /api/health/
     port: 13456
-    periodSeconds: 60
+  periodSeconds: 60  # ✅ FIXED: Moved periodSeconds to probe level (not inside httpGet)
+  timeoutSeconds: 5
+  failureThreshold: 3
 readinessProbe:
   httpGet:
     path: /api/health/
     port: 13456
-    periodSeconds: 60
+  periodSeconds: 60  # ✅ FIXED: Moved periodSeconds to probe level (not inside httpGet)
+  timeoutSeconds: 5
+  failureThreshold: 3
 
 # This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
 autoscaling:

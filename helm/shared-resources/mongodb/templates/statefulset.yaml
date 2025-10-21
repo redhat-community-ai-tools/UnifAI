@@ -15,10 +15,13 @@ metadata:
     {{- with .Values.customLabels }}
       {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- with .Values.customAnnotations }}
   annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- end }}
+    {{- with .Values.customAnnotations }}
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
   {{- if .Values.replicaSet.enabled }}
   replicas: {{ add1 .Values.replicaSet.secondaries }}

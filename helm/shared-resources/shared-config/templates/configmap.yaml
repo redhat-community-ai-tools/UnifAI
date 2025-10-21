@@ -1,7 +1,12 @@
-# shared-resources/shared-config/templates/dummy.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: dummy-config
-data:
-  dummy: "true"
+# The actual shared-config ConfigMap is created by the service-discovery-job.yaml
+# This placeholder file exists to maintain chart structure
+# The Job will create a ConfigMap named {{ .Values.serviceDiscovery.configMapName }} 
+# with dynamic service discovery information
+
+{{/*
+The real ConfigMap will contain:
+- MONGO_EXT_ADDR, MONGODB_PORT, MONGODB_IP
+- RABBITMQ_EXT_ADDR, RABBITMQ_PORT, RABBITMQ_IP  
+- QDRANT_EXT_ADDR
+- DOCLING_EXT_ADDR, DOCLING_PORT, DOCLING_IP
+*/}}

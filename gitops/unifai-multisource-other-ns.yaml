@@ -1,0 +1,306 @@
+# Repository Secret for main code repo
+# NOTE: This secret must be in the same namespace as ArgoCD
+apiVersion: v1
+kind: Secret
+metadata:
+  name: unifai-gitlab-repo
+  namespace: tag-ai--runtime-int  # ArgoCD namespace (fixed)
+  labels:
+    argocd.argoproj.io/secret-type: repository
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+type: Opaque
+stringData:
+  type: git
+  url: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+  insecure: "true"
+  username: oauth2
+  password: adK_tdzvTZzLCoqNyFj5
+
+---
+# Repository Secret for private config repo - TOKEN VERSION
+# NOTE: This secret must be in the same namespace as ArgoCD
+apiVersion: v1
+kind: Secret
+metadata:
+  name: unifai-config-private-repo
+  namespace: tag-ai--runtime-int  # ArgoCD namespace (fixed)
+  labels:
+    argocd.argoproj.io/secret-type: repository
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+type: Opaque
+stringData:
+  type: git
+  url: https://gitlab.cee.redhat.com/gzhou/unifai-gitops-priv.git
+  insecure: "true"  
+  username: oauth2
+  password: adK_tdzvTZzLCoqNyFj5  # Using same token as main repo
+
+# SSH VERSION (commented out in favor of token auth)
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: unifai-config-private-repo
+#   namespace: ${NAMESPACE}
+#   labels:
+#     argocd.argoproj.io/secret-type: repository
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "-1"
+# type: Opaque
+# stringData:
+#   type: git
+#   url: https://gitlab.cee.redhat.com/gzhou/unifai-gitops-priv.git
+#   sshPrivateKey: |
+#     -----BEGIN OPENSSH PRIVATE KEY-----
+#     # ADD YOUR SSH PRIVATE KEY HERE
+#     -----END OPENSSH PRIVATE KEY-----
+
+---
+# Multi-source ArgoCD Application - DEVELOPMENT
+# NOTE: The Application must be in the same namespace as ArgoCD
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: unifai-platform
+  namespace: tag-ai--runtime-int  # ArgoCD namespace (fixed)
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    app.kubernetes.io/name: unifai-platform
+    app.kubernetes.io/component: platform
+    environment: dev
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  
+  # Multi-source configuration - pulls from both repos
+  sources:
+    # Source 1: Private configuration repo (loaded first)  
+    - repoURL: https://gitlab.cee.redhat.com/gzhou/unifai-gitops-priv.git
+      targetRevision: HEAD
+      ref: values  # This allows other sources to reference files as $values/path/filename.yaml
+      
+    # Source 2: Main code repo with all the helm charts
+    
+    # Wave 1: Storage - Deploy first  
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai  # NOTE: Could be made dynamic via ApplicationSet
+      path: helm/shared-resources/unifai-dataflow-shared-storage
+      helm:
+        valueFiles:
+          - $values/environments/dev/sensitive-values.yaml       # From private repo
+          - $values/environments/dev/site-config.yaml            # From private repo (only referenced data)  
+          - $values/environments/dev/values/shared-resources.values.yaml  # From private repo
+          - $values/environments/dev/values/global.values.yaml     # From private repo
+        parameters:
+          - name: "global.syncWave"
+            value: "1"
+          - name: "global.environment"
+            value: "dev"
+          - name: "fullnameOverride"
+            value: "unifai-dataflow-shared-storage"
+    
+    # Wave 2: Core Services - Deploy in parallel
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/shared-resources/mongodb
+      helm:
+        valueFiles:
+          - $values/environments/dev/sensitive-values.yaml       # Passwords, etc.
+          - $values/environments/dev/site-config.yaml            # Resources, infrastructure
+          - $values/environments/dev/values/mongodb.values.yaml  # From private repo
+        parameters:
+          - name: "global.syncWave"
+            value: "2"
+          - name: "global.environment"
+            value: "dev"
+    
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/shared-resources/qdrant
+      helm:
+        valueFiles:
+          - $values/environments/dev/sensitive-values.yaml
+          - $values/environments/dev/site-config.yaml
+          - $values/environments/dev/values/qdrant.values.yaml
+        parameters:
+          - name: "global.syncWave"
+            value: "2"
+          - name: "global.environment"
+            value: "dev"
+    
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/shared-resources/rabbitmq
+      helm:
+        valueFiles:
+          - $values/environments/dev/sensitive-values.yaml
+          - $values/environments/dev/site-config.yaml
+          - $values/environments/dev/values/rabbitmq.values.yaml
+        parameters:
+          - name: "global.syncWave"
+            value: "2"
+          - name: "global.environment"
+            value: "dev"
+          # RabbitMQ auth parameters now come from private repo auth section
+    
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/shared-resources/docling
+      helm:
+        valueFiles:
+          - $values/environments/dev/values/docling.values.yaml
+          - $values/environments/dev/sensitive-values.yaml
+          - $values/environments/dev/site-config.yaml
+        parameters:
+          - name: "global.syncWave"
+            value: "2"
+          - name: "global.environment"
+            value: "dev"
+    
+    # Wave 3: Shared Infrastructure Configuration
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/shared-resources/shared-config
+      helm:
+        valueFiles:
+          - $values/environments/dev/values/shared-config.values.yaml
+        parameters:
+          - name: "global.syncWave"
+            value: "3"
+          - name: "global.environment"
+            value: "dev"
+    
+    # Wave 4: Application Layer - Deploy after infrastructure is ready
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/dataflow/unifai-dataflow-server
+      helm:
+        valueFiles:
+          - $values/environments/dev/values/dataflow.backend.values.yaml  # ✅ FIXED: Use backend-specific file
+          - $values/environments/dev/sensitive-values.yaml
+          - $values/environments/dev/site-config.yaml
+        parameters:
+          - name: "global.syncWave"
+            value: "4"
+          - name: "global.environment"
+            value: "dev"
+    
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/dataflow/unifai-dataflow-celery  
+      helm:
+        valueFiles:
+          - $values/environments/dev/values/dataflow.celery.values.yaml  # ✅ FIXED: Use celery-specific file
+          - $values/environments/dev/sensitive-values.yaml
+          - $values/environments/dev/site-config.yaml
+        parameters:
+          - name: "global.syncWave"
+            value: "4"
+          - name: "global.environment"
+            value: "dev"
+    
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/shared-resources/sso
+      helm:
+        valueFiles:
+          - $values/environments/dev/sensitive-values.yaml       
+          - $values/environments/dev/site-config.yaml
+          - $values/environments/dev/values/sso.values.yaml
+        parameters:
+          - name: "global.syncWave"
+            value: "4"
+          - name: "global.environment"
+            value: "dev"
+    
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/multiagent/be
+      helm:
+        valueFiles:
+          - $values/environments/dev/sensitive-values.yaml       
+          - $values/environments/dev/site-config.yaml
+          - $values/environments/dev/values/multiagent.values.yaml
+        parameters:
+          - name: "global.syncWave"
+            value: "4"
+          - name: "global.environment"
+            value: "dev"
+    
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/multiagent/multiagent-config
+      helm:
+        valueFiles:
+          - $values/environments/dev/site-config.yaml
+          - $values/environments/dev/values/multiagent-config.values.yaml
+        parameters:
+          - name: "global.syncWave"
+            value: "5"
+          - name: "global.environment"
+            value: "dev"
+    
+    - repoURL: https://gitlab.cee.redhat.com/ai_tools/unifai.git
+      targetRevision: GENIE-727/story/gitops-unifai
+      path: helm/ui
+      helm:
+        valueFiles:
+           - $values/environments/dev/sensitive-values.yaml       # SSO secrets
+           - $values/environments/dev/site-config.yaml
+           - $values/environments/dev/values/ui.values.yaml
+        parameters:
+           - name: "global.syncWave"
+             value: "6"
+           - name: "global.environment"
+             value: "dev"
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ${TARGET_NAMESPACE}  # Target namespace where Unifai resources will be deployed
+
+  syncPolicy:
+    automated:
+      prune: false  # ✅ Safe pruning
+      selfHeal: true   # ✅ Re-enable now that service discovery is disabled
+    syncOptions:
+    - CreateNamespace=true
+    - RespectIgnoreDifferences=true
+    - ApplyOutOfSyncOnly=true
+    - ServerSideApply=true  # ✅ FIXED: Add server-side apply for better conflict resolution
+    - Replace=true  # ✅ FIXED: Use replace instead of patch for better conflict resolution
+    - PrunePropagationPolicy=foreground  # ✅ FIXED: Better resource cleanup
+    retry:
+      limit: 2  # ✅ FIXED: Reduce retries to prevent multiple sync appearance
+      backoff:
+        duration: 30s  # ✅ FIXED: Longer delays to prevent sync conflicts
+        factor: 2
+        maxDuration: 10m  # ✅ FIXED: Longer max duration
+
+  ignoreDifferences:
+  - group: ""
+    kind: PersistentVolumeClaim
+    jsonPointers:
+    - /spec/resources/requests/storage
+    - /metadata/finalizers
+    - /spec/volumeName
+    - /spec/accessModes
+    - /spec/storageClassName
+    - /spec/volumeMode
+    - /status
+  - group: apps
+    kind: StatefulSet
+    jsonPointers:
+    - /spec/replicas
+  - group: apps
+    kind: Deployment
+    jsonPointers:
+    - /spec/replicas
+  - group: batch
+    kind: Job
+    jsonPointers:
+    - /status  # ✅ FIXED: Ignore job status changes to prevent sync loops
+    - /spec/activeDeadlineSeconds
+    - /spec/backoffLimit

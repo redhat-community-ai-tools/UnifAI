@@ -1,0 +1,39 @@
+# multiagent-config chart values
+# Service discovery for multiagent backend
+serviceDiscovery:
+  enabled: true
+  image:
+    repository: bitnami/kubectl
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  # Services to discover
+  services:
+    multiagent:
+      serviceName: "unifai-multiagent-be"
+      enabled: true
+
+  # Job configuration
+  job:
+    restartPolicy: OnFailure
+    backoffLimit: 3
+    ttlSecondsAfterFinished: null  # Disabled: Prevents ArgoCD recreation loop
+    
+  # RBAC - namespace-scoped permissions (no cluster-admin required)
+  rbac:
+    create: true
+    serviceAccount:
+      create: true
+      name: "multiagent-config-discovery"
+    
+  # ConfigMap name to create
+  configMapName: "multiagent-config"
+  
+  # Wait timeout (in seconds) for services to be ready  
+  waitTimeout: 600
+
+# Cleanup configuration - ensures proper resource lifecycle management
+cleanup:
+  enabled: true
+  job:
+    backoffLimit: 3

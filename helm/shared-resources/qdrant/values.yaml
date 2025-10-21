@@ -80,9 +80,9 @@ resources:
 storage:
   volumeName: "unifai-qdrant-volume"
   requestedSize: 100Gi
-  className: aws-ebs
+  className: aws-efs-tier-c1  # Changed from aws-ebs to fix WaitForFirstConsumer issue
   accessModes:
-    - ReadWriteOnce
+    - ReadWriteMany  # Changed to support EFS
   keepPvc: true
   annotations:
     kubernetes.io/reclaimPolicy: Delete

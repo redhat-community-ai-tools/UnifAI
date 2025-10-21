@@ -2,6 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "multiagent.fullname" . }}
+  {{- if .Values.global.syncWave }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+  {{- end }}
   labels:
     {{- include "multiagent.labels" . | nindent 4 }}
 spec:

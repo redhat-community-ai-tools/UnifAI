@@ -1,0 +1,329 @@
+apiVersion: v1
+items:
+- apiVersion: argoproj.io/v1beta1
+  kind: ArgoCD
+  metadata:
+    finalizers:
+    - argoproj.io/finalizer
+    name: argocd
+    namespace: ${ARGOCD_NAMESPACE}
+  spec:
+    controller:
+      processors: {}
+      resources:
+        limits:
+          cpu: "2"
+          memory: 2Gi
+        requests:
+          cpu: 250m
+          memory: 1Gi
+      sharding: {}
+    grafana:
+      enabled: false
+      ingress:
+        enabled: false
+      route:
+        enabled: false
+    ha:
+      enabled: false
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 250m
+          memory: 128Mi
+    initialSSHKnownHosts: {}
+    monitoring:
+      enabled: false
+    notifications:
+      enabled: false
+    prometheus:
+      enabled: false
+      ingress:
+        enabled: false
+      route:
+        enabled: false
+    rbac:
+      defaultPolicy: ""
+      policy: |
+        #g, system:cluster-admins, role:admin
+        p, role:admin, applications, *, */*, allow
+        p, role:admin, clusters, *, *, allow
+        p, role:admin, repositories, *, *, allow
+        p, role:admin, projects, *, *, allow
+        g, argocd-admins, role:admin
+        g, system:authenticated, role:admin  
+      scopes: '[groups]'
+    redis:
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 250m
+          memory: 128Mi
+    repo:
+      env:
+      - name: GIT_SSL_NO_VERIFY
+        value: "true"
+      resources:
+        limits:
+          cpu: "1"
+          memory: 1Gi
+        requests:
+          cpu: 250m
+          memory: 256Mi
+    resourceExclusions: "- apiGroups:\n  - tekton.dev\n  clusters:\n  - '*'\n  kinds:\n
+      \ - TaskRun\n  - PipelineRun        \n"
+    server:
+      autoscale:
+        enabled: false
+      grpc:
+        ingress:
+          enabled: false
+      ingress:
+        enabled: false
+      insecure: true
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 125m
+          memory: 128Mi
+      route:
+        enabled: true
+      service:
+        type: ""
+    sso:
+      dex:
+        openShiftOAuth: true
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 250m
+            memory: 128Mi
+      provider: dex
+    tls:
+      ca: {}
+
+# Additional RBAC components for cross-namespace management
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    name: argocd-application-controller
+  rules:
+  - apiGroups:
+    - ""
+    resources:
+    - secrets
+    - configmaps
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - argoproj.io
+    resources:
+    - applications
+    - appprojects
+    verbs:
+    - create
+    - get
+    - list
+    - watch
+    - update
+    - patch
+    - delete
+  - apiGroups:
+    - ""
+    resources:
+    - pods
+    - pods/log
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - ""
+    resources:
+    - events
+    verbs:
+    - list
+    - watch
+  - apiGroups:
+    - ""
+    resources:
+    - persistentvolumeclaims
+    - persistentvolumes
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    - replicasets
+    - statefulsets
+    - daemonsets
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroups:
+    - batch
+    resources:
+    - jobs
+    - cronjobs
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroups:
+    - networking.k8s.io
+    resources:
+    - ingresses
+    - networkpolicies
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroups:
+    - ""
+    resources:
+    - services
+    - endpoints
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroups:
+    - ""
+    resources:
+    - namespaces
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata:
+    name: argocd-application-controller
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: argocd-application-controller
+  subjects:
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: ${ARGOCD_NAMESPACE}
+
+# Namespace-scoped RBAC for target namespaces
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata:
+    name: argocd-manager
+    namespace: ${TARGET_NAMESPACE}
+  rules:
+  - apiGroups:
+    - ""
+    resources:
+    - deployments
+    - services
+    - pods
+    - persistentvolumeclaims
+    - configmaps
+    - secrets
+    - events
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroups:
+    - apps
+    resources:
+    - deployments
+    - replicasets
+    - statefulsets
+    - daemonsets
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroups:
+    - batch
+    resources:
+    - jobs
+    - cronjobs
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+  - apiGroups:
+    - networking.k8s.io
+    resources:
+    - ingresses
+    - networkpolicies
+    verbs:
+    - get
+    - list
+    - watch
+    - create
+    - update
+    - patch
+    - delete
+
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata:
+    name: argocd-manager
+    namespace: ${TARGET_NAMESPACE}
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: argocd-manager
+  subjects:
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: ${ARGOCD_NAMESPACE}
+
+kind: List
+metadata:
+  resourceVersion: ""

@@ -6,6 +6,12 @@ mongodb:
   service:
     type: LoadBalancer
     port: 27017
+  env: []  # Explicit empty array to prevent marshaling error
+
+# Global env override - ensure MongoDB uses array format
+global:
+  mongodb:
+    env: []
 
 qdrant:
   replicaCount: 1
@@ -44,3 +50,27 @@ storage:
     kubernetes.io/reclaimPolicy: Delete
   labels:
     paas.redhat.com/appcode: TAG-001
+
+docling:
+  #image:
+  #  registry: "images.paas.redhat.com/genie"
+  #  repository: "docling"
+  #  pullPolicy: IfNotPresent
+  #  tag: "latest"
+  service:
+    type: LoadBalancer
+    port: 5001
+  resources:
+    limits:
+      cpu: 4
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 4Gi
+        #healthCheck:
+        #enabled: true
+        #path: "/health"
+        #port: 5001
+        #api:
+        #version: "v1alpha"
+        #timeout: 300

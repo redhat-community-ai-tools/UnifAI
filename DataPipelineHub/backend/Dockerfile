@@ -5,6 +5,12 @@ RUN dnf update -y && dnf install -y vim less iputils telnet && dnf clean all
 
 USER default
 
+# Default environment variables for docling service
+# These should be overridden in Kubernetes deployment
+ENV DOCLING_ENDPOINT_URL="http://localhost:5001"
+ENV DOCLING_API_VERSION="v1alpha"
+ENV DOCLING_TIMEOUT="300"
+
 # Copy all backend files (including entrypoint.sh) and global_utils
 ADD  --chown=default:root --chmod=777 ./DataPipelineHub/backend $HOME/backend
 ADD  --chown=default:root --chmod=777 ./global_utils $HOME/global_utils

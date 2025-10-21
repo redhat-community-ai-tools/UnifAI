@@ -7,6 +7,10 @@ metadata:
   name: {{ $fullname }}
   labels:
     {{- include "docling.labels" . | nindent 4 }}
+  annotations:
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- end }}
 spec:
   replicas: {{ .Values.replicaCount | default 1 }}
   selector:

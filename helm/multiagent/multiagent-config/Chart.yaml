@@ -1,4 +1,10 @@
 apiVersion: v2
 name: multiagent-config
-version: 0.1.0
-description: Dummy chart for config creation hook
+version: 0.2.0
+description: Service discovery and configuration management for multiagent backend
+appVersion: "1.0.0"
+keywords:
+  - configuration
+  - service-discovery
+  - multiagent
+  - unifai

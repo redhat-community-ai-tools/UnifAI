@@ -1,4 +1,9 @@
 apiVersion: v2
 name: shared-config
-version: 0.1.0
-description: Dummy chart for config creation hook
+version: 0.2.0
+description: Service discovery and shared configuration management chart
+appVersion: "1.0.0"
+keywords:
+  - configuration
+  - service-discovery
+  - unifai

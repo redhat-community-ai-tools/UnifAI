@@ -1,0 +1,127 @@
+{{- if .Values.serviceDiscovery.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "multiagent-config.fullname" . }}-service-discovery
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "multiagent-config.labels" . | nindent 4 }}
+    job-type: service-discovery
+  annotations:
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- else }}
+    argocd.argoproj.io/sync-wave: "4"
+    {{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "multiagent-config.labels" . | nindent 8 }}
+        job-type: service-discovery
+    spec:
+      serviceAccountName: {{ include "multiagent-config.serviceAccountName" . }}
+      restartPolicy: {{ .Values.serviceDiscovery.job.restartPolicy }}
+      containers:
+      - name: service-discovery
+        image: "{{ .Values.serviceDiscovery.image.repository }}:{{ .Values.serviceDiscovery.image.tag }}"
+        imagePullPolicy: {{ .Values.serviceDiscovery.image.pullPolicy }}
+        command: ["/bin/bash"]
+        args:
+          - "-c"
+          - |
+            set -x  # Print each command
+            set +e  # Disable immediate exit on error
+            echo "Starting multiagent service discovery..."
+
+            wait_for_port() {
+              local svc=$1
+              local port=""
+              for i in {1..60}; do
+                port=$(kubectl get svc "$svc" -o jsonpath='{.spec.ports[0].port}' 2>/dev/null)
+                if [[ -n "$port" ]]; then
+                  echo "$port"
+                  return
+                fi
+                echo "Waiting for $svc Port..."
+                sleep 10
+              done
+              echo "pending"
+            }
+
+            wait_for_service_name() {
+              local svc=$1
+              local ip=""
+              for i in {1..60}; do
+                ip=$(kubectl get svc "$svc" -o jsonpath='{.metadata.name}' 2>/dev/null)
+                if [[ -n "$ip" ]]; then
+                  echo "$ip"
+                  return
+                fi
+                echo "Waiting for $svc Service Name..."
+                sleep 10
+              done
+              echo "pending"
+            }
+
+            wait_for_ip() {
+              local svc=$1
+              local ip=""
+              for i in {1..60}; do
+                ip=$(kubectl get svc "$svc" -o jsonpath='{.spec.clusterIPs[0]}' 2>/dev/null)
+                if [[ -n "$ip" ]]; then
+                  echo "$ip"
+                  return
+                fi
+                echo "Waiting for $svc ClusterIP IP..."
+                sleep 10
+              done
+              echo "pending"
+            }
+
+            echo "=== Discovering multiagent service information ==="
+            
+            {{- if .Values.serviceDiscovery.services.multiagent.enabled }}
+            echo "Discovering Multiagent Backend service info..."
+            MULTIAGENT_ADDR=$(wait_for_ip {{ .Values.serviceDiscovery.services.multiagent.serviceName }})              
+            MULTIAGENT_PORT=$(wait_for_port {{ .Values.serviceDiscovery.services.multiagent.serviceName }})
+            MULTIAGENT_IP=$(wait_for_service_name {{ .Values.serviceDiscovery.services.multiagent.serviceName }})
+            echo "Multiagent - ADDR: $MULTIAGENT_ADDR, PORT: $MULTIAGENT_PORT, IP: $MULTIAGENT_IP"
+            {{- end }}
+
+            echo "=== Creating multiagent-config ConfigMap with Owner Reference ==="
+            kubectl delete configmap {{ .Values.serviceDiscovery.configMapName }} --ignore-not-found=true
+            
+            # Get current job UID for owner reference
+            JOB_UID=$(kubectl get job {{ include "multiagent-config.fullname" . }}-service-discovery -o jsonpath='{.metadata.uid}')
+
+            # Create ConfigMap YAML with owner reference
+            cat <<EOF | kubectl apply -f -
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: {{ .Values.serviceDiscovery.configMapName }}
+              namespace: {{ .Release.Namespace }}
+              ownerReferences:
+              - apiVersion: batch/v1
+                kind: Job
+                name: {{ include "multiagent-config.fullname" . }}-service-discovery
+                uid: $JOB_UID
+                controller: true
+            data:
+              {{- if .Values.serviceDiscovery.services.multiagent.enabled }}
+              MULTIAGENT_ADDR: "$MULTIAGENT_ADDR"
+              MULTIAGENT_PORT: "$MULTIAGENT_PORT"
+              MULTIAGENT_IP: "$MULTIAGENT_IP"
+              {{- end }}
+            EOF
+
+            echo "=== ConfigMap created successfully ==="
+            kubectl get configmap {{ .Values.serviceDiscovery.configMapName }} -o yaml
+            
+            echo "Multiagent service discovery completed!"
+  backoffLimit: {{ .Values.serviceDiscovery.job.backoffLimit }}
+  {{- if .Values.serviceDiscovery.job.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ .Values.serviceDiscovery.job.ttlSecondsAfterFinished }}
+  {{- end }}
+{{- end }}

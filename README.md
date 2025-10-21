@@ -72,6 +72,70 @@ The GUI is a React-based frontend that serves two main functions:
 
 ---
 
+## 🚀 **Deployment & Configuration**
+
+UnifAI uses a **multi-source GitOps** approach with **centralized private configuration** for secure, scalable deployments across environments.
+
+### **📁 Repository Structure**
+
+| Repository | Purpose | Content |
+|------------|---------|---------|
+| **Main Repo** (`unifai.git`) | Application code & Helm charts | Source code, Docker images, Helm templates |
+| **Private Config Repo** (`unifai-gitops-priv.git`) | Environment configuration | Secrets, environment-specific settings, service configurations |
+
+### **🌍 Multi-Environment Support**
+
+| Environment | Namespace | Git Branch | Configuration |
+|-------------|-----------|------------|---------------|
+| **Development** | `tag-ai--runtime-int` | `GENIE-727/story/gitops-unifai` | `environments/dev/` |
+| **Production** | `unifai-prod` | `main` | `environments/prod/` |
+
+### **⚙️ Service Architecture**
+
+Deployed in **4 waves** for proper dependency management:
+
+1. **Wave 1**: Shared Storage (EFS)
+2. **Wave 2**: Core Services (MongoDB, Qdrant, RabbitMQ, Docling)
+3. **Wave 3**: Configuration & Service Discovery
+4. **Wave 4**: Application Layer (Dataflow, Celery, SSO)
+
+### **🔧 Configuration Management**
+
+**Centralized Configuration** - All environment-specific settings in private repo:
+```
+unifai-gitops-priv/environments/
+├── dev/
+│   ├── sensitive-values.yaml      # Secrets, API keys
+│   ├── site-config.yaml           # Infrastructure settings
+│   └── values/                    # Service configurations
+│       ├── mongodb.values.yaml
+│       ├── qdrant.values.yaml
+│       ├── dataflow.values.yaml
+│       └── ... (9 service files)
+└── prod/
+    └── (same structure)
+```
+
+### **📋 Quick Deployment**
+
+**Development:**
+```bash
+kubectl apply -f gitops-updated/unifai-multisource-dev.yaml
+```
+
+**Production:**
+```bash
+kubectl create namespace unifai-prod
+kubectl apply -f gitops-updated/unifai-multisource-prod.yaml
+```
+
+**📖 Detailed Documentation:**
+- [`Private Repo Configuration Guide`](unifai-gitops-priv.ericz/README.md)
+- [`Parameterized Setup Guide`](gitops-updated/PARAMETERIZED-SETUP-GUIDE.md)
+- [`Environment Topology Comparison`](gitops-updated/ENVIRONMENT-TOPOLOGY-COMPARISON.md)
+
+---
+
 ## 🧭 Getting Started – What to Explore First
 
 To make your onboarding smooth, we recommend the following steps:
@@ -82,6 +146,8 @@ Start with the following:
 
 - [`Data Preparation README`](DataPipelineHub/backend/README.md): Understand how we ingest and embed data.  
 - [`Agentic AI README`](LINK 2): Learn about how our agentic system works and how execution plans are structured.
+- [`Private Repo Configuration Guide`](unifai-gitops-priv.ericz/README.md): Learn about the GitOps deployment and configuration management.
+- [`Deployment Documentation`](gitops-updated/): Explore environment setup and ArgoCD applications.
 
 ### ✅ 2. Explore the Code Repos
 
@@ -93,22 +159,43 @@ Start with the following:
 - Review some sample `.yaml` plans.
 - Check how each node (retriever, summarizer, etc.) contributes to the overall response pipeline.
 
-### ✅ 4. Run Locally (Optional but Helpful)
+### ✅ 4. Deploy to Kubernetes (Recommended)
+
+- **Development**: Deploy to your dev environment using `kubectl apply -f gitops-updated/unifai-multisource-dev.yaml`
+- **Local Testing**: Set up your environment to run components independently
+- **Production**: Follow production deployment guide for full-scale deployment
+
+### ✅ 5. Run Locally (Optional)
 
 - Set up your environment to run the data pipeline and agentic backends independently.
 - Launch the GUI and experiment with different plans and data sources.
 
 💡 **Development Notes**  
-The system is designed to be modular. New retrievers or plan nodes can be added without impacting the core execution engine.  
-We aim to scale this to support more data sources in the near future.
+- **Modular Architecture**: New retrievers or plan nodes can be added without impacting the core execution engine.  
+- **GitOps Workflow**: All configuration changes go through the private repository for proper security and audit trails.
+- **Multi-Environment**: Identical topology across dev/prod environments with environment-specific configuration.
+- **Scalability**: Designed to support more data sources and environments in the future.
+
+🔧 **Recent Improvements**
+- ✅ **Centralized Configuration**: All config files moved to private repository for better security
+- ✅ **Clean File Naming**: Standardized `service.values.yaml` naming convention  
+- ✅ **Multi-Environment**: Production topology created with identical structure to development
+- ✅ **GitOps Integration**: Full ArgoCD multi-source deployment with automated sync
 
 ---
 
 ## 📣 Final Words
 
 This system is at the heart of building context-aware AI agents that help users get accurate, multi-source answers without manual data digging.  
-Your contributions will directly enhance how users interact with internal knowledge in a smart, explainable, and visual way.
 
-Feel free to reach out to the current maintainers for walkthroughs, design overviews, or setup help.
+With our **GitOps-powered deployment infrastructure**, you can:
+- 🔒 **Deploy Securely** - All sensitive config in private repositories
+- 🌍 **Scale Across Environments** - Identical dev/prod topologies  
+- ⚙️ **Configure Centrally** - Single source of truth for all environments
+- 🚀 **Deploy Confidently** - Automated, reproducible deployments
+
+Your contributions will directly enhance how users interact with internal knowledge in a smart, explainable, and visual way, while benefiting from enterprise-grade deployment practices.
+
+Feel free to reach out to the current maintainers for walkthroughs, design overviews, or GitOps setup help.
 
 **Happy coding! 🚀**

@@ -1,0 +1,48 @@
+# shared-config chart values
+# Default values - can be overridden by global-config.yaml
+serviceDiscovery:
+  enabled: true
+  image:
+    repository: bitnami/kubectl
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  # Services to discover
+  services:
+    mongodb:
+      serviceName: "mongodb"
+      enabled: true
+    rabbitmq:
+      serviceName: "rabbitmq"
+      enabled: true
+    qdrant:
+      serviceName: "qdrant"
+      enabled: true
+    docling:
+      serviceName: "docling-serve"
+      enabled: true
+
+  # Job configuration
+  job:
+    restartPolicy: OnFailure
+    backoffLimit: 3
+    ttlSecondsAfterFinished: null  # Disabled: Prevents ArgoCD recreation loop
+    
+  # RBAC - namespace-scoped permissions (no cluster-admin required)
+  rbac:
+    create: true
+    serviceAccount:
+      create: true
+      name: "shared-config-discovery"
+    
+  # ConfigMap name to create
+  configMapName: "shared-config"
+  
+  # Wait timeout (in seconds) for services to be ready  
+  waitTimeout: 600
+
+# Cleanup configuration - ensures proper resource lifecycle management
+cleanup:
+  enabled: true
+  job:
+    backoffLimit: 3

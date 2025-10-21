@@ -1,0 +1,56 @@
+{{- if .Values.serviceDiscovery.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: shared-config-discovery-role
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shared-config.labels" . | nindent 4 }}
+  annotations:
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- else }}
+    argocd.argoproj.io/sync-wave: "3"
+    {{- end }}
+rules:
+# Read services to get their IPs and ports
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list"]
+
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "watch"]
+# Manage the shared-config ConfigMap
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Read secrets to get RabbitMQ credentials
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shared-config-discovery-binding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shared-config.labels" . | nindent 4 }}
+  annotations:
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- else }}
+    argocd.argoproj.io/sync-wave: "3"
+    {{- end }}
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.serviceDiscovery.rbac.serviceAccount.name }}
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: shared-config-discovery-role
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

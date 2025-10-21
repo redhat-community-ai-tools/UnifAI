@@ -78,7 +78,9 @@ def register_sources_task(self, data_list: list, source_type: str, upload_by: st
             elif source_type.upper() == DataSource.DOCUMENT.upper_name:
                 source_id = str(uuid.uuid4())
                 source_name = instance.get("source_name", "")
-                doc_path = os.path.join(upload_folder, source_name)
+                # Use provided doc_path or fallback to constructed path
+                doc_path = instance.get("doc_path", os.path.join(upload_folder, source_name))
+                logger.info(f"Document registration: source_name={source_name}, doc_path={doc_path}")
                 pipeline_id = f"{DataSource.DOCUMENT.value}_{source_id}"
                 
                 # Create metadata object

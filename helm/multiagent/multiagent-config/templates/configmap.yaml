@@ -1,7 +1,0 @@
-# shared-resources/shared-config/templates/dummy.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: multiagent-config
-data:
-  dummy: "true"

@@ -1,0 +1,50 @@
+{{- if .Values.cleanup.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "shared-config.fullname" . }}-cleanup
+  labels:
+    {{- include "shared-config.labels" . | nindent 4 }}
+    job-type: cleanup
+  annotations:
+    # Helm hook: Run before deletion to clean up resources
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "shared-config.selectorLabels" . | nindent 8 }}
+        job-type: cleanup
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ .Values.serviceDiscovery.rbac.serviceAccount.name }}
+      containers:
+        - name: cleanup
+          image: bitnami/kubectl:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash"]
+          args:
+            - -c
+            - |
+              set -x
+              echo "=== Cleaning up shared-config resources ==="
+              
+              # Delete ConfigMap created by service discovery
+              kubectl delete configmap shared-config --ignore-not-found=true
+              echo "ConfigMap 'shared-config' deleted"
+              
+              # Delete any completed service discovery jobs
+              kubectl delete jobs -l job-type=service-discovery --ignore-not-found=true
+              echo "Service discovery jobs deleted"
+              
+              # Clean up any other dynamically created resources
+              # Add more cleanup commands here as needed
+              
+              echo "=== Cleanup completed ==="
+  backoffLimit: {{ .Values.cleanup.job.backoffLimit }}
+{{- end }}

@@ -1,0 +1,52 @@
+{{- if .Values.serviceDiscovery.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "multiagent-config.fullname" . }}-service-discovery
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "multiagent-config.labels" . | nindent 4 }}
+  annotations:
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- else }}
+    argocd.argoproj.io/sync-wave: "3"
+    {{- end }}
+rules:
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["create", "get", "list", "patch", "update", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+  
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "multiagent-config.fullname" . }}-service-discovery
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "multiagent-config.labels" . | nindent 4 }}
+  annotations:
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- else }}
+    argocd.argoproj.io/sync-wave: "3"
+    {{- end }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "multiagent-config.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "multiagent-config.fullname" . }}-service-discovery
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

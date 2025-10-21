@@ -4,6 +4,10 @@ metadata:
   name: {{ include "unifai-dataflow-celery.fullname" . }}
   labels:
     {{- include "unifai-dataflow-celery.labels" . | nindent 4 }}
+  annotations:
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- end }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}

@@ -9,20 +9,17 @@ metadata:
     {{- with .Values.storage.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- if or .Values.storage.keepPvc .Values.storage.annotations }}
   annotations:
-  {{- if .Values.storage.keepPvc }}
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- end }}
+    {{- if .Values.storage.keepPvc }}
     "helm.sh/resource-policy": keep
-  {{- end }}
-  {{- with .Values.storage.annotations }}
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-  {{- end }}
+    {{- end }}
+    {{- with .Values.storage.annotations }}
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
-  {{- if .Values.storage.keepPvc }}
-  finalizers:
-    - kubernetes.io/pvc-protection          
-  {{- end }}
   {{- with .Values.storage }}
   accessModes:
     {{- toYaml .accessModes | nindent 4 }}

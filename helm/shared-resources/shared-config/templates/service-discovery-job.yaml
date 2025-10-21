@@ -1,0 +1,180 @@
+{{- if .Values.serviceDiscovery.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "shared-config.fullname" . }}-service-discovery
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shared-config.labels" . | nindent 4 }}
+    job-type: service-discovery
+  annotations:
+    {{- if hasKey .Values.global "syncWave" }}
+    argocd.argoproj.io/sync-wave: {{ .Values.global.syncWave | quote }}
+    {{- else }}
+    argocd.argoproj.io/sync-wave: "3"
+    {{- end }}
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "shared-config.labels" . | nindent 8 }}
+        job-type: service-discovery
+    spec:
+      serviceAccountName: {{ .Values.serviceDiscovery.rbac.serviceAccount.name }}
+      restartPolicy: {{ .Values.serviceDiscovery.job.restartPolicy }}
+      containers:
+      - name: service-discovery
+        image: "{{ .Values.serviceDiscovery.image.repository }}:{{ .Values.serviceDiscovery.image.tag }}"
+        imagePullPolicy: {{ .Values.serviceDiscovery.image.pullPolicy }}
+        command: ["/bin/bash"]
+        args:
+          - "-c"
+          - |
+            set -x  # Print each command
+            set +e  # Disable immediate exit on error
+            echo "Starting service discovery for shared-config..."
+
+            wait_for_port() {
+              local svc=$1
+              local port=""
+              for i in {1..60}; do
+                port=$(kubectl get svc "$svc" -o jsonpath='{.spec.ports[0].port}' 2>/dev/null)
+                if [[ -n "$port" ]]; then
+                  echo "$port"
+                  return
+                fi
+                echo "Waiting for $svc Port..."
+                sleep 10
+              done
+              echo "pending"
+            }
+
+            wait_for_service_name() {
+              local svc=$1
+              local ip=""
+              for i in {1..60}; do
+                ip=$(kubectl get svc "$svc" -o jsonpath='{.metadata.name}' 2>/dev/null)
+                if [[ -n "$ip" ]]; then
+                  echo "$ip"
+                  return
+                fi
+                echo "Waiting for $svc LoadBalancer IP..."
+                sleep 10
+              done
+              echo "pending"
+            }
+
+            wait_for_ext_ip() {
+              local svc=$1
+              local ip=""
+              for i in {1..60}; do
+                ip=$(kubectl get svc "$svc" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+                if [[ -n "$ip" ]]; then
+                  echo "$ip"
+                  return
+                fi
+                echo "Waiting for $svc LoadBalancer IP..."
+                sleep 10
+              done
+              echo "pending"
+            }
+
+            echo "=== Discovering service information ==="
+            
+            {{- if .Values.serviceDiscovery.services.mongodb.enabled }}
+            echo "Discovering MongoDB service info..."
+            MONGODB_ADDR=$(wait_for_ext_ip {{ .Values.serviceDiscovery.services.mongodb.serviceName }})
+            MONGO_PORT=$(wait_for_port {{ .Values.serviceDiscovery.services.mongodb.serviceName }})
+            MONGO_IP=$(wait_for_service_name {{ .Values.serviceDiscovery.services.mongodb.serviceName }})
+            echo "MongoDB - ADDR: $MONGODB_ADDR, PORT: $MONGO_PORT, IP: $MONGO_IP"
+            {{- end }}
+
+            {{- if .Values.serviceDiscovery.services.rabbitmq.enabled }}
+            echo "Discovering RabbitMQ service info..."
+            RABBITMQ_ADDR=$(wait_for_ext_ip {{ .Values.serviceDiscovery.services.rabbitmq.serviceName }})
+            RMQ_PORT=$(wait_for_port {{ .Values.serviceDiscovery.services.rabbitmq.serviceName }})
+            RMQ_IP=$(wait_for_service_name {{ .Values.serviceDiscovery.services.rabbitmq.serviceName }})
+            echo "RabbitMQ - ADDR: $RABBITMQ_ADDR, PORT: $RMQ_PORT, IP: $RMQ_IP"
+            {{- end }}
+
+            {{- if .Values.serviceDiscovery.services.qdrant.enabled }}
+            echo "Discovering Qdrant service info..."
+            QDRANT_ADDR=$(wait_for_ext_ip {{ .Values.serviceDiscovery.services.qdrant.serviceName }})
+            echo "Qdrant - ADDR: $QDRANT_ADDR"
+            {{- end }}
+
+            {{- if .Values.serviceDiscovery.services.docling.enabled }}
+            echo "Discovering Docling service info..."
+            DOCLING_ADDR=$(wait_for_ext_ip {{ .Values.serviceDiscovery.services.docling.serviceName }})
+            DOCLING_PORT=$(wait_for_port {{ .Values.serviceDiscovery.services.docling.serviceName }})
+            DOCLING_IP=$(wait_for_service_name {{ .Values.serviceDiscovery.services.docling.serviceName }})
+            echo "Docling - ADDR: $DOCLING_ADDR, PORT: $DOCLING_PORT, IP: $DOCLING_IP"
+            {{- end }}
+
+            {{- if .Values.serviceDiscovery.services.dataflow.enabled }}
+            echo "Discovering Dataflow service info..."
+            DATAFLOW_PORT=$(wait_for_port {{ .Values.serviceDiscovery.services.dataflow.serviceName }})
+            DATAFLOW_IP=$(wait_for_service_name {{ .Values.serviceDiscovery.services.dataflow.serviceName }})
+            echo "Dataflow - PORT: $DATAFLOW_PORT, IP: $DATAFLOW_IP"
+            {{- end }}
+
+            echo "=== Discovering RabbitMQ Credentials ==="
+            RABBITMQ_PASSWORD=$(kubectl get secret rabbitmq -o jsonpath='{.data.rabbitmq-password}' | base64 -d || echo "guest")
+            RABBITMQ_USER="guest"  # Standard RabbitMQ guest username
+            echo "RabbitMQ - USER: $RABBITMQ_USER, PASSWORD: [REDACTED]"
+
+            echo "=== Creating shared-config ConfigMap with Owner Reference ==="
+            kubectl delete configmap {{ .Values.serviceDiscovery.configMapName }} --ignore-not-found=true
+            
+            # Get current job UID for owner reference
+            JOB_UID=$(kubectl get job {{ include "shared-config.fullname" . }}-service-discovery -o jsonpath='{.metadata.uid}')
+
+            # Create ConfigMap YAML with owner reference
+            cat <<EOF | kubectl apply -f -
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: {{ .Values.serviceDiscovery.configMapName }}
+              namespace: {{ .Release.Namespace }}
+              ownerReferences:
+              - apiVersion: batch/v1
+                kind: Job
+                name: {{ include "shared-config.fullname" . }}-service-discovery
+                uid: $JOB_UID
+                controller: true
+            data:
+              {{- if .Values.serviceDiscovery.services.mongodb.enabled }}
+              MONGO_EXT_ADDR: "$MONGODB_ADDR"
+              MONGODB_PORT: "$MONGO_PORT"
+              MONGODB_IP: "$MONGO_IP"
+              {{- end }}
+              {{- if .Values.serviceDiscovery.services.rabbitmq.enabled }}
+              RABBITMQ_EXT_ADDR: "$RABBITMQ_ADDR"
+              RABBITMQ_PORT: "$RMQ_PORT"
+              RABBITMQ_IP: "$RMQ_IP"
+              RABBITMQ_USER: "$RABBITMQ_USER"
+              RABBITMQ_PASSWORD: "$RABBITMQ_PASSWORD"
+              {{- end }}
+              {{- if .Values.serviceDiscovery.services.qdrant.enabled }}
+              QDRANT_EXT_ADDR: "$QDRANT_ADDR"
+              {{- end }}
+              {{- if .Values.serviceDiscovery.services.docling.enabled }}
+              DOCLING_EXT_ADDR: "$DOCLING_ADDR"
+              DOCLING_PORT: "$DOCLING_PORT"
+              DOCLING_IP: "$DOCLING_IP"
+              {{- end }}
+              {{- if .Values.serviceDiscovery.services.dataflow.enabled }}
+              DATAFLOW_PORT: "$DATAFLOW_PORT"
+              DATAFLOW_IP: "$DATAFLOW_IP"
+              {{- end }}
+            EOF
+
+            echo "=== ConfigMap created successfully ==="
+            kubectl get configmap {{ .Values.serviceDiscovery.configMapName }} -o yaml
+            
+            echo "Service discovery completed!"
+  backoffLimit: {{ .Values.serviceDiscovery.job.backoffLimit }}
+  {{- if .Values.serviceDiscovery.job.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ .Values.serviceDiscovery.job.ttlSecondsAfterFinished }}
+  {{- end }}
+{{- end }}
