@@ -66,4 +66,4 @@ docker run -d --name qdrant   -p 6333:6333    -p 6334:6334   -v ~/qdrant_data:/q
 3. Install sub-library deps (pip install -e ../global_utils/)
 4. Running the backend: python app.py
 5. Running celery worker: celery -A celery_app.init worker -c 1 --loglevel=info -Q slack_queue -n data_sources
-6. Running celery worker: celery -A celery_app.init worker -c 1 --loglevel=info -Q docs_queue -n data_sources
+6. Running celery worker: celery -A celery_app.init worker -c 1 --loglevel=info -Q document_queue -n data_sources

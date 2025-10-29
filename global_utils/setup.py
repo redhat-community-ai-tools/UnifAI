@@ -1,8 +1,18 @@
 from setuptools import setup, find_packages
 
 # Read dependencies from requirements.txt
-with open("requirements.txt") as f:
-    requirements = f.read().splitlines()
+def parse_requirements(filename):
+    with open(filename) as f:
+        lines = f.read().splitlines()
+    # Filter out comments and empty lines
+    requirements = []
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith('#'):
+            requirements.append(line)
+    return requirements
+
+requirements = parse_requirements("requirements.txt")
 
 setup(
     name="global_utils",

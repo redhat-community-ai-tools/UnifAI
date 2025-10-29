@@ -1,3 +1,4 @@
+
 import os
 from urllib import request
 from config.constants import DataSource
@@ -8,6 +9,7 @@ from shared.logger import logger
 from global_utils.helpers.apiargs import from_query, from_body
 from global_utils.celery_app.helpers import send_task
 from providers.docs import get_best_match_results, upload_docs
+from pipeline.pipeline_service import PipelineCeleryService
 
 docs_bp = Blueprint("docs", __name__)
 
@@ -41,13 +43,31 @@ def available_doc_list():
 })
 def embed_docs(docs):
     try:
-        send_task(
-            task_name="celery_app.tasks.pipeline_tasks.execute_pipeline_task",
-            celery_queue="docs_queue",
-            source_type="DOCUMENT",
-            source_data=docs
+        # Transform docs to match pipeline service expectations
+        transformed_docs = []
+        for doc in docs:
+            # Handle different UI input formats (UI sends source_name, not filename)
+            source_name = doc.get("source_name", doc.get("filename", ""))
+            
+            transformed_doc = {
+                "source_name": source_name,
+                "id": doc.get("id", "")
+            }
+            
+            # Only include doc_path if it's provided and not empty
+            doc_path = doc.get("path", "")
+            if doc_path:
+                transformed_doc["doc_path"] = doc_path
+                
+            transformed_docs.append(transformed_doc)
+        
+        # Use the complete pipeline service workflow
+        pipeline_service = PipelineCeleryService()
+        result, status_code = pipeline_service.execute_pipeline_workflow_with_registration(
+            data=transformed_docs,
+            source_type="DOCUMENT"
         )
-        return jsonify({"status": "task submitted"}), 202
+        return jsonify(result), status_code
     except Exception as e:
         logger.error(f"Failed to submit docs embedding task: {str(e)}")
         return jsonify({"error": str(e)}), 500

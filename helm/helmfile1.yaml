@@ -30,6 +30,13 @@ releases:
     values:
       - ./values/shared-resource-values.yaml
       #- valuesKey: rabbitmq
+
+  - name: unifai-docling-service
+    chart: ./shared-resources/docling-service
+    wait: true
+    timeout: 300
+    values:
+      - {{- toYaml .Values.docling | nindent 8 }}
   - name: unifai-shared-config
     chart: ./shared-resources/shared-config
     wait: true
@@ -37,6 +44,7 @@ releases:
       - unifai-mongodb
       - unifai-qdrant
       - unifai-rabbitmq
+      - unifai-docling-service
     hooks:
       - events: ["postsync"]
         showlogs: true
@@ -96,12 +104,15 @@ releases:
               MONGODB_ADDR=$(wait_for_ext_ip mongodb)
               QDRANT_ADDR=$(wait_for_ext_ip qdrant)
               RABBITMQ_ADDR=$(wait_for_ext_ip rabbitmq)
-              
+              DOCLING_ADDR=$(wait_for_ext_ip docling-service)
+
               MONGO_PORT=$(wait_for_port mongodb)
               RMQ_PORT=$(wait_for_port rabbitmq)
+              DOCLING_PORT=$(wait_for_port docling-service)
 
               MONGO_IP=$(wait_for_service_name mongodb)
               RMQ_IP=$(wait_for_service_name rabbitmq)
+              DOCLING_IP=$(wait_for_service_name docling-service)
               
 
               kubectl delete configmap shared-config
@@ -109,8 +120,11 @@ releases:
                 --from-literal=MONGO_EXT_ADDR="$MONGODB_ADDR" \
                 --from-literal=RABBITMQ_EXT_ADDR="$RABBITMQ_ADDR" \
                 --from-literal=QDRANT_EXT_ADDR="$QDRANT_ADDR" \
+                --from-literal=DOCLING_EXT_ADDR="$DOCLING_ADDR" \
                 --from-literal=MONGODB_PORT="$MONGO_PORT" \
                 --from-literal=RABBITMQ_PORT="$RMQ_PORT" \
+                --from-literal=DOCLING_PORT="$DOCLING_PORT" \
                 --from-literal=MONGODB_IP="$MONGO_IP" \
                 --from-literal=RABBITMQ_IP="$RMQ_IP" \
+                --from-literal=DOCLING_IP="$DOCLING_IP" \
                 --dry-run=client -o yaml | kubectl apply -f -

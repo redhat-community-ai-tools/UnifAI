@@ -3,6 +3,7 @@ from data_sources.docs.doc_connector import DocumentConnector
 from data_sources.docs.document_processor import DocumentProcessor
 from data_sources.docs.pdf_chunker_strategy import PDFChunkerStrategy
 from shared.source_types import DocumentMetadata
+from shared.logger import logger
 from config.constants import DataSource
 from pipeline.pipeline import Pipeline
 from utils.embedding.embedding_generator import EmbeddingGenerator
@@ -58,10 +59,15 @@ class DocumentPipeline(Pipeline):
             }
 
     def collect_data(self) -> Dict:
+        logger.info(f"Collecting document data from path: {self.metadata.doc_path}")
         self._cached_collected = self.collector.process_document(
             document_path=self.metadata.doc_path,
             upload_by=self.metadata.upload_by
         )
+        if self._cached_collected is None:
+            logger.error(f"Document collection failed for path: {self.metadata.doc_path}")
+        else:
+            logger.info(f"Document collection succeeded, got {len(self._cached_collected.get('text', ''))} characters")
         return self._cached_collected
 
     def process_data(self, data: Dict) -> Dict:

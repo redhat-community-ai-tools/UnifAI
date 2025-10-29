@@ -31,6 +31,13 @@ class AppConfig(SharedConfig):
 
     frontend_url: str = "http://localhost:5000"
     upload_folder: str = "/app/shared"
+    
+    # Docling Configuration
+    # These will be set via environment variables in Kubernetes:
+    # DOCLING_ENDPOINT_URL, DOCLING_API_VERSION, DOCLING_TIMEOUT
+    docling_endpoint_url: str = "http://localhost:5001"  # Default for local dev
+    docling_api_version: str = "v1alpha"
+    docling_timeout: int = 300
     # session_cookie_secure=True
     backend_env: str = "development"
     version: str = "1.0.0"

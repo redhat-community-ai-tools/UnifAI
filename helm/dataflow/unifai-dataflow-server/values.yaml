@@ -8,6 +8,10 @@ env:
   BACKEND_ENV: "production"
   ROLE: "flask"
   SHARED_STORAGE: "/app/shared"
+  # Docling service configuration - will be overridden by shared-config ConfigMap if available
+  DOCLING_ENDPOINT_URL: "http://docling-service:5001"
+  DOCLING_API_VERSION: "v1alpha"
+  DOCLING_TIMEOUT: "300"
 
 debug: false
 
