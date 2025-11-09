@@ -36,12 +36,13 @@ export interface PipelineEmbedResponse {
     };
 }
 
-export async function embedDocs(docs: {source_name: string}[]): Promise<PipelineEmbedResponse> {
+export async function embedDocs(docs: {source_name: string}[], user: string): Promise<PipelineEmbedResponse> {
     const embedded = await api.put<PipelineEmbedResponse>(
       'pipelines/embed',
       {
         data: docs,
-        type: 'document'
+        source_type: 'document',
+        logged_in_user: user
       }
     );
     return embedded.data;

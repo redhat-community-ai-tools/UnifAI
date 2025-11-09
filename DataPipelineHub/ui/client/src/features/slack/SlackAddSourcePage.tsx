@@ -1,6 +1,6 @@
 import React, { useRef, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { submitSlackChannels, ChannelWithSettings } from '@/api/slack';
+import { useSubmitSlackChannels, ChannelWithSettings } from '@/api/slack';
 import AddSourceSection, { AddSourceSectionHandle } from './AddSourceSection';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
@@ -14,6 +14,7 @@ export default function SlackAddSourcePage() {
     const [, navigate] = useLocation();
     const queryClient = useQueryClient();
     const { toast } = useToast();
+    const submitSlackChannels = useSubmitSlackChannels();
 
     const {
         mutate: addChannels,

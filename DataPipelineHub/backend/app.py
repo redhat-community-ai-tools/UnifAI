@@ -9,7 +9,6 @@ from endpoints import register_all_endpoints
 from flask import Flask
 from flask_cors import CORS
 from global_utils.flask.request_rules import RequestRules
-from utils.auth_manager import AuthManager
 from config.app_config import AppConfig
 from global_utils.utils.util import get_mongo_url
 
@@ -31,12 +30,6 @@ CORS(app, supports_credentials=True, origins=os.environ.get("FRONTEND_URL", "htt
 # app.config['MONGO_URI'] = os.path.join(config_params.MONGODB_URL, config_params.MONGODB_BACKEND_COLLECTION)
 
 # app.db = register_mongo(app)
-
-# Initialize Authentication Manager
-auth_manager = AuthManager(app)
-
-# Store auth_manager in app extensions for easy access
-app.extensions['auth_manager'] = auth_manager
 
 register_all_endpoints(app)
 

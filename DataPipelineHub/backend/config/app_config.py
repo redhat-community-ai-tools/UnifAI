@@ -20,12 +20,6 @@ class AppConfig(SharedConfig):
     default_slack_bot_token: str = "xoxb-2253118358-8783454711008-dwnxf7cPBpeVLlLw8KMurohb"
     default_slack_user_token: str = "xoxp-2253118358-5868044369985-8783454578416-0003b6aeff72208153bc56001e14a2dd"
 
-    # Keycloak Configuration
-    keycloak_base_url: str = "https://auth.stage.redhat.com/auth"
-    client_id: str = "TAG-001"
-    client_secret: str = "a0a82b17-e7e7-49c6-ad1c-3d03c79ff4fd"
-    keycloak_realm: str = "EmployeeIDP"
-
     # Flask Configuration
     # secret_key=your-super-secret-key-change-this-in-production
 

@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { CircleX } from "lucide-react";
 import { ProcessingOptions } from "./ProcessingOptions";
 import { embedDocs, uploadDocs, getSupportedFileExtensions } from "@/api/docs";
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from "@/hooks/use-toast";
 
 interface UploadTabProps {
@@ -17,6 +18,7 @@ interface UploadTabProps {
 export const UploadTab: React.FC<UploadTabProps> = ({
     setShowUploadModal, fetchDocuments
 }) => {
+    const { user } = useAuth();
     const [isDragging, setIsDragging] = useState(false);
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [isUploading, setIsUploading] = useState(false);
@@ -145,7 +147,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
     const startPipeline = async (docs: {source_name: string}[]) => {
         try {
-            const res = await embedDocs(docs);
+            const res = await embedDocs(docs, user?.username || 'default');
             const issues = res?.registration?.issues || [];
 
             if (issues.length > 0) {

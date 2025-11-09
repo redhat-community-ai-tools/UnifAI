@@ -93,9 +93,10 @@ class SlackPipeline(Pipeline):
         self, processed: Tuple[List[Dict], List[List[Dict]]]
     ) -> List[Dict]:
         main, threads = processed
-        chunks = self.slack_chunker.chunk_content(main)
+        upload_by = self.metadata.upload_by or "default"
+        chunks = self.slack_chunker.chunk_content(main, upload_by=upload_by)
         for t in threads:
-            chunks.extend(self.slack_chunker.chunk_content(t))
+            chunks.extend(self.slack_chunker.chunk_content(t, upload_by=upload_by))
 
         for idx, c in enumerate(chunks):
             md = c.setdefault("metadata", {})
