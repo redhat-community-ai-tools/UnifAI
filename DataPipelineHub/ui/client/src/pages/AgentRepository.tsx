@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Plus } from 'lucide-react';
 import { CategorySidebar } from '../components/agentic-ai/workspace/CategorySidebar';
 import { ElementGrid } from '../components/agentic-ai/workspace/ElementGrid';
 import { ElementForm } from '../components/agentic-ai/workspace/ElementForm';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
-import { ElementCategory, ElementType, ElementInstance } from '../types/workspace';
+import { ElementType, ElementInstance } from '../types/workspace';
 
 export default function UserWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -16,6 +16,9 @@ export default function UserWorkspace() {
   const [selectedElementType, setSelectedElementType] = useState<ElementType | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingElement, setEditingElement] = useState<ElementInstance | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [elementToDelete, setElementToDelete] = useState<ElementInstance | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const {
     categories,
@@ -65,12 +68,35 @@ export default function UserWorkspace() {
     }
   };
 
-  const handleDeleteElement = async (rid: string) => {
-    if (selectedElementType) {
-      await deleteElement(rid);
-      // Refresh instances
-      fetchElementInstances(selectedElementType.category, selectedElementType.type);
+  const handleDeleteElement = (rid: string) => {
+    const element = elementInstances.find(el => el.rid === rid);
+    if (element) {
+      setElementToDelete(element);
+      setShowDeleteModal(true);
     }
+  };
+
+  const confirmDeleteElement = async () => {
+    if (!elementToDelete || !selectedElementType) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteElement(elementToDelete.rid);
+      // Refresh instances
+      await fetchElementInstances(selectedElementType.category, selectedElementType.type);
+      setShowDeleteModal(false);
+      setElementToDelete(null);
+    } catch (error) {
+      console.error('Error deleting element:', error);
+      // Error handling is done in the deleteElement function via toast
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const cancelDeleteElement = () => {
+    setShowDeleteModal(false);
+    setElementToDelete(null);
   };
 
   return (
@@ -155,6 +181,34 @@ export default function UserWorkspace() {
           )}
         </main>
       </div>
+
+      <AlertDialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
+        <AlertDialogContent className="bg-background-card border-gray-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedElementType?.name || 'Element'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{elementToDelete?.name || `${selectedElementType?.name || 'Element'} Instance`}"?
+              <br /><br />
+              <strong>Be aware that this action is irreversible.</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              onClick={cancelDeleteElement}
+              className="bg-background-dark border-gray-700 hover:bg-background-surface"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteElement}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
