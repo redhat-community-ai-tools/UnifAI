@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Users, Network, Play, Plus, LoaderCircle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 // Agentic AI components
 import AgentFlowGraph from "@/components/agentic-ai/AgentFlowGraph";
@@ -32,6 +33,7 @@ export default function AgenticAI() {
   const [showGraphBuilder, setShowGraphBuilder] = useState(false);
   const [isLoadingFlow, setIsLoadingFlow] = useState(false);
   const { user } = useAuth();
+  const { toast } = useToast();
 
   const handleLoadFlow = async () => {
     if (isLoadingFlow) return; // Prevent multiple calls
@@ -61,6 +63,11 @@ export default function AgenticAI() {
       window.location.href = "/agentic-chats";
     } catch (error) {
       console.error("Error create new graph session:", error);
+      toast({
+        title: "Failed to load current workflow",
+        description: `Error: ${error.response.data.error}`,
+        variant: "destructive",
+      });
     } finally {
       setIsLoadingFlow(false);
     }
