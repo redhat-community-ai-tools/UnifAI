@@ -19,3 +19,8 @@ pytest-clarity
 # Development utilities (optional)
 pytest-watch
 pytest-sugar
+
+# HTTP client for E2E API tests
+requests
+
+# Note: PyYAML is required for E2E tests and is already in requirements.txt

@@ -58,7 +58,7 @@ def execute_user_session(session_id, inputs, stream_mode, stream, scope, logged_
                 scope=scope,
                 logged_in_user=logged_in_user
             )
-            return jsonify(result), 200
+            return json.dumps(result, default=pydantic_encoder), 200
 
         # streaming run
         def generate():

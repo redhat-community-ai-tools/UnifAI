@@ -559,6 +559,43 @@ def element_card():
 # PYTEST CONFIGURATION
 # =============================================================================
 
+def pytest_addoption(parser):
+    """Add custom command line options."""
+    # E2E Stress Test Options
+    parser.addoption(
+        "--stress-sessions",
+        action="store",
+        type=int,
+        default=20,
+        help="Number of sessions to create in stress test (default: 20)"
+    )
+    parser.addoption(
+        "--stress-concurrent",
+        action="store",
+        type=int,
+        default=10,
+        help="Number of concurrent executions in stress test (default: 10)"
+    )
+    parser.addoption(
+        "--stress-base-url",
+        action="store",
+        default="http://localhost:8002",
+        help="Base URL for API server in stress tests (default: http://localhost:8002)"
+    )
+    parser.addoption(
+        "--blueprint-path",
+        action="store",
+        default=None,
+        help="Path to YAML blueprint file for stress testing (e.g., run/blueprint_mcp_agent.yml)"
+    )
+    parser.addoption(
+        "--input-text",
+        action="store",
+        default="What is 2+2?",
+        help="Input text for stress test execution (default: 'What is 2+2?')"
+    )
+
+
 def pytest_configure(config):
     """Configure pytest with custom markers."""
     config.addinivalue_line("markers", "unit: Unit tests")
@@ -574,6 +611,9 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "fast: Fast running tests")
     config.addinivalue_line("markers", "stable: Stable tests")
     config.addinivalue_line("markers", "flaky: Potentially flaky tests")
+    # E2E Stress Test markers
+    config.addinivalue_line("markers", "stress: Stress and load tests")
+    config.addinivalue_line("markers", "custom_blueprint: Tests using custom blueprints")
 
 
 def pytest_collection_modifyitems(config, items):
