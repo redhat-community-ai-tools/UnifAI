@@ -594,6 +594,12 @@ def pytest_addoption(parser):
         default="What is 2+2?",
         help="Input text for stress test execution (default: 'What is 2+2?')"
     )
+    parser.addoption(
+        "--use-streaming",
+        action="store_true",
+        default=False,
+        help="Use streaming execution mode (prevents gateway timeouts for high-load tests)"
+    )
 
 
 def pytest_configure(config):

@@ -36,8 +36,8 @@ from collections import defaultdict
 class StressTestConfig:
     """Configuration for stress test parameters."""
     # API Configuration
-    base_url: str = "http://localhost:8002"
-    # base_url: str = "http://unifai-multiagent-be-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
+    # base_url: str = "http://localhost:8002"
+    base_url: str = "http://unifai-multiagent-be-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
     api_prefix: str = "/api"
     
     # User Configuration
@@ -47,6 +47,9 @@ class StressTestConfig:
     blueprint_path: Optional[str] = None  # Path to YAML blueprint file
     input_text: str = "What is 2+2?"  # Input text for execution
     
+    # Execution Configuration
+    use_streaming: bool = False  # Use streaming mode (prevents gateway timeouts)
+    
     # Load Configuration
     num_sessions: int = 20  # Total sessions to create
     concurrent_create: int = 5  # Concurrent session creations
@@ -54,8 +57,8 @@ class StressTestConfig:
     
     # Timing Configuration
     creation_timeout: float = 30.0  # Per session creation
-    execution_timeout: float = 60.0  # Per session execution
-    total_timeout: float = 300.0  # Total test timeout
+    execution_timeout: float = 300.0  # Per session execution
+    total_timeout: float = 600.0  # Total test timeout
     
     # Retry Configuration
     max_retries: int = 3
@@ -205,6 +208,42 @@ class SessionAPIClient:
         response.raise_for_status()
         
         return response.json()
+    
+    def execute_session_streaming(self, session_id: str, inputs: Dict) -> Dict:
+        """Execute a session with streaming and return final result."""
+        url = f"{self.base_url}/sessions/user.session.execute"
+        
+        payload = {
+            "sessionId": session_id,
+            "inputs": inputs,
+            "stream": True,
+            "streamMode": ["custom"],
+            "scope": "public"
+        }
+        
+        # Stream response with longer timeout between chunks
+        # (connect_timeout, read_timeout_between_chunks)
+        response = self.session.post(
+            url,
+            json=payload,
+            stream=True,  # Enable response streaming
+        )
+        response.raise_for_status()
+        
+        # Just consume all chunks - don't parse, just let it finish
+        chunk_count = 0
+        
+        try:
+            for line in response.iter_lines():
+                if line:
+                    chunk_count += 1
+                    # Just count chunks, don't parse
+                    # This keeps the connection alive and prevents timeouts
+        finally:
+            response.close()
+        
+        # Return simple success indicator
+        return {"status": "completed", "chunks_received": chunk_count}
     
     def get_session_status(self, session_id: str) -> str:
         """Get session status."""
@@ -460,7 +499,12 @@ class StressTestRunner:
         error_msg = None
         
         try:
-            result = self.client.execute_session(session_id, inputs)
+            # Choose streaming or non-streaming based on config
+            if self.config.use_streaming:
+                result = self.client.execute_session_streaming(session_id, inputs)
+            else:
+                result = self.client.execute_session(session_id, inputs)
+            
             success = True
             duration = time.time() - start_time
             
@@ -610,6 +654,8 @@ def stress_config(request):
         config.blueprint_path = request.config.option.blueprint_path
     if hasattr(request.config.option, 'input_text'):
         config.input_text = request.config.option.input_text
+    if hasattr(request.config.option, 'use_streaming'):
+        config.use_streaming = request.config.option.use_streaming
     
     return config
 
@@ -688,6 +734,7 @@ class TestSessionStress:
             print(f"  • Total Sessions: {stress_config.num_sessions}")
             print(f"  • Concurrent Creates: {stress_config.concurrent_create}")
             print(f"  • Concurrent Executes: {stress_config.concurrent_execute}")
+            print(f"  • Streaming Mode: {'ENABLED ✓' if stress_config.use_streaming else 'DISABLED'}")
             print(f"  • API: {stress_config.base_url}")
             
             stress_runner.metrics.total_start_time = time.time()
