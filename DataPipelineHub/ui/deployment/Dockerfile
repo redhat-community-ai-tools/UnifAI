@@ -38,6 +38,9 @@ RUN chmod +x /opt/app-root/src/entrypoint.sh
 RUN chmod -R 7777 /opt/app-root/src/
 RUN chown default:root /opt/app-root/src/
 
+#copy certificate files from the cred repo
+COPY genie-cred-data/certificates/* /etc/nginx/ssl/
+
 COPY --from=build /ui/build /usr/share/nginx/html
 RUN chown -R default:root /usr/share/nginx/html && chmod -R 775 /usr/share/nginx/html
 COPY deployment/nginx.conf.template /etc/nginx/nginx.conf.template
@@ -45,5 +48,6 @@ COPY deployment/nginx.conf.template /etc/nginx/nginx.conf.template
 USER default
 
 EXPOSE 8080
+EXPOSE 443
 
 ENTRYPOINT ["/opt/app-root/src/entrypoint.sh"]

@@ -1,3 +1,6 @@
+#This template file is a backup of the original nginx template supporting http only.
+# it is not being used and if desired to move to https the ui image should be rebuilt with this file instead of ../nginx.conf.template
+
 # For more information on configuration, see:
 #   * Official English Documentation: http://nginx.org/en/docs/
 
@@ -34,34 +37,10 @@ http {
     # for more information.
     include /opt/app-root/etc/nginx.d/*.conf;
 
-    # HTTP Redirection Server Block - currently not in use as this port won't be available to the roue in the first place
-    #server {
-    #    listen 8080 default_server;
-    #    listen [::]:8080 default_server;
-    #    server_name your_domain.com; # IMPORTANT: Replace with your actual domain
-
-        # Redirect all HTTP requests to HTTPS on the standard 443 port
-        # NOTE: If you must use port 8080 for HTTPS due to a proxy, use $host:8080$request_uri;
-        # For a standard redirect:
-    #    return 301 https://$host$request_uri; 
-    #}
-
     server {
-        listen       ${NGINX_PORT} ssl default_server;
-        listen       [::]:${NGINX_PORT} ssl default_server;
+        listen       ${NGINX_PORT} default_server;
+        listen       [::]:${NGINX_PORT} default_server;
         server_name  _;
-        
-        # SSL Configuration 
-        ssl_certificate /etc/nginx/ssl/unifai.crt; # Path to your .pem file
-        ssl_certificate_key /etc/nginx/ssl/unifai.key; # Use the same .pem file
-
-        ssl_protocols TLSv1.2 TLSv1.3;
-        ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384';
-        ssl_prefer_server_ciphers on;
-
-        # Add an HSTS header (Highly recommended for security)
-        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-        
         root         /usr/share/nginx/html  ;
         client_max_body_size 75M;
 

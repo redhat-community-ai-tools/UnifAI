@@ -14,7 +14,7 @@ debug: false
 
 ui:
   env:
-    NGINX_PORT: "8080"
+    NGINX_PORT: "8443"
     VERSION: ""
     # DATAPIPELINEHUB_PORT: ""
     # DATAPIPELINEHUB_HOST: "https://unifai-dataflow-server-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
@@ -28,6 +28,8 @@ ui:
 
   service:
     portList:
+    - name: ui-https
+      port: 8443
     - name: ui
       port: 8080
     - name: df-backend

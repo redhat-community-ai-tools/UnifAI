@@ -53,6 +53,8 @@ securityContext: {}
 # This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
 service:
   portList:
+  - name: ui-https
+    port: 8443
   - name: ui
     port: 8080
   - name: df-backend
@@ -66,7 +68,8 @@ debug: false
 command: ["/bin/sh", "-c", "sleep infinity"]
 
 env:
-  NGINX_PORT: "8080"
+  NGINX_PORT: "8443"
+  #NGINX_PORT: "8080"
   #DATAPIPELINEHUB_PORT: "13456"
   # DATAPIPELINEHUB_HOST: "unifai-dataflow-server"
   #MULTIAGENT_PORT: "8080"
@@ -108,13 +111,15 @@ resources: {}
 livenessProbe:
   httpGet:
     path: /
-    port: 8080
+    port: 8443
     periodSeconds: 60
+    scheme: HTTPS
 readinessProbe:
   httpGet:
     path: /
-    port: 8080
+    port: 8443
     periodSeconds: 60
+    scheme: HTTPS
 
 # This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
 autoscaling:

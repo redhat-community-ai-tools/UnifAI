@@ -31,6 +31,10 @@ def buildParams = [
     ImageRegistry      : "images.paas.redhat.com",
     ImageRegistryPath  : "unifai",
     ImageRegistryCreds : "images.paas.registry-unifai",
+
+    CredMainRepoProject: "ai_tools/genie-cred-data", 
+    CredMainRepoBranch : "main",
+    CredCredentialsId  : "gitlab-genie",
 ]
 
 
@@ -123,6 +127,20 @@ pipeline {
                         ]]
                     ])
                 }
+                dir("${buildParams.DevRoot}/${params.BRANCH}/DataPipelineHub/ui/") {
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: "${buildParams.CredMainRepoBranch}"]],
+                        doGenerateSubmoduleConfigurations: false,
+                        //extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: "${buildParams.DevRoot}/${params.BRANCH}"]],
+                        extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: "genie-cred-data"]],
+                        submoduleCfg: [],
+                        userRemoteConfigs: [[
+                            credentialsId: "${buildParams.CredCredentialsId}",
+                            url: "https://${buildParams.MainRepoURL}/${buildParams.CredMainRepoProject}.git"
+                        ]]
+                    ])
+                }
+                
             }
         }
 

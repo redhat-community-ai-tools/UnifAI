@@ -9,9 +9,12 @@ metadata:
 spec:
   host:
   port:
-    targetPort: 8080
+    targetPort: 8443
   to:
     kind: Service
     name: {{ include "ui.fullname" . }}
     weight: 100
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: Redirect
   wildcardPolicy: None
