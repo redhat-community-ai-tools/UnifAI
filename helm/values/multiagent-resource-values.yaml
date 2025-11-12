@@ -15,6 +15,7 @@ multiagent_server:
   env:
     BACKEND_ENV: "production" #options - production development
     ROLE: "flask" # options are flask celery debug
-    GUNICORN_WORKERS: "9"
-    GUNICORN_TIMEOUT: "300"
+    GUNICORN_WORKERS: "15"
+    GUNICORN_THREADS: "16"
+    GUNICORN_TIMEOUT: "600"
     VERSION: ""
