@@ -676,7 +676,7 @@ export default function ExecutionTab({
                       key={session.id}
                       className={`group px-4 py-3 border-l-2 cursor-pointer ${
                         selectedSession?.id === session.id
-                          ? "border-[hsl(var(--primary))] bg-[#8A2BE2] bg-opacity-10"
+                          ? "border-[hsl(var(--primary))] bg-primary/20"
                           : "border-transparent hover:bg-background-surface"
                       } ${
                         !session.blueprintExists 

@@ -12,6 +12,7 @@ import {
   GitBranch,
   Box,
 } from "lucide-react";
+import { DownloadFile } from "@/utils/guideLoader";
 
 export interface CategoryDisplay {
   icon: React.ReactNode;
@@ -45,3 +46,34 @@ export const getCategoryDisplayName = (category: string) => {
     nameMap[category] || category.charAt(0).toUpperCase() + category.slice(1)
   );
 };
+
+export const handleDownloadFile = (downloadFile: DownloadFile, setDownloadingFile: any) => {
+    setDownloadingFile(downloadFile.path);
+    fetch(downloadFile.path)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`File not found: ${response.status}`);
+        }
+        return response.text();
+      })
+      .then((fileContent) => {
+        const blob = new Blob([fileContent], { type: "text/plain" });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = downloadFile.filename;
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        
+        setTimeout(() => {
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+          setDownloadingFile(null);
+        }, 100);
+      })
+      .catch((error) => {
+        console.error("Download failed:", error);
+        setDownloadingFile(null);
+      });
+  };

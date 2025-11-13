@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
+import { Plus, Info } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus } from 'lucide-react';
 import { CategorySidebar } from '../components/agentic-ai/workspace/CategorySidebar';
 import { ElementGrid } from '../components/agentic-ai/workspace/ElementGrid';
 import { ElementForm } from '../components/agentic-ai/workspace/ElementForm';
@@ -41,6 +41,7 @@ export default function UserWorkspace() {
   }, [selectedElementType, fetchElementInstances]);
 
   const handleElementTypeSelect = async (category: string, elementType: ElementType) => {
+    // Ensure category is set before element type to avoid race conditions
     setSelectedCategory(category);
     setSelectedElementType(elementType);
     await Promise.all([
@@ -133,14 +134,27 @@ export default function UserWorkspace() {
                         Manage your {selectedElementType.name.toLowerCase()} configurations
                       </p>
                     </div>
-                    <Button 
-                      onClick={handleCreateNew}
-                      className="bg-primary hover:bg-opacity-80"
-                      disabled={!elementSchema}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Create New
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          const guidesUrl = `/guides?section=agentic-inventory`;
+                          window.open(guidesUrl, '_blank');
+                        }}
+                        className="border-gray-700 hover:bg-background-dark"
+                        title="View guides"
+                      >
+                        <Info className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        onClick={handleCreateNew}
+                        className="bg-primary hover:bg-opacity-80"
+                        disabled={!elementSchema}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create New
+                      </Button>
+                    </div>
                   </div>
                 )}
 

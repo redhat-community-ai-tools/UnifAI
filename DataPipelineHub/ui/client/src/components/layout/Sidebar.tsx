@@ -6,7 +6,7 @@ import {
   FaChartLine, FaUserShield, FaCog, FaSignOutAlt,
   FaRobot, FaFile, FaChevronLeft, FaChevronRight 
 } from "react-icons/fa";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Info } from "lucide-react";
 import { FaJira, FaSlack, FaBars } from "react-icons/fa";
 import { motion } from "framer-motion";
 import { useState } from "react";
@@ -202,6 +202,14 @@ export default function Sidebar() {
             label="User Management" 
             to="/users"
             isActive={location === '/users'}
+            status={null}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem 
+            icon={<Info className="sidebar-icon" />} 
+            label="How-To Guides" 
+            to="/guides"
+            isActive={location === '/guides'}
             status={null}
             isCollapsed={isCollapsed}
           />

@@ -16,6 +16,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import SlackIntegration from "./features/slack/SlackIntegration";
 import SlackAddSourcePage from "./features/slack/SlackAddSourcePage";
+import GuidesPage from "./components/guides/GuidesPage";
 
 function App() {
   // Set document title
@@ -40,6 +41,7 @@ function App() {
                   <Route path="/agentic-chats" component={AgenticChats} />
                   <Route path="/slack/add-source" component={SlackAddSourcePage} />
                   <Route path="/configuration" component={Configuration} />
+                  <Route path="/guides" component={GuidesPage} />
                   <Route component={NotFound} />
                 </Switch>
               </ProtectedRoute>

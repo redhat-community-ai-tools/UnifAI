@@ -1,0 +1,121 @@
+guide_title: "Google MCP Provider Setup"
+title: "Google MCP Provider Setup"
+description: "Complete guide to set up a Google Workspace MCP server for UnifAI"
+category: "providers"
+section: "agentic-inventory"
+order: 1
+download_files:
+  - path: "/guides/agentic-inventory/providers/google_workspace_mcp_script.sh"
+    filename: "google_workspace_mcp_script.sh"
+    label: "Download Script"
+    trigger: "google_workspace_mcp_script.sh"
+steps:
+  - step: 1
+    title: "Extract Credentials from Google Console"
+    body: |
+      ## Create a Google Cloud Project
+      
+      1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+      2. Create a new project or select an existing one (Default Projects location is fine)
+
+      
+      ## Configure OAuth Consent Screen
+      
+      1. Navigate to **APIs & Services → OAuth consent screen** and click Get Started if prompted
+      2. Fill in the required fields (app name, support email, developer email - both your redhat gmail account)
+      3. Select **External** and click **Create**
+      4. Fill out the remaining steps until you complete the creation
+      
+      **Important:** When you first try to use the OAuth credentials, you may see a warning message: **"This app isn't verified"** or **"Google hasn't verified this app"**. This is normal for development/testing. To proceed:
+      - Click **Advanced** at the bottom of the warning screen
+      - Click **Go to [Your App Name] (unsafe)** to continue
+      - This allows you to use the app during development
+      
+      ## Create OAuth Credentials
+      
+      1. Go to **APIs & Services → Credentials** (if you can't find it, click on the Google Cloud logo to return to the main console, where you will find it)
+      2. Click **Create Credentials → OAuth Client ID**
+      3. Select **Web Application**
+      4. Configure:
+         - **Name**: "UnifAI Google MCP Server" (or any name)
+         - **Authorized JavaScript origins**: `http://localhost:8000`
+         - **Authorized redirect URIs**: `http://localhost:8000/oauth2callback`
+        Note that this port should be unused on your local machine so that the MCP server can bind to it.
+      5. Click **Create**
+      
+      ## Download Credentials JSON File
+      
+      1. After creating the OAuth Client ID, you'll see a dialog with your credentials
+      2. Click **Download JSON** to download the credentials file
+      
+
+  - step: 2
+    title: "Download & Run the Setup Script"
+    body: |
+      ## Download the Script
+      
+      Download: [google_workspace_mcp_script.sh](/guides/agentic-inventory/providers/google_workspace_mcp_script.sh)
+      
+      ## Prerequisites
+      
+      Ensure you have **Docker** (or Podman) and **Docker Compose** installed and running. Git is also required.
+      
+      ## Prepare Files
+      
+      1. Make sure both files are in the same folder:
+         - The downloaded script: `google_workspace_mcp_script.sh`
+         - The credentials JSON file from Google Console
+      
+      ## Make Script Executable
+      
+      ```bash
+      chmod +x google_workspace_mcp_script.sh
+      ```
+      
+      ## Run the Script
+      
+      ```bash
+      bash ./google_workspace_mcp_script.sh {google-credentials.json} \
+         --user_email {your-email@example.com} \
+         --enable_services \
+         --services "gmail,calendar,drive,docs,sheets,slides,tasks,contacts"
+      ```
+      
+      **Replace:**
+      - `google-credentials.json` with the actual name of your downloaded JSON file
+      - `your-email@example.com` with your Google account email address
+      
+      The `--enable_services` flag is optional and will automatically enable the required Google Cloud APIs. If you prefer to enable them manually, omit this flag.
+      
+      The script will automatically:
+      - Extract credentials from the JSON file
+      - Clone the Google Workspace MCP repository
+      - Configure the environment
+      - Enable Google APIs (if `--enable_services` is used)
+      - Start the MCP server
+      
+      Make sure you follow the instructions printed in the terminal while the script is running.
+      **Note the SSE Endpoint URL** displayed at the end (e.g., `http://192.168.1.100:8000/mcp`).
+
+  - step: 3
+    title: "Connect UnifAI to Your Local MCP Server"
+    body: |
+      ## Configure the SSE Endpoint
+      
+      1. In UnifAI, go to Agentic Inventory -> Providers -> MCP Provider
+      2. Click "Create New" and locate the **SSE Endpoint** field
+      2. Enter: `http://YOUR_IP_ADDRESS:8000/mcp`
+         - Replace `YOUR_IP_ADDRESS` with the IP shown by the script
+         - Example: `http://192.168.1.100:8000/mcp`
+      3. Wait for validation, then click **Save**
+      
+      ## Troubleshooting
+      
+      - **Connection refused**: Check if Docker container is running (`docker ps`)
+      - **Cannot reach server**: Verify IP address and firewall settings
+      - **OAuth errors**: Ensure redirect URI matches `http://YOUR_IP:8000/oauth2callback` in Google Console
+      
+      **Useful commands:**
+      - View logs: `docker-compose logs -f`
+      - Stop server: `docker-compose down`
+      - Restart: `docker-compose restart`

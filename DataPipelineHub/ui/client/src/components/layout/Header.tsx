@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
-import { FaSearch, FaBell, FaInfoCircle, FaPlus, FaBars, FaMoon, FaSun, FaSignOutAlt, FaShare } from "react-icons/fa";
+import { FaSearch, FaBell, FaInfoCircle, FaPlus, FaBars, FaMoon, FaSun, FaSignOutAlt, FaShare, FaCodeBranch } from "react-icons/fa";
 import { FaShareNodes } from "react-icons/fa6";
 import { motion } from "framer-motion";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
@@ -129,14 +129,14 @@ export default function Header({ title, onToggleSidebar }: HeaderProps) {
           />
         </div>
 
-        {/* Help Button */}
+        {/* Versions Button */}
         <div className="relative">
-          <SimpleTooltip content={<p>Help</p>}>
+          <SimpleTooltip content={<p>Versions</p>}>
             <button
               onClick={() => setIsHelpPanelOpen(!isHelpPanelOpen)}
               className="p-2 rounded-full hover:bg-background-card text-gray-400 hover:text-gray-800 dark:hover:text-white transition-colors"
             >
-              <FaInfoCircle />
+              <FaCodeBranch />
             </button>
           </SimpleTooltip>
           <HelpPanel

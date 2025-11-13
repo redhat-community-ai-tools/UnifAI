@@ -275,7 +275,7 @@ export default function AvailableFlows({
                   key={flow.id}
                   className={`px-4 py-2 border-l-2 cursor-pointer ${
                     selectedFlow?.id === flow.id
-                      ? "border-[#003f5c] bg-[#003f5c] bg-opacity-10"
+                      ? "border-primary bg-primary/20"
                       : "border-transparent hover:bg-background-surface"
                   }`}
                   onClick={() => handleFlowSelect(flow)}
