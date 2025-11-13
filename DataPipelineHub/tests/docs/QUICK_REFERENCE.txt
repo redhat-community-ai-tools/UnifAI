@@ -1,0 +1,125 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║              STRESS TEST SUITE - QUICK REFERENCE CARD                        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─ LOCATION ─────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  All test files are in: ${CURRENT_PATH}/unifai/DataPipelineHub/tests/docs │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ SETUP ────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Navigate:   cd ${CURRENT_PATH}/unifai/DataPipelineHub/tests/docs │
+│  Install:    pip install -r requirements_stress_test.txt                    │
+│  Verify:     python3 verify_setup.py                                        │
+│  Run:        ./run_stress_test.sh                                           │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ COMMON COMMANDS ──────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Full Test:           ./run_stress_test.sh                                  │
+│  Check Only:          ./run_stress_test.sh --check-only                     │
+│  Custom API:          ./run_stress_test.sh --api-url http://api:13457/api  │
+│  Direct Run:          python3 stress_test_doc_upload.py                     │
+│  Analyze Log:         python3 analyze_stress_test_logs.py <logfile>         │
+│  Export JSON:         python3 analyze_stress_test_logs.py <log> --export-json out.json │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ SERVICE CHECKS ───────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Backend:    curl http://localhost:13457/api/health                         │
+│  MongoDB:    mongosh --eval "db.adminCommand('ping')"                       │
+│  Celery:     celery -A celery_app inspect active                            │
+│  RabbitMQ:   sudo rabbitmqctl status                                        │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ CONFIGURATION ────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Environment Variables:                                                      │
+│    export API_BASE_URL="http://localhost:13457/api"                         │
+│    export MONGODB_HOST="localhost"                                          │
+│    export MONGODB_PORT="27017"                                              │
+│                                                                              │
+│  Code Settings (in stress_test_doc_upload.py):                              │
+│    NUM_DOCUMENTS = 100          # Number of docs                            │
+│    CONCURRENT_UPLOADS = 10      # Parallel uploads                          │
+│    PAGES_PER_DOC = 2            # Pages per doc                             │
+│    UPLOAD_TIMEOUT = 300         # Upload timeout (sec)                      │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ SUCCESS CRITERIA ─────────────────────────────────────────────────────────┐
+│                                                                              │
+│  ✓ Upload success rate ≥ 95%                                                │
+│  ✓ All Celery tasks SUCCESS                                                 │
+│  ✓ No critical errors                                                       │
+│  ✓ Average upload time < 5s                                                 │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+┌─ TROUBLESHOOTING ──────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Issue                    Solution                                          │
+│  ─────────────────────    ─────────────────────────────────────────────    │
+│  Backend not responding   cd ../backend && python app.py                    │
+│  MongoDB failed           sudo systemctl start mongod                       │
+│  Celery stuck             celery -A celery_app inspect active               │
+│  Import errors            pip install -r requirements_stress_test.txt       │
+│  Permission denied        chmod +x *.sh *.py                                │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ FILES ────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Test Scripts:                                                               │
+│    stress_test_doc_upload.py      Main test script                          │
+│    run_stress_test.sh             Runner with checks                        │
+│    analyze_stress_test_logs.py    Log analysis tool                         │
+│    verify_setup.py                Pre-flight checks                         │
+│                                                                              │
+│  Documentation:                                                              │
+│    README.md                      Complete documentation                    │
+│    QUICKSTART.md                  5-minute setup guide                      │
+│    QUICK_REFERENCE.txt            This file                                 │
+│                                                                              │
+│  Supporting:                                                                 │
+│    requirements_stress_test.txt   Python dependencies                       │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ METRICS TRACKED ──────────────────────────────────────────────────────────┐
+│                                                                              │
+│  Upload Phase:                    Embedding Phase:                          │
+│    • Total attempts                 • Total tasks                           │
+│    • Success/failure counts         • Successful/failed tasks               │
+│    • Success rate %                 • Pending tasks                         │
+│    • Avg/Min/Max times              • Average duration                      │
+│    • 95th/99th percentiles          • Status breakdown                      │
+│    • Error breakdown                • Completion rate                       │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ DOCUMENTATION ────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  New User?         Read QUICKSTART.md                                       │
+│  Full Details?     Read README.md                                           │
+│  Quick Commands?   This file (QUICK_REFERENCE.txt)                          │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─ SUPPORT ──────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  1. Run: python3 verify_setup.py                                            │
+│  2. Check logs: stress_test_*.log                                           │
+│  3. Review docs: README.md                                                  │                                              │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  Version: 1.0.0  |  Updated: November 2025  |  UnifAI DataPipelineHub      ║
+╚══════════════════════════════════════════════════════════════════════════════╝

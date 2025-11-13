@@ -1,0 +1,4 @@
+aiohttp>=3.9.0
+pymongo>=4.6.0
+reportlab>=4.0.0
+
