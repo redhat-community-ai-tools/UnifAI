@@ -46,10 +46,11 @@ interface ChatSessionData {
   session_id: string;
   started_at: string;
   blueprint_exists: boolean;
-  state: {
-    final_output: string;
-    messages: ChatMessage[];
-  };
+}
+
+interface SessionStateData {
+  final_output: string;
+  messages: ChatMessage[];
 }
 
 interface ChatSession {
@@ -242,7 +243,7 @@ export default function ExecutionTab({
       const blueprintExists = sessionData.blueprint_exists;
       const timestamp = new Date(sessionData.started_at);
       const lastActive = formatTimestamp(sessionData.started_at);
-      const preview = getPreviewText(sessionData.state.messages);
+      const preview = 'Click to load messages...';
       
       return {
         id,
@@ -251,10 +252,21 @@ export default function ExecutionTab({
         lastActive,
         timestamp,
         preview,
-        messages: sessionData.state.messages,
+        messages: [], // Messages will be loaded separately when session is selected
         blueprintExists,  
       };
     });
+  };
+
+  // Fetch session state (messages) for a specific session
+  const fetchSessionState = async (sessionId: string): Promise<SessionStateData | null> => {
+    try {
+      const response = await axios.get(`/sessions/session.state.get?sessionId=${sessionId}`);
+      return response.data;
+    } catch (err) {
+      console.error('Error fetching session state:', err);
+      return null;
+    }
   };
 
   // Fetch chat sessions from API
@@ -268,13 +280,32 @@ export default function ExecutionTab({
       const transformedSessions = transformApiDataToSessions(response.data);
 
       // sort chat sessions based on the latest date
-      setChatSessions(transformedSessions.sort((firstSession, secondSession) => secondSession.timestamp.getTime() - firstSession.timestamp.getTime()));
+      const sortedSessions = transformedSessions.sort((firstSession, secondSession) => secondSession.timestamp.getTime() - firstSession.timestamp.getTime());
+      setChatSessions(sortedSessions);
 
-      // Auto-select the first session if available
-      if (transformedSessions.length > 0 && !selectedSession) {
-        const firstSession = transformedSessions[0];
+      // Auto-select the first session if available and fetch its state
+      if (sortedSessions.length > 0 && !selectedSession) {
+        const firstSession = sortedSessions[0];
         setSelectedSession(firstSession);
-        setCurrentSessionMessages(firstSession.messages);
+        
+        // Fetch the state for the first session
+        const stateData = await fetchSessionState(firstSession.id);
+        if (stateData && stateData.messages) {
+          setCurrentSessionMessages(stateData.messages);
+          
+          // Update the session's preview with actual message content
+          const updatedSession = {
+            ...firstSession,
+            messages: stateData.messages,
+            preview: getPreviewText(stateData.messages)
+          };
+          setSelectedSession(updatedSession);
+          
+          // Update the session in the list as well
+          setChatSessions(prevSessions => 
+            prevSessions.map(s => s.id === firstSession.id ? updatedSession : s)
+          );
+        }
       }
     } catch (err) {
       console.error('Error fetching chat sessions:', err);
@@ -285,12 +316,32 @@ export default function ExecutionTab({
   };
 
   // Handle session selection
-  const handleSessionSelect = (session: ChatSession) => {
+  const handleSessionSelect = async (session: ChatSession) => {
     setSelectedSession(session);
-    setCurrentSessionMessages(session.messages);
-
-    // Refresh chat sessions when a session is selected
-    fetchChatSessions();
+    
+    // If messages are already loaded for this session, use them
+    if (session.messages && session.messages.length > 0) {
+      setCurrentSessionMessages(session.messages);
+    } else {
+      // Otherwise, fetch the session state
+      const stateData = await fetchSessionState(session.id);
+      if (stateData && stateData.messages) {
+        setCurrentSessionMessages(stateData.messages);
+        
+        // Update the session with loaded messages and preview
+        const updatedSession = {
+          ...session,
+          messages: stateData.messages,
+          preview: getPreviewText(stateData.messages)
+        };
+        setSelectedSession(updatedSession);
+        
+        // Update the session in the list as well
+        setChatSessions(prevSessions => 
+          prevSessions.map(s => s.id === session.id ? updatedSession : s)
+        );
+      }
+    }
   };
 
   // Handle delete chat
