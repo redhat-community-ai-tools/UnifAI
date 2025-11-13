@@ -157,7 +157,7 @@ export default function ExecutionTab({
       const availableWidth = 100 - chatSidebarWidth;
       const relativePosition = ((mousePosition - chatSidebarWidth) / availableWidth) * 100;
       const minChatInterface = 25;
-      const maxChatInterface = 75;
+      const maxChatInterface = 100; // Allow Blueprint Graph to collapse to 0%
       const newChatInterfaceRatio = Math.min(Math.max(relativePosition, minChatInterface), maxChatInterface);
       
       const newChatInterfaceWidth = (availableWidth * newChatInterfaceRatio) / 100;

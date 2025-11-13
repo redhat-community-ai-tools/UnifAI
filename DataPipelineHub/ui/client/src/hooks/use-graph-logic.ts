@@ -58,7 +58,7 @@ const defaulYmlState: YamlFlowState = {
     },
     {
       rid: "final_answer",
-      name: "Final Answer None",
+      name: "Final Answer Node",
       type: "final_answer_node",
       config: {
         type: "final_answer_node",
