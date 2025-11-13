@@ -17,7 +17,7 @@ providers:
     type: mcp_server
     config:
       type: mcp_server
-      sse_endpoint: http://10.46.254.131:8007/servers/mcp-atlassian/sse
+      sse_endpoint: http://10.46.254.131:8007/servers/mcp-atlassian/mcp
       tool_names:
         - jira_get_issue
         - jira_search
@@ -31,7 +31,7 @@ providers:
     type: mcp_server
     config:
       type: mcp_server
-      sse_endpoint: http://10.46.254.131:8007/servers/mcp-atlassian/sse
+      sse_endpoint: http://10.46.254.131:8007/servers/mcp-atlassian/mcp
       tool_names:
         - confluence_search
         - confluence_get_page
@@ -50,7 +50,7 @@ llms:
     config:
       type: openai
       model_name: gemini-2.5-flash
-      api_key: AIzaSyC_Jt5v4wzPP6RDsHN_wR9iUsCsyO_7IoI
+      api_key: AIzaSyCnplFW816wfu0jNAyoxQQSQkNdX8yxgQc
       base_url: https://generativelanguage.googleapis.com/v1beta/openai
 
   - rid: openai_llm_pro_rid
@@ -59,7 +59,7 @@ llms:
     config:
       type: openai
       model_name: gemini-2.5-pro
-      api_key: AIzaSyC_Jt5v4wzPP6RDsHN_wR9iUsCsyO_7IoI
+      api_key: AIzaSyCnplFW816wfu0jNAyoxQQSQkNdX8yxgQc
       base_url: https://generativelanguage.googleapis.com/v1beta/openai
 conditions:
   - rid: router_direct

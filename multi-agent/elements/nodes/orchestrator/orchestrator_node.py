@@ -288,9 +288,24 @@ class OrchestratorNode(
         # Extract response content for storage in work item
         response_content = ""
         if task.result:
-            # ✅ Handle AgentResult properly (use .content field, not str())
+            # Handle AgentResult properly (use .content field, not str())
             if isinstance(task.result, AgentResult):
                 response_content = task.result.content
+                
+                # Append error information if present and execution failed
+                # Only add error indicator if:
+                # 1. Execution was not successful
+                # 2. Error message exists
+                # 3. Error is not exactly the same as content (avoid duplication)
+                if not task.result.success and task.result.error:
+                    # Only skip if error exactly equals content (case insensitive with strip)
+                    if task.result.error.lower().strip() != response_content.lower().strip():
+                        # If content is empty, use error as content
+                        if not response_content.strip():
+                            response_content = f"ERROR: {task.result.error}"
+                        else:
+                            # Append error to existing content
+                            response_content += f"\nERROR: {task.result.error}"
             else:
                 response_content = str(task.result)
         elif task.error:

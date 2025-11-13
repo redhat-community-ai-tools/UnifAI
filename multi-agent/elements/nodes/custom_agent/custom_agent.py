@@ -1,4 +1,4 @@
-from typing import Optional, Any, List, ClassVar, Set
+from typing import Optional, Any, List, ClassVar, Set, Dict
 from copy import deepcopy
 from graph.state.state_view import StateView
 from elements.llms.common.chat.message import ChatMessage, Role
@@ -96,11 +96,11 @@ class CustomAgentNode(
             # 1. Build conversation context
             conversation_context = self._build_conversation_context(task)
 
-            # 2. Process with LLM
-            assistant_response = self._process_with_llm(conversation_context)
+            # 2. Process with LLM - returns result dict
+            execution_result = self._process_with_llm(conversation_context)
 
-            # 3. Create agent result
-            agent_result = self._create_agent_result(assistant_response)
+            # 3. Create agent result from execution result
+            agent_result = self._create_agent_result(execution_result)
 
             # 4. Add agent result to workspace
             if task.thread_id:
@@ -113,6 +113,17 @@ class CustomAgentNode(
 
         except Exception as e:
             print(f"CustomAgent {self.uid}: Error processing task: {e}")
+            # Create error agent result and send it
+            error_result = AgentResult(
+                content=f"Error processing task: {str(e)}",
+                agent_id=self.uid,
+                agent_name=self.display_name,
+                success=False,
+                error=str(e)
+            )
+            if task.thread_id:
+                self._add_agent_result_to_workspace(task.thread_id, error_result)
+            self._route_response(task, error_result, packet)
 
     def _build_conversation_context(self, task: Task) -> List[ChatMessage]:
         """
@@ -162,11 +173,15 @@ class CustomAgentNode(
 
         return ChatMessage(role=Role.USER, content=results_text)
 
-    def _process_with_llm(self, conversation_context: List[ChatMessage]) -> ChatMessage:
-        """Process conversation with LLM (with optional tools)."""
+    def _process_with_llm(self, conversation_context: List[ChatMessage]) -> Dict[str, Any]:
+        """
+        Process conversation with LLM (with optional tools).
+        
+        Returns:
+            Dict with keys: output, success, error, reasoning, metadata, metrics
+        """
         if self.tools:
             # Use new agent execution system
-
             strategy = self.create_strategy(
                 tools=self.tools,
                 strategy_type=self.strategy_type,
@@ -185,14 +200,20 @@ class CustomAgentNode(
                 config=config
             )
 
-            # Extract the final assistant message from the result
-            if result.get("success") and result.get("output"):
-                return ChatMessage(role=Role.ASSISTANT, content=str(result["output"]))
-            else:
-                # Fallback to basic chat if agent execution failed
-                return self.chat(conversation_context)
+            # Return result dict as-is (contains success, error, output, etc.)
+            return result
         else:
-            return self.chat(conversation_context)
+            # No tools - use basic chat
+            assistant_msg = self.chat(conversation_context)
+            # Create a result dict that matches run_agent format
+            return {
+                "success": True,
+                "output": assistant_msg.content,
+                "error": None,
+                "reasoning": "",
+                "metadata": {},
+                "metrics": {}
+            }
 
     def _route_response(self, task: Task, agent_result: AgentResult, original_packet) -> None:
         """
@@ -266,12 +287,36 @@ class CustomAgentNode(
         )
         self.broadcast_task(forked_task)
 
-    def _create_agent_result(self, assistant_response: ChatMessage) -> AgentResult:
-        """Create AgentResult from assistant response."""
+    def _create_agent_result(self, execution_result: Dict[str, Any]) -> AgentResult:
+        """
+        Create AgentResult from execution result dict.
+        
+        Args:
+            execution_result: Result dict from _process_with_llm with keys:
+                - output: The content/response
+                - success: Whether execution succeeded
+                - error: Error message if failed
+                - reasoning: Agent's reasoning process
+                - metadata: Execution metadata
+                - metrics: Performance metrics
+        """
+        # Extract output/content
+        output = execution_result.get("output", "")
+        if output is None:
+            output = ""
+        
+        # If execution failed but no output, use error as content
+        content = str(output) if output else execution_result.get("error", "No output produced")
+        
         return AgentResult(
-            content=assistant_response.content,
+            content=content,
             agent_id=self.uid,
-            agent_name=self.display_name
+            agent_name=self.display_name,
+            success=execution_result.get("success", True),
+            error=execution_result.get("error"),
+            reasoning=execution_result.get("reasoning", ""),
+            execution_metadata=execution_result.get("metadata", {}),
+            metrics=execution_result.get("metrics", {})
         )
 
     def _add_agent_result_to_workspace(self, thread_id: str, agent_result: AgentResult) -> None:

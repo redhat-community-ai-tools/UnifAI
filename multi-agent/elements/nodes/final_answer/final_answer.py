@@ -59,24 +59,78 @@ class FinalAnswerNode(IEMCapableMixin, BaseNode):
             print(f"FinalAnswerNode {self.uid}: Error collecting task result: {e}")
 
     def _merge_results(self) -> str:
-        """Merge all collected AgentResult objects into one final message."""
+        """
+        Merge all collected AgentResult objects into one final message.
+        
+        Handles both successful results and errors, ensuring errors are
+        clearly communicated to the user.
+        """
         if not self._collected_results:
             return "I apologize, but I don't have any information to provide."
         
+        # Single result case
         if len(self._collected_results) == 1:
-            return self._collected_results[0].content
+            result = self._collected_results[0]
+            content = result.content
+            
+            # Check if execution failed and append error if not already the same as content
+            if not result.success and result.error:
+                # Only skip if error exactly equals content (avoid duplication)
+                if result.error.lower().strip() != content.lower().strip():
+                    # If content is empty, use error as the main content
+                    if not content or content.strip() == "":
+                        content = f"ERROR: {result.error}"
+                    else:
+                        # Append error to existing content
+                        content += f"\nERROR: {result.error}"
+            
+            return content
         
-        # Remove duplicates while preserving order
-        unique_contents = []
-        seen = set()
+        # Multiple results case - separate successful results from errors
+        successful_contents = []
+        error_messages = []
+        seen_success = set()
+        seen_errors = set()
+        
         for result in self._collected_results:
             content = result.content.strip()
-            if content and content not in seen:
-                unique_contents.append(content)
-                seen.add(content)
+            
+            if result.success:
+                # Collect successful results (deduplicate)
+                if content and content not in seen_success:
+                    successful_contents.append(content)
+                    seen_success.add(content)
+            else:
+                # Collect error information
+                error_info = content
+                # Only append error if it's not exactly the same as content
+                if result.error and result.error.lower().strip() != content.lower().strip():
+                    error_info = f"{content}\nERROR: {result.error}" if content else f"ERROR: {result.error}"
+                
+                if error_info and error_info not in seen_errors:
+                    error_messages.append(error_info)
+                    seen_errors.add(error_info)
         
-        if len(unique_contents) == 1:
-            return unique_contents[0]
+        # Build final message
+        parts = []
         
-        # Join multiple unique results
-        return "\n\n".join(unique_contents)
+        # Add successful results
+        if successful_contents:
+            if len(successful_contents) == 1:
+                parts.append(successful_contents[0])
+            else:
+                parts.append("\n\n".join(successful_contents))
+        
+        # Add errors if any
+        if error_messages:
+            if successful_contents:
+                # Separate errors from successful content
+                parts.append("\n\nErrors encountered:")
+            for error in error_messages:
+                parts.append(error)
+        
+        # If nothing at all, return default message
+        if not parts:
+            return "I apologize, but I don't have any information to provide."
+        
+        return "\n\n".join(parts)
