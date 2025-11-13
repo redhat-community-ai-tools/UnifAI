@@ -433,6 +433,9 @@ class ToolNames:
     
     # Workspace tools
     WORKSPACE_READ_SUMMARY = "workspace.read_summary"
+    
+    # Time tools
+    TIME_GET_CURRENT = "time.get_current_time"
 
 
 class ToolKeywords:

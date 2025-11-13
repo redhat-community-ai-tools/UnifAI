@@ -15,6 +15,7 @@ from elements.nodes.common.agent import AgentConfig
 from elements.nodes.common.agent.execution import ExecutionMode
 from elements.nodes.common.agent.constants import StrategyType
 from elements.tools.common.execution.models import ExecutorConfig
+from elements.tools.builtin.time import GetCurrentTimeTool
 
 
 class CustomAgentNode(
@@ -34,6 +35,7 @@ class CustomAgentNode(
     - Intelligent response routing based on task.should_respond
     - Clean service-based architecture for all workload operations
     - Comprehensive task and result tracking in workspace
+    - Automatic builtin tools (time, etc.)
     """
 
     READS: ClassVar[set[str]] = set()
@@ -49,6 +51,7 @@ class CustomAgentNode(
             mcp_provider: McpProvider = None,
             max_rounds: Optional[int] = 15,
             strategy_type: str = StrategyType.REACT.value,
+            include_builtin_tools: bool = True,
             **kwargs: Any
     ):
         super().__init__(
@@ -60,18 +63,77 @@ class CustomAgentNode(
         self.mcp_provider = mcp_provider
         self.max_rounds = max_rounds
         self.strategy_type = strategy_type
-        self.tools = tools or []
+
+        # SOLID: Separate domain tools from builtin tools
+        self._domain_tools = tools or []  # Tools from configuration
+        self._include_builtin_tools = include_builtin_tools
+        self.tools = []  # Will be populated in run()
 
     def run(self, state: StateView) -> StateView:
         """Main entry point - process all incoming TaskPackets."""
 
-        # Add MCP tools if available
-        if self.mcp_provider:
-            self.tools.extend(self.mcp_provider.get_tools())
+        # Build complete tools list (domain + builtin + mcp)
+        self.tools = self._get_all_tools()
 
         # Process all incoming packets
         self.process_packets(state)
         return state
+
+    # ========== BUILTIN TOOLS (SOLID) ==========
+
+    def _get_all_tools(self) -> List[BaseTool]:
+        """
+        Combine all tools: domain tools + builtin tools + MCP tools.
+        
+        SOLID Design:
+        - Single Responsibility: Each tool type managed separately
+        - Open/Closed: Easy to add new builtin tools
+        - Dependency Inversion: Tools depend on abstractions (lambdas)
+        """
+        all_tools = []
+
+        # 1. Domain-specific tools (from configuration)
+        all_tools.extend(self._domain_tools)
+
+        # 2. Built-in tools (if enabled)
+        if self._include_builtin_tools:
+            all_tools.extend(self._create_builtin_tools())
+
+        # 3. MCP tools (if provider available)
+        if self.mcp_provider:
+            all_tools.extend(self.mcp_provider.get_tools())
+
+        return all_tools
+
+    def _create_builtin_tools(self) -> List[BaseTool]:
+        """
+        Create built-in tools with dependency injection.
+        
+        Pattern follows OrchestratorPhaseProvider design:
+        - Tools initialized with clean lambda dependencies
+        - No hard dependencies on node internals
+        - Easy to test and mock
+        
+        Returns:
+            List of initialized builtin tools
+        """
+        builtin_tools = []
+
+        # Time tool (no dependencies needed)
+        builtin_tools.append(GetCurrentTimeTool())
+
+        # Future builtin tools can be added here with their dependencies:
+        # Example with dependencies (when needed):
+        # get_uid = lambda: self.uid
+        # get_thread = lambda: self._current_thread
+        # builtin_tools.append(SomeToolWithDeps(
+        #     get_uid=get_uid,
+        #     get_thread=get_thread
+        # ))
+
+        return builtin_tools
+
+    # ========== TASK PROCESSING ==========
 
     def handle_task_packet(self, packet) -> None:
         """
@@ -88,7 +150,7 @@ class CustomAgentNode(
             # Extract and mark task as processed
             task = packet.extract_task()
             task.mark_processed(self.uid)
-            
+
             # Record task in workspace for tracking
             if task.thread_id:
                 self.workspaces.add_task(task.thread_id, task)
@@ -322,7 +384,7 @@ class CustomAgentNode(
     def _add_agent_result_to_workspace(self, thread_id: str, agent_result: AgentResult) -> None:
         """Add agent result to workspace using new service architecture."""
         self.workspaces.add_result(thread_id, agent_result)
-    
+
     def get_thread_hierarchy_info(self, thread_id: str) -> str:
         """
         Example method showing clean usage of thread service.
@@ -332,17 +394,17 @@ class CustomAgentNode(
         """
         if not thread_id:
             return "No thread ID provided"
-        
+
         # Get thread hierarchy information
         thread = self.threads.get_thread(thread_id)
         if not thread:
             return f"Thread {thread_id} not found"
-        
+
         # Get hierarchy path
         hierarchy_path = self.threads.get_hierarchy_path(thread_id)
         depth = self.threads.get_thread_depth(thread_id)
         root_thread = self.threads.find_root_thread(thread_id)
-        
+
         info = [
             f"Thread: {thread.title} ({thread_id})",
             f"Initiator: {thread.initiator}",
@@ -350,9 +412,9 @@ class CustomAgentNode(
             f"Root Thread: {root_thread}",
             f"Hierarchy Path: {' → '.join(hierarchy_path)}"
         ]
-        
+
         return "\n".join(info)
-    
+
     def get_workspace_summary(self, thread_id: str) -> str:
         """
         Example method showing clean usage of workspace service.
@@ -362,27 +424,27 @@ class CustomAgentNode(
         """
         if not thread_id:
             return "No thread ID provided"
-        
+
         # Get workspace content using focused services
         summary = self.workspaces.get_workspace_summary(thread_id)
         facts = self.workspaces.get_facts(thread_id)
         results = self.workspaces.get_results(thread_id)
         tasks = self.workspaces.get_tasks(thread_id)
         recent_messages = self.workspaces.get_recent_messages(thread_id, 5)
-        
+
         info = [
             f"Workspace Summary for Thread: {thread_id}",
             f"Facts: {len(facts)} items",
-            f"Results: {len(results)} items", 
+            f"Results: {len(results)} items",
             f"Tasks: {len(tasks)} items",
             f"Recent Messages: {len(recent_messages)} items",
             f"Last Updated: {summary.get('last_updated', 'Unknown')}"
         ]
-        
+
         # Add recent facts if any
         if facts:
             info.append("\nRecent Facts:")
             for fact in facts[-3:]:  # Last 3 facts
                 info.append(f"  - {fact}")
-        
+
         return "\n".join(info)

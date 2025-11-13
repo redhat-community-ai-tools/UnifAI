@@ -5,7 +5,6 @@ from typing import Any, Dict, Mapping
 @dataclass(slots=True)
 class ChatHistoryItem:
     session_id: str
-    state: Dict[str, Any]
     metadata: Dict[str, Any]
     started_at: str
     blueprint_id: str
@@ -16,7 +15,6 @@ class ChatHistoryItem:
         rc = doc.get("run_context", {})
         return cls(
             session_id=rc.get("run_id"),
-            state=doc.get("graph_state", {}),
             metadata=doc.get("metadata", {}),
             started_at=rc.get("started_at"),
             blueprint_id=doc.get("blueprint_id", ""),
