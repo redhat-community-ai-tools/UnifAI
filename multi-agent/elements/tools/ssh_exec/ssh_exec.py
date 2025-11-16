@@ -22,6 +22,27 @@ class SshExecTool(BaseTool):
         self._port = port
         self._username = username
         self._password = password
+        
+        # Override name with unique identifier from config
+        # Create translation table to replace special characters with underscores
+        translation = str.maketrans('.:- /', '_____')
+        safe_host = host.translate(translation)
+        safe_username = username.translate(translation)
+        self.name = f"ssh_exec_{safe_host}_{port}_{safe_username}"
+        
+        # Override description with config-specific details
+        self.description = (
+            f"Run shell commands on remote server at {host}:{port}.\n\n"
+            f"This tool automatically connects to the server (as user '{username}') "
+            f"and executes the command you provide. You only need to specify the command - "
+            f"the tool handles the SSH connection, authentication, and execution.\n\n"
+            f"Connection Details:\n"
+            f"• Host: {host}\n"
+            f"• Port: {port}\n"
+            f"• User: {username}\n\n"
+            f"Usage: Simply provide the shell command as an argument. "
+            f"The tool will connect to this specific remote machine and run it."
+        )
 
     def run(self, *args: Any, **kwargs: Any) -> str:
         inp = self.args_schema(**kwargs)  # validate + parse
