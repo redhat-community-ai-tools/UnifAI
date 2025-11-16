@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Trash2, Settings } from "lucide-react";
+import { Send, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -33,6 +33,8 @@ interface ChatInterfaceProps {
   triggerExecution: (sessionPayload: SessionPayload) => Promise<string>;
   initialMessages?: BackendMessage[];
   blueprintExists?: boolean;
+  onToggleBlueprintGraph?: () => void;
+  isBlueprintGraphHidden?: boolean;
 }
 
 export default function ChatInterface({
@@ -40,6 +42,8 @@ export default function ChatInterface({
   triggerExecution,
   initialMessages = [],
   blueprintExists = true,
+  onToggleBlueprintGraph,
+  isBlueprintGraphHidden = false,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -681,13 +685,21 @@ export default function ChatInterface({
           >
             <Trash2 className="h-4 w-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-gray-400 hover:text-gray-100"
-          >
-            <Settings className="h-4 w-4" />
-          </Button>
+          {onToggleBlueprintGraph && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onToggleBlueprintGraph}
+              className="text-gray-400 hover:text-gray-100"
+              title={isBlueprintGraphHidden ? "Show Blueprint Graph" : "Hide Blueprint Graph"}
+            >
+              {isBlueprintGraphHidden ? (
+                <ChevronLeft className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="flex-1 overflow-hidden p-0 flex flex-col min-h-0">

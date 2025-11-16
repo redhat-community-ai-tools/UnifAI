@@ -25,10 +25,10 @@ from elements.tools.builtin.workplan.create_or_update import CreateOrUpdateWorkP
 from elements.tools.builtin.workplan.assign_item import AssignWorkItemTool
 from elements.tools.builtin.workplan.mark_status import MarkWorkItemStatusTool
 from elements.tools.builtin.workplan.record_execution import RecordLocalExecutionTool
-# SummarizeWorkPlanTool removed - work plan now provided via dynamic context
 from elements.tools.builtin.delegation.delegate_task import DelegateTaskTool
 from elements.tools.builtin.topology.list_adjacent import ListAdjacentNodesTool
 from elements.tools.builtin.topology.get_node_card import GetNodeCardTool
+from elements.tools.builtin.time import GetCurrentTimeTool
 
 
 class OrchestratorPhase(Enum):
@@ -230,6 +230,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
         get_node_card_tool = GetNodeCardTool(
             get_adjacent_nodes=self._get_adjacent_nodes  # Uses orchestrator-provided nodes
         )
+        time_tool = GetCurrentTimeTool()
 
         # Create phase definitions directly in execution order (no interim configs)
         domain_tools_list = list(self._domain_tools)
@@ -244,7 +245,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
         planning_phase = PhaseDefinition(
             name=OrchestratorPhase.PLANNING.value,
             description="Create or update work plan with dependencies and task breakdown",
-            tools=[create_plan_tool, list_nodes_tool, get_node_card_tool],
+            tools=[create_plan_tool, list_nodes_tool, get_node_card_tool, time_tool],
             guidance=(
                 "PHASE: PLANNING - Create or update work plan based on new request.\n\n"
                 "YOUR ROLE IN THIS PHASE:\n"
@@ -313,7 +314,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
         allocation_phase = PhaseDefinition(
             name=OrchestratorPhase.ALLOCATION.value,
             description="Assign work items to appropriate nodes and delegate tasks",
-            tools=[assign_tool, delegate_tool, list_nodes_tool, get_node_card_tool, create_plan_tool],
+            tools=[assign_tool, delegate_tool, list_nodes_tool, get_node_card_tool, create_plan_tool, time_tool],
             guidance=(
                 "PHASE: ALLOCATION - Assign REMOTE work items to appropriate agents and delegate tasks.\n\n"
                 "WORKFLOW:\n"
@@ -359,7 +360,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
         execution_phase = PhaseDefinition(
             name=OrchestratorPhase.EXECUTION.value,
             description="Execute local work items using domain capabilities",
-            tools=[record_execution_tool] + domain_tools_list,
+            tools=[record_execution_tool, time_tool] + domain_tools_list,
             guidance=(
                 "PHASE: EXECUTION - Execute LOCAL work items directly.\n\n"
 
@@ -407,7 +408,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
         monitoring_phase = PhaseDefinition(
             name=OrchestratorPhase.MONITORING.value,
             description="Interpret responses and execution results, manage work item lifecycle",
-            tools=[mark_status_tool, delegate_tool, list_nodes_tool],
+            tools=[mark_status_tool, delegate_tool, list_nodes_tool, time_tool],
             guidance=(
                 "PHASE: MONITORING - Review completed work (both remote and local) and decide next actions.\n\n"
                 "YOUR ROLE:\n"

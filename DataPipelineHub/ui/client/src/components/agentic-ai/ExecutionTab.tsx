@@ -122,9 +122,33 @@ export default function ExecutionTab({
   const [blueprintGraphWidth, setBlueprintGraphWidth] = useState(30);
   const [isResizing, setIsResizing] = useState(false);
   const [activeResizer, setActiveResizer] = useState<'left' | 'right' | null>(null);
+  const [isBlueprintGraphHidden, setIsBlueprintGraphHidden] = useState(false);
+  const [savedBlueprintGraphWidth, setSavedBlueprintGraphWidth] = useState(30);
 
   const { nodeListRef, forceUpdate } = useStreamingData();
   const { user } = useAuth();
+
+  // Toggle Blueprint Graph visibility
+  const toggleBlueprintGraph = () => {
+    if (isBlueprintGraphHidden) {
+      // Show the Blueprint Graph - restore to saved width
+      const availableWidth = 100 - chatSidebarWidth;
+      const restoredGraphWidth = savedBlueprintGraphWidth;
+      const newChatInterfaceWidth = availableWidth - restoredGraphWidth;
+      
+      setChatInterfaceWidth(newChatInterfaceWidth);
+      setBlueprintGraphWidth(restoredGraphWidth);
+      setIsBlueprintGraphHidden(false);
+    } else {
+      // Hide the Blueprint Graph - expand ChatInterface
+      setSavedBlueprintGraphWidth(blueprintGraphWidth); // Save current width
+      const availableWidth = 100 - chatSidebarWidth;
+      
+      setChatInterfaceWidth(availableWidth);
+      setBlueprintGraphWidth(0);
+      setIsBlueprintGraphHidden(true);
+    }
+  };
 
   // Resizable panel handlers
   const handleMouseDown = (resizer: 'left' | 'right') => (e: React.MouseEvent) => {
@@ -789,6 +813,8 @@ export default function ExecutionTab({
               triggerExecution={triggerExecution}
               initialMessages={currentSessionMessages}
               blueprintExists={selectedSession?.blueprintExists ?? true}
+              onToggleBlueprintGraph={toggleBlueprintGraph}
+              isBlueprintGraphHidden={isBlueprintGraphHidden}
             />
           </div>
           
@@ -803,21 +829,24 @@ export default function ExecutionTab({
           )}
         </div>
 
-        {/* Second Resizable divider */}
-        <div
-          className={`w-1 cursor-col-resize transition-colors duration-200 flex-shrink-0 ${
-            isResizing && activeResizer === 'right' ? 'opacity-100' : 'opacity-50'
-          }`}
-          style={{
-            backgroundColor: 'hsl(var(--primary))',
-          }}
-          onMouseDown={handleMouseDown('right')}
-          title="Drag to resize panels"
-        />
+        {/* Second Resizable divider - only show when Blueprint Graph is visible */}
+        {!isBlueprintGraphHidden && (
+          <div
+            className={`w-1 cursor-col-resize transition-colors duration-200 flex-shrink-0 ${
+              isResizing && activeResizer === 'right' ? 'opacity-100' : 'opacity-50'
+            }`}
+            style={{
+              backgroundColor: 'hsl(var(--primary))',
+            }}
+            onMouseDown={handleMouseDown('right')}
+            title="Drag to resize panels"
+          />
+        )}
 
         {/* Blueprint Graph Visualization - Dynamic width */}
-        <div className="flex-shrink-0" style={{ width: `${blueprintGraphWidth}%` }}>
-          <Card className="bg-background-card shadow-card border-gray-800 h-full flex flex-col ml-0">
+        {!isBlueprintGraphHidden && (
+          <div className="flex-shrink-0" style={{ width: `${blueprintGraphWidth}%` }}>
+            <Card className="bg-background-card shadow-card border-gray-800 h-full flex flex-col ml-0">
             {/* TODO: Add below general component that gets 'blueprintId' and showing his title and uid - can be called from multiple places */}
             {/* <CardHeader className="py-3 px-4 border-b border-gray-800">
               {selectedSession && (
@@ -854,6 +883,7 @@ export default function ExecutionTab({
             </CardContent>
           </Card>
         </div>
+        )}
       </div>
 
       {/* Add Flow Modal */}

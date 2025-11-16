@@ -16,7 +16,6 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { motion } from "framer-motion";
-import { Wrench } from "lucide-react";
 import {
   NodeData,
   GraphFlow,
@@ -51,7 +50,6 @@ const AgentNode: React.FC<NodeProps<EnhancedNodeData>> = ({
   const bgmatcher = data.style.match(/bg-\[#([0-9A-Fa-f]{6})\]/);
   const bgcolor = bgmatcher ? bgmatcher[1] : null;
 
-  const hasTools = data.tools && data.tools.length > 0;
   const isInProgress = data.status === "PROGRESS";
   const isDone = data.status === "DONE";
 
@@ -205,7 +203,7 @@ const AgentNode: React.FC<NodeProps<EnhancedNodeData>> = ({
       />
 
       <motion.div
-        className={`rounded-lg ${statusStyles.containerClass} ${statusStyles.borderGlow} transition-all duration-300 ${hasTools ? "min-w-[200px]" : "px-4 py-2"}`}
+        className={`rounded-lg ${statusStyles.containerClass} ${statusStyles.borderGlow} transition-all duration-300 px-4 py-2`}
         initial={{ opacity: 0 }}
         animate={{
           opacity: 1,
@@ -227,10 +225,8 @@ const AgentNode: React.FC<NodeProps<EnhancedNodeData>> = ({
           },
         }}
       >
-        {/* Main node content - 75% of height when tools exist */}
-        <div
-          className={`${hasTools ? "px-4 py-2 border-b border-opacity-30" : "px-4 py-2"} ${hasTools ? "border-white" : ""} flex items-center relative`}
-        >
+        {/* Main node content */}
+        <div className="flex items-center relative">
           <div className="mr-2">{data.icon}</div>
           <div className="flex-1">
             <div className="font-medium text-sm flex items-center gap-2">
@@ -269,33 +265,6 @@ const AgentNode: React.FC<NodeProps<EnhancedNodeData>> = ({
             )}
           </div>
         </div>
-
-        {/* Tools section */}
-        {hasTools && (
-          <div className="px-4 py-2">
-            <div
-              className={`text-xs font-medium mb-2 ${data.style.includes("text-white") ? "text-gray-400" : "text-gray-200"} text-center border-b border-opacity-20 border-current pb-1 flex items-center justify-center gap-1`}
-            >
-              <Wrench className="w-3 h-3 opacity-75" />
-              Tools
-            </div>
-            <div className="grid grid-cols-3 gap-1">
-              {data.tools.map((tool, index) => (
-                <div
-                  key={index}
-                  className={`px-2 py-1 rounded text-xs font-medium truncate text-center ${
-                    data.style.includes("text-white")
-                      ? "bg-white bg-opacity-20 text-white"
-                      : "bg-gray-800 bg-opacity-20 text-white-200"
-                  }`}
-                  title={tool}
-                >
-                  {tool}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* References section */}
         {hasReferences && (
