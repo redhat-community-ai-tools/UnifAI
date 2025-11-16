@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BuildingBlock } from '@/types/graph';
 import { FileText } from 'lucide-react';
+import { maskSecretFieldsInConfig } from '../utils/maskSecretFields';
+import { ElementSchema } from '../types/workspace';
+import axios from '../http/axiosAgentConfig';
 
 interface ResourceDetailsModalProps {
   isOpen: boolean;
@@ -15,6 +18,29 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
   onClose,
   element
 }) => {
+  const [elementSchema, setElementSchema] = useState<ElementSchema | null>(null);
+
+  // Fetch schema when modal opens and element is available
+  useEffect(() => {
+    if (isOpen && element?.workspaceData) {
+      const fetchSchema = async () => {
+        try {
+          // Fetch the element-specific schema
+          const response = await axios.get<ElementSchema>(
+            `/catalog/element.spec.get?category=${element.workspaceData?.category}&type=${element.workspaceData?.type}`
+          );
+          setElementSchema(response.data);
+        } catch (error) {
+          console.error('Error fetching element schema:', error);
+          setElementSchema(null);
+        }
+      };
+      fetchSchema();
+    } else {
+      setElementSchema(null);
+    }
+  }, [isOpen, element?.workspaceData?.category, element?.workspaceData?.type]);
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="bg-background-card border-gray-800 text-foreground max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -79,7 +105,7 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
                 <label className="text-sm font-medium text-gray-400">Full Configuration</label>
                 <div className="mt-2 bg-gray-900 p-4 rounded-md">
                   <pre className="text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto">
-                    {JSON.stringify(element.workspaceData.config, null, 2)}
+                    {JSON.stringify(maskSecretFieldsInConfig(element.workspaceData.config, elementSchema?.config_schema), null, 2)}
                   </pre>
                 </div>
               </div>

@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field, Extra, HttpUrl
+from core.field_hints import SecretHint
 
 
 class BaseLLMConfig(BaseModel):
@@ -14,7 +15,8 @@ class BaseLLMConfig(BaseModel):
     )
     api_key: str = Field(
         "EMPTY",
-        description="API key or token for OpenAI"
+        description="API key or token for OpenAI",
+        json_schema_extra=SecretHint(reason="API credentials should be masked").to_hints()
     )
     base_url: HttpUrl = Field(
         description="Base URL for the OpenAI API"
