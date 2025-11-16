@@ -241,7 +241,7 @@ export default function Sidebar() {
               transition={{ duration: 0.2 }}
               className="flex-grow"
             >
-              <h4 className="text-sm font-medium">{user?.name}</h4>
+              <h4 className="text-sm font-medium">{user?.username}</h4>
               <p className="text-xs text-gray-400">Administrator</p>
             </motion.div>
           )}

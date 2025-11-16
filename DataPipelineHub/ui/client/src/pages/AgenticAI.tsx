@@ -113,6 +113,9 @@ export default function AgenticAI() {
                         onClick={handleLoadFlow}
                         disabled={isLoadingFlow}
                         className="bg-primary hover:bg-[#7525c9] text-white flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        data-umami-event="agent-graphs-load-flow-button" 
+                        data-umami-event-user-id={user?.username }
+                        data-umami-event-flow-name={selectedFlow?.name}
                       >
                         <LoaderCircle className={`h-4 w-4 ${isLoadingFlow ? 'animate-spin' : ''}`} />
                         {isLoadingFlow ? 'Loading...' : 'Load Workflow'}

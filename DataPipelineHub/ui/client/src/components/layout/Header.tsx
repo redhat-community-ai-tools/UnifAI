@@ -177,7 +177,7 @@ export default function Header({ title, onToggleSidebar }: HeaderProps) {
               transition={{ duration: 0.2 }}
               className="flex-grow"
             >
-              <h4 className="text-sm font-medium">{user?.name}</h4>
+              <h4 className="text-sm font-medium">{user?.username}</h4>
             </motion.div>
             
             <motion.div

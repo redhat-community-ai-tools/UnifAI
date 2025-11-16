@@ -18,6 +18,7 @@ interface DocumentGridProps {
   footer?: React.ReactNode;
 }
 
+
 const getFooterText = (doc: Document) => {
   if (isEmbeddingActivelyProcessing(doc)) return <InlineLoader />;
   if (!doc.status || doc.status === PIPELINE_STATUS.PENDING || doc.status === PIPELINE_STATUS.FAILED) return "-";
@@ -70,6 +71,7 @@ const getActions = (
 ];
 
 export const DocumentGrid = ({paginatedDocuments, activeDoc, setActiveDoc, deleteLoading, onDeleteConfirmed, retrying, handleRetry, footer}: DocumentGridProps) => {
+  
   return (
     <>
       <div className="p-6">

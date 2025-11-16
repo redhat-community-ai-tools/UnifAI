@@ -9,6 +9,8 @@ import { ElementGrid } from '../components/agentic-ai/workspace/ElementGrid';
 import { ElementForm } from '../components/agentic-ai/workspace/ElementForm';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
 import { ElementType, ElementInstance } from '../types/workspace';
+import { useAuth } from "@/contexts/AuthContext"; // for user id
+
 
 export default function UserWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -16,6 +18,7 @@ export default function UserWorkspace() {
   const [selectedElementType, setSelectedElementType] = useState<ElementType | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingElement, setEditingElement] = useState<ElementInstance | null>(null);
+  const { user } = useAuth();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [elementToDelete, setElementToDelete] = useState<ElementInstance | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -150,6 +153,8 @@ export default function UserWorkspace() {
                         onClick={handleCreateNew}
                         className="bg-primary hover:bg-opacity-80"
                         disabled={!elementSchema}
+                        data-umami-event="agent-repository-create-new-button" 
+                        data-umami-event-user-id={user?.username}
                       >
                         <Plus className="h-4 w-4 mr-2" />
                         Create New

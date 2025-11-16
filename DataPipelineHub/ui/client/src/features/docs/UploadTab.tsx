@@ -323,7 +323,10 @@ export const UploadTab: React.FC<UploadTabProps> = ({
                 </CardContent>
                 {selectedFiles.length > 0 && !isUploading && (
                     <div className="flex justify-end p-4">
-                        <Button disabled={selectedFiles.length === 0} onClick={handleSubmit}>
+                        <Button disabled={selectedFiles.length === 0} 
+                                onClick={handleSubmit} 
+                                data-umami-event="document-upload-submit-button" 
+                                data-umami-event-user-id={user?.username}>
                             Submit
                         </Button>
                     </div>

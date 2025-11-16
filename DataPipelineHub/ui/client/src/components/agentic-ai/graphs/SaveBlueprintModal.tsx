@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { useAuth } from "@/contexts/AuthContext"; // for user id
 
 interface SaveBlueprintModalProps {
   isOpen: boolean;
@@ -42,6 +43,8 @@ const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
   };
 
   const isFormValid = name.trim().length > 0;
+
+  const { user } = useAuth();
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -94,6 +97,9 @@ const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
             onClick={handleSave}
             disabled={!isFormValid || isLoading}
             className="bg-primary hover:bg-primary/80"
+            data-umami-event="agent-graphs-save-blueprint-button" 
+            data-umami-event-user-id={user?.username}
+            data-umami-event-blueprint-name={name}
           >
             {isLoading ? (
               <div className="flex items-center gap-2">

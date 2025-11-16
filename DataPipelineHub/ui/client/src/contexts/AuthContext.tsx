@@ -18,6 +18,16 @@ export interface AuthContextType {
   checkAuthStatus: () => Promise<void>;
 }
 
+declare global {
+  interface Window {
+    umami?: {
+      identify: (data: Record<string, any>| null) => void;
+      track: (event: string, data?: Record<string, any>) => void;
+    };
+  }
+}
+
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 interface AuthProviderProps {
@@ -63,6 +73,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       setUser(null);
       setIsAuthenticated(false);
+      window.umami?.identify(null); // Clear user identity in Umami
       // Redirect to login
       login();
     }
@@ -88,6 +99,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       checkAuthStatus();
     }
   }, []);
+
+  // Add a NEW useEffect that watches for user changes:
+  useEffect(() => {
+    if (user && isAuthenticated) {
+      // User just logged in or page loaded with authenticated user
+      window.umami?.identify({
+        userId: user.sub,           // or user.username
+        username: user.username,
+        email: user.email,
+        name: user.name
+      });
+    }
+  }, [user, isAuthenticated]);
 
   // Set up token refresh and expiration checking
   useEffect(() => {

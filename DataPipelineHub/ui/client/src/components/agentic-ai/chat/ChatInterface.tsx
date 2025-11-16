@@ -21,7 +21,7 @@ import { useStreamingData } from "../StreamingDataContext";
 import { Message, StreamLogEntry, WorkPlanSnapshot } from "./types";
 import { StreamLogDisplay } from "./StreamLogDisplay";
 import { useToast } from "@/hooks/use-toast";
-
+import { useAuth } from "@/contexts/AuthContext"; // for user id
 // Backend message format
 interface BackendMessage {
   content: string;
@@ -57,6 +57,7 @@ export default function ChatInterface({
   const streamLogDataRef = useRef<Record<string, StreamLogEntry[]>>({});
   const { nodeListRef, clearStream } = useStreamingData();
   const { toast } = useToast();
+  const { user } = useAuth();
 
   // Transform backend messages to frontend format (streamLogs/workPlans, managed separately)
   const transformBackendMessagesToFrontend = useCallback(
@@ -744,6 +745,9 @@ export default function ChatInterface({
               onClick={handleSendMessage}
               disabled={inputMessage.trim() === "" || isTyping || !blueprintExists}
               className="bg-primary hover:bg-[#7525c9] mb-0"
+              data-umami-event="agent-chat-send-message-button" 
+              data-umami-event-user-id={user?.usernamename}
+              data-umami-event-flow-name={runId}
             >
               <Send className="h-4 w-4" />
             </Button>

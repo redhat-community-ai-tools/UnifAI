@@ -12,6 +12,8 @@ import { DocumentTable } from "./DocumentsTable";
 import { PageLoader } from "@/components/shared/PageLoader";
 import { DocumentGrid } from "./DocumentGrid";
 import { deleteDoc, fetchDocuments } from "@/api/docs";
+import { useAuth } from "@/contexts/AuthContext"; // for user id
+
 
 export default function Documents() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -22,8 +24,9 @@ export default function Documents() {
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [retrying, setRetrying] = useState(false);
-
+  
   const { currentPage, setPage, resetPage, itemsPerPage, } = usePaginationStore();
+  const { user } = useAuth();
 
   const { data: documents = [], isLoading, isError, error } = useQuery<Document[]>({
     queryKey: ['documents'],
@@ -94,7 +97,7 @@ export default function Documents() {
 
   const viewButtons = (
     <div className="flex items-center space-x-4">
-      <Button onClick={() => setShowUploadModal(true)}>Upload Document</Button>
+      <Button onClick={() => setShowUploadModal(true)} data-umami-event="upload-document-button" data-umami-event-user-id={user?.username}>Upload Document</Button>
       <div className="flex">
         <Button
           variant={viewMode === "list" ? "default" : "outline"}

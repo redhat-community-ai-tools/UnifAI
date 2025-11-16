@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { EmbedChannel } from "@/types";
 import { DataTable } from "@/components/shared/DataTable";
 import { getColumns } from "./ChannelTable";
+import { useAuth } from "@/contexts/AuthContext"; // for user id
 
 export interface PaginatedChannelTableProps {
   allChannels: EmbedChannel[];
@@ -29,6 +30,7 @@ export function PaginatedChannelTable({
   activeEmbeddingIds = [],
 }: PaginatedChannelTableProps) {
   const [, navigate] = useLocation();
+  const { user } = useAuth();
 
   if (isLoading) {
     return (
@@ -75,6 +77,8 @@ export function PaginatedChannelTable({
                 <Button
                   onClick={() => navigate("/slack/add-source")}
                   className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 hover:-translate-y-0.5 hover:scale-105 hover:shadow-lg transition-all duration-200"
+                  data-umami-event="slack-addsource-button" 
+                  data-umami-event-user-id={user?.username}
                 >
                   <FaPlus className="mr-2" /> Add Channel
                 </Button>
