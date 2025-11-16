@@ -83,7 +83,11 @@ export const DocumentGrid = ({paginatedDocuments, activeDoc, setActiveDoc, delet
                 status={doc.status}
                 subtitle={getDataToDisplay(doc) || `${doc.type_data.page_count} pages | ${doc.type_data.file_type} | ${doc.type_data.file_size}`}
                 metadata={`Uploaded ${new Date(doc.created_at).toLocaleString("en-GB")} by ${doc.upload_by}`}
-                footer={getDataToDisplay(doc) || `${doc.pipeline_stats?.chunks_generated} chunks`}
+                footer={
+                  doc.status === PIPELINE_STATUS.FAILED && doc.type_data?.last_error
+                    ? <span className="text-red-400">{doc.type_data.last_error}</span>
+                    : (getDataToDisplay(doc) || `${doc.pipeline_stats?.chunks_generated} chunks`)
+                }
                 selected={doc === activeDoc}
                 onClick={() => setActiveDoc(doc === activeDoc ? null : doc)}
                 // extraTopRight={getExtraTopRight(doc, handleRetry, retrying)}

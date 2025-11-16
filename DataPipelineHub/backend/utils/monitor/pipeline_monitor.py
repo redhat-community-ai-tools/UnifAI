@@ -316,7 +316,7 @@ class PipelineMonitor():
             if api_endpoint:
                 metrics["api_calls"] = 1
         
-    
+        
         # Track chunk counts
         chunk_count = DocLogParser.extract_chunk_count(log_line)
         if chunk_count:
@@ -326,7 +326,7 @@ class PipelineMonitor():
         embedding_count = DocLogParser.extract_embedding_count(log_line)
         if embedding_count:
             metrics["embeddings_created"] = embedding_count
-        
+
         # # Check for document processing status changes
         # status = DocLogParser.extract_processing_status(log_line)
         # if status:

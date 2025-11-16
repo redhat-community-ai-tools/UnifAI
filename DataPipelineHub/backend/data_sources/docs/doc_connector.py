@@ -80,7 +80,7 @@ class DocumentConnector(DataConnector):
         # Validate the file exists
         if not os.path.exists(document_path):
             logger.error(f"Document not found: {document_path}")
-            return None
+            raise DoclingProcessingError(f"Document not found: {document_path}")
             
         # Validate file extension
         _, file_extension = os.path.splitext(document_path)
@@ -88,7 +88,7 @@ class DocumentConnector(DataConnector):
         
         if file_extension.lower() not in supported_extensions:
             logger.error(f"Unsupported file extension: {file_extension}. Supported types: {supported_extensions}")
-            return None
+            raise DoclingProcessingError(f"Unsupported file extension: {file_extension}. Supported types: {supported_extensions}")
 
         # Check file size
         file_size_mb = os.path.getsize(document_path) / (1024 * 1024)
@@ -96,7 +96,7 @@ class DocumentConnector(DataConnector):
 
         if file_size_mb > max_size_mb:
             logger.error(f"File size ({file_size_mb:.2f} MB) exceeds maximum allowed size ({max_size_mb} MB)")
-            return None
+            raise DoclingProcessingError(f"File size ({file_size_mb:.2f} MB) exceeds maximum allowed size ({max_size_mb} MB)")
             
         try:
             logger.info(f"Processing document: {document_path}")
@@ -133,9 +133,12 @@ class DocumentConnector(DataConnector):
             
         except DoclingProcessingError:
             raise
+        except PdfiumError:
+            # PDF cannot be opened/parsed by PDFium
+            raise DoclingProcessingError("The PDF appears to be corrupted or invalid. Please upload a valid PDF.")
         except Exception as e:
             logger.error(f"Error processing document {document_path}: {str(e)}")
-            return None
+            raise DoclingProcessingError(str(e))
     
     def process_documents(self, document_paths: List[str]) -> List[Dict[str, Any]]:
         """
@@ -202,9 +205,12 @@ class DocumentConnector(DataConnector):
             
         except DoclingProcessingError:
             raise
+        except PdfiumError:
+            # PDF from URL cannot be opened/parsed
+            raise DoclingProcessingError("The PDF at the provided URL appears to be corrupted or invalid. Please try another file or re-upload it.")
         except Exception as e:
             logger.error(f"Error processing document from URL {document_url}: {str(e)}")
-            return None
+            raise DoclingProcessingError(str(e))
     
     def _extract_metadata(self, conversion_result: ConversionResult, upload_by="default", file_size=0) -> Dict[str, Any]:
         """

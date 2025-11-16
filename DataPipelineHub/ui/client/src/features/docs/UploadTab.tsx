@@ -140,8 +140,20 @@ export const UploadTab: React.FC<UploadTabProps> = ({
             setShowUploadModal(false);
         } catch (err) {
             console.error("Upload failed", err);
-            setError("Upload failed. Please try again.");
+            const message = (err as Error)?.message || "Upload failed. Please try again.";
+            setError(message);
+            toast({
+                variant: "destructive",
+                title: (
+                    <span className="inline-flex items-center gap-2">
+                        <CircleX className="h-4 w-4 text-red-500" />
+                        <span>Upload failed</span>
+                    </span>
+                ),
+                description: message,
+            });
             setIsUploading(false);
+            throw err; // Propagate to caller so downstream steps (embed) are not started
         }
     };
 
@@ -179,17 +191,30 @@ export const UploadTab: React.FC<UploadTabProps> = ({
             }
         } catch (error) {
             console.error(error);
-            setError((error as Error).message);
+            const message = (error as Error)?.message || "Failed to start embedding pipeline.";
+            setError(message);
+            toast({
+                variant: "destructive",
+                title: (
+                    <span className="inline-flex items-center gap-2">
+                        <CircleX className="h-4 w-4 text-red-500" />
+                        <span>Embedding failed</span>
+                    </span>
+                ),
+                description: message,
+            });
         }
     }
 
     const handleSubmit = async () => {
         if (selectedFiles.length === 0) return;
-
-        await uploadFiles(selectedFiles);
-
+        try {
+            await uploadFiles(selectedFiles);
+        } catch {
+            // Upload error already toasted; do not proceed to embedding
+            return;
+        }
         const docs = selectedFiles.map((file) => ({source_name: file.name}));
-
         await startPipeline(docs);
         await fetchDocuments();
         setSelectedFiles([]);

@@ -56,6 +56,7 @@ export async function fetchAvailableSlackChannels(
       channel_name: c.channel_name,
       channel_id: c.channel_id,
       is_private: c.is_private,
+      is_app_member: c.is_app_member,
     })),
     nextCursor: data.nextCursor,
     hasMore: data.hasMore,
@@ -141,7 +142,14 @@ export async function fetchEmbeddedSlackChannels(): Promise<EmbedChannel[]> {
     created: formatDate(item.created_at || ''),
     is_private: item.type_data?.is_private || false,
     communityPrivacy: item.type_data?.communityPrivacy || 'public',
-    initialTimestamp: item.type_data?.start_timestamp ? formatDate(item.type_data.start_timestamp) : undefined,
+    // Surface backend error info so UI tooltips can display it
+    type_data: {
+      last_error: item.type_data?.last_error,
+    },
+    // For UI: if dateRange is 'all', mark initialTimestamp as 'all' to customize label
+    initialTimestamp: item.type_data?.dateRange === 'all'
+      ? 'all'
+      : (item.type_data?.start_timestamp ? formatDate(item.type_data.start_timestamp) : undefined),
   }));
 };
 

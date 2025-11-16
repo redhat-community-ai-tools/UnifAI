@@ -57,6 +57,7 @@ export interface Channel {
   channel_name: string;
   channel_id: string;
   is_private: boolean;
+  is_app_member?: boolean;
 }
 
 export interface EmbedChannel {
@@ -68,6 +69,7 @@ export interface EmbedChannel {
   channel_id: string;
   created: string;
   is_private: boolean;
+  initialTimestamp: string;
 }
 export interface Document {
   _id: string;
@@ -82,6 +84,8 @@ export interface Document {
     page_count: number;
     full_text: string;
     file_size: string;
+    last_error?: string;
+    failed_at?: string;
     md5?: string;
   };
   upload_by: string;

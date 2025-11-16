@@ -73,7 +73,7 @@ export default function NotificationPanel({ isOpen, onClose }: NotificationPanel
   };
 
   // Filter only pending notifications for notifications panel
-  const pendingNotifications = receivedNotifications.filter(notification => notification.status === 'pending');
+  const pendingNotifications = receivedNotifications?.filter(notification => notification.status === 'pending');
 
   if (!isOpen) return null;
 

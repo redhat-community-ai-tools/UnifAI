@@ -161,12 +161,6 @@ export default function SlackIntegration() {
     setActiveEmbedding(prev => new Set([...Array.from(prev), ...channelIds]));
 
     refetchStats();
-
-    toast({
-      title: "🚀 Embedding Started",
-      description: `Processing ${channelIds.length} channel${channelIds.length > 1 ? 's' : ''}. This may take a few minutes.`,
-      variant: "default",
-    });
   }, [refetchStats, toast]);
 
   const trackEmbeddingComplete = useCallback((channelIds: string[]) => {
@@ -290,11 +284,16 @@ export default function SlackIntegration() {
 
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-foreground">System Statistics</h3>
-              {activeEmbedding.size > 0 && (
+              {(() => {
+                const activeCount = Array.isArray(embedChannels)
+                  ? embedChannels.filter((c) => isEmbeddingActivelyProcessing(c)).length
+                  : 0;
+                return activeCount > 0;
+              })() && (
                 <div className="flex items-center space-x-2 px-3 py-1 bg-blue-500/10 border border-blue-400/20 rounded-full">
                   <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
                   <span className="text-sm text-blue-400 font-medium">
-                    {activeEmbedding.size} channel{activeEmbedding.size > 1 ? 's' : ''} embedding
+                    {embedChannels.filter((c) => isEmbeddingActivelyProcessing(c)).length} channel{embedChannels.filter((c) => isEmbeddingActivelyProcessing(c)).length > 1 ? 's' : ''} embedding
                   </span>
                 </div>
               )}

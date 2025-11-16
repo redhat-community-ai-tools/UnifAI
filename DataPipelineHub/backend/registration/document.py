@@ -11,7 +11,7 @@ from config.app_config import AppConfig
 from config.constants import DataSource
 from shared.source_types import DocumentMetadata, DocumentTypeData
 from utils.file_hash import compute_file_md5
-from validator.validator import Validator, build_doc_validators
+from validator.validator import Validator, DocValidators
 
 app_config = AppConfig.get_instance()
 upload_folder = app_config.upload_folder
@@ -28,7 +28,7 @@ class DocumentRegistration(RegistrationBase):
     def __init__(self, mongo_storage: Any, upload_by: str, instance: Dict[str, Any]) -> None:
         super().__init__(mongo_storage, upload_by, instance)
         self.upload_folder = upload_folder
-        self._validator = Validator(build_doc_validators(self.mongo_storage))
+        self._validator = Validator(DocValidators().create_validators())
 
     @cached_property
     def source_data(self) -> DocumentSourceData:

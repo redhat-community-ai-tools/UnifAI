@@ -15,8 +15,11 @@ def parse_date_range_to_days(date_range: str) -> int:
     """
     if not date_range:
         return 30 
-        
+       
     date_range = date_range.lower().strip()
+    # Special case: UI sends "all" for all-time selection
+    if date_range in {"all", "all_time", "alltime"}:
+        return 36500  # ~100 years
     
     compact_match = re.search(r'(\d+)([dmyh])', date_range)
     if compact_match:

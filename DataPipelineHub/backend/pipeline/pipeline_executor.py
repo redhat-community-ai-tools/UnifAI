@@ -57,19 +57,21 @@ class PipelineExecutor:
 
     def run(self) -> Any:
         self._run_orchestration()
-        
-        collected   = self._run_collect()          
-        processed   = self._run_process(collected)   
-        embeddings  = self._run_chunk_and_embed(processed)
-        stored      = self._run_store(embeddings)
-        
-        self._run_clean_orchestration()
-        self.repo.update_pipeline_status(
-            pipeline=self.pipeline,
-            new_status=PipelineStatus.DONE.value
-        )
-        self.repo.upsert_source(
-            pipeline=self.pipeline,
-            summary=self.pipeline.summary()
-        )
-        return stored
+        stored = None
+        try:
+            collected   = self._run_collect()
+            processed   = self._run_process(collected)
+            embeddings  = self._run_chunk_and_embed(processed)
+            stored      = self._run_store(embeddings)
+            self.repo.update_pipeline_status(
+                pipeline=self.pipeline,
+                new_status=PipelineStatus.DONE.value
+            )
+            self.repo.upsert_source(
+                pipeline=self.pipeline,
+                summary=self.pipeline.summary()
+            )
+            return stored
+        finally:
+            # Always detach monitoring handler even if any step fails
+            self._run_clean_orchestration()

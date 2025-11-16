@@ -6,6 +6,7 @@ from config.constants import DataSource
 from global_utils.helpers.helpers import calculate_date_range
 from shared.source_types import SlackMetadata, SlackTypeData
 from .base import RegistrationBase, BaseSourceData
+from validator.validator import Validator, SlackValidators
 
 @dataclass(frozen=True)
 class SlackSourceData(BaseSourceData):
@@ -17,6 +18,7 @@ class SlackRegistration(RegistrationBase):
 
     def __init__(self, mongo_storage: Any, upload_by: str, instance: Dict[str, Any]) -> None:
         super().__init__(mongo_storage, upload_by, instance)
+        self._validator = Validator(SlackValidators().create_validators())
 
     @cached_property
     def source_data(self) -> SlackSourceData:
@@ -32,7 +34,23 @@ class SlackRegistration(RegistrationBase):
         )
 
     def run_validator(self) -> Tuple[bool, Dict[str, Any] | None]:
-        # No validator yet for Slack; always pass.
+        validation_args = {
+            "channel_id": self.source_data.source_id,
+            "channel_name": self.source_data.source_name,
+        }
+        is_valid, issue = self._validator.validate(**validation_args)
+
+        if not is_valid:
+            issue_key = (issue or {}).get("issue_key", "ValidationError")
+            message = (issue or {}).get("message", "Validation error")
+            validator_name = (issue or {}).get("validator_name", "Validator")
+            return False, {
+                "channel_name": self.source_data.source_name,
+                "issue_type": issue_key,
+                "message": message,
+                "validator": validator_name,
+            }
+
         return True, None
 
     def _build_metadata(self) -> SlackMetadata:

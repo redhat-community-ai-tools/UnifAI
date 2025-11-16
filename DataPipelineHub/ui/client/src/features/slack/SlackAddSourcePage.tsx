@@ -7,6 +7,7 @@ import Header from '@/components/layout/Header';
 import StatusBar from '@/components/layout/StatusBar';
 import { motion } from 'framer-motion';
 import { useLocation } from 'wouter';
+import { XCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { SlackSetupInfo } from './SlackSetupInfo';
 
@@ -28,11 +29,33 @@ export default function SlackAddSourcePage() {
             queryClient.invalidateQueries({ queryKey: ['embeddedSlackChannels'] });
             queryClient.invalidateQueries({ queryKey: ['embeddedSlackChannelsStats'] });
             
-            toast({
-                title: "🚀 Embedding Task Started",
-                description: "Your Slack channels have been submitted for processing. You'll see them appear in the integration dashboard as they're processed.",
-                variant: "default",
-            });
+            // Surface any backend validation issues (e.g., app not installed in channel)
+            const issues = (data as any)?.registration?.issues || [];
+            const hasIssues = Array.isArray(issues) && issues.length > 0;
+            if (hasIssues) {
+                issues.forEach((issue: any) => {
+                    const issueType = String(issue?.issue_type || "Validation issue");
+                    const message = String(issue?.message || "");
+                    const isBotNotInstalled = issueType === "Channel bot not installed";
+                    toast({
+                        title: isBotNotInstalled ? (
+                            <span className="inline-flex items-center gap-2">
+                                <XCircle className="h-4 w-4 text-red-600" />
+                                <span>{issueType}</span>
+                            </span>
+                        ) : issueType,
+                        description: message,
+                        variant: "destructive",
+                    });
+                });
+            } else {
+                // Only show success toast if there are no blocking issues
+                toast({
+                    title: "🚀 Embedding Task Started",
+                    description: "Your Slack channels have been submitted for processing. You'll see them appear in the integration dashboard as they're processed.",
+                    variant: "default",
+                });
+            }
             
             const channelIds = variables.map(channel => channel.channel_id);
             const channelIdsParam = encodeURIComponent(JSON.stringify(channelIds));
@@ -41,7 +64,12 @@ export default function SlackAddSourcePage() {
         },
         onError: (err: Error) => {
             toast({
-                title: "❌ Submission Failed",
+                title: (
+                    <span className="inline-flex items-center gap-2">
+                        <XCircle className="h-4 w-4 text-red-600" />
+                        <span>Submission Failed</span>
+                    </span>
+                ),
                 description: `Unable to start embedding process: ${err.message}`,
                 variant: "destructive",
             });

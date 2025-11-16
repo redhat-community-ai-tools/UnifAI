@@ -58,7 +58,9 @@ export function getColumns(
             </div>
             {channel.initialTimestamp && (
               <span className="text-xs text-muted-foreground mt-1 ml-5">
-                Messages starting from: {channel.initialTimestamp}
+                {channel.initialTimestamp === 'all'
+                  ? 'Messages from all time'
+                  : `Messages starting from: ${channel.initialTimestamp}`}
               </span>
             )}
           </div>
@@ -70,10 +72,28 @@ export function getColumns(
       header: "Status",
       cell: (info) => {
         const channel = info.row.original;
+        const isFailed = channel.status === PIPELINE_STATUS.FAILED;
+        // Try to extract a failure message if backend provides one
+        const failureMessage = channel.type_data?.last_error;
+        if (!isFailed) {
+          return <StatusBadge status={channel.status} />;
+        }
+
         return (
-          <StatusBadge 
-            status={channel.status} 
-          />
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="inline-flex">
+                  <StatusBadge status={channel.status} />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" align="center" className="max-w-xs">
+                <p className="text-sm">
+                  {failureMessage || "Embedding failed. Open the channel to view details and retry."}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       },
       filterFn: (row, columnId, filterValue) => {

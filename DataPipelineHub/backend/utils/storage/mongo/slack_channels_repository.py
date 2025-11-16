@@ -106,12 +106,43 @@ class SlackChannelsRepository:
         return self.col.count_documents({"project_id": project_id}) > 0
 
     def create_channel_document(self, channel: Dict[str, Any], project_id: str) -> Dict[str, Any]:
-        """Create a channel document with standard fields."""
+        """Create a channel document with standard fields, including membership info if available."""
         return {
             'channel_id': channel.get('id'),
             'channel_name': channel.get('name'),
             'type': 'Private' if channel.get('is_private', False) else 'Public',
             'is_private': channel.get('is_private', False),
             'project_id': project_id,
+            # Prefer provided membership, else fall back to Slack payload if present
+            'is_app_member': bool(channel.get('is_member', False)),
             'last_updated': time.time()
-        } 
+        }
+
+    def find_by_channel_id(self, channel_id: str) -> Optional[Dict[str, Any]]:
+        """Find a single channel document by channel_id."""
+        try:
+            return self.col.find_one({"channel_id": channel_id})
+        except Exception as e:
+            logger.error(f"Error finding channel {channel_id}: {e}")
+            return None
+
+    def update_membership(self, channel_id: str, is_member: bool, timestamp: float) -> bool:
+        """Update membership flag and timestamp on a channel document by channel_id."""
+        try:
+            result = self.col.update_one(
+                {"channel_id": channel_id},
+                {"$set": {"is_app_member": is_member, "last_updated": timestamp}}
+            )
+            return result.modified_count > 0
+        except Exception as e:
+            logger.error(f"Error updating membership for channel {channel_id}: {e}")
+            return False
+
+    def insert_channel(self, channel_doc: Dict[str, Any]) -> bool:
+        """Insert a new channel document."""
+        try:
+            self.col.insert_one(channel_doc)
+            return True
+        except Exception as e:
+            logger.error(f"Error inserting channel {channel_doc.get('channel_id', 'unknown')}: {e}")
+            return False
