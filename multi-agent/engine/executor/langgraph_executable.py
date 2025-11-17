@@ -13,7 +13,7 @@ class LangGraphExecutor(GraphExecutor):
 
     def run(self, initial_state):
         # delegate to LangGraph’s invoke API
-        return self._compiled.invoke(initial_state, config={"streaming": False})
+        return self._compiled.invoke(initial_state, config={"streaming": False, "recursion_limit": 100})
 
     def stream(self, initial_state, *args, **kwargs):
         """
