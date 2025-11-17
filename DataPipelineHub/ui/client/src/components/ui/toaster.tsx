@@ -24,9 +24,9 @@ export function Toaster() {
             onClick={props.variant === "destructive" ? () => dismiss(id) : undefined}
           >
             <div className="grid gap-1">
-              {title && <ToastTitle>{title}</ToastTitle>}
+              {title && <ToastTitle className={props.variant === "destructive" ? "text-base" : undefined}>{title}</ToastTitle>}
               {description && (
-                <ToastDescription>{description}</ToastDescription>
+                <ToastDescription className={props.variant === "destructive" ? "text-base" : undefined}>{description}</ToastDescription>
               )}
             </div>
             {action}

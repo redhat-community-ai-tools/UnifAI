@@ -26,27 +26,24 @@ steps:
       3. Select **External** and click **Create**
       4. Fill out the remaining steps until you complete the creation
       
-      **Important:** When you first try to use the OAuth credentials, you may see a warning message: **"This app isn't verified"** or **"Google hasn't verified this app"**. This is normal for development/testing. To proceed:
+      **Optional:** When you first try to use the OAuth credentials, you may see a warning message: **"This app isn't verified"** or **"Google hasn't verified this app"**. This is normal for development/testing. To proceed:
       - Click **Advanced** at the bottom of the warning screen
       - Click **Go to [Your App Name] (unsafe)** to continue
       - This allows you to use the app during development
       
-      ## Create OAuth Credentials
+      ## Create OAuth Credentials and Download Credentials JSON File
       
       1. Go to **APIs & Services → Credentials** (if you can't find it, click on the Google Cloud logo to return to the main console, where you will find it)
       2. Click **Create Credentials → OAuth Client ID**
       3. Select **Web Application**
       4. Configure:
          - **Name**: "UnifAI Google MCP Server" (or any name)
-         - **Authorized JavaScript origins**: `http://localhost:8000`
-         - **Authorized redirect URIs**: `http://localhost:8000/oauth2callback`
+         - **Authorized JavaScript origins**: `http://localhost:8000` (locally) or `http://<your-machine-address>:8000` (remotely)
+         - **Authorized redirect URIs**: `http://localhost:8000/oauth2callback` (locally) or `http://<your-machine-address>:8000/oauth2callback` (remotely)
         Note that this port should be unused on your local machine so that the MCP server can bind to it.
-      5. Click **Create**
-      
-      ## Download Credentials JSON File
-      
-      1. After creating the OAuth Client ID, you'll see a dialog with your credentials
-      2. Click **Download JSON** to download the credentials file
+      5. Click **Create**      
+      6. After creating the OAuth Client ID, you'll see a dialog with your credentials
+      7. Click **Download JSON** to download the credentials file
       
 
   - step: 2
@@ -58,7 +55,7 @@ steps:
       
       ## Prerequisites
       
-      Ensure you have **Docker** (or Podman) and **Docker Compose** installed and running. Git is also required.
+      Ensure you have **Docker** (or Podman) and **docker-compose** (or podman-compose) installed and running. Git is also required.
       
       ## Prepare Files
       
@@ -105,7 +102,7 @@ steps:
       1. In UnifAI, go to Agentic Inventory -> Providers -> MCP Provider
       2. Click "Create New" and locate the **SSE Endpoint** field
       2. Enter: `http://YOUR_IP_ADDRESS:8000/mcp`
-         - Replace `YOUR_IP_ADDRESS` with the IP shown by the script
+         - Replace `YOUR_IP_ADDRESS` with your public IP address (either locally or remotely)
          - Example: `http://192.168.1.100:8000/mcp`
       3. Wait for validation, then click **Save**
       

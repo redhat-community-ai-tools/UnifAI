@@ -27,6 +27,7 @@ export const SlackSetupInfo = ({ className = '' }: SlackSetupInfoProps) => {
   const { toast } = useToast();
   const [isExpanded, setIsExpanded] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [isNoticeCopied, setIsNoticeCopied] = useState(false);
 
   const copyTagUser = () => {
     navigator.clipboard.writeText('TAG-001');
@@ -44,10 +45,29 @@ export const SlackSetupInfo = ({ className = '' }: SlackSetupInfoProps) => {
     }, 3000);
   };
 
+  const consentNotice = [
+    "Please be advised that this channel is now monitored by an AI tool for content analysis.",
+    "This tool anonymously collects and embeds message content for processing.",
+    "Your individual messages will not be linked to your identity.",
+    "If you do not consent to this anonymous data collection, please opt out by leaving the channel."
+  ].join("\n\n");
+
+  const copyConsentNotice = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    navigator.clipboard.writeText(consentNotice);
+    setIsNoticeCopied(true);
+    toast({
+      title: "Copied!",
+      description: "The channel notice has been copied to your clipboard.",
+      variant: "default",
+    });
+    setTimeout(() => setIsNoticeCopied(false), 3000);
+  };
+
   const steps = [
     {
       icon: Settings,
-      title: "Open Channel Settings",
+      title: "Open Channel Details",
       description: "Navigate to your channel and click on the channel name, then select 'Integrations'",
       status: "required"
     },
@@ -195,6 +215,34 @@ export const SlackSetupInfo = ({ className = '' }: SlackSetupInfoProps) => {
                   </motion.div>
                 );
               })}
+            </div>
+
+            {/* Consent/Monitoring Notice - shown after "App Access Granted" step */}
+            <div className="mb-6">
+              <div className="flex items-start justify-between p-4 rounded-lg bg-muted/40 border border-border shadow-sm">
+                <div className="pr-3">
+                  <h5 className="text-sm font-semibold text-foreground mb-2">
+                    Channel Notice
+                  </h5>
+                  <p className="text-xs text-red-600 dark:text-red-400 mb-2">
+                    Past this message in the channel after app access is granted:
+                  </p>
+                  <pre className="text-xs whitespace-pre-wrap bg-background/60 p-3 rounded-md border border-border/50">
+{consentNotice}
+                  </pre>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={copyConsentNotice}
+                  className={`ml-3 self-start ${
+                    isNoticeCopied ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'
+                  }`}
+                >
+                  {isNoticeCopied ? <Check className="w-4 h-4 mr-1" /> : <Copy className="w-4 h-4 mr-1" />}
+                  {isNoticeCopied ? 'Copied!' : 'Copy'}
+                </Button>
+              </div>
             </div>
 
             {/* Help Link */}

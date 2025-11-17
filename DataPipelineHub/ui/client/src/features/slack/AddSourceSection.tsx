@@ -385,45 +385,10 @@ const AddSourceSection = forwardRef<AddSourceSectionHandle, AddSourceSectionProp
     };
   }, [scope, totalChannels]);
 
-  const noticeLines = [
-    'Please be advised that this channel is now monitored by an AI tool for content analysis.',
-    'This tool anonymously collects and embeds message content for processing.',
-    'Your individual messages will not be linked to your identity.',
-    'If you do not consent to this anonymous data collection, please opt out by leaving the channel.',
-  ];
-
   return (
     <Card className="bg-background-card shadow-card border-gray-800">
       <CardContent className="p-4 space-y-4">
-        <AnimatePresence>
-          {selectedChannels.length > 0 && (
-            <motion.div
-              key="ai-monitoring-notice"
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.25 }}
-              className="relative"
-            >
-              <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-3">
-                <div className="text-sm text-white space-y-1">
-                  {noticeLines.map((line, idx) => (
-                    <motion.p
-                      key={idx}
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.2, delay: idx * 0.1 }}
-                    >
-                      {line}
-                    </motion.p>
-                  ))}
-                </div>
-              </div>
-              <div className="absolute -bottom-2 left-6 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-amber-500/20"></div>
-              <div className="absolute -bottom-[7px] left-6 w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[7px] border-t-amber-500/10"></div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        
         <h3 className="text-lg font-semibold">Channel Selection</h3>
 
         <div className="flex items-center justify-between">
