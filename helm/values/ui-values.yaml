@@ -22,7 +22,7 @@ ui:
     # MULTIAGENT_HOST: "http://unifai-multiagent-be-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
 
   image:
-    repository: images.paas.redhat.com/unifai/datapipelinehub/ui
+    repository: images.paas.redhat.com/unifai/ui
     tag: "latest"
     pullPolicy: Always
 

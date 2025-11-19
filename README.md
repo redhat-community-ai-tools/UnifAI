@@ -23,7 +23,7 @@ UnifAI is engineered to:
 
 The application is divided into three main components:
 
-### 1. 🔧 Data Preparation Backend
+### 1. 🔧 RAG Backend
 
 This service is responsible for:
 
@@ -35,7 +35,7 @@ This service is responsible for:
   - Chunking and embedding status
 
 📘 Reference Documentation:  
-👉 [`Data Preparation README`](DataPipelineHub/backend/README.md)
+👉 [`RAG README`](backend/README.md)
 
 ---
 
@@ -57,7 +57,7 @@ This is the "AI" layer representation of the system responsible for:
 
 The GUI is a React-based frontend that serves two main functions:
 
-#### a. Data Preparation View
+#### a. RAG View
 - Shows statistics and metadata per data source:
   - Number of documents available
   - Chunking/embedding status
@@ -80,7 +80,7 @@ To make your onboarding smooth, we recommend the following steps:
 
 Start with the following:
 
-- [`Data Preparation README`](DataPipelineHub/backend/README.md): Understand how we ingest and embed data.  
+- [`RAG README`](backend/README.md): Understand how we ingest and embed data.  
 - [`Agentic AI README`](LINK 2): Learn about how our agentic system works and how execution plans are structured.
 
 ### ✅ 2. Explore the Code Repos

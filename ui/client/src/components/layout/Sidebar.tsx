@@ -103,7 +103,7 @@ export default function Sidebar() {
             transition={{ duration: 0.2 }}
             className="px-3 mb-2"
           >
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">Data Preparation</span>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">RAG</span>
           </motion.div>
         )}
         <ul>

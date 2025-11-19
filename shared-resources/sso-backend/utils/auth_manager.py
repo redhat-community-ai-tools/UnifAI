@@ -83,6 +83,7 @@ class AuthManager:
                 else f"http://{config.hostname_local}:{config.port}/api/auth/callback"
             )
 
+
             logger.info(f"[LOGIN] session before redirect: {session.items()}")
             return self.keycloak_client.authorize_redirect(redirect_uri)
 
