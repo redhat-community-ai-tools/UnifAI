@@ -12,4 +12,4 @@ docling
 Authlib
 PyJWT
 python-dotenv
-pydantic
+pydantic==2.11.7
