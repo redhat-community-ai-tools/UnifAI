@@ -17,7 +17,7 @@ llms:
     type: openai
     config:
       type: openai
-      model_name: gemini-2.5-flash-lite
+      model_name: gemini-2.5-flash
       api_key: AIzaSyCnplFW816wfu0jNAyoxQQSQkNdX8yxgQc
       base_url: https://generativelanguage.googleapis.com/v1beta/openai
 
@@ -32,14 +32,14 @@ retrievers: [ ]
 # ----------------------------
 tools:
   - rid: ssh_tool_rid
-    name: RHDP-2bf7x
+    name: myVM
     type: ssh_exec
     config:
       type: ssh_exec
-      host: ssh.ocpv05.rhdp.net
-      port: 31202
-      username: lab-user
-      password: WZO71ZhKmGHC
+      host: 10.46.254.131
+      port: 22
+      username: cloud-user
+      password: password
 
 # ----------------------------
 # Conditions
