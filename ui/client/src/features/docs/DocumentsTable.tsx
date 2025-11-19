@@ -77,7 +77,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
     {
       accessorKey: "type_data.file_type",
       header: "File Type",
-      cell: ({ row }) => row.original.type_data.file_type.toUpperCase(),
+      cell: ({ row }) => row.original.type_data.file_type?.toUpperCase(),
       meta: {
         align: "center",
         filterType: "select",
