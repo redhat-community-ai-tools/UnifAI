@@ -83,6 +83,7 @@ class AuthManager:
                 else f"http://{config.hostname_local}:{config.port}/api/auth/callback"
             )
 
+
             logger.info(f"[LOGIN] session before redirect: {session.items()}")
             return self.keycloak_client.authorize_redirect(redirect_uri)
 
@@ -120,12 +121,12 @@ class AuthManager:
                 
                 # Redirect to frontend
                 frontend_url = config.get('frontend_url', 'http://localhost:5000')
-                return redirect(f"{config.frontend_url}?auth=success")
+                return redirect(f"http://127.0.0.1:5000?auth=success")
                 
             except AuthlibBaseError as e:
                 logger.error(f"Authentication error: {str(e)}")
                 frontend_url = config.get('frontend_url', 'http://localhost:5000')
-                return redirect(f"{config.frontend_url}?auth=error")
+                return redirect(f"http://127.0.0.1:5000?auth=error")
 
         
         @self.app.route('/api/auth/logout', methods=['POST'])

@@ -3,7 +3,7 @@ from global_utils.config.config import SharedConfig
 
 class AppConfig(SharedConfig):
 
-    hostname_local: str = "0.0.0.0"
+    hostname_local: str = "127.0.0.1"
     port: str = "13456"
 
     # Keycloak Configuration

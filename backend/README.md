@@ -1,7 +1,7 @@
 # Data Hub - Backend
 
-## Data Preparation Pipeline Architecture
-Modular and extensible data preparation pipeline for integrating Jira, Slack, and document sources into vector databases for future LLM retrieval.
+## RAG Pipeline Architecture
+Modular and extensible rag pipeline for integrating Jira, Slack, and document sources into vector databases for future LLM retrieval.
 
 ## High-Level Architecture
 The architecture follows a modular approach with clear separation of concerns:

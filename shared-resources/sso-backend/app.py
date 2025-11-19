@@ -32,4 +32,4 @@ register_all_endpoints(app)
 RequestRules(app)
 
 if __name__ == '__main__':
-    app.run(host=config.hostname_local, port=config.port, debug=True)
+    app.run(host="0.0.0.0", port=config.port, debug=True)

@@ -1,0 +1,84 @@
+description: |
+  Basic flow with LLM agent
+
+name: |
+  LLM Agent Node 
+# ----------------------------
+# LLM Definitions
+# ----------------------------
+llms:
+  - rid: openai_llm_rid
+    name: openai_llm
+    type: openai
+    config:
+      type: openai
+      model_name: gemini-2.5-flash-lite
+      api_key: AIzaSyCnplFW816wfu0jNAyoxQQSQkNdX8yxgQc
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai
+
+# ----------------------------
+# Retriever
+# ----------------------------
+retrievers: [ ]
+
+
+# ----------------------------
+# Tool Stubs
+# ----------------------------
+tools: [ ]
+
+# ----------------------------
+# Conditions
+# ----------------------------
+conditions: [ ]
+
+nodes:
+  - rid: user_question_node_rid
+    name: User Question Node
+    type: user_question_node
+    config:
+      type: user_question_node
+
+  - rid: final_answer_node_rid
+    name: Final Answer None
+    type: final_answer_node
+    config:
+      type: final_answer_node
+
+  - rid: agent_with_llm_direct
+    name: Agent With LLM
+    type: custom_agent_node
+    config:
+      type: custom_agent_node
+      llm: openai_llm_rid
+      system_message: |
+        Your job is to answer the user's question.
+
+
+# ----------------------------
+# Plan Steps
+# ----------------------------
+plan:
+  - uid: user_input
+    node: user_question_node_rid
+    meta:
+      display_name: User Question
+      description: |
+        The user inputs a question or request.
+
+  - uid: agent_with_llm
+    after: user_input
+    node: agent_with_llm_direct
+    meta:
+      display_name: LLM Agent
+      description: |
+        Basic agent with LLM brain
+
+  - uid: finalize
+    after: agent_with_llm
+    node: final_answer_node_rid
+    meta:
+      display_name: Final Answer
+      description: |
+        Provide the final answer to the user based on all gathered information.
+

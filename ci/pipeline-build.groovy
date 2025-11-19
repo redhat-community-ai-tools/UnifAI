@@ -45,7 +45,7 @@ def buildDockerImage(String component) {
 
     // Special-case UI: Dockerfile lives under deployment/, and context must be the UI folder
     // will be fix in followup ticket to fix all non-importnet issues.
-    if (component == "DataPipelineHub/ui") {
+    if (component == "ui") {
         dockerfile = "deployment/Dockerfile"
         context = "${component}"
 
@@ -127,7 +127,7 @@ pipeline {
                         ]]
                     ])
                 }
-                dir("${buildParams.DevRoot}/${params.BRANCH}/DataPipelineHub/ui/") {
+                dir("${buildParams.DevRoot}/${params.BRANCH}/ui/") {
                     checkout([$class: 'GitSCM',
                         branches: [[name: "${buildParams.CredMainRepoBranch}"]],
                         doGenerateSubmoduleConfigurations: false,
@@ -168,7 +168,7 @@ pipeline {
                     when { expression { params.build_dataflow_backend } }
                     steps {
                         script {
-                            def component = "DataPipelineHub/backend"
+                            def component = "backend"
                             def module = ""
                             dir("${buildParams.DevRoot}/${params.BRANCH}/") {
                                 cleanWorkspace(component)
@@ -203,7 +203,7 @@ pipeline {
                     when { expression { params.build_gui } }
                     steps {
                         script {
-                            def component = "DataPipelineHub/ui"
+                            def component = "ui"
                             def module = ""
                             dir("${buildParams.DevRoot}/${params.BRANCH}/") {
                                 cleanWorkspace(component)

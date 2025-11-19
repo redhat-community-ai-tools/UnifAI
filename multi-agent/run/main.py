@@ -178,7 +178,7 @@ def run_test_new_version(app, blueprint_id):
     session = app.session_service.create(user_id="alice", blueprint_id=blueprint_id)
     print(f"Created session with id: {session.run_context.run_id}")
     print(app.session_service.execute(session_id=session.run_context.run_id,
-                                      inputs={"user_prompt": "what is latest issues in GENIE project?"},
+                                      inputs={"user_prompt": "what can you tell me about Redhat?"},
                                       stream=False,
                                       scope="public"))
 
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     blueprint_loader = YAMLBlueprintLoader()
     # raw = blueprint_loader.load("run/branch_router_demo.yml")
     # raw = blueprint_loader.load("run/boolean_router_demo.yml")
-    raw = blueprint_loader.load("run/blueprint_mcp_agent.yml")
+    raw = blueprint_loader.load("run/blueprint_llm_agent.yml")
     # raw = blueprint_loader.load("run/blueprint_SDJ.yml")
     blueprint_id = app.blueprint_service.save_draft(user_id="alice", draft_dict=raw)
     blueprint_spec = app.blueprint_service.load_resolved(blueprint_id=blueprint_id)

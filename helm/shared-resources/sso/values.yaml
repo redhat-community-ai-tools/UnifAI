@@ -126,7 +126,7 @@ backend:
 # TODO : follow up story for sso-nginx GENIE-812
 # nginx:
 #   image:
-#     repository: images.paas.redhat.com/unifai/datapipelinehub/ui
+#     repository: images.paas.redhat.com/unifai/ui
 #     tag: "latest"
 #     pullPolicy: Always
 
