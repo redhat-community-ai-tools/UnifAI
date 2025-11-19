@@ -121,12 +121,12 @@ class AuthManager:
                 
                 # Redirect to frontend
                 frontend_url = config.get('frontend_url', 'http://localhost:5000')
-                return redirect(f"http://127.0.0.1:5000?auth=success")
+                return redirect(f"{config.frontend_url}?auth=success")
                 
             except AuthlibBaseError as e:
                 logger.error(f"Authentication error: {str(e)}")
                 frontend_url = config.get('frontend_url', 'http://localhost:5000')
-                return redirect(f"http://127.0.0.1:5000?auth=error")
+                return redirect(f"{config.frontend_url}?auth=error")
 
         
         @self.app.route('/api/auth/logout', methods=['POST'])
