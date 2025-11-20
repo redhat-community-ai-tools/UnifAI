@@ -32,7 +32,7 @@ function App() {
             <ProjectProvider>
               <ProtectedRoute>
                 <Switch>
-                  <Route path="/" component={Dashboard} />
+                  <Route path="/" component={AgenticAI} />
                   <Route path="/jira" component={JiraIntegration} />
                   <Route path="/slack" component={SlackIntegration} />
                   <Route path="/documents" component={DocumentsPage} />

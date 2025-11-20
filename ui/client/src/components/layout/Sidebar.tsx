@@ -110,10 +110,11 @@ export default function Sidebar() {
           <NavItem 
             icon={<FaTachometerAlt className="sidebar-icon" />} 
             label="Overview" 
-            to="/"
-            isActive={location === '/'}
+            to="/overview"
+            isActive={location === '/overview'}
             status={null}
             isCollapsed={isCollapsed}
+            disabled={true}
           />
           <NavItem 
             icon={<FaSlack className="sidebar-icon" />} 
@@ -122,6 +123,7 @@ export default function Sidebar() {
             isActive={location === '/slack'}
             status={null}
             isCollapsed={isCollapsed}
+            disabled={true}
           />
           <NavItem 
             icon={<FaFileAlt className="sidebar-icon" />} 
@@ -130,6 +132,7 @@ export default function Sidebar() {
             isActive={location === '/documents'}
             status={null}
             isCollapsed={isCollapsed}
+            disabled={true}
           />
         </ul>
 
