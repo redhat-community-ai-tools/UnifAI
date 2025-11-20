@@ -398,7 +398,8 @@ const getConditionalEdgeStyle = (
 // Function to parse the JSON graph flow into ReactFlow nodes and edges
 const parseGraphFlow = (
   graphFlow: GraphFlow,
-  fetchResourceByIdFn?: (refId: string) => Promise<any>
+  fetchResourceByIdFn?: (refId: string) => Promise<any>,
+  preFetchedBlocks?: BuildingBlock[]
 ): { nodes: Node<EnhancedNodeData>[]; edges: Edge[] } => {
   if (!graphFlow || !graphFlow.plan) {
     return { nodes: [], edges: [] };
@@ -577,7 +578,7 @@ const parseGraphFlow = (
         tools: nodeTools || [],
         status: "IDLE" as NodeStatus,
         workspaceData: nodeDefinition,
-        allBlocks: graphFlow.nodes || [],
+        allBlocks: preFetchedBlocks || graphFlow.nodes || [],
         fetchResourceById: fetchResourceByIdFn,
       },
       position: { x: xOffset, y: yOffset },
@@ -810,6 +811,20 @@ export default function ReactFlowGraph({
     }
   }, [isLiveRequest, setNodes]);
 
+  // Helper function to extract all reference IDs from a config object
+  const extractAllReferences = (obj: any, refs: Set<string> = new Set()): void => {
+    if (!obj || typeof obj !== "object") return;
+    
+    for (const value of Object.values(obj)) {
+      if (typeof value === "string" && value.startsWith("$ref:")) {
+        refs.add(value.substring(5));
+      }
+      if (typeof value === "object" && value !== null) {
+        extractAllReferences(value, refs);
+      }
+    }
+  };
+
   // Function to convert graph flow JSON to ReactFlow format
   const convertGraphFlowToReactFlow = async (graphId: string) => {
     try {
@@ -826,8 +841,48 @@ export default function ReactFlowGraph({
       );
 
       if (targetBlueprintObj) {
+        const graphFlow = targetBlueprintObj.spec_dict;
+        
+        // Extract all unique reference IDs from all nodes
+        const allRefIds = new Set<string>();
+        graphFlow.nodes?.forEach((node: { config: any; }) => node.config && extractAllReferences(node.config, allRefIds));
+
+        // Fetch all referenced resources in parallel
+        const fetchedBlocks = allRefIds.size > 0 ? (await Promise.all(
+          Array.from(allRefIds).map(async (refId) => {
+            try {
+              const data = await fetchResourceById(refId);
+              if (!data) return null;
+              const { rid, name, type, cfg_dict, ...rest } = data;
+              return {
+                id: rid || refId,
+                type: type || 'unknown',
+                label: name || refId,
+                color: "#FFB300",
+                description: "",
+                workspaceData: { ...rest, rid, name, type, config: cfg_dict }
+              } as BuildingBlock;
+            } catch (error) {
+              console.error(`Failed to fetch referenced resource ${refId}:`, error);
+              return null;
+            }
+          })
+        )).filter((block): block is BuildingBlock => block !== null) : [];
+
+        // Combine with existing nodes from graphFlow
+        const existingBlocks = graphFlow.nodes?.map((node: NodeDefinition) => ({
+          id: node.rid,
+          type: node.type,
+          label: node.name,
+          color: "#FFB300",
+          description: "",
+          workspaceData: node
+        })) as BuildingBlock[] || [];
+        const allBlocks = [...existingBlocks, ...fetchedBlocks];
+
+        // Now parse the graph with pre-fetched resources
         const { nodes: newNodes, edges: newEdges } =
-          parseGraphFlow(targetBlueprintObj.spec_dict, fetchResourceById);
+          parseGraphFlow(graphFlow, fetchResourceById, allBlocks);
 
         setNodes(newNodes);
         setEdges(newEdges);
