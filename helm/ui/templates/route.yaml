@@ -3,6 +3,7 @@ kind: Route
 metadata:
   annotations:
     openshift.io/host.generated: "true"
+    haproxy.router.openshift.io/timeout: "600s"
   labels:
     {{- include "ui.labels" . | nindent 4 }}
   name: {{ include "ui.fullname" . }}
