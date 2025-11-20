@@ -1,5 +1,6 @@
 import { Route, Switch } from "wouter";
-import Dashboard from "@/pages/Dashboard";
+import RagOverview from "@/pages/RagOverview";
+import AgenticOverview from "@/pages/AgenticOverview";
 import Configuration from "@/pages/Configuration";
 import JiraIntegration from "@/pages/JiraIntegration";
 import AgenticAI from "@/pages/AgenticAI";
@@ -32,7 +33,8 @@ function App() {
             <ProjectProvider>
               <ProtectedRoute>
                 <Switch>
-                  <Route path="/" component={AgenticAI} />
+                  <Route path="/" component={AgenticOverview} />
+                  <Route path="/overview" component={RagOverview} />
                   <Route path="/jira" component={JiraIntegration} />
                   <Route path="/slack" component={SlackIntegration} />
                   <Route path="/documents" component={DocumentsPage} />

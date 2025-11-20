@@ -139,6 +139,18 @@ def get_user_blueprints(user_id):
         return jsonify({"error": str(e)}), 500
 
 
+@sessions_bp.route("/session.user.blueprint.counts.get", methods=["GET"])
+@from_query({
+    "user_id": fields.Str(data_key="userId", required=True),
+})
+def get_user_blueprint_counts(user_id):
+    try:
+        svc = current_app.container.session_service
+        return jsonify(svc.get_user_blueprint_session_counts(user_id)), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @sessions_bp.route("/session.delete", methods=["DELETE"])
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),

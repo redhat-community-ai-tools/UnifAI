@@ -109,7 +109,7 @@ export default function Sidebar() {
         <ul>
           <NavItem 
             icon={<FaTachometerAlt className="sidebar-icon" />} 
-            label="Overview" 
+            label="RAG Overview" 
             to="/overview"
             isActive={location === '/overview'}
             status={null}
@@ -147,6 +147,14 @@ export default function Sidebar() {
           </motion.div>
         )}
         <ul>
+          <NavItem 
+            icon={<FaTachometerAlt className="sidebar-icon" />} 
+            label="Agentic AI Overview" 
+            to="/"
+            isActive={location === '/'}
+            status={null}
+            isCollapsed={isCollapsed}
+          />
           <NavItem 
               icon={<FaFile className="sidebar-icon" />} 
               label="Agentic Inventory" 

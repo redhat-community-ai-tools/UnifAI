@@ -118,6 +118,19 @@ class SessionService:
         docs = self._manager.list_docs(user_id)
         return list({d.get("blueprint_id") for d in docs})
 
+    def get_user_blueprint_session_counts(self, user_id: str) -> Dict[str, int]:
+        """
+        Get count of sessions by blueprint_id for a user.
+        Returns a dictionary mapping blueprint_id to session count.
+        """
+        docs = self._manager.list_docs(user_id)
+        counts: Dict[str, int] = {}
+        for doc in docs:
+            blueprint_id = doc.get("blueprint_id")
+            if blueprint_id:
+                counts[blueprint_id] = counts.get(blueprint_id, 0) + 1
+        return counts
+
     def delete(self, run_id: str) -> bool:
         """
         Delete a session by run_id. Returns True if deleted, False if not found.
