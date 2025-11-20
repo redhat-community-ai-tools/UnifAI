@@ -24,8 +24,8 @@ def process_pdf_directory() -> None:
     config.set_config_value("chunk_size", 1500)
     config.set_config_value("chunk_overlap", 300)
 
-    # Note: These settings are stored in config but not used by docling currently
-    # They're kept for future compatibility if docling adds these features
+    # Note: These settings are stored in config but not used by the docling service currently
+    # They're kept for future compatibility if the docling service adds these features
     config.set_config_value("extract_tables", True)
     config.set_config_value("use_ocr", True)  # Enable OCR for scanned documents
     

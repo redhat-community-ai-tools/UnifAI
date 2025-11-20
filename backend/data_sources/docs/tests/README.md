@@ -31,8 +31,8 @@ python -m data_sources.docs.tests.pdf_flow_test rag_flow
 * analyze_document_sections – Checking how the separation into different sections of an .md file works
 * chunking_test – Tests chunking logic on PDF text content
 * embedding_test – Validates that embeddings are generated correctly
-* process_pdf_directory - Going over all the PDFs in certain folder, proccessing them with docling
-* process_url_document - Proccessing PDF file (provided from the web) with docling
+* process_pdf_directory - Going over all the PDFs in certain folder, processing them with the docling service
+* process_url_document - Processing PDF file (provided from the web) with the docling service
 * retrieval_test – Demonstrates RAG retrieval operation based on PDF chunking & embeddings
 
 ### 📝 Notes

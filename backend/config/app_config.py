@@ -15,6 +15,9 @@ class AppConfig(SharedConfig):
 
     qdrant_ip: str = "0.0.0.0"
     qdrant_port: str = "6333"
+    
+    docling_service_url: str = "http://docling-service:5001"
+    docling_service_timeout: int = 300
 
     # Slack Configuration
     default_slack_bot_token: str = "xoxb-2253118358-8783454711008-P7XnZRur3OGpo6YIXOELahY1"

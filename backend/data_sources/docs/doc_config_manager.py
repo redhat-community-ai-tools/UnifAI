@@ -18,12 +18,12 @@ class DocConfigManager(ConfigurationManager):
         "supported_extensions": [".pdf", ".docx", ".txt", ".md"],
         "max_file_size_mb": 50,
         "timeout_seconds": 300,
-        # Note: The following parameters are kept for future use if docling adds these features
-        # Currently docling.DocumentConverter.convert() doesn't support these parameters
-        "use_ocr": False,  # Not currently supported by docling
-        "ocr_language": "eng",  # Not currently supported by docling
-        "extract_tables": True,  # Not currently supported by docling
-        "extract_images": False,  # Not currently supported by docling
+        # Note: The following parameters are kept for future use if the docling service adds these features
+        # Currently the docling service may not support all these parameters
+        "use_ocr": False,  # Not currently supported by docling service
+        "ocr_language": "eng",  # Not currently supported by docling service
+        "extract_tables": True,  # Not currently supported by docling service
+        "extract_images": False,  # Not currently supported by docling service
         "image_extraction_path": "./extracted_images/",
     }
     

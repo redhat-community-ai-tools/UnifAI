@@ -8,8 +8,9 @@ langchain-openai==0.3.24
 numpy
 sentence-transformers
 qdrant-client
-docling
 Authlib
 PyJWT
 python-dotenv
 pydantic==2.11.7
+pydantic_settings
+jsonschema
