@@ -1,1 +1,1 @@
-from .spec import SlackRetrieverElementSpec
+# from .spec import SlackRetrieverElementSpec
