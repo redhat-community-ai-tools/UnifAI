@@ -38,7 +38,7 @@ export default defineConfig({
       },
       // Proxy for api2 (assuming this is still local or another service)
       '/api2': {
-        target: process.env.MULTIAGENT_HOST,//'http://127.0.0.1:13457', // Your second backend
+        target: "http://127.0.0.1:8002", //process.env.MULTIAGENT_HOST,//'http://127.0.0.1:13457', // Your second backend
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api2/, '/api'), // This rewrites /api2 to nothing
         // secure: false, // Only needed if this target is HTTPS and you have SSL issues

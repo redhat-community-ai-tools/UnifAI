@@ -16,6 +16,12 @@ class AppConfig(SharedConfig):
     qdrant_ip: str = "0.0.0.0"
     qdrant_port: str = "6333"
 
+    # Analytics Access Control
+    # Add usernames or emails that can access analytics
+    analytics_allowed_users: list = [
+        'yhabushi',          # Add your username here
+    ]
+
     # Slack Configuration
     default_slack_bot_token: str = "xoxb-2253118358-8783454711008-P7XnZRur3OGpo6YIXOELahY1"
     default_slack_user_token: str = "xoxp-2253118358-5985274029168-9985689955216-3ed225bbc2990579845542a1921563d4"

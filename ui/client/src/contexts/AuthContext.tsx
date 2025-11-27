@@ -7,6 +7,7 @@ export interface User {
   name: string;
   sub: string;
   token_expires_at: number;
+  can_access_analytics?: boolean;  // Permission set by backend
 }
 
 export interface AuthContextType {

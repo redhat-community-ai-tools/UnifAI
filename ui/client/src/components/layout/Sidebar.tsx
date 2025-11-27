@@ -25,6 +25,9 @@ export default function Sidebar() {
   };
 
   const { user, logout } = useAuth();
+  
+  // Check if user can access analytics (permission set by backend)
+  const hasAnalyticsAccess = user?.can_access_analytics || false;
 
   const getInitials = (name: string): string => {
     return name
@@ -200,7 +203,7 @@ export default function Sidebar() {
             isActive={location === '/analytics'}
             status={null}
             isCollapsed={isCollapsed}
-            disabled={true}
+            disabled={!hasAnalyticsAccess}
           />
           <NavItem 
             icon={<FaUserShield className="sidebar-icon" />} 
@@ -315,10 +318,14 @@ function NavItem({ icon, label, to, isActive, status, isCollapsed, disabled = fa
   );
 
   if (disabled) {
+    const tooltipText = label === "Analytics" 
+      ? `${label} (Access Restricted)` 
+      : `${label} (Coming Soon)`;
+    
     return (
       <li className="sidebar-item">
         {isCollapsed ? (
-          <SimpleTooltip content={<p>{label} (Coming Soon)</p>}>
+          <SimpleTooltip content={<p>{tooltipText}</p>}>
             {content}
           </SimpleTooltip>
         ) : (

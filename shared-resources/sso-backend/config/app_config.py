@@ -16,4 +16,11 @@ class AppConfig(SharedConfig):
 
     frontend_url: str = "http://localhost:5000"    # session_cookie_secure=True
     backend_env: str = "development"
+    
+
+    # Analytics Access Control
+    # Add usernames or emails that can access analytics
+    analytics_allowed_users: list = [
+        'yhabushi',          # Add your username here
+    ]
 
