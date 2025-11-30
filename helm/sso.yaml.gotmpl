@@ -16,3 +16,15 @@ releases:
     values:
       - {{- toYaml .Values | nindent 8 }}
       - ./values/global-config.yaml
+
+  - name: unifai-sso-config
+    chart: ./shared-resources/shared-config
+    wait: true
+    needs:
+      - unifai-sso
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: bash
+        args:
+        - "./postsync-sso.sh"
