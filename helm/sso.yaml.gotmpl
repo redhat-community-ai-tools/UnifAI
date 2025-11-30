@@ -17,7 +17,7 @@ releases:
       - {{- toYaml .Values | nindent 8 }}
       - ./values/global-config.yaml
     hooks:
-      - events: ["postsync"]
+      - events: ["presync"]
         showlogs: true
         command: bash
         args:
