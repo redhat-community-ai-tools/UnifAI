@@ -20,7 +20,5 @@ class AppConfig(SharedConfig):
 
     # Analytics Access Control
     # Add usernames or emails that can access analytics
-    analytics_allowed_users: list = [
-        'yhabushi',          # Add your username here
-    ]
+    admin_allowed_users: list = []
 

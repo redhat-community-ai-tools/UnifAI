@@ -260,7 +260,7 @@ class AuthManager:
             return False
         
         # Get allowed users from config
-        allowed_users = config.get('analytics_allowed_users', [])
+        allowed_users = config.get('admin_allowed_users', [])
         
         username = user.get('username') or user.get('sub')
         email = user.get('email')
