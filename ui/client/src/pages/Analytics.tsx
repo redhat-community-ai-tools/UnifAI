@@ -108,7 +108,6 @@ export default function Analytics() {
       'Metric,Value',
       `Total Runs,${analytics.total_stats.total_runs}`,
       `Unique Users,${analytics.total_stats.unique_users}`,
-      `Average Runs per User,${analytics.total_stats.avg_runs_per_user.toFixed(2)}`,
       `Success Rate,${successRate.toFixed(1)}%`,
       `Active Today,${analytics.active_today.length}`,
       '',
@@ -125,9 +124,9 @@ export default function Analytics() {
       ),
       '',
       'TOP BLUEPRINTS',
-      'Blueprint Name,Total Runs,Unique Users,Avg Runs per User',
+      'Blueprint Name,Total Runs,Unique Users',
       ...analytics.top_blueprints.map(bp => 
-        `"${bp.blueprint_name}",${bp.run_count},${bp.unique_users},${(bp.run_count / bp.unique_users).toFixed(1)}`
+        `"${bp.blueprint_name}",${bp.run_count},${bp.unique_users}`
       ),
     ];
 
@@ -661,7 +660,6 @@ function BlueprintsTable({ blueprints }: any) {
                 <TableHead>Blueprint Name</TableHead>
                 <TableHead className="text-right">Total Runs</TableHead>
                 <TableHead className="text-right">Unique Users</TableHead>
-                <TableHead className="text-right">Avg Runs/User</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -675,14 +673,11 @@ function BlueprintsTable({ blueprints }: any) {
                       {bp.run_count}
                     </TableCell>
                     <TableCell className="text-right text-sm">{bp.unique_users}</TableCell>
-                    <TableCell className="text-right text-sm text-gray-400">
-                      {(bp.run_count / bp.unique_users).toFixed(1)}
-                    </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-6 text-gray-400">
+                  <TableCell colSpan={3} className="text-center py-6 text-gray-400">
                     No blueprint data available
                   </TableCell>
                 </TableRow>
