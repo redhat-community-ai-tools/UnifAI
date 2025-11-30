@@ -98,4 +98,5 @@ releases:
                 --from-literal=DATAFLOW_ADDR="$DATAFLOW_ADDR" \
                 --from-literal=DATAFLOW_PORT="$DATAFLOW_PORT" \
                 --from-literal=DATAFLOW_IP="$DATAFLOW_IP" \
+                --from-literal=admin_allowed_users="$admin_allowed_users" \
                 --dry-run=client -o yaml | kubectl apply -f -
