@@ -18,7 +18,9 @@ interface FieldPopulationProps {
   elementActions: any[];
   selectedElementType: any;
   formData: any;
-  onPopulateResult: (fieldName: string, results: string[], multiSelect: boolean) => void;
+  onPopulateResult: (fieldName: string, results: string[] | any, multiSelect: boolean) => void;
+  autoTrigger?: boolean;
+  hideUI?: boolean;
 }
 
 export const FieldPopulation: React.FC<FieldPopulationProps> = ({
@@ -27,13 +29,16 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
   elementActions,
   selectedElementType,
   formData,
-  onPopulateResult
+  onPopulateResult,
+  autoTrigger = false,
+  hideUI = false
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [populatedOptions, setPopulatedOptions] = useState<string[]>([]);
   const [selectedValues, setSelectedValues] = useState<string[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [shouldKeepOpen, setShouldKeepOpen] = useState(false);
+  const [hasAutoTriggered, setHasAutoTriggered] = useState(false);
 
   // Find the populate action from elementActions
   const populateAction = elementActions.find(
@@ -54,6 +59,27 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
       return () => clearTimeout(timer);
     }
   }, [shouldKeepOpen, populateHint.multi_select, isDropdownOpen]);
+
+  // Effect to reset auto-trigger state when dependency values change
+  useEffect(() => {    
+    setHasAutoTriggered(false);
+  }, [Object.keys(populateHint.dependencies || {}).map((depKey) => formData[depKey]).join(',')]);
+
+  // Effect to auto-trigger population when dependencies are satisfied
+  useEffect(() => {
+    if (autoTrigger && !hasAutoTriggered && !isLoading) {
+      // Check if all required dependencies have values
+      const dependencies = populateHint.dependencies || {};
+      const allDependenciesSatisfied = Object.keys(dependencies).every(
+        (depKey) => formData[depKey] !== undefined && formData[depKey] !== null && formData[depKey] !== ''
+      );
+
+      if (allDependenciesSatisfied) {
+        setHasAutoTriggered(true);
+        performPopulation();
+      }
+    }
+  }, [autoTrigger, hasAutoTriggered, isLoading, formData]);
 
   const performPopulation = async () => {
     setIsLoading(true);
@@ -88,18 +114,12 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
       const fieldMapping = populateHint.field_mapping || 'results';
       const results = response.data[fieldMapping] || [];
       
-      // Ensure results is an array of strings
-      const stringResults = Array.isArray(results) ? results.map(String) : [];
-      
-      setPopulatedOptions(stringResults);
-      
-      // If multi_select is false, clear previous selections
-      if (!populateHint.multi_select) {
-        setSelectedValues([]);
+      if (populateHint.selection_type == 'manual' || populateHint.multi_select) {
+        // Currently we cover only selection of options from a list of options (for population actions)
+        setPopulatedOptions(results);
       }
 
-      // Notify parent component
-      onPopulateResult(fieldName, stringResults, populateHint.multi_select || false);
+      onPopulateResult(fieldName, results, populateHint.multi_select || false);
 
     } catch (error: any) {
       console.error('Population error:', error);
@@ -160,6 +180,11 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
   };
 
   const availableOptions = getAvailableOptions();
+
+  // Hide UI when auto-triggering (keep logic running in background)
+  if (hideUI) {
+    return null;
+  }
 
   return (
     <div className="space-y-3">

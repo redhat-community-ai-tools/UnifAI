@@ -32,7 +32,7 @@ llms:
     config:
       type: openai
       model_name: gemini-2.5-flash-lite
-      api_key: AIzaSyC_Jt5v4wzPP6RDsHN_wR9iUsCsyO_7IoI
+      api_key:
       base_url: https://generativelanguage.googleapis.com/v1beta/openai
 
 

@@ -25,8 +25,8 @@ class CategoryBuilder(ABC):
             # Create instance
             inst = self._create_instance(resource, registry)
             
-            # Store complete runtime element (instance + config + spec)
-            self._register(registry, resource.rid.ref, inst, resource.config, spec)
+            # Store complete runtime element (instance + spec + resource_spec)
+            self._register(registry, resource.rid.ref, inst, spec, resource)
 
     # -------- protected helpers ----------------------------------------
 
@@ -34,8 +34,8 @@ class CategoryBuilder(ABC):
     def _iter_specs(self, blueprint: BlueprintSpec) -> Iterable[ResourceSpec]:
         ...
 
-    def _register(self, registry, name: str, inst: Any, config: Any, spec: Any):
-        registry.register(self.category, name, inst, config, spec)
+    def _register(self, registry, name: str, inst: Any, spec: Any, resource_spec: Any):
+        registry.register(self.category, name, inst, spec, resource_spec)
 
     # ––– shared factory construction with error handling ––––––––––––––
     def _create_instance(self, resource_spec: ResourceSpec, session_registry: SessionRegistry) -> Any:

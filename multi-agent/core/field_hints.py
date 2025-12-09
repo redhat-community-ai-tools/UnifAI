@@ -11,6 +11,12 @@ class HintType(Enum):
     SECRET = "secret"
 
 
+class SelectionType(Enum):
+    """Selection type for action hints"""
+    AUTOMATIC = "automatic"
+    MANUAL = "manual"
+
+
 class ActionHint(BaseModel):
     """
     Simple hint that references an action for field population or validation.
@@ -30,6 +36,10 @@ class ActionHint(BaseModel):
     multi_select: bool = Field(
         default=False,
         description="Whether this field supports multiple selections"
+    )
+    selection_type: SelectionType = Field(
+        default=None,
+        description="Selection type: automatic (auto-populate) or manual (user triggers)"
     )
     dependencies: Dict[str, str] = Field(
         default_factory=dict,

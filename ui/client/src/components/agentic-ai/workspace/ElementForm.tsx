@@ -41,7 +41,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     {},
   );
   const [fieldValidationStates, setFieldValidationStates] = useState<{ [fieldName: string]: boolean }>({});
-  const [populateResults, setPopulateResults] = useState<{ [fieldName: string]: string[] }>({});
+  const [populateResults, setPopulateResults] = useState<{ [fieldName: string]: string[] | any }>({});
 
   const { fetchResourcesForCategory } = useWorkspaceData();
 
@@ -52,20 +52,15 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     }));
   };
 
-  const handlePopulateResult = (fieldName: string, results: string[], multiSelect: boolean) => {
+  const handlePopulateResult = (fieldName: string, results: string[] | any, multiSelect: boolean) => {
     setPopulateResults(prev => ({
       ...prev,
       [fieldName]: results
     }));
     
-    // Update form data with populated results
-    if (multiSelect) {
-      // For multi-select, set the array of selected values
-      handleInputChange(fieldName, results);
-    } else {
-      // For single select, set the first (and only) selected value
-      handleInputChange(fieldName, results.length > 0 ? results[0] : "");
-    }
+    // For multi-select, set the array of selected values
+    // For single select, set the first (and only) selected value
+    handleInputChange(fieldName, multiSelect || typeof results === 'object' ? results : results.length > 0 ? results[0] : "");
   };
 
 
@@ -490,7 +485,10 @@ export const ElementForm: React.FC<ElementFormProps> = ({
 
           // Convert reference fields back to $ref:rid format and handle empty values
           if (fieldSchema) {
-            if (
+            if (typeof value === "object" && value !== null) {
+              processedValue = value;
+            }
+            else if (
               fieldSchema.$ref &&
               value &&
               value !== ""
@@ -598,6 +596,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         formData={formData}
         refOptions={refOptions}
         fieldType={isSecret ? "secret" : "public"}
+        fieldValidationStates={fieldValidationStates}
         isArrayWithRefItems={isArrayWithRefItems}
         getArrayItemsSchema={getArrayItemsSchema}
         extractCategoryFromField={extractCategoryFromField}
@@ -661,6 +660,24 @@ export const ElementForm: React.FC<ElementFormProps> = ({
               // if (editingElement) {
               //   return true;
               // }
+            })
+            .sort(([fieldNameA, fieldSchemaA], [fieldNameB, fieldSchemaB]) => {
+              // Sort fields so that fields with dependencies come after their dependency fields
+              const populateHintA = fieldSchemaA?.hints?.action?.hint_type === 'populate' ? fieldSchemaA.hints.action : null;
+              const populateHintB = fieldSchemaB?.hints?.action?.hint_type === 'populate' ? fieldSchemaB.hints.action : null;
+              
+              // If A depends on B, A should come after B
+              if (populateHintA?.dependencies && Object.keys(populateHintA.dependencies).includes(fieldNameB)) {
+                return 1; // A comes after B
+              }
+              
+              // If B depends on A, B should come after A
+              if (populateHintB?.dependencies && Object.keys(populateHintB.dependencies).includes(fieldNameA)) {
+                return -1; // A comes before B
+              }
+              
+              // Otherwise, maintain original order
+              return 0;
             })
             .map(([fieldName, fieldSchema]) => renderFormField(fieldName, fieldSchema))}
 

@@ -1,0 +1,51 @@
+description: |
+  a2a agent
+name: |
+  a2a agent
+
+
+nodes:
+  - rid: user_question_node_rid
+    name: User Question Node
+    type: user_question_node
+    config:
+      type: user_question_node
+
+  - rid: final_answer_node_rid
+    name: Final Answer None
+    type: final_answer_node
+    config:
+      type: final_answer_node
+
+  - rid: a2a_agent_rid
+    name: A2A agent
+    type: a2a_agent_node
+    config:
+      type: a2a_agent_node
+      base_url: https://ifd-001-preview-api-speol.apps.int.spoke.preprod.us-east-1.aws.paas.redhat.com/api/ask/v1/a2a/
+      bearer_token:
+      agent_card:
+# ----------------------------
+# Plan Steps
+# ----------------------------
+plan:
+  - uid: user_input
+    node: user_question_node_rid
+    meta:
+      display_name: User Question
+      description: |
+        The user inputs a question or request.
+
+  ##### A2A Agent ######
+  - uid: a2a_agent
+    after: user_input
+    node: a2a_agent_rid
+
+  - uid: finalize
+    after: a2a_agent
+    node: final_answer_node_rid
+    meta:
+      display_name: Final Answer
+      description: |
+        Provide the final answer to the user based on all gathered information.
+

@@ -68,7 +68,7 @@ llms:
     config:
       type: openai
       model_name: gemini-2.5-flash
-      api_key: AIzaSyCnplFW816wfu0jNAyoxQQSQkNdX8yxgQc
+      api_key:
       base_url: https://generativelanguage.googleapis.com/v1beta/openai
 
   - rid: openai_llm_pro_rid
@@ -77,7 +77,7 @@ llms:
     config:
       type: openai
       model_name: gemini-2.5-pro
-      api_key: AIzaSyCnplFW816wfu0jNAyoxQQSQkNdX8yxgQc
+      api_key:
       base_url: https://generativelanguage.googleapis.com/v1beta/openai
 conditions:
   - rid: router_direct

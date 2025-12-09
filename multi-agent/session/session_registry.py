@@ -18,13 +18,13 @@ class SessionRegistry:
 
     # ─────────────── public, generic API ────────────────
     def register(self, category: ResourceCategory, rid: str,
-                 instance: Any, config: Any, spec: Any) -> None:
-        """Register complete runtime element (instance + config + spec)."""
+                 instance: Any, spec: Any, resource_spec: Any) -> None:
+        """Register complete runtime element (instance + spec + resource_spec)."""
         self._assert_not_frozen()
         self._store[category][rid] = RuntimeElement(
             instance=instance,
-            config=config,
-            spec=spec
+            spec=spec,
+            resource_spec=resource_spec
         )
 
     def get(self, category: ResourceCategory, rid: str) -> RuntimeElement:

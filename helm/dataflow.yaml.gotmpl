@@ -13,6 +13,12 @@ releases:
   - name: unifai-dataflow-server
     chart: ./dataflow/unifai-dataflow-server
     wait: true
+    hooks:
+      - events: ["presync"]
+        showlogs: true
+        command: bash
+        args:
+          - "./dataflow-presync.sh"
     values:
       - {{- toYaml .Values.unifai_dataflow_server | nindent 8 }}
       - ./values/global-config.yaml
@@ -93,7 +99,7 @@ releases:
               DATAFLOW_PORT=$(wait_for_port unifai-dataflow-server)
               DATAFLOW_IP=$(wait_for_service_name unifai-dataflow-server)
               
-              kubectl delete configmap unifai-dataflow-config
+              kubectl delete configmap unifai-dataflow-config --ignore-not-found=true
               kubectl create configmap unifai-dataflow-config \
                 --from-literal=DATAFLOW_ADDR="$DATAFLOW_ADDR" \
                 --from-literal=DATAFLOW_PORT="$DATAFLOW_PORT" \

@@ -140,7 +140,7 @@ def save_resources(app):
                                            config={
                                                "type": "openai",
                                                "model_name": "gemini-2.0-flash",
-                                               "api_key": "AIzaSyBwuQtKPtwKILBulq_YW16RKjMAVx4gbKQ",
+                                               "api_key": "",
                                                "base_url": "https://generativelanguage.googleapis.com/v1beta/openai"
                                            }).rid
 
@@ -187,18 +187,140 @@ from graph.graph_plan import GraphPlan
 from dataclasses import dataclass, asdict
 import json
 
-if __name__ == "__main__":
-    config = AppConfig.get_instance()
-    app = AppContainer(config)
 
-    blueprint_loader = YAMLBlueprintLoader()
-    # raw = blueprint_loader.load("run/branch_router_demo.yml")
-    # raw = blueprint_loader.load("run/boolean_router_demo.yml")
-    raw = blueprint_loader.load("run/blueprint_llm_agent.yml")
-    # raw = blueprint_loader.load("run/blueprint_SDJ.yml")
-    blueprint_id = app.blueprint_service.save_draft(user_id="alice", draft_dict=raw)
-    blueprint_spec = app.blueprint_service.load_resolved(blueprint_id=blueprint_id)
-    run_test_new_version(app, blueprint_id=blueprint_id)
+def test_a2a_provider():
+    """Test A2A provider by connecting to agent and sending a message."""
+    from elements.providers.a2a_client import A2AProvider
+    from elements.llms.common.chat.message import ChatMessage, Role
+    from pydantic import HttpUrl
+    
+    print("=" * 80)
+    print("Testing A2A Provider (Non-Streaming)")
+    print("=" * 80)
+    
+    # Create provider for the A2A agent
+    agent_url = "http://10.46.254.131:8001"
+    print(f"\n🔗 Connecting to A2A agent at: {agent_url}")
+    
+    try:
+        provider = A2AProvider.create_sync(
+            base_url=HttpUrl(agent_url)
+        )
+        
+        print(f"✅ Connected to agent: {provider.agent_card.name}")
+        print(f"   Version: {provider.agent_card.version}")
+        
+        skills = provider.get_available_skills()
+        if skills:
+            print(f"   Available skills: {skills}")
+        
+        # Create message
+        user_message = ChatMessage(
+            role=Role.USER,
+            content="give me interesting facts."
+        )
+        
+        print(f"\n📤 Sending message: {user_message.content}")
+        print("-" * 80)
+        
+        # Send message and get response
+        response, metadata = provider.send_message_sync(user_message)
+        
+        print(f"\n📥 Response:")
+        print("-" * 80)
+        print(response.content)
+        print("-" * 80)
+        
+        print(f"\n📊 Metadata:")
+        print(f"   Task ID: {metadata.get('task_id')}")
+        print(f"   Status: {metadata.get('status')}")
+        
+        print("\n" + "=" * 80)
+        print("✅ Test completed successfully!")
+        print("=" * 80)
+        
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def test_a2a_streaming():
+    """Test A2A provider streaming by connecting to agent and streaming a response."""
+    from elements.providers.a2a_client import A2AProvider
+    from elements.llms.common.chat.message import ChatMessage, Role
+    from pydantic import HttpUrl
+    
+    print("\n\n")
+    print("=" * 80)
+    print("Testing A2A Provider (Streaming)")
+    print("=" * 80)
+    
+    # Create provider for the A2A agent
+    agent_url = "http://10.46.254.131:8001"
+    print(f"\n🔗 Connecting to A2A agent at: {agent_url}")
+    
+    try:
+        provider = A2AProvider.create_sync(
+            base_url=HttpUrl(agent_url)
+        )
+        
+        print(f"✅ Connected to agent: {provider.agent_card.name}")
+        print(f"   Version: {provider.agent_card.version}")
+        
+        skills = provider.get_available_skills()
+        if skills:
+            print(f"   Available skills: {skills}")
+        
+        # Create message
+        user_message = ChatMessage(
+            role=Role.USER,
+            content="give me interesting facts."
+        )
+        
+        print(f"\n📤 Streaming message: {user_message.content}")
+        print("-" * 80)
+        print("📥 Streaming response:\n")
+        
+        # Stream message and print chunks as they arrive
+        chunk_count = 0
+        for chunk in provider.stream_message_sync(user_message):
+            print(chunk.content, end="", flush=True)
+            chunk_count += 1
+        
+        print("\n" + "-" * 80)
+        print(f"\n📊 Statistics:")
+        print(f"   Total chunks received: {chunk_count}")
+        
+        print("\n" + "=" * 80)
+        print("✅ Streaming test completed successfully!")
+        print("=" * 80)
+        
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+if __name__ == "__main__":
+    # Test A2A Provider - Non-Streaming
+    test_a2a_provider()
+    
+    # Test A2A Provider - Streaming
+    # test_a2a_streaming()
+    
+    # Original main code (commented out)
+    # config = AppConfig.get_instance()
+    # app = AppContainer(config)
+
+    # blueprint_loader = YAMLBlueprintLoader()
+    # # raw = blueprint_loader.load("run/branch_router_demo.yml")
+    # # raw = blueprint_loader.load("run/boolean_router_demo.yml")
+    # raw = blueprint_loader.load("run/blueprint_llm_agent.yml")
+    # # raw = blueprint_loader.load("run/blueprint_SDJ.yml")
+    # blueprint_id = app.blueprint_service.save_draft(user_id="alice", draft_dict=raw)
+    # blueprint_spec = app.blueprint_service.load_resolved(blueprint_id=blueprint_id)
+    # run_test_new_version(app, blueprint_id=blueprint_id)
 
     # Use the separate services - build with graph service, validate with validation service
     # plan = app.graph_service.build_plan(blueprint_spec)

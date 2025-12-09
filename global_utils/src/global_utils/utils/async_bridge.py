@@ -13,11 +13,12 @@ Key Features:
 import asyncio
 import threading
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Iterable, Optional, Protocol, runtime_checkable
+from typing import Any, AsyncIterator, Awaitable, Callable, Iterable, Iterator, Optional, Protocol, runtime_checkable
 import anyio
 from anyio.from_thread import BlockingPortal
 import anyio.from_thread
 import logging
+from queue import Queue, Empty
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,14 @@ class AsyncRunner(Protocol):
         limit: Optional[int] = None
     ) -> list[Any]:
         """Run multiple awaitables concurrently from sync context."""
+        ...
+    
+    def iterate(
+        self,
+        async_iterator: "AsyncIterator[Any]",
+        timeout: Optional[float] = None
+    ) -> Iterator[Any]:
+        """Iterate over an async iterator from sync context with real-time streaming."""
         ...
     
     def close(self) -> None:
@@ -313,6 +322,108 @@ class BlockingPortalAsyncRunner(AsyncRunner):
             limit
         )
     
+    def iterate(
+        self,
+        async_iterator: "AsyncIterator[Any]",
+        timeout: Optional[float] = None
+    ) -> Iterator[Any]:
+        """
+        Iterate over an async iterator from sync context with real-time streaming.
+        
+        Uses a queue-based approach to pass items from the async context to sync context
+        as they become available, enabling true real-time streaming without buffering.
+        
+        Args:
+            async_iterator: Any async iterator/generator to consume
+            timeout: Optional timeout for the entire iteration
+            
+        Yields:
+            Items from the async iterator as they arrive (real-time)
+            
+        Example:
+            async def stream_data():
+                for i in range(5):
+                    await asyncio.sleep(0.1)
+                    yield f"Item {i}"
+            
+            with get_async_bridge() as bridge:
+                for item in bridge.iterate(stream_data()):
+                    print(item)  # Prints each item as it arrives
+        
+        Raises:
+            TimeoutError: If the iteration exceeds the specified timeout
+            Exception: Any exception raised by the async iterator
+        """
+        # Step 1: Validate execution context
+        self._execution_guard.validate_sync_execution()
+        
+        # Step 2: Get portal
+        portal = self._portal_manager.acquire_portal()
+        
+        # Step 3: Resolve timeout
+        effective_timeout = self._timeout_manager.resolve_timeout(timeout)
+        
+        # Step 4: Set up queue for real-time item passing
+        # Unlimited size allows producer and consumer to run concurrently
+        # Items are still yielded in real-time as they become available
+        item_queue: Queue = Queue()
+        
+        # Sentinel values to signal completion or error
+        _DONE = object()
+        _ERROR = object()
+        
+        # Container to pass exceptions from async to sync context
+        exception_holder = [None]
+        
+        async def _producer():
+            """
+            Producer coroutine that runs in async context.
+            Consumes the async iterator and puts items in the queue.
+            Runs concurrently with consumer - no blocking on queue.put().
+            """
+            try:
+                if effective_timeout is not None:
+                    with anyio.fail_after(effective_timeout):
+                        async for item in async_iterator:
+                            item_queue.put(item)  # Non-blocking (unlimited queue)
+                else:
+                    async for item in async_iterator:
+                        item_queue.put(item)  # Non-blocking (unlimited queue)
+            except Exception as e:
+                # Capture exception to re-raise in sync context
+                exception_holder[0] = e
+                item_queue.put(_ERROR)
+            finally:
+                # Signal completion
+                item_queue.put(_DONE)
+        
+        # Step 5: Start producer in background task
+        portal.start_task_soon(_producer)
+        
+        # Step 6: Consume from queue in sync context (yields in real-time)
+        try:
+            while True:
+                # Block until an item is available (or timeout)
+                item = item_queue.get(timeout=effective_timeout)
+                
+                # Check for completion signal
+                if item is _DONE:
+                    break
+                
+                # Check for error signal
+                if item is _ERROR:
+                    if exception_holder[0]:
+                        raise exception_holder[0]
+                    else:
+                        raise RuntimeError("Unknown error in async iterator")
+                
+                # Yield item immediately (real-time!)
+                yield item
+                
+        except Empty:
+            # Queue.get() timed out
+            raise TimeoutError(f"Iteration timed out after {effective_timeout}s")
+    
     def close(self) -> None:
         """Clean up resources."""
         self._portal_manager.release_portal()
@@ -340,6 +451,36 @@ class AsyncBridge(metaclass=SingletonMeta):
     ) -> list[Any]:
         """Run multiple awaitables concurrently from sync context."""
         return self._runner.run_many(awaitables, timeout, limit)
+    
+    def iterate(
+        self,
+        async_iterator: "AsyncIterator[Any]",
+        timeout: Optional[float] = None
+    ) -> Iterator[Any]:
+        """
+        Iterate over an async iterator from sync context with real-time streaming.
+        
+        Generic method for consuming any async iterator/generator.
+        Items are yielded as they become available (true real-time streaming).
+        
+        Args:
+            async_iterator: Any async iterator/generator to consume
+            timeout: Optional timeout for the entire iteration
+            
+        Yields:
+            Items from the async iterator as they arrive
+            
+        Example:
+            async def stream_tokens():
+                for token in ["Hello", " ", "World"]:
+                    await asyncio.sleep(0.1)
+                    yield token
+            
+            with get_async_bridge() as bridge:
+                for token in bridge.iterate(stream_tokens()):
+                    print(token, end='', flush=True)
+        """
+        return self._runner.iterate(async_iterator, timeout)
     
     def close(self) -> None:
         """Clean up resources."""

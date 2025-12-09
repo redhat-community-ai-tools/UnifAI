@@ -1,13 +1,18 @@
 from dataclasses import dataclass, field, asdict
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 @dataclass(frozen=True)
 class RuntimeElement:
-    """Complete runtime element: instance + config + spec."""
+    """Complete runtime element: instance + spec + resource_spec."""
     instance: Any
-    config: Any
     spec: Any
+    resource_spec: Any  # ResourceSpec with user-defined name, config, rid, type
+    
+    @property
+    def config(self) -> Any:
+        """Get config from resource_spec."""
+        return self.resource_spec.config if self.resource_spec else None
 
 
 @dataclass(slots=True)

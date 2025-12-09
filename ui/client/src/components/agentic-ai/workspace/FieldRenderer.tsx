@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FieldValidation } from "./FieldValidation";
 import { FieldPopulation } from "./FieldPopulation";
+import { AgentCardVisualization } from "./AgentCardVisualization";
 import { ElementType } from "../../../types/workspace";
 import { maskSecretValue } from "../../../utils/maskSecretFields";
 
@@ -30,6 +31,7 @@ interface FieldRendererProps {
   formData: any;
   refOptions: { [category: string]: any[] };
   fieldType: "secret" | "public";
+  fieldValidationStates?: { [fieldName: string]: boolean };
   isArrayWithRefItems: (fieldSchema: any) => boolean;
   getArrayItemsSchema: (fieldSchema: any) => any;
   extractCategoryFromField: (fieldSchema: any) => string | null;
@@ -38,7 +40,7 @@ interface FieldRendererProps {
   onAddArrayItem?: (field: string) => void;
   onRemoveArrayItem?: (field: string, index: number) => void;
   onValidationChange: (fieldName: string, isValid: boolean) => void;
-  onPopulateResult: (fieldName: string, results: string[], multiSelect: boolean) => void;
+  onPopulateResult: (fieldName: string, results: string[] | any, multiSelect: boolean) => void;
 }
 
 export const FieldRenderer: React.FC<FieldRendererProps> = ({
@@ -54,6 +56,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   formData,
   refOptions,
   fieldType,
+  fieldValidationStates,
   isArrayWithRefItems,
   getArrayItemsSchema,
   extractCategoryFromField,
@@ -66,6 +69,46 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
 }) => {
   const [showMasked, setShowMasked] = useState(true);
   const isSecret = fieldType === "secret";
+
+  // Calculate if dependencies are validated for automatic population fields
+  const areDependenciesValid = React.useMemo(() => {
+    if (populateHint?.selection_type === "automatic" && populateHint?.dependencies) {
+      const dependencies = populateHint.dependencies || {};
+      const dependencyKeys = Object.keys(dependencies);
+      return dependencyKeys.every((depKey) => fieldValidationStates?.[depKey] === true);
+    }
+    return false;
+  }, [populateHint, fieldValidationStates]);
+
+  // Track previous dependency values for automatic population fields
+  const prevDependencyValuesRef = useRef<{[key: string]: any}>({});
+  
+  // Clear field value when dependency values change (for automatic population fields)
+  useEffect(() => {
+    if (populateHint?.selection_type === "automatic" && populateHint?.dependencies) {
+      const dependencies = populateHint.dependencies || {};
+      const dependencyKeys = Object.keys(dependencies);
+      
+      const currentDependencyValues: {[key: string]: any} = {};
+      dependencyKeys.forEach((depKey) => {
+        currentDependencyValues[depKey] = formData[depKey];
+      });
+
+      // Check if any dependency value has changed
+      const hasChanged = dependencyKeys.some((depKey) => {
+        return prevDependencyValuesRef.current[depKey] !== currentDependencyValues[depKey];
+      });
+
+      if (hasChanged && Object.keys(prevDependencyValuesRef.current).length > 0) {
+        // Dependency changed - clear the field value
+        console.log(`Dependency changed - clearing field value for ${fieldName}`);
+        onInputChange(fieldName, null);
+      }
+
+      // Update the ref with current values
+      prevDependencyValuesRef.current = currentDependencyValues;
+    }
+  }, [fieldName, populateHint?.selection_type, populateHint?.dependencies, formData, onInputChange]);
 
   // Secret field masking logic
   const getSecretInputProps = () => {
@@ -258,6 +301,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
     }
   }
 
+
   // Handle object fields (like 'extra')
   if (fieldSchema.type === "object") {
     return (
@@ -423,16 +467,24 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
             </Badge>
           )}
         </Label>
-        <Textarea
-          id={fieldName}
-          value={value}
-          onChange={(e) => onInputChange(fieldName, e.target.value)}
-          rows={4}
-          className="bg-background-dark resize-none"
-          placeholder={fieldSchema.description}
-          readOnly={!!populateHint}
-          disabled={!!populateHint}
-        />
+
+        {fieldSchema.description && (
+          <p className="text-xs text-gray-400">{fieldSchema.description}</p>
+        )}
+
+        {populateHint?.selection_type != 'automatic' && (
+          <Textarea
+            id={fieldName}
+            value={value}
+            onChange={(e) => onInputChange(fieldName, e.target.value)}
+            rows={4}
+            className="bg-background-dark resize-none"
+            placeholder={fieldSchema.description}
+            readOnly={!!populateHint}
+            disabled={!!populateHint}
+          />
+        )}
+
         {validationHint && (
           <FieldValidation
             fieldName={fieldName}
@@ -451,10 +503,14 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
             selectedElementType={elementType}
             formData={formData}
             onPopulateResult={onPopulateResult}
+            hideUI={populateHint.selection_type == 'automatic'}
+            autoTrigger={areDependenciesValid}
           />
         )}
-        {fieldSchema.description && (
-          <p className="text-xs text-gray-400">{fieldSchema.description}</p>
+        {/* Agent Card Visualization */}
+        {fieldName === "agent_card" && (
+          <AgentCardVisualization agentCard={value} 
+          />
         )}
       </div>
     );
@@ -483,17 +539,25 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
           </Badge>
         )}
       </Label>
-      <Input
-        id={fieldName}
-        type={secretProps.inputType}
-        value={secretProps.displayValue}
-        onChange={secretProps.handleChange}
-        onFocus={secretProps.handleFocus}
-        className="bg-background-dark"
-        placeholder={fieldSchema.description}
-        readOnly={!!populateHint}
-        disabled={!!populateHint}
-      />
+      
+      {fieldSchema.description && (
+        <p className="text-xs text-gray-400">{fieldSchema.description}</p>
+      )}
+
+      {populateHint?.selection_type != 'automatic' && (
+        <Input
+          id={fieldName}
+          type={secretProps.inputType}
+          value={secretProps.displayValue}
+          onChange={secretProps.handleChange}
+          onFocus={secretProps.handleFocus}
+          className="bg-background-dark"
+          placeholder={fieldSchema.description}
+          readOnly={!!populateHint}
+          disabled={!!populateHint}
+        />
+      )}
+
       {validationHint && (
         <FieldValidation
           fieldName={fieldName}
@@ -512,10 +576,13 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
           selectedElementType={elementType}
           formData={formData}
           onPopulateResult={onPopulateResult}
+          hideUI={populateHint.selection_type == 'automatic'}
+          autoTrigger={areDependenciesValid}
         />
       )}
-      {fieldSchema.description && (
-        <p className="text-xs text-gray-400">{fieldSchema.description}</p>
+      {/* Agent Card Visualization */}
+      {fieldName === "agent_card" && (
+        <AgentCardVisualization agentCard={value} />
       )}
     </div>
   );

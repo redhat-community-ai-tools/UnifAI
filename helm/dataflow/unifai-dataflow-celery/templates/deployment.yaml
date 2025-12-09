@@ -48,6 +48,8 @@ spec:
           {{- end }}
           
           envFrom:
+          - secretRef:
+              name: unifai-dataflow-secrets
           - configMapRef:
               name: {{ .Values.globalConfigMapName }}
 
