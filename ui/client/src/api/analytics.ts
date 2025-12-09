@@ -1,5 +1,8 @@
 /**
  * Analytics API client for workflow statistics
+ * 
+ * NOTE: Uses api from @/http/queryClient which points to /api1 (Data Pipeline Hub).
+ * Analytics endpoints are in backend/endpoints/analytics.py (port 13457).
  */
 
 import { api } from '@/http/queryClient';
