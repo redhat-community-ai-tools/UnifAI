@@ -1,7 +1,7 @@
 """
 Analytics API endpoints for workflow session statistics.
 
-Thin HTTP layer that delegates to providers/analytics.py for business logic.
+Provides real-time analytics data fetched directly from MongoDB.
 """
 
 from flask import Blueprint, jsonify, session, request
