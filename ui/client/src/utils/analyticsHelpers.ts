@@ -94,6 +94,9 @@ export function filterAnalyticsByTimeRange(analytics: any, timeRange: 'today' | 
   filteredData.top_users = mapToTopUsers(users, runsKey);
   filteredData.total_stats = calculateStats(users, runsKey);
   filteredData.status_breakdown = calculateStatusBreakdown(users);
+  
+  // top_blueprints is already filtered by time_range on the backend, so keep it as is
+  // The backend returns time-filtered blueprints based on the time_range parameter
 
   return filteredData;
 }

@@ -59,6 +59,11 @@ export interface HourlyActivity {
   count: number;
 }
 
+export interface TimeSeriesData {
+  period: string;
+  count: number;
+}
+
 export interface AnalyticsOverview {
   total_stats: TotalStats;
   status_breakdown: StatusBreakdown;
@@ -68,14 +73,17 @@ export interface AnalyticsOverview {
   active_30days: ActiveUser[];
   top_users: UserActivity[];
   top_blueprints: BlueprintUsage[];
+  time_series?: TimeSeriesData[];
   generated_at: string;
 }
 
 /**
  * Fetch comprehensive analytics overview
  */
-export async function fetchAnalyticsOverview(): Promise<AnalyticsOverview> {
-  const response = await api.get<AnalyticsOverview>('analytics/overview');
+export async function fetchAnalyticsOverview(timeRange: 'today' | '7days' | '30days' | 'all' = 'all'): Promise<AnalyticsOverview> {
+  const response = await api.get<AnalyticsOverview>('analytics/overview', {
+    params: { time_range: timeRange }
+  });
   return response.data;
 }
 

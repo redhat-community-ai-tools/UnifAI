@@ -14,14 +14,14 @@ import {
   FaUsers, FaRocket, FaChartLine, FaCheckCircle, 
   FaClock, FaFire, FaSync, FaDownload
 } from "react-icons/fa";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, AreaChart, Area } from "recharts";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { AccessDenied } from "@/components/analytics/AccessDenied";
 import { LoadingSkeleton } from "@/components/analytics/LoadingSkeleton";
 import { ErrorDisplay } from "@/components/analytics/ErrorDisplay";
-import { ActivityPeriodRow } from "@/components/analytics/ActivityPeriodRow";
 import { filterAnalyticsByTimeRange, truncateUserId } from "@/utils/analyticsHelpers";
+import { UserActivity } from "@/api/analytics";
 
 type TimeRange = 'today' | '7days' | '30days' | 'all';
 
@@ -39,8 +39,8 @@ export default function Analytics() {
 
   // Fetch analytics data
   const { data: analytics, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ['analyticsOverview'],
-    queryFn: fetchAnalyticsOverview,
+    queryKey: ['analyticsOverview', timeRange],
+    queryFn: () => fetchAnalyticsOverview(timeRange),
     staleTime: 60000,
     gcTime: 300000,
     refetchInterval: 60000,
@@ -87,7 +87,7 @@ export default function Analytics() {
       }))
     : [];
 
-  const topUsersData = displayData?.top_users?.slice(0, 8).map(u => ({
+  const topUsersData = displayData?.top_users?.slice(0, 8).map((u: UserActivity) => ({
     name: truncateUserId(u.user_id, 12),
     fullName: u.user_id,
     runs: u.total_runs,
@@ -313,39 +313,19 @@ export default function Analytics() {
                   {/* Top Active Users */}
                   <TopUsersChart topUsersData={topUsersData} colors={colors} />
 
-                  {/* Activity Periods */}
-                  <Card className="bg-background-card shadow-card border-gray-800">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-lg font-heading">Activity Periods</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-4">
-                        <ActivityPeriodRow 
-                          label="Last 7 Days" 
-                          activeUsers={analytics?.active_7days?.length || 0}
-                          totalRuns={analytics?.active_7days?.reduce((sum, u) => sum + u.recent_runs, 0) || 0}
-                          color={colors.info}
-                        />
-                        <ActivityPeriodRow 
-                          label="Last 30 Days" 
-                          activeUsers={analytics?.active_30days?.length || 0}
-                          totalRuns={analytics?.active_30days?.reduce((sum, u) => sum + u.recent_runs, 0) || 0}
-                          color={colors.primary}
-                        />
-                        {analytics?.time_stats?.time_span_days && (
-                          <div className="pt-3 border-t border-gray-700">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm text-gray-400">Data Span:</span>
-                              <span className="text-lg font-bold text-success">{analytics.time_stats.time_span_days} days</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                  {/* Top Blueprints Quick View */}
+                  <TopBlueprintsQuickView 
+                    blueprints={displayData?.top_blueprints?.slice(0, 5) || []}
+                    totalBlueprints={displayData?.top_blueprints?.length || 0}
+                    colors={colors}
+                  />
 
-                  {/* Time Statistics */}
-                  <TimeStatistics analytics={analytics} />
+                  {/* Workflow Execution Chart */}
+                  <WorkflowExecutionChart 
+                    timeSeriesData={analytics?.time_series || []} 
+                    timeRange={timeRange}
+                    colors={colors}
+                  />
                 </div>
               </TabsContent>
 
@@ -499,37 +479,135 @@ function TopUsersChart({ topUsersData, colors }: any) {
   );
 }
 
-// Time Statistics Component
-function TimeStatistics({ analytics }: any) {
+// Workflow Execution Chart Component
+function WorkflowExecutionChart({ timeSeriesData, timeRange, colors }: any) {
+  // Format the data for the chart
+  const chartData = timeSeriesData.map((item: any) => ({
+    period: formatPeriodLabel(item.period, timeRange),
+    count: item.count,
+    fullPeriod: item.period
+  }));
+
+  // Format period label based on time range
+  function formatPeriodLabel(period: string, range: string): string {
+    if (!period) return '';
+    
+    try {
+      if (range === 'today') {
+        // Format: "2024-01-15 14:00" -> "2:00 PM"
+        // Try parsing as date first
+        let date: Date | null = null;
+        if (period.includes('T') || period.includes('Z')) {
+          date = new Date(period);
+        } else if (period.includes(' ')) {
+          // Format: "2024-01-15 14:00" - add timezone for parsing
+          date = new Date(period + ':00Z');
+        } else {
+          date = new Date(period);
+        }
+        
+        if (date && !isNaN(date.getTime())) {
+          return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        }
+        
+        // Fallback: extract hour from string like "2024-01-15 14:00"
+        const parts = period.split(' ');
+        if (parts.length > 1) {
+          const hourStr = parts[1].split(':')[0];
+          const hour = parseInt(hourStr);
+          if (!isNaN(hour)) {
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            const displayHour = hour % 12 || 12;
+            return `${displayHour}:00 ${ampm}`;
+          }
+        }
+      } else {
+        // Format: "2024-01-15" -> "Jan 15"
+        let date: Date | null = null;
+        if (period.includes('T') || period.includes('Z')) {
+          date = new Date(period);
+        } else {
+          // Assume it's a date string like "2024-01-15"
+          date = new Date(period + 'T00:00:00Z');
+        }
+        
+        if (date && !isNaN(date.getTime())) {
+          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+      }
+      return period;
+    } catch {
+      return period;
+    }
+  }
+
+  const getChartTitle = () => {
+    switch (timeRange) {
+      case 'today':
+        return 'Workflow Executions Today (by Hour)';
+      case '7days':
+        return 'Workflow Executions (Last 7 Days)';
+      case '30days':
+        return 'Workflow Executions (Last 30 Days)';
+      default:
+        return 'Workflow Executions Over Time';
+    }
+  };
+
   return (
     <Card className="bg-background-card shadow-card border-gray-800">
       <CardHeader className="pb-2">
         <CardTitle className="text-lg font-heading flex items-center gap-2">
-          <FaClock className="text-warning" />
-          Time Statistics
+          <FaChartLine style={{ color: colors.primary }} />
+          {getChartTitle()}
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          {analytics?.time_stats?.earliest_run && (
-            <div className="p-3 bg-background-dark rounded-md">
-              <p className="text-xs text-gray-500 mb-1">First Run</p>
-              <p className="text-sm font-medium truncate">{analytics.time_stats.earliest_run.user_id}</p>
-              <p className="text-xs text-gray-400 mt-1">
-                {new Date(analytics.time_stats.earliest_run.timestamp).toLocaleString()}
-              </p>
-            </div>
-          )}
-          {analytics?.time_stats?.latest_run && (
-            <div className="p-3 bg-background-dark rounded-md">
-              <p className="text-xs text-gray-500 mb-1">Latest Run</p>
-              <p className="text-sm font-medium truncate">{analytics.time_stats.latest_run.user_id}</p>
-              <p className="text-xs text-gray-400 mt-1">
-                {new Date(analytics.time_stats.latest_run.timestamp).toLocaleString()}
-              </p>
-            </div>
-          )}
-        </div>
+        {chartData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={chartData}>
+              <defs>
+                <linearGradient id="colorWorkflows" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={colors.primary} stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor={colors.primary} stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis 
+                dataKey="period" 
+                stroke="#9CA3AF" 
+                style={{ fontSize: '12px' }}
+                angle={chartData.length > 10 ? -45 : 0}
+                textAnchor={chartData.length > 10 ? 'end' : 'middle'}
+                height={chartData.length > 10 ? 80 : 30}
+              />
+              <YAxis stroke="#9CA3AF" style={{ fontSize: '12px' }} />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: '#374151', 
+                  border: '1px solid #6B7280', 
+                  borderRadius: '0.375rem' 
+                }}
+                labelStyle={{ color: '#F9FAFB' }}
+                formatter={(value: number) => [`${value} workflows`, 'Executions']}
+                labelFormatter={(label) => `Period: ${label}`}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="count" 
+                stroke={colors.primary} 
+                fillOpacity={1} 
+                fill="url(#colorWorkflows)"
+                strokeWidth={2}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+            <FaChartLine className="text-5xl mb-4 opacity-30" />
+            <p className="text-sm">No workflow execution data available for this period</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -640,6 +718,80 @@ function AllUsersTable({ users, page, setPage, itemsPerPage }: any) {
             onPageChange={setPage}
           />
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Top Blueprints Quick View Component
+function TopBlueprintsQuickView({ blueprints, totalBlueprints, colors }: any) {
+  if (!blueprints || blueprints.length === 0) {
+    return (
+      <Card className="bg-background-card shadow-card border-gray-800">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-heading flex items-center gap-2">
+            <FaRocket style={{ color: colors.primary }} />
+            Top Blueprints
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center h-48 text-gray-400">
+            <FaRocket className="text-4xl mb-3 opacity-30" />
+            <p className="text-sm">No blueprint data available</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const maxRuns = Math.max(...blueprints.map((bp: any) => bp.run_count), 1);
+
+  return (
+    <Card className="bg-background-card shadow-card border-gray-800">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg font-heading flex items-center gap-2">
+          <FaRocket style={{ color: colors.primary }} />
+          Top Blueprints
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {blueprints.map((bp: any, idx: number) => {
+            const percentage = (bp.run_count / maxRuns) * 100;
+            return (
+              <div key={idx} className="space-y-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="font-medium truncate max-w-[200px]" title={bp.blueprint_name}>
+                    {bp.blueprint_name}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-gray-400 text-xs">{bp.unique_users} users</span>
+                    <span className="font-semibold" style={{ color: colors.primary }}>
+                      {bp.run_count}
+                    </span>
+                  </div>
+                </div>
+                <div className="w-full bg-background-dark rounded-full h-2">
+                  <div
+                    className="h-2 rounded-full transition-all"
+                    style={{
+                      width: `${percentage}%`,
+                      backgroundColor: colors.primary,
+                      opacity: 0.7
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+          {totalBlueprints > 5 && (
+            <div className="pt-2 border-t border-gray-700 text-center">
+              <p className="text-xs text-gray-500">
+                +{totalBlueprints - 5} more blueprints
+              </p>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
