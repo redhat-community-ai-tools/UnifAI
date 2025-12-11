@@ -3,6 +3,7 @@ from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 from pydantic.json import pydantic_encoder
 import yaml
+import traceback
 
 graph_validation_bp = Blueprint("graph_validation", __name__)
 
@@ -17,7 +18,7 @@ def get_validation_names():
         validation_names = validation_svc.get_validation_names()
         return jsonify({"validation_names": validation_names}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @graph_validation_bp.route("/channels.validate", methods=["POST"])
@@ -48,7 +49,7 @@ def validate_channels():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @graph_validation_bp.route("/all.validate", methods=["POST"])
@@ -79,7 +80,7 @@ def validate_all():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @graph_validation_bp.route("/dependencies.validate", methods=["POST"])
@@ -110,7 +111,7 @@ def validate_dependencies():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @graph_validation_bp.route("/cycles.validate", methods=["POST"])
@@ -141,7 +142,7 @@ def validate_cycles():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @graph_validation_bp.route("/orphans.validate", methods=["POST"])
@@ -172,7 +173,7 @@ def validate_orphans():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @graph_validation_bp.route("/required_nodes.validate", methods=["POST"])
@@ -203,4 +204,4 @@ def validate_required_nodes():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500

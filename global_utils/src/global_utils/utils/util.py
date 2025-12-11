@@ -158,6 +158,22 @@ def to_pascal_case(s: str) -> str:
     return ''.join(word.capitalize() for word in words)
 
 
+def to_snake_case(s: str) -> str:
+    """
+    Convert CamelCase or PascalCase to snake_case.
+    
+    Examples:
+        - SlackRetriever -> slack_retriever
+        - DocsDataflowRetriever -> docs_dataflow_retriever
+        - HTTPResponse -> http_response
+    """
+    # Insert underscore before uppercase letters that follow lowercase letters
+    s = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', s)
+    # Insert underscore between consecutive uppercase letters followed by lowercase
+    s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', s)
+    return s.lower()
+
+
 def validate_arguments(schema: dict, args: dict):
     try:
         # Validate the data against the JSON Schema

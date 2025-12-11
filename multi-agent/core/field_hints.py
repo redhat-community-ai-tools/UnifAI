@@ -33,6 +33,14 @@ class ActionHint(BaseModel):
         None,
         description="Target field in action output for population hints"
     )
+    label_field: Optional[str] = Field(
+        None,
+        description="Dot-notation path to display label (e.g., 'documents.name')"
+    )
+    value_field: Optional[str] = Field(
+        None,
+        description="Dot-notation path to stored value (e.g., 'documents.id')"
+    )
     multi_select: bool = Field(
         default=False,
         description="Whether this field supports multiple selections"
@@ -44,6 +52,14 @@ class ActionHint(BaseModel):
     dependencies: Dict[str, str] = Field(
         default_factory=dict,
         description="Field dependencies for action input (config_field_name -> action_input_field)"
+    )
+    pagination: bool = Field(
+        default=False,
+        description="Whether the action supports pagination (has next_cursor, has_more)"
+    )
+    search: bool = Field(
+        default=False,
+        description="Whether the action supports search filtering (has search_regex param)"
     )
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:

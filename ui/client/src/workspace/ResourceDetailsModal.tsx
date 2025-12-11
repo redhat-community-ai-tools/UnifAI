@@ -6,6 +6,7 @@ import { FileText } from 'lucide-react';
 import { maskSecretFieldsInConfig } from '../utils/maskSecretFields';
 import { ElementSchema } from '../types/workspace';
 import axios from '../http/axiosAgentConfig';
+import { useAgenticAI } from '@/contexts/AgenticAIContext';
 
 interface ResourceDetailsModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
   element
 }) => {
   const [elementSchema, setElementSchema] = useState<ElementSchema | null>(null);
+  const { getResourceName, resolveRefsInConfig } = useAgenticAI();
 
   // Fetch schema when modal opens and element is available
   useEffect(() => {
@@ -90,11 +92,14 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
               <div>
                 <label className="text-sm font-medium text-gray-400">Referenced Resources</label>
                 <div className="mt-1 space-y-1">
-                  {element.workspaceData.nested_refs.map((ref, index) => (
-                    <Badge key={index} variant="outline" className="mr-2">
-                      {ref}
-                    </Badge>
-                  ))}
+                  {element.workspaceData.nested_refs.map((ref, index) => {
+                    const displayText = getResourceName(ref);
+                    return (
+                      <Badge key={index} variant="outline" className="mr-2">
+                        {displayText}
+                      </Badge>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -105,7 +110,7 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
                 <label className="text-sm font-medium text-gray-400">Full Configuration</label>
                 <div className="mt-2 bg-gray-900 p-4 rounded-md">
                   <pre className="text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto">
-                    {JSON.stringify(maskSecretFieldsInConfig(element.workspaceData.config, elementSchema?.config_schema), null, 2)}
+                    {JSON.stringify(maskSecretFieldsInConfig(resolveRefsInConfig(element.workspaceData.config), elementSchema?.config_schema), null, 2)}
                   </pre>
                 </div>
               </div>

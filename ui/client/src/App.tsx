@@ -14,10 +14,19 @@ import { NotificationProvider } from '@/contexts/NotificationContext';
 import { SharedProvider } from '@/contexts/SharedContext';
 import DocumentsPage from "./features/docs/DocumentsPage";
 import { AuthProvider } from '@/contexts/AuthContext';
+import { AgenticAIProvider } from '@/contexts/AgenticAIContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import SlackIntegration from "./features/slack/SlackIntegration";
 import SlackAddSourcePage from "./features/slack/SlackAddSourcePage";
 import GuidesPage from "./components/guides/GuidesPage";
+
+const withAgenticAIProvider = <P extends object>(Component: React.ComponentType<P>) => {
+  return (props: P) => (
+    <AgenticAIProvider>
+      <Component {...props} />
+    </AgenticAIProvider>
+  );
+};
 
 function App() {
   // Set document title
@@ -28,18 +37,21 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <NotificationProvider>
-          <SharedProvider>
-            <ProjectProvider>
+        <SharedProvider>
+          <ProjectProvider>
+            <NotificationProvider>
               <ProtectedRoute>
                 <Switch>
-                  <Route path="/" component={AgenticAI} />
+                  {/* Agentic AI routes - wrapped with AgenticAIProvider */}
+                  <Route path="/" component={withAgenticAIProvider(AgenticAI)} />
+                  <Route path="/agentic-ai" component={withAgenticAIProvider(AgenticAI)} />
+                  <Route path="/inventory" component={withAgenticAIProvider(AgentRepository)} />
+                  <Route path="/agentic-chats" component={withAgenticAIProvider(AgenticChats)} />
+                  
+                  {/* Non-agentic routes - don't need AgenticAIProvider */}
                   <Route path="/jira" component={JiraIntegration} />
                   <Route path="/slack" component={SlackIntegration} />
                   <Route path="/documents" component={DocumentsPage} />
-                  <Route path="/inventory" component={AgentRepository} />
-                  <Route path="/agentic-ai" component={AgenticAI} />
-                  <Route path="/agentic-chats" component={AgenticChats} />
                   <Route path="/slack/add-source" component={SlackAddSourcePage} />
                   <Route path="/configuration" component={Configuration} />
                   <Route path="/analytics" component={Analytics} />
@@ -47,9 +59,9 @@ function App() {
                   <Route component={NotFound} />
                 </Switch>
               </ProtectedRoute>
-            </ProjectProvider>
-          </SharedProvider>
-        </NotificationProvider>
+            </NotificationProvider>
+          </ProjectProvider>
+        </SharedProvider>
       </AuthProvider>
     </ThemeProvider>
   );

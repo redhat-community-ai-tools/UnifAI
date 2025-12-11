@@ -4,13 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { FileText } from 'lucide-react';
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
 import { maskSecretFieldsInConfig } from '../../../utils/maskSecretFields';
+import { useAgenticAI } from '@/contexts/AgenticAIContext';
 
 interface ElementDataProps {
   element: ElementInstance | null;
   elementType: ElementType;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  elementSchema: ElementSchema | null;
+  elementSchema: ElementSchema | null | undefined;
 }
 
 export const ElementData: React.FC<ElementDataProps> = ({
@@ -20,6 +21,18 @@ export const ElementData: React.FC<ElementDataProps> = ({
   onOpenChange,
   elementSchema
 }) => {
+  const { getResourceName, resolveRefsInConfig } = useAgenticAI();
+
+  // Resolve refs in nested_refs to show names
+  const resolvedNestedRefs = element?.nested_refs?.map((ref) => {
+    return getResourceName(ref);
+  });
+
+  // Resolve refs in config for display
+  const configWithResolvedRefs = element?.config 
+    ? resolveRefsInConfig(element.config)
+    : null;
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="bg-background-card border-gray-800 text-foreground max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -65,11 +78,11 @@ export const ElementData: React.FC<ElementDataProps> = ({
             </div>
 
             {/* References */}
-            {element.nested_refs && element.nested_refs.length > 0 && (
+            {resolvedNestedRefs && resolvedNestedRefs.length > 0 && (
               <div>
                 <label className="text-sm font-medium text-gray-400">Referenced Resources</label>
                 <div className="mt-1 space-y-1">
-                  {element.nested_refs.map((ref, index) => (
+                  {resolvedNestedRefs.map((ref, index) => (
                     <Badge key={index} variant="outline" className="mr-2">
                       {ref}
                     </Badge>
@@ -79,12 +92,12 @@ export const ElementData: React.FC<ElementDataProps> = ({
             )}
 
             {/* Configuration */}
-            {element.config && (
+            {configWithResolvedRefs && (
               <div>
                 <label className="text-sm font-medium text-gray-400">Full Configuration</label>
                 <div className="mt-2 bg-gray-900 p-4 rounded-md">
                   <pre className="text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto">
-                    {JSON.stringify(maskSecretFieldsInConfig(element.config, elementSchema?.config_schema), null, 2)}
+                    {JSON.stringify(maskSecretFieldsInConfig(configWithResolvedRefs, elementSchema?.config_schema), null, 2)}
                   </pre>
                 </div>
               </div>

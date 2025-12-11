@@ -8,6 +8,7 @@ They are organized by category:
 - delegation: Tools for delegating tasks between nodes
 - workspace: Tools for reading workspace context
 - time: Tools for getting time and date information
+- retriever: Tool wrapper for using retrievers as tools
 """
 
 # Import all built-in tools for easy access
@@ -16,4 +17,5 @@ from .topology import *
 from .delegation import *
 from .workspace import *
 from .time import *
+from .retriever import *
 

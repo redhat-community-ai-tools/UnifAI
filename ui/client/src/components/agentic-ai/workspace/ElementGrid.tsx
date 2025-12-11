@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import SimpleTooltip from '@/components/shared/SimpleTooltip';
 import { useShared } from '@/contexts/SharedContext';
+import { useAgenticAI } from '@/contexts/AgenticAIContext';
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
 import { ElementData } from './ElementData';
 import { formatConfigValue } from '../../../utils/maskSecretFields';
@@ -39,6 +40,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   const [selectedElement, setSelectedElement] = useState<ElementInstance | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const { openShareForItem } = useShared();
+  const { getResourceName } = useAgenticAI();
 
   const handleViewDetails = (element: ElementInstance) => {
     setSelectedElement(element);
@@ -149,11 +151,15 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
                     <div className="text-xs text-gray-300 mt-1 space-y-1">
                       {Object.keys(element.config).slice(0, 3).map((key) => {
                         const fieldSchema = elementSchema?.config_schema?.properties?.[key];
+                        const rawValue = element.config[key];
+                        const displayValue = Array.isArray(rawValue)
+                          ? rawValue.map((item: any) => getResourceName(item)).join(', ')
+                          : getResourceName(rawValue);
                         return (
                           <div key={key} className="flex justify-between">
                             <span className="truncate">{key}:</span>
-                            <span className="text-gray-400 ml-2 truncate max-w-24">
-                              {formatConfigValue(element.config[key], fieldSchema)}
+                            <span className="text-gray-400 ml-2 truncate max-w-24" title={displayValue}>
+                              {formatConfigValue(displayValue, fieldSchema)}
                             </span>
                           </div>
                         );

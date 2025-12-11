@@ -16,6 +16,7 @@ from elements.nodes.common.agent.execution import ExecutionMode
 from elements.nodes.common.agent.constants import StrategyType
 from elements.tools.common.execution.models import ExecutorConfig
 from elements.tools.builtin.time import GetCurrentTimeTool
+from elements.tools.builtin.retriever import RetrieverTool
 
 
 class CustomAgentNode(
@@ -122,14 +123,10 @@ class CustomAgentNode(
         # Time tool (no dependencies needed)
         builtin_tools.append(GetCurrentTimeTool())
 
-        # Future builtin tools can be added here with their dependencies:
-        # Example with dependencies (when needed):
-        # get_uid = lambda: self.uid
-        # get_thread = lambda: self._current_thread
-        # builtin_tools.append(SomeToolWithDeps(
-        #     get_uid=get_uid,
-        #     get_thread=get_thread
-        # ))
+        # Retriever as tool (if available)
+        # Allows agent to decide when to retrieve context
+        if self.retriever is not None:
+            builtin_tools.append(RetrieverTool(self.retriever))
 
         return builtin_tools
 
@@ -210,10 +207,10 @@ class CustomAgentNode(
         if agent_results_context:
             context_messages.append(agent_results_context)
 
-        # 4. Add current task with retriever context if available
+        # 4. Add current task
+        # Note: Retriever is now exposed as a tool (RetrieverTool) so the agent
+        # can decide when to retrieve context rather than always augmenting
         user_msg = ChatMessage(role=Role.USER, content=task.content)
-        if self.retriever:
-            user_msg = self.augment_with_context(user_msg)
         context_messages.append(user_msg)
 
         return context_messages
