@@ -57,11 +57,6 @@ export interface BlueprintUsage {
   unique_users: number;
 }
 
-export interface HourlyActivity {
-  hour: string;
-  count: number;
-}
-
 export interface TimeSeriesData {
   period: string;
   count: number;
@@ -119,17 +114,6 @@ export async function fetchBlueprintUsage(limit: number = 10): Promise<{ bluepri
   const response = await api.get<{ blueprint_usage: BlueprintUsage[], count: number }>(
     'analytics/blueprints/usage',
     { params: { limit } }
-  );
-  return response.data;
-}
-
-/**
- * Fetch hourly activity distribution
- */
-export async function fetchHourlyActivity(days: number = 7): Promise<{ hourly_activity: HourlyActivity[], days: number }> {
-  const response = await api.get<{ hourly_activity: HourlyActivity[], days: number }>(
-    'analytics/activity/hourly',
-    { params: { days } }
   );
   return response.data;
 }

@@ -7,7 +7,8 @@ celery = CeleryApp(
     broker_password=config.broker_password,
     task_modules=[
         "celery_app.tasks.pipeline_tasks",
-        "celery_app.tasks.slack_event_subscription_tasks"
+        "celery_app.tasks.slack_event_subscription_tasks",
+        "celery_app.tasks.analytics_cache_tasks"
     ]
 ).app
 
