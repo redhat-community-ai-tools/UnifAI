@@ -2,6 +2,8 @@
 
 Welcome! This guide explains our two-step Jenkins pipeline process for building and deploying the **UnifAI** application.
 
+> **📖 For detailed architecture, conventions, and troubleshooting, see [ARCHITECTURE.md](./ARCHITECTURE.md)**
+
 ---
 
 ## 📦 Overview
@@ -10,6 +12,11 @@ Our CI/CD process consists of two main pipelines:
 
 1. **Image Builder** – Builds new container images from our code.
 2. **Application Deployer** – Deploys those images to our OpenShift clusters using Helm.
+
+**Quick Links:**
+- 🏗️ [Image Builder Job](https://jenkins-csb-ant-main.dno.corp.redhat.com/job/UnifAI/job/image-builder/)
+- 🚀 [Application Deployer Job](https://jenkins-csb-ant-main.dno.corp.redhat.com/job/UnifAI/job/app-deployer/)
+- 📚 [Detailed Architecture Documentation](./ARCHITECTURE.md)
 
 ---
 
@@ -81,4 +88,114 @@ This pipeline takes the images built by the first pipeline and deploys them to a
 
 ---
 
-Have Fun.
+## 📚 Additional Resources
+
+### Documentation
+- **[ARCHITECTURE.md](./ARCHITECTURE.md)** - Comprehensive technical documentation including:
+  - Pipeline architecture and flow diagrams
+  - Code conventions and best practices
+  - Detailed function documentation
+  - Troubleshooting guide
+  - Environment configuration
+  - Groovy coding standards
+
+### Pipeline Files
+- `pipeline-build.groovy` - Image builder implementation
+- `pipeline-deploy.groovy` - Deployment orchestration
+- `deploy-bu.groovy` - Build utility functions
+
+### Related Documentation
+- [Helm Deployment Guide](../helm/README.md)
+- [Helm Architecture](../helm/ARCHITECTURE.md)
+
+---
+
+## 🔧 Common Workflows
+
+### Workflow 1: Full Build & Deploy to Staging
+```
+✅ Build all components → Deploy to staging environment
+```
+1. Go to [Image Builder](https://jenkins-csb-ant-main.dno.corp.redhat.com/job/UnifAI/job/image-builder/)
+2. Set parameters:
+   - `BRANCH`: `main`
+   - `build_sso_image`: ✓
+   - `build_gui`: ✓
+   - `build_dataflow_backend`: ✓
+   - `build_multiagent_backend`: ✓
+   - `set_image_candidate`: ✓
+   - `deploy_unifai`: ✓
+   - `deploy_type`: `APPLICATION_UPGRADE`
+   - `deploy_location`: `STAGING`
+
+### Workflow 2: Hotfix Single Component
+```
+🔥 Build one component → Deploy to production
+```
+1. Build only the changed component (e.g., `build_gui`: ✓, others: ✗)
+2. **Don't trigger automatic deployment** (`deploy_unifai`: ✗)
+3. Manually run [Application Deployer](https://jenkins-csb-ant-main.dno.corp.redhat.com/job/UnifAI/job/app-deployer/)
+4. Set `MODULES_TO_DEPLOY`: `ui` and appropriate version
+
+### Workflow 3: Fresh Environment Setup
+```
+🆕 Deploy everything from scratch
+```
+1. Run deployment pipeline with:
+   - `deploy_type`: `FRESH_INSTALL`
+   - `deploy_location`: `STAGING` or `PRODUCTION`
+2. Wait for shared resources to be ready (~15 min)
+3. Application components deploy automatically
+
+---
+
+## ⚠️ Important Notes
+
+### Version Management
+- **VERSION** parameter is auto-generated as `YYYY.MM.DD` (e.g., `2024.12.01`)
+- Use the same **VERSION** across build and deployment pipelines
+- For hotfixes, append suffix: `2024.12.01-hotfix`
+
+### Image Tags
+- Setting `set_image_candidate=true` also tags images as `latest`
+- Production deployments should use specific version tags
+- Development can use `latest` tag
+
+### Deployment Safety
+- **FRESH_INSTALL** deletes existing deployment ⚠️
+- **APPLICATION_UPGRADE** performs rolling updates (zero downtime)
+- Always verify in **STAGING** before deploying to **PRODUCTION**
+
+### Manual Deployment
+If you need to manually deploy without building:
+1. **Don't set** the `VERSION` parameter in deployment pipeline
+2. **Do set** the component-specific versions (`DF_VERSION`, `MA_VERSION`, etc.)
+3. Specify `MODULES_TO_DEPLOY` (e.g., `dataflow,ui,sso`)
+
+---
+
+## 🐛 Troubleshooting
+
+### Build Failures
+```
+Error: podman build failed with exit status 137
+```
+**Solution:** OOM (Out of Memory) - Contact DevOps to increase build agent resources.
+
+### Deployment Hangs
+```
+Waiting for pods to be ready...
+```
+**Solution:** Check OpenShift console, pods may be in `ImagePullBackOff` or `CrashLoopBackOff`.
+
+### Image Not Found
+```
+Failed to pull image: manifest unknown
+```
+**Solution:** Verify image was pushed to registry, check `VERSION` parameter matches.
+
+For detailed troubleshooting, see [ARCHITECTURE.md - Troubleshooting](./ARCHITECTURE.md#troubleshooting).
+
+---
+
+Have Fun! 🚀
