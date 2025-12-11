@@ -48,18 +48,25 @@ def require_analytics_access(f):
                 request.headers.get('X-User')
             )
         
+        # Require authentication - deny access if no user_id found
+        if not user_id:
+            return jsonify({
+                "error": "Authentication required",
+                "message": "You must be authenticated to access analytics"
+            }), 401
+        
         # Get allowed users from config
         admin_allowed_users = getattr(config, 'admin_allowed_users', [])
         if not admin_allowed_users:
             admin_allowed_users = ["yhabushi"]  # Default fallback
         
-        # If we found a user, check if they're in the allowed list
-        if user_id:
-            if user_id not in admin_allowed_users:
-                return jsonify({
-                    "error": "Access denied",
-                    "message": f"User '{user_id}' does not have permission to access analytics"
-                }), 403
+        # Check if user is in the allowed list
+        if user_id not in admin_allowed_users:
+            return jsonify({
+                "error": "Access denied",
+                "message": f"User '{user_id}' does not have permission to access analytics"
+            }), 403
+        
         return f(*args, **kwargs)
     return decorated_function
 

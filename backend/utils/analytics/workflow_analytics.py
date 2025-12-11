@@ -269,8 +269,8 @@ class WorkflowAnalytics:
     
     def get_time_based_stats(self) -> Dict[str, Any]:
         """Get time-based statistics."""
-        earliest = self.collection.find_one(sort=[("run_context.start_timestamp", pymongo.ASCENDING)])
-        latest = self.collection.find_one(sort=[("run_context.start_timestamp", pymongo.DESCENDING)])
+        earliest = self.collection.find_one(sort=[("run_context.started_at", pymongo.ASCENDING)])
+        latest = self.collection.find_one(sort=[("run_context.started_at", pymongo.DESCENDING)])
         
         stats = {
             "earliest_run": None,
@@ -280,8 +280,8 @@ class WorkflowAnalytics:
         
         if earliest and latest:
             try:
-                earliest_time = earliest.get("run_context", {}).get("start_timestamp")
-                latest_time = latest.get("run_context", {}).get("start_timestamp")
+                earliest_time = earliest.get("run_context", {}).get("started_at")
+                latest_time = latest.get("run_context", {}).get("started_at")
                 
                 # Validate and convert timestamps
                 def validate_timestamp(ts):
