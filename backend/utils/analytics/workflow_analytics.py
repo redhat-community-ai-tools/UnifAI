@@ -7,12 +7,13 @@ from collections import defaultdict
 from typing import Dict, List, Any
 import pymongo
 from global_utils.utils.util import get_mongo_url
-from global_utils.config import SharedConfig
+from config.app_config import AppConfig
+from config.constants import Collection
 
 # Get MongoDB configuration
-config = SharedConfig.get_instance()
+app_config = AppConfig.get_instance()
 MONGO_URI = get_mongo_url()
-MONGO_DB = getattr(config, 'mongo_db', 'UnifAI')
+MONGO_DB = "UnifAI"
 
 
 class WorkflowAnalytics:
@@ -22,8 +23,8 @@ class WorkflowAnalytics:
         """Initialize with MongoDB connection."""
         self.client = pymongo.MongoClient(mongo_uri or MONGO_URI)
         self.db = self.client[db_name or MONGO_DB]
-        self.collection = self.db["workflow_sessions"]
-        self.blueprints_collection = self.db["blueprints"]
+        self.collection = self.db[Collection.WORKFLOW_SESSIONS.value]
+        self.blueprints_collection = self.db[Collection.BLUEPRINTS.value]
         
         # Ensure indexes exist for better performance
         self._ensure_indexes()

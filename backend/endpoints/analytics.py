@@ -9,7 +9,7 @@ Cache is refreshed in background by Celery workers.
 from flask import Blueprint, jsonify, session, request
 from global_utils.helpers.apiargs import from_query
 from webargs import fields
-from global_utils.config import SharedConfig
+from config.app_config import AppConfig
 from functools import wraps
 from shared.logger import logger
 from providers.analytics import (
@@ -22,7 +22,7 @@ from providers.analytics import (
 analytics_bp = Blueprint("analytics", __name__)
 
 # Get configuration for access control
-config = SharedConfig.get_instance()
+app_config = AppConfig.get_instance()
 
 
 def require_analytics_access(f):
@@ -60,9 +60,7 @@ def require_analytics_access(f):
             }), 401
         
         # Get allowed users from config
-        admin_allowed_users = getattr(config, 'admin_allowed_users', [])
-        if not admin_allowed_users:
-            admin_allowed_users = ["yhabushi"]  # Default fallback
+        admin_allowed_users = getattr(app_config, 'admin_allowed_users', [])
         
         # Check if user is in the allowed list
         if user_id not in admin_allowed_users:

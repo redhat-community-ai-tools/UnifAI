@@ -5,9 +5,10 @@ Contains cache configuration and helper functions for MongoDB cache management.
 """
 
 from utils.analytics.workflow_analytics import WorkflowAnalytics
+from config.constants import Collection
 
 # Cache configuration
-CACHE_COLLECTION = "analytics_cache"
+CACHE_COLLECTION = Collection.ANALYTICS_CACHE.value
 CACHE_TTL = 60  # 60 seconds
 
 # Singleton cache collection access

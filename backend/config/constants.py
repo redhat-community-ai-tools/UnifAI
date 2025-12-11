@@ -11,6 +11,9 @@ class Collection(Enum):
     CHUNKS = "chunks"
     SLACK_CHANNELS = "slack_channels"
     PIPELINES = "pipelines"
+    WORKFLOW_SESSIONS = "workflow_sessions"
+    BLUEPRINTS = "blueprints"
+    ANALYTICS_CACHE = "analytics_cache"
 
 class DataSource(Enum):
     """Data source types with consistent naming"""
