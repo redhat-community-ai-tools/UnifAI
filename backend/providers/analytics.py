@@ -5,7 +5,6 @@ Contains business logic for analyzing workflow sessions from MongoDB.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List
 from global_utils.celery_app.helpers import send_task
 from shared.logger import logger
 from utils.analytics import get_workflow_analytics, get_cache_collection, CACHE_TTL
@@ -33,23 +32,57 @@ def get_analytics_overview(time_range: str = "all"):
     if cache_doc:
         # Check if cache is still valid
         expires_at = cache_doc.get("expires_at")
-        if expires_at and datetime.now(timezone.utc) < expires_at:
-            # Cache HIT - return cached data
-            # Trigger background refresh if cache is about to expire (stale-while-revalidate)
-            time_until_expiry = (expires_at - datetime.now(timezone.utc)).total_seconds()
-            if time_until_expiry < 10:  # Less than 10 seconds until expiry
-                try:
-                    send_task(
-                        task_name="celery_app.tasks.analytics_cache_tasks.refresh_analytics_cache",
-                        celery_queue="analytics_queue",
-                        time_range=time_range
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to trigger cache refresh: {str(e)}")
+        if expires_at:
+            # Ensure expires_at is timezone-aware (MongoDB might return naive datetime)
+            if isinstance(expires_at, datetime):
+                if expires_at.tzinfo is None:
+                    # Naive datetime - assume UTC
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
             
-            return cache_doc["data"]
+            if expires_at:
+                now = datetime.now(timezone.utc)
+                time_until_expiry = (expires_at - now).total_seconds()
+                if now < expires_at:
+                    # Cache HIT - return cached data
+                    # Trigger background refresh if cache is about to expire (stale-while-revalidate)
+                    logger.info(f"Cache HIT for time_range={time_range}, expires in {time_until_expiry:.1f}s")
+                    if time_until_expiry < 10:  # Less than 10 seconds until expiry
+                        logger.info(f"Cache expiring soon ({time_until_expiry:.1f}s), triggering background refresh")
+                        try:
+                            task_result = send_task(
+                                task_name="celery_app.tasks.analytics_cache_tasks.refresh_analytics_cache",
+                                celery_queue="analytics_queue",
+                                time_range=time_range
+                            )
+                            task_id = getattr(task_result, 'id', None) if task_result else None
+                            logger.info(f"Queued cache refresh task for time_range={time_range}, task_id={task_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to trigger cache refresh: {str(e)}", exc_info=True)
+                    
+                    return cache_doc["data"]
+                else:
+                    logger.info(f"Cache EXPIRED for time_range={time_range} (expired {abs(time_until_expiry):.1f}s ago)")
     
     # Cache MISS or expired - fetch fresh data
+    logger.info(f"Cache MISS for time_range={time_range}, fetching fresh data")
+    
+    # Trigger Celery task to update cache in background
+    # This ensures cache is updated via Celery, not synchronously in request handler
+    try:
+        logger.info(f"Triggering Celery task to refresh cache for time_range={time_range}")
+        task_result = send_task(
+            task_name="celery_app.tasks.analytics_cache_tasks.refresh_analytics_cache",
+            celery_queue="analytics_queue",
+            time_range=time_range
+        )
+        task_id = getattr(task_result, 'id', None) if task_result else None
+        logger.info(f"Successfully queued cache refresh task for time_range={time_range}, task_id={task_id}")
+    except Exception as e:
+        logger.error(f"Failed to trigger cache refresh task: {str(e)}", exc_info=True)
+        # Fallback: fetch synchronously if task fails
+        logger.warning(f"Falling back to synchronous cache update for time_range={time_range}")
+    
+    # Fetch fresh data synchronously for this request (user gets immediate response)
     analytics = get_workflow_analytics()
     
     overview = {
@@ -65,15 +98,20 @@ def get_analytics_overview(time_range: str = "all"):
         "generated_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     }
     
-    # Store in MongoDB cache (synchronous write for immediate availability)
+    # Also update cache synchronously for immediate availability (in case Celery task is delayed)
+    # The Celery task will update it again, but this ensures cache is available immediately
+    cached_at = datetime.now(timezone.utc)
+    expires_at = cached_at + timedelta(seconds=CACHE_TTL)
+    
     cache_doc = {
         "_id": cache_key,
         "data": overview,
         "time_range": time_range,
-        "cached_at": datetime.now(timezone.utc),
-        "expires_at": datetime.now(timezone.utc).replace(second=0, microsecond=0) + timedelta(seconds=CACHE_TTL)
+        "cached_at": cached_at,
+        "expires_at": expires_at
     }
     
+    # Update cache synchronously for immediate availability (Celery task will update it again in background)
     cache_collection.replace_one(
         {"_id": cache_key},
         cache_doc,
@@ -85,15 +123,6 @@ def get_analytics_overview(time_range: str = "all"):
         cache_collection.create_index("expires_at", expireAfterSeconds=0)
     except Exception:
         pass  # Index might already exist
-    
-    # Trigger background refresh for all time ranges on cache miss
-    try:
-        send_task(
-            task_name="celery_app.tasks.analytics_cache_tasks.refresh_all_analytics_cache",
-            celery_queue="analytics_queue"
-        )
-    except Exception as e:
-        logger.warning(f"Failed to trigger cache refresh: {str(e)}")
     
     return overview
 
@@ -140,11 +169,11 @@ def get_user_activity_data(limit: int = 15):
 def get_blueprint_usage_data(limit: int = 10):
     """
     Get most used blueprints.
-    
-    Args:
+        
+        Args:
         limit: Number of top blueprints to return (default: 10)
-    
-    Returns:
+        
+        Returns:
         Dict with blueprint_usage list and count
     """
     analytics = get_workflow_analytics()

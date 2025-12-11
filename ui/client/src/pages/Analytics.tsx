@@ -39,8 +39,8 @@ export default function Analytics() {
 
   // Fetch analytics data
   const { data: analytics, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ['analyticsOverview', timeRange],
-    queryFn: () => fetchAnalyticsOverview(timeRange),
+    queryKey: ['analyticsOverview', timeRange, user?.username || user?.sub],
+    queryFn: () => fetchAnalyticsOverview(timeRange, user?.username || user?.sub),
     staleTime: 60000,
     gcTime: 300000,
     refetchInterval: 60000,

@@ -78,10 +78,12 @@ export interface AnalyticsOverview {
 /**
  * Fetch comprehensive analytics overview
  */
-export async function fetchAnalyticsOverview(timeRange: 'today' | '7days' | '30days' | 'all' = 'all'): Promise<AnalyticsOverview> {
-  const response = await api.get<AnalyticsOverview>('analytics/overview', {
-    params: { time_range: timeRange }
-  });
+export async function fetchAnalyticsOverview(timeRange: 'today' | '7days' | '30days' | 'all' = 'all', userId?: string): Promise<AnalyticsOverview> {
+  const params: any = { time_range: timeRange };
+  if (userId) {
+    params.userId = userId;
+  }
+  const response = await api.get<AnalyticsOverview>('analytics/overview', { params });
   return response.data;
 }
 

@@ -29,7 +29,7 @@ def require_analytics_access(f):
     """Decorator to check if user has analytics access"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Get user from session or request headers
+        # Get user from multiple sources (session, headers, query params)
         user_id = None
         
         # Try to get user from Flask session (works if session is set in this backend)
@@ -40,7 +40,7 @@ def require_analytics_access(f):
             elif isinstance(user_data, str):
                 user_id = user_data
         
-        # Fallback: try to get from request headers (if passed by proxy/auth middleware)
+        # Fallback 1: try to get from request headers (if passed by proxy/auth middleware)
         if not user_id:
             user_id = (
                 request.headers.get('X-User-Id') or 
@@ -48,11 +48,15 @@ def require_analytics_access(f):
                 request.headers.get('X-User')
             )
         
+        # Fallback 2: try to get from query parameters (for frontend calls)
+        if not user_id:
+            user_id = request.args.get('userId') or request.args.get('user_id')
+        
         # Require authentication - deny access if no user_id found
         if not user_id:
             return jsonify({
                 "error": "Authentication required",
-                "message": "You must be authenticated to access analytics"
+                "message": "You must be authenticated to access analytics. Please provide userId parameter."
             }), 401
         
         # Get allowed users from config
