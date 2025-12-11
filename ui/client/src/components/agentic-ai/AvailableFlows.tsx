@@ -11,6 +11,7 @@ import {
   BookOpen,
   Trash2,
   Users,
+  Pencil,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useShared } from "@/contexts/SharedContext";
@@ -69,8 +70,10 @@ export interface AvailableFlowsProps {
   selectedFlow: FlowObject | null;
   onFlowSelect: (flow: FlowObject | null) => void;
   onFlowDelete?: (flow: FlowObject) => void;
+  onFlowEdit?: (flow: FlowObject) => void;
   showActiveStatus?: boolean;
   showDeleteButton?: boolean;
+  showEditButton?: boolean;
   className?: string;
   height?: string;
   useResolvedEndpoint?: boolean; // If true, uses resolved endpoint, otherwise uses regular get endpoint
@@ -87,8 +90,10 @@ export default function AvailableFlows({
   selectedFlow,
   onFlowSelect,
   onFlowDelete,
+  onFlowEdit,
   showActiveStatus = false,
   showDeleteButton = false,
+  showEditButton = false,
   className = "",
   height = "100%",
   useResolvedEndpoint = false,
@@ -191,6 +196,13 @@ export default function AvailableFlows({
       itemId: flow.id,
       itemName: flow.name,
     });
+  };
+
+  const handleEditClick = (flow: FlowObject, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent flow selection when clicking edit
+    if (onFlowEdit) {
+      onFlowEdit(flow);
+    }
   };
 
   const handleDeleteConfirm = async () => {
@@ -303,6 +315,18 @@ export default function AvailableFlows({
                           <Users className="h-3 w-3" />
                         </Button>
                       </SimpleTooltip>
+                      {showEditButton && (
+                        <SimpleTooltip content={<p>Edit this workflow</p>}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 hover:bg-amber-500/20 hover:text-amber-400"
+                            onClick={(e) => handleEditClick(flow, e)}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </Button>
+                        </SimpleTooltip>
+                      )}
                       {showDeleteButton && (
                         <SimpleTooltip content={<p>Delete this workflow</p>}>
                           <Button

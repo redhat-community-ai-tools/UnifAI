@@ -8,11 +8,10 @@ import SaveBlueprintModal from "@/components/agentic-ai/graphs/SaveBlueprintModa
 
 interface NewGraphProps {
   onBack?: () => void;
+  editBlueprintId?: string | null;
 }
 
-export default function NewGraph({ onBack }: NewGraphProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
+export default function NewGraph({ onBack, editBlueprintId }: NewGraphProps) {
   const {
     nodes,
     edges,
@@ -40,7 +39,12 @@ export default function NewGraph({ onBack }: NewGraphProps) {
     fixSuggestions,
     isValidating,
     isSaving,
-  } = useGraphLogic();
+    // Edit mode state
+    isEditMode,
+    isLoadingBlueprint,
+    blueprintName,
+    blueprintDescription,
+  } = useGraphLogic({ editBlueprintId });
 
   const [saveModalOpen, setSaveModalOpen] = useState(false);
 
@@ -84,6 +88,18 @@ export default function NewGraph({ onBack }: NewGraphProps) {
   const handleClearGraph = () => {
     clearGraph();
   };
+
+  // Show loading state while loading blueprint for edit
+  if (isLoadingBlueprint) {
+    return (
+      <div className="h-full max-h-[calc(100vh-100px)] flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <p className="text-gray-400">Loading blueprint for editing...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full max-h-[calc(100vh-100px)] flex bg-background overflow-hidden">
@@ -145,6 +161,9 @@ export default function NewGraph({ onBack }: NewGraphProps) {
         onClose={() => setSaveModalOpen(false)}
         onSave={saveGraph}
         isLoading={isSaving}
+        isEditMode={isEditMode}
+        initialName={blueprintName}
+        initialDescription={blueprintDescription}
       />
     </div>
   );

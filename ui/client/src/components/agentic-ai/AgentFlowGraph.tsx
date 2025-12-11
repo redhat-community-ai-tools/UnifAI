@@ -12,11 +12,13 @@ import { ReactFlowProvider } from "reactflow";
 type AgentFlowGraphProps = {
   selectedFlow: FlowObject | null;
   setSelectedFlow: (flow: FlowObject | null) => void;
+  onFlowEdit?: (blueprintId: string) => void;
 };
 
 export default function AgentFlowGraph({
   selectedFlow,
   setSelectedFlow,
+  onFlowEdit,
 }: AgentFlowGraphProps): React.ReactElement {
   
   const handleFlowSelect = (flow: FlowObject | null): void => {
@@ -27,6 +29,12 @@ export default function AgentFlowGraph({
     // If the deleted flow was selected, clear the selection
     if (selectedFlow?.id === flow.id) {
       setSelectedFlow(null);
+    }
+  };
+
+  const handleFlowEdit = (flow: FlowObject): void => {
+    if (onFlowEdit) {
+      onFlowEdit(flow.id);
     }
   };
 
@@ -44,8 +52,10 @@ export default function AgentFlowGraph({
               selectedFlow={selectedFlow}
               onFlowSelect={handleFlowSelect}
               onFlowDelete={handleFlowDelete}
+              onFlowEdit={handleFlowEdit}
               showActiveStatus={true}
               showDeleteButton={true}
+              showEditButton={true}
               useResolvedEndpoint={true}
               height="100%"
               graphProps={{

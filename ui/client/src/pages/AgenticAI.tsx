@@ -32,6 +32,7 @@ export default function AgenticAI() {
   const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
   const [showGraphBuilder, setShowGraphBuilder] = useState(false);
   const [isLoadingFlow, setIsLoadingFlow] = useState(false);
+  const [editBlueprintId, setEditBlueprintId] = useState<string | null>(null);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -74,11 +75,18 @@ export default function AgenticAI() {
   };
 
   const handleBuildGraph = () => {
+    setEditBlueprintId(null); // Ensure we're in create mode, not edit mode
+    setShowGraphBuilder(true);
+  };
+
+  const handleEditFlow = (blueprintId: string) => {
+    setEditBlueprintId(blueprintId);
     setShowGraphBuilder(true);
   };
 
   const handleBackToFlowConfig = () => {
     setShowGraphBuilder(false);
+    setEditBlueprintId(null); // Clear edit mode when going back
   };
 
   return (
@@ -93,7 +101,7 @@ export default function AgenticAI() {
 
         <main className="flex-1 overflow-y-auto bg-background-dark">
           {showGraphBuilder ? (
-            <NewGraph onBack={handleBackToFlowConfig} />
+            <NewGraph onBack={handleBackToFlowConfig} editBlueprintId={editBlueprintId} />
           ) : (
             <div className="p-6">
               <motion.div
@@ -140,6 +148,7 @@ export default function AgenticAI() {
                 <AgentFlowGraph
                   selectedFlow={selectedFlow}
                   setSelectedFlow={setSelectedFlow}
+                  onFlowEdit={handleEditFlow}
                 />
               </motion.div>
             </div>

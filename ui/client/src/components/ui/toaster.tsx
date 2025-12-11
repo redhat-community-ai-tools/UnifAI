@@ -13,15 +13,18 @@ export function Toaster() {
 
   return (
     <ToastProvider duration={5000}>
-      {toasts.map(function ({ id, title, description, action, ...props }) {
+      {toasts.map(function ({ id, title, description, action, duration, ...props }) {
+        // Determine duration: use custom duration if provided, infinity for destructive, or fall back to provider default
+        const toastDuration = props.variant === "destructive" ? 2147483647 : duration;
+        
         return (
           <Toast
             key={id}
             {...props}
-            duration={props.variant === "destructive" ? 2147483647 : undefined}
+            duration={toastDuration}
             onEscapeKeyDown={(e) => e.preventDefault()}
             onSwipeEnd={(e) => e.preventDefault()}
-            onClick={props.variant === "destructive" ? () => dismiss(id) : undefined}
+            onClick={() => dismiss(id)}
           >
             <div className="grid gap-1">
               {title && <ToastTitle className={props.variant === "destructive" ? "text-base" : undefined}>{title}</ToastTitle>}

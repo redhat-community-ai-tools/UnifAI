@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +17,10 @@ interface SaveBlueprintModalProps {
   onClose: () => void;
   onSave: (name: string, description: string) => void;
   isLoading?: boolean;
+  /** If true, modal is in edit mode, also need initial name and description for edited flow */
+  isEditMode?: boolean;
+  initialName?: string;
+  initialDescription?: string;
 }
 
 const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
@@ -24,9 +28,20 @@ const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
   onClose,
   onSave,
   isLoading = false,
+  isEditMode = false,
+  initialName = "",
+  initialDescription = "",
 }) => {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [name, setName] = useState(initialName);
+  const [description, setDescription] = useState(initialDescription);
+
+  // Update state when initial values change (e.g., when switching to edit mode)
+  useEffect(() => {
+    if (isOpen) {
+      setName(initialName);
+      setDescription(initialDescription);
+    }
+  }, [isOpen, initialName, initialDescription]);
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -47,7 +62,9 @@ const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[500px] bg-gray-900 border-gray-700">
         <DialogHeader>
-          <DialogTitle className="text-white">Save Workflow</DialogTitle>
+          <DialogTitle className="text-white">
+            {isEditMode ? "Update Workflow" : "Save Workflow"}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
@@ -98,10 +115,10 @@ const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
             {isLoading ? (
               <div className="flex items-center gap-2">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                Saving...
+                {isEditMode ? "Updating..." : "Saving..."}
               </div>
             ) : (
-              "Save Workflow"
+              isEditMode ? "Update Workflow" : "Save Workflow"
             )}
           </Button>
         </DialogFooter>

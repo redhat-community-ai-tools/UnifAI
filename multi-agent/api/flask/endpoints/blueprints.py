@@ -97,6 +97,85 @@ def blueprint_draft_schema_get():
         return jsonify({"error": str(e)}), 500
 
 
+@blueprints_bp.route("/blueprint.get", methods=["GET"])
+@from_query({
+    "blueprint_id": fields.Str(data_key="blueprintId", required=True)
+})
+def get_blueprint(blueprint_id):
+    """
+    Get a single blueprint by its ID.
+    """
+    try:
+        svc = current_app.container.blueprint_service
+        
+        if not svc.exists(blueprint_id):
+            return jsonify({
+                "status": "error",
+                "error": f"Blueprint with ID '{blueprint_id}' not found"
+            }), 404
+        
+        doc = svc.get_blueprint_draft_doc(blueprint_id)
+        return jsonify({
+            "blueprint_id": doc["blueprint_id"],
+            "spec_dict": doc["spec_dict"]
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
+@blueprints_bp.route("/blueprint.update", methods=["PUT"])
+@from_body({
+    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
+    "blueprint_raw": fields.Str(data_key="blueprintRaw", required=True),
+})
+def update_blueprint(blueprint_id, blueprint_raw):
+    """
+    Update an existing blueprint by its ID.
+    """
+    try:
+        svc = current_app.container.blueprint_service
+        
+        # Check if blueprint exists
+        if not svc.exists(blueprint_id):
+            return jsonify({
+                "status": "error",
+                "error": f"Blueprint with ID '{blueprint_id}' not found"
+            }), 404
+        
+        # Parse the YAML or JSON string
+        try:
+            parsed = yaml.safe_load(blueprint_raw)
+            if not isinstance(parsed, dict):
+                raise ValueError("Parsed blueprint must be a dictionary.")
+        except Exception as e:
+            raise BadRequest(f"Invalid blueprint format: {e}")
+        
+        # Update using service
+        updated = svc.update_draft(blueprint_id=blueprint_id, draft_dict=parsed)
+        
+        if updated:
+            return jsonify({
+                "status": "success",
+                "blueprint_id": blueprint_id,
+                "message": f"Blueprint '{blueprint_id}' updated successfully"
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "error": f"Failed to update blueprint '{blueprint_id}'"
+            }), 500
+            
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
+
+
 @blueprints_bp.route("/remove.blueprint", methods=["DELETE"])
 @from_query({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True)

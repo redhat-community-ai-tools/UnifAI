@@ -77,7 +77,14 @@ const defaulYmlState: YamlFlowState = {
   ],
 };
 
-export const useGraphLogic = () => {
+interface UseGraphLogicOptions {
+  /** Blueprint ID for edit mode - if provided, loads existing blueprint */
+  editBlueprintId?: string | null;
+}
+
+export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
+  const { editBlueprintId } = options;
+  
   const { toast } = useToast();
   const [location, setLocation] = useLocation();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -126,6 +133,13 @@ export const useGraphLogic = () => {
   // Save modal state
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Edit mode state
+  const [isEditMode, setIsEditMode] = useState(!!editBlueprintId);
+  const [currentBlueprintId, setCurrentBlueprintId] = useState<string | null>(editBlueprintId || null);
+  const [isLoadingBlueprint, setIsLoadingBlueprint] = useState(false);
+  const [blueprintName, setBlueprintName] = useState("");
+  const [blueprintDescription, setBlueprintDescription] = useState("");
 
   // Drag state to track what type of item is being dragged
   const [isDraggingCondition, setIsDraggingCondition] = useState(false);
@@ -589,10 +603,316 @@ export const useGraphLogic = () => {
     }
   }, [toast]);
 
+  // Load existing blueprint for editing
+  const loadBlueprintForEdit = useCallback(async (blueprintId: string, allBlocks: BuildingBlock[]) => {
+    try {
+      setIsLoadingBlueprint(true);
+      
+      const response = await axios.get(`/blueprints/blueprint.get?blueprintId=${blueprintId}`);
+      const { spec_dict } = response.data;
+      
+      // Store blueprint metadata
+      setBlueprintName(spec_dict.name || "");
+      setBlueprintDescription(spec_dict.description || "");
+      setCurrentBlueprintId(blueprintId);
+      setIsEditMode(true);
+      
+      // Set the YAML flow state from the loaded blueprint (keep as-is for saving)
+      setYamlFlow({
+        name: spec_dict.name || "",
+        description: spec_dict.description || "",
+        nodes: spec_dict.nodes || [],
+        plan: spec_dict.plan || [],
+        conditions: spec_dict.conditions || [],
+      });
+      
+      // Helper to extract rid without $ref: prefix
+      const extractRid = (rid: string): string => {
+        return rid?.startsWith('$ref:') ? rid.slice(5) : rid;
+      };
+      
+      // Create a map of node rids to their definitions
+      const nodeDefMap: Record<string, any> = {};
+      (spec_dict.nodes || []).forEach((nodeDef: any) => {
+        const rid = extractRid(nodeDef.rid);
+        nodeDefMap[rid] = nodeDef;
+      });
+      
+      // Create a map of condition rids to their definitions
+      const conditionDefMap: Record<string, any> = {};
+      (spec_dict.conditions || []).forEach((condDef: any) => {
+        const rid = extractRid(condDef.rid);
+        conditionDefMap[rid] = condDef;
+      });
+      
+      // Calculate node levels for proper positioning (similar to parseGraphFlow)
+      const nodeLevel: Record<string, number> = {};
+      const nodesByLevel: Record<number, string[]> = {};
+      const nodePredecessors: Record<string, string[]> = {};
+      
+      // First pass: Identify predecessors
+      (spec_dict.plan || []).forEach((step: any) => {
+        const nodeId = step.uid;
+        const nodeRid = step.node;
+        const nodeDef = nodeDefMap[nodeRid];
+        const nodeType = nodeDef?.type || nodeDef?.config?.type || "custom_agent_node";
+        
+        if (step.after) {
+          const predecessors = Array.isArray(step.after) ? step.after : [step.after];
+          nodePredecessors[nodeId] = predecessors;
+        } else {
+          nodePredecessors[nodeId] = [];
+        }
+        
+        // Force user_question_node to level 0
+        if (nodeType === "user_question_node" || nodeRid === "user_question") {
+          nodeLevel[nodeId] = 0;
+          if (!nodesByLevel[0]) nodesByLevel[0] = [];
+          nodesByLevel[0].push(nodeId);
+        }
+      });
+      
+      // Second pass: Assign levels to remaining nodes (except final_answer)
+      let allAssigned = false;
+      while (!allAssigned) {
+        allAssigned = true;
+        (spec_dict.plan || []).forEach((step: any) => {
+          const nodeId = step.uid;
+          const nodeRid = step.node;
+          const nodeDef = nodeDefMap[nodeRid];
+          const nodeType = nodeDef?.type || nodeDef?.config?.type || "custom_agent_node";
+          
+          if (nodeLevel[nodeId] !== undefined) return;
+          if (nodeType === "final_answer_node" || nodeRid === "final_answer") return;
+          
+          const predecessors = nodePredecessors[nodeId] || [];
+          const allPredHaveLevels = predecessors.every((predId) => nodeLevel[predId] !== undefined);
+          
+          if (allPredHaveLevels) {
+            let level;
+            if (predecessors.length === 0) {
+              level = 1;
+            } else {
+              const maxPredLevel = Math.max(...predecessors.map((predId) => nodeLevel[predId] ?? 0));
+              level = maxPredLevel + 1;
+            }
+            nodeLevel[nodeId] = level;
+            if (!nodesByLevel[level]) nodesByLevel[level] = [];
+            nodesByLevel[level].push(nodeId);
+          } else {
+            allAssigned = false;
+          }
+        });
+      }
+      
+      // Third pass: Force final_answer_node to last level
+      (spec_dict.plan || []).forEach((step: any) => {
+        const nodeId = step.uid;
+        const nodeRid = step.node;
+        const nodeDef = nodeDefMap[nodeRid];
+        const nodeType = nodeDef?.type || nodeDef?.config?.type || "custom_agent_node";
+        
+        if (nodeType === "final_answer_node" || nodeRid === "final_answer") {
+          const existingLevels = Object.keys(nodesByLevel).map(l => parseInt(l));
+          const maxLevel = existingLevels.length > 0 ? Math.max(...existingLevels) : 0;
+          const finalLevel = maxLevel + 1;
+          nodeLevel[nodeId] = finalLevel;
+          if (!nodesByLevel[finalLevel]) nodesByLevel[finalLevel] = [];
+          nodesByLevel[finalLevel].push(nodeId);
+        }
+      });
+      
+      // Convert the blueprint spec to ReactFlow nodes
+      const reactFlowNodes: Node[] = [];
+      let currentNodeId = 1;
+      
+      (spec_dict.plan || []).forEach((step: any) => {
+        const nodeRid = step.node;
+        const nodeDef = nodeDefMap[nodeRid];
+        const nodeType = nodeDef?.type || nodeDef?.config?.type || "custom_agent_node";
+        
+        // Find matching building block from workspace
+        const matchingBlock = allBlocks.find(
+          (block) => block.workspaceData?.rid === nodeRid
+        );
+        
+        // Determine node display properties
+        let label = nodeDef?.name || matchingBlock?.label || nodeRid;
+        let color = matchingBlock?.color || "#6B7280";
+        let icon = getCategoryDisplay(matchingBlock?.workspaceData?.category || "nodes").icon;
+        let workspaceData = matchingBlock?.workspaceData;
+        
+        // Handle special built-in nodes
+        if (nodeType === "user_question_node" || nodeRid === "user_question") {
+          label = "User Input";
+          color = "#4A90E2";
+          workspaceData = {
+            rid: "user_question",
+            name: "user_question",
+            category: "nodes",
+            type: "user_question_node",
+            config: { name: "User Input", type: "user_question_node" },
+            version: 1,
+          };
+        } else if (nodeType === "final_answer_node" || nodeRid === "final_answer") {
+          label = "Final Answer";
+          color = "#50C878";
+          workspaceData = {
+            rid: "final_answer",
+            name: "final_answer",
+            category: "nodes",
+            type: "final_answer_node",
+            config: { name: "Final Answer", type: "final_answer_node" },
+            version: 1,
+          };
+        } else if (!workspaceData) {
+          // Fallback for unmatched nodes
+          workspaceData = {
+            rid: nodeRid,
+            name: nodeDef?.name || label,
+            category: "nodes",
+            type: nodeType,
+            config: nodeDef?.config || {},
+          };
+        }
+        
+        // Calculate position based on level
+        const level = nodeLevel[step.uid] ?? 0;
+        const nodesInLevel = nodesByLevel[level] || [step.uid];
+        const indexInLevel = nodesInLevel.indexOf(step.uid);
+        const totalInLevel = nodesInLevel.length;
+        
+        const levelWidth = Math.max(totalInLevel * 400, 400);
+        const xSpacing = levelWidth / totalInLevel;
+        const xOffset = 200 + (xSpacing / 2) + (indexInLevel * xSpacing) - (levelWidth / 2);
+        const yOffset = 100 + level * 200;
+        
+        const node: Node = {
+          id: step.uid,
+          type: "custom",
+          position: { x: xOffset, y: yOffset },
+          data: {
+            label,
+            icon,
+            color,
+            style: `bg-gray-800 text-white border`,
+            description: nodeDef?.name || "",
+            workspaceData,
+            onDelete: deleteNode,
+            allBlocks,
+            referencedConditions: [],
+            onAttachCondition: attachConditionToNode,
+            onRemoveCondition: removeConditionFromNode,
+          },
+        };
+        
+        // Check if this step has an exit_condition
+        if (step.exit_condition) {
+          const conditionRid = step.exit_condition;
+          const conditionDef = conditionDefMap[conditionRid];
+          const matchingCondition = allBlocks.find(
+            (block) => block.workspaceData?.category === "conditions" && 
+                       block.workspaceData?.rid === conditionRid
+          );
+          
+          if (conditionDef || matchingCondition) {
+            node.data.referencedConditions = [{
+              id: conditionRid,
+              label: matchingCondition?.label || conditionDef?.name,
+              workspaceData: matchingCondition?.workspaceData || {
+                rid: conditionRid,
+                name: conditionDef?.name,
+                type: conditionDef?.type,
+                config: conditionDef?.config,
+                category: "conditions",
+              },
+            }];
+          }
+        }
+        
+        reactFlowNodes.push(node);
+        currentNodeId++;
+      });
+      
+      // Create edges from plan step dependencies
+      const reactFlowEdges: Edge[] = [];
+      
+      (spec_dict.plan || []).forEach((step: any) => {
+        // Handle regular edges (after dependencies)
+        if (step.after) {
+          const sources = Array.isArray(step.after) ? step.after : [step.after];
+          sources.forEach((source: string) => {
+            reactFlowEdges.push({
+              id: `${source}-${step.uid}`,
+              source,
+              target: step.uid,
+              type: "default",
+            });
+          });
+        }
+        
+        // Handle conditional branches
+        if (step.branches) {
+          Object.entries(step.branches).forEach(([branchKey, targetUid]) => {
+            reactFlowEdges.push({
+              id: `${step.uid}-${targetUid}-${branchKey}`,
+              source: step.uid,
+              target: targetUid as string,
+              type: "default",
+              style: { strokeDasharray: "5,5", stroke: "#10b981" },
+              label: String(branchKey),
+              data: { branch: branchKey, isConditional: true },
+            });
+          });
+        }
+      });
+      
+      setNodes(reactFlowNodes);
+      setEdges(reactFlowEdges);
+      setNodeId(currentNodeId);
+      
+      toast({
+        title: "✅ Blueprint Loaded",
+        description: `"${spec_dict.name}" loaded for editing`,
+        variant: "default",
+        duration: 3000,
+      });
+      
+    } catch (error) {
+      console.error("Error loading blueprint for edit:", error);
+      toast({
+        title: "❌ Error Loading Blueprint",
+        description: "Failed to load blueprint for editing",
+        variant: "destructive",
+      });
+      // Fall back to default nodes on error
+      initializeDefaultNodes();
+    } finally {
+      setIsLoadingBlueprint(false);
+    }
+  }, [toast, deleteNode, attachConditionToNode, removeConditionFromNode, initializeDefaultNodes, setNodes, setEdges]);
+
   useEffect(() => {
-    loadBuildingBlocks();
-    initializeDefaultNodes();
+    const initializeGraph = async () => {
+      await loadBuildingBlocks();
+      
+      // If we have a blueprint ID to edit, load it; otherwise initialize default nodes
+      if (editBlueprintId && allBlocksData.length > 0) {
+        await loadBlueprintForEdit(editBlueprintId, allBlocksData);
+      } else if (!editBlueprintId) {
+        initializeDefaultNodes();
+      }
+    };
+    
+    initializeGraph();
   }, [loadBuildingBlocks]);
+  
+  // Load blueprint when allBlocksData becomes available (for edit mode)
+  useEffect(() => {
+    if (editBlueprintId && allBlocksData.length > 0 && !isLoadingBlueprint && nodes.length === 0) {
+      loadBlueprintForEdit(editBlueprintId, allBlocksData);
+    }
+  }, [editBlueprintId, allBlocksData, isLoadingBlueprint, nodes.length, loadBlueprintForEdit]);
 
   // Trigger validation whenever yamlFlow changes
   useEffect(() => {
@@ -1018,16 +1338,26 @@ export const useGraphLogic = () => {
           sortKeys: false,
         });
 
-        const response = await axios.post("/blueprints/blueprint.save", {
-          blueprintRaw: yamlString,
-          userId: USER_ID,
-        });
+        let response;
+        
+        // If in edit mode and we have a blueprint ID, update; otherwise create new
+        if (isEditMode && currentBlueprintId) {
+          response = await axios.put("/blueprints/blueprint.update", {
+            blueprintId: currentBlueprintId,
+            blueprintRaw: yamlString,
+          });
+        } else {
+          response = await axios.post("/blueprints/blueprint.save", {
+            blueprintRaw: yamlString,
+            userId: USER_ID,
+          });
+        }
 
         if (response.data.status === "success") {
           // Show success toast
           toast({
-            title: "✅ Blueprint Saved Successfully",
-            description: `Blueprint "${name}" saved successfully`,
+            title: isEditMode ? "✅ Blueprint Updated Successfully" : "✅ Blueprint Saved Successfully",
+            description: `Blueprint "${name}" ${isEditMode ? "updated" : "saved"} successfully`,
             variant: "default",
           });
 
@@ -1046,14 +1376,14 @@ export const useGraphLogic = () => {
       } catch (error) {
         console.error("Error saving graph:", error);
         toast({
-          title: "❌ Error Saving Workflow",
-          description: "Failed to save workflow to the server",
+          title: isEditMode ? "❌ Error Updating Workflow" : "❌ Error Saving Workflow",
+          description: `Failed to ${isEditMode ? "update" : "save"} workflow to the server`,
           variant: "destructive",
         });
         setIsSaving(false);
       }
     },
-    [yamlFlow, toast, setLocation],
+    [yamlFlow, toast, setLocation, isEditMode, currentBlueprintId],
   );
 
   useEffect(() => {
@@ -1245,5 +1575,11 @@ export const useGraphLogic = () => {
     saveModalOpen,
     setSaveModalOpen,
     isSaving,
+    // Edit mode state
+    isEditMode,
+    currentBlueprintId,
+    isLoadingBlueprint,
+    blueprintName,
+    blueprintDescription,
   };
 };
