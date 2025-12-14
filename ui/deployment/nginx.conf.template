@@ -78,14 +78,41 @@ http {
            proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
            proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
            proxy_cookie_path / /;
+
+           # Using nginx default timeouts (60s) for regular API calls
         }
 
+        # Long-running workflow execution endpoint - needs extended timeouts
+        # This MUST come BEFORE the general /api2/ location block
+        # Nginx matches locations in order: more specific first
+        # Using regex to match exact endpoint, then rewrite to use same proxy_pass pattern
+        location ~ ^/api2/sessions/user\.session\.execute$ {
+           rewrite ^/api2/(.*)$ /api/$1 break;
+           proxy_pass  http://${MULTIAGENT_IP}:${MULTIAGENT_PORT};
+           proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+           proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
+           proxy_cookie_path / /;
+
+           # Extended timeout settings for long-running workflows (10 minutes)
+           proxy_connect_timeout 600s;
+           proxy_send_timeout 600s;       # 10 minutes - time to send request to upstream
+           proxy_read_timeout 600s;       # 10 minutes - time to read response from upstream
+           send_timeout 600s;             # 10 minutes - time to send response to client
+           
+           # Keep connection alive for long operations
+           proxy_buffering off;           # Disable buffering for streaming responses
+        }
+
+        # General multi-agent API endpoints - using default timeouts to prevent hanging connections
         location /api2/ {
            proxy_pass  http://${MULTIAGENT_IP}:${MULTIAGENT_PORT}/api/;
            proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
            proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
            proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
            proxy_cookie_path / /;
+
+           # Using nginx default timeouts (60s) for regular API calls
         }
 
         location / {
