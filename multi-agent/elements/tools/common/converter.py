@@ -1,6 +1,6 @@
 from typing import List
-from langchain.tools import StructuredTool
-from langchain.tools import BaseTool as LangChainBaseTool
+from langchain_core.tools import StructuredTool
+from langchain_core.tools import BaseTool as LangChainBaseTool
 from .base_tool import BaseTool
 
 

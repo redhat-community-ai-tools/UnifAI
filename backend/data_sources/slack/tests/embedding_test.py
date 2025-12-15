@@ -66,4 +66,4 @@ def embedding_flow():
     
     print(f"Search results for: '{query}'")
     for result in search_results:
-        print(f"Score: {result['score']:.4f}, Text: {result['text']}")
+        print(f"Score: {result['score']:.4f}, Content: {result['content']}")

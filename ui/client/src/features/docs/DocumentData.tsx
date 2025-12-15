@@ -1,6 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { FaEye, FaSync, FaTrash } from "react-icons/fa";
+import { Badge } from "@/components/ui/badge";
 import { getFileIcon } from "../helpers";
 import { Document } from "@/types";
 
@@ -67,7 +66,7 @@ export const DocumentData: React.FC<LibraryTabProps> = ({ doc }) => {
 
 
             {/* Right side: metadata and stats */}
-            <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex flex-col overflow-y-auto">
               <div className="bg-background-dark p-4 rounded-lg border border-gray-800 flex-1">
                 <h4 className="font-medium mb-3">Document Metadata</h4>
                 <div className="space-y-3">
@@ -79,6 +78,17 @@ export const DocumentData: React.FC<LibraryTabProps> = ({ doc }) => {
                   ))}
                 </div>
               </div>
+
+              {doc.tags.length > 0 && (
+                <div className="mt-4 bg-background-dark p-4 rounded-lg border border-gray-800">
+                  <h4 className="font-medium mb-3">Tags</h4>
+                  <div className="flex flex-wrap gap-2 max-h-24 overflow-y-auto">
+                    {doc.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary">{tag}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="mt-4 bg-background-dark p-4 rounded-lg border border-gray-800">
                 <h4 className="font-medium mb-3">Extraction Statistics</h4>

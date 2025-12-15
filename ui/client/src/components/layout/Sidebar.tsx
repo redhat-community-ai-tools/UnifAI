@@ -4,7 +4,8 @@ import { useProject } from "@/contexts/ProjectContext";
 import { 
   FaTachometerAlt, FaCogs, FaFileAlt, 
   FaChartLine, FaUserShield, FaCog, FaSignOutAlt,
-  FaRobot, FaFile, FaChevronLeft, FaChevronRight 
+  FaRobot, FaFile, FaChevronLeft, FaChevronRight,
+  FaInfoCircle
 } from "react-icons/fa";
 import { MessageSquare, Info } from "lucide-react";
 import { FaJira, FaSlack, FaBars } from "react-icons/fa";
@@ -135,7 +136,7 @@ export default function Sidebar() {
             isActive={location === '/documents'}
             status={null}
             isCollapsed={isCollapsed}
-            disabled={true}
+            disabled={false}
           />
         </ul>
 
@@ -189,10 +190,26 @@ export default function Sidebar() {
         )}
         <ul>
           <NavItem 
+            icon={<FaInfoCircle className="sidebar-icon" />} 
+            label="Getting Started" 
+            to="/get-to-know"
+            isActive={location === '/get-to-know'}
+            status={null}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem 
             icon={<FaCogs className="sidebar-icon" />} 
             label="Configuration" 
             to="/configuration"
             isActive={location === '/configuration'}
+            status={null}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem 
+            icon={<Info className="sidebar-icon" />} 
+            label="How-To Guides" 
+            to="/guides"
+            isActive={location === '/guides'}
             status={null}
             isCollapsed={isCollapsed}
           />
@@ -213,14 +230,6 @@ export default function Sidebar() {
             status={null}
             isCollapsed={isCollapsed}
             disabled={true}
-          />
-          <NavItem 
-            icon={<Info className="sidebar-icon" />} 
-            label="How-To Guides" 
-            to="/guides"
-            isActive={location === '/guides'}
-            status={null}
-            isCollapsed={isCollapsed}
           />
           <NavItem 
             icon={<FaCog className="sidebar-icon" />} 

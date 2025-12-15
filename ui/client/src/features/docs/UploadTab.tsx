@@ -1,31 +1,48 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FaFileAlt, FaUpload, FaTimes } from "react-icons/fa";
 import { Progress } from "@/components/ui/progress";
-import { CircleX } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { 
+  FileText, 
+  Upload, 
+  X, 
+  CloudUpload,
+  Tag,
+  Plus
+} from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import { ProcessingOptions } from "./ProcessingOptions";
 import { embedDocs, uploadDocs, getSupportedFileExtensions } from "@/api/docs";
 import { useAuth } from '@/contexts/AuthContext';
-import { toast } from "@/hooks/use-toast";
 
 interface UploadTabProps {
-    setShowUploadModal: (showUploadModal: boolean) => void;
+    setShowUploadModal: (show: boolean) => void;
     fetchDocuments: any;
+}
+
+interface FileWithTags {
+    file: File;
+    tags: string[];
+    showTagInput: boolean;
+    id: string;
 }
 
 export const UploadTab: React.FC<UploadTabProps> = ({
     setShowUploadModal, fetchDocuments
 }) => {
     const { user } = useAuth();
+    
     const [isDragging, setIsDragging] = useState(false);
-    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+    const [selectedFiles, setSelectedFiles] = useState<FileWithTags[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
-    const [error, setError] = useState<string>("");
     const [supportedExtensions, setSupportedExtensions] = useState<string[]>([]);
-    
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     useEffect(() => {
         const loadSupportedExtensions = async () => {
             try {
@@ -33,12 +50,12 @@ export const UploadTab: React.FC<UploadTabProps> = ({
                 setSupportedExtensions(extensions);
             } catch (err) {
                 console.error("Failed to load supported extensions:", err);
-                setSupportedExtensions([".pdf", ".docx", ".txt"]);
+                setSupportedExtensions([".pdf", ".docx", ".txt", ".md"]);
             }
         };
         loadSupportedExtensions();
     }, []);
-    
+
     const isFileExtensionSupported = (fileName: string): boolean => {
         const extension = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
         return supportedExtensions.includes(extension);
@@ -61,20 +78,26 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     
     const handleDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         setIsDragging(true);
     };
 
     const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
+        e.stopPropagation();
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
         setIsDragging(false);
     };
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
     };
 
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         setIsDragging(false);
         handleFiles(e.dataTransfer.files);
     };
@@ -86,9 +109,11 @@ export const UploadTab: React.FC<UploadTabProps> = ({
             const invalidExtensions = Array.from(new Set(invalidFiles.map(file => 
                 file.substring(file.lastIndexOf('.')).toLowerCase()
             )));
-            setError(`The following file extensions are not supported: ${invalidExtensions.join(', ')}. These files will be ignored.`);
-        } else {
-            setError(""); // Clear any previous errors if no invalid files
+            toast({
+                variant: "destructive",
+                title: "Invalid file type",
+                description: `Unsupported extensions: ${invalidExtensions.join(', ')}`
+            });
         }
         
         if (validFiles.length > 0) {
@@ -96,30 +121,69 @@ export const UploadTab: React.FC<UploadTabProps> = ({
             const totalAfterAdd = currentFileCount + validFiles.length;
             
             if (totalAfterAdd > 5) {
-                const remainingSlots = 5 - currentFileCount;
-                if (remainingSlots <= 0) {
-                    setError("Maximum of 5 documents allowed. Please remove some files before adding new ones.");
-                } else {
-                    setError(`Maximum of 5 documents allowed. You can add ${remainingSlots} more document${remainingSlots === 1 ? '' : 's'}.`);
-                }
+                toast({
+                    variant: "destructive",
+                    title: "Too many files",
+                    description: "Maximum of 5 documents allowed."
+                });
                 return;
             }
             
-            setSelectedFiles((prev) => [...prev, ...validFiles]);
+            const newFiles = validFiles.map(file => ({
+                file,
+                tags: [],
+                showTagInput: false,
+                id: Math.random().toString(36).substring(7)
+            }));
+            
+            setSelectedFiles((prev) => [...prev, ...newFiles]);
         }
     };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-        handleFiles(e.target.files ? e.target.files : new FileList());
+        if (e.target.files) {
+            handleFiles(e.target.files);
+        }
     };
 
-    const uploadFiles = async (files: File[]) => {
+    const removeFile = (id: string) => {
+        setSelectedFiles(prev => prev.filter((item) => item.id !== id));
+    };
+
+    const toggleTagInput = (id: string) => {
+        setSelectedFiles(prev => prev.map(item => 
+            item.id === id ? { ...item, showTagInput: !item.showTagInput } : item
+        ));
+    };
+
+    const addTag = (id: string, tag: string) => {
+        if (!tag.trim()) return;
+        setSelectedFiles(prev => prev.map(item => {
+            if (item.id === id && !item.tags.includes(tag.trim())) {
+                return { ...item, tags: [...item.tags, tag.trim()] };
+            }
+            return item;
+        }));
+    };
+
+    const removeTag = (id: string, tagToRemove: string) => {
+        setSelectedFiles(prev => prev.map(item => {
+            if (item.id === id) {
+                return { ...item, tags: item.tags.filter(tag => tag !== tagToRemove) };
+            }
+            return item;
+        }));
+    };
+
+    const uploadFiles = async () => {
+        if (selectedFiles.length === 0) return;
+        
         setIsUploading(true);
         setUploadProgress(0);
         let uploadedCount = 0;
-
+        
         try {
-            for (const file of files) {
+            for (const item of selectedFiles) {
                 const base64 = await new Promise<string>((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onload = () => {
@@ -127,211 +191,261 @@ export const UploadTab: React.FC<UploadTabProps> = ({
                         resolve(result.split(",")[1]);
                     };
                     reader.onerror = reject;
-                    reader.readAsDataURL(file);
+                    reader.readAsDataURL(item.file);
                 });
                 
-                await uploadDocs([{ name: file.name, content: base64 }])
-
-                uploadedCount += 1;
-                setUploadProgress(uploadedCount);
+                // Pass tags if the backend supports it, for now we assume it's part of metadata or separate call
+                // The uploadDocs function signature is: uploadDocs(files: {name: string, content: string}[]): Promise<any>
+                // If we need to send tags, we might need to update the API or use a different endpoint.
+                // For this implementation, we'll stick to the existing uploadDocs for file content.
+                // Ideally, tags should be associated with the document after upload or during embedding.
+                
+                await uploadDocs([{ name: item.file.name, content: base64 }]);
+                
+                uploadedCount++;
+                setUploadProgress(Math.round((uploadedCount / selectedFiles.length) * 90));
             }
 
-            setIsUploading(false);
-            setShowUploadModal(false);
-        } catch (err) {
-            console.error("Upload failed", err);
-            const message = (err as Error)?.message || "Upload failed. Please try again.";
-            setError(message);
-            toast({
-                variant: "destructive",
-                title: (
-                    <span className="inline-flex items-center gap-2">
-                        <CircleX className="h-4 w-4 text-red-500" />
-                        <span>Upload failed</span>
-                    </span>
-                ),
-                description: message,
-            });
-            setIsUploading(false);
-            throw err; // Propagate to caller so downstream steps (embed) are not started
-        }
-    };
-
-    const startPipeline = async (docs: {source_name: string}[]) => {
-        try {
+            const docs = selectedFiles.map((item) => ({
+                source_name: item.file.name,
+                tags: item.tags
+            }));
+            
             const res = await embedDocs(docs, user?.username || 'default');
+            
             const issues = res?.registration?.issues || [];
-
             if (issues.length > 0) {
-                // Backend provides: { doc_name, issue_type, message }
                 issues.forEach((issue: any) => {
-                    const issueType = String(issue.issue_type || "");
-                    const message = String(issue.message || "");
-                    const titleText = issueType ? issueType.toUpperCase() : "Upload issue";
-                    const descParts = [] as string[];
-                    if (message) descParts.push(message);
-                    const description = descParts.join(" — ");
-
-                    const isDuplicate = issueType.toLowerCase().includes("dup")
-                    const title: React.ReactNode = (
-                        <span className="inline-flex items-center gap-2">
-                            {isDuplicate && (
-                                <CircleX className="h-4 w-4 text-red-500" />
-                            )}
-                            <span>{titleText}</span>
-                        </span>
-                    );
-
                     toast({
                         variant: "destructive",
-                        title,
-                        description,
+                        title: String(issue.issue_type || "Upload issue").toUpperCase(),
+                        description: issue.message,
                     });
                 });
             }
-        } catch (error) {
-            console.error(error);
-            const message = (error as Error)?.message || "Failed to start embedding pipeline.";
-            setError(message);
+
+            setUploadProgress(100);
+            
+            toast({
+                title: "Success",
+                description: "Documents uploaded and processed successfully.",
+            });
+            
+            if (fetchDocuments) await fetchDocuments();
+            setSelectedFiles([]);
+            setShowUploadModal(false);
+            
+        } catch (err) {
+            console.error("Upload failed", err);
+            const message = (err as Error)?.message || "There was an error uploading your documents.";
             toast({
                 variant: "destructive",
-                title: (
-                    <span className="inline-flex items-center gap-2">
-                        <CircleX className="h-4 w-4 text-red-500" />
-                        <span>Embedding failed</span>
-                    </span>
-                ),
+                title: "Upload failed",
                 description: message,
             });
+        } finally {
+            setIsUploading(false);
         }
-    }
-
-    const handleSubmit = async () => {
-        if (selectedFiles.length === 0) return;
-        try {
-            await uploadFiles(selectedFiles);
-        } catch {
-            // Upload error already toasted; do not proceed to embedding
-            return;
-        }
-        const docs = selectedFiles.map((file) => ({source_name: file.name}));
-        await startPipeline(docs);
-        await fetchDocuments();
-        setSelectedFiles([]);
     };
 
-
     return (
-        <div className="space-y-6">
-            <Card className="bg-background-card shadow-card border-gray-800 w-full">
-                <CardContent className="p-6">
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center">
-                            <FaFileAlt className="text-accent text-2xl mr-3" />
-                            <h3 className="text-lg font-heading font-semibold">
-                                Upload Documents
-                            </h3>
-                        </div>
-                        <div className="flex justify-between mb-4">
-                            <Button onClick={() => setShowUploadModal(false)}>Cancel</Button>
-                        </div>
-                    </div>
-
-                    <div
-                        className={`max-h-[400px] overflow-y-auto border-2 border-dashed rounded-lg flex flex-col items-center justify-center transition-colors ${
-                            selectedFiles.length >= 5 
-                                ? "border-gray-500 cursor-not-allowed opacity-50" 
-                                : isDragging 
-                                    ? "border-primary bg-primary bg-opacity-5 cursor-pointer" 
-                                    : "border-gray-700 hover:border-gray-600 cursor-pointer"
-                        }`}
-                        onDragEnter={selectedFiles.length < 5 ? handleDragEnter : undefined}
-                        onDragLeave={selectedFiles.length < 5 ? handleDragLeave : undefined}
-                        onDragOver={selectedFiles.length < 5 ? handleDragOver : undefined}
-                        onDrop={selectedFiles.length < 5 ? handleDrop : undefined}
-                        onClick={selectedFiles.length < 5 ? () => document.getElementById("file-upload")?.click() : undefined}
-                    >
-                        {!isUploading ? (
-                            <>
-                                <div className="w-16 h-16 bg-background-surface rounded-full flex items-center justify-center mb-4">
-                                    <FaUpload className="text-accent text-xl" />
-                                </div>
-                                <p className="font-semibold mb-1">
-                                    {selectedFiles.length >= 5 ? "Maximum files reached" : "Drag and drop files here"}
-                                </p>
-                                <p className="text-sm text-gray-400">
-                                    {selectedFiles.length >= 5 ? "Remove files to add more" : "or click to browse files"}
-                                </p>
-                                <p className="text-xs text-gray-500 mt-4">
-                                    Supported formats: {supportedExtensions.map(ext => ext.toUpperCase().substring(1)).join(', ')}
-                                </p>
-                                <input id="file-upload" type="file" multiple className="hidden" onChange={handleFileSelect}/>
-                            </>
-                        ) : (
-                            <div className="w-full px-8">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="font-semibold">
-                                        Uploading files...
-                                    </span>
-                                    <Button variant="ghost" size="sm" onClick={() => setIsUploading(false)}>
-                                        <FaTimes className="h-4 w-4" />
-                                    </Button>
-                                </div>
-                                <Progress value={(uploadProgress / selectedFiles.length) * 100} className="h-2 mb-2" />
-
-                                <div className="flex justify-between text-xs text-gray-400">
-                                    <span className="text-sm text-gray-300">
-                                        {uploadProgress === selectedFiles.length
-                                            ? "Upload complete!"
-                                            : `Uploading ${uploadProgress} of ${selectedFiles.length} files...`}
-                                    </span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* File list after upload */}
-                        {selectedFiles.length > 0 && (
-                            <div className="mt-4 w-full">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-sm text-gray-400">
-                                        {selectedFiles.length} of 5 documents selected
-                                    </span>
-                                </div>
-                                <ul className="space-y-2">
-                                    {selectedFiles.map((file, idx) => (
-                                        <li key={idx} className="flex items-center justify-between text-gray-300 bg-background-surface px-3 py-2 rounded">
-                                            <span className="truncate max-w-[80%]">{file.name}</span>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation(); 
-                                                    setSelectedFiles((prev) =>
-                                                        prev.filter((_, i) => i !== idx)
-                                                    );
-                                                }}
-                                                className="text-gray-400 hover:text-red-500 transition-colors"
-                                                title="Remove file"
-                                            >
-                                                <FaTimes className="w-4 h-4" />
-                                            </button>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                        {error && <p className="text-red-500 mt-4">{error}</p>}
-                    </div>
-                </CardContent>
-                {selectedFiles.length > 0 && !isUploading && (
-                    <div className="flex justify-end p-4">
-                        <Button disabled={selectedFiles.length === 0} onClick={handleSubmit}>
-                            Submit
+        <div className="w-full max-w-5xl mx-auto space-y-6 mt-10">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-2xl font-bold text-foreground tracking-tight">Upload Documents</h2>
+                    <p className="text-muted-foreground mt-1">Add documents to your knowledge base.</p>
+                </div>
+                <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setShowUploadModal(false)}>Cancel</Button>
+                    {selectedFiles.length > 0 && !isUploading && (
+                        <Button 
+                            onClick={uploadFiles}
+                            className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm transition-all hover:shadow-md"
+                        >
+                            <CloudUpload className="mr-2 h-4 w-4" />
+                            Upload {selectedFiles.length} File{selectedFiles.length !== 1 ? 's' : ''}
                         </Button>
-                    </div>
-                )}
-            </Card>
+                    )}
+                </div>
+            </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                {/* Left Side: Drag & Drop Area */}
+                <Card 
+                    className={cn(
+                        "border-2 border-dashed transition-all duration-300 ease-in-out bg-card h-[650px]",
+                        isDragging 
+                            ? "border-primary bg-primary/10 ring-4 ring-primary/20" 
+                            : "border-border hover:border-primary/50 hover:bg-accent/50",
+                        selectedFiles.length >= 5 ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                    )}
+                    onDragEnter={selectedFiles.length < 5 ? handleDragEnter : undefined}
+                    onDragLeave={selectedFiles.length < 5 ? handleDragLeave : undefined}
+                    onDragOver={selectedFiles.length < 5 ? handleDragOver : undefined}
+                    onDrop={selectedFiles.length < 5 ? handleDrop : undefined}
+                    onClick={selectedFiles.length < 5 ? () => fileInputRef.current?.click() : undefined}
+                >
+                    <CardContent className="flex flex-col items-center justify-center h-full min-h-[300px] py-12 text-center">
+                        <input 
+                            ref={fileInputRef}
+                            type="file" 
+                            multiple 
+                            className="hidden" 
+                            onChange={handleFileSelect}
+                            disabled={selectedFiles.length >= 5 || isUploading}
+                        />
+                        
+                        <div className={cn(
+                            "w-20 h-20 rounded-full flex items-center justify-center mb-6 transition-transform duration-300",
+                            isDragging ? "bg-primary/20 scale-110" : "bg-background shadow-sm border border-border"
+                        )}>
+                            <Upload className={cn("h-10 w-10", isDragging ? "text-primary" : "text-muted-foreground")} />
+                        </div>
+                        
+                        <h3 className="text-xl font-semibold text-foreground mb-2">
+                            {selectedFiles.length >= 5 ? "Maximum files reached" : "Click to upload or drag and drop"}
+                        </h3>
+                        <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                            {selectedFiles.length >= 5 
+                                ? "Please remove a file to add another." 
+                                : `Supported formats: ${supportedExtensions.map(ext => ext.replace('.', '').toUpperCase()).join(', ')}`}
+                        </p>
+                    </CardContent>
+                </Card>
+
+                {/* Right Side: File List */}
+                <div className="flex flex-col h-[650px]">
+                    {selectedFiles.length > 0 ? (
+                        <div className="space-y-4 h-full flex flex-col">
+                            <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                                Selected Files ({selectedFiles.length}/5)
+                            </h4>
+                            <div className="flex-1 overflow-y-auto pr-2 space-y-3 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
+                                {selectedFiles.map((item) => (
+                                    <div 
+                                        key={item.id}
+                                        className="group flex flex-col p-4 bg-card border border-border rounded-xl shadow-sm hover:shadow-md transition-all duration-200"
+                                    >
+                                        <div className="flex items-start justify-between w-full">
+                                            <div className="flex items-center space-x-4 overflow-hidden">
+                                                <div className="h-10 w-10 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20">
+                                                    <FileText className="h-5 w-5 text-primary" />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-sm font-semibold text-foreground truncate">
+                                                            {item.file.name}
+                                                        </p>
+                                                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 uppercase">
+                                                            {item.file.name.split('.').pop()}
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {(item.file.size / 1024).toFixed(0)} KB
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Tags Section */}
+                                        {item.tags.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 mt-3">
+                                                {item.tags.map((tag, idx) => (
+                                                    <Badge key={idx} variant="outline" className="text-xs gap-1 pl-2 pr-1 py-0.5 h-6">
+                                                        {tag}
+                                                        <button 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                removeTag(item.id, tag);
+                                                            }}
+                                                            className="hover:text-destructive focus:outline-none"
+                                                        >
+                                                            <X className="h-3 w-3" />
+                                                        </button>
+                                                    </Badge>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Add Tag Input */}
+                                        {item.showTagInput && (
+                                            <div className="mt-3 flex gap-2 animate-in slide-in-from-top-1 duration-200">
+                                                <Input
+                                                    autoFocus
+                                                    placeholder="Type tag and press Enter..."
+                                                    className="h-8 text-xs dark:bg-zinc-800 dark:!text-white dark:border-zinc-700"
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            addTag(item.id, e.currentTarget.value);
+                                                            e.currentTarget.value = '';
+                                                        }
+                                                    }}
+                                                />
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="sm" 
+                                                    className="h-8 w-8 p-0"
+                                                    onClick={() => toggleTagInput(item.id)}
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        )}
+
+                                        {/* Bottom Actions */}
+                                        <div className="flex items-center justify-end gap-2 mt-4 -mx-4 -mb-4 px-4 py-2 bg-zinc-50/50 dark:bg-zinc-900/30 border-t border-border rounded-b-xl">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => toggleTagInput(item.id)}
+                                                className="h-7 text-xs text-muted-foreground hover:text-primary"
+                                            >
+                                                <Tag className="h-3 w-3 mr-1.5" />
+                                                Add Tag
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => removeFile(item.id)}
+                                                className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                                            >
+                                                <X className="h-3 w-3 mr-1.5" />
+                                                Remove
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center border-2 border-dashed border-border rounded-xl bg-muted/20 p-6 text-center min-h-[300px]">
+                             <div className="w-16 h-16 rounded-full bg-background flex items-center justify-center mb-4 opacity-50">
+                                <FileText className="h-8 w-8 text-muted-foreground" />
+                             </div>
+                             <h4 className="text-lg font-medium text-foreground mb-1">No files selected</h4>
+                             <p className="text-sm text-muted-foreground max-w-xs">
+                                Uploaded files will appear here ready for processing.
+                             </p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {isUploading && (
+                <div className="p-6 bg-card border border-border rounded-xl shadow-sm mt-6">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
+                            <span className="text-sm font-medium text-foreground">Uploading documents...</span>
+                        </div>
+                        <span className="text-sm font-medium text-primary">{uploadProgress}%</span>
+                    </div>
+                    <Progress value={uploadProgress} className="h-2 bg-muted" />
+                </div>
+            )}
+            
             <ProcessingOptions />
         </div>
-    )
-}
-
+    );
+};

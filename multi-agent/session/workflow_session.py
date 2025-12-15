@@ -3,7 +3,10 @@ from graph.rt_graph_plan import RTGraphPlan
 from engine.builder.base_graph_builder import BaseGraphBuilder
 from engine.executor.interfaces import GraphExecutor
 from core.run_context import RunContext
+from core.enums import ResourceCategory
+from core.channels import SessionChannel
 from graph.state.graph_state import GraphState
+from typing import Optional
 from .status import SessionStatus
 from .models import SessionMeta
 
@@ -76,3 +79,19 @@ class WorkflowSession:
 
     def update_status(self, new: SessionStatus) -> None:
         self.status = new
+
+    def prepare_for_streaming(self, channel: Optional[SessionChannel]) -> None:
+        """
+        Inject streaming channel into all nodes that support streaming.
+        Called by SessionExecutor._pre_run when streaming=True.
+        """
+        for node in self.session_registry.all_of(ResourceCategory.NODE).values():
+            if hasattr(node, 'set_streaming_channel'):
+                node.set_streaming_channel(channel)
+    
+    def cleanup_streaming(self) -> None:
+        """
+        Clear streaming channel from all nodes.
+        Called by SessionExecutor._post_run when streaming=True.
+        """
+        self.prepare_for_streaming(None)

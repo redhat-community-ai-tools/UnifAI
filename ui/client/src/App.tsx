@@ -6,6 +6,7 @@ import AgenticAI from "@/pages/AgenticAI";
 import AgentRepository from "@/pages/AgentRepository";
 import AgenticChats from "@/pages/AgenticChats";
 import Analytics from "@/pages/Analytics";
+import GetToKnow from "@/pages/GetToKnow";
 import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
 import { ProjectProvider } from '@/contexts/ProjectContext';
@@ -43,7 +44,7 @@ function App() {
               <ProtectedRoute>
                 <Switch>
                   {/* Agentic AI routes - wrapped with AgenticAIProvider */}
-                  <Route path="/" component={withAgenticAIProvider(AgenticAI)} />
+                  <Route path="/" component={GetToKnow} />
                   <Route path="/agentic-ai" component={withAgenticAIProvider(AgenticAI)} />
                   <Route path="/inventory" component={withAgenticAIProvider(AgentRepository)} />
                   <Route path="/agentic-chats" component={withAgenticAIProvider(AgenticChats)} />
@@ -53,6 +54,7 @@ function App() {
                   <Route path="/slack" component={SlackIntegration} />
                   <Route path="/documents" component={DocumentsPage} />
                   <Route path="/slack/add-source" component={SlackAddSourcePage} />
+                  <Route path="/get-to-know" component={GetToKnow} />
                   <Route path="/configuration" component={Configuration} />
                   <Route path="/analytics" component={Analytics} />
                   <Route path="/guides" component={GuidesPage} />

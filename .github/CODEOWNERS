@@ -1,2 +1,4 @@
-# Default owners for the entire repository
-* @odaiodeh @nirsisr @sfiresht
+* @odaiodeh @nirsisr
+
+ci/ @sfiresht
+helm/ @sfiresht
