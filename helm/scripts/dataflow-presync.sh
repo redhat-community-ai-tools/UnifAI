@@ -42,6 +42,7 @@ fi
 
 # Create or update the secret
 kubectl create secret generic "$SECRET_NAME" \
+    --from-literal=admin_allowed_users="$admin_allowed_users" \
     --from-literal=default_slack_bot_token="${default_slack_bot_token:-}" \
     --from-literal=default_slack_user_token="${default_slack_user_token:-}" \
     --dry-run=client -o yaml | kubectl apply -f -
