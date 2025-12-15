@@ -7,7 +7,13 @@ Contains business logic for analyzing workflow sessions from MongoDB.
 from datetime import datetime, timedelta, timezone
 from global_utils.celery_app.helpers import send_task
 from shared.logger import logger
-from utils.analytics import get_workflow_analytics, get_cache_collection, CACHE_TTL
+from utils.analytics import (
+    get_workflow_analytics,
+    get_cache_collection,
+    CACHE_TTL,
+    get_cache_lock,
+    get_task_tracker
+)
 
 
 def get_analytics_overview(time_range: str = "all"):
@@ -48,83 +54,183 @@ def get_analytics_overview(time_range: str = "all"):
                     logger.info(f"Cache HIT for time_range={time_range}, expires in {time_until_expiry:.1f}s")
                     if time_until_expiry < 10:  # Less than 10 seconds until expiry
                         logger.info(f"Cache expiring soon ({time_until_expiry:.1f}s), triggering background refresh")
-                        try:
-                            task_result = send_task(
-                                task_name="celery_app.tasks.analytics_cache_tasks.refresh_analytics_cache",
-                                celery_queue="analytics_queue",
-                                time_range=time_range
-                            )
-                            task_id = getattr(task_result, 'id', None) if task_result else None
-                            logger.info(f"Queued cache refresh task for time_range={time_range}, task_id={task_id}")
-                        except Exception as e:
-                            logger.error(f"Failed to trigger cache refresh: {str(e)}", exc_info=True)
+                        # Check task tracker to avoid duplicate tasks
+                        task_tracker = get_task_tracker()
+                        if not task_tracker.is_task_running(cache_key):
+                            try:
+                                # Mark task as started before queueing (prevents duplicates)
+                                task_tracker.mark_task_started(cache_key)
+                                task_result = send_task(
+                                    task_name="celery_app.tasks.analytics_cache_tasks.refresh_analytics_cache",
+                                    celery_queue="analytics_queue",
+                                    time_range=time_range
+                                )
+                                # Update task_id after queueing (if available)
+                                if task_result:
+                                    task_id = getattr(task_result, 'id', None)
+                                    if task_id:
+                                        task_tracker.update_task_id(cache_key, task_id)
+                                    logger.info(f"Queued cache refresh task for time_range={time_range}, task_id={task_id}")
+                                else:
+                                    logger.info(f"Queued cache refresh task for time_range={time_range}, task_id=None")
+                            except Exception as e:
+                                logger.error(f"Failed to trigger cache refresh: {str(e)}", exc_info=True)
+                        else:
+                            logger.debug(f"Cache refresh task already running for {cache_key}, skipping")
                     
                     return cache_doc["data"]
                 else:
                     logger.info(f"Cache EXPIRED for time_range={time_range} (expired {abs(time_until_expiry):.1f}s ago)")
     
-    # Cache MISS or expired - fetch fresh data
-    logger.info(f"Cache MISS for time_range={time_range}, fetching fresh data")
+    # Cache MISS or expired - use distributed lock to prevent thundering herd
+    logger.info(f"Cache MISS for time_range={time_range}, attempting to acquire lock")
     
-    # Trigger Celery task to update cache in background
-    # This ensures cache is updated via Celery, not synchronously in request handler
-    try:
-        logger.info(f"Triggering Celery task to refresh cache for time_range={time_range}")
-        task_result = send_task(
-            task_name="celery_app.tasks.analytics_cache_tasks.refresh_analytics_cache",
-            celery_queue="analytics_queue",
-            time_range=time_range
+    cache_lock = get_cache_lock()
+    task_tracker = get_task_tracker()
+    
+    # Try to acquire lock (only one user will succeed)
+    lock_acquired = cache_lock.acquire(cache_key, timeout=30)
+    
+    if lock_acquired:
+        # This user won the race - they will do the work
+        logger.info(f"Lock acquired for {cache_key}, fetching fresh data")
+        
+        try:
+            # Check if task is already running (shouldn't be, but double-check)
+            if not task_tracker.is_task_running(cache_key):
+                # Mark task as started before queueing (prevents duplicates)
+                task_tracker.mark_task_started(cache_key)
+                try:
+                    task_result = send_task(
+                        task_name="celery_app.tasks.analytics_cache_tasks.refresh_analytics_cache",
+                        celery_queue="analytics_queue",
+                        time_range=time_range
+                    )
+                    # Update task_id after queueing (if available)
+                    if task_result:
+                        task_id = getattr(task_result, 'id', None)
+                        if task_id:
+                            task_tracker.update_task_id(cache_key, task_id)
+                        logger.info(f"Queued cache refresh task for time_range={time_range}, task_id={task_id}")
+                    else:
+                        logger.info(f"Queued cache refresh task for time_range={time_range}, task_id=None")
+                except Exception as e:
+                    logger.error(f"Failed to trigger cache refresh task: {str(e)}", exc_info=True)
+            
+            # Fetch fresh data synchronously for this request (user gets immediate response)
+            analytics = get_workflow_analytics()
+            
+            overview = {
+                "total_stats": analytics.get_total_stats(),
+                "status_breakdown": analytics.get_status_breakdown(),
+                "time_stats": analytics.get_time_based_stats(),
+                "active_today": analytics.get_active_users_today(),
+                "active_7days": analytics.get_active_users(days=7),
+                "active_30days": analytics.get_active_users(days=30),
+                "top_users": analytics.get_user_activity(limit=10),
+                "top_blueprints": analytics.get_blueprint_usage(limit=10, time_range=time_range),
+                "time_series": analytics.get_time_series_activity(time_range=time_range),
+                "generated_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+            }
+            
+            # Update cache synchronously for immediate availability
+            cached_at = datetime.now(timezone.utc)
+            expires_at = cached_at + timedelta(seconds=CACHE_TTL)
+            
+            cache_doc = {
+                "_id": cache_key,
+                "data": overview,
+                "time_range": time_range,
+                "cached_at": cached_at,
+                "expires_at": expires_at
+            }
+            
+            cache_collection.replace_one(
+                {"_id": cache_key},
+                cache_doc,
+                upsert=True
+            )
+            
+            # Create TTL index if it doesn't exist (auto-delete expired documents)
+            try:
+                cache_collection.create_index("expires_at", expireAfterSeconds=0)
+            except Exception:
+                pass  # Index might already exist
+            
+            # Release lock so other users can proceed
+            cache_lock.release(cache_key)
+            logger.info(f"Lock released for {cache_key}, cache updated")
+            
+            return overview
+            
+        except Exception as e:
+            # Release lock on error
+            cache_lock.release(cache_key)
+            logger.error(f"Error fetching analytics data: {str(e)}", exc_info=True)
+            raise
+    else:
+        # Lock already held - another user is refreshing, wait for them
+        logger.info(f"Lock already held for {cache_key}, waiting for refresh to complete")
+        
+        # Wait for lock to be released (max 5 seconds)
+        lock_released = cache_lock.wait_for_lock(cache_key, max_wait=5, check_interval=0.1)
+        
+        if lock_released:
+            # Lock released, check cache again
+            logger.info(f"Lock released for {cache_key}, checking cache")
+            cache_doc = cache_collection.find_one({"_id": cache_key})
+            
+            if cache_doc:
+                expires_at = cache_doc.get("expires_at")
+                if expires_at:
+                    if isinstance(expires_at, datetime):
+                        if expires_at.tzinfo is None:
+                            expires_at = expires_at.replace(tzinfo=timezone.utc)
+                    
+                    if expires_at:
+                        now = datetime.now(timezone.utc)
+                        if now < expires_at:
+                            # Cache is now valid, return it
+                            logger.info(f"Cache HIT after waiting for {cache_key}")
+                            return cache_doc["data"]
+        
+        # If we get here, either timeout or cache still invalid
+        # Fallback: fetch data ourselves (shouldn't happen often)
+        logger.warning(f"Timeout waiting for lock or cache still invalid for {cache_key}, fetching directly")
+        
+        analytics = get_workflow_analytics()
+        overview = {
+            "total_stats": analytics.get_total_stats(),
+            "status_breakdown": analytics.get_status_breakdown(),
+            "time_stats": analytics.get_time_based_stats(),
+            "active_today": analytics.get_active_users_today(),
+            "active_7days": analytics.get_active_users(days=7),
+            "active_30days": analytics.get_active_users(days=30),
+            "top_users": analytics.get_user_activity(limit=10),
+            "top_blueprints": analytics.get_blueprint_usage(limit=10, time_range=time_range),
+            "time_series": analytics.get_time_series_activity(time_range=time_range),
+            "generated_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        }
+        
+        # Update cache
+        cached_at = datetime.now(timezone.utc)
+        expires_at = cached_at + timedelta(seconds=CACHE_TTL)
+        
+        cache_doc = {
+            "_id": cache_key,
+            "data": overview,
+            "time_range": time_range,
+            "cached_at": cached_at,
+            "expires_at": expires_at
+        }
+        
+        cache_collection.replace_one(
+            {"_id": cache_key},
+            cache_doc,
+            upsert=True
         )
-        task_id = getattr(task_result, 'id', None) if task_result else None
-        logger.info(f"Successfully queued cache refresh task for time_range={time_range}, task_id={task_id}")
-    except Exception as e:
-        logger.error(f"Failed to trigger cache refresh task: {str(e)}", exc_info=True)
-        # Fallback: fetch synchronously if task fails
-        logger.warning(f"Falling back to synchronous cache update for time_range={time_range}")
-    
-    # Fetch fresh data synchronously for this request (user gets immediate response)
-    analytics = get_workflow_analytics()
-    
-    overview = {
-        "total_stats": analytics.get_total_stats(),
-        "status_breakdown": analytics.get_status_breakdown(),
-        "time_stats": analytics.get_time_based_stats(),
-        "active_today": analytics.get_active_users_today(),
-        "active_7days": analytics.get_active_users(days=7),
-        "active_30days": analytics.get_active_users(days=30),
-        "top_users": analytics.get_user_activity(limit=10),
-        "top_blueprints": analytics.get_blueprint_usage(limit=10, time_range=time_range),
-        "time_series": analytics.get_time_series_activity(time_range=time_range),
-        "generated_at": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-    }
-    
-    # Also update cache synchronously for immediate availability (in case Celery task is delayed)
-    # The Celery task will update it again, but this ensures cache is available immediately
-    cached_at = datetime.now(timezone.utc)
-    expires_at = cached_at + timedelta(seconds=CACHE_TTL)
-    
-    cache_doc = {
-        "_id": cache_key,
-        "data": overview,
-        "time_range": time_range,
-        "cached_at": cached_at,
-        "expires_at": expires_at
-    }
-    
-    # Update cache synchronously for immediate availability (Celery task will update it again in background)
-    cache_collection.replace_one(
-        {"_id": cache_key},
-        cache_doc,
-        upsert=True
-    )
-    
-    # Create TTL index if it doesn't exist (auto-delete expired documents)
-    try:
-        cache_collection.create_index("expires_at", expireAfterSeconds=0)
-    except Exception:
-        pass  # Index might already exist
-    
-    return overview
+        
+        return overview
 
 
 def get_active_users_data(days: int = 7):

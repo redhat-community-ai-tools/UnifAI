@@ -11,6 +11,8 @@ from utils.analytics.cache import (
     CACHE_TTL,
     get_cache_collection
 )
+from utils.analytics.cache_lock import get_cache_lock
+from utils.analytics.task_tracker import get_task_tracker
 
 __all__ = [
     "WorkflowAnalytics",
@@ -18,5 +20,7 @@ __all__ = [
     "CACHE_COLLECTION",
     "CACHE_TTL",
     "get_cache_collection",
+    "get_cache_lock",
+    "get_task_tracker",
 ]
 

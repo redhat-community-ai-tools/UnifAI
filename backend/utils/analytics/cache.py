@@ -9,7 +9,7 @@ from config.constants import Collection
 
 # Cache configuration
 CACHE_COLLECTION = Collection.ANALYTICS_CACHE.value
-CACHE_TTL = 60  # 60 seconds
+CACHE_TTL = 300  # 300 seconds (5 minutes)
 
 # Singleton cache collection access
 _cache_collection = None

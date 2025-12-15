@@ -14,6 +14,8 @@ class Collection(Enum):
     WORKFLOW_SESSIONS = "workflow_sessions"
     BLUEPRINTS = "blueprints"
     ANALYTICS_CACHE = "analytics_cache"
+    ANALYTICS_CACHE_TASKS = "analytics_cache_tasks"
+    ANALYTICS_CACHE_LOCKS = "analytics_cache_locks"
 
 class DataSource(Enum):
     """Data source types with consistent naming"""

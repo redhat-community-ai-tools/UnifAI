@@ -3,7 +3,12 @@ Celery tasks for refreshing analytics cache in the background.
 """
 from datetime import datetime, timedelta, timezone
 from global_utils.celery_app import CeleryApp
-from utils.analytics import get_workflow_analytics, get_cache_collection, CACHE_TTL
+from utils.analytics import (
+    get_workflow_analytics,
+    get_cache_collection,
+    CACHE_TTL,
+    get_task_tracker
+)
 from shared.logger import logger
 
 
@@ -19,6 +24,8 @@ def refresh_analytics_cache(self, time_range="all"):
     Args:
         time_range: 'today', '7days', '30days', or 'all'
     """
+    cache_key = f"overview:{time_range}"
+    
     try:
         logger.info(f"Refreshing analytics cache for time_range={time_range}")
         
@@ -39,7 +46,6 @@ def refresh_analytics_cache(self, time_range="all"):
         }
         
         # Update cache directly
-        cache_key = f"overview:{time_range}"
         cache_collection = get_cache_collection()
         
         cached_at = datetime.now(timezone.utc)
@@ -65,10 +71,21 @@ def refresh_analytics_cache(self, time_range="all"):
         except Exception:
             pass  # Index might already exist
         
+        # Mark task as completed in task tracker
+        task_tracker = get_task_tracker()
+        task_tracker.mark_task_completed(cache_key)
+        
         logger.info(f"Successfully cached analytics data for time_range={time_range}")
         return {"status": "success", "time_range": time_range}
         
     except Exception as e:
+        # Mark task as completed even on error (to prevent stuck tasks)
+        try:
+            task_tracker = get_task_tracker()
+            task_tracker.mark_task_completed(cache_key)
+        except Exception:
+            pass
+        
         logger.error(f"Failed to refresh analytics cache: {str(e)}", exc_info=True)
         raise
 
