@@ -1,0 +1,2 @@
+from .spec import GoogleGenAIElementSpec
+

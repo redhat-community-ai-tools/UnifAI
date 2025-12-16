@@ -8,6 +8,7 @@ from .pdf_chunker_strategy import DoclingProcessingError
 from docling.document_converter import DocumentConverter, ConversionResult, InputFormat, PdfFormatOption
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend 
+from pypdfium2 import PdfiumError
 
 class DocumentConnector(DataConnector):
     """

@@ -53,10 +53,14 @@ class MongoStorage:
         """Delete source (delegates to sources repository)."""
         return self.sources.delete(source_id)
 
+    def update_source(self, source_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        """Update source (delegates to sources repository)."""
+        return self.sources.update(source_id, updates)
+
     def upsert_source_summary(self, source_id: str, source_name: str, source_type: str,
-                              upload_by: str, pipeline_id: str, type_data: Optional[Dict[str, Any]] = None) -> None:
+                              upload_by: str, pipeline_id: str, type_data: Optional[Dict[str, Any]] = None, tags: List[str] = None) -> None:
         """Create/update source summary (delegates to sources repository)."""
-        return self.sources.upsert_summary(source_id, source_name, source_type, upload_by, pipeline_id, type_data)
+        return self.sources.upsert_summary(source_id, source_name, source_type, upload_by, pipeline_id, type_data, tags)
 
     def get_pipeline_stats(self, pipeline_ids: List[str]) -> Dict[str, Dict[str, Any]]:
         """Get pipeline stats (delegates to pipelines repository)."""
@@ -69,6 +73,58 @@ class MongoStorage:
     def get_all(self, source_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Alias for get_all_sources to maintain SourceRepository interface compatibility."""
         return self.get_all_sources(source_type)
+
+    def get_paginated(
+        self,
+        field_path: Optional[str] = None,
+        cursor: Optional[str] = None,
+        limit: int = 50,
+        search_regex: Optional[str] = None,
+        match_filter: Optional[Dict[str, Any]] = None,
+        sort_by: Optional[str] = None,
+        sort_order: int = -1
+    ) -> Dict[str, Any]:
+        """Generic paginated query (delegates to sources repository)."""
+        return self.sources.get_paginated(
+            field_path=field_path,
+            cursor=cursor,
+            limit=limit,
+            search_regex=search_regex,
+            match_filter=match_filter,
+            sort_by=sort_by,
+            sort_order=sort_order
+        )
+
+    def get_sources_paginated(self, cursor: Optional[str] = None, limit: int = 50, search_regex: Optional[str] = None, source_type: Optional[str] = None) -> Dict[str, Any]:
+        """Get sources with pagination and pipeline stats enrichment."""
+        match_filter = {"source_type": source_type.upper()} if source_type else None
+        result = self.sources.get_paginated(
+            field_path=None,
+            cursor=cursor,
+            limit=limit,
+            search_regex=search_regex,
+            match_filter=match_filter,
+        )
+        sources = result.get("data", [])
+        
+        # Enrich with pipeline stats
+        pipeline_ids = [s.get('pipeline_id') for s in sources if s.get('pipeline_id')]
+        valid_ids = [pid for pid in pipeline_ids if pid is not None]
+        pipeline_stats = self.pipelines.get_stats(valid_ids)
+        enriched = []
+        for source in sources:
+            pipeline_id = source.get('pipeline_id')
+            if pipeline_id and pipeline_id in pipeline_stats:
+                source['pipeline_stats'] = pipeline_stats[pipeline_id]
+                source['status'] = pipeline_stats[pipeline_id].get('status')
+            else:
+                source['pipeline_stats'] = None
+                source['status'] = None
+            enriched.append(make_json_safe(source))
+            
+        result["sources"] = enriched
+        del result["data"]
+        return result
 
     def list_sources(self, source_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get all sources enriched with pipeline stats (for backward compatibility)."""

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, asdict
 from enum import Enum
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 
 class Role(str, Enum):
@@ -32,3 +32,4 @@ class ChatMessage:
     content: str
     tool_calls: Optional[List[ToolCall]] = None  # for assistant messages
     tool_call_id: Optional[str] = None  # for tool messages
+    additional_kwargs: Optional[Dict[str, Any]] = None  # for thought signatures etc.

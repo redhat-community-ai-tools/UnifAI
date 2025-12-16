@@ -1,9 +1,10 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from .registry import ResourcesRegistry
 from catalog.element_registry import ElementRegistry
 from .models import ResourceDoc, ResourceQuery
 from core.enums import ResourceCategory
 from core.ref import RefWalker
+from core.dto import GroupedCount
 from pydantic import BaseModel
 
 
@@ -99,3 +100,29 @@ class ResourcesService:
     def get_resource_schema() -> dict:
         """Get the JSON schema for ResourceDoc model."""
         return ResourceDoc.model_json_schema()
+
+    # ---------- Statistics ----------
+    def count(self, user_id: str, filter: Dict[str, Any] = None) -> int:
+        """Count resources matching filter criteria for a user."""
+        return self._store.count(user_id, filter)
+
+    def group_count(
+        self, 
+        user_id: str, 
+        group_by: List[str],
+        filter: Dict[str, Any] = None
+    ) -> List[GroupedCount]:
+        """
+        Group resources by specified fields and return counts.
+        Performs efficient server-side grouping via the registry.
+        
+        Args:
+            user_id: The user ID to filter by
+            group_by: List of field names to group by (e.g., ["category", "type"])
+            filter: Optional additional filter criteria
+            
+        Returns:
+            List of GroupedCount DTOs with grouped field values and count.
+            Example: [GroupedCount(fields={"category": "llm", "type": "openai"}, count=5), ...]
+        """
+        return self._store.group_count(user_id, group_by, filter)

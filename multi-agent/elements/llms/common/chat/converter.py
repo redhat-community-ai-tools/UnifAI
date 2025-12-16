@@ -27,7 +27,11 @@ class LangChainConverter:
                         "id": tc.tool_call_id,
                         "type": "tool_call"
                     } for tc in m.tool_calls]
-                    out.append(AIMessage(content=m.content if m.content else "[TOOL CALL]", tool_calls=tool_calls))
+                    out.append(AIMessage(
+                        content=m.content if m.content else "[TOOL CALL]",
+                        tool_calls=tool_calls,
+                        additional_kwargs=m.additional_kwargs or {}
+                    ))
                 else:
                     out.append(AIMessage(content=m.content))
 
@@ -64,6 +68,7 @@ class LangChainConverter:
                 role=Role.ASSISTANT,
                 content=m.content or " " if tool_calls else m.content,
                 tool_calls=[ToolCall(**tc.to_dict()) for tc in tool_calls] if tool_calls else None,
+                additional_kwargs=getattr(m, 'additional_kwargs', None)
             )
 
         elif isinstance(m, ToolMessage):

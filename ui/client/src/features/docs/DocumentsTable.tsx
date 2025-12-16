@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { FaEye, FaTrash, FaSync } from "react-icons/fa";
+import { FaEye, FaTrash, FaEdit } from "react-icons/fa";
 import { Button } from "@/components/ui/button";
 import { InlineLoader } from "@/components/shared/InlineLoader";
 import { Document } from "@/types";
@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DocumentData } from "./DocumentData";
 import { PIPELINE_STATUS } from "@/constants/pipelineStatus";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { EditDocumentModal } from "./EditDocumentModal";
 
 interface DocumentTableProps {
   documents: Document[];
@@ -18,11 +19,13 @@ interface DocumentTableProps {
   onDeleteConfirmed?: (id: string) => void;
   retrying?: boolean;
   handleRetry?: (id: string) => void;
+  onRefresh?: () => void;
 }
 
-export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDoc, setActiveDoc, deleteLoading, onDeleteConfirmed, retrying, handleRetry}) => {
+export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDoc, setActiveDoc, deleteLoading, onDeleteConfirmed, retrying, handleRetry, onRefresh}) => {
   const [confirmDoc, setConfirmDoc] = useState<Document | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [editDoc, setEditDoc] = useState<Document | null>(null);
 
   const columns: DataTableColumn<Document>[] = [
     {
@@ -151,6 +154,14 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
               variant="ghost"
               size="icon"
               className="h-6 w-6 p-0"
+              onClick={() => setEditDoc(doc)}
+            >
+              <FaEdit className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 p-0"
               onClick={() => {
                 setConfirmDoc(doc);
                 setConfirmLoading(false);
@@ -202,6 +213,16 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
               setConfirmLoading(false);
             }
           }}
+        />
+      )}
+
+      {editDoc && (
+        <EditDocumentModal
+          key={editDoc.source_id}
+          document={editDoc}
+          open={true}
+          onClose={() => setEditDoc(null)}
+          onUpdated={() => onRefresh?.()}
         />
       )}
     </div>

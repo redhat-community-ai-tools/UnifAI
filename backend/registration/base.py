@@ -94,6 +94,7 @@ class RegistrationBase(ABC):
             upload_by=self.upload_by,
             pipeline_id=pipeline_id,
             type_data=type_data,
+            tags=self.instance.get("tags", []),
         )
 
     def _build_registered_source_common(

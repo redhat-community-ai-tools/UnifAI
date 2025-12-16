@@ -686,14 +686,15 @@ export default function ExecutionTab({
             Interact with your AI assistant and monitor execution details
           </p>
         </div>
-        <Button
+        {/* Commenting the next part out due to Nir's request. If and when commenting back in need to take care of coloring. */}
+        {/* <Button
           className={`flex items-center gap-2 ${isActiveChatSession ? "bg-[#03DAC6] hover:bg-opacity-80" : "bg-gray-700 text-gray-300 cursor-not-allowed"}`}
           onClick={() => setShowExecutionStream(!showExecutionStream)}
           disabled={!isActiveChatSession}
         >
           <SplitSquareVertical className="h-4 w-4" />
           {showExecutionStream ? "Hide" : "Open"} Execution Stream
-        </Button>
+        </Button> */}
       </div>
 
       <div className="flex resizable-container gap-0" style={{ height: "calc(100vh - 230px)" }}>
@@ -706,24 +707,25 @@ export default function ExecutionTab({
                   Available Chats ({chatSessions.length})
                 </CardTitle>
                 <div className="flex items-center gap-1 flex-shrink-0 max-w-fit">
+                  {/* Commenting the next part out since it's related to our RAG system. If and when commenting back in need to take care of coloring. */}
                   {/* Global Scope Toggle */}
-                  <Switch.Root
+                  {/* <Switch.Root
                     className="relative w-20 h-5 rounded-full bg-gray-600 data-[state=checked]:bg-[#03DAC6] transition-colors cursor-pointer flex-shrink-0"
                     checked={globalScope === 'public'}
                     onCheckedChange={handleGlobalScopeToggle}
                     id="scope-switch"
                     title={`Current scope: ${globalScope}`}
-                  >
-                    {/* Background label */}
+                  > */}
+                    {/* Background label
                     <span className="absolute inset-0 flex items-center justify-center text-xs font-medium text-white pointer-events-none select-none">
                       {globalScope === 'public' ? 'Public' : 'Private'}
-                    </span>
+                    </span> */}
 
                     {/* Switch thumb */}
-                    <Switch.Thumb
+                    {/* <Switch.Thumb
                       className="absolute top-[1px] left-[1px] h-4 w-4 rounded-full bg-white transition-transform duration-300 z-10 transform data-[state=checked]:translate-x-[60px]"
-                    />
-                  </Switch.Root>
+                    /> */}
+                  {/* </Switch.Root> */}
                   <Button variant="ghost" size="sm" className="h-6 w-6 p-0 flex-shrink-0">
                     <Users className="h-3 w-3" />
                   </Button>

@@ -1,8 +1,9 @@
 import pymongo
 from pymongo.collection import Collection
-from typing import List, Mapping, Any
+from typing import List, Mapping, Any, Dict
 from session.repository.repository import SessionRepository
 from session.workflow_session import WorkflowSession
+from core.dto import GroupedCount
 
 
 class MongoSessionRepository(SessionRepository):
@@ -68,3 +69,35 @@ class MongoSessionRepository(SessionRepository):
         """Delete a session by run_id. Returns True if deleted, False if not found."""
         result = self._col.delete_one({"run_id": run_id})
         return result.deleted_count > 0
+
+    def count(self, user_id: str, filter: Dict[str, Any]) -> int:
+        """Count sessions matching filter criteria for a user."""
+        query = {"user_id": user_id, **filter}
+        return self._col.count_documents(query)
+    
+    def group_count(
+        self, 
+        user_id: str, 
+        group_by: List[str],
+        filter: Dict[str, Any] = None
+    ) -> List[GroupedCount]:
+        """
+        Group documents by specified fields and return counts.
+        Uses MongoDB aggregation for efficient server-side grouping.
+        
+        Transforms MongoDB's {"_id": {...}, "count": N} format to 
+        database-agnostic GroupedCount DTOs.
+        """
+        match = {"user_id": user_id, **(filter or {})}
+        group_id = {field: f"${field}" for field in group_by}
+        
+        pipeline = [
+            {"$match": match},
+            {"$group": {"_id": group_id, "count": {"$sum": 1}}}
+        ]
+        
+        # Transform MongoDB format → clean DTO
+        return [
+            GroupedCount(fields=doc["_id"], count=doc["count"])
+            for doc in self._col.aggregate(pipeline)
+        ]

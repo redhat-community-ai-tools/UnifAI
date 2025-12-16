@@ -25,7 +25,7 @@ import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import { Separator } from "@/components/ui/separator";
 import { useTheme } from "@/contexts/ThemeContext";
 
-export default function Dashboard() {
+export default function RagOverview() {
   const { projects } = useProject();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { primaryHex } = useTheme();

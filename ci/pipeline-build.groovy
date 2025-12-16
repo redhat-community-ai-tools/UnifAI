@@ -44,12 +44,11 @@ def buildDockerImage(String component) {
     String dockerfile = "Dockerfile"
     String context = "."
 
-    // Special-case UI: Dockerfile lives under deployment/, and context must be the UI folder
-    // will be fix in followup ticket to fix all non-importnet issues.
+    // Special-case UI: Dockerfile lives under deployment/, context is repo root
+    // to allow access to README.md which is imported by the frontend build
     if (component == "ui") {
         dockerfile = "deployment/Dockerfile"
-        context = "${component}"
-
+        context = "."
     }
 
     String logFile = "/tmp/${component.replace("/", "_")}_build.log"

@@ -17,6 +17,7 @@ from actions.service import ActionsService
 from sharing.repository.mongo_repository import MongoShareRepository
 from sharing.cloner import ShareCloner
 from sharing.service import ShareService
+from statistics.service import StatisticsService
 from config.app_config import AppConfig
 from global_utils.utils.singleton import SingletonMeta
 
@@ -114,6 +115,12 @@ class AppContainer(metaclass=SingletonMeta):
         self.share_service = ShareService(
             share_repository=self.share_repo,
             cloner=self.share_cloner
+        )
+
+        self.statistics_service = StatisticsService(
+            blueprint_service=self.blueprint_service,
+            session_service=self.session_service,
+            resources_service=self.resources_service
         )
 
         self._initialized = True

@@ -2,23 +2,25 @@ from abc import ABC, abstractmethod
 from graph.models import StepContext
 from graph.state.graph_state import GraphState, Channel
 from graph.state.state_view import StateView
-from core.types import StreamWriter
 from typing import Optional, Any, Mapping, ClassVar
 from elements.llms.common.chat.message import ChatMessage, Role
-from core.contracts import SupportsStreaming, SupportsStateContext
+from core.contracts import SupportsStateContext
+from elements.nodes.common.capabilities.streaming_capable import StreamingCapableMixin
 
 
-class BaseNode(SupportsStreaming, SupportsStateContext, ABC):
+class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
     """
     Base node for all graph elements.
     
-    • Provides __call__ with streaming
-    • NO domain-specific logic
-    • Messenger access via IEMCapableMixin only
+    Streaming is provided via StreamingCapableMixin.
+    Channel is injected via set_streaming_channel() before execution.
+    
+    MRO: StreamingCapableMixin → SupportsStateContext → ABC → object
+    Subclasses should list their mixins BEFORE BaseNode:
+        class MyNode(SomeMixin, OtherMixin, BaseNode): ...
     """
 
     # Base channels that ALL nodes must have
-    # Note: INTER_PACKETS moved to IEMCapableMixin for opt-in IEM protocol usage
     BASE_READS: ClassVar[set[str]] = set()
     BASE_WRITES: ClassVar[set[str]] = set()
 
@@ -30,8 +32,6 @@ class BaseNode(SupportsStreaming, SupportsStateContext, ABC):
         super().__init__(**kwargs)  # MRO
         self.retries = retries
         self._ctx: Optional[StepContext] = None
-        self._stream_writer: Optional[StreamWriter] = None
-        self._is_streaming = False
 
     @abstractmethod
     def run(self, state: StateView) -> StateView:
@@ -39,11 +39,7 @@ class BaseNode(SupportsStreaming, SupportsStateContext, ABC):
 
     def __call__(self,
                  state: GraphState,
-                 config,
-                 writer: StreamWriter = None) -> GraphState:
-        self._stream_writer = writer
-        self._is_streaming = config.get("metadata", {}).get("streaming", False)
-
+                 config) -> GraphState:
         # Create StateView with all channels (base + mixin + node-specific)
         all_reads = self.total_reads()
         all_writes = self.total_writes()
@@ -56,7 +52,7 @@ class BaseNode(SupportsStreaming, SupportsStateContext, ABC):
         self.run(wrapped_state)
         result = wrapped_state.backing_state
 
-        # Stream only streamable fields to reduce payload size
+        # Stream completion
         streamable_state = result.get_streamable_state()
         self._stream({
             "type": "complete",
@@ -66,31 +62,11 @@ class BaseNode(SupportsStreaming, SupportsStateContext, ABC):
         return result
 
     def _base_stream_data(self) -> dict[str, Any]:
-        """Core metadata every chunk must carry."""
+        """Core metadata every chunk must carry. Used by StreamingCapableMixin."""
         return {
             "node": self.uid,
             "display_name": self.display_name,
         }
-
-    def _stream(self, payload: Mapping[str, Any]) -> None:
-        """
-        Forward a payload to the writer, enriching it with node metadata.
-
-        • Does nothing if no writer is attached
-        • Caller's keys override ours in case of conflict
-        • Leaves the original `payload` untouched
-        """
-        if not self.is_streaming():
-            return
-
-        enriched: dict[str, Any] = {**self._base_stream_data(), **payload}
-        self._stream_writer(enriched)
-
-    def is_streaming(self) -> bool:
-        """
-        Check if the node is streaming.
-        """
-        return self._is_streaming
 
     def _stream_field(self, field_name: str, value: Any = None) -> None:
         """

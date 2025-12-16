@@ -6,6 +6,25 @@ from dataclasses import asdict
 catalog_bp = Blueprint("catalog", __name__)
 
 
+@catalog_bp.route("/categories.list.get", methods=["GET"])
+def list_categories():
+    """
+    Get all available resource categories.
+    Returns a list of category names.
+    
+    Response format:
+    {
+        "categories": ["llms", "tools", "retrievers", "conditions", "providers", "nodes"]
+    }
+    """
+    try:
+        catalog_service = current_app.container.catalog_service
+        categories = catalog_service.list_categories()
+        return jsonify({"categories": categories}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @catalog_bp.route("/elements.list.get", methods=["GET"])
 def list_all_elements():
     """

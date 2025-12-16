@@ -1,8 +1,9 @@
-from typing import List, Mapping, Any
+from typing import List, Mapping, Any, Dict
 from session.repository.repository import SessionRepository
 from session.workflow_session_factory import WorkflowSessionFactory
 from session.workflow_session import WorkflowSession
 from core.run_context import RunContext
+from core.dto import GroupedCount
 from graph.state.graph_state import GraphState
 from session.status import SessionStatus
 from blueprints.service import BlueprintService
@@ -98,3 +99,28 @@ class UserSessionManager:
     def delete_session(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""
         return self._repo.delete(run_id)
+
+    # ---------- statistics ----------
+    def count(self, user_id: str, filter: Dict[str, Any] = None) -> int:
+        """Count sessions matching filter criteria for a user."""
+        return self._repo.count(user_id, filter or {})
+
+    def group_count(
+        self, 
+        user_id: str, 
+        group_by: List[str],
+        filter: Dict[str, Any] = None
+    ) -> List[GroupedCount]:
+        """
+        Group sessions by specified fields and return counts.
+        Performs efficient server-side grouping via the repository.
+        
+        Args:
+            user_id: The user ID to filter by
+            group_by: List of field names to group by (e.g., ["blueprint_id"])
+            filter: Optional additional filter criteria
+            
+        Returns:
+            List of GroupedCount DTOs with grouped field values and count.
+        """
+        return self._repo.group_count(user_id, group_by, filter)

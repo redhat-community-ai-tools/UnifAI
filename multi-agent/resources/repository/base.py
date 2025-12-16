@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Dict, Any
 from resources.models import ResourceDoc, ResourceQuery
+from core.dto import GroupedCount
 
 
 class ResourceRepository(ABC):
@@ -59,3 +60,25 @@ class ResourceRepository(ABC):
 
     @abstractmethod
     def exists(self, rid: str) -> bool: ...
+
+    @abstractmethod
+    def group_count(
+        self, 
+        user_id: str, 
+        group_by: List[str],
+        filter: Dict[str, Any] = None
+    ) -> List[GroupedCount]:
+        """
+        Group documents by specified fields and return counts.
+        Implementation should perform efficient server-side grouping.
+        
+        Args:
+            user_id: The user ID to filter by
+            group_by: List of field names to group by
+            filter: Optional additional filter criteria
+            
+        Returns:
+            List of GroupedCount DTOs with grouped field values and count.
+            Example: [GroupedCount(fields={"category": "llm"}, count=5), ...]
+        """
+        ...

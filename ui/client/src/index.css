@@ -167,6 +167,33 @@
     display: none; /* Chrome, Safari */
   }
 
+  /* Custom scrollbar styling - dark, subtle, modern */
+  /* Webkit browsers (Chrome, Safari, Edge) */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    transition: background 0.2s ease;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  }
+
   /* Glassmorphism helpers */
   /* Deprecated glass utilities retained empty to avoid stale class effects */
   .glass, .bg-glass, .glass-strong, .bg-glass-strong, .glass-edge, .glass-noise, .glass-hover { }

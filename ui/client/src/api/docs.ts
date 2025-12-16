@@ -36,7 +36,7 @@ export interface PipelineEmbedResponse {
     };
 }
 
-export async function embedDocs(docs: {source_name: string}[], user: string): Promise<PipelineEmbedResponse> {
+export async function embedDocs(docs: {source_name: string, tags?: string[]}[], user: string): Promise<PipelineEmbedResponse> {
     const embedded = await api.put<PipelineEmbedResponse>(
       'pipelines/embed',
       {
@@ -59,4 +59,11 @@ export async function deleteDoc(pipelineId: string): Promise<any> {
 export async function getSupportedFileExtensions(): Promise<string[]> {
     const response = await api.get<{supported_extensions: string[]}>('docs/supported-extensions');
     return response.data.supported_extensions;
+};
+
+export async function updateDocument(sourceId: string, updates: Record<string, unknown>): Promise<void> {
+    await api.put('data_sources/data.source.update', {
+        source_id: sourceId,
+        updates
+    });
 };

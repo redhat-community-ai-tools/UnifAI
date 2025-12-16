@@ -1,10 +1,12 @@
 import { Route, Switch } from "wouter";
-import Dashboard from "@/pages/Dashboard";
+import RagOverview from "@/pages/RagOverview";
+import AgenticOverview from "@/pages/AgenticOverview";
 import Configuration from "@/pages/Configuration";
 import JiraIntegration from "@/pages/JiraIntegration";
 import AgenticAI from "@/pages/AgenticAI";
 import AgentRepository from "@/pages/AgentRepository";
 import AgenticChats from "@/pages/AgenticChats";
+import GetToKnow from "@/pages/GetToKnow";
 import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
 import { ProjectProvider } from '@/contexts/ProjectContext';
@@ -42,16 +44,19 @@ function App() {
               <ProtectedRoute>
                 <Switch>
                   {/* Agentic AI routes - wrapped with AgenticAIProvider */}
-                  <Route path="/" component={withAgenticAIProvider(AgenticAI)} />
+                  <Route path="/" component={GetToKnow} />
+                  <Route path="/agentic-overview" component={withAgenticAIProvider(AgenticOverview)} />
                   <Route path="/agentic-ai" component={withAgenticAIProvider(AgenticAI)} />
                   <Route path="/inventory" component={withAgenticAIProvider(AgentRepository)} />
                   <Route path="/agentic-chats" component={withAgenticAIProvider(AgenticChats)} />
                   
                   {/* Non-agentic routes - don't need AgenticAIProvider */}
+                  <Route path="/rag-overview" component={RagOverview} />
                   <Route path="/jira" component={JiraIntegration} />
                   <Route path="/slack" component={SlackIntegration} />
                   <Route path="/documents" component={DocumentsPage} />
                   <Route path="/slack/add-source" component={SlackAddSourcePage} />
+                  <Route path="/get-to-know" component={GetToKnow} />
                   <Route path="/configuration" component={Configuration} />
                   <Route path="/guides" component={GuidesPage} />
                   <Route component={NotFound} />
