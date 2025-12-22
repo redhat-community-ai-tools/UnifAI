@@ -997,7 +997,6 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
 
       if (blockData) {
         const block = JSON.parse(blockData);
-        console.log(block);
         const position = {
           x: event.clientX - reactFlowBounds.left - 75,
           y: event.clientY - reactFlowBounds.top - 25,
