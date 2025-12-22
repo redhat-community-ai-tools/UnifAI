@@ -107,13 +107,6 @@ def get_blueprint(blueprint_id):
     """
     try:
         svc = current_app.container.blueprint_service
-        
-        if not svc.exists(blueprint_id):
-            return jsonify({
-                "status": "error",
-                "error": f"Blueprint with ID '{blueprint_id}' not found"
-            }), 404
-        
         doc = svc.get_blueprint_draft_doc(blueprint_id)
         return jsonify({
             "blueprint_id": doc["blueprint_id"],
@@ -138,15 +131,6 @@ def update_blueprint(blueprint_id, blueprint_raw):
     """
     try:
         svc = current_app.container.blueprint_service
-        
-        # Check if blueprint exists
-        if not svc.exists(blueprint_id):
-            return jsonify({
-                "status": "error",
-                "error": f"Blueprint with ID '{blueprint_id}' not found"
-            }), 404
-        
-        # Parse the YAML or JSON string
         try:
             parsed = yaml.safe_load(blueprint_raw)
             if not isinstance(parsed, dict):
@@ -154,7 +138,6 @@ def update_blueprint(blueprint_id, blueprint_raw):
         except Exception as e:
             raise BadRequest(f"Invalid blueprint format: {e}")
         
-        # Update using service
         updated = svc.update_draft(blueprint_id=blueprint_id, draft_dict=parsed)
         
         if updated:

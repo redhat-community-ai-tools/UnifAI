@@ -14,11 +14,10 @@ import {
   MarkerType,
 } from "reactflow";
 import { useToast } from "@/hooks/use-toast";
-import { CurrentGraph, BuildingBlock } from "@/types/graph";
+import { BuildingBlock } from "@/types/graph";
 import { getCategoryDisplay } from "@/components/shared/helpers";
 import { useAuth } from "@/contexts/AuthContext";
 import * as yaml from "js-yaml";
-import { useLocation } from "wouter";
 import {
   fetchBlueprint,
   fetchAllResources,
@@ -63,7 +62,6 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
   const { editBlueprintId } = options;
 
   const { toast } = useToast();
-  const [, setLocation] = useLocation();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [nodeId, setNodeId] = useState(1);
@@ -81,19 +79,6 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
     targetNodeId: "",
     conditionType: "",
     existingBranches: [],
-  });
-
-  const [currentGraph, setCurrentGraph] = useState<CurrentGraph>({
-    id: `graph-${Date.now()}`,
-    name: "Untitled Graph",
-    nodes: [],
-    edges: [],
-    metadata: {
-      created: new Date(),
-      lastModified: new Date(),
-      nodeCount: 0,
-      edgeCount: 0,
-    },
   });
 
   // YAML flow state management
@@ -185,26 +170,15 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
         return;
       }
 
-      setNodes((currentNodes) => {
-        const updatedNodes = currentNodes.filter((node) => node.id !== nodeIdToDelete);
-        setCurrentGraph((prev) => ({
-          ...prev,
-          nodes: updatedNodes,
-          metadata: { ...prev.metadata, lastModified: new Date(), nodeCount: updatedNodes.length },
-        }));
-        return updatedNodes;
-      });
+      setNodes((currentNodes) =>
+        currentNodes.filter((node) => node.id !== nodeIdToDelete)
+      );
 
       setEdges((currentEdges) => {
         const updatedEdges = currentEdges.filter(
           (edge) => edge.source !== nodeIdToDelete && edge.target !== nodeIdToDelete
         );
         setYamlFlow((prevFlow) => removeNodeFromYamlFlow(prevFlow, nodeIdToDelete));
-        setCurrentGraph((prev) => ({
-          ...prev,
-          edges: updatedEdges,
-          metadata: { ...prev.metadata, lastModified: new Date(), edgeCount: updatedEdges.length },
-        }));
         return updatedEdges;
       });
     },
@@ -221,11 +195,6 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
         setYamlFlow((prevFlow) =>
           removeEdgeFromYamlFlow(prevFlow, edgeToDelete.source, edgeToDelete.target)
         );
-        setCurrentGraph((prev) => ({
-          ...prev,
-          edges: updatedEdges,
-          metadata: { ...prev.metadata, lastModified: new Date(), edgeCount: updatedEdges.length },
-        }));
         return updatedEdges;
       });
     },
@@ -532,11 +501,6 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
       setYamlFlow((prevFlow) =>
         addConnectionToYamlFlow(prevFlow, params.source!, params.target!)
       );
-      setCurrentGraph((prev) => ({
-        ...prev,
-        edges: newEdge,
-        metadata: { ...prev.metadata, lastModified: new Date(), edgeCount: newEdge.length },
-      }));
     },
     [setEdges, edges, nodes]
   );
@@ -632,17 +596,6 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
           nodeUid
         )
       );
-
-      setCurrentGraph((prev) => ({
-        ...prev,
-        nodes: updatedNodes,
-        metadata: {
-          ...prev.metadata,
-          lastModified: new Date(),
-          nodeCount: updatedNodes.length,
-          edgeCount: edges.length,
-        },
-      }));
     },
     [nodeId, setNodes, nodes, edges, createNodeFromBlock, attachConditionToNode, toast]
   );
@@ -721,12 +674,6 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
     setIsGraphValid(false);
     setValidationResult(null);
     setFixSuggestions([]);
-    setCurrentGraph((prev) => ({
-      ...prev,
-      nodes: [],
-      edges: [],
-      metadata: { ...prev.metadata, lastModified: new Date(), nodeCount: 2, edgeCount: 0 },
-    }));
   }, [initializeDefaultNodes, setEdges]);
 
   const openSaveModal = useCallback(() => {
@@ -833,12 +780,6 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
           branchConfig
         )
       );
-
-      setCurrentGraph((prev) => ({
-        ...prev,
-        edges: [...prev.edges, newEdge],
-        metadata: { ...prev.metadata, lastModified: new Date(), edgeCount: prev.edges.length + 1 },
-      }));
     },
     [nodes, setEdges]
   );
@@ -907,7 +848,6 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
     // State
     nodes,
     edges,
-    currentGraph,
     buildingBlocksData,
     conditionsData,
     allBlocksData,
