@@ -15,7 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import axios from "../http/axiosAgentConfig";
 import * as yaml from "js-yaml";
 import { useLocation } from "wouter";
-import { fetchBlueprint, fetchAllResources } from "@/api/agentic";
+import { fetchBlueprint, fetchAllResources, updateBlueprint, saveBlueprint, validateBlueprintGraph } from "@/api/agentic";
 
 interface YamlFlowNode {
   rid: string;
@@ -177,16 +177,7 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
         sortKeys: false,
       });
 
-      const response = await axios.post(
-        "/graph/validation/all.validate",
-        yamlString,
-        {
-          headers: {
-            "Content-Type": "text/plain",
-          },
-        },
-      );
-
+      const response = await validateBlueprintGraph(yamlString);
       const { validation_result, fix_suggestions } = response.data;
 
       setValidationResult(validation_result);
@@ -1270,15 +1261,9 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
         
         // If in edit mode and we have a blueprint ID, update; otherwise create new
         if (isEditMode && currentBlueprintId) {
-          response = await axios.put("/blueprints/blueprint.update", {
-            blueprintId: currentBlueprintId,
-            blueprintRaw: yamlString,
-          });
+          response = await updateBlueprint(currentBlueprintId, yamlString);
         } else {
-          response = await axios.post("/blueprints/blueprint.save", {
-            blueprintRaw: yamlString,
-            userId: USER_ID,
-          });
+          response = await saveBlueprint(yamlString, USER_ID);
         }
 
         if (response.data.status === "success") {

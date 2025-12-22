@@ -139,3 +139,45 @@ export async function fetchBlueprint(blueprintId: string) {
 
   return response.data;
 }
+
+export async function updateBlueprint(
+  blueprintId: string,
+  blueprintRaw: string
+): Promise<any> {
+  const response = await axios.put("/blueprints/blueprint.update", {
+    blueprintId,
+    blueprintRaw,
+  });
+
+  return response.data;
+}
+
+export async function saveBlueprint(
+  blueprintRaw: string,
+  userId?: string
+): Promise<any> {
+  const userIdParam = userId || 'default';
+
+  const response = await axios.post("/blueprints/blueprint.save", {
+    blueprintRaw,
+    userId: userIdParam,
+  });
+
+  return response.data;
+}
+
+export async function validateBlueprintGraph(
+  blueprintRaw: string
+): Promise<any> {
+  const response = await axios.post(
+    "/graph/validation/all.validate",
+    blueprintRaw,
+    {
+      headers: {
+        "Content-Type": "text/plain",
+      },
+    }
+  );
+
+  return response.data;
+}
