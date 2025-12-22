@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { useGraphLogic } from "@/hooks/use-graph-logic";
+import { useGraphLogic } from "@/hooks/use-graph-logic/use-graph-logic";
 import GraphCanvas from "@/components/agentic-ai/graphs/GraphCanvas";
 import BuildingBlocksSidebar from "./BuildingBlocksSidebar";
 import ConditionalEdgeModal from "@/components/agentic-ai/graphs/ConditionalEdgeModal";
