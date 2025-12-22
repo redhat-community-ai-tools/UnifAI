@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import axios from "../http/axiosAgentConfig";
 import * as yaml from "js-yaml";
 import { useLocation } from "wouter";
+import { fetchBlueprint, fetchAllResources } from "@/api/agentic";
 
 interface YamlFlowNode {
   rid: string;
@@ -263,24 +264,65 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
 
         // Update YAML flow to remove references and connections
         setYamlFlow((prevFlow) => {
-          const updatedNodes = prevFlow.nodes.filter(
-            (node) =>
-              !node.rid.includes(nodeId) && node.rid !== `$ref:${nodeId}`,
-          );
-
+          // Remove the plan step for this node
           const updatedPlan = prevFlow.plan
             .filter((step) => step.uid !== nodeId)
             .map((step) => {
+              // Clean up 'after' references to deleted node
               if (step.after === nodeId) {
                 const { after, ...stepWithoutAfter } = step;
                 return stepWithoutAfter;
               }
+              if (Array.isArray(step.after)) {
+                const filteredAfter = step.after.filter(a => a !== nodeId);
+                if (filteredAfter.length === 0) {
+                  const { after, ...stepWithoutAfter } = step;
+                  return stepWithoutAfter;
+                }
+                return { ...step, after: filteredAfter.length === 1 ? filteredAfter[0] : filteredAfter };
+              }
+              // Clean up branches that target the deleted node
+              if (step.branches) {
+                const updatedBranches = { ...step.branches };
+                Object.keys(updatedBranches).forEach((key) => {
+                  if (updatedBranches[key] === nodeId) {
+                    delete updatedBranches[key];
+                  }
+                });
+                if (Object.keys(updatedBranches).length === 0) {
+                  const { branches, ...stepWithoutBranches } = step;
+                  return stepWithoutBranches;
+                }
+                return { ...step, branches: updatedBranches };
+              }
               return step;
             });
 
+          // Get the node rid that was referenced by the deleted plan step
+          const deletedStep = prevFlow.plan.find(step => step.uid === nodeId);
+          const deletedNodeRid = deletedStep?.node;
+          
+          // Check if any remaining plan step still references this node rid
+          const nodeStillInUse = updatedPlan.some(step => step.node === deletedNodeRid);
+          
+          // Only keep node definitions that are still referenced in the plan
+          const updatedNodes = nodeStillInUse 
+            ? prevFlow.nodes 
+            : prevFlow.nodes.filter(n => {
+                const rid = n.rid?.startsWith('$ref:') ? n.rid.slice(5) : n.rid;
+                return rid !== deletedNodeRid;
+              });
+
+          // Clean up orphaned conditions - only keep conditions still referenced in plan
+          const usedConditions = new Set(updatedPlan.filter(s => s.exit_condition).map(s => s.exit_condition));
+          const updatedConditions = (prevFlow.conditions || []).filter(c => {
+            const rid = c.rid?.startsWith('$ref:') ? c.rid.slice(5) : c.rid;
+            return usedConditions.has(rid);
+          });
+
           return {
-            nodes: prevFlow.nodes,
-            conditions: prevFlow.conditions || [],
+            nodes: updatedNodes,
+            conditions: updatedConditions,
             plan: updatedPlan,
           };
         });
@@ -586,10 +628,8 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
   const loadBuildingBlocks = useCallback(async () => {
     try {
       setIsLoadingBlocks(true);
-      const response = await axios.get(
-        `/resources/resources.list?userId=${USER_ID}`,
-      );
-      const allBlocks = response.data.resources.map(transformResourceToBlock);
+      const resources = await fetchAllResources(USER_ID);
+      const allBlocks = resources.map(transformResourceToBlock);
 
       // Store all blocks for reference lookup
       setAllBlocksData(allBlocks);
@@ -708,9 +748,7 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
   const loadBlueprintForEdit = useCallback(async (blueprintId: string, allBlocks: BuildingBlock[]) => {
     try {
       setIsLoadingBlueprint(true);
-      
-      const response = await axios.get(`/blueprints/blueprint.get?blueprintId=${blueprintId}`);
-      const { spec_dict } = response.data;
+      const { spec_dict } = await fetchBlueprint(blueprintId);
       
       // Store metadata
       setBlueprintName(spec_dict.name || "");

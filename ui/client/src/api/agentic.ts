@@ -132,3 +132,10 @@ export async function fetchResolvedBlueprints(userId?: string): Promise<Workflow
   return response.data || [];
 }
 
+export async function fetchBlueprint(blueprintId: string) {
+  const response = await axios.get(
+    `/blueprints/blueprint.get?blueprintId=${blueprintId}`
+  );
+
+  return response.data;
+}
