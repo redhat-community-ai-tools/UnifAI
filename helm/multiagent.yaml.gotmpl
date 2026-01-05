@@ -1,4 +1,3 @@
-#podman run -dt   --name helmfile   --user $(id -u):$(id -g)   --workdir /helm/charts   -v "$PWD":/helm/charts:Z   -v "$HOME/.kube":/helm/.kube:Z   ghcr.io/helmfile/helmfile:latest bash
 environments:
   default:
     values:

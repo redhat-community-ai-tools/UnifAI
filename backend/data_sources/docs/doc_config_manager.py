@@ -15,7 +15,7 @@ class DocConfigManager(ConfigurationManager):
         "include_metadata": True,
         "chunk_size": 1000,
         "chunk_overlap": 200,
-        "supported_extensions": [".pdf", ".docx", ".txt", ".md"],
+        "supported_extensions": [".pdf", ".docx", ".md", ".pptx"],
         "max_file_size_mb": 50,
         "timeout_seconds": 300,
         # Note: The following parameters are kept for future use if docling adds these features

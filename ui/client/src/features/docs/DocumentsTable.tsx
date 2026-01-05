@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { FaEye, FaTrash, FaEdit } from "react-icons/fa";
 import { Button } from "@/components/ui/button";
 import { InlineLoader } from "@/components/shared/InlineLoader";
@@ -9,25 +9,63 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { DocumentData } from "./DocumentData";
 import { PIPELINE_STATUS } from "@/constants/pipelineStatus";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { RowSelectionState } from "@tanstack/react-table";
+import { SelectionCheckbox } from "@/components/shared/SelectionCheckbox";
+import { getSupportedFileExtensions } from "@/api/docs";
 import { EditDocumentModal } from "./EditDocumentModal";
+import { useQuery } from "@tanstack/react-query";
 
 interface DocumentTableProps {
   documents: Document[];
   activeDoc?: Document | null;
   setActiveDoc?: (doc: Document | null) => void;
+  onActiveDocChange: () => void;
   deleteLoading?: boolean; // Optional: legacy
   onDeleteConfirmed?: (id: string) => void;
   retrying?: boolean;
   handleRetry?: (id: string) => void;
+  rowSelection?: RowSelectionState;
+  onRowSelectionChange?: (selection: RowSelectionState) => void;
   onRefresh?: () => void;
+  expandedDocDetails: Document | null;
+  isLoadingDetails: boolean;
 }
 
-export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDoc, setActiveDoc, deleteLoading, onDeleteConfirmed, retrying, handleRetry, onRefresh}) => {
+export const DocumentTable: React.FC<DocumentTableProps> = ({
+  documents, 
+  activeDoc, 
+  setActiveDoc, 
+  onActiveDocChange,
+  deleteLoading, 
+  onDeleteConfirmed, 
+  retrying, 
+  handleRetry,
+  rowSelection,
+  onRowSelectionChange,
+  onRefresh,
+  expandedDocDetails,
+  isLoadingDetails,
+  
+}) => {
   const [confirmDoc, setConfirmDoc] = useState<Document | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [editDoc, setEditDoc] = useState<Document | null>(null);
 
-  const columns: DataTableColumn<Document>[] = [
+  // Fetch document details when activeDoc changes
+  useEffect(() => {
+    onActiveDocChange()
+  }, [activeDoc?.source_id]);
+
+  // Use TanStack Query for caching supported extensions across pages/refetches
+  // Extensions are static data, so we use staleTime: Infinity to prevent refetching
+  const { data: fileTypeFilterOptions = [] } = useQuery({
+    queryKey: ['supportedFileExtensions'],
+    queryFn: getSupportedFileExtensions,
+    staleTime: Infinity, // Extensions never change during a session
+    select: (extensions) => extensions.map(ext => ext.substring(1).toUpperCase()),
+  });
+
+  const columns: DataTableColumn<Document>[] = React.useMemo(() => [
     {
       accessorKey: "source_name",
       header: "Name",
@@ -84,7 +122,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
       meta: {
         align: "center",
         filterType: "select",
-        filterOptions: ["PDF", "DOCX", "TXT", "XLSX", "OTHER"],
+        filterOptions: fileTypeFilterOptions,
       },
     },
     {
@@ -102,7 +140,10 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
       cell: ({ row }) => {
         const doc = row.original;
         return (
-          <StatusBadge status={doc.status} />
+          <StatusBadge 
+            status={doc.status} 
+            errorMessage={doc.type_data?.last_error}
+          />
         );
       },
       meta: {
@@ -125,23 +166,57 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
     },
     {
       id: "actions",
-      header: "",
+      header: ({ table }) => {
+        if (!onRowSelectionChange || !rowSelection) return "";
+        
+        // Calculate if all filtered rows are selected
+        const filteredRows = table.getFilteredRowModel().rows;
+        const isAllFilteredSelected = filteredRows.length > 0 && filteredRows.every(row => {
+          return rowSelection[row.original.source_id];
+        });
+        
+        // Handle select all toggle for filtered rows
+        const handleSelectAllChange = (checked: boolean) => {
+          const newSelection = { ...rowSelection };
+          if (checked) {
+            filteredRows.forEach(row => {
+              newSelection[row.original.source_id] = true;
+            });
+          } else {
+            filteredRows.forEach(row => {
+              delete newSelection[row.original.source_id];
+            });
+          }
+          onRowSelectionChange(newSelection);
+        };
+        
+        return (
+          <SelectionCheckbox
+            checked={isAllFilteredSelected}
+            onCheckedChange={handleSelectAllChange}
+            ariaLabel="Select all filtered rows"
+            align="right"
+          />
+        );
+      },
       cell: ({ row }) => {
         const doc = row.original;
         const isActive = activeDoc?.pipeline_id === doc.pipeline_id;
+        
+        // Handle individual row selection toggle
+        const handleRowSelect = (checked: boolean) => {
+          if (!onRowSelectionChange || !rowSelection) return;
+          const newSelection = { ...rowSelection };
+          if (checked) {
+            newSelection[doc.source_id] = true;
+          } else {
+            delete newSelection[doc.source_id];
+          }
+          onRowSelectionChange(newSelection);
+        };
+        
         return (
           <div className="flex items-center space-x-2 justify-end">
-            {/* {doc.status === PIPELINE_STATUS.FAILED && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 p-0"
-                onClick={() => handleRetry?.(doc.pipeline_id)}
-                disabled={retrying}
-              >
-                <FaSync />
-              </Button>
-            )} */}
             <Button
               variant="ghost"
               size="icon"
@@ -170,12 +245,19 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
             >
               <FaTrash className="h-3 w-3" />
             </Button>
+            {onRowSelectionChange && rowSelection && (
+              <SelectionCheckbox
+                checked={rowSelection[doc.source_id] === true}
+                onCheckedChange={handleRowSelect}
+                ariaLabel={`Select document ${doc.source_name}`}
+              />
+            )}
           </div>
         );
       },
       meta: { align: "right" },
     },
-  ];
+  ], [activeDoc, setActiveDoc, rowSelection, onRowSelectionChange, fileTypeFilterOptions]);
 
   return (
     <div className="w-full">
@@ -185,11 +267,17 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({documents, activeDo
         enableGlobalFilter={false}
         enableColumnFilters={true}
         enablePagination={true}
+        enableRowSelection={false}
+        getRowId={(row) => row.source_id}
         initialState={{
           pagination: { pageIndex: 0, pageSize: 15 }
         }}
         expendedRow={activeDoc}
-        renderExpandedRow={(doc) => <DocumentData doc={doc} />}
+        expandedRowDetails={expandedDocDetails}
+        isLoadingExpanded={isLoadingDetails}
+        renderExpandedRow={(doc, details, isLoading) => (
+          <DocumentData doc={doc} details={details} isLoading={isLoading} />
+        )}
       />
 
       {confirmDoc && (

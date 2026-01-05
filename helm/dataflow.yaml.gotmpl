@@ -26,7 +26,6 @@ releases:
 
   - name: unifai-dataflow-celery
     chart: ./dataflow/unifai-dataflow-celery
-    version: "0.9.0"
     wait: true
     values:
       - {{- toYaml .Values.unifai_dataflow_celery | nindent 8 }}

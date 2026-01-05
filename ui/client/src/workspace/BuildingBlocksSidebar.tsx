@@ -6,6 +6,8 @@ import { Eye, Loader2 } from "lucide-react";
 import { BuildingBlock } from "@/types/graph";
 import { getCategoryDisplay } from "@/components/shared/helpers";
 import ResourceDetailsModal from "./ResourceDetailsModal";
+import { UmamiTrack } from '@/components/ui/umamitrack';
+import { UmamiEvents } from '@/config/umamiEvents';
 
 interface BuildingBlocksSidebarProps {
   buildingBlocks: BuildingBlock[];
@@ -54,9 +56,12 @@ const BuildingBlocksSidebar: React.FC<BuildingBlocksSidebarProps> = ({
                 <TabsTrigger value="nodes" className="text-gray-300 data-[state=active]:text-white">
                   Nodes ({buildingBlocks.length})
                 </TabsTrigger>
-                <TabsTrigger value="conditions" className="text-gray-300 data-[state=active]:text-white">
-                  Conditions ({conditions.length})
-                </TabsTrigger>
+
+                <UmamiTrack event={UmamiEvents.AGENT_GRAPHS_CONDITIONS_BUTTON} includeUserData={false}>
+                  <TabsTrigger value="conditions" className="text-gray-300 data-[state=active]:text-white">
+                    Conditions ({conditions.length})
+                  </TabsTrigger>
+                </UmamiTrack>
               </TabsList>
 
               <TabsContent value="nodes" className="mt-4">

@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,13 +10,17 @@ import {
   FileText,
   Database,
   Eye,
-  Users
+  Users,
+  Check,
+  AlertTriangle
 } from 'lucide-react';
 import SimpleTooltip from '@/components/shared/SimpleTooltip';
 import { useShared } from '@/contexts/SharedContext';
 import { useAgenticAI } from '@/contexts/AgenticAIContext';
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
+import { ElementValidationResult } from '../../../types/validation';
 import { ElementData } from './ElementData';
+import { ValidationResultModal } from './ValidationResultModal';
 import { formatConfigValue } from '../../../utils/maskSecretFields';
 
 interface ElementGridProps {
@@ -39,8 +42,23 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
 }) => {
   const [selectedElement, setSelectedElement] = useState<ElementInstance | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isValidationModalOpen, setIsValidationModalOpen] = useState(false);
+  const [selectedValidationResult, setSelectedValidationResult] = useState<ElementValidationResult | null>(null);
   const { openShareForItem } = useShared();
-  const { getResourceName } = useAgenticAI();
+  const { 
+    getResourceName, 
+    getValidationResult, 
+    getValidationStatus,
+    validateResources 
+  } = useAgenticAI();
+
+  // Trigger validation for all elements when they change
+  useEffect(() => {
+    if (elements.length > 0) {
+      const rids = elements.map(el => el.rid);
+      validateResources(rids);
+    }
+  }, [elements, validateResources]);
 
   const handleViewDetails = (element: ElementInstance) => {
     setSelectedElement(element);
@@ -54,6 +72,58 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
       itemName: element.name || `${elementType.name} Instance`,
     });
   };
+
+  const handleValidationClick = (rid: string) => {
+    const result = getValidationResult(rid);
+    if (result) {
+      setSelectedValidationResult(result);
+      setIsValidationModalOpen(true);
+    }
+  };
+
+  // Render validation status icon
+  const renderValidationStatus = (rid: string) => {
+    const status = getValidationStatus(rid);
+
+    if (status === 'loading') {
+      return (
+        <SimpleTooltip content={<p>Validating resource...</p>}>
+          <div className="flex items-center justify-center w-8 h-8">
+            <LoaderCircle className="h-4 w-4 animate-spin text-gray-400" />
+          </div>
+        </SimpleTooltip>
+      );
+    }
+
+    if (status === 'valid') {
+      return (
+        <SimpleTooltip content={<p>Resource is valid - Click for details</p>}>
+          <button 
+            className="flex items-center justify-center w-8 h-8 rounded-md bg-green-500/10 hover:bg-green-500/20 transition-colors cursor-pointer"
+            onClick={() => handleValidationClick(rid)}
+          >
+            <Check className="h-4 w-4 text-green-500" />
+          </button>
+        </SimpleTooltip>
+      );
+    }
+
+    if (status === 'invalid') {
+      return (
+        <SimpleTooltip content={<p>Resource is invalid - Click for details</p>}>
+          <button 
+            className="flex items-center justify-center w-8 h-8 rounded-md bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors cursor-pointer"
+            onClick={() => handleValidationClick(rid)}
+          >
+            <AlertTriangle className="h-4 w-4 text-yellow-500" />
+          </button>
+        </SimpleTooltip>
+      );
+    }
+
+    return null;
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -92,7 +162,8 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
                     {element.name || `${elementType.name} Instance`}
                   </CardTitle>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  {renderValidationStatus(element.rid)}
                   <SimpleTooltip content={<p>Share this resource</p>}>
                     <Button 
                       variant="ghost" 
@@ -208,6 +279,13 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
         isOpen={isDetailsModalOpen}
         onOpenChange={setIsDetailsModalOpen}
         elementSchema={elementSchema}
+      />
+
+      {/* Validation Result Modal */}
+      <ValidationResultModal
+        validationResult={selectedValidationResult}
+        isOpen={isValidationModalOpen}
+        onOpenChange={setIsValidationModalOpen}
       />
     </div>
   );

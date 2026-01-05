@@ -2,6 +2,8 @@ import React from 'react';
 import { CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Trash2, Save, ArrowLeft } from 'lucide-react';
+import { UmamiTrack } from '@/components/ui/umamitrack';
+import { UmamiEvents } from '@/config/umamiEvents';
 
 interface GraphHeaderProps {
   onClearGraph: () => void;
@@ -21,28 +23,32 @@ const GraphHeader: React.FC<GraphHeaderProps> = ({
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-3">
           {onBack && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onBack}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back
-            </Button>
+            <UmamiTrack event={UmamiEvents.AGENT_GRAPHS_BACK_BUTTON} includeUserData={false}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onBack}
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back
+              </Button>
+            </UmamiTrack>
           )}
           <CardTitle className="text-lg font-heading">Workflow Canvas</CardTitle>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onClearGraph}
-            className="flex items-center gap-2"
-          >
-            <Trash2 className="w-4 h-4" />
-            Clear
-          </Button>
+          <UmamiTrack event={UmamiEvents.AGENT_GRAPHS_CLEAR_BUTTON} includeUserData={false}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onClearGraph}
+              className="flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clear
+            </Button>
+          </UmamiTrack>
           <Button
               onClick={onSaveGraph}
               disabled={!isGraphValid}

@@ -4,6 +4,7 @@ from ..config import OrchestratorNodeConfig
 from ..orchestrator_node import OrchestratorNode
 from ..orchestrator_node_factory import OrchestratorNodeFactory
 from ..identifiers import Identifier, META
+from ..validator import OrchestratorNodeValidator
 
 
 class OrchestratorNodeElementSpec(BaseElementSpec):
@@ -18,5 +19,6 @@ class OrchestratorNodeElementSpec(BaseElementSpec):
     reads = OrchestratorNode.total_reads()
     writes = OrchestratorNode.total_writes()
     tags = META.tags
+    validator_cls = OrchestratorNodeValidator
 
 

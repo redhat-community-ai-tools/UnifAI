@@ -46,9 +46,10 @@ export const useWorkspaceData = () => {
   );
   const [elementActions, setElementActions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingInstances, setIsLoadingInstances] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
-  const { addOrUpdateResource, removeResource } = useAgenticAI();
+  const { addOrUpdateResource, removeResource, revalidateResourceAndAncestors } = useAgenticAI();
 
   const { user } = useAuth();
   const USER_ID = user?.username || "default";
@@ -94,7 +95,7 @@ export const useWorkspaceData = () => {
   const fetchElementInstances = useCallback(
     async (category: string, type: string) => {
       try {
-        setIsLoading(true);
+        setIsLoadingInstances(true);
         setError(null);
         setElementInstances([]);
 
@@ -132,7 +133,7 @@ export const useWorkspaceData = () => {
         setElementInstances([]);
         return null;
       } finally {
-        setIsLoading(false);
+        setIsLoadingInstances(false);
       }
     },
     [toast],
@@ -319,6 +320,8 @@ export const useWorkspaceData = () => {
               category: response.data.category || category,
               type: response.data.type || type,
             });
+            // Revalidate resource after update
+            revalidateResourceAndAncestors(response.data.rid || rid);
           }
           
           toast({
@@ -350,6 +353,8 @@ export const useWorkspaceData = () => {
               category: response.data.category || category,
               type: response.data.type || type,
             });
+            // Validate new resource immediately after creation
+            revalidateResourceAndAncestors(response.data.rid);
           }
           
           toast({
@@ -421,6 +426,7 @@ export const useWorkspaceData = () => {
     elementSchema,
     elementActions,
     isLoading,
+    isLoadingInstances,
     error,
     fetchCategories,
     fetchElementInstances,

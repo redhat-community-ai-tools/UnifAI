@@ -23,8 +23,13 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Loader2, RefreshCw, ChevronDown, Check } from 'lucide-react';
+import { Loader2, RefreshCw, ChevronDown, Check, CheckCheck, X } from 'lucide-react';
 import axios from "../../../http/axiosAgentConfig";
+
+// Type guard to check if hint is an ApiHint (has endpoint) vs ActionHint (has action_uid)
+const isApiHint = (hint: any): boolean => {
+  return hint && typeof hint.endpoint === 'string' && hint.endpoint.length > 0;
+};
 
 // Type for option items - can be string or object with label/value
 interface OptionItem {
@@ -47,9 +52,12 @@ interface FieldPopulationProps {
   onPopulateResult: (fieldName: string, results: string[] | any, multiSelect: boolean) => void;
   autoTrigger?: boolean;
   hideUI?: boolean;
+  currentValue?: string[];
 }
 
 const SEARCH_DEBOUNCE_DELAY = 300; // ms
+const SELECT_ALL_VALUE = "__select_all__";
+
 
 export const FieldPopulation: React.FC<FieldPopulationProps> = ({
   fieldName,
@@ -59,16 +67,18 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
   formData,
   onPopulateResult,
   autoTrigger = false,
-  hideUI = false
+  hideUI = false,
+  currentValue = []
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [populatedOptions, setPopulatedOptions] = useState<OptionItem[]>([]);
-  const [selectedValues, setSelectedValues] = useState<string[]>([]);
+  const [selectedValues, setSelectedValues] = useState<string[]>(currentValue);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [shouldKeepOpen, setShouldKeepOpen] = useState(false);
   const [hasAutoTriggered, setHasAutoTriggered] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false); // Track if options were ever loaded
+  const [isInitialized, setIsInitialized] = useState(false); // Track if we've synced with parent value
   
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
@@ -83,18 +93,27 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     total: null
   });
 
+  const isSelectAll = (value: string) => value === SELECT_ALL_VALUE;
+
   // Extract hint flags with defaults for backwards compatibility
   const supportsPagination = populateHint.pagination === true;
   const supportsSearch = populateHint.search === true;
   const labelField = populateHint.label_field;
   const valueField = populateHint.value_field;
 
-  // Find the populate action from elementActions
-  const populateAction = elementActions.find(
-    action => action.uid === populateHint.action_uid
-  );
+  // Determine if this is an ApiHint or ActionHint
+  const useApiHint = isApiHint(populateHint);
 
-  if (!populateAction) {
+  // Find the populate action from elementActions (only needed for ActionHint)
+  const populateAction = !useApiHint
+    ? elementActions.find(action => action.uid === populateHint.action_uid)
+    : null;
+
+  // For ActionHint, we need a valid action; for ApiHint, we need an endpoint
+  if (!useApiHint && !populateAction) {
+    return null;
+  }
+  if (useApiHint && !populateHint.endpoint) {
     return null;
   }
 
@@ -128,6 +147,15 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
       return { label: String(item), value: String(item) };
     });
   };
+
+  // When a user edits an existing element, ensure that any previously saved selections are reflected as "selected" in the dropdown. This only runs once
+  // on initial mount to avoid overwriting user changes during the editing session
+  useEffect(() => {
+    if (!isInitialized && currentValue && currentValue.length > 0) {
+      setSelectedValues(currentValue);
+      setIsInitialized(true);
+    }
+  }, [currentValue, isInitialized]);
 
   // Effect to force dropdown to stay open for multi-select
   useEffect(() => {
@@ -197,6 +225,85 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     }
   }, [debouncedSearchTerm]);
 
+  const applySelection = (values: string[]) => {
+    setSelectedValues(values);
+    onPopulateResult(fieldName, values, populateHint.multi_select || false);
+  };
+
+  /**
+   * Toggle between "Select All" and "Clear All" for multi-select dropdowns.
+   * 
+   * Behavior:
+   * - If ALL options are currently selected → Clear all selections (empty array)
+   * - If ANY options are unselected → Select all available options
+   * 
+   * This allows users to quickly select/deselect all options with a single click.
+   * The `allOptionsSelected` flag (computed elsewhere) determines which action to take.
+   */
+  const toggleSelectAll = () => {
+    const allValues = populatedOptions.map(o => o.value);
+    applySelection(allOptionsSelected ? [] : allValues);
+  };
+
+  const handleSelectChange = (value: string) => {
+    if (!value || value === "__no_options_disabled__" || value === "__load_more__") return;
+    if (isSelectAll(value)) return toggleSelectAll();
+
+    const newValues = populateHint.multi_select
+      ? selectedValues.includes(value)
+        ? selectedValues.filter(v => v !== value)
+        : [...selectedValues, value]
+      : [value];
+
+    applySelection(newValues);
+  };
+
+  const handleItemSelect = (value: string) => {
+    handleSelectChange(value);
+    if (populateHint.multi_select) setShouldKeepOpen(true);
+  };
+
+  const removeSelectedValue = (value: string) => {
+    applySelection(selectedValues.filter(v => v !== value));
+  };
+
+
+  // Perform population via ActionHint (action system)
+  const performActionPopulation = async (inputData: any) => {
+    if (!populateAction) {
+      throw new Error('Populate action not found');
+    }
+
+    const response = await axios.post('/actions/action.execute', {
+      uid: populateAction.uid,
+      inputData
+    });
+
+    return response.data;
+  };
+
+  // Perform population via ApiHint (direct API call)
+  const performApiPopulation = async (requestBody: any) => {
+    // Determine the HTTP method (default to POST)
+    const method = (populateHint.method || 'POST').toUpperCase();
+    const endpoint = populateHint.endpoint;
+
+    let response;
+    if (method === 'GET') {
+      // For GET requests, send data as query params
+      response = await axios.get(endpoint, { params: requestBody });
+    } else {
+      // For POST/PUT/PATCH, send data in body
+      response = await axios({
+        method: method.toLowerCase(),
+        url: endpoint,
+        data: requestBody
+      });
+    }
+
+    return response.data;
+  };
+
   const performPopulation = async (cursor: string | null = null, searchRegex: string | null = null) => {
     const isLoadMore = cursor !== null;
     
@@ -207,19 +314,19 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     }
 
     try {
-      // Prepare input data based on populate action's input schema
+      // Prepare input/request data based on dependencies
       const inputData: any = {};
       
-      // Map dependencies from populate hint or use field name directly
+      // Map dependencies from populate hint
       if (populateHint.dependencies && Object.keys(populateHint.dependencies).length > 0) {
-        Object.entries(populateHint.dependencies).forEach(([configField, actionField]) => {
+        Object.entries(populateHint.dependencies).forEach(([configField, requestField]) => {
           const configValue = formData[configField];
           if (configValue !== undefined && configValue !== null && configValue !== '') {
-            inputData[actionField as string] = configValue;
+            inputData[requestField as string] = configValue;
           }
         });
-      } else {
-        // If no dependencies specified, use form data directly
+      } else if (!useApiHint && populateAction) {
+        // For ActionHint without explicit dependencies, use form data directly
         Object.keys(populateAction.input_schema?.properties || {}).forEach(inputField => {
           if (formData[inputField] !== undefined && formData[inputField] !== null && formData[inputField] !== '') {
             inputData[inputField] = formData[inputField];
@@ -240,14 +347,14 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
         inputData.search_regex = searchRegex;
       }
 
-      const response = await axios.post('/actions/action.execute', {
-        uid: populateAction.uid,
-        inputData
-      });
+      // Use the appropriate population method based on hint type
+      const responseData = useApiHint
+        ? await performApiPopulation(inputData)
+        : await performActionPopulation(inputData);
 
       // Extract results based on field_mapping
       const fieldMapping = populateHint.field_mapping || 'results';
-      const rawResults = response.data[fieldMapping] || [];
+      const rawResults = responseData[fieldMapping] || [];
       
     
       if (populateHint.selection_type === 'automatic' && !Array.isArray(rawResults)) {
@@ -256,6 +363,7 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
       }
       
       const normalizedResults = normalizeOptions(rawResults);
+      const newOptionValues = new Set(normalizedResults.map(opt => opt.value));
       
       if (populateHint.selection_type == 'manual' || populateHint.multi_select) {
         if (isLoadMore) {
@@ -267,6 +375,22 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
           if (normalizedResults.length > 0) {
             setHasLoadedOnce(true);
           }
+          
+          // Validate existing selections - remove any that no longer exist in new results
+          setSelectedValues(prevSelected => {
+            if (prevSelected.length === 0) return prevSelected;
+            const validatedSelections = prevSelected.filter(val => newOptionValues.has(val));
+            
+            // If selections changed (some were removed), notify parent
+            if (validatedSelections.length !== prevSelected.length) {
+              // Use setTimeout to avoid state update during render
+              setTimeout(() => {
+                onPopulateResult(fieldName, validatedSelections, populateHint.multi_select || false);
+              }, 0);
+            }
+            
+            return validatedSelections;
+          });
         } else {
           // Search: update with results (even if empty - will show "No results found")
           setPopulatedOptions(normalizedResults);
@@ -276,17 +400,10 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
       // Update pagination state if supported
       if (supportsPagination) {
         setPagination({
-          nextCursor: response.data.nextCursor || response.data.next_cursor || null,
-          hasMore: response.data.hasMore ?? response.data.has_more ?? false,
-          total: response.data.total ?? null
+          nextCursor: responseData.nextCursor || responseData.next_cursor || null,
+          hasMore: responseData.hasMore ?? responseData.has_more ?? false,
+          total: responseData.total ?? null
         });
-      }
-
-      // Only report to parent on initial load (not load more or search)
-      if (!isLoadMore && !searchRegex) {
-        // For backwards compatibility, send values based on the original format
-        const resultValues = normalizedResults.map(opt => opt.value);
-        onPopulateResult(fieldName, resultValues, populateHint.multi_select || false);
       }
 
     } catch (error: any) {
@@ -314,43 +431,6 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     }
   };
 
-  const handleSelectChange = (value: string) => {
-    if (!value || value === "__no_options_disabled__" || value === "__load_more__") return;
-
-    let newSelectedValues: string[];
-    
-    if (populateHint.multi_select) {
-      // Multi-select: toggle selection
-      if (selectedValues.includes(value)) {
-        newSelectedValues = selectedValues.filter(v => v !== value);
-      } else {
-        newSelectedValues = [...selectedValues, value];
-      }
-    } else {
-      // Single select: replace current selection
-      newSelectedValues = [value];
-    }
-
-    setSelectedValues(newSelectedValues);
-    
-    // Update parent component with selected values
-    onPopulateResult(fieldName, newSelectedValues, populateHint.multi_select || false);
-  };
-
-  // Handle item selection for multi-select to keep dropdown open
-  const handleItemSelect = (value: string) => {
-    handleSelectChange(value);
-    // For multi-select, signal that we want to keep the dropdown open
-    if (populateHint.multi_select) {
-      setShouldKeepOpen(true);
-    }
-  };
-
-  const removeSelectedValue = (valueToRemove: string) => {
-    const newSelectedValues = selectedValues.filter(val => val !== valueToRemove);
-    setSelectedValues(newSelectedValues);
-    onPopulateResult(fieldName, newSelectedValues, populateHint.multi_select || false);
-  };
 
   const getAvailableOptions = (): OptionItem[] => {
     if (populateHint.multi_select) {
@@ -371,6 +451,10 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
   const remainingCount = pagination.total 
     ? pagination.total - populatedOptions.length 
     : null;
+  
+  // Check if all options are selected (for showing Select All vs Clear All)
+  const allOptionsSelected = populatedOptions.length > 0 && 
+    selectedValues.length === populatedOptions.length;
 
   // Hide UI when auto-triggering (keep logic running in background)
   if (hideUI) {
@@ -427,6 +511,27 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
               {isLoading ? 'Loading...' : isSearching ? 'Searching...' : searchTerm ? 'No matching results found.' : 'No options found.'}
             </CommandEmpty>
             <CommandGroup>
+              {/* Select All / Clear All option for multi-select */}
+              {populateHint.multi_select && populatedOptions.length > 0 && !searchTerm && (
+                <CommandItem
+                  value={SELECT_ALL_VALUE}
+                  onSelect={handleSelectChange}
+                  className="font-medium border-b border-gray-700 mb-1 pb-2"
+                >
+                  {allOptionsSelected ? (
+                    <>
+                      <X className="mr-2 h-4 w-4 text-red-400" />
+                      <span className="text-red-400">Clear All</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCheck className="mr-2 h-4 w-4 text-green-400" />
+                      <span className="text-green-400">Select All ({populatedOptions.length})</span>
+                    </>
+                  )}
+                </CommandItem>
+              )}
+
               {availableOptions.map((option: OptionItem) => (
                 <CommandItem
                   key={option.value}
@@ -515,6 +620,26 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
           setIsDropdownOpen(false);
         }}
       >
+        {/* Select All / Clear All option for multi-select */}
+        {populateHint.multi_select && populatedOptions.length > 0 && (
+          <SelectItem 
+            value={SELECT_ALL_VALUE}
+            className="font-medium border-b border-gray-700"
+          >
+            {allOptionsSelected ? (
+              <span className="flex items-center gap-2 text-red-400">
+                <X className="h-3 w-3" />
+                Clear All
+              </span>
+            ) : (
+              <span className="flex items-center gap-2 text-green-400">
+                <CheckCheck className="h-3 w-3" />
+                Select All ({populatedOptions.length})
+              </span>
+            )}
+          </SelectItem>
+        )}
+
         {availableOptions.map((option: OptionItem, index: number) => (
           <SelectItem 
             key={`${option.value}-${index}`} 
@@ -581,7 +706,7 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
           ) : (
             <RefreshCw className="h-4 w-4" />
           )}
-          {populateAction.uid}
+          {useApiHint ? `Fetch ${populateHint.field_mapping || 'options'}` : populateAction?.uid}
         </Button>
         <Badge variant="outline" className="text-xs">
           populate

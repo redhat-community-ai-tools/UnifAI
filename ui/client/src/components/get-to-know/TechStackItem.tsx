@@ -6,7 +6,8 @@ import {
   SiRabbitmq, 
   SiMongodb, 
   SiReact, 
-  SiTypescript 
+  SiTypescript, 
+  SiUmami
 } from "react-icons/si";
 import { FaDatabase, FaLink, FaRobot, FaCubes } from "react-icons/fa";
 
@@ -28,6 +29,7 @@ const techIconMap: Record<string, React.ReactNode> = {
   langgraph: <FaCubes className="w-6 h-6" />,
   langchain: <FaLink className="w-6 h-6" />,
   a2a: <FaRobot className="w-6 h-6" />,
+  umami: <SiUmami className="w-6 h-6" />,
   default: <FaCubes className="w-6 h-6" />
 };
 
@@ -43,6 +45,7 @@ const techColorMap: Record<string, string> = {
   langgraph: "text-indigo-400 bg-indigo-400/10",
   langchain: "text-teal-400 bg-teal-400/10",
   a2a: "text-pink-400 bg-pink-400/10",
+  umami: "text-black-400 bg-black-400/10",
   default: "text-gray-400 bg-gray-400/10"
 };
 

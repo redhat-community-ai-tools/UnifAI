@@ -13,7 +13,8 @@ from typing import (
 )
 from pydantic import BaseModel
 from core.enums import ResourceCategory
-from .base_factory import BaseFactory
+from elements.common.base_factory import BaseFactory
+from elements.common.validator import ElementValidator
 from graph.state.graph_state import Channel
 
 
@@ -38,6 +39,9 @@ class BaseElementSpec(ABC):
     version: ClassVar[str] = "1.0.0"
     tags: ClassVar[List[str]] = []
     hints: ClassVar[List[Any]] = []
+    
+    # ── optional validator ------------------------------------------------
+    validator_cls: ClassVar[Optional[Type[ElementValidator]]] = None
 
     # ─────────────────────────────────────────────────────────────────────
     # compile‑time validation

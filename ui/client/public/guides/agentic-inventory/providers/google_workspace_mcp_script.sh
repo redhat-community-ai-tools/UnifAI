@@ -572,9 +572,29 @@ elif command -v podman &> /dev/null; then
     CONTAINER_CMD="podman"
     print_success "Podman is installed"
     
+     # Check if Podman socket service is running (systemd user service)
+    if command -v systemctl &> /dev/null; then
+        if systemctl --user list-unit-files podman.socket &> /dev/null; then
+            if ! systemctl --user is-active --quiet podman.socket 2>/dev/null; then
+                print_error "Podman socket service is not running"
+                echo ""
+                print_info "Please start it with: systemctl --user start podman.socket"
+                print_info "Or enable it to start on boot: systemctl --user enable --now podman.socket"
+                exit 1
+            else
+                print_success "Podman socket service is running"
+            fi
+        fi
+
     # Check if Podman service is accessible
     if ! podman info &> /dev/null; then
         print_error "Podman is not accessible. Please check your Podman installation."
+        echo ""
+        if command -v systemctl &> /dev/null; then
+            print_info "You may need to:"
+            echo "  1. Start Podman socket: systemctl --user start podman.socket"
+            echo "  2. Enable Podman socket: systemctl --user enable --now podman.socket"
+        fi
         exit 1
     fi
     print_success "Podman is accessible"

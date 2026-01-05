@@ -84,6 +84,7 @@ export interface PlatformResource {
     { name: "MongoDB", icon: "mongodb", category: "backend" },
     { name: "React", icon: "react", category: "frontend" },
     { name: "TypeScript", icon: "typescript", category: "frontend" },
+    { name: "Umami", icon: "umami", category: "frontend" },
     { name: "LangGraph", icon: "langgraph", category: "agentic" },
     { name: "LangChain", icon: "langchain", category: "agentic" },
     { name: "A2A (Agents-to-Agents)", icon: "a2a", category: "agentic" }

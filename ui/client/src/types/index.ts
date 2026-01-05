@@ -61,6 +61,7 @@ export interface Channel {
 }
 
 export interface EmbedChannel {
+  type_data: any;
   name: string;
   messages: string;
   lastSync: string;

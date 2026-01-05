@@ -4,6 +4,7 @@ from core.enums import ResourceCategory
 from ..config import DocsDataflowRetrieverConfig
 from ..docs_dataflow_retriever_factory import DocsDataflowRetrieverFactory
 from ..identifiers import Identifier, META
+from ..validator import DocsDataflowRetrieverValidator
 
 
 class DocsDataflowRetrieverElementSpec(BaseElementSpec):
@@ -20,4 +21,5 @@ class DocsDataflowRetrieverElementSpec(BaseElementSpec):
     config_schema = DocsDataflowRetrieverConfig
     factory_cls = DocsDataflowRetrieverFactory
     tags = META.tags
+    validator_cls = DocsDataflowRetrieverValidator
 

@@ -32,6 +32,27 @@ class PipelinesRepository:
             }
         return result
 
+    def get_status(self, pipeline_id: str) -> str:
+        """Get the status of a single pipeline by ID.
+        
+        Args:
+            pipeline_id: The pipeline ID to look up
+            
+        Returns:
+            The pipeline status string, or None if not found
+        """
+        if not pipeline_id:
+            return ""
+        try:
+            doc = self.col.find_one(
+                {"pipeline_id": pipeline_id},
+                {"status": 1}
+            )
+            return doc.get("status") if doc else None
+        except Exception as e:
+            logger.error(f"Error fetching pipeline status for {pipeline_id}: {e}")
+            return None
+
     def delete(self, pipeline_id: str) -> Dict[str, Any]:
         """Delete pipeline documents by ID (supports regex for related pipelines)."""
         try:

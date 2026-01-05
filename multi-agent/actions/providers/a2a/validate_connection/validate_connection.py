@@ -1,4 +1,10 @@
-import asyncio
+"""
+A2A validate_connection action.
+
+Validates A2A agent connection reachability.
+"""
+
+import anyio
 import time
 from typing import Optional, Dict, Any
 from pydantic import HttpUrl
@@ -42,13 +48,16 @@ class ValidateConnectionAction(BaseAction):
     tags = {"a2a", "validation", "connectivity"}
     elements = {(ResourceCategory.NODE.value, Identifier.TYPE)}
     
-    async def execute(self, input_data: ValidateConnectionInput, 
-                     context: Optional[Dict[str, Any]] = None) -> ValidateConnectionOutput:
+    async def execute(
+        self,
+        input_data: ValidateConnectionInput, 
+        context: Optional[Dict[str, Any]] = None
+    ) -> ValidateConnectionOutput:
         """
-        Execute connection validation with optional context.
+        Execute connection validation.
         
         Args:
-            input_data: Validated connection input with base_url and optional bearer_token
+            input_data: Validated connection input with base_url
             context: Optional execution context
             
         Returns:
@@ -62,8 +71,7 @@ class ValidateConnectionAction(BaseAction):
         #     headers = {"Authorization": f"Bearer {input_data.bearer_token}"}
         
         try:
-            # Helper coroutine to test connection
-            async def _test_connection():
+            with anyio.fail_after(10.0):
                 async with A2AClient(
                     base_url=input_data.base_url,
                     headers=headers
@@ -71,9 +79,6 @@ class ValidateConnectionAction(BaseAction):
                     # Agent card is fetched during __aenter__
                     # Just confirm we can access it (connection successful)
                     _ = client.agent_card
-            
-            # Test connection with timeout
-            await asyncio.wait_for(_test_connection(), timeout=10.0)
             
             response_time = (time.time() - start_time) * 1000
             
@@ -84,7 +89,7 @@ class ValidateConnectionAction(BaseAction):
                 response_time_ms=response_time
             )
             
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return ValidateConnectionOutput(
                 success=False,
                 message="Connection timeout - agent may be unreachable",

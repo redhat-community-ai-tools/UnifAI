@@ -3,6 +3,7 @@ from elements.nodes.common.base_config import NodeBaseConfig
 from typing import Literal
 from pydantic import Field
 from .identifiers import Identifier
+from core.field_hints import ApiHint, HintType, SelectionType
 
 
 class MergerLLMNodeConfig(NodeBaseConfig):
@@ -10,7 +11,17 @@ class MergerLLMNodeConfig(NodeBaseConfig):
     Node that merges outputs from multiple agents.
     """
     type: Literal[Identifier.TYPE] = Identifier.TYPE
-    llm: LLMRef = Field(description="LLM Ref UID to use")
+    llm: LLMRef = Field(
+        description="LLM Ref UID to use",
+        json_schema_extra=ApiHint(
+            endpoint="/resources/resource.validate",
+            method="POST",
+            hint_type=HintType.VALIDATE,
+            selection_type=SelectionType.AUTOMATIC,
+            dependencies={"llm": "resourceId"},
+            field_mapping="is_valid"
+        ).to_hints()
+    )
     system_message: str = Field("""You are the Merger Agent. Your role is to combine answers from specialized agents into one clear, helpful response.
 
         1. **Merge answers**:

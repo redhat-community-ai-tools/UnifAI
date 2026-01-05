@@ -12,9 +12,18 @@ RMQ_PORT=$(wait_for_port rabbitmq) || exit 1
 MONGO_IP=$(wait_for_service_name mongodb) || exit 1
 RMQ_IP=$(wait_for_service_name rabbitmq) || exit 1  
 
+UMAMI_URL=$umami_url
+UMAMI_WEBSITE_NAME=$umami_website_name
+UMAMI_USERNAME=$umami_username
+UMAMI_PASSWORD=$umami_password
+
 # Create configmap
 create_or_update_configmap shared-config \
   --from-literal=MONGODB_PORT="$MONGO_PORT" \
   --from-literal=RABBITMQ_PORT="$RMQ_PORT" \
   --from-literal=MONGODB_IP="$MONGO_IP" \
-  --from-literal=RABBITMQ_IP="$RMQ_IP"
+  --from-literal=RABBITMQ_IP="$RMQ_IP" \
+  --from-literal=UMAMI_URL="$UMAMI_URL" \
+  --from-literal=UMAMI_WEBSITE_NAME="$UMAMI_WEBSITE_NAME" \
+  --from-literal=UMAMI_USERNAME="$UMAMI_USERNAME" \
+  --from-literal=UMAMI_PASSWORD="$UMAMI_PASSWORD"

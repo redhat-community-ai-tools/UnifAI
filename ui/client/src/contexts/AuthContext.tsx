@@ -1,5 +1,6 @@
 import { api } from '@/http/authClient';
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { loadAnalytics } from '@/components/shared/LoadAnalytics';
 
 export interface User {
   username: string;
@@ -28,6 +29,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Load analytics after authentication
+  loadAnalytics(isAuthenticated, user);
 
   // Check authentication status
   const checkAuthStatus = async () => {
@@ -88,7 +92,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       checkAuthStatus();
     }
   }, []);
-
+  
   // Set up token refresh and expiration checking
   useEffect(() => {
     if (!isAuthenticated || !user) return;

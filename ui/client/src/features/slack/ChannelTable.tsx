@@ -18,6 +18,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { isEmbeddingActivelyProcessing } from "../helpers";
+import { UmamiTrack } from '@/components/ui/umamitrack';
+import { UmamiEvents } from '@/config/umamiEvents';
+import type { User } from "@/contexts/AuthContext";
 
 export function isChannelNew(createdAt: Date): boolean {
   const now = new Date()
@@ -31,6 +34,7 @@ export function getColumns(
   deletingChannelId?: string,
   activeEmbeddingIds: string[] = [],
 ): DataTableColumn<EmbedChannel>[] {
+
   return [
     {
       accessorKey: "name",
@@ -296,30 +300,35 @@ export function getColumns(
               </Button>
             </motion.div>
             <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isDeleting || isEmbeddingActivelyProcessing(ch)}
-                className={`p-2 text-muted-foreground rounded-lg transition-all duration-200 ${
-                  isDeleting || isEmbeddingActivelyProcessing(ch) 
-                    ? "opacity-50 cursor-not-allowed" 
-                    : "hover:text-destructive hover:bg-destructive/10"
-                }`}
-                onClick={() => !isDeleting && !isEmbeddingActivelyProcessing(ch) && onDeleteClick(ch)}
-                title={
-                  isEmbeddingActivelyProcessing(ch) 
-                    ? "Cannot delete channel while processing" 
-                    : isDeleting 
-                      ? "Deleting..." 
-                      : "Delete channel"
-                }
+              <UmamiTrack 
+                event={UmamiEvents.SLACK_DELETE_SOURCE_BUTTON}
+                eventData={{ channelName: ch.name }}
               >
-                {isDeleting ? (
-                  <FaSync className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FaTrash className="h-4 w-4" />
-                )}
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isDeleting || isEmbeddingActivelyProcessing(ch)}
+                  className={`p-2 text-muted-foreground rounded-lg transition-all duration-200 ${
+                    isDeleting || isEmbeddingActivelyProcessing(ch) 
+                      ? "opacity-50 cursor-not-allowed" 
+                      : "hover:text-destructive hover:bg-destructive/10"
+                  }`}
+                  onClick={() => !isDeleting && !isEmbeddingActivelyProcessing(ch) && onDeleteClick(ch)}
+                  title={
+                    isEmbeddingActivelyProcessing(ch) 
+                      ? "Cannot delete channel while processing" 
+                      : isDeleting 
+                        ? "Deleting..." 
+                        : "Delete channel"
+                  }
+                >
+                  {isDeleting ? (
+                    <FaSync className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <FaTrash className="h-4 w-4" />
+                  )}
+                </Button>
+              </UmamiTrack>
             </motion.div>
           </div>
         );

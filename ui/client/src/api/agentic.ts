@@ -1,5 +1,6 @@
 import axios from '../http/axiosAgentConfig';
 import { normalizeCategory } from '@/constants/resources';
+import { BlueprintValidationResult, BlueprintValidationRequest } from '@/types/validation';
 
 export interface WorkflowBlueprint {
   blueprint_id: string;
@@ -125,7 +126,7 @@ export async function fetchAgenticStats(userId?: string): Promise<AgenticStats> 
   };
 }
 
-// Fetch resolved blueprints (for AvailableFlows component)
+// Fetch resolved blueprints (for WorkflowsPanel component)
 export async function fetchResolvedBlueprints(userId?: string): Promise<WorkflowBlueprint[]> {
   const userIdParam = userId || 'default';
   const response = await axios.get(`/blueprints/available.blueprints.resolved.get?userId=${userIdParam}`);
@@ -181,3 +182,12 @@ export async function validateBlueprintGraph(
 
   return response.data;
 }
+// Validate a saved blueprint and all its elements
+export async function validateBlueprint(request: BlueprintValidationRequest): Promise<BlueprintValidationResult> {
+  const response = await axios.post('/blueprints/blueprint.validate', {
+    blueprintId: request.blueprintId,
+    timeoutSeconds: request.timeoutSeconds ?? 10.0,
+  });
+  return response.data;
+}
+

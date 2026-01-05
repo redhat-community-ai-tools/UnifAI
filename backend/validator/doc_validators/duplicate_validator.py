@@ -6,7 +6,7 @@ from utils.storage.mongo.mongo_helpers import get_mongo_storage
 
 class DuplicateValidator(DataSourceValidator):
 	name = "DuplicateValidator"
-	error_message = "This file appears to be a duplicate from an existing file and was not added. File: {source_name}"
+	error_message = "This file appears to be a duplicate of an existing successfully processed file and was not added. File: {source_name}"
 	error_message_key = "File duplicated error"
 
 	def __init__(self) -> None:

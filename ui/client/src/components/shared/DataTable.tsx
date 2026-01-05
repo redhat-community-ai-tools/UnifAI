@@ -11,6 +11,7 @@ import {
   SortingFn,
   SortingState,
   useReactTable,
+  RowSelectionState,
 } from '@tanstack/react-table'
 import { cn } from '@/lib/utils'
 import {
@@ -37,6 +38,9 @@ import {
   TableHead,
   TableCell,
 } from '../ui/table'
+import { SelectionCheckbox } from './SelectionCheckbox'
+import { Pagination } from './Pagination'
+
 
 // ─── 1. SORT HELPERS ───────────────────────────────────────────────────────
 
@@ -95,15 +99,24 @@ interface DataTableProps<T extends object> {
   enableGlobalFilter?: boolean
   enableColumnFilters?: boolean
   enablePagination?: boolean
+  enableRowSelection?: boolean
+  rowSelection?: RowSelectionState
+  onRowSelectionChange?: (selection: RowSelectionState) => void
+  getRowId?: (row: T) => string
   initialState?: Partial<{
     sorting: SortingState
     globalFilter: string
     columnFilters: ColumnFiltersState
     pagination: { pageIndex: number; pageSize: number }
+    rowSelection: RowSelectionState
   }>
   onSortingChange?: (updater: SortingState) => void
+  onColumnFiltersChange?: (filters: ColumnFiltersState) => void
   expendedRow?: any;
-  renderExpandedRow?: (row: T) => React.ReactNode
+  /** Detailed row data loaded on demand - separate from expendedRow for lazy loading */
+  expandedRowDetails?: any;
+  isLoadingExpanded?: boolean;
+  renderExpandedRow?: (row: T, details?: any, isLoading?: boolean) => React.ReactNode
 }
 
 export function DataTable<T extends object>({
@@ -113,9 +126,16 @@ export function DataTable<T extends object>({
   enableGlobalFilter = false,
   enableColumnFilters = true,
   enablePagination = true,
+  enableRowSelection = false,
+  rowSelection: controlledRowSelection,
+  onRowSelectionChange,
+  getRowId,
   initialState,
   onSortingChange,
+  onColumnFiltersChange,
   expendedRow,
+  expandedRowDetails,
+  isLoadingExpanded = false,
   renderExpandedRow
 }: DataTableProps<T>) {
   // ─── State Hooks
@@ -133,8 +153,51 @@ export function DataTable<T extends object>({
     pageSize: initialState?.pagination?.pageSize ?? 10,
   })
 
+  const [internalRowSelection, setInternalRowSelection] = React.useState<RowSelectionState>(
+    initialState?.rowSelection ?? {}
+  )
+
+  /** 
+    Controlled mode means the parent passes the data, in this case rowSelection + onRowSelectionChange 
+    so DataTable uses those (external state management)
+    while uncontrolled mode means DataTable manages its own internal state
+    so here DocumentsTable uses controlled mode to share selection state with the bulk delete button
+   */
+  const rowSelection = controlledRowSelection ?? internalRowSelection
+  const setRowSelection = onRowSelectionChange ?? setInternalRowSelection
+  
+  /** Handles "Select All" checkbox toggle - selects/deselects all currently filtered rows */
+  const handleSelectAllChange = React.useCallback((checked: boolean, filteredRows: any[]) => {
+    const newSelection: RowSelectionState = { ...rowSelection }
+    if (checked) {
+      // Select all filtered rows
+      filteredRows.forEach(row => {
+        const rowId = getRowId ? getRowId(row.original) : row.id
+        newSelection[rowId] = true
+      })
+    } else {
+      // Deselect all filtered rows
+      filteredRows.forEach(row => {
+        const rowId = getRowId ? getRowId(row.original) : row.id
+        delete newSelection[rowId]
+      })
+    }
+    setRowSelection(newSelection)
+  }, [rowSelection, setRowSelection, getRowId])
+
+  /** Handles individual row checkbox toggle */
+  const handleRowSelectionChange = React.useCallback((rowId: string, checked: boolean) => {
+    const newSelection = { ...rowSelection }
+    if (checked) {
+      newSelection[rowId] = true
+    } else {
+      delete newSelection[rowId]
+    }
+    setRowSelection(newSelection)
+  }, [rowSelection, setRowSelection])
+
   // ─── Auto‐assign sortingFns
-  const processedColumns = React.useMemo(() => {
+  const columnsWithSortingFns = React.useMemo(() => {
     return columns.map(col => {
       if (col.enableSorting === false) return col
       if (col.sortingFn) return col
@@ -150,16 +213,65 @@ export function DataTable<T extends object>({
     })
   }, [columns, data])
 
+  // ─── Create selection column (adds checkbox column when row selection is enabled)
+  const columnsWithSelection = React.useMemo(() => {
+    if (!enableRowSelection) {
+      return columnsWithSortingFns
+    }
+    
+    const selectionColumn: ColumnDef<T> = {
+      id: 'select',
+      header: ({ table }) => {
+        const filteredRows = table.getFilteredRowModel().rows
+        const isAllFilteredSelected = filteredRows.length > 0 && filteredRows.every(row => {
+          const rowId = getRowId ? getRowId(row.original) : row.id
+          return rowSelection[rowId]
+        })
+        
+        return (
+          <SelectionCheckbox
+            checked={isAllFilteredSelected}
+            onCheckedChange={(checked) => handleSelectAllChange(checked, filteredRows)}
+            ariaLabel="Select all filtered rows"
+          />
+        )
+      },
+      cell: ({ row }) => {
+        const rowId = getRowId ? getRowId(row.original) : row.id
+        return (
+          <SelectionCheckbox
+            checked={rowSelection[rowId] === true}
+            onCheckedChange={(checked) => handleRowSelectionChange(rowId, checked)}
+            ariaLabel={`Select row ${rowId}`}
+          />
+        )
+      },
+      enableSorting: false,
+      enableHiding: false,
+    }
+    return [selectionColumn, ...columnsWithSortingFns]
+  }, [columnsWithSortingFns, enableRowSelection, rowSelection, getRowId, handleSelectAllChange, handleRowSelectionChange])
+
   // ─── TanStack Table instance
   const table = useReactTable({
     data,
-    columns: processedColumns,
+    columns: columnsWithSelection,
     filterFns,
+    getRowId: getRowId as any,
+    enableRowSelection: enableRowSelection,
+    // Handle TanStack's updater pattern (can be value or function)
+    onRowSelectionChange: (updaterOrValue) => {
+      const newValue = typeof updaterOrValue === 'function' 
+        ? updaterOrValue(rowSelection) 
+        : updaterOrValue
+      setRowSelection(newValue)
+    },
     state: {
       sorting: enableSorting ? sorting : [],
       globalFilter: enableGlobalFilter ? globalFilter : undefined,
       columnFilters: enableColumnFilters ? columnFilters : [],
       pagination: enablePagination ? pagination : undefined,
+      rowSelection: enableRowSelection ? rowSelection : undefined,
     },
     enableSorting,
     enableGlobalFilter,
@@ -181,13 +293,18 @@ export function DataTable<T extends object>({
       }
     },
     onGlobalFilterChange: setGlobalFilter,
-    onColumnFiltersChange: setColumnFilters,
+    onColumnFiltersChange: (updater) => {
+      const newFilters = typeof updater === 'function' ? updater(columnFilters) : updater
+      setColumnFilters(newFilters)
+      onColumnFiltersChange?.(newFilters)
+    },
     onPaginationChange: setPagination,
     initialState: {
       sorting: initialState?.sorting ?? [],
       globalFilter: initialState?.globalFilter ?? '',
       columnFilters: initialState?.columnFilters ?? [],
       pagination: initialState?.pagination ?? { pageIndex: 0, pageSize: 10 },
+      rowSelection: initialState?.rowSelection ?? {},
     },
   })
 
@@ -347,7 +464,7 @@ export function DataTable<T extends object>({
       {expendedRow === row.original && (
         <TableRow className="bg-muted/40 transition-all duration-300">
           <TableCell colSpan={row.getVisibleCells().length}>
-            {renderExpandedRow?.(row.original)}
+            {renderExpandedRow?.(row.original, expandedRowDetails, isLoadingExpanded)}
           </TableCell>
         </TableRow>
       )}
@@ -368,34 +485,17 @@ export function DataTable<T extends object>({
 
       {/* Pagination */}
       {enablePagination && (
-        <div className="flex items-center justify-between py-4">
-          <span className="text-sm text-muted-foreground">
-            Page <strong>{table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</strong>
-            {' '}(documents{' '}
-            {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}-
-            {Math.min(
-              (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-              table.getFilteredRowModel().rows.length
-            )}
-            {' '}out of {table.getFilteredRowModel().rows.length})
-          </span>
-          <div className="flex items-center space-x-2">
-            <button
-              className="btn-animated px-3 py-1 border border-border text-muted-foreground rounded-lg hover:bg-muted hover:text-foreground transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
-              Previous
-            </button>
-            <button
-              className="btn-animated px-3 py-1 border border-border text-foreground rounded-lg hover:bg-muted transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
-              Next
-            </button>
-          </div>
-        </div>
+        <Pagination
+          pageIndex={table.getState().pagination.pageIndex}
+          pageCount={table.getPageCount()}
+          pageSize={table.getState().pagination.pageSize}
+          totalItems={table.getFilteredRowModel().rows.length}
+          onPreviousPage={() => table.previousPage()}
+          onNextPage={() => table.nextPage()}
+          canPreviousPage={table.getCanPreviousPage()}
+          canNextPage={table.getCanNextPage()}
+          itemName="items"
+        />
       )}
     </div>
   )

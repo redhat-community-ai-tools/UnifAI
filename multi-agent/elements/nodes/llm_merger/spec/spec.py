@@ -4,6 +4,7 @@ from ..config import MergerLLMNodeConfig
 from ..llm_merger_node_factory import LLMMergerNodeFactory
 from ..llm_merger import LLMMergerNode
 from ..identifiers import Identifier, META
+from ..validator import LLMMergerNodeValidator
 
 
 class LLMMergerNodeElementSpec(BaseElementSpec):
@@ -18,3 +19,4 @@ class LLMMergerNodeElementSpec(BaseElementSpec):
     reads = LLMMergerNode.total_reads()
     writes = LLMMergerNode.total_writes()
     tags = META.tags
+    validator_cls = LLMMergerNodeValidator

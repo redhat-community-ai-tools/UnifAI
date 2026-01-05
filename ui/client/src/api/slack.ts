@@ -153,10 +153,9 @@ export async function fetchEmbeddedSlackChannels(): Promise<EmbedChannel[]> {
   }));
 };
 
-export async function deleteSlackChannel(channelId: string): Promise<any> {
-  // Call the new backend endpoint for deleting data sources
+export async function deleteSlackChannels(channelIds: string[]): Promise<any> {
   const { data } = await api.delete(`data_sources/data.source.delete`, {
-    data: { pipeline_id: channelId }
+    data: { pipeline_ids: channelIds }
   });
   return data;
 };

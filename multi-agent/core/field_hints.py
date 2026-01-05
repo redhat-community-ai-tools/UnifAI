@@ -75,6 +75,69 @@ class ActionHint(BaseModel):
         }
 
 
+class ApiHint(BaseModel):
+    """
+    Hint that references an API endpoint directly for field population or validation.
+    Use when action system is not needed or endpoint already exists.
+    """
+    endpoint: str = Field(
+        ..., 
+        description="API endpoint path (e.g., '/api/resources/resource.validate')"
+    )
+    method: str = Field(
+        default="POST",
+        description="HTTP method (GET, POST, etc.)"
+    )
+    hint_type: HintType = Field(
+        ..., 
+        description="Type of hint (populate, validate)"
+    )
+    field_mapping: Optional[str] = Field(
+        None,
+        description="Target field in response for validation hints"
+    )
+    label_field: Optional[str] = Field(
+        None,
+        description="Dot-notation path to display label (e.g., 'items.name')"
+    )
+    value_field: Optional[str] = Field(
+        None,
+        description="Dot-notation path to stored value (e.g., 'items.id')"
+    )
+    multi_select: bool = Field(
+        default=False,
+        description="Whether this field supports multiple selections"
+    )
+    selection_type: SelectionType = Field(
+        default=None,
+        description="Selection type: automatic (auto-trigger) or manual (user triggers)"
+    )
+    dependencies: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Field dependencies (config_field_name -> request_field_name)"
+    )
+    pagination: bool = Field(
+        default=False,
+        description="Whether the endpoint supports pagination"
+    )
+    search: bool = Field(
+        default=False,
+        description="Whether the endpoint supports search filtering"
+    )
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Override to return clean dict for json_schema_extra"""
+        return super().model_dump(**kwargs)
+    
+    def to_hints(self) -> Dict[str, Any]:
+        """Return the proper structure for json_schema_extra hints"""
+        return {
+            "hints": {
+                "api": self.model_dump()
+            }
+        }
+
+
 class HiddenHint(BaseModel):
     """
     Simple hint to hide a field from the UI.
@@ -130,7 +193,7 @@ class SecretHint(BaseModel):
         }
 
 
-def combine_hints(*hints: Union[ActionHint, HiddenHint, SecretHint]) -> Dict[str, Any]:
+def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint]) -> Dict[str, Any]:
     """
     Combine multiple hints into a single json_schema_extra structure.
     
@@ -143,6 +206,7 @@ def combine_hints(*hints: Union[ActionHint, HiddenHint, SecretHint]) -> Dict[str
     Example:
         json_schema_extra=combine_hints(
             ActionHint(...),
+            ApiHint(...),
             HiddenHint(...),
             SecretHint(...)
         )

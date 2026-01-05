@@ -73,3 +73,7 @@ class Pipeline(ABC):
     
     def clean_orchestration(self):
         self.monitor.finish_log_monitoring()
+    
+    def cleanup(self):
+        """Override in subclasses that require cleanup (e.g., DocumentPipeline)."""
+        return NotImplemented

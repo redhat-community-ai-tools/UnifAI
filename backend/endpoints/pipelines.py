@@ -13,8 +13,9 @@ pipelines_bp = Blueprint("pipelines", __name__)
     "data": fields.List(fields.Dict(), required=True),
     "source_type": fields.Str(required=True),
     "logged_in_user": fields.Str(required=True),
+    "skip_validation": fields.Bool(required=False, load_default=False),
 })
-def start_pipeline(data, source_type, logged_in_user):
+def start_pipeline(data, source_type, logged_in_user, skip_validation):
     """
     Trigger the embedding pipeline for registered data sources.
     Performs registration synchronously, then enqueues pipeline execution tasks to Celery.
@@ -23,6 +24,15 @@ def start_pipeline(data, source_type, logged_in_user):
         data: List of data sources to register and process
         source_type: Type of data source (SLACK, DOCUMENT, etc.)
         logged_in_user: Username of the current user
+        skip_validation: If True, skip file validation during registration.
+            This should ONLY be True when files have been pre-validated via 
+            the /docs/validate endpoint (UI flow).
+            
+            For external API calls, this should be False (default)
+            to ensure full validation is performed.
+            
+            Note: MD5 duplicate checking is ALWAYS performed during registration
+            regardless of this flag, as it requires the actual file content.
         
     Returns:
         JSON response indicating submission status
@@ -32,6 +42,7 @@ def start_pipeline(data, source_type, logged_in_user):
             data_list=data,
             source_type=source_type.upper(),
             upload_by=logged_in_user,
+            skip_validation=skip_validation,
         )
 
         registered_sources = registration_response.get("registered_sources", [])

@@ -9,6 +9,8 @@ import { CategorySidebar } from '../components/agentic-ai/workspace/CategorySide
 import { ElementGrid } from '../components/agentic-ai/workspace/ElementGrid';
 import { ElementForm } from '../components/agentic-ai/workspace/ElementForm';
 import { ElementType, ElementInstance } from '../types/workspace';
+import { UmamiTrack } from '@/components/ui/umamitrack';
+import { UmamiEvents } from '@/config/umamiEvents';
 
 export default function UserWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -19,13 +21,13 @@ export default function UserWorkspace() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [elementToDelete, setElementToDelete] = useState<ElementInstance | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
   const {
     categories,
     elementInstances,
     elementSchema,
     elementActions,
     isLoading,
+    isLoadingInstances,
     fetchElementInstances,
     fetchElementSchema,
     fetchElementActions,
@@ -146,14 +148,20 @@ export default function UserWorkspace() {
                       >
                         <Info className="h-4 w-4" />
                       </Button>
-                      <Button 
-                        onClick={handleCreateNew}
-                        className="bg-primary hover:bg-opacity-80"
-                        disabled={!elementSchema}
+
+                      <UmamiTrack 
+                        event={UmamiEvents.AGENT_REPOSITORY_CREATE_NEW_BUTTON}
+                        eventData={{ elementType: selectedElementType?.name }}
                       >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create New
-                      </Button>
+                        <Button 
+                          onClick={handleCreateNew}
+                          className="bg-primary hover:bg-opacity-80"
+                          disabled={!elementSchema}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Create New
+                        </Button>
+                      </UmamiTrack>
                     </div>
                   </div>
                 )}
@@ -164,7 +172,7 @@ export default function UserWorkspace() {
                     <ElementGrid
                       elements={elementInstances}
                       elementType={selectedElementType}
-                      isLoading={isLoading}
+                      isLoading={isLoadingInstances}
                       onEditElement={handleEditElement}
                       onDeleteElement={handleDeleteElement}
                       elementSchema={elementSchema}

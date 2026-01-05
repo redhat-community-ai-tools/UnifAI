@@ -116,6 +116,19 @@ def updateValuesYaml(String filePath , String version) {
     echo "✅ Updated ${filePath} successfully"
 }
 
+def updateDeployerEnv() {
+    echo "🔄 updating deployer env with new values"
+    if(params.deploy_location == 'STAGING') {
+        def file_path = "./genie-cred-data/.env"
+        def key = "umami_website_name"
+        def newValue = "unifai-staging"
+        def content = readFile(file_path)
+        def newContent = content.replaceFirst(/(?m)^${key}=.*/, "${key}=${newValue}")
+        writeFile(file: file_path, text: newContent)     
+    }
+    echo "✅ Deployer env updated successfully"
+}
+
 def deployModules(module){
     echo "deploying modules: ${module}"
     sh("podman exec -t helmfile bash -lc 'helmfile -f ${module}.yaml.gotmpl apply'")
@@ -228,6 +241,7 @@ pipeline {
                             echo("Creating helm deployment pod")
                             sh("oc login --token=${token} --server=${ClusterAddress}")
                             sh("oc project ${NameSpace}")
+                            updateDeployerEnv()
                             echo("Deploy Helm container")
                             sh("podman run --replace -dt --env-file=./genie-cred-data/.env --workdir /helm/charts -v .:/helm/charts:Z -v ~/.kube/:/helm/.kube:Z --name helmfile ghcr.io/helmfile/helmfile:latest bash")
                             

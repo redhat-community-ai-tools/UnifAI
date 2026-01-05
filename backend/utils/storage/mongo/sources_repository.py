@@ -11,10 +11,15 @@ class SourcesRepository:
     def __init__(self, col: Collection):
         self.col = col
 
-    def get_all(self, source_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get all sources, optionally filtered by type."""
+    def get_all(self, source_type: Optional[str] = None, projection: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Get all sources, optionally filtered by type.
+        
+        Args:
+            source_type: Optional filter by source type
+            projection: Optional MongoDB projection to include/exclude fields
+        """
         query = {"source_type": source_type.upper()} if source_type else {}
-        return list(self.col.find(query))
+        return list(self.col.find(query, projection))
 
     def get_by_query(self, query: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Get sources by custom query."""

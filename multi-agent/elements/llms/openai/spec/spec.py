@@ -3,6 +3,7 @@ from ..openai_factory import OpenAIFactory
 from core.enums import ResourceCategory
 from ..config import OpenAIConfig
 from ..identifiers import Identifier, META
+from ..validator import OpenAILLMValidator
 
 
 class OpenAIElementSpec(BaseElementSpec):
@@ -18,3 +19,4 @@ class OpenAIElementSpec(BaseElementSpec):
     config_schema = OpenAIConfig
     factory_cls = OpenAIFactory
     tags = META.tags
+    validator_cls = OpenAILLMValidator

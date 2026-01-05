@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import type React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,17 +11,20 @@ import {
   X, 
   CloudUpload,
   Tag,
-  Plus
+  CircleX,
+  Loader2
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ProcessingOptions } from "./ProcessingOptions";
-import { embedDocs, uploadDocs, getSupportedFileExtensions } from "@/api/docs";
+import { embedDocs, uploadDocs, getSupportedFileExtensions, validateFiles as validateFilesApi } from "@/api/docs";
 import { useAuth } from '@/contexts/AuthContext';
+import { formatPipelineError } from "@/utils/errorFormatting";
+import { useQuery } from "@tanstack/react-query";
 
 interface UploadTabProps {
-    setShowUploadModal: (show: boolean) => void;
-    fetchDocuments: any;
+    setShowUploadModal: (showUploadModal: boolean) => void;
+    fetchDocuments: () => Promise<any>;
 }
 
 interface FileWithTags {
@@ -32,50 +35,25 @@ interface FileWithTags {
 }
 
 export const UploadTab: React.FC<UploadTabProps> = ({
-    setShowUploadModal, fetchDocuments
+    setShowUploadModal, fetchDocuments: refetchDocuments
 }) => {
     const { user } = useAuth();
     
     const [isDragging, setIsDragging] = useState(false);
     const [selectedFiles, setSelectedFiles] = useState<FileWithTags[]>([]);
     const [isUploading, setIsUploading] = useState(false);
+    const [isValidating, setIsValidating] = useState(false);
+    const [error, setError] = useState<string>("");
     const [uploadProgress, setUploadProgress] = useState(0);
-    const [supportedExtensions, setSupportedExtensions] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    useEffect(() => {
-        const loadSupportedExtensions = async () => {
-            try {
-                const extensions = await getSupportedFileExtensions();
-                setSupportedExtensions(extensions);
-            } catch (err) {
-                console.error("Failed to load supported extensions:", err);
-                setSupportedExtensions([".pdf", ".docx", ".txt", ".md"]);
-            }
-        };
-        loadSupportedExtensions();
-    }, []);
+    // Use TanStack Query for caching supported extensions (for display only)
+    const { data: supportedExtensions = [] } = useQuery({
+        queryKey: ['supportedFileExtensions'],
+        queryFn: getSupportedFileExtensions,
+        staleTime: Infinity,
+    });
 
-    const isFileExtensionSupported = (fileName: string): boolean => {
-        const extension = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-        return supportedExtensions.includes(extension);
-    };
-    
-    const validateFiles = (files: FileList): { validFiles: File[], invalidFiles: string[] } => {
-        const validFiles: File[] = [];
-        const invalidFiles: string[] = [];
-        
-        Array.from(files).forEach(file => {
-            if (isFileExtensionSupported(file.name)) {
-                validFiles.push(file);
-            } else {
-                invalidFiles.push(file.name);
-            }
-        });
-        
-        return { validFiles, invalidFiles };
-    };
-    
     const handleDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -102,41 +80,136 @@ export const UploadTab: React.FC<UploadTabProps> = ({
         handleFiles(e.dataTransfer.files);
     };
 
-    const handleFiles = (files: FileList) => {
-        const { validFiles, invalidFiles } = validateFiles(files);
+    /**
+     * Handle file selection/drop - validates files via backend API
+     * 
+     * Backend validation checks:
+     * - File extension support
+     * - File size limits (50 MB max)
+     * - Duplicate filenames (allows re-upload of FAILED documents)
+     * 
+     * Only valid files are added to the selection list.
+     * Invalid files are rejected and errors are shown in the error box.
+     * Files already in the selection list are silently ignored.
+     */
+    const handleFiles = async (files: FileList) => {
+        const currentUsername = user?.username || 'default';
+        const filesArray = Array.from(files);
         
-        if (invalidFiles.length > 0) {
-            const invalidExtensions = Array.from(new Set(invalidFiles.map(file => 
-                file.substring(file.lastIndexOf('.')).toLowerCase()
-            )));
-            toast({
-                variant: "destructive",
-                title: "Invalid file type",
-                description: `Unsupported extensions: ${invalidExtensions.join(', ')}`
-            });
+        // Get names of files already in the selection list
+        const alreadySelectedNames = new Set(selectedFiles.map(f => f.file.name));
+        
+        // Filter out files that are already in the selection list (silently ignore them)
+        const trulyNewFiles = filesArray.filter(file => !alreadySelectedNames.has(file.name));
+        
+        // If all files were already selected, just return silently
+        if (trulyNewFiles.length === 0) {
+            return;
         }
         
-        if (validFiles.length > 0) {
-            const currentFileCount = selectedFiles.length;
-            const totalAfterAdd = currentFileCount + validFiles.length;
+        // Check max file limit
+        const currentFileCount = selectedFiles.length;
+        if (currentFileCount + trulyNewFiles.length > 5) {
+            setError(`Maximum of 5 documents allowed. You have ${currentFileCount} selected and tried to add ${trulyNewFiles.length} more.`);
+            return;
+        }
+
+        // Build file metadata for backend validation
+        // Include already selected files so backend can check for duplicates in the batch
+        const existingFileNames = selectedFiles.map(f => ({
+            name: f.file.name,
+            size: f.file.size
+        }));
+        
+        const newFilesMetadata = trulyNewFiles.map(file => ({
+            name: file.name,
+            size: file.size
+        }));
+        
+        // Combine existing and new for complete validation
+        const allFilesMetadata = [...existingFileNames, ...newFilesMetadata];
+
+        setIsValidating(true);
+        setError("");
+
+        try {
+            // Validate all files via backend API
+            const result = await validateFilesApi(allFilesMetadata, currentUsername, true);
             
-            if (totalAfterAdd > 5) {
-                toast({
-                    variant: "destructive",
-                    title: "Too many files",
-                    description: "Maximum of 5 documents allowed."
+            // Get errors for new files only
+            const newFileErrors = result.errors.filter(err => 
+                newFilesMetadata.some(nf => nf.name === err.file_name)
+            );
+
+            // Display validation errors in the error box only (no toast)
+            if (newFileErrors.length > 0) {
+                const errorsByType: Record<string, string[]> = {};
+                
+                newFileErrors.forEach(err => {
+                    if (!errorsByType[err.error_type]) {
+                        errorsByType[err.error_type] = [];
+                    }
+                    errorsByType[err.error_type].push(`${err.file_name}`);
                 });
-                return;
+
+                const errorMessages: string[] = [];
+                
+                if (errorsByType.extension) {
+                    errorMessages.push(`Unsupported file types: ${errorsByType.extension.join(', ')}`);
+                }
+                if (errorsByType.size) {
+                    errorMessages.push(`Files too large (max 50 MB): ${errorsByType.size.join(', ')}`);
+                }
+                if (errorsByType.duplicate) {
+                    errorMessages.push(`Duplicate names: ${errorsByType.duplicate.join(', ')}`);
+                }
+
+                if (errorMessages.length > 0) {
+                    setError(errorMessages.join('\n') + '\n\nThese files were not added.');
+                }
+            }
+
+            // Build a set of valid file names from backend response (for new files only)
+            // Use a count-based approach to handle multiple files with the same name correctly
+            const validNameCounts: Record<string, number> = {};
+            result.valid_files
+                .filter(vf => newFilesMetadata.some(nf => nf.name === vf.name))
+                .forEach(vf => {
+                    validNameCounts[vf.name] = (validNameCounts[vf.name] || 0) + 1;
+                });
+            
+            // Track how many of each name we've added to prevent duplicates
+            const addedNameCounts: Record<string, number> = {};
+            
+            // Add ONLY valid files to selection - one per valid name from backend
+            const validNewFiles: File[] = [];
+            for (const file of trulyNewFiles) {
+                const allowedCount = validNameCounts[file.name] || 0;
+                const addedCount = addedNameCounts[file.name] || 0;
+                
+                if (addedCount < allowedCount) {
+                    validNewFiles.push(file);
+                    addedNameCounts[file.name] = addedCount + 1;
+                }
             }
             
-            const newFiles = validFiles.map(file => ({
-                file,
-                tags: [],
-                showTagInput: false,
-                id: Math.random().toString(36).substring(7)
-            }));
-            
-            setSelectedFiles((prev) => [...prev, ...newFiles]);
+            if (validNewFiles.length > 0) {
+                const newFiles = validNewFiles.map(file => ({
+                    file,
+                    tags: [],
+                    showTagInput: false,
+                    id: Math.random().toString(36).substring(7)
+                }));
+                
+                setSelectedFiles(prev => [...prev, ...newFiles]);
+            }
+
+        } catch (err) {
+            console.error("File validation failed", err);
+            const message = (err as Error)?.message || "Failed to validate files. Please try again.";
+            setError(message);
+        } finally {
+            setIsValidating(false);
         }
     };
 
@@ -175,11 +248,21 @@ export const UploadTab: React.FC<UploadTabProps> = ({
         }));
     };
 
-    const uploadFiles = async () => {
+    const handleUpload = async () => {
         if (selectedFiles.length === 0) return;
         
         setIsUploading(true);
         setUploadProgress(0);
+        
+        try {
+            await uploadFiles();
+            await startPipeline();
+        } catch (err) {
+            setIsUploading(false);
+        }
+    };
+
+    const uploadFiles = async () => {
         let uploadedCount = 0;
         
         try {
@@ -194,28 +277,46 @@ export const UploadTab: React.FC<UploadTabProps> = ({
                     reader.readAsDataURL(item.file);
                 });
                 
-                // Pass tags if the backend supports it, for now we assume it's part of metadata or separate call
-                // The uploadDocs function signature is: uploadDocs(files: {name: string, content: string}[]): Promise<any>
-                // If we need to send tags, we might need to update the API or use a different endpoint.
-                // For this implementation, we'll stick to the existing uploadDocs for file content.
-                // Ideally, tags should be associated with the document after upload or during embedding.
-                
                 await uploadDocs([{ name: item.file.name, content: base64 }]);
                 
                 uploadedCount++;
-                setUploadProgress(Math.round((uploadedCount / selectedFiles.length) * 90));
+                setUploadProgress(Math.round((uploadedCount / selectedFiles.length) * 50));
             }
+        } catch (err) {
+            console.error("File upload failed", err);
+            const message = (err as Error)?.message || "Failed to upload files. Please try again.";
+            setError(message);
+            toast({
+                variant: "destructive",
+                title: (
+                    <span className="inline-flex items-center gap-2">
+                        <CircleX className="h-4 w-4 text-red-500" />
+                        <span>Upload failed</span>
+                    </span>
+                ),
+                description: message,
+            });
+            throw err;
+        }
+    };
 
+    const startPipeline = async () => {
+        try {
             const docs = selectedFiles.map((item) => ({
                 source_name: item.file.name,
                 tags: item.tags
             }));
             
-            const res = await embedDocs(docs, user?.username || 'default');
+            setUploadProgress(60);
+            
+            // Pass skip_validation=true since files were pre-validated
+            const res = await embedDocs(docs, user?.username || 'default', true);
             
             const issues = res?.registration?.issues || [];
             if (issues.length > 0) {
                 issues.forEach((issue: any) => {
+                    const { title: titleText, description } = formatPipelineError(issue);
+
                     toast({
                         variant: "destructive",
                         title: String(issue.issue_type || "Upload issue").toUpperCase(),
@@ -228,21 +329,28 @@ export const UploadTab: React.FC<UploadTabProps> = ({
             
             toast({
                 title: "Success",
-                description: "Documents uploaded and processed successfully.",
+                description: "Documents uploaded and processing started.",
             });
             
-            if (fetchDocuments) await fetchDocuments();
+            if (refetchDocuments) await refetchDocuments();
             setSelectedFiles([]);
             setShowUploadModal(false);
             
         } catch (err) {
-            console.error("Upload failed", err);
-            const message = (err as Error)?.message || "There was an error uploading your documents.";
+            console.error("Embedding failed", err);
+            const message = (err as Error)?.message || "There was an error processing your documents.";
+            setError(message);
             toast({
                 variant: "destructive",
-                title: "Upload failed",
+                title: (
+                    <span className="inline-flex items-center gap-2">
+                        <CircleX className="h-4 w-4 text-red-500" />
+                        <span>Processing failed</span>
+                    </span>
+                ),
                 description: message,
             });
+            throw err;
         } finally {
             setIsUploading(false);
         }
@@ -259,7 +367,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
                     <Button variant="outline" onClick={() => setShowUploadModal(false)}>Cancel</Button>
                     {selectedFiles.length > 0 && !isUploading && (
                         <Button 
-                            onClick={uploadFiles}
+                            onClick={handleUpload}
                             className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm transition-all hover:shadow-md"
                         >
                             <CloudUpload className="mr-2 h-4 w-4" />
@@ -277,13 +385,13 @@ export const UploadTab: React.FC<UploadTabProps> = ({
                         isDragging 
                             ? "border-primary bg-primary/10 ring-4 ring-primary/20" 
                             : "border-border hover:border-primary/50 hover:bg-accent/50",
-                        selectedFiles.length >= 5 ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                        (selectedFiles.length >= 5 || isValidating) ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
                     )}
-                    onDragEnter={selectedFiles.length < 5 ? handleDragEnter : undefined}
-                    onDragLeave={selectedFiles.length < 5 ? handleDragLeave : undefined}
-                    onDragOver={selectedFiles.length < 5 ? handleDragOver : undefined}
-                    onDrop={selectedFiles.length < 5 ? handleDrop : undefined}
-                    onClick={selectedFiles.length < 5 ? () => fileInputRef.current?.click() : undefined}
+                    onDragEnter={selectedFiles.length < 5 && !isValidating ? handleDragEnter : undefined}
+                    onDragLeave={selectedFiles.length < 5 && !isValidating ? handleDragLeave : undefined}
+                    onDragOver={selectedFiles.length < 5 && !isValidating ? handleDragOver : undefined}
+                    onDrop={selectedFiles.length < 5 && !isValidating ? handleDrop : undefined}
+                    onClick={selectedFiles.length < 5 && !isValidating ? () => fileInputRef.current?.click() : undefined}
                 >
                     <CardContent className="flex flex-col items-center justify-center h-full min-h-[300px] py-12 text-center">
                         <input 
@@ -292,24 +400,56 @@ export const UploadTab: React.FC<UploadTabProps> = ({
                             multiple 
                             className="hidden" 
                             onChange={handleFileSelect}
-                            disabled={selectedFiles.length >= 5 || isUploading}
+                            disabled={selectedFiles.length >= 5 || isUploading || isValidating}
                         />
                         
                         <div className={cn(
                             "w-20 h-20 rounded-full flex items-center justify-center mb-6 transition-transform duration-300",
                             isDragging ? "bg-primary/20 scale-110" : "bg-background shadow-sm border border-border"
                         )}>
-                            <Upload className={cn("h-10 w-10", isDragging ? "text-primary" : "text-muted-foreground")} />
+                            {isValidating ? (
+                                <Loader2 className="h-10 w-10 text-primary animate-spin" />
+                            ) : (
+                                <Upload className={cn("h-10 w-10", isDragging ? "text-primary" : "text-muted-foreground")} />
+                            )}
                         </div>
                         
                         <h3 className="text-xl font-semibold text-foreground mb-2">
-                            {selectedFiles.length >= 5 ? "Maximum files reached" : "Click to upload or drag and drop"}
+                            {isValidating 
+                                ? "Validating files..." 
+                                : selectedFiles.length >= 5 
+                                    ? "Maximum files reached" 
+                                    : "Click to upload or drag and drop"
+                            }
                         </h3>
-                        <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-                            {selectedFiles.length >= 5 
-                                ? "Please remove a file to add another." 
-                                : `Supported formats: ${supportedExtensions.map(ext => ext.replace('.', '').toUpperCase()).join(', ')}`}
+                        <p className="text-sm text-muted-foreground max-w-xs mx-auto mb-4">
+                            {isValidating 
+                                ? "Checking file types, sizes, and duplicates..."
+                                : selectedFiles.length >= 5 
+                                    ? "Please remove a file to add another." 
+                                    : ""
+                            }
                         </p>
+                        
+                        {/* Additional details */}
+                        <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground">
+                            <p>
+                                Supported formats: {supportedExtensions.map(ext => ext.toUpperCase().substring(1)).join(', ')}
+                            </p>
+                            <p>
+                                Maximum file size: <span className="font-semibold text-foreground/70">50 MB</span> per file
+                            </p>
+                            <p>
+                                Maximum files: <span className="font-semibold text-foreground/70">5</span> documents
+                            </p>
+                        </div>
+                        
+                        {/* Error display */}
+                        {error && (
+                            <div className="mt-6 w-full max-w-sm">
+                                <p className="text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2 whitespace-pre-line">{error}</p>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 

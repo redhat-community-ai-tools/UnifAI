@@ -54,6 +54,7 @@ class PipelineExecutor:
 
     def _run_clean_orchestration(self):
         self.pipeline.clean_orchestration()
+        self.pipeline.cleanup()
 
     def run(self) -> Any:
         self._run_orchestration()

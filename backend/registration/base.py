@@ -19,12 +19,24 @@ class RegistrationBase(ABC):
 
     Implementations should orchestrate validation and persistence while preserving
     the existing behavior for their specific source type.
+    
+    Supports skip_validation flag:
+    - When False (default): Full validation is performed (for external API calls)
+    - When True: Skip pre-upload validations, only perform content-based validation
+      like MD5 duplicate checking (for UI calls that pre-validated via /docs/validate)
     """
 
-    def __init__(self, mongo_storage: Any, upload_by: str, instance: Dict[str, Any]) -> None:
+    def __init__(
+        self, 
+        mongo_storage: Any, 
+        upload_by: str, 
+        instance: Dict[str, Any],
+        skip_validation: bool = False
+    ) -> None:
         self.mongo_storage = mongo_storage
         self.upload_by = upload_by
         self.instance = instance
+        self.skip_validation = skip_validation
         
     def run_registration(self) -> Tuple[Dict[str, Any] | None, Dict[str, Any] | None]:
         """

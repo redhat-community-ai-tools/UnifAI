@@ -8,6 +8,7 @@ from pipeline.pipeline import Pipeline
 from utils.embedding.embedding_generator import EmbeddingGenerator
 from utils.monitor.pipeline_monitor import PipelineMonitor
 from utils.storage.vector_storage import VectorStorage
+from global_utils.utils import cleanup_file
 
 class DocumentPipeline(Pipeline):
     SOURCE_TYPE = DataSource.DOCUMENT.upper_name
@@ -85,3 +86,15 @@ class DocumentPipeline(Pipeline):
             })
 
         return self.embedder.generate_embeddings(chunks)
+
+    def cleanup(self) -> bool:
+        """
+        Cleanup uploaded document file after pipeline execution.
+        
+        Returns:
+            True if cleanup was performed, False otherwise.
+        """
+        doc_path = getattr(self.metadata, 'doc_path', None)
+        if doc_path:
+            return cleanup_file(doc_path, "after pipeline completion")
+        return False

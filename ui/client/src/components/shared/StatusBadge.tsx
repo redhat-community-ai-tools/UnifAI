@@ -1,13 +1,20 @@
 import { cn } from "@/lib/utils";
 import { EmbedChannel, Document } from "@/types";
 import { useMemo } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export function StatusBadge({ 
-  status, 
+  status,
+  errorMessage,
 }: { 
   status: EmbedChannel["status"] | Document["status"] | undefined;
+  errorMessage?: string;
 }) {
-  console.log(status)
   const { bgColor, textColor, label, isActive } = useMemo(() => {
     // Show "Pending" if there's no real pipeline status yet, even if actively embedding
     if (!status) {
@@ -118,7 +125,7 @@ export function StatusBadge({
     }
   }, [status]);
 
-  return (
+  const badge = (
     <span
       className={cn(
         "inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border",
@@ -126,6 +133,7 @@ export function StatusBadge({
         textColor,
         isActive && "animate-pulse-glow border-emerald-400/30",
         !isActive && "border-current/20",
+        status === "FAILED" && errorMessage && "cursor-help",
       )}
     >
       <span
@@ -137,4 +145,25 @@ export function StatusBadge({
       {label}
     </span>
   );
+
+  // Show tooltip with error message for failed status
+  if (status === "FAILED" && errorMessage) {
+    return (
+      <TooltipProvider>
+        <Tooltip delayDuration={200}>
+          <TooltipTrigger asChild>
+            {badge}
+          </TooltipTrigger>
+          <TooltipContent 
+            side="top" 
+            className="max-w-xs bg-red-950 border-red-800 text-red-200"
+          >
+            <p className="text-xs">{errorMessage}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return badge;
 }

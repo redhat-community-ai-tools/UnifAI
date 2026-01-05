@@ -21,6 +21,9 @@ import { useStreamingData } from "../StreamingDataContext";
 import { Message, StreamLogEntry, WorkPlanSnapshot } from "./types";
 import { StreamLogDisplay } from "./StreamLogDisplay";
 import { useToast } from "@/hooks/use-toast";
+import { UmamiTrack } from '@/components/ui/umamitrack';
+import { UmamiEvents } from '@/config/umamiEvents';
+
 
 // Backend message format
 interface BackendMessage {
@@ -33,6 +36,8 @@ interface ChatInterfaceProps {
   triggerExecution: (sessionPayload: SessionPayload) => Promise<string>;
   initialMessages?: BackendMessage[];
   blueprintExists?: boolean;
+  blueprintValid?: boolean;
+  isValidatingBlueprint?: boolean;
   onToggleBlueprintGraph?: () => void;
   isBlueprintGraphHidden?: boolean;
 }
@@ -42,6 +47,8 @@ export default function ChatInterface({
   triggerExecution,
   initialMessages = [],
   blueprintExists = true,
+  blueprintValid = true,
+  isValidatingBlueprint = false,
   onToggleBlueprintGraph,
   isBlueprintGraphHidden = false,
 }: ChatInterfaceProps) {
@@ -160,13 +167,14 @@ export default function ChatInterface({
             existingLog.status !== newStatus ||
             existingLog.message !== newMessage
           ) {
-            if (newMessage) {
+            // Show stream log if there's text content OR if there are tool calls
+            if (newMessage || (entry?.tools && entry.tools.length > 0)) {
               updatedStreamLogs.push({
                 nodeId: entry.node_name,
                 nodeName: entry.node_name
                   .replace(/_/g, " ")
                   .replace(/\b\w/g, (l: string) => l.toUpperCase()),
-                message: newMessage,
+                message: newMessage || "", // Allow empty message when showing tools
                 tools: entry?.tools || [],
                 status: newStatus,
                 isExpanded: existingLog?.isExpanded || false,
@@ -741,24 +749,61 @@ export default function ChatInterface({
               </div>
             </div>
           )}
+          {blueprintExists && !blueprintValid && !isValidatingBlueprint && (
+            <div className="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded-lg">
+              <div className="flex items-center text-red-200">
+                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <span className="text-sm font-medium">
+                  Workflow Unavailable: The workflow associated with this chat didn't pass validation check.
+                </span>
+              </div>
+            </div>
+          )}
+          {isValidatingBlueprint && (
+            <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/50 rounded-lg">
+              <div className="flex items-center text-blue-200">
+                <svg className="w-5 h-5 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span className="text-sm font-medium">
+                  Validating workflow...
+                </span>
+              </div>
+            </div>
+          )}
           <div className="flex space-x-2 items-end">
             <Textarea
               ref={textareaRef}
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={blueprintExists ? "Ask a question about your data..." : "This chat cannot be continued - workflow was deleted"}
-              className={`bg-background-dark min-h-[80px] resize-none ${!blueprintExists ? 'opacity-50 cursor-not-allowed' : ''}`}
+              placeholder={
+                !blueprintExists 
+                  ? "This chat cannot be continued - workflow was deleted" 
+                  : isValidatingBlueprint
+                    ? "Validating workflow..."
+                    : !blueprintValid 
+                      ? "This chat cannot be continued - workflow validation failed" 
+                      : "Ask a question about your data..."
+              }
+              className={`bg-background-dark min-h-[80px] resize-none ${(!blueprintExists || !blueprintValid) ? 'opacity-50 cursor-not-allowed' : ''}`}
               rows={3}
-              disabled={!blueprintExists}
+              disabled={!blueprintExists || !blueprintValid || isValidatingBlueprint}
             />
-            <Button
-              onClick={handleSendMessage}
-              disabled={inputMessage.trim() === "" || isTyping || !blueprintExists}
-              className="bg-primary hover:bg-[#7525c9] mb-0"
+            <UmamiTrack 
+              event={UmamiEvents.AGENT_CHAT_SEND_MESSAGE_BUTTON}
             >
-              <Send className="h-4 w-4" />
-            </Button>
+              <Button
+                onClick={handleSendMessage}
+                disabled={inputMessage.trim() === "" || isTyping || !blueprintExists || !blueprintValid || isValidatingBlueprint}
+                className="bg-primary hover:bg-[#7525c9] mb-0"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </UmamiTrack>
           </div>
         </div>
       </CardContent>

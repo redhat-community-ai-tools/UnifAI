@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { Users, Network, Play, Plus, LoaderCircle } from "lucide-react";
+import { Users, Network, Play, Plus, LoaderCircle, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // Agentic AI components
@@ -17,6 +18,10 @@ import axios from "../http/axiosAgentConfig";
 // Create a ReactFlow provider wrapper
 import { ReactFlowProvider } from "reactflow";
 import { FlowObject } from "@/components/agentic-ai/graphs/interfaces";
+import { BlueprintValidationResult } from "@/types/validation";
+import SimpleTooltip from "@/components/shared/SimpleTooltip";
+import { UmamiTrack } from '@/components/ui/umamitrack';
+import { UmamiEvents } from '@/config/umamiEvents';
 
 export interface GraphNode {
   id: string;
@@ -24,7 +29,7 @@ export interface GraphNode {
   description: string | null;
 }
 
-export default function AgenticAI() {
+export default function AgenticWorkflows() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedFlow, setSelectedFlow] = useState<FlowObject | null>(null);
   const [builtGraphId, setBuiltGraphId] = useState<string | null>(null);
@@ -33,8 +38,24 @@ export default function AgenticAI() {
   const [showGraphBuilder, setShowGraphBuilder] = useState(false);
   const [isLoadingFlow, setIsLoadingFlow] = useState(false);
   const [editBlueprintId, setEditBlueprintId] = useState<string | null>(null);
+  const [isFlowValid, setIsFlowValid] = useState<boolean>(true);
+  const [isValidatingFlow, setIsValidatingFlow] = useState<boolean>(false);
+  const [currentValidationResult, setCurrentValidationResult] = useState<BlueprintValidationResult | null>(null);
   const { user } = useAuth();
   const { toast } = useToast();
+  const { cacheBlueprintValidationResults } = useAgenticAI();
+  
+  // Handle validation changes from the flow graph
+  const handleValidationChange = useCallback((isValid: boolean, validationResult: BlueprintValidationResult | null, isValidating: boolean) => {
+    setIsFlowValid(isValid);
+    setCurrentValidationResult(validationResult);
+    setIsValidatingFlow(isValidating);
+    
+    // Cache all element validation results from the the blueprint.validate API response
+    if (validationResult) {
+      cacheBlueprintValidationResults(validationResult);
+    }
+  }, [cacheBlueprintValidationResults]);
 
   const handleLoadFlow = async () => {
     if (isLoadingFlow) return; // Prevent multiple calls
@@ -62,11 +83,11 @@ export default function AgenticAI() {
 
       // Navigate to Agentic Chats page
       window.location.href = "/agentic-chats";
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error create new graph session:", error);
       toast({
         title: "Failed to load current workflow",
-        description: `Error: ${error.response.data.error}`,
+        description: `Error: ${error?.response?.data?.error || error?.message || 'Unknown error'}`,
         variant: "destructive",
       });
     } finally {
@@ -115,24 +136,55 @@ export default function AgenticAI() {
                       Agent Workflow Configuration
                     </CardTitle>
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleLoadFlow}
-                        disabled={isLoadingFlow}
-                        className="bg-primary hover:bg-[#7525c9] text-white flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      <SimpleTooltip 
+                        content={
+                          !isFlowValid && !isValidatingFlow ? (
+                            <p>Cannot load workflow: Validation failed. Fix the issues before loading.</p>
+                          ) : isValidatingFlow ? (
+                            <p>Validating workflow...</p>
+                          ) : null
+                        }
                       >
-                        <LoaderCircle className={`h-4 w-4 ${isLoadingFlow ? 'animate-spin' : ''}`} />
-                        {isLoadingFlow ? 'Loading...' : 'Load Workflow'}
-                      </Button>
-                      <Button
-                        className="bg-primary hover:bg-opacity-80 flex items-center gap-2"
-                        size="sm"
-                        onClick={handleBuildGraph}
-                      >
-                        <Plus className="h-4 w-4" />
-                        Build Workflow
-                      </Button>
+                        <UmamiTrack 
+                          event={UmamiEvents.AGENT_GRAPHS_LOAD_FLOW_BUTTON}
+                          eventData={{ flowName: selectedFlow?.name }}
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleLoadFlow}
+                            disabled={isLoadingFlow || !isFlowValid || isValidatingFlow}
+                            className={`${
+                              !isFlowValid && !isValidatingFlow
+                                ? 'bg-gray-600 text-gray-400 border-gray-600' 
+                                : isValidatingFlow
+                                ? 'bg-gray-600 text-gray-300 border-gray-600'
+                                : 'bg-primary hover:bg-[#7525c9] text-white'
+                            } flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            {isValidatingFlow ? (
+                              <LoaderCircle className="h-4 w-4 animate-spin" />
+                            ) : !isFlowValid ? (
+                              <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                            ) : (
+                              <LoaderCircle className={`h-4 w-4 ${isLoadingFlow ? 'animate-spin' : ''}`} />
+                            )}
+                            {isValidatingFlow ? 'Validating...' : isLoadingFlow ? 'Loading...' : !isFlowValid ? 'Validation Failed' : 'Load Workflow'}
+                          </Button>
+                        </UmamiTrack>
+                      </SimpleTooltip>
+                        <UmamiTrack 
+                          event={UmamiEvents.AGENT_GRAPHS_BUILD_FLOW_BUTTON}
+                        >
+                          <Button
+                            className="bg-primary hover:bg-opacity-80 flex items-center gap-2"
+                            size="sm"
+                            onClick={handleBuildGraph}
+                          >
+                            <Plus className="h-4 w-4" />
+                            Build Workflow
+                          </Button>
+                        </UmamiTrack>
                     </div>
                   </CardHeader>
                   <CardContent className="pt-2 px-4 pb-4">
@@ -149,6 +201,7 @@ export default function AgenticAI() {
                   selectedFlow={selectedFlow}
                   setSelectedFlow={setSelectedFlow}
                   onFlowEdit={handleEditFlow}
+                  onValidationChange={handleValidationChange}
                 />
               </motion.div>
             </div>

@@ -3,6 +3,7 @@ from ..google_genai_factory import GoogleGenAIFactory
 from core.enums import ResourceCategory
 from ..config import GoogleGenAIConfig
 from ..identifiers import Identifier, META
+from ..validator import GoogleGenAIValidator
 
 
 class GoogleGenAIElementSpec(BaseElementSpec):
@@ -18,4 +19,5 @@ class GoogleGenAIElementSpec(BaseElementSpec):
     config_schema = GoogleGenAIConfig
     factory_cls = GoogleGenAIFactory
     tags = META.tags
+    validator_cls = GoogleGenAIValidator
 

@@ -16,8 +16,14 @@ class SlackRegistration(RegistrationBase):
     """Registration flow for Slack sources."""
     DATA_SOURCE_TYPE = DataSource.SLACK.upper_name
 
-    def __init__(self, mongo_storage: Any, upload_by: str, instance: Dict[str, Any]) -> None:
-        super().__init__(mongo_storage, upload_by, instance)
+    def __init__(
+        self, 
+        mongo_storage: Any, 
+        upload_by: str, 
+        instance: Dict[str, Any],
+        skip_validation: bool = False
+    ) -> None:
+        super().__init__(mongo_storage, upload_by, instance, skip_validation)
         self._validator = Validator(SlackValidators().create_validators())
 
     @cached_property

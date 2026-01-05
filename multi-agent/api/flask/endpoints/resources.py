@@ -50,10 +50,10 @@ def get_resource(resource_id):
     "user_id": fields.Str(data_key="userId", required=True),
     "category": fields.Str(required=False),
     "type": fields.Str(required=False),
-    "limit": fields.Int(required=False, load_default=50),
+    "limit": fields.Int(required=False, load_default=1000),
     "offset": fields.Int(required=False, load_default=0),
 })
-def list_resources(user_id, category=None, type=None, limit=50, offset=0):
+def list_resources(user_id, category=None, type=None, limit=1000, offset=0):
     """
     Get resources with flexible filtering and pagination:
     - Only user_id: returns all resources for that user
@@ -131,5 +131,60 @@ def get_resource_schema():
     try:
         schema = svc.get_resource_schema()
         return jsonify(schema), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@resources_bp.route("/resource.validate", methods=["POST"])
+@from_body({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+    "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
+})
+def validate_resource(resource_id, timeout_seconds):
+    """Validate a saved resource and its dependencies."""
+    svc = current_app.container.resources_service
+    try:
+        result = svc.validate_resource(
+            rid=resource_id,
+            timeout_seconds=timeout_seconds,
+        )
+        return jsonify(result.to_dict()), 200
+    except KeyError as e:
+        return jsonify({"error": f"Resource not found: {e}"}), 404
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@resources_bp.route("/config.validate", methods=["POST"])
+@from_body({
+    "category": fields.Str(required=True),
+    "type": fields.Str(required=True),
+    "name": fields.Str(required=False),
+    "config": fields.Dict(required=True),
+    "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
+})
+def validate_config(category, type, config, name=None, timeout_seconds=10.0):
+    """
+    Validate a resource config before saving.
+    
+    Same fields as resource.save but validates without saving to database.
+    Useful for pre-save validation in the UI.
+    """
+    svc = current_app.container.resources_service
+    try:
+        result = svc.validate_config(
+            category=category,
+            element_type=type,
+            config=config,
+            name=name,
+            timeout_seconds=timeout_seconds,
+        )
+        return jsonify(result.to_dict()), 200
+    except ValueError as e:
+        return jsonify({"error": f"Schema validation failed: {e}"}), 400
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
