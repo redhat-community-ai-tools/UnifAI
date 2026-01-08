@@ -66,6 +66,7 @@ INSTRUCTIONS:
    
    When reviewing files in:
    - ui/ directory (includes ui/client/, ui/deployment/, etc.) → Use ONLY "DOMAIN: UI" context
+   - backend/ directory (includes backend/common, backend/pipeline, etc.) → Use ONLY "DOMAIN: BACKEND" context
    - ci/ directory (*.groovy files) → Use ONLY "DOMAIN: CI/CD" context  
    - helm/ directory (charts/values)→ Use ONLY "DOMAIN: HELM" context
    
@@ -133,6 +134,8 @@ def main():
             return "CI/CD"
         elif file_path.startswith("helm/"):
             return "HELM"
+        elif file_path.startswith("backend/"):
+            return "BACKEND"
         else:
             return "OTHER"
     
@@ -158,9 +161,10 @@ def main():
     domain_map = {
         "UI": "ui/ directory (includes client/, deployment/, etc.)",
         "CI/CD": "ci/ directory (Groovy pipelines)",
-        "HELM": "helm/ directory (Kubernetes charts)"
+        "HELM": "helm/ directory (Kubernetes charts)",
+        "BACKEND": "backend/ directory (includes common/, pipeline/, etc.)"
     }
-    all_domains = ["UI", "CI/CD", "HELM"]
+    all_domains = ["UI", "CI/CD", "HELM", "BACKEND"]
     for domain in sorted(loaded_domains):
         print(f"   ✓ {domain:8} → {domain_map[domain]}", file=sys.stderr)
     

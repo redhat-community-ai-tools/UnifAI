@@ -954,9 +954,9 @@ export async function fetchActivePipelines(): Promise<ActivePipeline[]> {
 
 | Client | Import | Base URL | Use Case |
 |--------|--------|----------|----------|
-| `api` | `@/http/queryClient` | `/api3` (SSO) | Auth, user management |
+| `api` | `@/http/queryClient` | `/api1` (Data Pipeline) | Document/Slack pipelines |
 | `axios` | `@/http/axiosAgentConfig` | `/api2` (Multi-Agent) | Agentic workflows, sessions |
-| _(default)_ | `@/http/authClient` | `/api1` (Data Pipeline) | Document/Slack pipelines |
+| `api`/`apiAuth` | `@/http/authClient` | `/api3` (SSO) | Auth, user management |
 
 **Client configuration differences:**
 

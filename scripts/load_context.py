@@ -23,6 +23,10 @@ def load_context(changed_files=None):
             "files": ["helm/ARCHITECTURE.md", "helm/README.md"],
             "paths": ["helm/"]
         },
+        "BACKEND": {
+            "files": ["backend/ARCHITECTURE.md", "backend/README.md"],
+            "paths": ["backend/"]
+        },
     }
     
     # Detect which domains to load

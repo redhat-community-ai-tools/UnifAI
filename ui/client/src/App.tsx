@@ -17,6 +17,7 @@ import DocumentsPage from "./features/docs/DocumentsPage";
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AgenticAIProvider } from '@/contexts/AgenticAIContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import TermsApproval from '@/components/auth/TermsApproval';
 import SlackIntegration from "./features/slack/SlackIntegration";
 import SlackAddSourcePage from "./features/slack/SlackAddSourcePage";
 import GuidesPage from "./components/guides/GuidesPage";
@@ -72,7 +73,9 @@ function App() {
           <ProjectProvider>
             <NotificationProvider>
               <ProtectedRoute>
-                <AppRoutes />
+                <TermsApproval>
+                  <AppRoutes />
+                </TermsApproval>
               </ProtectedRoute>
             </NotificationProvider>
           </ProjectProvider>

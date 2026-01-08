@@ -4,6 +4,7 @@ class Database(Enum):
     """Database names"""
     DATA_SOURCES = "data_sources"
     PIPELINE = "pipeline_monitoring"
+    USERS = "users"
 
 class Collection(Enum):
     """Collection names"""
@@ -11,6 +12,7 @@ class Collection(Enum):
     CHUNKS = "chunks"
     SLACK_CHANNELS = "slack_channels"
     PIPELINES = "pipelines"
+    TERMS_USER_APPROVAL = "terms_user_approval"
 
 class DataSource(Enum):
     """Data source types with consistent naming"""
