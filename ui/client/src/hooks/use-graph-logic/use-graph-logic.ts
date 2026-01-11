@@ -751,7 +751,7 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
         id: edgeId,
         source: params.source!,
         target: params.target!,
-        type: "default",
+        type: "custom",
         style: { strokeDasharray: "5,5", stroke: "#10b981" },
         markerEnd: { type: MarkerType.ArrowClosed, color: "#10b981" },
         data: { ...branchConfig, isConditional: true },

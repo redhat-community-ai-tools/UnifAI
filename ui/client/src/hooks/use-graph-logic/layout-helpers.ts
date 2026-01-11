@@ -100,7 +100,7 @@ export function createEdgesFromPlan(plan: YamlFlowPlanStep[]): Edge[] {
           id: `${source}-${step.uid}`,
           source,
           target: step.uid,
-          type: "default",
+          type: "custom",
         });
       });
     }
@@ -112,7 +112,7 @@ export function createEdgesFromPlan(plan: YamlFlowPlanStep[]): Edge[] {
           id: `${step.uid}-${targetUid}-${branchKey}`,
           source: step.uid,
           target: targetUid as string,
-          type: "default",
+          type: "custom",
           style: { strokeDasharray: "5,5", stroke: "#10b981" },
           label: String(branchKey),
           data: { branch: branchKey, isConditional: true },
