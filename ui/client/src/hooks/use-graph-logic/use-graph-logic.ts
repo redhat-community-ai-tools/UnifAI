@@ -32,6 +32,7 @@ import {
   YamlFlowPlanStep,
   UseGraphLogicOptions,
   ConditionalEdgeModalState,
+  NodeRid,
 } from "./types";
 import {
   DEFAULT_YAML_FLOW_STATE,
@@ -375,10 +376,10 @@ export const useGraphLogic = (options: UseGraphLogicOptions = {}) => {
           const nodeRid = step.node;
           const matchingBlock = findBlockByRid(allBlocks, nodeRid);
           const builtinNode =
-            nodeRid === "user_question"
-              ? BUILTIN_NODES.user_question
-              : nodeRid === "final_answer"
-              ? BUILTIN_NODES.final_answer
+            nodeRid === NodeRid.USER_QUESTION
+              ? BUILTIN_NODES[NodeRid.USER_QUESTION]
+              : nodeRid === NodeRid.FINAL_ANSWER
+              ? BUILTIN_NODES[NodeRid.FINAL_ANSWER]
               : null;
 
           // Build referenced conditions

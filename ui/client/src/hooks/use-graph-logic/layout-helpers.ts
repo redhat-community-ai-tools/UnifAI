@@ -3,21 +3,21 @@
  */
 
 import { Edge } from 'reactflow';
-import { YamlFlowPlanStep, NodePosition } from './types';
+import { YamlFlowPlanStep, NodePosition, NodeType, NodeRid } from './types';
 import { LAYOUT } from './constants';
 
 /**
  * Check if a node type is user_question
  */
 const isUserQuestionNode = (nodeType: string | undefined, nodeRid: string): boolean => {
-  return nodeType === "user_question_node" || nodeRid === "user_question";
+  return nodeType === NodeType.USER_QUESTION || nodeRid === NodeRid.USER_QUESTION;
 };
 
 /**
  * Check if a node type is final_answer
  */
 const isFinalAnswerNode = (nodeType: string | undefined, nodeRid: string): boolean => {
-  return nodeType === "final_answer_node" || nodeRid === "final_answer";
+  return nodeType === NodeType.FINAL_ANSWER || nodeRid === NodeRid.FINAL_ANSWER;
 };
 
 /**

@@ -31,6 +31,7 @@ import InnerRefElement from "./InnerRefElement";
 import NodeValidationIndicator from "./NodeValidationIndicator";
 import { ValidationResultModal } from "../workspace/ValidationResultModal";
 import { ElementValidationResult } from "@/types/validation";
+import { NodeType } from "@/hooks/use-graph-logic";
 import axios from "../../../http/axiosAgentConfig";
 
 // Node status enum
@@ -336,13 +337,13 @@ const extractUidFromRef = (value: string): string => {
 // Function to generate a random icon
 const getRandomIcon = (nodeType: string): React.ReactNode => {
   // Handle specific node types with consistent icons
-  if (nodeType === "user_question_node") {
+  if (nodeType === NodeType.USER_QUESTION) {
     return (
       <div className="w-6 h-6 rounded-full bg-white bg-opacity-30 flex items-center justify-center text-xs">
         💬
       </div>
     );
-  } else if (nodeType === "final_answer_node") {
+  } else if (nodeType === NodeType.FINAL_ANSWER) {
     return (
       <div className="w-6 h-6 rounded-full bg-white bg-opacity-30 flex items-center justify-center text-xs">
         🤖
@@ -381,9 +382,9 @@ const getRandomIcon = (nodeType: string): React.ReactNode => {
 
 // Get node style based on node type
 const getNodeStyle = (nodeType: string): string => {
-  if (nodeType === "user_question_node") {
+  if (nodeType === NodeType.USER_QUESTION) {
     return "bg-gradient-to-r from-accent to-[#003f5c] text-white";
-  } else if (nodeType === "final_answer_node") {
+  } else if (nodeType === NodeType.FINAL_ANSWER) {
     return "bg-gradient-to-r from-accent to-[#003f5c] text-white";
   } else {
     return "bg-gradient-to-r from-accent to-primary text-gray-300";
@@ -394,9 +395,9 @@ const getNodeStyle = (nodeType: string): string => {
 const getEdgeStyle = (
   sourceNodeType: string,
 ): { stroke: string; color: string } => {
-  if (sourceNodeType === "user_question_node") {
+  if (sourceNodeType === NodeType.USER_QUESTION) {
     return { stroke: "#003f5c", color: "#003f5c" };
-  } else if (sourceNodeType === "final_answer_node") {
+  } else if (sourceNodeType === NodeType.FINAL_ANSWER) {
     return { stroke: "#003f5c", color: "#003f5c" };
   } else {
     return { stroke: "hsl(var(--primary))", color: "hsl(var(--primary))" };
@@ -407,9 +408,9 @@ const getEdgeStyle = (
 const getConditionalEdgeStyle = (
   sourceNodeType: string,
 ): { stroke: string; color: string; strokeDasharray: string } => {
-  if (sourceNodeType === "user_question_node") {
+  if (sourceNodeType === NodeType.USER_QUESTION) {
     return { stroke: "hsl(var(--accent))", color: "hsl(var(--accent))", strokeDasharray: "5,5" };
-  } else if (sourceNodeType === "final_answer_node") {
+  } else if (sourceNodeType === NodeType.FINAL_ANSWER) {
     return { stroke: "hsl(var(--accent))", color: "hsl(var(--accent))", strokeDasharray: "5,5" };
   } else {
     return { stroke: "hsl(var(--primary))", color: "hsl(var(--primary))", strokeDasharray: "5,5" };
@@ -475,7 +476,7 @@ const parseGraphFlow = (
     const nodeDefinition = nodeMap[item.node];
     const nodeType = nodeDefinition?.type || "custom_agent_node";
     
-    if (nodeType === "user_question_node") {
+    if (nodeType === NodeType.USER_QUESTION) {
       nodeLevel[nodeId] = 0;
       if (!nodesByLevel[0]) {
         nodesByLevel[0] = [];
@@ -500,7 +501,7 @@ const parseGraphFlow = (
       }
 
       // Skip final_answer_node for now - we'll handle it separately
-      if (nodeType === "final_answer_node") {
+      if (nodeType === NodeType.FINAL_ANSWER) {
         return;
       }
 
@@ -542,7 +543,7 @@ const parseGraphFlow = (
     const nodeDefinition = nodeMap[item.node];
     const nodeType = nodeDefinition?.type || "custom_agent_node";
     
-    if (nodeType === "final_answer_node") {
+    if (nodeType === NodeType.FINAL_ANSWER) {
       // Find the current highest level
       const existingLevels = Object.keys(nodesByLevel).map(level => parseInt(level));
       const maxLevel = existingLevels.length > 0 ? Math.max(...existingLevels) : -1;
