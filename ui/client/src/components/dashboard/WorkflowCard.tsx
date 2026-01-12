@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { FaChevronRight } from "react-icons/fa";
 import { Workflow } from "lucide-react";
-import { WorkflowBlueprint } from "@/api/agentic";
+import { WorkflowBlueprint } from "@/api/blueprints";
 
 interface WorkflowCardProps {
   workflow: WorkflowBlueprint & { usageCount?: number };

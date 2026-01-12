@@ -1,14 +1,5 @@
 import axios from '../http/axiosAgentConfig';
 import { normalizeCategory } from '@/constants/resources';
-import { BlueprintValidationResult, BlueprintValidationRequest } from '@/types/validation';
-
-export interface WorkflowBlueprint {
-  blueprint_id: string;
-  spec_dict: any;
-  name?: string;
-  created_at?: string;
-  updated_at?: string;
-}
 
 export interface Session {
   session_id: string;
@@ -32,13 +23,6 @@ export interface AgenticStats {
   categoriesInUse: number;
   blueprintSessionCounts?: Record<string, number>;
   resourcesByCategory: ResourceStats[];
-}
-
-// Fetch available blueprints
-export async function fetchBlueprints(userId?: string): Promise<WorkflowBlueprint[]> {
-  const userIdParam = userId || 'default';
-  const response = await axios.get(`/blueprints/available.blueprints.get?userId=${userIdParam}`);
-  return response.data || [];
 }
 
 // Fetch active sessions
@@ -126,68 +110,4 @@ export async function fetchAgenticStats(userId?: string): Promise<AgenticStats> 
   };
 }
 
-// Fetch resolved blueprints (for WorkflowsPanel component)
-export async function fetchResolvedBlueprints(userId?: string): Promise<WorkflowBlueprint[]> {
-  const userIdParam = userId || 'default';
-  const response = await axios.get(`/blueprints/available.blueprints.resolved.get?userId=${userIdParam}`);
-  return response.data || [];
-}
-
-export async function fetchBlueprint(blueprintId: string) {
-  const response = await axios.get(
-    `/blueprints/blueprint.get?blueprintId=${blueprintId}`
-  );
-
-  return response.data;
-}
-
-export async function updateBlueprint(
-  blueprintId: string,
-  blueprintRaw: string
-): Promise<any> {
-  const response = await axios.put("/blueprints/blueprint.update", {
-    blueprintId,
-    blueprintRaw,
-  });
-
-  return response.data;
-}
-
-export async function saveBlueprint(
-  blueprintRaw: string,
-  userId?: string
-): Promise<any> {
-  const userIdParam = userId || 'default';
-
-  const response = await axios.post("/blueprints/blueprint.save", {
-    blueprintRaw,
-    userId: userIdParam,
-  });
-
-  return response.data;
-}
-
-export async function validateBlueprintGraph(
-  blueprintRaw: string
-): Promise<any> {
-  const response = await axios.post(
-    "/graph/validation/all.validate",
-    blueprintRaw,
-    {
-      headers: {
-        "Content-Type": "text/plain",
-      },
-    }
-  );
-
-  return response.data;
-}
-// Validate a saved blueprint and all its elements
-export async function validateBlueprint(request: BlueprintValidationRequest): Promise<BlueprintValidationResult> {
-  const response = await axios.post('/blueprints/blueprint.validate', {
-    blueprintId: request.blueprintId,
-    timeoutSeconds: request.timeoutSeconds ?? 10.0,
-  });
-  return response.data;
-}
 

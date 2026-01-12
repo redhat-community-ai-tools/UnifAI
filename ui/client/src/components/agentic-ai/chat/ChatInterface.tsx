@@ -6,11 +6,10 @@ import React, {
   useMemo,
 } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Trash2, ChevronLeft, ChevronRight, Sparkles, Info } from "lucide-react";
+import { Send, Trash2, ChevronLeft, ChevronRight, Loader2, Sparkles, Info } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -23,6 +22,7 @@ import { StreamLogDisplay } from "./StreamLogDisplay";
 import { useToast } from "@/hooks/use-toast";
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
+import WorkflowStatusBanner, { WorkflowBannerMessages } from '@/components/shared/WorkflowStatusBanner';
 
 
 // Backend message format
@@ -36,10 +36,12 @@ interface ChatInterfaceProps {
   triggerExecution: (sessionPayload: SessionPayload) => Promise<string>;
   initialMessages?: BackendMessage[];
   blueprintExists?: boolean;
+  isSharingDisabled?: boolean; // If true, sharing is disabled for this blueprint
   blueprintValid?: boolean;
   isValidatingBlueprint?: boolean;
   onToggleBlueprintGraph?: () => void;
   isBlueprintGraphHidden?: boolean;
+  isChatOnlyMode?: boolean; // If true, hide agent thinking and workflow details
 }
 
 export default function ChatInterface({
@@ -47,10 +49,12 @@ export default function ChatInterface({
   triggerExecution,
   initialMessages = [],
   blueprintExists = true,
+  isSharingDisabled = false,
   blueprintValid = true,
   isValidatingBlueprint = false,
   onToggleBlueprintGraph,
   isBlueprintGraphHidden = false,
+  isChatOnlyMode = false,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -622,6 +626,26 @@ export default function ChatInterface({
     [],
   );
 
+  // Loader for chat-only mode (simpler, cleaner loader)
+  const ChatOnlyLoader = useMemo(
+    () => (
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="flex justify-start"
+      >
+        <div className="bg-background-dark border border-gray-800 rounded-2xl rounded-tl-none p-4 max-w-[80%]">
+          <div className="flex items-center space-x-3">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <span className="text-sm text-gray-400">Processing your request...</span>
+          </div>
+        </div>
+      </motion.div>
+    ),
+    [],
+  );
+
   // Component for rendering message content with markdown support
   const MessageContent = ({ message }: { message: Message }) => {
     // Get stream logs and workplans from separate states
@@ -654,12 +678,14 @@ export default function ChatInterface({
     ) {
       return (
         <div className="space-y-3 w-full">
-          {/* Stream logs display */}
-          <StreamLogDisplay
-            message={messageWithStreamingData}
-            onToggleExpansion={toggleNodeExpansion}
-            onToggleWorkPlanExpansion={toggleWorkPlanExpansion}
-          />
+          {/* Stream logs display - hidden in chat-only mode */}
+          {!isChatOnlyMode && (
+            <StreamLogDisplay
+              message={messageWithStreamingData}
+              onToggleExpansion={toggleNodeExpansion}
+              onToggleWorkPlanExpansion={toggleWorkPlanExpansion}
+            />
+          )}
 
           {/* Final answer with markdown rendering */}
           {message.finalAnswer && (
@@ -702,28 +728,32 @@ export default function ChatInterface({
       <CardHeader className="py-4 px-6 flex flex-row justify-between items-center flex-shrink-0">
         <CardTitle className="text-lg font-heading">AI Assistant</CardTitle>
         <div className="flex space-x-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearChat}
-            className="text-gray-400 hover:text-gray-100"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-          {onToggleBlueprintGraph && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onToggleBlueprintGraph}
-              className="text-gray-400 hover:text-gray-100"
-              title={isBlueprintGraphHidden ? "Show Blueprint Graph" : "Hide Blueprint Graph"}
-            >
-              {isBlueprintGraphHidden ? (
-                <ChevronLeft className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
+          {!isChatOnlyMode && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearChat}
+                className="text-gray-400 hover:text-gray-100"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              {onToggleBlueprintGraph && !isChatOnlyMode && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onToggleBlueprintGraph}
+                  className="text-gray-400 hover:text-gray-100"
+                  title={isBlueprintGraphHidden ? "Show Blueprint Graph" : "Hide Blueprint Graph"}
+                >
+                  {isBlueprintGraphHidden ? (
+                    <ChevronLeft className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </Button>
               )}
-            </Button>
+            </>
           )}
         </div>
       </CardHeader>
@@ -768,48 +798,26 @@ export default function ChatInterface({
                 </div>
               </motion.div>
             ))}
-            {isTyping && TypingIndicator}
+            {isTyping && (isChatOnlyMode ? ChatOnlyLoader : TypingIndicator)}
           </AnimatePresence>
           <div ref={messagesEndRef} />
         </div>
         <div className="p-4 border-t border-gray-800 flex-shrink-0">
+          {/* Status banners - priority order: deleted > sharing disabled > invalid > validating */}
           {!blueprintExists && (
-            <div className="mb-4 p-3 bg-orange-900/20 border border-orange-500/50 rounded-lg">
-              <div className="flex items-center text-orange-200">
-                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                <span className="text-sm font-medium">
-                  Workflow Unavailable: The workflow associated with this chat has been deleted and can no longer be continued.
-                </span>
-              </div>
-            </div>
+            <WorkflowStatusBanner {...WorkflowBannerMessages.deleted} />
           )}
-          {blueprintExists && !blueprintValid && !isValidatingBlueprint && (
-            <div className="mb-4 p-3 bg-red-900/20 border border-red-500/50 rounded-lg">
-              <div className="flex items-center text-red-200">
-                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
-                <span className="text-sm font-medium">
-                  Workflow Unavailable: The workflow associated with this chat didn't pass validation check.
-                </span>
-              </div>
-            </div>
+          {blueprintExists && isSharingDisabled && (
+            <WorkflowStatusBanner {...WorkflowBannerMessages.sharingDisabled} />
           )}
-          {isValidatingBlueprint && (
-            <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/50 rounded-lg">
-              <div className="flex items-center text-blue-200">
-                <svg className="w-5 h-5 mr-2 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <span className="text-sm font-medium">
-                  Validating workflow...
-                </span>
-              </div>
-            </div>
+          {blueprintExists && !isSharingDisabled && !blueprintValid && !isValidatingBlueprint && (
+            <WorkflowStatusBanner {...WorkflowBannerMessages.validationFailed} />
           )}
+          {blueprintExists && !isSharingDisabled && isValidatingBlueprint && (
+            <WorkflowStatusBanner {...WorkflowBannerMessages.validating} />
+          )}
+          
+          {/* Input area */}
           <div className="flex space-x-2 items-end">
             <Textarea
               ref={textareaRef}
@@ -819,22 +827,24 @@ export default function ChatInterface({
               placeholder={
                 !blueprintExists 
                   ? "This chat cannot be continued - workflow was deleted" 
-                  : isValidatingBlueprint
-                    ? "Validating workflow..."
-                    : !blueprintValid 
-                      ? "This chat cannot be continued - workflow validation failed" 
-                      : "Ask a question about your data..."
+                  : isSharingDisabled
+                    ? "Chat sharing has been disabled for this workflow"
+                    : isValidatingBlueprint
+                      ? "Validating workflow..."
+                      : !blueprintValid 
+                        ? "This chat cannot be continued - workflow validation failed" 
+                        : "Ask a question about your data..."
               }
-              className={`bg-background-dark min-h-[80px] resize-none ${(!blueprintExists || !blueprintValid) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`bg-background-dark min-h-[80px] resize-none ${(!blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint) ? 'opacity-50 cursor-not-allowed' : ''}`}
               rows={3}
-              disabled={!blueprintExists || !blueprintValid || isValidatingBlueprint}
+              disabled={!blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint}
             />
             <UmamiTrack 
               event={UmamiEvents.AGENT_CHAT_SEND_MESSAGE_BUTTON}
             >
               <Button
                 onClick={handleSendMessage}
-                disabled={inputMessage.trim() === "" || isTyping || !blueprintExists || !blueprintValid || isValidatingBlueprint}
+                disabled={inputMessage.trim() === "" || isTyping || !blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint}
                 className="bg-primary hover:bg-[#7525c9] mb-0"
               >
                 <Send className="h-4 w-4" />

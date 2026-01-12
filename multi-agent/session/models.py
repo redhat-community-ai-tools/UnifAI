@@ -1,5 +1,6 @@
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass
 from typing import Dict, Any, Optional
+from pydantic import BaseModel, Field
 
 
 @dataclass(frozen=True)
@@ -15,13 +16,14 @@ class RuntimeElement:
         return self.resource_spec.config if self.resource_spec else None
 
 
-@dataclass(slots=True)
-class SessionMeta:
+class SessionMeta(BaseModel):
+    """Session metadata with Pydantic validation."""
     title: str | None = None
-    tags: Dict[str, str] = field(default_factory=dict)
+    tags: Dict[str, str] = Field(default_factory=dict)
+    source: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return self.model_dump()
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SessionMeta":

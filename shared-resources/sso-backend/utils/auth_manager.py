@@ -2,16 +2,15 @@
 Authentication Manager for Keycloak SSO Integration
 Handles user authentication, session management, and token validation
 """
-import os
-import jwt
-import requests
 from datetime import datetime, timedelta
 from functools import wraps
+import os
 from flask import request, jsonify, session, redirect, url_for, current_app
 from authlib.integrations.flask_client import OAuth
 from authlib.common.errors import AuthlibBaseError
 from shared.logger import logger
 from config.app_config import AppConfig
+from urllib.parse import quote
 
 config = AppConfig.get_instance()
 
@@ -28,9 +27,11 @@ class AuthManager:
         """Initialize the auth manager with Flask app"""
         self.app = app
         
-        # Set up secret key for sessions
+        # Set up secret key for sessions (required for secure session management)
+        # The secret_key should be configured in app_config for both dev and production
         if not app.secret_key:
             app.secret_key = config.get('secret_key', os.urandom(24))
+        
         # Configure OAuth
         self.oauth = OAuth(app)
         
@@ -70,30 +71,34 @@ class AuthManager:
         @self.app.route('/api/auth/login')
         def login():
             """Initiate OAuth login flow"""
-            # Hardcode or use an env variable to set the externally reachable redirect URI
-
-            # redirect_uri = config.get(
-            #     'redirect_url',
-            #     url_for('auth_callback', _external=True, _scheme='https')
-            # )
+            # Get the state parameter from frontend (contains original URL encoded by client)
+            # State is required by our protocol - frontend must always provide it
+            client_state = request.args.get('state')
+            
+            if not client_state:
+                return jsonify({'error': 'State parameter is required'}), 400
+            
+            # Get the OAuth callback redirect URI
             redirect_uri = config.get(
                 'redirect_url',
                 url_for('auth_callback', _external=True, _scheme='https') 
                 if config.backend_env == "production" 
                 else f"http://{config.hostname_local}:{config.port}/api/auth/callback"
             )
-
-
-            logger.info(f"[LOGIN] session before redirect: {session.items()}")
-            return self.keycloak_client.authorize_redirect(redirect_uri)
-
-
+            
+            # Pass the client-provided state through to Keycloak
+            # Keycloak will echo it back in the callback
+            return self.keycloak_client.authorize_redirect(redirect_uri, state=client_state)
 
         @self.app.route('/api/auth/callback')
         def auth_callback():
             """Handle OAuth callback"""
+            # Get the state parameter that Keycloak echoed back
+            # This contains the original URL encoded by the frontend
+            request_state = request.args.get('state', '')
+            
             try:
-                logger.info(f"[CALLBACK] session when returning: {session.items()}")
+                # Process the OAuth callback - exchange authorization code for tokens
                 token = self.keycloak_client.authorize_access_token()
                 userinfo = self.keycloak_client.userinfo()
                 
@@ -114,20 +119,23 @@ class AuthManager:
                 }
                 session['access_token'] = token.get('access_token')
                 session['refresh_token'] = token.get('refresh_token')
-                session['token_expires_at'] = token.get('expires_at', 0)  # Keep for token refresh logic
+                session['token_expires_at'] = token.get('expires_at', 0)
                 
                 logger.info(f"User {userinfo.get('preferred_username')} authenticated successfully")
-                logger.info(f"Session will expire at: {session_expires_at.strftime('%Y-%m-%d %H:%M:%S')}")
                 
-                # Redirect to frontend
-                frontend_url = config.get('frontend_url', 'http://localhost:5000')
-                return redirect(f"{config.frontend_url}?auth=success")
+                # Redirect to frontend with auth status and state parameter
+                # Frontend will extract the original URL from state and restore it
+                state_param = f"&state={quote(request_state, safe='')}" if request_state else ""
+                final_url = f"{config.frontend_url}/?auth=success{state_param}"
+                return redirect(final_url)
                 
             except AuthlibBaseError as e:
                 logger.error(f"Authentication error: {str(e)}")
-                frontend_url = config.get('frontend_url', 'http://localhost:5000')
-                return redirect(f"{config.frontend_url}?auth=error")
-
+                
+                # On error, return state back to frontend so it can retry with preserved URL
+                state_param = f"&state={quote(request_state, safe='')}" if request_state else ""
+                redirect_url = f"{config.frontend_url}/?auth=error{state_param}"
+                return redirect(redirect_url)
         
         @self.app.route('/api/auth/logout', methods=['POST'])
         def logout():
@@ -195,7 +203,7 @@ class AuthManager:
         """Check if the user session has expired (requires re-authentication)"""
         session_expires_at = session.get('user', {}).get('session_expires_at', 0)
         if not session_expires_at:
-            return True  # No expiration time means session is invalid
+            return True # No expiration time means session is invalid
         
         current_time = datetime.now().timestamp()
         is_expired = current_time >= session_expires_at
@@ -209,7 +217,7 @@ class AuthManager:
         """Check if access token should be refreshed (expires in next 5 minutes)"""
         token_expires_at = session.get('token_expires_at', 0)
         if not token_expires_at:
-            return True  # No token expiration means we should try to refresh
+            return True # No token expiration means we should try to refresh
         
         current_time = datetime.now().timestamp()
         
@@ -257,7 +265,6 @@ def require_auth(f):
         if auth_manager._should_refresh_token():
             if not auth_manager._refresh_access_token():
                 logger.warning("Token refresh failed, but continuing with existing token")
-                # Don't return error here - request continue with existing token (token might still be valid for a short time)
         
         return f(*args, **kwargs)
     return decorated_function

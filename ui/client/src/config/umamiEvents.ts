@@ -13,6 +13,8 @@ export enum UmamiEvents {
     AGENT_GRAPHS_CONDITIONS_BUTTON = "agent-graphs-conditions-button",
     AGENT_REPOSITORY_SAVE_ELEMENT_BUTTON = "agent-repository-save-element-button",
     AGENT_REPOSITORY_CREATE_NEW_BUTTON = "agent-repository-create-new-button",
+    WORKFLOW_SHARE_COPY_LINK = "workflow-share-copy-link",
+    PUBLIC_CHAT_NEW_SESSION = "public-chat-new-session",
     SHARED_SYSTEM_BUTTON = "shared-system-button",
     NOTIFICATIONS_BUTTON = "notifications-button",
     UPLOAD_DOCUMENT_BUTTON = "upload-document-button",

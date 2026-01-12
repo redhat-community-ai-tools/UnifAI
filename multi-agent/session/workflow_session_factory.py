@@ -44,11 +44,15 @@ class WorkflowSessionFactory:
             metadata: SessionMeta = None,
             graph_state: GraphState = GraphState(),
     ) -> WorkflowSession:
+        # Ensure metadata is a SessionMeta instance
+        session_meta = metadata if metadata is not None else SessionMeta()
+        
         # 0) Build and propagate RunContext ———
+        # RunContext.metadata expects a dict, so convert SessionMeta to dict
         ctx = RunContext(
             user_id=user_id,
             engine_name=self._engine_name,
-            metadata=metadata or {}
+            metadata=session_meta.to_dict()
         )
         set_current_context(ctx)
 
@@ -77,7 +81,7 @@ class WorkflowSessionFactory:
             executable_graph=executable_graph,
             builder=_engine_builder,
             run_context=ctx,
-            metadata=metadata or {},
+            metadata=session_meta,
             graph_state=graph_state,
         )
 

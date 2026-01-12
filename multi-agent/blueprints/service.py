@@ -4,6 +4,11 @@ from blueprints.models.blueprint import BlueprintSpec, BlueprintDraft
 from blueprints.repository.repository import BlueprintRepository
 from blueprints.resolver import BlueprintResolver
 from blueprints.validation.collector import BlueprintConfigCollector
+from blueprints.exceptions import (
+    BlueprintNotFoundError,
+    BlueprintSaveError,
+    BlueprintMetadataError,
+)
 from core.ref import RefWalker
 from elements.common.validator import ValidationContext
 from validation.models import BlueprintValidationResult
@@ -23,10 +28,10 @@ class BlueprintService:
         self._config_collector = BlueprintConfigCollector()
 
     # ────────── Write ──────────
-    def save_draft(self, *, user_id: str, draft_dict: dict) -> str:
+    def save_draft(self, *, user_id: str, draft_dict: dict, metadata: Optional[Dict[str, Any]] = None) -> str:
         draft_bp = BlueprintDraft(**draft_dict)
         rid_refs = list(RefWalker.external_rids(draft_bp))
-        return self._repo.save(user_id=user_id, spec=draft_bp, rid_refs=rid_refs)
+        return self._repo.save(user_id=user_id, spec=draft_bp, rid_refs=rid_refs, metadata=metadata or {})
 
     # ────────── Single-blueprint reads (ID is globally unique) ──────────
     def load_draft(self, blueprint_id: str) -> BlueprintDraft:
@@ -126,6 +131,24 @@ class BlueprintService:
         """
         return BlueprintDraft.model_json_schema()
 
+# ────────── Blueprint Metadata ──────────
+    def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
+        """
+        Set the metadata dictionary for a blueprint.
+        
+        :param blueprint_id: The blueprint ID
+        :param metadata: Dictionary of metadata to set
+        :return: True if the document was modified
+        :raises BlueprintNotFoundError: If blueprint doesn't exist
+        :raises BlueprintMetadataError: If update fails
+        """
+        if not self.exists(blueprint_id):
+            raise BlueprintNotFoundError(blueprint_id)
+        
+        try:
+            return self._repo.set_metadata(blueprint_id=blueprint_id, metadata=metadata)
+        except Exception as e:
+            raise BlueprintMetadataError(blueprint_id, f"Failed to update metadata: {str(e)}")
     # ────────── Validation ──────────
     def validate_blueprint(
         self,

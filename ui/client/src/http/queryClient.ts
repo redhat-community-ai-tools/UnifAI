@@ -30,14 +30,15 @@ api.interceptors.response.use(
   (error: AxiosError) => {
     console.error("API Error:", error);
 
-    // Handle authentication errors
     if (error.response?.status === 401) {
-      // Check if we're not already on an auth-related endpoint
       const isAuthEndpoint = error.config?.url?.includes('/auth');
       
       if (!isAuthEndpoint) {
-        // Redirect to login for non-auth endpoints
-        window.location.href = `${api.defaults.baseURL}/auth/login`;
+        // Capture the original URL to restore after authentication
+        const originalUrl = window.location.pathname + window.location.search;
+        const stateData = { originalUrl: originalUrl || '/' };
+        const encodedState = btoa(JSON.stringify(stateData));
+        window.location.href = `${api.defaults.baseURL}/auth/login?state=${encodeURIComponent(encodedState)}`;
         return Promise.reject(new Error("Authentication required"));
       }
     }

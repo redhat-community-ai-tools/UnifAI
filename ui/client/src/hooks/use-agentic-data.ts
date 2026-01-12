@@ -2,11 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   fetchAgenticStats,
-  fetchBlueprints,
   fetchActiveSessions,
   fetchAllResources,
   fetchResourceCategories,
 } from "@/api/agentic";
+import { fetchBlueprints } from "@/api/blueprints";
 
 export function useAgenticData() {
   const { user } = useAuth();

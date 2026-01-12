@@ -2,8 +2,18 @@ from flask import Blueprint, jsonify, current_app, request
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import yaml
+import json
+import logging
+from bson import json_util
 from werkzeug.exceptions import BadRequest
 from typing import Optional
+from blueprints.exceptions import (
+    BlueprintNotFoundError,
+    BlueprintSaveError,
+    BlueprintMetadataError,
+)
+
+logger = logging.getLogger(__name__)
 
 blueprints_bp = Blueprint("blueprints", __name__)
 
@@ -103,25 +113,29 @@ def available_resolved_doc_list(user_id):
 @blueprints_bp.route("/blueprint.save", methods=["POST"])
 @from_body({
     "blueprint_raw": fields.Str(data_key="blueprintRaw", required=False),
-    "user_id": fields.Str(data_key="userId", required=False, load_default="alice")
+    "user_id": fields.Str(data_key="userId", required=False, load_default="alice"),
+    "metadata": fields.Dict(data_key="metadata", required=False, load_default=lambda: {})
 })
-def save_blueprint(blueprint_raw=None, user_id="alice"):
+def save_blueprint(blueprint_raw=None, user_id="alice", metadata=None):
     """
     Save a blueprint draft.
     
     Accepts blueprint data in multiple formats:
-    - JSON body: { "blueprintRaw": "<yaml or json string>", "userId": "..." }
+    - JSON body: { "blueprintRaw": "<yaml or json string>", "userId": "...", "metadata": {...} }
     - Raw YAML/JSON body with Content-Type: application/x-yaml, text/yaml, or text/plain
     - Form-data: file upload or string field named 'blueprint_raw'
     """
     try:
+        if metadata is None:
+            metadata = {}
+            
         parsed = _extract_blueprint_data(
             json_field_value=blueprint_raw,
             field_name="blueprint_raw"
         )
         
         svc = current_app.container.blueprint_service
-        blueprint_id = svc.save_draft(user_id=user_id, draft_dict=parsed)
+        blueprint_id = svc.save_draft(user_id=user_id, draft_dict=parsed, metadata=metadata)
 
         return jsonify({
             "status": "success",
@@ -130,8 +144,33 @@ def save_blueprint(blueprint_raw=None, user_id="alice"):
 
     except BadRequest as e:
         return jsonify({"status": "error", "error": str(e)}), 400
-    except Exception as e:
+    except BlueprintSaveError as e:
+        logger.exception(f"Failed to save blueprint for user {user_id}")
         return jsonify({"status": "error", "error": str(e)}), 500
+    except Exception as e:
+        logger.exception(f"Unexpected error saving blueprint for user {user_id}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@blueprints_bp.route("/blueprint.info.get", methods=["GET"])
+@from_query({
+    "blueprint_id": fields.Str(data_key="blueprintId", required=True)
+})
+def get_blueprint_info(blueprint_id):
+    """
+    Get blueprint information.
+    """
+    try:
+        svc = current_app.container.blueprint_service
+        doc = svc.get_blueprint_draft_doc(blueprint_id)
+        return json.loads(json_util.dumps(doc)), 200
+    except BlueprintNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except KeyError:
+        return jsonify({"error": "Blueprint not found"}), 404
+    except Exception as e:
+        logger.exception(f"Unexpected error getting blueprint info for {blueprint_id}")
+        return jsonify({"error": str(e)}), 500
 
 
 @blueprints_bp.route("/blueprint.draft.schema.get", methods=["GET"])
@@ -248,6 +287,32 @@ def remove_blueprint(blueprint_id):
         }), 500
 
 
+@blueprints_bp.route("/blueprint.metadata.set", methods=["PUT"])
+@from_body({
+    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
+    "metadata": fields.Dict(required=True),
+})
+def set_metadata(blueprint_id, metadata):
+    """
+    Set the metadata dictionary for a blueprint.
+    """
+    try:
+        svc = current_app.container.blueprint_service
+        success = svc.set_metadata(blueprint_id=blueprint_id, metadata=metadata)
+        
+        if not success:
+            return jsonify({"error": "Failed to update metadata"}), 500
+        
+        return jsonify({"status": "success"}), 200
+    except BlueprintNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except BlueprintMetadataError as e:
+        logger.exception(f"Failed to update metadata for blueprint {blueprint_id}")
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        logger.exception(f"Unexpected error updating metadata for blueprint {blueprint_id}")
+        return jsonify({"error": str(e)}), 500
+
 @blueprints_bp.route("/blueprint.validate", methods=["POST"])
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
@@ -262,11 +327,14 @@ def validate_blueprint(blueprint_id, timeout_seconds):
             timeout_seconds=timeout_seconds,
         )
         return jsonify(result.to_dict()), 200
+    except BlueprintNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
     except KeyError as e:
         return jsonify({"error": f"Blueprint not found: {e}"}), 404
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
+        logger.exception(f"Unexpected error validating blueprint {blueprint_id}")
         return jsonify({"error": str(e)}), 500
 
 

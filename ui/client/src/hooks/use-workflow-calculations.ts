@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { WorkflowBlueprint } from "@/api/agentic";
+import { WorkflowBlueprint } from "@/api/blueprints";
 
 interface WorkflowWithUsage extends WorkflowBlueprint {
   usageCount: number;

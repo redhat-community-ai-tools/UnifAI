@@ -21,7 +21,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         self._col.create_index([("blueprint_id", pymongo.ASCENDING)], unique=True)
         self._col.create_index("rid_refs")
 
-    def save(self, user_id, spec: BlueprintDraft, rid_refs: list[str]) -> str:
+    def save(self, user_id, spec: BlueprintDraft, rid_refs: list[str], metadata: Dict[str, Any] = {}) -> str:
         new_id = str(uuid4())
         doc = {
             "blueprint_id": new_id,
@@ -29,7 +29,8 @@ class MongoBlueprintRepository(BlueprintRepository):
             "created_at": getattr(spec, "created_at", datetime.utcnow()),
             "updated_at": datetime.utcnow(),
             "spec_dict": spec.model_dump(mode="json"),
-            "rid_refs": rid_refs
+            "rid_refs": rid_refs,
+            "metadata": metadata
         }
         self._col.insert_one(doc)
         return new_id
@@ -50,6 +51,16 @@ class MongoBlueprintRepository(BlueprintRepository):
             }}
         )
 
+        return res.modified_count == 1
+    
+    def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
+        """Set the metadata dictionary for a blueprint document."""
+        if not isinstance(metadata, dict):
+            raise ValueError(f"metadata must be a dictionary, got: {type(metadata)}")
+        res = self._col.update_one(
+            {"blueprint_id": blueprint_id},
+            {"$set": {"metadata": metadata, "updated_at": datetime.utcnow()}}
+        )
         return res.modified_count == 1
 
     def load(self, blueprint_id: str) -> Mapping[str, Any]:

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { validateBlueprint } from '@/api/agentic';
+import { validateBlueprint } from '@/api/blueprints';
 import { BlueprintValidationResult, ElementValidationResult } from '@/types/validation';
 import { useToast } from '@/hooks/use-toast';
 
