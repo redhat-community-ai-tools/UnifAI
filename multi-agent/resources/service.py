@@ -1,4 +1,5 @@
 from typing import List, Optional, Tuple, Dict, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pydantic import BaseModel
 
@@ -168,6 +169,98 @@ class ResourcesService:
         
         # Validate and return result for requested rid
         return self._validate_and_get(ordered_configs, rid, timeout_seconds)
+
+    def validate_resources(
+        self,
+        rids: List[str],
+        timeout_seconds: float = 10.0,
+        max_workers: int = 10,
+    ) -> List[ElementValidationResult]:
+        """
+        Validate multiple resources in parallel.
+        
+        Uses a thread pool for concurrent validation while preserving
+        the order of results to match the input order.
+        
+        Args:
+            rids: List of resource IDs to validate
+            timeout_seconds: Timeout per resource validation
+            max_workers: Maximum concurrent validations (default: 10)
+            
+        Returns:
+            List of ElementValidationResult in same order as input rids
+            
+        Note:
+            Failed validations return a result with is_valid=False.
+            This method never raises - all errors are captured in results.
+        """
+        self._ensure_validation_service()
+        
+        if not rids:
+            return []
+        
+        # Single resource optimization - skip thread pool overhead
+        if len(rids) == 1:
+            return [self._validate_resource_safe(rids[0], timeout_seconds)]
+        
+        return self._validate_in_parallel(rids, timeout_seconds, max_workers)
+
+    def _validate_in_parallel(
+        self,
+        rids: List[str],
+        timeout_seconds: float,
+        max_workers: int,
+    ) -> List[ElementValidationResult]:
+        """
+        Execute validations concurrently with order preservation.
+        
+        Uses ThreadPoolExecutor with indexed futures to maintain
+        the original order of results.
+        """
+        results: List[Optional[ElementValidationResult]] = [None] * len(rids)
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks, tracking their original index
+            future_to_index = {
+                executor.submit(
+                    self._validate_resource_safe, rid, timeout_seconds
+                ): idx
+                for idx, rid in enumerate(rids)
+            }
+            
+            # Collect results as they complete, placing in correct position
+            for future in as_completed(future_to_index):
+                idx = future_to_index[future]
+                results[idx] = future.result()
+        
+        return results
+
+    def _validate_resource_safe(
+        self,
+        rid: str,
+        timeout_seconds: float,
+    ) -> ElementValidationResult:
+        """
+        Validate a single resource with exception handling.
+        
+        Wraps validate_resource to ensure it never raises.
+        All exceptions are converted to error results.
+        
+        Returns:
+            ElementValidationResult - always valid object, even on errors
+        """
+        try:
+            return self.validate_resource(rid=rid, timeout_seconds=timeout_seconds)
+        except KeyError:
+            return ElementValidationResult.create_error(
+                rid=rid,
+                error=f"Resource not found: {rid}"
+            )
+        except Exception as e:
+            return ElementValidationResult.create_error(
+                rid=rid,
+                error=f"Validation failed: {str(e)}"
+            )
 
     def validate_config(
         self,

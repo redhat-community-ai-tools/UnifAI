@@ -28,13 +28,7 @@ export const useSessionManagement = () => {
 
   const loadSessionMessages = useCallback(
     async (session: ChatSession): Promise<ChatSession | null> => {
-      // If messages are already loaded for this session, use them
-      if (session.messages && session.messages.length > 0) {
-        setCurrentMessages(session.messages);
-        return session;
-      }
-
-      // Otherwise, fetch the session state
+      // Always fetch fresh messages from the backend to ensure we have the latest data
       const stateData = await fetchSessionState(session.id);
       if (stateData && stateData.messages) {
         setCurrentMessages(stateData.messages);
@@ -47,6 +41,12 @@ export const useSessionManagement = () => {
         };
 
         return updatedSession;
+      }
+
+      // If no messages from backend, fall back to session's existing messages
+      if (session.messages && session.messages.length > 0) {
+        setCurrentMessages(session.messages);
+        return session;
       }
 
       return null;

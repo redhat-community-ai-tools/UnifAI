@@ -26,7 +26,7 @@ class CustomAgentNodeValidator(BaseElementValidator):
     - LLM dependency (required)
     - Retriever dependency (optional)
     - Tools dependencies (optional)
-    - Provider dependency (optional)
+    - Providers dependencies (optional, list)
     """
 
     def validate(
@@ -67,11 +67,11 @@ class CustomAgentNodeValidator(BaseElementValidator):
             ):
                 all_deps_valid = False
 
-        # Check provider dependency (optional)
-        if config.provider:
-            provider_rid = self._extract_rid(config.provider)
+        # Check providers dependencies (optional, list)
+        for idx, provider_ref in enumerate(config.providers or []):
+            provider_rid = self._extract_rid(provider_ref)
             if not self._check_dependency(
-                context, provider_rid, "provider", messages, checked_dependencies
+                context, provider_rid, f"providers[{idx}]", messages, checked_dependencies
             ):
                 all_deps_valid = False
 
@@ -89,7 +89,7 @@ class CustomAgentNodeValidator(BaseElementValidator):
                     1 if config.llm else 0,
                     len(config.tools or []),
                     1 if config.retriever else 0,
-                    1 if config.provider else 0,
+                    len(config.providers or []),
                 ])
                 if total_deps == 0:
                     messages.append(self._info(

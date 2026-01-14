@@ -19,9 +19,10 @@ class CustomAgentNodeFactory(BaseFactory[CustomAgentNodeConfig, CustomAgentNode]
                 llm=deps.pop("llm"),
                 retriever=deps.pop("retriever"),
                 tools=deps.pop("tools"),
-                mcp_provider=deps.pop("provider"),
+                mcp_providers=deps.pop("providers"),
                 system_message=cfg.system_message,
                 strategy_type=cfg.strategy_type,
+                max_rounds=cfg.max_rounds,
                 retries=cfg.retries,
             )
         except Exception as e:

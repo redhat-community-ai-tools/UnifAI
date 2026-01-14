@@ -49,7 +49,7 @@ class CustomAgentNode(
             retriever: Any = None,
             tools: List[BaseTool] = None,
             system_message: str = "",
-            mcp_provider: McpProvider = None,
+            mcp_providers: List[McpProvider] = None,
             max_rounds: Optional[int] = 15,
             strategy_type: str = StrategyType.REACT.value,
             include_builtin_tools: bool = True,
@@ -61,7 +61,7 @@ class CustomAgentNode(
             system_message=system_message,
             **kwargs
         )
-        self.mcp_provider = mcp_provider
+        self.mcp_providers = mcp_providers or []
         self.max_rounds = max_rounds
         self.strategy_type = strategy_type
 
@@ -100,9 +100,9 @@ class CustomAgentNode(
         if self._include_builtin_tools:
             all_tools.extend(self._create_builtin_tools())
 
-        # 3. MCP tools (if provider available)
-        if self.mcp_provider:
-            all_tools.extend(self.mcp_provider.get_tools())
+        # 3. MCP tools from all providers
+        for provider in self.mcp_providers:
+            all_tools.extend(provider.get_tools())
 
         return all_tools
 

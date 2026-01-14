@@ -12,7 +12,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FieldValidation } from "./FieldValidation";
+import { FieldValidation, ItemValidationResult } from "./FieldValidation";
 import { FieldPopulation } from "./FieldPopulation";
 import { AgentCardVisualization } from "./AgentCardVisualization";
 import { ElementType } from "../../../types/workspace";
@@ -33,6 +33,7 @@ interface FieldRendererProps {
   refOptions: { [category: string]: any[] };
   fieldType: "secret" | "public";
   fieldValidationStates?: { [fieldName: string]: boolean };
+  itemValidationStates?: { [fieldName: string]: ItemValidationResult[] };
   isArrayWithRefItems: (fieldSchema: any) => boolean;
   getArrayItemsSchema: (fieldSchema: any) => any;
   extractCategoryFromField: (fieldSchema: any) => string | null;
@@ -40,7 +41,7 @@ interface FieldRendererProps {
   onArrayChange?: (field: string, index: number, value: any) => void;
   onAddArrayItem?: (field: string) => void;
   onRemoveArrayItem?: (field: string, index: number) => void;
-  onValidationChange: (fieldName: string, isValid: boolean) => void;
+  onValidationChange: (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => void;
   onPopulateResult: (fieldName: string, results: string[] | any, multiSelect: boolean) => void;
 }
 
@@ -58,6 +59,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   refOptions,
   fieldType,
   fieldValidationStates,
+  itemValidationStates,
   isArrayWithRefItems,
   getArrayItemsSchema,
   extractCategoryFromField,
@@ -70,9 +72,27 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
 }) => {
   // Check if this field has validation errors based on validation action result
   // Use useMemo to recalculate when fieldValidationStates changes after validation action
+  // For non-required fields with no value, don't show error
   const hasFieldError = React.useMemo(() => {
-    return validationHint && fieldValidationStates?.[fieldName] === false;
-  }, [validationHint, fieldValidationStates, fieldName]);
+    if (!validationHint || fieldValidationStates?.[fieldName] !== false) {
+      return false;
+    }
+    // If field is not required and has no value, don't show error
+    const hasValue = value !== undefined && value !== null && value !== '' && 
+      !(Array.isArray(value) && value.length === 0);
+    if (!isRequired && !hasValue) {
+      return false;
+    }
+    return true;
+  }, [validationHint, fieldValidationStates, fieldName, value, isRequired]);
+
+  // Helper function to check if a specific item in a list field is invalid
+  const isItemInvalid = React.useCallback((rid: string): boolean => {
+    const itemResults = itemValidationStates?.[fieldName];
+    if (!itemResults) return false;
+    const itemResult = itemResults.find(item => item.rid === rid);
+    return itemResult ? !itemResult.isValid : false;
+  }, [itemValidationStates, fieldName]);
 
   const [showMasked, setShowMasked] = useState(true);
   const isSecret = fieldType === "secret";
@@ -235,12 +255,14 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
                 const selectedOption = validOptions.find(
                   (opt: any) => opt.rid === selectedRid,
                 );
+                const itemInvalid = isItemInvalid(selectedRid);
                 return (
                   <Badge
                     key={index}
                     variant="secondary"
-                    className="flex items-center gap-1"
+                    className={`flex items-center gap-1 ${itemInvalid ? 'border-red-500 border' : ''}`}
                   >
+                    {itemInvalid && <XCircle className="h-3 w-3 text-red-500" />}
                     {selectedOption
                       ? `${selectedOption.name} (${selectedOption.type})`
                       : selectedRid}
@@ -271,6 +293,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
             validationHint={validationHint}
             elementActions={elementActions}
             selectedElementType={elementType}
+            isRequired={isRequired}
             onValidationChange={onValidationChange}
           />
         )}
@@ -367,6 +390,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
               validationHint={validationHint}
               elementActions={elementActions}
               selectedElementType={elementType}
+              isRequired={isRequired}
               onValidationChange={onValidationChange}
             />
           )}
@@ -587,6 +611,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
           validationHint={validationHint}
           elementActions={elementActions}
           selectedElementType={elementType}
+          isRequired={isRequired}
           onValidationChange={onValidationChange}
         />
       )}
@@ -662,6 +687,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         validationHint={validationHint}
         elementActions={elementActions}
         selectedElementType={elementType}
+        isRequired={isRequired}
         onValidationChange={onValidationChange}
       />
     )}

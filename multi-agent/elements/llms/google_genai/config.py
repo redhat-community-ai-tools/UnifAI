@@ -31,7 +31,7 @@ class GoogleGenAIConfig(BaseModel):
     )
 
     max_tokens: Optional[int] = Field(
-        default=None,
+        default=8192,
         description="Maximum number of tokens to generate (None for model default)"
     )
 

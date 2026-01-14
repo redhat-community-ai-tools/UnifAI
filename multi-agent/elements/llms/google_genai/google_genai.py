@@ -6,7 +6,7 @@ from core.contracts import SupportsStreaming
 from ..common.chat.converter import LangChainConverter
 from ..common.chat.message import ChatMessage
 from ...tools.common.base_tool import BaseTool
-from ...tools.common.converter import LangChainToolsConverter
+from .tools_converter import GoogleGenAIToolsConverter
 
 
 def _extract_text_content(content: Any) -> str:
@@ -20,7 +20,6 @@ def _extract_text_content(content: Any) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        # Extract text from content blocks
         texts = []
         for block in content:
             if isinstance(block, dict) and block.get("type") == "text":
@@ -57,7 +56,6 @@ class GoogleGenAILLM(BaseLLM, SupportsStreaming):
         """
         self._name = "google-genai"
 
-        # Build kwargs, only including non-None values
         client_kwargs: Dict[str, Any] = {
             "model": model_name,
             "google_api_key": api_key,
@@ -99,15 +97,12 @@ class GoogleGenAILLM(BaseLLM, SupportsStreaming):
             call_params["max_output_tokens"] = max_tokens
         call_params.update(kwargs)
 
-        # Convert to LangChain message objects
         lc_messages = LangChainConverter.to_lc(messages)
-
         response = self.client.invoke(lc_messages, **call_params)
-        
-        # Google GenAI returns content as list of blocks, normalize it to string
+
         if hasattr(response, 'content') and isinstance(response.content, list):
             response.content = _extract_text_content(response.content)
-        
+
         return LangChainConverter.from_lc_message(response)
 
     def stream(
@@ -123,49 +118,34 @@ class GoogleGenAILLM(BaseLLM, SupportsStreaming):
           and, at the very end, yields **one** `ChatMessage` representing
           the full assistant reply with `tool_calls=[…]`.
         """
-        # Translate our domain history → LangChain
         lc_history = LangChainConverter.to_lc(messages)
-
-        aggregated: Any | None = None  # will hold the growing AIMessage
+        aggregated: Any | None = None
 
         for chunk in self.client.stream(lc_history, **call_params):
-            # Tool-call partials -------------------------------------------------
             if getattr(chunk, "tool_call_chunks", None):
                 aggregated = chunk if aggregated is None else aggregated + chunk
-                # we do NOT yield yet — wait until provider is done
                 continue
 
-            # Plain token path --------------------------------------------------
-            # Google GenAI returns content as list of blocks, not a simple string
             token = _extract_text_content(chunk.content)
             if token:
                 yield token
 
-        # Provider finished ------------------------------------------------------
         if aggregated:
-            # LangChain "+" produced a final AIMessage with complete tool_calls,
-            # Normalize content format before converting
             if hasattr(aggregated, 'content') and isinstance(aggregated.content, list):
                 aggregated.content = _extract_text_content(aggregated.content)
-            # Convert once to our ChatMessage model and yield it.
             yield LangChainConverter.from_lc_message(aggregated)
 
     def bind_tools(self, tools: List[BaseTool]) -> "GoogleGenAILLM":
         """
-        Return a new GoogleGenAILLM instance with tools bound, avoiding cross-contamination.
+        Return a new GoogleGenAILLM instance with tools bound.
 
-        This creates a copy of the current LLM with tools bound to the client,
-        ensuring the original LLM instance remains unchanged.
+        Uses GoogleGenAIToolsConverter which sanitizes schemas to meet
+        Google GenAI's strict validation requirements.
         """
-        # Create a shallow copy of the current instance
         new_llm = copy.copy(self)
-
-        # Create a new client with tools bound (LangChain's bind_tools returns a copy)
-        new_llm.client = self.client.bind_tools(LangChainToolsConverter.to_lc(tools))
-
+        new_llm.client = self.client.bind_tools(GoogleGenAIToolsConverter.to_lc(tools))
         return new_llm
 
     @property
     def name(self) -> str:
         return self._name
-

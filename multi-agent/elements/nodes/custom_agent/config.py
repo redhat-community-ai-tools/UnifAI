@@ -25,17 +25,18 @@ class CustomAgentNodeConfig(NodeBaseConfig):
     )
     retriever: Optional[RetrieverRef] = Field(None, description="Retriever key to use")
     tools: Optional[List[ToolRef]] = Field(default_factory=list, description="List of tool keys")
-    provider: Optional[ProviderRef] = Field(
-        default=None,
-        description="MCP Provider Ref",
+    providers: Optional[List[ProviderRef]] = Field(
+        default_factory=list,
+        description="List of MCP Provider Refs",
         json_schema_extra=ApiHint(
-            endpoint="/resources/resource.validate",
+            endpoint="/resources/resources.validate",
             method="POST",
             hint_type=HintType.VALIDATE,
             selection_type=SelectionType.AUTOMATIC,
-            dependencies={"provider": "resourceId"},
+            dependencies={"providers": "resourceIds"},
             field_mapping="is_valid"
         ).to_hints()
     )
     system_message: str = Field("", description="Custom system prompt")
     strategy_type: str = Field(default=StrategyType.REACT.value, description="Agent strategy type")
+    max_rounds: Optional[int] = Field(default=100, description="Maximum number of agent execution rounds")

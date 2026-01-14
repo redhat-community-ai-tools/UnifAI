@@ -109,6 +109,27 @@ class ElementValidationResult:
             },
         }
 
+    @classmethod
+    def create_error(cls, rid: str, error: str) -> "ElementValidationResult":
+        """
+        Factory for creating an error result.
+        
+        Useful when validation fails due to exceptions (resource not found, etc.)
+        rather than actual validation logic.
+        """
+        return cls(
+            is_valid=False,
+            element_rid=rid,
+            element_type="unknown",
+            name=None,
+            messages=[ValidationMessage(
+                severity=ValidationSeverity.ERROR,
+                code="VALIDATION_ERROR",
+                message=error,
+            )],
+            dependency_results={},
+        )
+
 
 @dataclass(frozen=True)
 class ValidationContext:

@@ -4,10 +4,18 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import axios from "../../../http/axiosAgentConfig";
 
+
 // Type guard to check if hint is an ApiHint (has endpoint) vs ActionHint (has action_uid)
 const isApiHint = (hint: any): boolean => {
   return hint && typeof hint.endpoint === 'string' && hint.endpoint.length > 0;
 };
+
+// Per-item validation result for list fields
+export interface ItemValidationResult {
+  rid: string;
+  isValid: boolean;
+  message?: string;
+}
 
 interface FieldValidationProps {
   fieldName: string;
@@ -15,7 +23,8 @@ interface FieldValidationProps {
   validationHint: any;
   elementActions: any[];
   selectedElementType: any;
-  onValidationChange: (fieldName: string, isValid: boolean) => void;
+  isRequired?: boolean;
+  onValidationChange: (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => void;
 }
 
 export const FieldValidation: React.FC<FieldValidationProps> = ({
@@ -24,6 +33,7 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
   validationHint,
   elementActions,
   selectedElementType,
+  isRequired = false,
   onValidationChange
 }) => {
   const [validationState, setValidationState] = useState<{
@@ -150,13 +160,15 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
     }
 
     // Skip if no value
-    if (!value || value === '') {
+    if (!value || value === '' || (Array.isArray(value) && value.length === 0)) {
       setValidationState({
         isValidating: false,
         isValid: null,
         message: ''
       });
-      onValidationChange(fieldName, false);
+      // For non-required fields, empty value should not block save (report as valid)
+      // For required fields, empty value is invalid
+      onValidationChange(fieldName, !isRequired);
       return;
     }
 
@@ -178,16 +190,42 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
 
       // Extract validation result based on field_mapping or default to 'success'
       const fieldMapping = validationHint.field_mapping || 'success';
-      const isValid = responseData[fieldMapping] === true;
       
-      setValidationState({
-        isValidating: false,
-        isValid,
-        message: responseData.message || (isValid ? 'Valid' : 'Invalid')
-      });
+      // Handle array responses (for list validation like resources.validate)
+      if (Array.isArray(responseData)) {
+        const itemResults: ItemValidationResult[] = responseData.map((item: any) => ({
+          rid: item.element_rid || '',
+          isValid: item[fieldMapping] === true,
+          message: item.messages?.[0]?.message || (item[fieldMapping] ? 'Valid' : 'Invalid')
+        }));
+        
+        // Field is valid only if ALL items are valid
+        const allValid = itemResults.every(item => item.isValid);
+        const invalidCount = itemResults.filter(item => !item.isValid).length;
+        
+        setValidationState({
+          isValidating: false,
+          isValid: allValid,
+          message: allValid 
+            ? `All ${itemResults.length} items valid` 
+            : `${invalidCount} of ${itemResults.length} items invalid`
+        });
 
-      lastValidatedValueRef.current = value;
-      onValidationChange(fieldName, isValid);
+        lastValidatedValueRef.current = value;
+        onValidationChange(fieldName, allValid, itemResults);
+      } else {
+        // Single item response (original behavior)
+        const isValid = responseData[fieldMapping] === true;
+        
+        setValidationState({
+          isValidating: false,
+          isValid,
+          message: responseData.message || (isValid ? 'Valid' : 'Invalid')
+        });
+
+        lastValidatedValueRef.current = value;
+        onValidationChange(fieldName, isValid);
+      }
 
     } catch (error: any) {
       console.error('Validation error:', error);
