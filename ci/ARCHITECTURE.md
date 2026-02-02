@@ -16,6 +16,7 @@
 ## Overview
 
 The UnifAI CI/CD system is a Jenkins-based pipeline infrastructure for **building container images** and **deploying to OpenShift clusters**. The system supports multiple environments (Staging, Production) and provides flexible deployment strategies.
+In addition there are some areas where the team is using GitHub actions, with the intention to move as much of the flow into GitHub actions.
 
 **Core Features:**
 - Automated container image building using Podman

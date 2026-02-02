@@ -1,8 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { 
   Select,
   SelectContent,
@@ -25,17 +23,12 @@ import {
 } from "@/components/ui/command";
 import { Loader2, RefreshCw, ChevronDown, Check, CheckCheck, X } from 'lucide-react';
 import axios from "../../../http/axiosAgentConfig";
+import { OptionItem, normalizeOptions } from './fieldPopulationUtils';
 
 // Type guard to check if hint is an ApiHint (has endpoint) vs ActionHint (has action_uid)
 const isApiHint = (hint: any): boolean => {
-  return hint && typeof hint.endpoint === 'string' && hint.endpoint.length > 0;
+  return hint && typeof hint.endpoint == 'string' && hint.endpoint.length > 0;
 };
-
-// Type for option items - can be string or object with label/value
-interface OptionItem {
-  label: string;
-  value: string;
-}
 
 interface PaginationState {
   nextCursor: string | null;
@@ -49,7 +42,7 @@ interface FieldPopulationProps {
   elementActions: any[];
   selectedElementType: any;
   formData: any;
-  onPopulateResult: (fieldName: string, results: string[] | any, multiSelect: boolean) => void;
+  onPopulateResult: (fieldName: string, results: any[], multiSelect: boolean) => void;
   autoTrigger?: boolean;
   hideUI?: boolean;
   currentValue?: string[];
@@ -73,12 +66,11 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [populatedOptions, setPopulatedOptions] = useState<OptionItem[]>([]);
-  const [selectedValues, setSelectedValues] = useState<string[]>(currentValue);
+  const [selectedValues, setSelectedValues] = useState<string[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [shouldKeepOpen, setShouldKeepOpen] = useState(false);
   const [hasAutoTriggered, setHasAutoTriggered] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false); // Track if options were ever loaded
-  const [isInitialized, setIsInitialized] = useState(false); // Track if we've synced with parent value
   
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
@@ -98,7 +90,7 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
   // Extract hint flags with defaults for backwards compatibility
   const supportsPagination = populateHint.pagination === true;
   const supportsSearch = populateHint.search === true;
-  const labelField = populateHint.label_field;
+  const displayField = populateHint.display_field || populateHint.label_field;
   const valueField = populateHint.value_field;
 
   // Determine if this is an ApiHint or ActionHint
@@ -117,45 +109,52 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     return null;
   }
 
-  // Helper to normalize items to OptionItem format
-  const normalizeOptions = (items: any[]): OptionItem[] => {
-    if (!items || !Array.isArray(items)) return [];
+  // Helper to extract value (ID) from an item - handles both string and object formats
+  const extractValue = (item: any): string => {
+    if (typeof item == 'string') return item;
+    if (typeof item == 'object' && item !== null) {
+      if (valueField && item[valueField] != null) return String(item[valueField]);
+      return String(item.id ?? item.value ?? item.name ?? item);
+    }
+    return String(item);
+  };
+
+  // Helper to get display label for a value
+  const getDisplayLabel = (value: string): string => {
+    // First check populated options
+    const option = populatedOptions.find(opt => opt.value === value);
+    if (option) return option.label;
     
-    return items.map(item => {
-      // If item is a string, use it for both label and value
-      if (typeof item === 'string') {
-        return { label: item, value: item };
-      }
+    return value;
+  };
+
+  // Helper to get original objects for selected value IDs - used to send full objects to backend
+  const getSelectedObjects = (values: string[]): any[] => {
+    return values.map(value => {
+      const option = populatedOptions.find(opt => opt.value === value);
+      if (option) return option.originalObject;
       
-      // If item is an object with label_field/value_field specified
-      if (labelField && valueField && typeof item === 'object') {
-        return {
-          label: item[labelField] || String(item[valueField] || ''),
-          value: String(item[valueField] || '')
-        };
+      // Fallback to formData for items not in populated options
+      const currentValue = formData[fieldName];
+      if (Array.isArray(currentValue)) {
+        const item = currentValue.find((i: any) => extractValue(i) === value);
+        if (item) return item;
       }
-      
-      // If item is an object with label/value properties (pre-normalized)
-      if (typeof item === 'object' && 'label' in item && 'value' in item) {
-        return {
-          label: String(item.label),
-          value: String(item.value)
-        };
-      }
-      
-      // Fallback: stringify the item
-      return { label: String(item), value: String(item) };
+      // Fallback: create minimal object
+      return { id: value, name: value };
     });
   };
 
-  // When a user edits an existing element, ensure that any previously saved selections are reflected as "selected" in the dropdown. This only runs once
-  // on initial mount to avoid overwriting user changes during the editing session
+  // Initialize selectedValues from formData when editing existing element
   useEffect(() => {
-    if (!isInitialized && currentValue && currentValue.length > 0) {
-      setSelectedValues(currentValue);
-      setIsInitialized(true);
+    const currentValue = formData[fieldName];
+    if (Array.isArray(currentValue) && currentValue.length > 0) {
+      const values = currentValue.map(extractValue);
+      if (JSON.stringify(values) !== JSON.stringify(selectedValues)) {
+        setSelectedValues(values);
+      }
     }
-  }, [currentValue, isInitialized]);
+  }, [formData[fieldName]]);
 
   // Effect to force dropdown to stay open for multi-select
   useEffect(() => {
@@ -200,7 +199,7 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
 
     if (searchTerm.trim()) {
       setIsSearching(true);
-      
+
       searchTimeoutRef.current = setTimeout(() => {
         setDebouncedSearchTerm(searchTerm.trim());
         setIsSearching(false);
@@ -227,7 +226,7 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
 
   const applySelection = (values: string[]) => {
     setSelectedValues(values);
-    onPopulateResult(fieldName, values, populateHint.multi_select || false);
+    onPopulateResult(fieldName, getSelectedObjects(values), populateHint.multi_select || false);
   };
 
   /**
@@ -246,7 +245,7 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
   };
 
   const handleSelectChange = (value: string) => {
-    if (!value || value === "__no_options_disabled__" || value === "__load_more__") return;
+    if (!value || value == "__no_options_disabled__" || value == "__load_more__") return;
     if (isSelectAll(value)) return toggleSelectAll();
 
     const newValues = populateHint.multi_select
@@ -258,13 +257,18 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     applySelection(newValues);
   };
 
+  // Handle item selection for multi-select to keep dropdown open
   const handleItemSelect = (value: string) => {
     handleSelectChange(value);
-    if (populateHint.multi_select) setShouldKeepOpen(true);
+    // For multi-select, signal that we want to keep the dropdown open
+    if (populateHint.multi_select) {
+      setShouldKeepOpen(true);
+    }
   };
 
-  const removeSelectedValue = (value: string) => {
-    applySelection(selectedValues.filter(v => v !== value));
+  // Remove a selected value (from badge click)
+  const removeSelectedValue = (valueToRemove: string) => {
+    applySelection(selectedValues.filter(v => v !== valueToRemove));
   };
 
 
@@ -289,7 +293,7 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     const endpoint = populateHint.endpoint;
 
     let response;
-    if (method === 'GET') {
+    if (method == 'GET') {
       // For GET requests, send data as query params
       response = await axios.get(endpoint, { params: requestBody });
     } else {
@@ -355,14 +359,14 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
       // Extract results based on field_mapping
       const fieldMapping = populateHint.field_mapping || 'results';
       const rawResults = responseData[fieldMapping] || [];
-      
-    
-      if (populateHint.selection_type === 'automatic' && !Array.isArray(rawResults)) {
+
+      // Handle automatic selection (non-array result)
+      if (populateHint.selection_type == 'automatic' && !Array.isArray(rawResults)) {
         onPopulateResult(fieldName, rawResults, false);
         return;
       }
       
-      const normalizedResults = normalizeOptions(rawResults);
+      const normalizedResults = normalizeOptions(rawResults, displayField, valueField);
       const newOptionValues = new Set(normalizedResults.map(opt => opt.value));
       
       if (populateHint.selection_type == 'manual' || populateHint.multi_select) {
@@ -377,6 +381,7 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
           }
           
           // Validate existing selections - remove any that no longer exist in new results
+          // (keeps original selection or empty if there wasn't one - matches main behavior)
           setSelectedValues(prevSelected => {
             if (prevSelected.length === 0) return prevSelected;
             const validatedSelections = prevSelected.filter(val => newOptionValues.has(val));
@@ -385,7 +390,7 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
             if (validatedSelections.length !== prevSelected.length) {
               // Use setTimeout to avoid state update during render
               setTimeout(() => {
-                onPopulateResult(fieldName, validatedSelections, populateHint.multi_select || false);
+                onPopulateResult(fieldName, getSelectedObjects(validatedSelections), populateHint.multi_select || false);
               }, 0);
             }
             
@@ -408,14 +413,10 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
 
     } catch (error: any) {
       console.error('Population error:', error);
-      const errorMessage = error.response?.data?.message || 'Population failed';
-      console.warn(`Failed to populate ${fieldName}:`, errorMessage);
-      // Only clear options on initial load failure, not on search failure
       if (!isLoadMore && !searchRegex) {
         setPopulatedOptions([]);
         setPagination({ nextCursor: null, hasMore: false, total: null });
       }
-      // For search errors, keep existing options visible
     } finally {
       if (isLoadMore) {
         setIsLoadingMore(false);
@@ -431,52 +432,32 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     }
   };
 
+  const remainingCount = pagination.total ? pagination.total - populatedOptions.length : null;
 
-  const getAvailableOptions = (): OptionItem[] => {
-    if (populateHint.multi_select) {
-      // For multi-select, show options that aren't already selected
-      return populatedOptions.filter(option => !selectedValues.includes(option.value));
-    }
-    // For single select, show all options
-    return populatedOptions;
-  };
-
-  // Get the display label for a selected value
-  const getDisplayLabel = (value: string): string => {
-    const option = populatedOptions.find(opt => opt.value === value);
-    return option?.label || value;
-  };
-
-  const availableOptions = getAvailableOptions();
-  const remainingCount = pagination.total 
-    ? pagination.total - populatedOptions.length 
-    : null;
-  
   // Check if all options are selected (for showing Select All vs Clear All)
   const allOptionsSelected = populatedOptions.length > 0 && 
     selectedValues.length === populatedOptions.length;
+
+  // For multi-select, filter out already selected options from dropdown
+  const availableOptions = !populateHint.multi_select
+    ? populatedOptions
+    : populatedOptions.filter(opt => !selectedValues.includes(opt.value));
 
   // Hide UI when auto-triggering (keep logic running in background)
   if (hideUI) {
     return null;
   }
+  const getDropdownLabel = () => {
+    if (populateHint.multi_select) return `Add ${populateHint.field_mapping || 'option'}...`;
+    if (selectedValues.length > 0) return getDisplayLabel(selectedValues[0]);
+    return `Select ${populateHint.field_mapping || 'option'}...`;
+  };
 
-  // Render searchable dropdown with Command component
   const renderSearchableDropdown = () => (
     <Popover open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
       <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={isDropdownOpen}
-          className="w-full justify-between bg-background-dark"
-        >
-          {populateHint.multi_select 
-            ? `Add ${populateHint.field_mapping || 'option'}...`
-            : selectedValues.length > 0 
-              ? getDisplayLabel(selectedValues[0])
-              : `Select ${populateHint.field_mapping || 'option'}...`
-          }
+        <Button variant="outline" role="combobox" aria-expanded={isDropdownOpen} className="w-full justify-between bg-background-dark">
+          {getDropdownLabel()}
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -493,11 +474,11 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
         }}
       >
         <Command shouldFilter={false} loop>
-        <div className="[&_input]:!text-white">
+          <div className="[&_input]:!text-white">
             <CommandInput 
-              placeholder={`Search ${populateHint.field_mapping || 'options'}...`}
-              value={searchTerm}
-              onValueChange={setSearchTerm}
+            placeholder={`Search ${populateHint.field_mapping || 'options'}...`} 
+            value={searchTerm} 
+            onValueChange={setSearchTerm} 
             />
           </div>
           {isSearching && (
@@ -543,33 +524,32 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
                     }
                   }}
                 >
-                  <Check
+                  <Check 
                     className={`mr-2 h-4 w-4 ${
                       selectedValues.includes(option.value) ? "opacity-100" : "opacity-0"
-                    }`}
+                    }`} 
                   />
                   {option.label}
                 </CommandItem>
               ))}
-              
+
               {/* Load More option for pagination */}
               {supportsPagination && pagination.hasMore && (
-                <CommandItem
-                  value="__load_more__"
-                  onSelect={handleLoadMore}
-                  className="text-blue-400 font-medium justify-center cursor-pointer"
+                <CommandItem 
+                value="__load_more__" 
+                onSelect={handleLoadMore} 
+                className="text-blue-400 font-medium justify-center cursor-pointer"
                 >
-                  {isLoadingMore ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Loading more...
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown className="mr-2 h-4 w-4" />
-                      Load more{remainingCount !== null ? ` (${remainingCount} remaining)` : '...'}
-                    </>
-                  )}
+                  {isLoadingMore ? <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Loading more...
+                  </>
+                   : 
+                   <>
+                   <ChevronDown className="mr-2 h-4 w-4" />
+                   Load more{remainingCount !== null ? ` (${remainingCount} remaining)` : '...'}
+                   </>
+                  }
                 </CommandItem>
               )}
             </CommandGroup>
@@ -584,41 +564,27 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     <Select
       value=""
       open={isDropdownOpen}
-      onOpenChange={(open) => {
-        setIsDropdownOpen(open);
-      }}
+      onOpenChange={setIsDropdownOpen}
       onValueChange={(value) => {
-        if (value === "__load_more__") {
-          handleLoadMore();
-          return;
+        if (value == "__load_more__") { 
+          handleLoadMore(); 
+          return; 
         }
-        if (populateHint.multi_select) {
-          handleItemSelect(value);
-        } else {
-          handleSelectChange(value);
-          setIsDropdownOpen(false);
-        }
+        if (populateHint.multi_select) handleItemSelect(value);
+        else { handleSelectChange(value); setIsDropdownOpen(false); }
       }}
     >
       <SelectTrigger className="bg-background-dark">
-        <SelectValue placeholder={
-          populateHint.multi_select 
-            ? `Add ${populateHint.field_mapping || 'option'}...`
-            : `Select ${populateHint.field_mapping || 'option'}...`
-        } />
+        <SelectValue placeholder={getDropdownLabel()} />
       </SelectTrigger>
       <SelectContent
-        onCloseAutoFocus={(e) => {
+        onCloseAutoFocus={(e) => { 
           if (populateHint.multi_select) {
-            e.preventDefault();
-          }
-        }}
-        onPointerDownOutside={() => {
-          setIsDropdownOpen(false);
-        }}
-        onEscapeKeyDown={() => {
-          setIsDropdownOpen(false);
-        }}
+            e.preventDefault(); 
+            }
+          }}
+        onPointerDownOutside={() => setIsDropdownOpen(false)}
+        onEscapeKeyDown={() => setIsDropdownOpen(false)}
       >
         {/* Select All / Clear All option for multi-select */}
         {populateHint.multi_select && populatedOptions.length > 0 && (
@@ -642,47 +608,26 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
 
         {availableOptions.map((option: OptionItem, index: number) => (
           <SelectItem 
-            key={`${option.value}-${index}`} 
-            value={option.value}
-            onSelect={(event) => {
-              if (populateHint.multi_select) {
-                event.preventDefault();
-                handleItemSelect(option.value);
-              }
-            }}
+          key={`${option.value}-${index}`} 
+          value={option.value}
           >
             {option.label}
-          </SelectItem>
+            </SelectItem>
         ))}
-        
-        {/* Load More option for pagination */}
+
         {supportsPagination && pagination.hasMore && (
           <SelectItem 
-            value="__load_more__" 
-            className="text-blue-400 font-medium cursor-pointer"
+          value="__load_more__" 
+          className="text-blue-400 font-medium cursor-pointer"
           >
-            {isLoadingMore ? (
-              <span className="flex items-center gap-2">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Loading...
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <ChevronDown className="h-3 w-3" />
-                Load more{remainingCount !== null ? ` (${remainingCount} remaining)` : '...'}
-              </span>
-            )}
+            {isLoadingMore 
+              ? <span className="flex items-center gap-2"><Loader2 className="h-3 w-3 animate-spin" />Loading...</span>
+              : <span className="flex items-center gap-2"><ChevronDown className="h-3 w-3" />Load more{remainingCount !== null ? ` (${remainingCount} remaining)` : '...'}</span>}
           </SelectItem>
         )}
-        
-        {availableOptions.length === 0 && populatedOptions.length > 0 && (
+        {availableOptions.length === 0 && (
           <SelectItem value="__no_options_disabled__" disabled>
-            {populateHint.multi_select ? 'All options selected' : 'No options available'}
-          </SelectItem>
-        )}
-        {populatedOptions.length === 0 && (
-          <SelectItem value="__no_options_disabled__" disabled>
-            No options available
+            {populatedOptions.length > 0 && populateHint.multi_select ? 'All options selected' : 'No options available'}
           </SelectItem>
         )}
       </SelectContent>

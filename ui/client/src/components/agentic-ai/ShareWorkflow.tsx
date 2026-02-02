@@ -10,6 +10,7 @@ import { constructShareLink } from "@/utils/blueprintHelpers";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import { UmamiTrack } from "@/components/ui/umamitrack";
 import { UmamiEvents } from "@/config/umamiEvents";
+import { cn } from "@/lib/utils";
 
 interface ShareWorkflowProps {
   blueprintId: string;
@@ -116,27 +117,25 @@ export default function ShareWorkflow({
   };
 
   const tooltipContent = getTooltipContent();
+  const isClickable = !isValidating && !isSharingDisabled && !isLoading;
+
 
   return (
     <div className={`space-y-4 ${className}`}>
-      <div className="flex items-center justify-between">
+      <div
+        className={cn(
+          "flex items-center justify-between rounded-md px-1 py-1",
+          isClickable ? "cursor-pointer hover:bg-background-surface" : "cursor-not-allowed opacity-60")}
+        onClick={() => {if (!isClickable) return; handleToggle(!enabled);}}
+      >
         <div className="flex items-center space-x-2">
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
-          ) : isValidating ? (
-            <Loader2 className="h-4 w-4 text-gray-400 animate-spin" />
-          ) : (
-            <Share2 className="h-4 w-4 text-gray-400" />
-          )}
-          <Label htmlFor="share-toggle" className="text-sm font-medium">
-            {isLoading 
-              ? (enabled ? "Disabling..." : "Enabling...")
-              : isValidating
-                ? "Validating..."
-                : "Enable Public Chat Sharing"
-            }
+          <Share2 className="h-4 w-4 text-gray-400" />
+          
+          <Label className={cn("text-sm font-medium pointer-events-none", !isClickable && "text-gray-400")}>
+            {isLoading ? (enabled ? "Disabling..." : "Enabling...") : isValidating ? "Validating..." : "Enable Public Chat Sharing" }
           </Label>
         </div>
+        
         <SimpleTooltip content={tooltipContent}>
           <span>
             <Switch
@@ -144,10 +143,17 @@ export default function ShareWorkflow({
               checked={enabled}
               onCheckedChange={handleToggle}
               disabled={isSharingDisabled}
-              className={isSharingDisabled && !isLoading ? 'opacity-50 cursor-not-allowed' : ''}
+              onClick={(e) => e.stopPropagation()}
+              className={`
+                data-[state=unchecked]:bg-gray-400
+                data-[state=unchecked]:data-[disabled]:bg-gray-200
+                data-[state=checked]:bg-primary
+                data-[disabled]:opacity-60
+              `}
             />
           </span>
         </SimpleTooltip>
+        
       </div>
 
       {/* Warning for shared but invalid blueprints */}

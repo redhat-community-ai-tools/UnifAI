@@ -8,12 +8,12 @@ interface SimpleTooltipProps {
   skipProvider?: boolean;
 }
 
-export default function SimpleTooltip({ 
-  content, 
-  children, 
-  delayDuration = 300,
-  skipProvider = false
-}: SimpleTooltipProps) {
+export default function SimpleTooltip({content, children, delayDuration = 300, skipProvider = false}: SimpleTooltipProps) {
+
+  if (!content) {
+    return <>{children}</>;
+  }
+
   const tooltip = (
     <Tooltip>
       <TooltipTrigger asChild>

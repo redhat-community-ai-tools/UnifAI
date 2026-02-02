@@ -1,0 +1,45 @@
+reviews:
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+
+  commit_status: true
+  high_level_summary: true
+
+  path_filters:
+    - "multi-agents/**"
+    - "backend/**"
+    - "ui/**"
+
+  instructions: |
+    This repository represents an agentic AI system with a modular, layered architecture.
+
+    Each of the main directories (multi-agents/, backend/, ui/) contains README.md and ARCHITECTURE.md files
+    that define architectural intent, responsibilities, and boundaries.
+
+    These documents should be treated as the source of truth.
+
+    During reviews, always cross-check code changes against the architectural guidance in those files.
+
+    FOCUS AREAS:
+    - architecture
+    - maintainability
+    - modularity
+    - separation of concerns
+    - dependency boundaries
+    - layering
+    - testability
+
+    Please pay special attention to:
+
+    - Whether new components are placed in the correct layer and folder
+    - Whether responsibilities align with the architecture defined in the directory-level README.md and ARCHITECTURE.md files
+    - Whether any architectural boundaries are violated
+    - Whether new dependencies increase coupling in undesirable ways
+    - Whether changes weaken modularity or future extensibility
+    - Whether agent, backend, and UI concerns are leaking across layers
+
+    Prefer architectural and system-level feedback over stylistic feedback.
+    When relevant, explicitly reference architectural mismatches (for example: "this component seems to belong under X based on ARCHITECTURE.md").
+
+    Act as a senior software engineer deeply familiar with this project's architecture.

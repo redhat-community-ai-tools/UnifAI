@@ -8,29 +8,25 @@ def get_changed_files():
     """Get list of changed files in the PR (excluding review system files)."""
     base = os.getenv("GITHUB_BASE_REF", "main")
     
-    # Ensure the base branch exists
+    # Fetch the base branch from origin to ensure it's available
     subprocess.run(["git", "fetch", "origin", base], check=True, 
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
-    # Get list of changed files
+    # Use origin/{base} to compare against the remote version of the base branch
     changed = subprocess.check_output(
-        ["git", "diff", f"{base}...HEAD", "--name-only"],
+        ["git", "diff", f"origin/{base}...HEAD", "--name-only"],
         text=True
     ).strip().split('\n')
     
-    # Filter out empty strings and review system files
     return [f for f in changed if f and not f.startswith("scripts/")]
 
 def get_pr_diff(pr_number):
     """Get PR diff, excluding review system files (scripts/)."""
     base = os.getenv("GITHUB_BASE_REF", "main")
 
-    # Ensure the base branch exists
-    subprocess.run(["git", "fetch", "origin", base], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
+    # Use origin/{base} here as well
     diff = subprocess.check_output(
-        ["git", "diff", f"{base}...HEAD"],
+        ["git", "diff", f"origin/{base}...HEAD"],
         text=True
     )
     

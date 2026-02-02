@@ -20,7 +20,7 @@ class DocsDataflowRetrieverFactory(BaseFactory[DocsDataflowRetrieverConfig, Docs
                 top_k_results=cfg.top_k_results,
                 threshold=cfg.threshold,
                 timeout=cfg.timeout,
-                doc_ids=cfg.doc_ids,
+                docs=cfg.docs,
                 tags=cfg.tags,
             )
         except Exception as e:

@@ -1,0 +1,121 @@
+name: Backup Databases
+
+env:
+
+  MONGO_POD: "mongodb-0"
+  username: "tag-ai"
+  QDRANT_SNAPSHOTS_DIR: "/tmp/snapshots"
+  BRANCH: ${{ inputs.target_branch || 'main' }}
+  CLUSTER: ${{ inputs.target_cluster || 'PRE-PRODUCTION' }}
+  NAMESPACE: ${{ inputs.target_namespace || 'tag-ai--pipeline' }}
+  BACKUP_REPO: ${{ vars.BACKUP_REPO_URL }}
+  BACKUP_REPO_NAME: ${{ vars.BACKUP_REPO_NAME }}
+
+on:
+  schedule:
+    - cron: '5 0 * * *'
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Which branch do you want to use?'
+        required: true
+        default: 'main'
+      target_cluster:
+        description: 'Which cluster do you want to backup?'
+        required: true
+        default: 'PRE-PRODUCTION'
+      target_namespace:
+        description: 'Which namespace do you want to backup?'
+        required: true
+        default: 'tag-ai--pipeline'
+
+jobs:
+
+
+  verify_agent_deps:
+    uses: ./.github/workflows/verify-agent-deps.yaml
+
+
+  setup_environment:
+    runs-on: ubuntu-latest
+    needs: verify_agent_deps
+    outputs:
+      BRANCH: ${{ steps.vars.outputs.branch }}
+      CLUSTER: ${{ steps.vars.outputs.cluster }}
+      NAMESPACE: ${{ steps.vars.outputs.namespace }}
+    steps:
+
+      - id: vars
+        run: |
+          echo "branch=${{ inputs.target_branch || 'GENIE-1071/backup_dbs' }}" >> $GITHUB_OUTPUT
+          echo "cluster=${{ inputs.target_cluster || 'PRE-PRODUCTION' }}" >> $GITHUB_OUTPUT
+          echo "namespace=${{ inputs.target_namespace || 'tag-ai--pipeline' }}" >> $GITHUB_OUTPUT
+
+
+  backup_mongo:
+    runs-on: linux
+    needs: [setup_environment, verify_agent_deps]
+    environment:
+      name: ${{ needs.setup_environment.outputs.CLUSTER }}
+    env:
+      BRANCH: ${{ needs.setup_environment.outputs.BRANCH }}
+      CLUSTER: ${{ needs.setup_environment.outputs.CLUSTER }}
+      NAMESPACE: ${{ needs.setup_environment.outputs.NAMESPACE }}
+      VERIFY_TLS: ${{ vars.VERIFY_TLS }}
+      API_URL: ${{ vars.API_URL }}
+      ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+      MONGO_URI: ${{ vars.MONGO_URI }}
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.BRANCH }}
+
+      - name: Backup MongoDB
+        run: python3 .github/scripts/backup_mongo.py
+
+
+  backup_qdrant:
+    runs-on: linux
+    needs: [setup_environment, verify_agent_deps]
+    environment:
+      name: ${{ needs.setup_environment.outputs.CLUSTER }}
+    env:
+      BRANCH: ${{ needs.setup_environment.outputs.BRANCH }}
+      QDRANT_URL: ${{ vars.QDRANT_URL }}
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.BRANCH }}
+
+      - name: Backup Qdrant
+        run: |
+          pwd
+          echo "Backing up Qdrant"
+          python3 .github/scripts/backup_qdrant.py
+          echo "Qdrant backup completed"
+
+
+  upload_to_gitlab:        
+    runs-on: linux
+    needs: [setup_environment, verify_agent_deps, backup_qdrant, backup_mongo]
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.BRANCH }}
+
+      - name: Upload files to gitlab repo
+        run: python3 .github/scripts/upload_to_gitlab.py
+      
+      - name: Clean up
+        run: |
+          rm -rf /tmp/mongo_backup_*.tar.gz
+          rm -rf /tmp/snapshots

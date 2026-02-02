@@ -78,15 +78,22 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     });
   };
 
-  const handlePopulateResult = (fieldName: string, results: string[] | any, multiSelect: boolean) => {
+  const handlePopulateResult = (fieldName: string, results: any[], multiSelect: boolean) => {
     setPopulateResults(prev => ({
       ...prev,
       [fieldName]: results
     }));
     
-    // For multi-select, set the array of selected values
-    // For single select, set the first (and only) selected value
-    handleInputChange(fieldName, multiSelect || typeof results === 'object' ? results : results.length > 0 ? results[0] : "");
+    // For multi-select fields, store the full array of objects (or strings)
+    // For single select, store just the first item (can be object or string)
+    if (multiSelect) {
+      // Multi-select: always store as array
+      handleInputChange(fieldName, results);
+    } else {
+      // Single select: store single item (first in array, or empty string)
+      const singleResult = results.length > 0 ? results[0] : "";
+      handleInputChange(fieldName, singleResult);
+    }
   };
 
 

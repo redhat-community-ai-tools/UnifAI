@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { FileText } from 'lucide-react';
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
 import { maskSecretFieldsInConfig } from '../../../utils/maskSecretFields';
+import { simplifyConfigForDisplay } from '../../../utils/displayUtils';
 import { useAgenticAI } from '@/contexts/AgenticAIContext';
 
 interface ElementDataProps {
@@ -28,9 +29,9 @@ export const ElementData: React.FC<ElementDataProps> = ({
     return getResourceName(ref);
   });
 
-  // Resolve refs in config for display
+  // Resolve refs in config for display, then simplify object arrays to just names
   const configWithResolvedRefs = element?.config 
-    ? resolveRefsInConfig(element.config)
+    ? simplifyConfigForDisplay(resolveRefsInConfig(element.config))
     : null;
 
   return (

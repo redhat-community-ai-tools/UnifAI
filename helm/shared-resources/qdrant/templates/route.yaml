@@ -4,14 +4,13 @@ metadata:
   annotations:
     openshift.io/host.generated: "true"
   labels:
-    {{- include "mongodb.labels" . | nindent 4 }}
-  name: {{ include "mongodb.fullname" . }}
+    {{- include "qdrant.labels" . | nindent 4 }}
+  name: {{ include "qdrant.fullname" . }}
 spec:
   port:
     targetPort: {{ .Values.service.port }}
   to:
     kind: Service
-    name: {{ include "mongodb.fullname" . }}
+    name: {{ include "qdrant.fullname" . }}
     weight: 100
   wildcardPolicy: None
-

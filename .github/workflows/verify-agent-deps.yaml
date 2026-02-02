@@ -1,0 +1,24 @@
+name: Verify Agent Dependencies
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  push:                
+    paths: [ '.github/workflows/verify-agent-deps.yaml' ]
+
+jobs:
+  verify_agent_deps:
+    runs-on: linux
+    steps:
+      - name: Verify Agent OS Dependencies
+        run: |
+          echo "Verifying agent dependencies"
+          command -v kubectl
+          echo "Agent dependencies verified"
+
+      - name: Verify Agent python Dependencies
+        run: |
+          echo "Verifying agent dependencies"
+          pip freeze | grep -E 'qdrant-client'
+          pip freeze | grep -E 'requests'
+          echo "Agent dependencies verified"

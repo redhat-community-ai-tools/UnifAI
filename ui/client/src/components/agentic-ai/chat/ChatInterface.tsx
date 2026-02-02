@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Trash2, ChevronLeft, ChevronRight, Loader2, Sparkles, Info } from "lucide-react";
+import { Send, Trash2, ChevronLeft, ChevronRight, Loader2, Sparkles, Info, Copy, RotateCcw, ThumbsUp, ThumbsDown, Check } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -72,6 +72,8 @@ export default function ChatInterface({
   const streamLogDataRef = useRef<Record<string, StreamLogEntry[]>>({});
   const { nodeListRef, clearStream } = useStreamingData();
   const { toast } = useToast();
+  const [userPromptsMap, setUserPromptsMap] = useState<Record<string, string>>({});
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   // Transform backend messages to frontend format (streamLogs/workPlans, managed separately)
   const transformBackendMessagesToFrontend = useCallback(
@@ -434,8 +436,9 @@ export default function ChatInterface({
   // User interaction → Can expand/collapse individual node logs
   // Completion → Final answer appears and streaming stops
   // Cleanup → All intervals are properly cleared
-  const handleSendMessage = async () => {
-    if (inputMessage.trim() === "") return;
+  const handleSendMessage = async (messageToSend?: string) => {
+    const messageContent = messageToSend || inputMessage;
+    if (messageContent.trim() === "") return;
 
     // Check if flow is loaded (runId should not be empty or null)
     if (!runId || runId.trim() === "") {
@@ -450,7 +453,7 @@ export default function ChatInterface({
     // Add user message
     const userMessage: Message = {
       id: Date.now().toString(),
-      content: inputMessage,
+      content: messageContent,
       sender: "user",
     };
 
@@ -478,6 +481,11 @@ export default function ChatInterface({
     clearStream();
     setCurrentStreamingMessageId(streamingMessageId);
 
+    setUserPromptsMap(prev => ({
+      ...prev,
+      [streamingMessageId]: messageContent
+    }));
+
     // Start streaming logs and workplans
     startStreamingLogs(streamingMessageId);
     startStreamingWorkPlans(streamingMessageId);
@@ -485,7 +493,7 @@ export default function ChatInterface({
     try {
       const sessionPayload: SessionPayload = {
         sessionId: runId || "",
-        inputs: { user_prompt: inputMessage },
+        inputs: { user_prompt: messageContent },
         stream: true,
         scope: "public",
         loggedInUser: "default",
@@ -548,6 +556,8 @@ export default function ChatInterface({
     workPlanDataRef.current = {};
     setStreamLogData({});
     streamLogDataRef.current = {};
+    setUserPromptsMap({});
+    setCopiedMessageId(null);
     stopStreamingLogs();
   };
 
@@ -645,6 +655,97 @@ export default function ChatInterface({
     ),
     [],
   );
+
+  // Component for AI message action buttons
+  const MessageActions = ({ message }: { message: Message }) => {
+    const handleCopy = async () => {
+      if (message.finalAnswer) {
+        try {
+          await navigator.clipboard.writeText(message.finalAnswer);
+          setCopiedMessageId(message.id);
+          setTimeout(() => setCopiedMessageId(null), 2000);
+        } catch (error) {
+          console.error("Failed to copy:", error);
+          toast({
+            title: "Copy failed",
+            description: "Failed to copy to clipboard",
+            variant: "destructive",
+          });
+        }
+      }
+    };
+
+    const handleTryAgain = async () => {
+      const originalPrompt = userPromptsMap[message.id];
+      if (!originalPrompt) {
+        toast({
+          title: "Error",
+          description: "Could not find original prompt",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Directly send the message with the original prompt
+      await handleSendMessage(originalPrompt);
+    };
+
+    const isCopied = copiedMessageId === message.id;
+
+    return (
+      <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-700/30">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleCopy}
+          disabled={!message.finalAnswer}
+          className="h-7 px-2 text-gray-400 hover:text-gray-100 hover:bg-gray-800/50"
+          title="Copy response"
+        >
+          {isCopied ? (
+            <Check className="h-3.5 w-3.5 mr-1.5" />
+          ) : (
+            <Copy className="h-3.5 w-3.5 mr-1.5" />
+          )}
+          <span className="text-xs">{isCopied ? "Copied!" : "Copy"}</span>
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleTryAgain}
+          disabled={!userPromptsMap[message.id] || isTyping}
+          className="h-7 px-2 text-gray-400 hover:text-gray-100 hover:bg-gray-800/50"
+          title="Try again with the same prompt"
+        >
+          <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+          <span className="text-xs">Try Again</span>
+        </Button>
+
+        <div className="flex-1" />
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-gray-400 hover:text-green-400 hover:bg-gray-800/50"
+          title="Good response"
+        >
+          <ThumbsUp className="h-3.5 w-3.5 mr-1.5" />
+          <span className="text-xs">Good</span>
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-gray-400 hover:text-red-400 hover:bg-gray-800/50"
+          title="Bad response"
+        >
+          <ThumbsDown className="h-3.5 w-3.5 mr-1.5" />
+          <span className="text-xs">Bad</span>
+        </Button>
+      </div>
+    );
+  };
 
   // Component for rendering message content with markdown support
   const MessageContent = ({ message }: { message: Message }) => {
@@ -795,6 +896,10 @@ export default function ChatInterface({
                     </div>
                   )}
                   <MessageContent message={message} />
+                  {/* Action buttons for AI messages */}
+                  {message.sender === "ai" && message.finalAnswer && (
+                    <MessageActions message={message} />
+                  )}
                 </div>
               </motion.div>
             ))}
@@ -843,7 +948,7 @@ export default function ChatInterface({
               event={UmamiEvents.AGENT_CHAT_SEND_MESSAGE_BUTTON}
             >
               <Button
-                onClick={handleSendMessage}
+                onClick={() => handleSendMessage()}
                 disabled={inputMessage.trim() === "" || isTyping || !blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint}
                 className="bg-primary hover:bg-[#7525c9] mb-0"
               >

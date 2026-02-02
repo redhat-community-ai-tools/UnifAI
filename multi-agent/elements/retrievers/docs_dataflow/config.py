@@ -1,4 +1,4 @@
-from typing import Literal, Optional, List
+from typing import Dict, List, Literal, Optional
 from pydantic import Field
 from elements.retrievers.common.base_config import BaseRetrieverConfig
 from core.field_hints import ActionHint, HintType, SelectionType
@@ -31,16 +31,16 @@ class DocsDataflowRetrieverConfig(BaseRetrieverConfig):
         description="Request timeout in seconds"
     )
 
-    doc_ids: Optional[List[str]] = Field(
+    docs: Optional[List[Dict]] = Field(
         default=None,
-        description="Filter results to specific document IDs",
+        description="Filter results to specific documents",
         json_schema_extra=ActionHint(
             action_uid="dataflow.get_available_docs",
+            display_name="documents",
             hint_type=HintType.POPULATE,
             selection_type=SelectionType.MANUAL,
             field_mapping="documents",
-            label_field="name",
-            value_field="id",
+            display_field="name",
             multi_select=True,
             pagination=True,
             search=True,

@@ -15,6 +15,7 @@ python-dotenv
 httptools
 mcp
 paramiko
+openshift-client
 yarl
 jsonschema
 anyio
