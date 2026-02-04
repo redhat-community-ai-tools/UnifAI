@@ -361,8 +361,9 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
       const rawResults = responseData[fieldMapping] || [];
 
       // Handle automatic selection (non-array result)
+      // For automatic population, the result is typically a single object (not an array)
       if (populateHint.selection_type == 'automatic' && !Array.isArray(rawResults)) {
-        onPopulateResult(fieldName, rawResults, false);
+        onPopulateResult(fieldName, [rawResults], false);
         return;
       }
       

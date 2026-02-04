@@ -7,7 +7,7 @@ unifai_dataflow_server:
   debug: false
   replicaCount: 1
   image:
-    repository: images.paas.redhat.com/unifai/backend
+    repository: images.paas.redhat.com/unifai/rag
     tag: "latest"
     pullPolicy: Always
   service:
@@ -31,7 +31,7 @@ unifai_dataflow_celery:
   debug: false
   replicaCount: 1
   image:
-    repository: images.paas.redhat.com/unifai/backend
+    repository: images.paas.redhat.com/unifai/rag
     tag: "latest"
     pullPolicy: Always
   env:

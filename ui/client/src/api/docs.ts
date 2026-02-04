@@ -30,16 +30,10 @@ export interface FileValidationResponse {
 
 
 export async function fetchDocuments(): Promise<Document[]> {
-  // Call the new backend endpoint for available data sources with source_type='document'
   // Using GET request with query parameters as required by the backend @from_query decorator
   const response = await api.get<{sources: any}>(
     "data_sources/data.sources.get",
-    {
-      params: {
-        source_type: "document",
-        filter_query: JSON.stringify({ "type_data.full_text": 0 })
-      }
-    }
+    { params: { source_type: "document", include_full_details: false } }
   );
   return response.data.sources;
 };

@@ -168,7 +168,7 @@ pipeline {
                     when { expression { params.build_dataflow_backend } }
                     steps {
                         script {
-                            def component = "backend"
+                            def component = "rag"
                             def module = ""
                             dir("${buildParams.DevRoot}/${params.BRANCH}/") {
                                 cleanWorkspace(component)
