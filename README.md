@@ -1,114 +1,236 @@
-# 🧭 Start With Guide: UnifAI – Project Overview
+# UnifAI
 
-Welcome aboard!
+An agentic AI platform for knowledge retrieval across multiple enterprise data sources, powered by Retrieval-Augmented Generation (RAG) and dynamic multi-agent workflows.
 
-You're about to join the development of a sophisticated Agentic AI platform designed to power knowledge retrieval across multiple internal data sources using Retrieval-Augmented Generation (RAG) techniques and dynamic agentic workflows.
+UnifAI aggregates data from sources like Slack, Jira, and documents, processes it into vector embeddings, and enables users to build and execute AI-driven retrieval plans through a visual interface.
 
-This guide outlines the system architecture at a high level and provides you with direct entry points (READMEs and relevant documentation) to help you understand the existing components and begin contributing effectively.
+## Architecture
 
----
+The platform consists of four main components:
 
-## 🧠 Project Goals
+```
+                    ┌──────────────────────────────────┐
+                    │           UI (React)             │
+                    │   Dashboard / Plan Builder /     │
+                    │        Chat Interface            │
+                    └──────┬───────────────┬───────────┘
+                           │               │
+              ┌────────────▼──┐      ┌─────▼──────────────┐
+              │   Dataflow    │      │   Multi-Agent      │
+              │   Backend     │      │   Backend           │
+              │  (Flask/RAG)  │      │  (Flask/LangGraph) │
+              └───┬───┬───┬───┘      └─────┬──────────────┘
+                  │   │   │                │
+           ┌──────┘   │   └──────┐         │
+           ▼          ▼          ▼         ▼
+       ┌────────┐ ┌────────┐ ┌────────┐
+       │MongoDB │ │Qdrant  │ │RabbitMQ│
+       └────────┘ └────────┘ └────────┘
+```
 
-UnifAI is engineered to:
+### Dataflow Backend
 
-- Aggregate and process data from various enterprise sources (Slack, Jira, Docs, etc.).
-- Store and index relevant data in a Vector Database.
-- Enable users to interactively retrieve answers using AI agents structured as dynamic, plannable workflows.
-- Provide clear, visual representations in a GUI interface of data readiness, plan execution, and retrieval results.
+Handles data ingestion, processing, and vector storage. Built as two complementary Python services:
 
----
+- **Data Pipeline Hub** (`backend/`) -- Flask API for data source management, pipeline orchestration, and Celery task coordination.
+- **RAG Module** (`rag/`) -- Feature-sliced architecture with hexagonal design for document processing, embedding, and semantic search.
 
-## 🧩 System Architecture Overview
+Supports Slack channels, PDF/Markdown documents, and Jira as data sources. Uses Celery with RabbitMQ for asynchronous pipeline execution and Qdrant for vector storage with 384-dimensional sentence transformer embeddings.
 
-The application is divided into three main components:
+[Backend README](backend/README.md) | [RAG README](rag/README.md) | [Backend Architecture](backend/ARCHITECTURE.md) | [RAG Diagrams](rag/DIAGRAMS.md)
 
-### 1. 🔧 RAG Backend
+### Multi-Agent Backend
 
-This service is responsible for:
+Defines and executes agentic AI workflows using LangGraph. Agents are composed from reusable nodes (retrievers, summarizers, tools) defined in YAML blueprint files. Supports multi-step reasoning, tool execution, and session management.
 
-- Ingesting and chunking data from various sources like Slack, Docs, Jira, etc.
-- Embedding and storing the data into a Vector Database (e.g., Qdrant, Milvus, or PostgreSQL with pgvector).
-- Tracking metadata like:
-  - Number of documents ingested per data source
-  - Last time each data source was processed
-  - Chunking and embedding status
+Integrates with LangChain, OpenAI-compatible LLM providers, MCP servers, and the A2A SDK.
 
-📘 Reference Documentation:  
-👉 [`RAG README`](backend/README.md)
+[Multi-Agent directory](multi-agent/)
 
----
+### UI
 
-### 2. 🤖 Agentic AI Backend
+React frontend built with Vite, TypeScript, and Tailwind CSS. Provides three main views:
 
-This is the "AI" layer representation of the system responsible for:
+- **Data Overview** -- Statistics per data source: document counts, embedding status, processing history.
+- **Plan Builder** -- Visual drag-and-drop editor for constructing agent execution plans using ReactFlow.
+- **Chat Interface** -- Interactive retrieval with real-time node execution monitoring.
 
-- Defining and executing Agentic Plans via `.yaml` files.
-- Each plan is composed of nodes (like Slack Retriever, Doc Retriever, etc.), which can be reused and combined in new workflows.
-- Plans can be pre-defined or built by users via GUI using drag-and-drop functionality.
-- Once executed, the plan retrieves data across multiple sources and composes a detailed answer.
+Uses Shadcn/ui components, Zustand for state management, and TanStack Query for data fetching.
 
-📘 Reference Documentation:  
-👉 [`Agentic AI README`](LINK 2)
+[UI README](ui/README.md)
 
----
+## Prerequisites
 
-### 3. 🖥️ Graphical User Interface (GUI)
+- Python 3.11+
+- Node.js 22+ with PNPM
+- Docker or Podman (for infrastructure services)
 
-The GUI is a React-based frontend that serves two main functions:
+### Infrastructure Services
 
-#### a. RAG View
-- Shows statistics and metadata per data source:
-  - Number of documents available
-  - Chunking/embedding status
-  - Last processed time
-- Helps users understand current data availability in the system.
+Start MongoDB, RabbitMQ, and Qdrant:
 
-#### b. Agentic AI View
-- Allows users to:
-  - Visualize and build executable plans using predefined building blocks.
-  - Trigger executions and observe each node's input/output.
-  - Receive final AI-generated answers based on plan execution across the available data.
+```bash
+# MongoDB
+docker run -d --name mongo -p 27017:27017 -v mongo_data:/data/db mongo:5.0
 
----
+# RabbitMQ
+docker run -d --name rabbitmq \
+  -p 5672:5672 -p 15672:15672 \
+  -e RABBITMQ_DEFAULT_USER=guest \
+  -e RABBITMQ_DEFAULT_PASS=guest \
+  rabbitmq:3-management
 
-## 🧭 Getting Started – What to Explore First
+# Qdrant
+docker run -d --name qdrant \
+  -p 6333:6333 -p 6334:6334 \
+  -v ~/qdrant_data:/qdrant/storage \
+  qdrant/qdrant:latest
+```
 
-To make your onboarding smooth, we recommend the following steps:
+Management interfaces:
+- RabbitMQ: http://localhost:15672 (guest/guest)
+- Qdrant: http://localhost:6333/dashboard
 
-### ✅ 1. Read the Key READMEs
+## Getting Started
 
-Start with the following:
+### Backend (Data Pipeline Hub)
 
-- [`RAG README`](backend/README.md): Understand how we ingest and embed data.  
-- [`Agentic AI README`](LINK 2): Learn about how our agentic system works and how execution plans are structured.
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install -e ../global_utils/
 
-### ✅ 2. Explore the Code Repos
+# Start Flask server (http://0.0.0.0:13456)
+python app.py
 
-- Identify key modules: retrievers, vector DB interfaces, plan execution engine, etc.
-- For GUI developers: explore components tied to Data Overview and Agentic Plan Builder UIs.
+# In separate terminals, start Celery workers:
+celery -A celery_app.init worker -c 1 --loglevel=info -Q slack_queue -n slack_worker
+celery -A celery_app.init worker -c 1 --loglevel=info -Q docs_queue -n docs_worker
+```
 
-### ✅ 3. Understand Plan Structure
+### RAG Module
 
-- Review some sample `.yaml` plans.
-- Check how each node (retriever, summarizer, etc.) contributes to the overall response pipeline.
+```bash
+cd rag
+python -m venv venv
+source venv/bin/activate
+pip install -e .
 
-### ✅ 4. Run Locally (Optional but Helpful)
+# Start Flask server
+python -m bootstrap.flask_app
 
-- Set up your environment to run the data pipeline and agentic backends independently.
-- Launch the GUI and experiment with different plans and data sources.
+# Start Celery workers:
+celery -A infrastructure.celery.app worker -Q document_queue,slack_queue -l info
+```
 
-💡 **Development Notes**  
-The system is designed to be modular. New retrievers or plan nodes can be added without impacting the core execution engine.  
-We aim to scale this to support more data sources in the near future.
+### Multi-Agent Backend
 
----
+```bash
+cd multi-agent
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install -e ../global_utils/
 
-## 📣 Final Words
+python app.py
+```
 
-This system is at the heart of building context-aware AI agents that help users get accurate, multi-source answers without manual data digging.  
-Your contributions will directly enhance how users interact with internal knowledge in a smart, explainable, and visual way.
+### UI
 
-Feel free to reach out to the current maintainers for walkthroughs, design overviews, or setup help.
+```bash
+cd ui/client
+npm install -g corepack
+corepack prepare pnpm@latest --activate
+pnpm install --frozen-lockfile
 
-**Happy coding! 🚀**
+# Development server (http://localhost:5173)
+pnpm run start
+
+# Production build
+pnpm build
+```
+
+Configure backend proxies in `vite.config.ts` to route `/api1` to the dataflow backend and `/api2` to the multi-agent backend. See the [UI README](ui/README.md) for proxy configuration details.
+
+## Configuration
+
+Each component reads configuration from its `config/app_config.py`, with environment variable overrides:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MONGODB_IP` | `0.0.0.0` | MongoDB host |
+| `MONGODB_PORT` | `27017` | MongoDB port |
+| `QDRANT_IP` | `0.0.0.0` | Qdrant host |
+| `QDRANT_PORT` | `6333` | Qdrant port |
+| `RABBITMQ_IP` | `0.0.0.0` | RabbitMQ host |
+| `RABBITMQ_PORT` | `5672` | RabbitMQ port |
+| `FRONTEND_URL` | `http://localhost:5000` | Frontend URL for CORS |
+| `DEFAULT_SLACK_BOT_TOKEN` | -- | Slack bot OAuth token |
+| `DEFAULT_SLACK_USER_TOKEN` | -- | Slack user OAuth token |
+
+## Deployment
+
+UnifAI deploys to Kubernetes/OpenShift using Helm and Helmfile. Container images are built on Red Hat UBI9 base images.
+
+```bash
+cd helm
+
+# Deploy infrastructure (MongoDB, RabbitMQ, Qdrant)
+helmfile -f helmfile1.yaml.gotmpl apply
+
+# Deploy application components
+helmfile -f dataflow.yaml.gotmpl apply
+helmfile -f multiagent.yaml.gotmpl apply
+helmfile -f ui.yaml.gotmpl apply
+```
+
+CI/CD is handled through Jenkins pipelines for image building and application deployment.
+
+[Helm Deployment Guide](helm/README.md) | [Helm Architecture](helm/ARCHITECTURE.md) | [CI/CD Guide](ci/README.md)
+
+## Testing
+
+The multi-agent module includes a comprehensive test suite:
+
+```bash
+cd multi-agent
+pytest tests/                # All tests
+pytest -m unit               # Unit tests only
+pytest -m integration        # Integration tests
+pytest --cov=.               # With coverage
+```
+
+Test categories include unit, integration, end-to-end, chaos, and edge case tests. See `multi-agent/pytest.ini` for available markers.
+
+## Project Structure
+
+```
+UnifAI/
+├── backend/              # Data Pipeline Hub (Flask, Celery)
+├── rag/                  # RAG Module (feature-sliced architecture)
+├── multi-agent/          # Agentic AI Backend (LangGraph)
+├── ui/
+│   ├── client/           # React frontend (Vite, TypeScript)
+│   └── deployment/       # Nginx container build
+├── global_utils/         # Shared Python utilities
+├── helm/                 # Kubernetes/OpenShift Helm charts
+├── ci/                   # Jenkins CI/CD pipelines
+├── shared-resources/     # SSO backend service
+├── mcp_servers/          # MCP server implementations
+└── scripts/              # Utility scripts
+```
+
+## Contributing
+
+1. Create a feature branch from `main`.
+2. Follow code conventions documented in each component's `ARCHITECTURE.md`.
+3. Add tests for new functionality.
+4. Update relevant documentation.
+5. Test locally with all services running.
+6. Submit a pull request with a clear description.
+
+## License
+
+[Apache License 2.0](LICENSE)
