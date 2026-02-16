@@ -21,7 +21,7 @@ UnifAI is engineered to:
 
 ## 🧩 Architecture
 
-The platform consists of four main components:
+The platform consists of three main components:
 
 ```
                     ┌──────────────────────────────────┐
@@ -43,16 +43,13 @@ The platform consists of four main components:
        └────────┘ └────────┘ └────────┘
 ```
 
-### 1. 🔧 Dataflow Backend
+### 1. 🔧 Dataflow Backend (`rag/`)
 
-Handles data ingestion, processing, and vector storage. Built as two complementary Python services:
-
-- **Data Pipeline Hub** (`backend/`) -- Flask API for data source management, pipeline orchestration, and Celery task coordination.
-- **RAG Module** (`rag/`) -- Feature-sliced architecture with hexagonal design for document processing, embedding, and semantic search.
+Handles data ingestion, processing, and vector storage. Built with a feature-sliced architecture and hexagonal design principles for document processing, embedding, and semantic search.
 
 Supports Slack channels, PDF/Markdown documents, and Jira as data sources. Uses Celery with RabbitMQ for asynchronous pipeline execution and Qdrant for vector storage with 384-dimensional sentence transformer embeddings.
 
-[Backend README](backend/README.md) | [RAG README](rag/README.md) | [Backend Architecture](backend/ARCHITECTURE.md) | [RAG Diagrams](rag/DIAGRAMS.md)
+[RAG README](rag/README.md) | [RAG Diagrams](rag/DIAGRAMS.md)
 
 ### 2. 🤖 Multi-Agent Backend
 
@@ -112,24 +109,7 @@ Management interfaces:
 
 ## 🚀 Getting Started
 
-### Backend (Data Pipeline Hub)
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-pip install -e ../global_utils/
-
-# Start Flask server (http://0.0.0.0:13456)
-python app.py
-
-# In separate terminals, start Celery workers:
-celery -A celery_app.init worker -c 1 --loglevel=info -Q slack_queue -n slack_worker
-celery -A celery_app.init worker -c 1 --loglevel=info -Q docs_queue -n docs_worker
-```
-
-### RAG Module
+### Dataflow Backend (RAG)
 
 ```bash
 cd rag
