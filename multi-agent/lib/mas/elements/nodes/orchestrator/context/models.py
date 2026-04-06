@@ -347,38 +347,17 @@ class OrchestratorContext(BaseModel):
     
     def format_context(self, work_plan_snapshot: str) -> str:
         """
-        Format complete context including work plan in single message.
-        
-        Combines orchestrator context and work plan into one coherent message
-        for presentation to the orchestrator.
-        
-        Args:
-            work_plan_snapshot: Pre-formatted work plan snapshot string
-        
-        Returns:
-            Complete formatted context string
+        Format compact context: trigger line + plan snapshot.
+
+        Health and history are omitted — the plan snapshot already contains
+        status counts, and the focused prompt provides situation-specific guidance.
         """
-        sections = [
-            "="*80,
-            "📊 ORCHESTRATION CYCLE CONTEXT",
-            "="*80,
-            "",
-            "🎯 WHY THIS CYCLE:",
-            self.trigger.to_summary(),
-            "",
-            "🏥 WORK PLAN HEALTH:",
-            self.health.to_summary(),
-            "",
-            "📜 HISTORY:",
-            self.history.to_summary(),
-            "",
-            "="*80,
-            "",
-            "📋 CURRENT WORK PLAN:",
-            work_plan_snapshot,
-            "",
-            "="*80
-        ]
-        
-        return "\n".join(sections)
+        trigger_line = self.trigger.to_summary()
+
+        # Only include health alerts when something is actually wrong
+        health_line = ""
+        if self.health.has_critical_issues or self.health.needs_pivot:
+            health_line = f"\n{self.health.to_summary()}\n"
+
+        return f"[Trigger] {trigger_line}{health_line}\n\n{work_plan_snapshot}"
 

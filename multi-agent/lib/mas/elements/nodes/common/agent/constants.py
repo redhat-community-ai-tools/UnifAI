@@ -249,12 +249,8 @@ class ErrorMessages:
             f"{base_message}\n\nPlease follow the expected format."
         )
         
-        # Add raw output if available (truncated)
         if hasattr(parse_error, 'raw_output') and parse_error.raw_output:
-            raw_output = parse_error.raw_output[:200]
-            if len(parse_error.raw_output) > 200:
-                raw_output += "..."
-            guidance += f"\n\nYour output: {raw_output}"
+            guidance += f"\n\nYour output: {parse_error.raw_output}"
         
         return guidance
 

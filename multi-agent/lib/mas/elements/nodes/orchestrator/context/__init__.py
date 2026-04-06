@@ -29,6 +29,7 @@ from .analyzers import (
 )
 
 from .builder import OrchestratorContextBuilder
+from .snapshot import IterationSnapshot
 
 __all__ = [
     # Enums
@@ -52,5 +53,8 @@ __all__ = [
     
     # Builder
     'OrchestratorContextBuilder',
+
+    # Snapshot
+    'IterationSnapshot',
 ]
 

@@ -59,7 +59,7 @@ class ReadWorkspaceSummaryTool(BaseTool):
             summary["recent_messages"] = [
                 {
                     "role": msg.role.value,
-                    "content": msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+                    "content": msg.content
                 }
                 for msg in recent_messages
             ]
@@ -71,7 +71,7 @@ class ReadWorkspaceSummaryTool(BaseTool):
             summary["recent_results"] = [
                 {
                     "agent_name": result.agent_name,
-                    "content_preview": result.content[:100] + "..." if len(result.content) > 100 else result.content
+                    "content": result.content
                 }
                 for result in recent_results
             ]

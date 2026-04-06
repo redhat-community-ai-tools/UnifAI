@@ -494,3 +494,67 @@ class WorkPlan(BaseModel):
         """Update the updated_at timestamp."""
         self.updated_at = datetime.now(timezone.utc).isoformat()
 
+    def to_slim_snapshot(self) -> Dict[str, Any]:
+        """
+        Lightweight projection of the plan for streaming consumers.
+
+        Keeps structural and status fields needed to track progress.
+        Drops heavyweight internal fields (response_data, local_execution,
+        metadata, artifacts, tool args, etc.) and caps delegation
+        response_content at 200 chars to keep payloads small.
+        """
+        slim_items: Dict[str, Any] = {}
+
+        for item_id, item in self.items.items():
+            slim_delegations = None
+            if item.result and item.result.delegations:
+                slim_delegations = [
+                    {
+                        "sequence": ex.sequence,
+                        "task_id": ex.task_id,
+                        "query": ex.query,
+                        "delegated_to": ex.delegated_to,
+                        "delegated_at": ex.delegated_at,
+                        "response_content": (
+                            ex.response_content[:200] + "..."
+                            if ex.response_content and len(ex.response_content) > 200
+                            else ex.response_content
+                        ),
+                        "responded_at": ex.responded_at,
+                    }
+                    for ex in item.result.delegations
+                ]
+
+            slim_items[item_id] = {
+                "id": item.id,
+                "title": item.title,
+                "description": item.description,
+                "kind": item.kind.value,
+                "status": item.status.value,
+                "dependencies": item.dependencies,
+                "assigned_uid": item.assigned_uid,
+                "error": item.error,
+                "retry_count": item.retry_count,
+                "max_retries": item.max_retries,
+                "created_at": item.created_at,
+                "updated_at": item.updated_at,
+                "result": {
+                    "delegations": slim_delegations or [],
+                    "local_execution": None,
+                    "success": item.result.success if item.result else False,
+                    "final_summary": None,
+                    "data": None,
+                    "metadata": {},
+                    "artifacts": [],
+                } if item.result else None,
+            }
+
+        return {
+            "summary": self.summary,
+            "owner_uid": self.owner_uid,
+            "thread_id": self.thread_id,
+            "items": slim_items,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+

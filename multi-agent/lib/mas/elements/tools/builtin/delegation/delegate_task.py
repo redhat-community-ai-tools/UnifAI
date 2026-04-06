@@ -140,98 +140,95 @@ class DelegateTaskTool(BaseTool):
                 "success": False,
                 "error": error_msg
             }
-        
+
         # ✅ Reuse existing child thread or create new one
         child_thread = None
         if target_item and target_item.child_thread_id:
-            # Re-delegation: attempt to reuse existing child thread
             thread_service = self._get_thread_service()
             child_thread = thread_service.get_thread(target_item.child_thread_id)
-            
             if not child_thread:
                 child_thread = None
-        
-        # Create new child thread if not reusing
+
         if not child_thread:
             child_thread = current_thread.create_child(
                 title=f"Delegated: {args.content[:50]}...",
                 objective=args.content,
                 initiator=owner_uid
             )
-        
-        # Create task with child thread context
+
+        # Create task (not sent yet — only sent after atomic update succeeds)
         task = Task.create(
             content=args.content,
             data=args.data,
-            should_respond=True,  # Always request response for delegation
+            should_respond=True,
             thread_id=child_thread.thread_id,
             created_by=self._get_owner_uid()
         )
-        
-        
-        # Add work item reference (always present now)
         task.data["work_item_id"] = work_item_id
-        
-        # Set response destination
         task.response_to = self._get_owner_uid()
-        
+
         try:
-            # Send via IEM
-            packet_id = self._send_task(args.dst_uid, task)
-            
-            # Save threads (parent and child)
-            thread_service = self._get_thread_service()
-            thread_service.save_thread(current_thread)  # Parent thread with updated children
-            thread_service.save_thread(child_thread)    # New child thread
-            
-            # Update work item with new DelegationExchange
-            try:
-                def update_for_delegation(item, plan):
-                    """Create delegation exchange and update work item state."""
-                    # Initialize result if needed
-                    if not item.result:
-                        item.result = WorkItemResult()
-                    
-                    # Mark all previous exchanges as processed (LLM has acted by delegating/re-delegating)
-                    for exchange in item.result.delegations:
-                        exchange.processed = True
-                    
-                    # Calculate sequence number
-                    sequence = len(item.result.delegations)
-                    
-                    # Create new delegation exchange
-                    exchange = DelegationExchange(
-                        sequence=sequence,
-                        task_id=task.task_id,
-                        query=args.content or item.description,
-                        delegated_to=args.dst_uid
+            # ✅ Atomic update with pending_exchange guard INSIDE the lock.
+            # Parallel DelegateTaskTool calls for the same item race here;
+            # the lock ensures only one creates the exchange.
+            validation_error = None
+
+            def update_for_delegation(item, plan):
+                """Validate and create delegation exchange under lock."""
+                nonlocal validation_error
+
+                # Guard: block if a previous delegation is still pending
+                if item.result and item.result.pending_exchange:
+                    pending = item.result.pending_exchange
+                    validation_error = (
+                        f"Work item '{work_item_id}' already has a pending delegation "
+                        f"(task {pending.task_id} to {pending.delegated_to}). "
+                        f"The agent is still processing — wait for the response."
                     )
-                    
-                    item.result.delegations.append(exchange)
-                    item.status = WorkItemStatus.IN_PROGRESS
-                    item.kind = WorkItemKind.REMOTE
-                    item.assigned_uid = args.dst_uid
-                    item.child_thread_id = child_thread.thread_id
-                
-                success = workspace_service.atomic_update_work_item(
-                    current_thread.thread_id, owner_uid, work_item_id, update_for_delegation
+                    return
+
+                if not item.result:
+                    item.result = WorkItemResult()
+
+                for exchange in item.result.delegations:
+                    exchange.processed = True
+
+                sequence = len(item.result.delegations)
+                exchange = DelegationExchange(
+                    sequence=sequence,
+                    task_id=task.task_id,
+                    query=args.content or item.description,
+                    delegated_to=args.dst_uid
                 )
-                
-                if not success:
-                    error_msg = f"Work item {work_item_id} not found in work plan"
-                    return {
-                        "success": False,
-                        "error": error_msg
-                    }
-                
-            except Exception as e:
-                error_msg = f"Exception updating work item status: {e}"
+
+                item.result.delegations.append(exchange)
+                item.status = WorkItemStatus.IN_PROGRESS
+                item.kind = WorkItemKind.REMOTE
+                item.assigned_uid = args.dst_uid
+                item.child_thread_id = child_thread.thread_id
+
+            success = workspace_service.atomic_update_work_item(
+                current_thread.thread_id, owner_uid, work_item_id, update_for_delegation
+            )
+
+            if validation_error:
+                return {"success": False, "error": validation_error}
+
+            if not success:
                 return {
                     "success": False,
-                    "error": error_msg
+                    "error": f"Work item {work_item_id} not found in work plan"
                 }
-            
-            result = {
+
+            # ✅ Send IEM only after atomic update succeeded
+            packet_id = self._send_task(args.dst_uid, task)
+
+            # Save threads
+            thread_service = self._get_thread_service()
+            thread_service.save_thread(current_thread)
+            thread_service.save_thread(child_thread)
+
+            return {
                 "success": True,
                 "task_id": task.task_id,
                 "packet_id": packet_id,
@@ -244,14 +241,11 @@ class DelegateTaskTool(BaseTool):
                     "child_thread_id": child_thread.thread_id
                 }
             }
-            
-            return result
-            
+
         except Exception as e:
-            error_msg = f"Failed to send task: {str(e)}"
             return {
                 "success": False,
-                "error": error_msg
+                "error": f"Failed to delegate task: {str(e)}"
             }
     
     # ========== HELPER METHODS ==========

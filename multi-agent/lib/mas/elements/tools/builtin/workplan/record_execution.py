@@ -64,68 +64,66 @@ class RecordLocalExecutionTool(BaseTool):
         self._get_workload_service = get_workload_service
     
     def run(self, **kwargs) -> Dict[str, Any]:
-        """Record local execution outcome (thread-safe)."""
+        """Record local execution outcome with all validation inside the lock."""
         args = RecordLocalExecutionArgs(**kwargs)
         
         thread_id = self._get_thread_id()
         owner_uid = self._get_owner_uid()
         workload_service = self._get_workload_service()
         workspace_service = workload_service.get_workspace_service()
-        
-        def update_execution(item, plan):
-            """Update function to record execution outcome and mark as DONE."""
-            # Validate it's a LOCAL item
-            if item.kind == WorkItemKind.LOCAL:
-                # Initialize result if needed
-                if not item.result:
-                    item.result = WorkItemResult()
-                
-                # Create LocalExecution record
-                item.result.local_execution = LocalExecution(
-                    outcome=args.outcome
-                )
-                
-                # Automatically mark as DONE (atomic operation)
-                item.status = WorkItemStatus.DONE
-            elif item.kind == WorkItemKind.REMOTE:
-                # Prevent recording for REMOTE items
-                raise ValueError(
+
+        validation_error = None
+
+        def validate_and_record(item, plan):
+            nonlocal validation_error
+
+            # --- Guard 1: REMOTE items cannot use local execution ---
+            if item.kind == WorkItemKind.REMOTE:
+                validation_error = (
                     f"Cannot record local execution for REMOTE item '{args.item_id}'. "
-                    f"REMOTE items track results through delegation exchanges, not local execution records. "
-                    f"Use DelegateTaskTool to work with REMOTE items."
+                    f"Use DelegateTaskTool to delegate work to agents."
                 )
-            else:
-                raise ValueError(
-                    f"Unknown work item kind '{item.kind}' for item '{args.item_id}'"
+                return
+
+            # --- Guard 2: already DONE (idempotent, don't overwrite) ---
+            if item.status == WorkItemStatus.DONE:
+                validation_error = (
+                    f"Item '{args.item_id}' is already DONE. "
+                    f"No need to record execution again."
                 )
-        
-        try:
-            success = workspace_service.atomic_update_work_item(
-                thread_id, owner_uid, args.item_id, update_execution
-            )
-            
-            if not success:
-                return {
-                    "success": False,
-                    "error": f"Work item '{args.item_id}' not found in work plan"
-                }
-            
-            return {
-                "success": True,
-                "item_id": args.item_id,
-                "status": "done",
-                "message": f"Execution outcome recorded for '{args.item_id}' and marked as DONE."
-            }
-            
-        except ValueError as e:
-            # Validation error (e.g., trying to record for REMOTE item)
-            return {
-                "success": False,
-                "error": str(e)
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to record execution: {str(e)}"
-            }
+                return
+
+            # --- Guard 3: unmet dependencies ---
+            completed_ids = plan.get_completed_item_ids()
+            if item.is_blocked(completed_ids):
+                unmet = [d for d in item.dependencies if d not in completed_ids]
+                validation_error = (
+                    f"Cannot execute '{args.item_id}' — blocked by unmet dependencies: "
+                    f"{unmet}. Wait for them to complete first."
+                )
+                return
+
+            # --- All guards passed — record and mark DONE ---
+            if not item.result:
+                item.result = WorkItemResult()
+
+            item.result.local_execution = LocalExecution(outcome=args.outcome)
+            item.status = WorkItemStatus.DONE
+
+        success = workspace_service.atomic_update_work_item(
+            thread_id, owner_uid, args.item_id, validate_and_record
+        )
+
+        if validation_error:
+            return {"success": False, "error": validation_error}
+
+        if not success:
+            return {"success": False, "error": f"Work item '{args.item_id}' not found in work plan."}
+
+        return {
+            "success": True,
+            "item_id": args.item_id,
+            "status": "done",
+            "message": f"Execution recorded for '{args.item_id}' and marked as DONE."
+        }
 

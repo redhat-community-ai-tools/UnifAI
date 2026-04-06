@@ -8,6 +8,7 @@ This node coordinates work execution by:
 4. Synthesizing results when complete
 """
 
+import logging
 from typing import Optional, Any, List, ClassVar, Dict
 from mas.graph.state.state_view import StateView
 from mas.elements.llms.common.chat.message import ChatMessage, Role
@@ -25,15 +26,15 @@ from mas.elements.tools.common.execution.models import ExecutorConfig
 from mas.elements.nodes.common.workload import Task, WorkItemStatus, WorkItemKind, AgentResult
 from .orchestrator_phase_provider import OrchestratorPhaseProvider
 from .delegation_policy import OrchestratorDelegationPolicy
-from .context import PendingCycle, CycleTrigger, CycleTriggerReason, OrchestratorContextBuilder, OrchestratorCycle
+from .context import CycleTrigger, CycleTriggerReason, OrchestratorContextBuilder, OrchestratorCycle
 from mas.elements.tools.builtin import (
     CreateOrUpdateWorkPlanTool,
-    AssignWorkItemTool,
     MarkWorkItemStatusTool,
     ListAdjacentNodesTool,
-    GetNodeCardTool,
     DelegateTaskTool
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ExecutionPhase import removed as it's not used in this file
@@ -162,11 +163,11 @@ class OrchestratorNode(
 
         if task.is_response():
             # This is a response to delegated work
-            print(f"📨 [ORCH:{self.uid}] Processing RESPONSE packet")
+            logger.info("[ORCH:%s] Processing RESPONSE packet", self.uid)
             self._handle_task_response(task)
         else:
             # This is a new work request
-            print(f"📬 [ORCH:{self.uid}] Processing NEW WORK packet")
+            logger.info("[ORCH:%s] Processing NEW WORK packet", self.uid)
             self._handle_new_work(task)
 
     def _record_trigger(
@@ -212,47 +213,16 @@ class OrchestratorNode(
         The cycle contains all accumulated triggers. The LLM sees
         complete context: "2 responses arrived + new request".
         
-        Design:
-        - Converts OrchestratorCycle to PendingCycle for backward compatibility
-        - Prints clear summary of all triggers for debugging
-        - Runs orchestration with full trigger context
-        - Finalizes work if complete
-        
         Args:
             cycle: OrchestratorCycle with accumulated triggers
         """
-        print(f"\n{'='*80}")
-        print(f"🎯 ORCHESTRATOR CYCLE START - Thread: {cycle.thread_id}")
-        print(f"   Triggers: {cycle.get_trigger_summary()}")
-        if cycle.all_changed_items:
-            items_str = ', '.join(list(cycle.all_changed_items)[:5])
-            if len(cycle.all_changed_items) > 5:
-                items_str += f" (+{len(cycle.all_changed_items) - 5} more)"
-            print(f"   Changed Items: {items_str}")
-        print(f"{'='*80}\n")
-        
-        # Get current status
-        status = self.workspaces.get_work_plan_status(cycle.thread_id, self.uid)
-        
-        # Resolve content for cycle (user message or guidance)
         content = self._resolve_cycle_content(cycle.thread_id)
         
-        # Convert to PendingCycle for backward compatibility with strategy
-        pending_cycle = cycle.to_pending_cycle()
+        self._run_orchestration_cycle(cycle, content)
         
-        # Run orchestration (uses PendingCycle internally for now)
-        self._run_orchestration_cycle(pending_cycle, content)
-        
-        # Re-check status after orchestration
         status = self.workspaces.get_work_plan_status(cycle.thread_id, self.uid)
         final_result = self._get_final_orchestration_result(cycle.thread_id)
         
-        # Finalize if orchestrator produced a result AND:
-        # 1. Work is complete (all items DONE/FAILED), OR
-        # 2. Work incomplete but no delegation packets sent (error/partial result case)
-        #
-        # If we have outgoing packets, let the router handle routing to delegated nodes.
-        # The graph will re-invoke us when responses arrive.
         if final_result:
             if status.is_complete or not self.has_outgoing_packets():
                 self._finalize_completed_work(cycle.thread_id, final_result)
@@ -270,17 +240,17 @@ class OrchestratorNode(
         # Find correlation in task data
         correlation_task_id = task.correlation_task_id
         if not correlation_task_id:
-            print(f"⚠️ [ORCH:{self.uid}] Response has no correlation_task_id - skipping")
+            logger.warning("[ORCH:%s] Response has no correlation_task_id - skipping", self.uid)
             return None
 
-        print(f"\n🔍 [ORCH:{self.uid}] Handling response:")
-        print(f"   - correlation_task_id: {correlation_task_id}")
-        print(f"   - from thread: {task.thread_id}")
-        print(f"   - created_by: {task.created_by}")
+        logger.debug(
+            "[ORCH:%s] Handling response: correlation_task_id=%s, from thread=%s, created_by=%s",
+            self.uid, correlation_task_id, task.thread_id, task.created_by
+        )
 
         # Determine which thread to update (parent vs child thread handling)
         target_thread_id = self._resolve_target_thread_for_response(task)
-        print(f"   - target_thread_id (resolved): {target_thread_id}")
+        logger.debug("[ORCH:%s] target_thread_id (resolved): %s", self.uid, target_thread_id)
 
         # Update work plan and workspace context
         service = self.workspaces
@@ -348,7 +318,7 @@ class OrchestratorNode(
         )
         
         if success:
-            print(f"✅ [ORCH:{self.uid}] Response stored successfully - will trigger orchestration cycle")
+            logger.info("[ORCH:%s] Response stored successfully - will trigger orchestration cycle", self.uid)
             
             # Find which work items got responses
             changed_item_ids = self._find_items_for_task(target_thread_id, correlation_task_id)
@@ -359,10 +329,13 @@ class OrchestratorNode(
                 reason=CycleTriggerReason.RESPONSE_ARRIVED,
                 changed_items=changed_item_ids
             )
-            print(f"✅ [ORCH:{self.uid}] Recorded response trigger for thread {target_thread_id[:8]}...")
+            logger.info("[ORCH:%s] Recorded response trigger for thread %s...", self.uid, target_thread_id[:8])
         else:
-            print(f"❌ [ORCH:{self.uid}] Failed to store response - NO orchestration cycle will run!")
-            print(f"   This means delegation exchange not found")
+            logger.error(
+                "[ORCH:%s] Failed to store response - NO orchestration cycle will run! "
+                "Delegation exchange not found",
+                self.uid
+            )
 
         # Return thread_id if we updated the work plan
         return target_thread_id if success else None
@@ -383,23 +356,26 @@ class OrchestratorNode(
         response_thread_id = task.thread_id
         if not response_thread_id:
             # No thread context, use current orchestrator thread
-            print(f"⚠️ [ORCH:{self.uid}] No thread_id in response - using default")
+            logger.warning("[ORCH:%s] No thread_id in response - using default", self.uid)
             return getattr(self, '_current_thread_id', None) or 'default'
 
         try:
             # Use thread service to find where THIS orchestrator's work plan is
-            print(f"🔍 [ORCH:{self.uid}] Resolving work plan owner for thread {response_thread_id[:8]}...")
+            logger.debug(
+                "[ORCH:%s] Resolving work plan owner for thread %s...",
+                self.uid, response_thread_id[:8]
+            )
             target_thread_id = self.threads.find_work_plan_owner(response_thread_id, self.uid)
             if target_thread_id:
                 if target_thread_id != response_thread_id:
-                    print(f"   ↪️ Found in parent thread: {target_thread_id[:8]}...")
+                    logger.debug("[ORCH:%s] Found in parent thread: %s...", self.uid, target_thread_id[:8])
                 else:
-                    print(f"   ✓ Found in same thread: {target_thread_id[:8]}...")
+                    logger.debug("[ORCH:%s] Found in same thread: %s...", self.uid, target_thread_id[:8])
             else:
-                print(f"   ⚠️ Not found, falling back to response thread")
+                logger.debug("[ORCH:%s] Not found, falling back to response thread", self.uid)
             return target_thread_id or response_thread_id
         except Exception as e:
-            print(f"   ❌ Error during resolution: {e}")
+            logger.error("[ORCH:%s] Error during resolution: %s", self.uid, e)
             return response_thread_id
 
     def _find_items_for_task(self, thread_id: str, correlation_task_id: str) -> List[str]:
@@ -485,7 +461,7 @@ class OrchestratorNode(
         # Return the original request (don't clear it - keep for all cycles)
         return self.workspaces.get_variable(thread_id, "_current_request", "") or ""
 
-    def _run_orchestration_cycle(self, cycle: PendingCycle, content: str) -> AgentResult:
+    def _run_orchestration_cycle(self, cycle: OrchestratorCycle, content: str) -> AgentResult:
         """
         Run a planning and execution cycle.
         
@@ -493,16 +469,9 @@ class OrchestratorNode(
         Returns AgentResult with the orchestration outcome.
         
         Args:
-            cycle: PendingCycle containing thread_id, reason, and changed_items
+            cycle: OrchestratorCycle with all accumulated triggers (preserves multi-trigger context)
             content: Orchestration content (user request or guidance message)
         """
-        print(f"\n{'='*80}")
-        print(f"🎯 ORCHESTRATOR CYCLE START - Thread: {cycle.thread_id}")
-        print(f"   Trigger: {cycle.reason.value}")
-        if cycle.changed_items:
-            print(f"   Changed items: {', '.join(cycle.changed_items)}")
-        print(f"{'='*80}")
-
         # Build conversation context
         messages = self._build_context_messages(cycle.thread_id, content)
 
@@ -517,36 +486,31 @@ class OrchestratorNode(
         # Get or create context builder (needed by phase provider for recording transitions)
         context_builder = self._get_or_create_context_builder(cycle.thread_id)
 
-        # Create orchestrator phase provider with clean SOLID dependencies
-        # NOTE: We pass filtered nodes - provider doesn't know about delegation policy
         phase_provider = OrchestratorPhaseProvider(
-            domain_tools=tools,  # These are the domain tools this orchestrator can use
-            get_adjacent_nodes=lambda: delegable_adjacent,  # Pass filtered nodes!
-            send_task=self.send_task,  # Inject IEM sender for delegation tool
+            domain_tools=tools,
+            get_adjacent_nodes=lambda: delegable_adjacent,
+            send_task=self.send_task,
             node_uid=self.uid,
             thread_id=cycle.thread_id,
-            get_workload_service=self.get_workload_service,  # Clean dependency injection
-            context_builder=context_builder  # For recording phase transitions
-            # Uses default PhaseIterationLimits (all phases = 10 iterations)
+            get_workload_service=self.get_workload_service,
+            context_builder=context_builder
         )
         
-        # Build rich orchestrator context with trigger information
+        # Build CycleTrigger from full OrchestratorCycle (preserves ALL triggers)
+        primary_reason = cycle.triggers[0].reason if cycle.triggers else CycleTriggerReason.NEW_REQUEST
         trigger = CycleTrigger(
-            reason=cycle.reason,
-            description=f"Orchestration cycle: {cycle.reason.value}",
-            new_user_message=content if cycle.reason == CycleTriggerReason.NEW_REQUEST else None,
-            response_task_ids=[],  # Task IDs not needed currently
-            changed_items=cycle.changed_items
+            reason=primary_reason,
+            description=cycle.get_trigger_summary(),
+            new_user_message=content if cycle.has_new_requests else None,
+            response_task_ids=[],
+            changed_items=list(cycle.all_changed_items)
         )
         orch_context = context_builder.build_context(
             trigger=trigger,
             phase_state=phase_provider.get_phase_context()
         )
         
-        # Store context for phase provider to access via dynamic context messages
-        phase_provider._current_orch_context = orch_context
-        
-        # Store user request for focused prompts
+        phase_provider.set_orch_context(orch_context)
         phase_provider.set_current_user_request(content)
 
         # Create strategy with unified provider
@@ -600,9 +564,7 @@ class OrchestratorNode(
         # Display work plan snapshot
         self._print_work_plan_snapshot(cycle.thread_id)
 
-        print(f"{'='*80}")
-        print(f"✅ ORCHESTRATOR CYCLE END - Thread: {cycle.thread_id}")
-        print(f"{'='*80}\n")
+        logger.info("ORCHESTRATOR CYCLE END - Thread: %s", cycle.thread_id)
 
         return agent_result
 
@@ -685,7 +647,7 @@ class OrchestratorNode(
             return "\n".join(lines)
             
         except Exception as e:
-            print(f"⚠️ [ORCHESTRATOR] Error building adjacency summary: {e}")
+            logger.warning("[ORCHESTRATOR] Error building adjacency summary: %s", e)
             # Fallback: show all adjacent nodes
             adjacent_nodes = self.get_adjacent_nodes()
             if not adjacent_nodes:
@@ -697,10 +659,6 @@ class OrchestratorNode(
                 lines.append("")
             
             return "\n".join(lines)
-
-    # NOTE: _build_workspace_summary and _build_plan_snapshot moved to
-    # OrchestratorPhaseProvider as _build_workspace_summary_internal and
-    # _build_plan_snapshot_internal to support dynamic context refresh
 
     def _get_final_orchestration_result(self, thread_id: str) -> Optional[AgentResult]:
         """
@@ -784,7 +742,7 @@ class OrchestratorNode(
             pass
 
     def _print_work_plan_snapshot(self, thread_id: str) -> None:
-        """Print a compact snapshot of the current work plan."""
+        """Log a compact snapshot of the current work plan."""
         service = self.workspaces
         plan = service.load_work_plan(thread_id, self.uid)
         
@@ -793,29 +751,31 @@ class OrchestratorNode(
         
         status = service.get_work_plan_status(thread_id, self.uid)
         
-        print(f"\n{'='*80}")
-        print(f"📋 WORK PLAN FINAL ({status.total_items} items)")
-        print(f"{'='*80}")
+        lines = [
+            "=" * 80,
+            f"WORK PLAN FINAL ({status.total_items} items)",
+            "=" * 80,
+        ]
         
         # Compact status line
         status_parts = []
         if status.pending_items > 0:
-            status_parts.append(f"⏸️ {status.pending_items} Pending")
+            status_parts.append(f"{status.pending_items} Pending")
         if status.in_progress_items > 0:
-            status_parts.append(f"🔄 {status.in_progress_items} In Progress")
+            status_parts.append(f"{status.in_progress_items} In Progress")
         if status.done_items > 0:
-            status_parts.append(f"✅ {status.done_items} Done")
+            status_parts.append(f"{status.done_items} Done")
         if status.failed_items > 0:
-            status_parts.append(f"❌ {status.failed_items} Failed")
-        print(f"Status: {' | '.join(status_parts)}")
+            status_parts.append(f"{status.failed_items} Failed")
+        lines.append(f"Status: {' | '.join(status_parts)}")
         
         if status.blocked_items > 0 or status.waiting_items > 0:
             extras = []
             if status.blocked_items > 0:
-                extras.append(f"🚫 {status.blocked_items} Blocked")
+                extras.append(f"{status.blocked_items} Blocked")
             if status.waiting_items > 0:
-                extras.append(f"⏳ {status.waiting_items} Waiting")
-            print(f"        {' | '.join(extras)}")
+                extras.append(f"{status.waiting_items} Waiting")
+            lines.append(f"        {' | '.join(extras)}")
         
         # Show ALL items compactly
         for status in [WorkItemStatus.PENDING, WorkItemStatus.IN_PROGRESS, WorkItemStatus.DONE, WorkItemStatus.FAILED]:
@@ -847,9 +807,9 @@ class OrchestratorNode(
                         if dep_item:
                             dep_title = dep_item.title[:20] + "..." if len(dep_item.title) > 20 else dep_item.title
                             if dep_id in completed_deps:
-                                dep_status.append(f"✓{dep_title}")
+                                dep_status.append(f"done:{dep_title}")
                             else:
-                                dep_status.append(f"✗{dep_title}")
+                                dep_status.append(f"pending:{dep_title}")
                         else:
                             # Fallback if dependency not found
                             dep_status.append(f"?{dep_id}")
@@ -865,35 +825,36 @@ class OrchestratorNode(
                         # Single exchange - show query and response
                         ex = item.result.delegations[0]
                         query_preview = ex.query[:80].replace('\n', ' ')
-                        item_line += f"\n      📤 Q: {query_preview}{'...' if len(ex.query) > 80 else ''}"
+                        item_line += f"\n      Q: {query_preview}{'...' if len(ex.query) > 80 else ''}"
                         
                         if ex.is_pending:
-                            item_line += f"\n      ⏳ Waiting for response from {ex.delegated_to}"
+                            item_line += f"\n      Waiting for response from {ex.delegated_to}"
                         elif ex.needs_attention:
                             resp_preview = ex.response_content[:100].replace('\n', ' ')
-                            item_line += f"\n      🔔 A: {resp_preview}{'...' if len(ex.response_content) > 100 else ''}"
+                            item_line += f"\n      A (needs attention): {resp_preview}{'...' if len(ex.response_content) > 100 else ''}"
                         else:
                             resp_preview = ex.response_content[:100].replace('\n', ' ')
-                            item_line += f"\n      ✓ A: {resp_preview}{'...' if len(ex.response_content) > 100 else ''}"
+                            item_line += f"\n      A: {resp_preview}{'...' if len(ex.response_content) > 100 else ''}"
                     else:
                         # Multiple exchanges - show summary and each turn
-                        item_line += f"\n      💬 {delegation_count} turns ({unprocessed_count}🔔 need attention, {pending_count}⏳ pending)"
+                        item_line += f"\n      {delegation_count} turns ({unprocessed_count} need attention, {pending_count} pending)"
                         for i, ex in enumerate(item.result.delegations):
                             query_preview = ex.query[:60].replace('\n', ' ')
                             item_line += f"\n      [{i}] Q: {query_preview}{'...' if len(ex.query) > 60 else ''}"
                             
                             if ex.is_pending:
-                                item_line += f"\n          ⏳ Waiting for {ex.delegated_to}"
+                                item_line += f"\n          Waiting for {ex.delegated_to}"
                             elif ex.needs_attention:
                                 resp_preview = ex.response_content[:80].replace('\n', ' ')
-                                item_line += f"\n          🔔 A: {resp_preview}{'...' if len(ex.response_content) > 80 else ''}"
+                                item_line += f"\n          A (needs attention): {resp_preview}{'...' if len(ex.response_content) > 80 else ''}"
                             else:
                                 resp_preview = ex.response_content[:80].replace('\n', ' ')
-                                item_line += f"\n          ✓ A: {resp_preview}{'...' if len(ex.response_content) > 80 else ''}"
+                                item_line += f"\n          A: {resp_preview}{'...' if len(ex.response_content) > 80 else ''}"
                 
-                print(f"   {item_line}")
+                lines.append(f"   {item_line}")
         
-        print(f"{'='*80}")
+        lines.append("=" * 80)
+        logger.debug("\n".join(lines))
 
     @staticmethod
     def _get_orchestrator_behavior_message() -> str:
@@ -973,8 +934,11 @@ Key principles:
             )
             
         except Exception as e:
-            print(f"⚠️ [ORCHESTRATOR] Error creating delegation policy: {e}")
-            print(f"⚠️ [ORCHESTRATOR] Falling back to permissive policy (all nodes delegable)")
+            logger.warning(
+                "[ORCHESTRATOR] Error creating delegation policy: %s - "
+                "Falling back to permissive policy (all nodes delegable)",
+                e
+            )
             
             # Fallback: Allow all adjacent nodes
             return PermissiveDelegationPolicy(self.get_adjacent_nodes())

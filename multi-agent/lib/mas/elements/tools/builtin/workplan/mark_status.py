@@ -49,14 +49,10 @@ class MarkWorkItemStatusTool(BaseTool):
     For REMOTE items: Review responses first, then mark done/failed
     For LOCAL items: RecordLocalExecutionTool auto-marks DONE (rarely need this tool)
     
-    ⚠️ IMPORTANT - DON'T RUSH TO MARK 'DONE':
-    - If response is incomplete → Use DelegateTaskTool to ask for more
-    - If response is unclear → Use DelegateTaskTool to ask for clarification
-    - If response is partial → Use DelegateTaskTool to request the rest
-    - Only mark 'done' when you're truly satisfied with the result
-    
-    REMEMBER: Thread context is preserved - you can re-delegate multiple times to get quality results.
-    Better to ask follow-up questions than accept incomplete work!"""
+    CRITICAL RULES:
+    - If you re-delegated (sent a follow-up), do NOT mark done — wait for the response
+    - Never call DelegateTaskTool AND MarkWorkItemStatusTool on the same item in one turn
+    - Only mark 'done' when you're truly satisfied with the result"""
     args_schema = MarkStatusArgs
     
     def __init__(
@@ -70,85 +66,84 @@ class MarkWorkItemStatusTool(BaseTool):
         self._get_workload_service = get_workload_service
     
     def run(self, **kwargs) -> Dict[str, Any]:
-        """Mark work item status (thread-safe)."""
+        """Mark work item status with all validation inside the lock."""
         args = MarkStatusArgs(**kwargs)
         
         thread_id = self._get_thread_id()
         owner_uid = self._get_owner_uid()
         workload_service = self._get_workload_service()
         workspace_service = workload_service.get_workspace_service()
-        
-        # VALIDATION: Check constraints before marking status
-        if args.status in [WorkItemStatus.DONE, WorkItemStatus.FAILED]:
-            # Load the work item to check state
-            plan = workspace_service.load_work_plan(thread_id, owner_uid)
-            if not plan or args.item_id not in plan.items:
-                return {"success": False, "error": "Work item not found"}
-            
-            item = plan.items[args.item_id]
-            
-            # Validate state transitions
-            
-            # 1. LOCAL items must record execution before marking DONE
-            #    (FAILED is allowed without recording, for cases where execution wasn't attempted)
-            if item.kind == WorkItemKind.LOCAL and args.status == 'done':
-                # Check if execution has been recorded
+
+        validation_error = None
+
+        def validate_and_update(item, plan):
+            nonlocal validation_error
+
+            target_status = WorkItemStatus.DONE if args.status == 'done' else WorkItemStatus.FAILED
+
+            # --- Guard 1: already in target status (idempotent, no-op) ---
+            if item.status == target_status:
+                validation_error = f"Item '{args.item_id}' is already {args.status}."
+                return
+
+            # --- Guard 2: LOCAL items need RecordLocalExecutionTool for DONE ---
+            if item.kind == WorkItemKind.LOCAL and target_status == WorkItemStatus.DONE:
                 if not item.result or not item.result.local_execution:
-                    return {
-                        "success": False,
-                        "error": (
-                            f"Cannot mark LOCAL item '{args.item_id}' as DONE without recording execution first. "
-                            f"This validation should not trigger since RecordLocalExecutionTool automatically marks as DONE. "
-                            f"If you see this error, there's a bug in the workflow."
-                        )
-                    }
-            
-            # 2. Check if trying to mark DONE while still waiting for response
-            if (args.status == 'done' and
-                item.status == WorkItemStatus.IN_PROGRESS and 
-                item.kind == WorkItemKind.REMOTE):
-                
-                # Check if we have pending delegation (waiting for response)
-                if item.result and item.result.pending_exchange:
-                    pending_ex = item.result.pending_exchange
-                    return {
-                        "success": False,
-                        "error": f"Cannot mark '{args.item_id}' as DONE - still waiting for response from {pending_ex.delegated_to}. DO NOT RETRY - the response will arrive in a future cycle. Either wait (finish this cycle) or use status='failed' to give up."
-                    }
-                
-                # Check for unprocessed responses (responses that need LLM interpretation)
-                # This is OK - LLM is marking DONE after interpreting the responses
-                # The processed flag will be set below when status changes
-        
-        def update_status(item, plan):
-            """Update function for atomic status change."""
-            # Convert string literal to WorkItemStatus enum
-            item.status = WorkItemStatus.DONE if args.status == 'done' else WorkItemStatus.FAILED
-            
-            if args.status == 'failed' and args.notes:
+                    validation_error = (
+                        f"Cannot mark LOCAL item '{args.item_id}' as DONE without recording execution. "
+                        f"Use RecordLocalExecutionTool instead — it records and marks DONE atomically."
+                    )
+                    return
+
+            # --- Guard 3: pending delegation (follow-up in flight) ---
+            if (target_status == WorkItemStatus.DONE
+                    and item.kind == WorkItemKind.REMOTE
+                    and item.result and item.result.pending_exchange):
+                pending = item.result.pending_exchange
+                validation_error = (
+                    f"Cannot mark '{args.item_id}' as DONE — a follow-up is pending with "
+                    f"{pending.delegated_to} (sent: \"{pending.query[:60]}...\"). "
+                    f"Wait for the response in a future cycle, or mark 'failed' to abandon."
+                )
+                return
+
+            # --- Guard 4: PENDING item with no work done at all ---
+            if (target_status == WorkItemStatus.DONE
+                    and item.status == WorkItemStatus.PENDING):
+                validation_error = (
+                    f"Cannot mark PENDING item '{args.item_id}' as DONE — no work was performed. "
+                    f"Delegate it first (REMOTE) or execute it (LOCAL)."
+                )
+                return
+
+            # --- All guards passed — apply the update ---
+            item.status = target_status
+
+            if target_status == WorkItemStatus.FAILED and args.notes:
                 item.error = args.notes
-            
-            # Mark all delegation exchanges as processed (LLM has acted by marking status)
+
             if item.result and item.result.delegations:
                 for exchange in item.result.delegations:
                     exchange.processed = True
-            
-            # Store final summary if provided
+
             if args.notes and item.result:
                 item.result.final_summary = args.notes
-            
-            # Mark success flag when marking DONE
-            if args.status == 'done' and item.result:
+
+            if target_status == WorkItemStatus.DONE and item.result:
                 item.result.success = True
-        
-        success = workspace_service.atomic_update_work_item(thread_id, owner_uid, args.item_id, update_status)
-        
+
+        success = workspace_service.atomic_update_work_item(
+            thread_id, owner_uid, args.item_id, validate_and_update
+        )
+
+        if validation_error:
+            return {"success": False, "error": validation_error}
+
         if not success:
-            return {"success": False, "error": "Work plan or work item not found"}
-        
-        result = {
+            return {"success": False, "error": f"Work item '{args.item_id}' not found in work plan."}
+
+        return {
             "success": True,
             "item_id": args.item_id,
-            "new_status": args.status  # Already a string literal ('done' or 'failed')
+            "new_status": args.status
         }
-        return result

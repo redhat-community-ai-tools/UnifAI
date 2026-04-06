@@ -872,17 +872,14 @@ class WorkspaceService(IWorkspaceService):
         
         # Apply strategy pattern
         if strategy == "facts":
-            # Add as contextual facts for LLM context
             for msg in recent_messages:
-                fact = f"Previous conversation - {msg.role.value}: {msg.content[:100]}..."
+                fact = f"Previous conversation - {msg.role.value}: {msg.content}"
                 workspace.add_fact(fact)
         elif strategy == "conversation":
-            # Add to conversation history (proper message format, avoiding duplicates)
             workspace.append_messages_from_graphstate(recent_messages)
         elif strategy == "both":
-            # Add as both facts and conversation history (avoiding duplicates)
             for msg in recent_messages:
-                fact = f"Previous conversation - {msg.role.value}: {msg.content[:100]}..."
+                fact = f"Previous conversation - {msg.role.value}: {msg.content}"
                 workspace.add_fact(fact)
             workspace.append_messages_from_graphstate(recent_messages)
         else:

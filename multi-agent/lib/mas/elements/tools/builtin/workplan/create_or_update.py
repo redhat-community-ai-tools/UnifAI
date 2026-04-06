@@ -5,7 +5,7 @@ Tool for creating or updating work plans.
 from typing import Dict, Any, List, Optional, Callable
 from pydantic import BaseModel, Field
 from mas.elements.tools.common.base_tool import BaseTool
-from mas.elements.nodes.common.workload import WorkPlan, WorkItem, WorkItemKind
+from mas.elements.nodes.common.workload import WorkPlan, WorkItem, WorkItemKind, WorkItemStatus
 from mas.elements.nodes.common.agent.constants import ToolNames
 
 
@@ -58,6 +58,7 @@ class CreateOrUpdateWorkPlanTool(BaseTool):
     - Use LOCAL for tasks you can do yourself, REMOTE for delegation
     - Set dependencies by item ID (items wait for dependencies to be 'done')
     - Use snake_case for IDs (e.g., 'analyze_data', 'create_report')
+    - Do NOT create synthesis/summarize/compile items — the SYNTHESIS phase handles final answers automatically
     
     DEPENDENCY EXAMPLES:
     - Item 'create_report' depends on ['analyze_data', 'gather_feedback']
@@ -118,22 +119,22 @@ class CreateOrUpdateWorkPlanTool(BaseTool):
             for i, item_spec in enumerate(args.items):
                 
                 if item_spec.id in plan.items:
-                    # ✅ UPDATE: Preserve runtime state (status, result, error, etc.)
                     existing_item = plan.items[item_spec.id]
                     
-                    # Only update fields from LLM spec, preserve all runtime state
+                    # Guard: don't mutate kind on active items (would corrupt state)
+                    if (existing_item.status != WorkItemStatus.PENDING
+                            and item_spec.kind != existing_item.kind):
+                        continue
+
                     existing_item.title = item_spec.title
                     existing_item.description = item_spec.description
                     existing_item.dependencies = item_spec.dependencies
                     existing_item.kind = item_spec.kind
                     
-                    # ✅ Allow reassignment if LLM specifies it
                     if item_spec.assigned_uid is not None:
                         existing_item.assigned_uid = item_spec.assigned_uid
                     
                     existing_item.mark_updated()
-                    
-                    # ✅ Preserved properties: status, result, child_thread_id, error, delegations
                 else:
                     # ✅ CREATE: New item with defaults
                     new_item = WorkItem(
