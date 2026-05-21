@@ -94,6 +94,14 @@ class ShareService:
         except Exception as e:
             raise ValueError(f"Failed to accept share: {str(e)}")
 
+    def duplicate_blueprint(self, *, blueprint_id: str, user_id: str) -> tuple:
+        """Duplicate a blueprint for the same user (no invite created)."""
+        ctx = CloneContext(
+            sender_user_id=user_id,
+            recipient_user_id=user_id,
+        )
+        return self._cloner.clone_blueprint(blueprint_id=blueprint_id, ctx=ctx)
+
     def decline_invite(self, share_id: str, *, recipient_user_id: str) -> None:
         """Decline invitation."""
         invite = self._repo.get(share_id)

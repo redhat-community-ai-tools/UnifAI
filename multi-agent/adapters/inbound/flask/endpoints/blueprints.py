@@ -7,6 +7,8 @@ from werkzeug.exceptions import BadRequest
 from typing import Optional
 from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
+    BlueprintAccessDeniedError,
+    BlueprintCloneError,
     BlueprintSaveError,
     BlueprintMetadataError,
 )
@@ -323,6 +325,43 @@ def set_metadata(blueprint_id, metadata):
     except Exception as e:
         logger.exception(f"Unexpected error updating metadata for blueprint {blueprint_id}")
         return jsonify({"error": str(e)}), 500
+
+@blueprints_bp.route("/blueprint.duplicate", methods=["POST"])
+@from_body({
+    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
+    "user_id": fields.Str(data_key="userId", required=True),
+})
+def duplicate_blueprint(blueprint_id, user_id):
+    """
+    Duplicate a blueprint and all its dependencies for the same user.
+    Creates a new blueprint with "(copy)" suffix.
+    """
+    try:
+        svc = current_app.container.share_service
+
+        new_blueprint_id, rid_mapping, name_conflicts = svc.duplicate_blueprint(
+            blueprint_id=blueprint_id,
+            user_id=user_id,
+        )
+
+        return jsonify({
+            "status": "success",
+            "blueprint_id": new_blueprint_id,
+            "resources_cloned": len(rid_mapping),
+            "name_conflicts": name_conflicts,
+        }), 201
+
+    except BlueprintNotFoundError as e:
+        return jsonify({"status": "error", "error": str(e)}), 404
+    except BlueprintAccessDeniedError as e:
+        return jsonify({"status": "error", "error": str(e)}), 403
+    except BlueprintCloneError as e:
+        logger.exception(f"Duplicate failed for blueprint {blueprint_id}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+    except Exception as e:
+        logger.exception(f"Unexpected error duplicating blueprint {blueprint_id}")
+        return jsonify({"status": "error", "error": str(e)}), 500
+
 
 @blueprints_bp.route("/blueprint.validate", methods=["POST"])
 @from_body({

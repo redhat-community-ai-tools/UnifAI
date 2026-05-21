@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
-import { Trash2, Users, Pencil, Search, X } from "lucide-react";
+import { Trash2, Users, Pencil, Search, X, Copy } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { useShared } from "@/contexts/SharedContext";
@@ -17,7 +17,7 @@ import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import { FlowObject } from "./graphs/interfaces";
 import GraphDisplay from "./graphs/GraphDisplay";
 import { fetchActiveSessions } from "@/api/agentic";
-import { fetchBlueprintSummaries, deleteBlueprint, fetchResolvedBlueprint } from "@/api/blueprints";
+import { fetchBlueprintSummaries, deleteBlueprint, fetchResolvedBlueprint, duplicateBlueprint } from "@/api/blueprints";
 import { convertGraphFlowToFlowObject } from "@/utils/blueprintHelpers";
 import ShareWorkflow from "./ShareWorkflow";
 import { BlueprintValidationResult } from "@/types/validation";
@@ -63,6 +63,8 @@ export default function WorkflowsPanel({
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [flowToDelete, setFlowToDelete] = useState<FlowObject | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [isDuplicating, setIsDuplicating] = useState<string | null>(null);
+  const duplicatingInFlight = useRef<Set<string>>(new Set());
   const [selectedBlueprintData, setSelectedBlueprintData] = useState<{
     specDict: any;
     sharingEnabled: boolean;
@@ -231,6 +233,23 @@ export default function WorkflowsPanel({
     });
   };
 
+  const handleDuplicateClick = async (flow: FlowObject, event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (duplicatingInFlight.current.has(flow.id)) return;
+    duplicatingInFlight.current.add(flow.id);
+    setIsDuplicating(flow.id);
+    try {
+      const userId = user?.username || "default";
+      await duplicateBlueprint(flow.id, userId);
+      await fetchAvailableFlows();
+    } catch (error) {
+      console.error("Error duplicating blueprint:", error);
+    } finally {
+      duplicatingInFlight.current.delete(flow.id);
+      setIsDuplicating(null);
+    }
+  };
+
   const handleDeleteConfirm = async () => {
     if (!flowToDelete) return;
 
@@ -376,6 +395,17 @@ export default function WorkflowsPanel({
                           onClick={(e) => handleShareClick(flow, e)}
                         >
                           <Users className="h-3 w-3" />
+                        </Button>
+                      </SimpleTooltip>
+                      <SimpleTooltip content={<p>Duplicate this workflow</p>}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 hover:bg-green-500/20 hover:text-green-400"
+                          onClick={(e) => handleDuplicateClick(flow, e)}
+                          disabled={isDuplicating === flow.id}
+                        >
+                          <Copy className="h-3 w-3" />
                         </Button>
                       </SimpleTooltip>
                       {showDeleteButton && (

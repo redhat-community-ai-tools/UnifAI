@@ -17,7 +17,7 @@ class BlueprintRepository(ABC):
         """
         Replace an existing draft.  Return True if a document was modified.
         """
-        
+
     @abstractmethod
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
         """

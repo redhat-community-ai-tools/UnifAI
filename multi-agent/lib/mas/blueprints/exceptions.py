@@ -41,3 +41,11 @@ class BlueprintMetadataError(BlueprintError):
         self.message = message or f"Failed to update metadata for blueprint '{blueprint_id}'"
         super().__init__(self.message)
 
+
+class BlueprintCloneError(BlueprintError):
+    """Raised when cloning a blueprint or its resources fails."""
+    def __init__(self, message: str, cause: Exception = None):
+        self.message = message
+        self.cause = cause
+        super().__init__(self.message)
+

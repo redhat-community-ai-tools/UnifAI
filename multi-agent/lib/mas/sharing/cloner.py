@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from mas.resources.models import Resource
 from mas.resources.registry import ResourcesRegistry
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintResource, StepDef
+from mas.blueprints.exceptions import BlueprintAccessDeniedError, BlueprintCloneError
 from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.ref import RefWalker, RefRemapper
@@ -84,7 +85,7 @@ class ShareCloner:
         result = self._clone_resource_set(closure_data, ctx)
 
         if not result.success:
-            raise ValueError(f"Resource cloning failed: {result.errors}")
+            raise BlueprintCloneError(f"Resource cloning failed: {result.errors}")
 
         logger.info(f"Resource graph clone completed: {result.resources_cloned} resources cloned")
         return result.rid_mapping, result.name_conflicts
@@ -97,7 +98,7 @@ class ShareCloner:
             # Load and validate blueprint
             bp_doc = self.blueprints.get_blueprint_draft_doc(blueprint_id)
             if bp_doc.user_id != ctx.sender_user_id:
-                raise ValueError(f"Blueprint {blueprint_id} not owned by sender")
+                raise BlueprintAccessDeniedError(blueprint_id, ctx.sender_user_id)
 
             draft = BlueprintDraft(**bp_doc.spec_dict)
 
@@ -142,7 +143,7 @@ class ShareCloner:
         clone_result = self._clone_resource_set(closure_data, ctx)
 
         if not clone_result.success:
-            raise ValueError(f"Failed to clone resources: {clone_result.errors}")
+            raise BlueprintCloneError(f"Failed to clone resources: {clone_result.errors}")
 
         logger.debug(f"RID mapping created: {clone_result.rid_mapping}")
         return clone_result.rid_mapping, clone_result.name_conflicts, clone_result.resources_cloned
@@ -293,6 +294,23 @@ class ShareCloner:
         # Fallback to UUID if too many conflicts
         return f"{base_name} ({uuid4().hex[:8]})"
 
+    def _resolve_blueprint_name_conflict(self, original_name: str, ctx: CloneContext) -> str:
+        """Resolve blueprint name conflicts for self-duplication: (copy), (copy 2), etc."""
+        existing_names = {
+            s.name for s in self.blueprints.list_summaries(user_id=ctx.recipient_user_id)
+        }
+
+        candidate = f"{original_name} (copy)"
+        if candidate not in existing_names:
+            return candidate
+
+        for counter in range(2, 101):
+            candidate = f"{original_name} (copy {counter})"
+            if candidate not in existing_names:
+                return candidate
+
+        return f"{original_name} (copy {uuid4().hex[:8]})"
+
     def _clone_blueprint_draft(self, draft: BlueprintDraft, rid_mapping: Dict[str, str],
                                ctx: CloneContext) -> BlueprintDraft:
         """Clone a BlueprintDraft with proper ref replacement and new step UIDs."""
@@ -306,9 +324,15 @@ class ShareCloner:
             for category in ResourceCategory
         }
 
+        is_self_clone = ctx.sender_user_id == ctx.recipient_user_id
+        if is_self_clone:
+            clone_name = self._resolve_blueprint_name_conflict(draft.name, ctx)
+        else:
+            clone_name = f"{draft.name} (from {ctx.sender_user_id})"
+
         return BlueprintDraft(
             plan=self._clone_plan(draft.plan, rid_mapping),
-            name=f"{draft.name} (from {ctx.sender_user_id})",
+            name=clone_name,
             description=draft.description,
             **resource_fields
         )

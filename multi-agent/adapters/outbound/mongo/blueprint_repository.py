@@ -49,7 +49,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         )
 
         return res.modified_count == 1
-    
+
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
         """Set the metadata dictionary for a blueprint document."""
         if not isinstance(metadata, dict):
