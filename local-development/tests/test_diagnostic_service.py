@@ -7,15 +7,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from devtool.domain.models import Service, ServiceType, VenvConfig, VenvStrategy
+from devtool.domain.models import ServiceInfo, ServiceType, VenvConfig, VenvStrategy
 from devtool.services.diagnostic_service import DiagnosticService
 
 
 def _make_service(
     name: str = "backend", *, port: int | None = 8000,
     env_file: str | None = ".env",
-) -> Service:
-    return Service(
+) -> ServiceInfo:
+    return ServiceInfo(
         name=name, directory=Path(name), type=ServiceType.PYTHON,
         launch="echo ok", venv=VenvConfig(strategy=VenvStrategy.NONE),
         port=port, env_file=env_file, env_entries={},
@@ -23,7 +23,7 @@ def _make_service(
 
 
 def _make_diag(
-    services: list[Service] | None = None,
+    services: list[ServiceInfo] | None = None,
     root: Path = Path("/fake"),
 ) -> DiagnosticService:
     registry = MagicMock()
@@ -31,6 +31,11 @@ def _make_diag(
     registry.all_services.return_value = svcs
     registry.log_dir = root / "logs"
     registry.local_auth = True
+
+    env_service = MagicMock()
+    env_service.env_file_exists.return_value = True
+    env_service.check_missing_keys.return_value = set()
+    env_service.check_unresolved.return_value = (set(), set())
 
     return DiagnosticService(
         registry=registry,
@@ -41,18 +46,20 @@ def _make_diag(
         health_checker=MagicMock(),
         infra_service=MagicMock(),
         venv_service=MagicMock(),
+        env_service=env_service,
     )
 
 
 class TestStatus:
     def test_delegates_to_health_checker(self) -> None:
         diag = _make_diag()
-        diag._health.build_dashboard.return_value = ([], [], [])
+        diag._health.check_all.return_value = ([], [])
+        diag._health.analyze_issues.return_value = []
+        diag._session.pane_contents.return_value = {}
 
         diag.status()
 
-        diag._health.build_dashboard.assert_called_once()
-        diag._health.render_dashboard.assert_called_once()
+        diag._health.check_all.assert_called_once()
 
 
 class TestDoctor:
@@ -86,20 +93,12 @@ class TestDoctor:
         diag._venv_svc.check.return_value = []
         diag._process.is_port_in_use.return_value = False
 
-        env_dir = tmp_path / "api"
-        env_dir.mkdir()
-        (env_dir / ".env").write_text("KEY=value\n")
+        diag.doctor()
 
-        with patch("devtool.services.diagnostic_service.env") as mock_env:
-            mock_env.check_missing_keys.return_value = set()
-            mock_env.check_unresolved.return_value = (set(), set())
-            diag.doctor()
-
-            mock_env.check_missing_keys.assert_called_once()
+        diag._env_svc.check_missing_keys.assert_called_once()
 
     def test_reports_missing_env(self, tmp_path: Path, capsys) -> None:
-        svc = _make_service("api", env_file=".env")
-        svc = Service(
+        svc = ServiceInfo(
             name="api", directory=Path("api"), type=ServiceType.PYTHON,
             launch="echo ok", venv=VenvConfig(strategy=VenvStrategy.NONE),
             port=8000, env_file=".env", env_entries={"KEY": "val"},
@@ -108,7 +107,7 @@ class TestDoctor:
         diag._venv_svc.detect_python.return_value = ("/usr/bin/python3", "3.12")
         diag._venv_svc.check.return_value = []
         diag._process.is_port_in_use.return_value = False
-        (tmp_path / "api").mkdir()
+        diag._env_svc.env_file_exists.return_value = False
 
         diag.doctor()
 

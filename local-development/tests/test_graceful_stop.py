@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
-from devtool.domain.models import Service, ServiceType, VenvConfig, VenvStrategy
+from devtool.domain.models import ServiceInfo, ServiceType, VenvConfig, VenvStrategy
 
 
 class TestTmuxGracefulStop:

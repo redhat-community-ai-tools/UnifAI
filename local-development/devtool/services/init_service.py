@@ -9,7 +9,6 @@ from pathlib import Path
 
 from devtool.domain.registry import Registry
 from devtool.ports.container_runtime import ContainerRuntime
-from devtool.services import dotenv as env
 from devtool.services.env_service import EnvService
 from devtool.services.infra_service import InfraService
 from devtool.services.venv_service import VenvService
@@ -77,14 +76,14 @@ class InitService:
         existing_envs = [
             svc for svc in self._registry.all_services()
             if svc.env_file
-            and (self._root / svc.directory / svc.env_file).exists()
+            and self._env_svc.env_file_exists(svc)
         ]
         if existing_envs and not non_interactive:
             names = ", ".join(s.name for s in existing_envs)
             print(f"  ℹ Existing .env files found: {names}")
             answer = input("  Regenerate .env files? [y/N]: ").strip().lower()
             if answer in ("y", "yes"):
-                env.get_or_create_shared_secret(self._root)
+                self._env_svc.get_or_create_shared_secret()
                 self._env_svc.generate(force=True)
                 self._env_svc.auto_resolve_generated_keys()
             else:

@@ -7,12 +7,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from devtool.domain.models import Service, ServiceType, VenvConfig, VenvStrategy
+from devtool.domain.models import ServiceInfo, ServiceType, VenvConfig, VenvStrategy
 from devtool.services.init_service import InitService
 
 
-def _make_service(name: str = "backend", env_file: str | None = ".env") -> Service:
-    return Service(
+def _make_service(name: str = "backend", env_file: str | None = ".env") -> ServiceInfo:
+    return ServiceInfo(
         name=name, directory=Path(name), type=ServiceType.PYTHON,
         launch="echo ok", venv=VenvConfig(strategy=VenvStrategy.TOML),
         env_file=env_file, env_entries={"KEY": "val"},
@@ -20,7 +20,7 @@ def _make_service(name: str = "backend", env_file: str | None = ".env") -> Servi
 
 
 def _make_init_service(
-    services: list[Service] | None = None,
+    services: list[ServiceInfo] | None = None,
     root: Path = Path("/fake"),
 ) -> InitService:
     registry = MagicMock()

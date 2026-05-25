@@ -1,18 +1,19 @@
-"""Tests for devtool.services.env_service."""
+"""Tests for devtool.services.env_service (public API and orchestration)."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from devtool.domain.models import Service, ServiceType, VenvConfig, VenvStrategy
+from devtool.domain.models import ServiceInfo, ServiceType, VenvConfig, VenvStrategy
+from devtool.ports.env_file_store import EnvFileStore
 from devtool.services.env_service import EnvService
 
 
-def _make_service(name: str = "backend") -> Service:
-    return Service(
+def _make_service(name: str = "backend") -> ServiceInfo:
+    return ServiceInfo(
         name=name, directory=Path(name), type=ServiceType.PYTHON,
         launch="echo ok", venv=VenvConfig(strategy=VenvStrategy.NONE),
         env_file=".env", env_entries={"KEY": "val"},
@@ -20,104 +21,141 @@ def _make_service(name: str = "backend") -> Service:
 
 
 def _make_env_service(
-    services: list[Service] | None = None,
-    root: Path = Path("/fake"),
+    services: list[ServiceInfo] | None = None,
+    *,
+    store: EnvFileStore | None = None,
+    local_auth: bool = False,
 ) -> EnvService:
     registry = MagicMock()
     svcs = services or [_make_service()]
     by_name = {s.name: s for s in svcs}
     registry.all_services.return_value = svcs
     registry.get_service.side_effect = lambda n: by_name[n]
-    return EnvService(registry=registry, root=root)
+    registry.local_auth = local_auth
+    if store is None:
+        store = MagicMock(spec=EnvFileStore)
+        store.exists.return_value = False
+    return EnvService(registry=registry, store=store)
 
 
 class TestGenerate:
-    @patch("devtool.services.env_service.env")
-    def test_generate_prints_summary(self, mock_env, capsys) -> None:
-        mock_env.generate_all.return_value = (["api"], ["backend"], ["rag"], [])
-        svc = _make_env_service()
+    def test_generate_prints_summary(self, capsys) -> None:
+        store = MagicMock(spec=EnvFileStore)
+        store.exists.return_value = False
+        svc = _make_env_service(store=store)
 
         svc.generate()
 
         captured = capsys.readouterr()
-        assert "Generated: api" in captured.out
-        assert "Updated" in captured.out
-        assert "Preserved" in captured.out
+        assert "Generated" in captured.out
 
-    @patch("devtool.services.env_service.env")
-    def test_generate_force(self, mock_env) -> None:
-        mock_env.generate_all.return_value = ([], [], [], [])
-        svc = _make_env_service()
+    def test_generate_force_overwrites(self) -> None:
+        store = MagicMock(spec=EnvFileStore)
+        store.exists.return_value = True
+        svc = _make_env_service(store=store)
 
         svc.generate(force=True)
 
-        mock_env.generate_all.assert_called_once()
-        _, kwargs = mock_env.generate_all.call_args
-        assert kwargs["force"] is True
+        store.write.assert_called_once()
 
-    @patch("devtool.services.env_service.env")
-    def test_generate_prints_warnings(self, mock_env, capsys) -> None:
-        mock_env.generate_all.return_value = ([], [], [], ["⚠ warning"])
-        svc = _make_env_service()
+    def test_generate_prints_warnings_for_placeholders(self, capsys) -> None:
+        service = ServiceInfo(
+            name="api", directory=Path("api"), type=ServiceType.PYTHON,
+            launch="echo ok", venv=VenvConfig(strategy=VenvStrategy.NONE),
+            env_file=".env", env_entries={"secret": "<REPLACE_ME>"},
+        )
+        store = MagicMock(spec=EnvFileStore)
+        store.exists.side_effect = lambda svc: True
+        store.read_entries.return_value = {"secret": "<REPLACE_ME>"}
+        env_svc = _make_env_service([service], store=store)
 
-        svc.generate()
+        env_svc.generate()
 
         captured = capsys.readouterr()
-        assert "⚠ warning" in captured.out
+        assert "placeholder" in captured.out
 
 
 class TestShow:
-    @patch("devtool.services.env_service.env")
-    def test_show_delegates(self, mock_env) -> None:
-        svc = _make_env_service()
+    def test_show_prints_file_content(self, capsys) -> None:
+        store = MagicMock(spec=EnvFileStore)
+        store.read_raw.return_value = "KEY=value\n"
+        svc = _make_env_service(store=store)
+
         svc.show("backend")
-        mock_env.show.assert_called_once()
+
+        captured = capsys.readouterr()
+        assert "KEY=value" in captured.out
+
+    def test_show_prints_template_when_missing(self, capsys) -> None:
+        store = MagicMock(spec=EnvFileStore)
+        store.read_raw.return_value = None
+        svc = _make_env_service(store=store)
+
+        svc.show("backend")
+
+        captured = capsys.readouterr()
+        assert "does not exist" in captured.out
+        assert "KEY=val" in captured.out
 
 
 class TestAutoResolveGeneratedKeys:
-    @patch("devtool.services.env_service.env")
-    def test_noop_when_no_keys(self, mock_env) -> None:
-        mock_env.collect_auto_generate_keys.return_value = {}
-        svc = _make_env_service()
+    def test_noop_when_no_keys(self) -> None:
+        service = ServiceInfo(
+            name="api", directory=Path("api"), type=ServiceType.PYTHON,
+            launch="echo ok", venv=VenvConfig(strategy=VenvStrategy.NONE),
+            env_file=".env", env_entries={"KEY": "val"},
+        )
+        store = MagicMock(spec=EnvFileStore)
+        store.exists.return_value = True
+        store.read_entries.return_value = {"KEY": "val"}
+        svc = _make_env_service([service], store=store)
 
         svc.auto_resolve_generated_keys()
 
-        mock_env.resolve_auto_generate_key.assert_not_called()
+        store.replace_value.assert_not_called()
 
-    @patch("devtool.services.env_service.env")
-    def test_resolves_keys(self, mock_env, capsys) -> None:
-        mock_env.collect_auto_generate_keys.return_value = {
-            "SECRET_KEY": ["backend", "api"],
-        }
-        mock_env.get_or_create_shared_secret.return_value = "s3cr3t"
-        mock_env.resolve_auto_generate_key.return_value = 2
-
-        svcs = [_make_service("backend"), _make_service("api")]
-        svc = _make_env_service(svcs)
+    def test_resolves_keys(self, capsys) -> None:
+        service = ServiceInfo(
+            name="backend", directory=Path("backend"), type=ServiceType.PYTHON,
+            launch="echo ok", venv=VenvConfig(strategy=VenvStrategy.NONE),
+            env_file=".env", env_entries={"SECRET_KEY": "<AUTO_GENERATE>"},
+        )
+        store = MagicMock(spec=EnvFileStore)
+        store.exists.return_value = True
+        store.read_entries.return_value = {"SECRET_KEY": "<AUTO_GENERATE>"}
+        store.read_shared_secret.return_value = "s3cr3t"
+        svc = _make_env_service([service], store=store)
 
         svc.auto_resolve_generated_keys()
 
-        mock_env.resolve_auto_generate_key.assert_called_once()
+        store.replace_value.assert_called_once_with(service, "SECRET_KEY", "s3cr3t")
         captured = capsys.readouterr()
         assert "SECRET_KEY" in captured.out
-        assert "2 service(s)" in captured.out
+        assert "1 service(s)" in captured.out
 
 
 class TestResolvePlaceholders:
-    @patch("devtool.services.env_service.env")
-    def test_no_placeholders(self, mock_env, capsys) -> None:
-        mock_env.check_unresolved.return_value = (set(), set())
-        svc = _make_env_service()
+    def test_no_placeholders(self, capsys) -> None:
+        store = MagicMock(spec=EnvFileStore)
+        store.exists.return_value = True
+        store.read_entries.return_value = {"KEY": "val"}
+        svc = _make_env_service(store=store)
 
         svc.resolve_placeholders(non_interactive=True)
 
         captured = capsys.readouterr()
         assert "No placeholders" in captured.out
 
-    @patch("devtool.services.env_service.env")
-    def test_non_interactive_warns(self, mock_env, capsys) -> None:
-        mock_env.check_unresolved.return_value = ({"client_id"}, set())
-        svc = _make_env_service()
+    def test_non_interactive_warns(self, capsys) -> None:
+        service = ServiceInfo(
+            name="backend", directory=Path("backend"), type=ServiceType.PYTHON,
+            launch="echo ok", venv=VenvConfig(strategy=VenvStrategy.NONE),
+            env_file=".env", env_entries={"client_id": "<REPLACE_ID>"},
+        )
+        store = MagicMock(spec=EnvFileStore)
+        store.exists.return_value = True
+        store.read_entries.return_value = {"client_id": "<REPLACE_ID>"}
+        svc = _make_env_service([service], store=store)
 
         svc.resolve_placeholders(non_interactive=True)
 

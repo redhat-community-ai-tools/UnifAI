@@ -9,7 +9,7 @@ import pytest
 from devtool.domain.models import (
     ContainerStatus,
     InfraComponent,
-    Service,
+    ServiceInfo,
     ServiceHealth,
     ServiceStatus,
     ServiceType,
@@ -21,8 +21,8 @@ from devtool.services.recovery import Recovery
 
 def _make_service(
     name: str, *, is_primary: bool = True, port: int | None = 8000,
-) -> Service:
-    return Service(
+) -> ServiceInfo:
+    return ServiceInfo(
         name=name, directory=name, type=ServiceType.PYTHON,
         launch="echo ok", venv=VenvConfig(strategy=VenvStrategy.NONE),
         port=port, is_primary=is_primary, env_file=None, env_entries={},
@@ -30,7 +30,7 @@ def _make_service(
 
 
 def _make_recovery(
-    services: list[Service],
+    services: list[ServiceInfo],
     infra: list[InfraComponent] | None = None,
 ) -> Recovery:
     registry = MagicMock()

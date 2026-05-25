@@ -14,7 +14,7 @@ from devtool.domain.models import (
     ContainerStatus,
     InfraComponent,
     InfraHealth,
-    Service,
+    ServiceInfo,
     ServiceHealth,
     ServiceStatus,
     ServiceType,
@@ -22,14 +22,9 @@ from devtool.domain.models import (
     VenvConfig,
     VenvStrategy,
 )
-from devtool.services.health_checker import (
-    HealthChecker,
-    _analyze_issues,
-    _match_panes_to_services,
-    _parse_host_port,
-    _render_dashboard,
-    _resolve_host,
-)
+from devtool.services.diagnostic_service import DiagnosticService
+from devtool.services.health_checker import HealthChecker
+from devtool.services.pane_matcher import match_panes_to_services
 
 
 # ---------------------------------------------------------------------------
@@ -44,8 +39,8 @@ def _make_service(
     health_endpoint: str | None = "/",
     infrastructure: list[str] | None = None,
     is_primary: bool = True,
-) -> Service:
-    return Service(
+) -> ServiceInfo:
+    return ServiceInfo(
         name=name,
         directory=Path(name),
         type=ServiceType.PYTHON,
@@ -224,7 +219,7 @@ class TestCheckService:
 # ---------------------------------------------------------------------------
 
 class TestCheckInfra:
-    def test_running_with_uptime(self) -> None:
+    def test_running_with_uptime(self, mock_probe: MagicMock) -> None:
         comp = InfraComponent(
             name="mongo", image="mongo:latest",
             ports=["27017:27017"], label="MongoDB",
@@ -233,13 +228,13 @@ class TestCheckInfra:
         runtime.status.return_value = ContainerStatus.RUNNING
         runtime.container_uptime.return_value = "2h 15m"
 
-        from devtool.services.health_checker import _check_infra
-        result = _check_infra(comp, runtime)
+        checker = HealthChecker(mock_probe)
+        result = checker.check_infra(comp, runtime)
         assert result.status is ContainerStatus.RUNNING
         assert result.uptime == "2h 15m"
         assert result.port == 27017
 
-    def test_stopped(self) -> None:
+    def test_stopped(self, mock_probe: MagicMock) -> None:
         comp = InfraComponent(
             name="redis", image="redis:latest",
             ports=["6379:6379"], label="Redis",
@@ -247,12 +242,12 @@ class TestCheckInfra:
         runtime = MagicMock()
         runtime.status.return_value = ContainerStatus.STOPPED
 
-        from devtool.services.health_checker import _check_infra
-        result = _check_infra(comp, runtime)
+        checker = HealthChecker(mock_probe)
+        result = checker.check_infra(comp, runtime)
         assert result.status is ContainerStatus.STOPPED
         assert result.uptime is None
 
-    def test_not_created(self) -> None:
+    def test_not_created(self, mock_probe: MagicMock) -> None:
         comp = InfraComponent(
             name="redis", image="redis:latest",
             ports=["6379:6379"], label="Redis",
@@ -260,8 +255,8 @@ class TestCheckInfra:
         runtime = MagicMock()
         runtime.status.return_value = ContainerStatus.NOT_CREATED
 
-        from devtool.services.health_checker import _check_infra
-        result = _check_infra(comp, runtime)
+        checker = HealthChecker(mock_probe)
+        result = checker.check_infra(comp, runtime)
         assert result.status is ContainerStatus.NOT_CREATED
 
 
@@ -270,8 +265,9 @@ class TestCheckInfra:
 # ---------------------------------------------------------------------------
 
 class TestAnalyzeIssues:
-    def test_stopped_infra_identifies_affected_services(self, yaml_path: Path) -> None:
+    def test_stopped_infra_identifies_affected_services(self, yaml_path: Path, mock_probe: MagicMock) -> None:
         reg = YamlRegistryLoader.load(yaml_path)
+        checker = HealthChecker(mock_probe)
         infra_results = [
             InfraHealth("mongo", "MongoDB", 27017, ContainerStatus.RUNNING, "1h"),
             InfraHealth("redis", "Redis", 6379, ContainerStatus.STOPPED),
@@ -282,15 +278,16 @@ class TestAnalyzeIssues:
             ServiceHealth("api", ServiceStatus.DOWN, 8002, port_open=False),
         ]
 
-        issues = _analyze_issues(reg, infra_results, service_results)
+        issues = checker.analyze_issues(reg, infra_results, service_results)
         assert len(issues) == 1
         assert "Redis" in issues[0].description
         assert "worker" in issues[0].affected
         assert "api" in issues[0].affected
         assert "infra start redis" in issues[0].fix
 
-    def test_service_down_without_infra_cause(self, yaml_path: Path) -> None:
+    def test_service_down_without_infra_cause(self, yaml_path: Path, mock_probe: MagicMock) -> None:
         reg = YamlRegistryLoader.load(yaml_path)
+        checker = HealthChecker(mock_probe)
         infra_results = [
             InfraHealth("mongo", "MongoDB", 27017, ContainerStatus.RUNNING, "1h"),
             InfraHealth("redis", "Redis", 6379, ContainerStatus.RUNNING, "1h"),
@@ -301,13 +298,14 @@ class TestAnalyzeIssues:
             ServiceHealth("api", ServiceStatus.HEALTHY, 8002, port_open=True, http_healthy=True),
         ]
 
-        issues = _analyze_issues(reg, infra_results, service_results)
+        issues = checker.analyze_issues(reg, infra_results, service_results)
         assert len(issues) == 1
         assert "backend" in issues[0].description
         assert "restart backend" in issues[0].fix
 
-    def test_no_issues_when_all_healthy(self, yaml_path: Path) -> None:
+    def test_no_issues_when_all_healthy(self, yaml_path: Path, mock_probe: MagicMock) -> None:
         reg = YamlRegistryLoader.load(yaml_path)
+        checker = HealthChecker(mock_probe)
         infra_results = [
             InfraHealth("mongo", "MongoDB", 27017, ContainerStatus.RUNNING, "1h"),
             InfraHealth("redis", "Redis", 6379, ContainerStatus.RUNNING, "1h"),
@@ -318,13 +316,14 @@ class TestAnalyzeIssues:
             ServiceHealth("api", ServiceStatus.HEALTHY, 8002, port_open=True, http_healthy=True),
         ]
 
-        issues = _analyze_issues(reg, infra_results, service_results)
+        issues = checker.analyze_issues(reg, infra_results, service_results)
         assert issues == []
 
-    def test_infra_caused_service_not_duplicated(self, yaml_path: Path) -> None:
+    def test_infra_caused_service_not_duplicated(self, yaml_path: Path, mock_probe: MagicMock) -> None:
         """A service affected by stopped infra should not also appear
         as an independent 'not responding' issue."""
         reg = YamlRegistryLoader.load(yaml_path)
+        checker = HealthChecker(mock_probe)
         infra_results = [
             InfraHealth("mongo", "MongoDB", 27017, ContainerStatus.RUNNING, "1h"),
             InfraHealth("redis", "Redis", 6379, ContainerStatus.STOPPED),
@@ -335,7 +334,7 @@ class TestAnalyzeIssues:
             ServiceHealth("api", ServiceStatus.DOWN, 8002, port_open=False),
         ]
 
-        issues = _analyze_issues(reg, infra_results, service_results)
+        issues = checker.analyze_issues(reg, infra_results, service_results)
         descriptions = " ".join(i.description for i in issues)
         assert descriptions.count("api") == 1
 
@@ -354,7 +353,7 @@ class TestMatchPanesToServices:
             "0.0": "cd /home/user/backend && source venv/bin/activate",
             "0.1": "cd /home/user/rag && python -m bootstrap",
         }
-        result = _match_panes_to_services(services, pane_contents)
+        result = match_panes_to_services(services, pane_contents)
         assert result == {"backend": "0.0", "rag": "0.1"}
 
     def test_matches_by_service_name(self) -> None:
@@ -362,7 +361,7 @@ class TestMatchPanesToServices:
         pane_contents = {
             "0.0": "starting multi-agent service...",
         }
-        result = _match_panes_to_services(services, pane_contents)
+        result = match_panes_to_services(services, pane_contents)
         assert result == {"multi-agent": "0.0"}
 
     def test_no_match_returns_empty(self) -> None:
@@ -370,18 +369,18 @@ class TestMatchPanesToServices:
         pane_contents = {
             "0.0": "some unrelated output",
         }
-        result = _match_panes_to_services(services, pane_contents)
+        result = match_panes_to_services(services, pane_contents)
         assert result == {}
 
     def test_empty_panes(self) -> None:
         services = [_make_service("backend")]
-        result = _match_panes_to_services(services, {})
+        result = match_panes_to_services(services, {})
         assert result == {}
 
     def test_pane_not_reused(self) -> None:
         """Each pane should be matched to at most one service."""
         svc_a = _make_service("backend")
-        svc_b = Service(
+        svc_b = ServiceInfo(
             name="worker",
             directory=Path("backend"),
             type=ServiceType.PYTHON,
@@ -393,7 +392,7 @@ class TestMatchPanesToServices:
             "0.0": "cd /home/user/backend && python -m run.dev",
             "1.0": "cd /home/user/backend && celery worker",
         }
-        result = _match_panes_to_services([svc_a, svc_b], pane_contents)
+        result = match_panes_to_services([svc_a, svc_b], pane_contents)
         assert len(result) == 2
         assert result["backend"] != result["worker"]
 
@@ -404,31 +403,31 @@ class TestMatchPanesToServices:
 
 class TestResolveHost:
     def test_none_defaults_to_localhost(self) -> None:
-        svc = Service(
+        svc = ServiceInfo(
             name="x", directory=Path("x"), type=ServiceType.PYTHON,
             launch="echo", venv=VenvConfig(strategy=VenvStrategy.NONE),
             port=8000, host=None,
         )
-        assert _resolve_host(svc) == "127.0.0.1"
+        assert HealthChecker._resolve_host(svc) == "127.0.0.1"
 
     def test_zero_addr_maps_to_localhost(self) -> None:
         svc = _make_service("x", host="0.0.0.0")
-        assert _resolve_host(svc) == "127.0.0.1"
+        assert HealthChecker._resolve_host(svc) == "127.0.0.1"
 
     def test_explicit_host_preserved(self) -> None:
         svc = _make_service("x", host="192.168.1.1")
-        assert _resolve_host(svc) == "192.168.1.1"
+        assert HealthChecker._resolve_host(svc) == "192.168.1.1"
 
 
 class TestParseHostPort:
     def test_standard_mapping(self) -> None:
-        assert _parse_host_port("27017:27017") == 27017
+        assert HealthChecker._parse_host_port("27017:27017") == 27017
 
     def test_different_host_port(self) -> None:
-        assert _parse_host_port("5432:5432") == 5432
+        assert HealthChecker._parse_host_port("5432:5432") == 5432
 
     def test_invalid_returns_none(self) -> None:
-        assert _parse_host_port("invalid") is None
+        assert HealthChecker._parse_host_port("invalid") is None
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +453,7 @@ class TestRenderDashboard:
             StatusIssue("Redis stopped → api affected", "unifai-dev infra start redis", ["api"]),
         ]
 
-        _render_dashboard(infra, services, issues)
+        DiagnosticService._render_dashboard(infra, services, issues)
 
         captured = capsys.readouterr()
         assert "INFRASTRUCTURE" in captured.out
@@ -475,7 +474,7 @@ class TestRenderDashboard:
             ServiceHealth("backend", ServiceStatus.HEALTHY, 8005, port_open=True, http_healthy=True),
         ]
 
-        _render_dashboard(infra, services, [])
+        DiagnosticService._render_dashboard(infra, services, [])
 
         captured = capsys.readouterr()
         assert "ISSUES" not in captured.out

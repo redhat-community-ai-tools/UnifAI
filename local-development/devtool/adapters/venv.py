@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from devtool.domain.models import Service, ServiceType, VenvStrategy
+from devtool.domain.models import ServiceInfo, ServiceType, VenvStrategy
 from devtool.ports.venv_manager import VenvManager
 
 
@@ -22,7 +22,7 @@ class LocalVenvManager(VenvManager):
         return svc_dir / "venv" / "bin" / name
 
     def create(
-        self, service: Service, python: str, root: Path,
+        self, service: ServiceInfo, python: str, root: Path,
         *, log_dir: Path | None = None, force: bool = False,
     ) -> None:
         svc_dir = root / service.directory
@@ -45,7 +45,7 @@ class LocalVenvManager(VenvManager):
 
         self._install_deps(service, python, root, svc_dir, log_file)
 
-    def verify(self, service: Service, python_minor: str, root: Path) -> None:
+    def verify(self, service: ServiceInfo, python_minor: str, root: Path) -> None:
         svc_dir = root / service.directory
 
         if service.type is ServiceType.NODE:
@@ -81,7 +81,7 @@ class LocalVenvManager(VenvManager):
                 f"  Recreate with: unifai-dev venv setup {service.name}"
             )
 
-    def exists(self, service: Service, root: Path) -> bool:
+    def exists(self, service: ServiceInfo, root: Path) -> bool:
         svc_dir = root / service.directory
         if service.type is ServiceType.NODE:
             return (svc_dir / "node_modules").exists()
@@ -90,7 +90,7 @@ class LocalVenvManager(VenvManager):
         return self._venv_bin(svc_dir, "activate").exists()
 
     def sync(
-        self, service: Service, python: str, root: Path,
+        self, service: ServiceInfo, python: str, root: Path,
         *, log_dir: Path | None = None,
     ) -> None:
         svc_dir = root / service.directory
@@ -110,7 +110,7 @@ class LocalVenvManager(VenvManager):
     # -- private helpers -----------------------------------------------------
 
     def _create_venv_dir(
-        self, service: Service, python: str, svc_dir: Path,
+        self, service: ServiceInfo, python: str, svc_dir: Path,
         log_file: Path | None,
     ) -> None:
         """Create the venv directory, validating that the expected manifest exists."""
@@ -128,7 +128,7 @@ class LocalVenvManager(VenvManager):
         self._run([python, "-m", "venv", "venv"], svc_dir, log_file)
 
     def _install_deps(
-        self, service: Service, python: str, root: Path,
+        self, service: ServiceInfo, python: str, root: Path,
         svc_dir: Path, log_file: Path | None,
     ) -> None:
         """Install/update dependencies into an existing venv."""
@@ -159,7 +159,7 @@ class LocalVenvManager(VenvManager):
             self._run(cmd, svc_dir, log_file)
 
     def _create_custom(
-        self, service: Service, python: str, svc_dir: Path,
+        self, service: ServiceInfo, python: str, svc_dir: Path,
         log_file: Path | None,
     ) -> None:
         for cmd_template in service.venv.commands:

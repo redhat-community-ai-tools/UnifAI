@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .models import (
     InfraComponent,
-    Service,
+    ServiceInfo,
     ServiceGroup,
 )
 
@@ -21,7 +21,7 @@ class Registry:
     def __init__(
         self,
         *,
-        services: dict[str, Service],
+        services: dict[str, ServiceInfo],
         infra: dict[str, InfraComponent],
         groups: dict[str, ServiceGroup],
         local_auth: bool,
@@ -39,7 +39,7 @@ class Registry:
 
     # -- public API ----------------------------------------------------------
 
-    def get_service(self, name: str) -> Service:
+    def get_service(self, name: str) -> ServiceInfo:
         if name not in self._services:
             raise KeyError(
                 f"Unknown service '{name}'. "
@@ -55,15 +55,15 @@ class Registry:
             )
         return self._infra[name]
 
-    def all_services(self) -> list[Service]:
+    def all_services(self) -> list[ServiceInfo]:
         return list(self._services.values())
 
     def all_infra(self) -> list[InfraComponent]:
         return list(self._infra.values())
 
-    def primary_services(self) -> list[Service]:
+    def primary_services(self) -> list[ServiceInfo]:
         seen_dirs: set[Path] = set()
-        result: list[Service] = []
+        result: list[ServiceInfo] = []
         for svc in self._services.values():
             if not svc.is_primary:
                 continue
@@ -97,11 +97,11 @@ class Registry:
             if name in g.services
         ]
 
-    def resolve_services(self, targets: list[str]) -> list[Service]:
+    def resolve_services(self, targets: list[str]) -> list[ServiceInfo]:
         """Expand a mix of service names and group names into a
-        deduplicated list of Service objects, preserving first-seen order."""
+        deduplicated list of ServiceInfo objects, preserving first-seen order."""
         seen: set[str] = set()
-        result: list[Service] = []
+        result: list[ServiceInfo] = []
         for target in targets:
             if target in self._groups:
                 for svc_name in self._groups[target].services:
@@ -114,7 +114,7 @@ class Registry:
                     result.append(self.get_service(target))
         return result
 
-    def infra_for_services(self, services: list[Service]) -> list[InfraComponent]:
+    def infra_for_services(self, services: list[ServiceInfo]) -> list[InfraComponent]:
         """Union of all infrastructure needed by the given services."""
         seen: set[str] = set()
         result: list[InfraComponent] = []

@@ -17,7 +17,7 @@ except ImportError:
 
 from devtool.domain.models import (
     InfraComponent,
-    Service,
+    ServiceInfo,
     ServiceGroup,
     ServiceType,
     VenvConfig,
@@ -78,15 +78,15 @@ class YamlRegistryLoader:
         return result
 
     @staticmethod
-    def _parse_services(raw: dict) -> dict[str, Service]:
-        result: dict[str, Service] = {}
+    def _parse_services(raw: dict) -> dict[str, ServiceInfo]:
+        result: dict[str, ServiceInfo] = {}
         for name, data in raw.items():
             venv_raw = data.get("venv", {})
             venv = VenvConfig(
                 strategy=VenvStrategy(venv_raw.get("strategy", "none")),
                 commands=venv_raw.get("commands", []),
             )
-            result[name] = Service(
+            result[name] = ServiceInfo(
                 name=name,
                 directory=Path(data["directory"]),
                 port=data.get("port"),

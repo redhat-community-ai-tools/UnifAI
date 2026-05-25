@@ -10,7 +10,7 @@ import pytest
 from devtool.domain.models import (
     ContainerStatus,
     InfraComponent,
-    Service,
+    ServiceInfo,
     ServiceType,
     VenvConfig,
     VenvStrategy,
@@ -27,8 +27,8 @@ def _make_service(
     env_file: str | None = None,
     env_entries: dict[str, str] | None = None,
     directory: str = "test",
-) -> Service:
-    return Service(
+) -> ServiceInfo:
+    return ServiceInfo(
         name=name,
         directory=Path(directory),
         type=svc_type,
@@ -42,7 +42,7 @@ def _make_service(
 
 
 def _make_orchestrator(
-    services: list[Service],
+    services: list[ServiceInfo],
     groups: dict[str, list[str]] | None = None,
     *,
     infra: list[InfraComponent] | None = None,
@@ -63,7 +63,7 @@ def _make_orchestrator(
 
     def resolve(targets):
         seen: set[str] = set()
-        result: list[Service] = []
+        result: list[ServiceInfo] = []
         for t in targets:
             if groups and t in groups:
                 for sn in groups[t]:
@@ -198,17 +198,34 @@ class TestClean:
 
 
 # ---------------------------------------------------------------------------
-# _replace_placeholder (tests replace_env_value from env.resolver)
+# replace_value (tests FilesystemEnvFileStore.replace_value)
 # ---------------------------------------------------------------------------
 
-from devtool.services.dotenv.resolver import replace_env_value
+from devtool.adapters.env_file_store import FilesystemEnvFileStore
+from devtool.domain.models import ServiceInfo, ServiceType, VenvConfig, VenvStrategy
+
+def _make_svc_for_env(tmp_path):
+    return ServiceInfo(
+        name="test", directory=tmp_path.relative_to(tmp_path.parent),
+        type=ServiceType.PYTHON, launch="echo ok",
+        venv=VenvConfig(strategy=VenvStrategy.NONE),
+        env_file=".env", env_entries={},
+    )
 
 class TestReplacePlaceholder:
     def test_replaces_placeholder_value(self, tmp_path) -> None:
-        env_file = tmp_path / ".env"
+        env_file = tmp_path / "svc" / ".env"
+        env_file.parent.mkdir(parents=True)
         env_file.write_text("key1=value1\nclient_id=<REPLACE>\nkey2=value2\n")
+        svc = ServiceInfo(
+            name="test", directory=Path("svc"),
+            type=ServiceType.PYTHON, launch="echo ok",
+            venv=VenvConfig(strategy=VenvStrategy.NONE),
+            env_file=".env", env_entries={},
+        )
+        store = FilesystemEnvFileStore(tmp_path)
 
-        replace_env_value(env_file, "client_id", "my-secret")
+        store.replace_value(svc, "client_id", "my-secret")
 
         content = env_file.read_text()
         assert "client_id=my-secret" in content
@@ -217,10 +234,18 @@ class TestReplacePlaceholder:
         assert "<REPLACE>" not in content
 
     def test_leaves_other_keys_untouched(self, tmp_path) -> None:
-        env_file = tmp_path / ".env"
+        env_file = tmp_path / "svc" / ".env"
+        env_file.parent.mkdir(parents=True)
         env_file.write_text("a=1\nb=2\nc=3\n")
+        svc = ServiceInfo(
+            name="test", directory=Path("svc"),
+            type=ServiceType.PYTHON, launch="echo ok",
+            venv=VenvConfig(strategy=VenvStrategy.NONE),
+            env_file=".env", env_entries={},
+        )
+        store = FilesystemEnvFileStore(tmp_path)
 
-        replace_env_value(env_file, "b", "new")
+        store.replace_value(svc, "b", "new")
 
         lines = env_file.read_text().splitlines()
         assert lines == ["a=1", "b=new", "c=3"]

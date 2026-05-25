@@ -67,14 +67,16 @@ local-development/
 │   ├── cli.py               # Typer CLI → orchestrator (entry point: main())
 │   ├── domain/              # Pure domain — no I/O
 │   │   ├── models.py        # Service, InfraComponent, ServiceStatus, etc.
-│   │   └── registry.py      # Pure domain class: typed lookups, parsing helpers
+│   │   ├── registry.py      # Pure domain class: typed lookups, parsing helpers
+│   │   └── env.py           # Env-file domain logic (GenerateResult, expected_keys, constants)
 │   ├── ports/               # Interfaces (ABCs)
 │   │   ├── container_runtime.py
 │   │   ├── session_manager.py
 │   │   ├── process_manager.py
 │   │   ├── venv_manager.py
 │   │   ├── python_resolver.py
-│   │   └── health_checker.py
+│   │   ├── health_probe.py
+│   │   └── env_file_store.py   # .env file I/O abstraction
 │   ├── adapters/            # Implementations
 │   │   ├── container/          # Container runtime package
 │   │   │   ├── base.py         # SubprocessContainerRuntime base class
@@ -85,34 +87,29 @@ local-development/
 │   │   ├── process.py          # Port detection + process killing
 │   │   ├── venv.py
 │   │   ├── python_detector.py  # Finds a suitable Python interpreter
-│   │   └── registry_loader.py  # Loads services.yaml → Registry
+│   │   ├── registry_loader.py  # Loads services.yaml → Registry
+│   │   └── env_file_store.py   # FilesystemEnvFileStore (.env file I/O)
 │   └── services/            # Application services
 │       ├── orchestrator.py     # Thin facade delegating to focused services
 │       ├── startup_service.py  # Start flow, shell, exec
 │       ├── infra_service.py    # Infrastructure container management
 │       ├── venv_service.py     # Virtual environment management
-│       ├── env_service.py      # .env file orchestration
+│       ├── env_service.py      # .env file orchestration (generate, inspect, resolve)
 │       ├── diagnostic_service.py # Health status + doctor
 │       ├── init_service.py     # First-time setup wizard
-│       ├── health_checker.py
-│       ├── recovery.py
+│       ├── health_checker.py   # Health probing and issue analysis
+│       ├── recovery.py         # Dependency-aware restart engine
+│       ├── pane_matcher.py     # Match tmux panes to services
 │       ├── constants.py        # Session name, shared constants
-│       ├── shell_utils.py      # Bash resolution
-│       └── dotenv/             # .env file logic (decomposed)
-│           ├── __init__.py     # Facade re-exports
-│           ├── common.py       # Constants, enums, helpers
-│           ├── generator.py    # .env creation / update
-│           ├── inspector.py    # Read-only .env analysis
-│           ├── resolver.py     # .env mutation, shared secrets
-│           ├── local_auth.py   # Local auth alignment
-│           └── display.py      # .env display to stdout
+│       └── shell_utils.py      # Bash resolution
 │
 └── tests/
     ├── test_orchestrator.py       # Orchestrator facade (attach, clean)
     ├── test_startup_service.py    # StartupService (layout, shell, exec)
     ├── test_registry.py
-    ├── test_env.py                # .env generation, inspection, alignment
-    ├── test_env_service.py        # EnvService orchestration
+    ├── test_env.py                # EnvService logic (generate, inspect, align)
+    ├── test_env_service.py        # EnvService orchestration (public API)
+    ├── test_env_file_store.py     # FilesystemEnvFileStore adapter (integration)
     ├── test_health_checker.py
     ├── test_venv_service.py       # VenvService (setup, check, sync)
     ├── test_venv_adapter.py       # LocalVenvManager (create, verify, exists)

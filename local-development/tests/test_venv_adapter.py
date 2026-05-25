@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from devtool.adapters.venv import LocalVenvManager
-from devtool.domain.models import Service, ServiceType, VenvConfig, VenvStrategy
+from devtool.domain.models import ServiceInfo, ServiceType, VenvConfig, VenvStrategy
 
 
 def _make_service(
@@ -19,8 +19,8 @@ def _make_service(
     strategy: VenvStrategy = VenvStrategy.TOML,
     directory: str = "backend",
     commands: list[str] | None = None,
-) -> Service:
-    return Service(
+) -> ServiceInfo:
+    return ServiceInfo(
         name=name,
         directory=Path(directory),
         type=svc_type,

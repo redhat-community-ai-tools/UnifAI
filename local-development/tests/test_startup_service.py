@@ -9,7 +9,7 @@ import pytest
 
 from devtool.domain.models import (
     InfraComponent,
-    Service,
+    ServiceInfo,
     ServiceType,
     VenvConfig,
     VenvStrategy,
@@ -27,8 +27,8 @@ def _make_service(
     env_file: str | None = None,
     env_entries: dict[str, str] | None = None,
     directory: str = "test",
-) -> Service:
-    return Service(
+) -> ServiceInfo:
+    return ServiceInfo(
         name=name,
         directory=Path(directory),
         type=svc_type,
@@ -42,7 +42,7 @@ def _make_service(
 
 
 def _make_startup_service(
-    services: list[Service],
+    services: list[ServiceInfo],
     groups: dict[str, list[str]] | None = None,
     *,
     infra: list[InfraComponent] | None = None,
@@ -63,7 +63,7 @@ def _make_startup_service(
 
     def resolve(targets):
         seen: set[str] = set()
-        result: list[Service] = []
+        result: list[ServiceInfo] = []
         for t in targets:
             if groups and t in groups:
                 for sn in groups[t]:

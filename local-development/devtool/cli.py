@@ -5,13 +5,12 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import typer
 
-if TYPE_CHECKING:
-    from devtool.domain.registry import Registry
-    from devtool.services.orchestrator import Orchestrator
+from devtool.domain.registry import Registry
+from devtool.services.orchestrator import Orchestrator
 
 # -- Root app ----------------------------------------------------------------
 
@@ -151,6 +150,7 @@ def _load_registry() -> Registry:
 def _create_orchestrator(*, fg: bool = False) -> Orchestrator:
     """Wire up adapters and return an Orchestrator."""
     from devtool.adapters.container import ContainerRuntimeFactory
+    from devtool.adapters.env_file_store import FilesystemEnvFileStore
     from devtool.adapters.foreground import ForegroundSessionManager
     from devtool.adapters.health_probe import NetworkHealthProbe
     from devtool.adapters.process import LocalProcessManager
@@ -190,14 +190,15 @@ def _create_orchestrator(*, fg: bool = False) -> Orchestrator:
 
     infra_svc = InfraService(registry, runtime)
     venv_svc = VenvService(registry, root, venv_mgr, python_resolver)
-    env_svc = EnvService(registry, root)
+    env_store = FilesystemEnvFileStore(root)
+    env_svc = EnvService(registry, env_store)
     startup_svc = StartupService(
         registry, root, runtime, session,
         process_mgr, venv_svc, env_svc,
     )
     diag_svc = DiagnosticService(
         registry, root, runtime, session, process_mgr,
-        health, infra_svc, venv_svc,
+        health, infra_svc, venv_svc, env_svc,
     )
     init_svc = InitService(
         registry, root, runtime,

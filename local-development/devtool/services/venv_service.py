@@ -6,7 +6,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
-from devtool.domain.models import Service, ServiceType
+from devtool.domain.models import ServiceInfo, ServiceType
 from devtool.domain.registry import Registry
 from devtool.ports.python_resolver import PythonResolver
 from devtool.ports.venv_manager import VenvManager
@@ -43,7 +43,7 @@ class VenvService:
         log_dir.mkdir(parents=True, exist_ok=True)
         skipped: list[str] = []
 
-        def do_create(svc: Service) -> str | None:
+        def do_create(svc: ServiceInfo) -> str | None:
             existed = self._venv.exists(svc, self._root)
             self._venv.create(svc, python, self._root, log_dir=log_dir, force=force)
             if existed and not force:
@@ -95,7 +95,7 @@ class VenvService:
     # -- public: building blocks for other services --------------------------
 
     def setup_services(
-        self, targets: list[Service], python: str,
+        self, targets: list[ServiceInfo], python: str,
     ) -> list[str]:
         """Create venvs for pre-resolved targets. Returns failed service names."""
         log_dir = self._registry.log_dir
@@ -108,27 +108,27 @@ class VenvService:
         )
 
     def verify_services(
-        self, targets: list[Service], python_minor: str,
+        self, targets: list[ServiceInfo], python_minor: str,
     ) -> None:
         """Verify venvs for pre-resolved targets. Raises on mismatch."""
         for svc in targets:
             self._venv.verify(svc, python_minor, self._root)
 
-    def existing_venvs(self, targets: list[Service]) -> list[Service]:
+    def existing_venvs(self, targets: list[ServiceInfo]) -> list[ServiceInfo]:
         """Return the subset of *targets* that already have a venv."""
         return [svc for svc in targets if self._venv.exists(svc, self._root)]
 
     # -- private helpers -----------------------------------------------------
 
-    def _resolve_targets(self, service_name: str | None) -> list[Service]:
+    def _resolve_targets(self, service_name: str | None) -> list[ServiceInfo]:
         if service_name:
             return [self._registry.get_service(service_name)]
         return self._registry.primary_services()
 
     def _run_batch(
         self,
-        targets: list[Service],
-        action: Callable[[Service], str | None],
+        targets: list[ServiceInfo],
+        action: Callable[[ServiceInfo], str | None],
         *,
         fail_label: str,
         log_dir: Path | None = None,

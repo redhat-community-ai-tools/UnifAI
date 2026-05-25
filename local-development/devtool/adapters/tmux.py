@@ -8,7 +8,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from devtool.domain.models import Service, WindowLayout
+from devtool.domain.models import ServiceInfo, WindowLayout
 from devtool.ports.session_manager import SessionManager
 
 
@@ -181,7 +181,7 @@ class TmuxSessionManager(SessionManager):
         self,
         session_name: str,
         window_name: str,
-        services: list[Service],
+        services: list[ServiceInfo],
         commands: dict[str, str],
         log_dir: Path,
     ) -> None:

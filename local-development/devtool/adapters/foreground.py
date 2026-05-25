@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from devtool.domain.models import Service, WindowLayout
+from devtool.domain.models import ServiceInfo, WindowLayout
 from devtool.ports.session_manager import SessionManager
 from devtool.utils import resolve_bash
 

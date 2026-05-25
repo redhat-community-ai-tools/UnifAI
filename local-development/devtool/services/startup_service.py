@@ -11,7 +11,7 @@ from pathlib import Path
 from devtool.domain.models import (
     InfraComponent,
     PortOccupant,
-    Service,
+    ServiceInfo,
     ServiceType,
     WindowLayout,
 )
@@ -168,7 +168,7 @@ class StartupService:
     # -- private helpers -----------------------------------------------------
 
     @staticmethod
-    def _validate_start(services: list[Service], *, fg: bool) -> None:
+    def _validate_start(services: list[ServiceInfo], *, fg: bool) -> None:
         non_primary = [s for s in services if not s.is_primary]
         primary = [s for s in services if s.is_primary]
 
@@ -193,7 +193,7 @@ class StartupService:
                     f"in foreground mode."
                 )
 
-    def _build_context_command(self, svc: Service, python_minor: str) -> str:
+    def _build_context_command(self, svc: ServiceInfo, python_minor: str) -> str:
         """Build the cd + venv-activate + env-source prefix for a service."""
         parts: list[str] = []
         svc_dir = self._root / svc.directory
@@ -208,7 +208,7 @@ class StartupService:
         return " && ".join(parts)
 
     def _build_commands(
-        self, services: list[Service], python_minor: str,
+        self, services: list[ServiceInfo], python_minor: str,
     ) -> dict[str, str]:
         """Build the full shell command for each service."""
         commands: dict[str, str] = {}
@@ -222,7 +222,7 @@ class StartupService:
         return commands
 
     @staticmethod
-    def _build_default_layout(services: list[Service]) -> list[WindowLayout]:
+    def _build_default_layout(services: list[ServiceInfo]) -> list[WindowLayout]:
         """Primary services in a 'services' window, workers in a 'workers' window."""
         primary = [s for s in services if s.is_primary]
         workers = [s for s in services if not s.is_primary]
@@ -237,7 +237,7 @@ class StartupService:
         self,
         window_specs: list[tuple[str | None, list[str]]],
         bare_targets: list[str],
-        all_services: list[Service],
+        all_services: list[ServiceInfo],
     ) -> list[WindowLayout]:
         """Build layout from explicit --window specs and bare positional targets."""
         by_name = {s.name: s for s in all_services}
@@ -268,9 +268,9 @@ class StartupService:
 
         return layout
 
-    def _check_ports(self, services: list[Service]) -> list[str]:
+    def _check_ports(self, services: list[ServiceInfo]) -> list[str]:
         """Check service ports for conflicts and offer to kill occupants."""
-        occupied: list[tuple[Service, list[PortOccupant]]] = []
+        occupied: list[tuple[ServiceInfo, list[PortOccupant]]] = []
 
         for svc in services:
             if not svc.port:
@@ -307,7 +307,7 @@ class StartupService:
         return []
 
     def _print_summary(
-        self, services: list[Service], infra: list[InfraComponent],
+        self, services: list[ServiceInfo], infra: list[InfraComponent],
     ) -> None:
         print()
         print("╔══════════════════════════════════════════════════════════════╗")

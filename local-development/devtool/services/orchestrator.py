@@ -12,6 +12,7 @@ from devtool.services.health_checker import HealthChecker
 from devtool.ports.session_manager import SessionManager
 from devtool.services.constants import SESSION_NAME
 from devtool.services.diagnostic_service import DiagnosticService
+from devtool.services.pane_matcher import match_panes_to_services
 from devtool.services.env_service import EnvService
 from devtool.services.infra_service import InfraService
 from devtool.services.init_service import InitService
@@ -71,7 +72,7 @@ class Orchestrator:
 
         svc = self._registry.get_service(service_name)
         pane_contents = self._session.pane_contents(SESSION_NAME)
-        mapping = self._health.match_panes_to_services([svc], pane_contents)
+        mapping = match_panes_to_services([svc], pane_contents)
 
         pane_ref = mapping.get(svc.name)
         if not pane_ref:

@@ -50,7 +50,7 @@ class VenvConfig:
 
 
 @dataclass(frozen=True)
-class Service:
+class ServiceInfo:
     name: str
     directory: Path
     type: ServiceType
@@ -74,7 +74,7 @@ class ServiceGroup:
 @dataclass(frozen=True)
 class WindowLayout:
     name: str
-    services: list[Service]
+    services: list[ServiceInfo]
 
 
 @dataclass(frozen=True)
