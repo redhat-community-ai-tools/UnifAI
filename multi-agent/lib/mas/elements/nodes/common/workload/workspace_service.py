@@ -865,7 +865,7 @@ class WorkspaceService(IWorkspaceService):
         # Filter out cancelled messages, then take the most recent N
         valid_messages = [
             msg for msg in graphstate_messages
-            if not (hasattr(msg, 'metadata') and isinstance(msg.metadata, dict) and msg.metadata.get("is_cancelled"))
+            if not msg.is_cancelled
         ] if graphstate_messages else []
         recent_messages = valid_messages[-limit:]
         
