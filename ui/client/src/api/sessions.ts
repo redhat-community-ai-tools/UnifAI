@@ -64,9 +64,11 @@ export async function submitSession(params: SubmitSessionParams): Promise<Submit
     const formData = new FormData();
     formData.append('payload', JSON.stringify(jsonPayload));
     files.forEach((file) => formData.append('files', file));
-    const response = await axios.post('/sessions/user.session.submit', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await axios.post(
+      `/sessions/user.session.submit?userId=${encodeURIComponent(jsonPayload.userId)}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
     return response.data;
   }
 
