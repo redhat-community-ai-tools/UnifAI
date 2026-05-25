@@ -1,11 +1,9 @@
-"""Shared logic for Podman/Docker container runtimes."""
+"""Base class that drives either ``podman`` or ``docker`` via subprocess."""
 
 from __future__ import annotations
 
 import contextlib
-import os
 import shlex
-import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -174,66 +172,3 @@ class SubprocessContainerRuntime(ContainerRuntime):
                 log_hint = f" Check {self._log_file}" if self._log_file else ""
                 print(f"  ⚠ Command failed: {' '.join(cmd)}.{log_hint}")
                 raise
-
-
-def detect_runtime() -> SubprocessContainerRuntime:
-    """Return the first working container runtime (podman preferred).
-
-    Honours the ``UNIFAI_CONTAINER_RUNTIME`` environment variable.  When set,
-    its value is used as the container command (e.g. ``sudo docker``) and
-    auto-detection is skipped entirely.
-    """
-    env_override = os.environ.get("UNIFAI_CONTAINER_RUNTIME")
-    if env_override:
-        cmd = shlex.split(env_override)
-        result = subprocess.run([*cmd, "info"], capture_output=True)
-        if result.returncode == 0:
-            return SubprocessContainerRuntime(cmd)
-        raise RuntimeError(
-            f"UNIFAI_CONTAINER_RUNTIME is set to '{env_override}' "
-            f"but '{env_override} info' failed. "
-            f"Verify the command works in your terminal."
-        )
-
-    if shutil.which("podman"):
-        from devtool.adapters.podman import PodmanRuntime
-
-        result = subprocess.run(
-            ["podman", "info"],
-            capture_output=True,
-        )
-        if result.returncode == 0:
-            return PodmanRuntime()
-
-        machines = subprocess.run(
-            ["podman", "machine", "list", "--format", "{{.Name}}"],
-            capture_output=True, text=True,
-        )
-        if machines.stdout.strip():
-            subprocess.run(
-                ["podman", "machine", "start"],
-                capture_output=True,
-            )
-            check = subprocess.run(
-                ["podman", "info"],
-                capture_output=True,
-            )
-            if check.returncode == 0:
-                return PodmanRuntime()
-
-    if shutil.which("docker"):
-        from devtool.adapters.docker import DockerRuntime
-
-        result = subprocess.run(
-            ["docker", "info"],
-            capture_output=True,
-        )
-        if result.returncode == 0:
-            return DockerRuntime()
-
-    raise RuntimeError(
-        "No working container runtime found. Install Podman or Docker.\n"
-        "If your runtime requires elevated privileges or a custom path, set\n"
-        "  export UNIFAI_CONTAINER_RUNTIME='<command>'  "
-        "(e.g. 'sudo docker')"
-    )

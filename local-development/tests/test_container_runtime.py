@@ -33,11 +33,11 @@ def redis() -> InfraComponent:
 
 
 class TestVerifyRunning:
-    @patch("devtool.adapters.container_base.time.sleep")
+    @patch("devtool.adapters.container.base.time.sleep")
     def test_passes_when_container_stays_running(
         self, mock_sleep: MagicMock, mongo: InfraComponent,
     ) -> None:
-        from devtool.adapters.container_base import SubprocessContainerRuntime
+        from devtool.adapters.container.base import SubprocessContainerRuntime
 
         runtime = SubprocessContainerRuntime.__new__(SubprocessContainerRuntime)
         runtime._cmd = ["podman"]
@@ -47,11 +47,11 @@ class TestVerifyRunning:
 
         mock_sleep.assert_called_once_with(2.0)
 
-    @patch("devtool.adapters.container_base.time.sleep")
+    @patch("devtool.adapters.container.base.time.sleep")
     def test_raises_when_container_exits(
         self, mock_sleep: MagicMock, mongo: InfraComponent,
     ) -> None:
-        from devtool.adapters.container_base import SubprocessContainerRuntime
+        from devtool.adapters.container.base import SubprocessContainerRuntime
 
         runtime = SubprocessContainerRuntime.__new__(SubprocessContainerRuntime)
         runtime._cmd = ["podman"]
@@ -61,11 +61,11 @@ class TestVerifyRunning:
         with pytest.raises(RuntimeError, match="exited shortly after starting"):
             runtime._verify_running(mongo)
 
-    @patch("devtool.adapters.container_base.time.sleep")
+    @patch("devtool.adapters.container.base.time.sleep")
     def test_error_message_includes_exit_code(
         self, mock_sleep: MagicMock, mongo: InfraComponent,
     ) -> None:
-        from devtool.adapters.container_base import SubprocessContainerRuntime
+        from devtool.adapters.container.base import SubprocessContainerRuntime
 
         runtime = SubprocessContainerRuntime.__new__(SubprocessContainerRuntime)
         runtime._cmd = ["podman"]
@@ -75,11 +75,11 @@ class TestVerifyRunning:
         with pytest.raises(RuntimeError, match="exit=139"):
             runtime._verify_running(mongo)
 
-    @patch("devtool.adapters.container_base.time.sleep")
+    @patch("devtool.adapters.container.base.time.sleep")
     def test_error_message_includes_log_command(
         self, mock_sleep: MagicMock, mongo: InfraComponent,
     ) -> None:
-        from devtool.adapters.container_base import SubprocessContainerRuntime
+        from devtool.adapters.container.base import SubprocessContainerRuntime
 
         runtime = SubprocessContainerRuntime.__new__(SubprocessContainerRuntime)
         runtime._cmd = ["podman"]
@@ -91,11 +91,11 @@ class TestVerifyRunning:
 
 
 class TestStopWithTimeout:
-    @patch("devtool.adapters.container_base.SubprocessContainerRuntime._run")
+    @patch("devtool.adapters.container.base.SubprocessContainerRuntime._run")
     def test_stop_uses_timeout_when_set(
         self, mock_run: MagicMock, mongo: InfraComponent,
     ) -> None:
-        from devtool.adapters.container_base import SubprocessContainerRuntime
+        from devtool.adapters.container.base import SubprocessContainerRuntime
 
         runtime = SubprocessContainerRuntime.__new__(SubprocessContainerRuntime)
         runtime._cmd = ["podman"]
@@ -108,11 +108,11 @@ class TestStopWithTimeout:
             ["podman", "stop", "--time", "30", "mongo"],
         )
 
-    @patch("devtool.adapters.container_base.SubprocessContainerRuntime._run")
+    @patch("devtool.adapters.container.base.SubprocessContainerRuntime._run")
     def test_stop_without_timeout(
         self, mock_run: MagicMock, redis: InfraComponent,
     ) -> None:
-        from devtool.adapters.container_base import SubprocessContainerRuntime
+        from devtool.adapters.container.base import SubprocessContainerRuntime
 
         runtime = SubprocessContainerRuntime.__new__(SubprocessContainerRuntime)
         runtime._cmd = ["podman"]
@@ -126,13 +126,13 @@ class TestStopWithTimeout:
 
 class TestDetectRuntimeEnvOverride:
     @patch.dict("os.environ", {"UNIFAI_CONTAINER_RUNTIME": "sudo docker"})
-    @patch("devtool.adapters.container_base.subprocess.run")
+    @patch("devtool.adapters.container.factory.subprocess.run")
     def test_uses_env_var_when_set(self, mock_run: MagicMock) -> None:
-        from devtool.adapters.container_base import detect_runtime
+        from devtool.adapters.container.factory import ContainerRuntimeFactory
 
         mock_run.return_value = MagicMock(returncode=0)
 
-        runtime = detect_runtime()
+        runtime = ContainerRuntimeFactory.create()
 
         mock_run.assert_called_once_with(
             ["sudo", "docker", "info"], capture_output=True,
@@ -141,30 +141,30 @@ class TestDetectRuntimeEnvOverride:
         assert runtime.runtime_name == "sudo docker"
 
     @patch.dict("os.environ", {"UNIFAI_CONTAINER_RUNTIME": "sudo docker"})
-    @patch("devtool.adapters.container_base.subprocess.run")
+    @patch("devtool.adapters.container.factory.subprocess.run")
     def test_raises_when_env_var_command_fails(
         self, mock_run: MagicMock,
     ) -> None:
-        from devtool.adapters.container_base import detect_runtime
+        from devtool.adapters.container.factory import ContainerRuntimeFactory
 
         mock_run.return_value = MagicMock(returncode=1)
 
         with pytest.raises(RuntimeError, match="UNIFAI_CONTAINER_RUNTIME"):
-            detect_runtime()
+            ContainerRuntimeFactory.create()
 
     @patch.dict("os.environ", {}, clear=False)
-    @patch("devtool.adapters.container_base.shutil.which", return_value=None)
+    @patch("devtool.adapters.container.factory.shutil.which", return_value=None)
     def test_error_message_mentions_env_var(
         self, mock_which: MagicMock,
     ) -> None:
-        from devtool.adapters.container_base import detect_runtime
+        from devtool.adapters.container.factory import ContainerRuntimeFactory
 
         # Remove the env var if present
         import os
         os.environ.pop("UNIFAI_CONTAINER_RUNTIME", None)
 
         with pytest.raises(RuntimeError, match="UNIFAI_CONTAINER_RUNTIME"):
-            detect_runtime()
+            ContainerRuntimeFactory.create()
 
 
 class TestInfraComponentStopTimeout:

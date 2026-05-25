@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from devtool.adapters.container_base import SubprocessContainerRuntime
+from devtool.adapters.container.base import SubprocessContainerRuntime
 
 
 class PodmanRuntime(SubprocessContainerRuntime):

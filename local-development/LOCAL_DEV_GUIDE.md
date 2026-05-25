@@ -76,8 +76,11 @@ local-development/
 │   │   ├── python_resolver.py
 │   │   └── health_checker.py
 │   ├── adapters/            # Implementations
-│   │   ├── container_base.py   # Runtime auto-detection (Podman/Docker)
-│   │   ├── podman.py / docker.py
+│   │   ├── container/          # Container runtime package
+│   │   │   ├── base.py         # SubprocessContainerRuntime base class
+│   │   │   ├── podman.py       # PodmanRuntime adapter
+│   │   │   ├── docker.py       # DockerRuntime adapter
+│   │   │   └── factory.py      # ContainerRuntimeFactory (auto-detection)
 │   │   ├── tmux.py / foreground.py
 │   │   ├── process.py          # Port detection + process killing
 │   │   ├── venv.py

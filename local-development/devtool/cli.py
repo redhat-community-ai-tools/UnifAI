@@ -150,7 +150,7 @@ def _load_registry() -> Registry:
 
 def _create_orchestrator(*, fg: bool = False) -> Orchestrator:
     """Wire up adapters and return an Orchestrator."""
-    from devtool.adapters.container_base import detect_runtime
+    from devtool.adapters.container import ContainerRuntimeFactory
     from devtool.adapters.foreground import ForegroundSessionManager
     from devtool.adapters.health_probe import NetworkHealthProbe
     from devtool.adapters.process import LocalProcessManager
@@ -171,7 +171,7 @@ def _create_orchestrator(*, fg: bool = False) -> Orchestrator:
 
     root = _resolve_root()
     registry = YamlRegistryLoader.load()
-    runtime = detect_runtime()
+    runtime = ContainerRuntimeFactory.create()
 
     if not fg and not shutil.which("tmux"):
         print(
