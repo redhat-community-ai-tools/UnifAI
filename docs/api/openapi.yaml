@@ -1,0 +1,623 @@
+openapi: 3.0.3
+info:
+  title: UnifAI API
+  description: The UnifAI REST API for programmatic workflow execution.
+  version: 1.0.0
+  termsOfService: https://unifai.example.com/terms
+  contact:
+    name: UnifAI Support
+
+servers:
+  - url: https://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com
+    description: Staging
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Health
+    description: Service health and version information.
+  - name: Authentication
+    description: Obtain a session token via OAuth 2.0 Device Authorization Grant.
+  - name: Sessions
+    description: Create and execute multi-agent workflow sessions.
+  - name: Blueprints
+    description: List and inspect available workflow blueprints.
+
+paths:
+  /api/health/:
+    get:
+      tags: [Health]
+      summary: Health check
+      operationId: healthCheck
+      description: Returns server health status.
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  message:
+                    type: string
+                    example: Server is healthy
+
+  /api/health/version:
+    get:
+      tags: [Health]
+      summary: Get API version
+      operationId: getVersion
+      description: Returns the current API version.
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    example: "1.0.0"
+
+  /api/auth/authorize:
+    post:
+      tags: [Authentication]
+      summary: Request device code
+      operationId: createDeviceAuthorization
+      description: >-
+        Initiates the OAuth 2.0 Device Authorization Grant. Returns a short-lived
+        user code and a verification URI. Direct the user to open the URI and enter
+        the code to complete authentication.
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceAuthorizationResponse'
+        '502':
+          description: Authentication server unavailable.
+
+  /api/auth/token:
+    post:
+      tags: [Authentication]
+      summary: Poll for session token
+      operationId: createDeviceToken
+      description: >-
+        Exchanges a device code for a session token. Poll this endpoint at the
+        interval specified in the authorization response until the user completes
+        login or the code expires.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceTokenRequest'
+      responses:
+        '200':
+          description: OK — either authorization pending or token issued.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/DeviceTokenPending'
+                  - $ref: '#/components/schemas/DeviceTokenSuccess'
+              examples:
+                pending:
+                  summary: Awaiting user login
+                  value:
+                    status: authorization_pending
+                success:
+                  summary: Token issued
+                  value:
+                    session_id: "550e8400-e29b-41d4-a716-446655440000"
+                    username: "jdoe"
+                    expires_in: 36000
+        '400':
+          description: Invalid device code or token exchange failure.
+        '410':
+          description: Device code expired. Restart the authorization flow.
+
+  /api/sessions/user.session.create:
+    post:
+      tags: [Sessions]
+      summary: Create a session
+      operationId: createSession
+      description: >-
+        Creates a new workflow session for the specified blueprint. Returns a
+        session ID to use in subsequent execute calls. This operation is
+        lightweight — no graph compilation occurs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                description: The session ID.
+                example: "550e8400-e29b-41d4-a716-446655440000"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Blueprint not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/sessions/user.session.execute:
+    post:
+      tags: [Sessions]
+      summary: Execute a session
+      operationId: executeSession
+      description: >-
+        Runs the workflow graph for an existing session. When `stream` is false,
+        blocks until completion and returns the full result. When `stream` is true,
+        returns a stream of newline-delimited JSON events. Call repeatedly on the
+        same session for multi-turn conversations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteSessionRequest'
+      responses:
+        '200':
+          description: OK — execution result or event stream.
+          content:
+            application/json:
+              description: Complete result (when `stream` is false).
+              schema:
+                type: object
+            application/x-ndjson:
+              description: Newline-delimited JSON event stream (when `stream` is true).
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Session is currently executing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/sessions/session.status.get:
+    get:
+      tags: [Sessions]
+      summary: Retrieve session status
+      operationId: getSessionStatus
+      description: Returns the current lifecycle status of a session.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: string
+                enum: [PENDING, QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/sessions/session.chat.get:
+    get:
+      tags: [Sessions]
+      summary: Retrieve session messages
+      operationId: getSessionChat
+      description: Returns the conversation messages and final output for a session.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionChat'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/sessions/session.state.get:
+    get:
+      tags: [Sessions]
+      summary: Retrieve session state
+      operationId: getSessionState
+      description: Returns the full graph state of a session including all node outputs.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/sessions/session.subscribe:
+    get:
+      tags: [Sessions]
+      summary: Subscribe to session events
+      operationId: subscribeSession
+      description: >-
+        Opens a persistent connection that streams session events as
+        newline-delimited JSON. Late-joining clients receive the full event
+        history followed by live events.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: OK — NDJSON event stream.
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '501':
+          description: Streaming not available (no distributed channel configured).
+
+  /api/sessions/user.session.submit:
+    post:
+      tags: [Sessions]
+      summary: Submit a session (async)
+      operationId: submitSession
+      description: >-
+        Starts a background workflow execution and returns immediately with a
+        workflow handle. Use this for long-running sessions where blocking is
+        undesirable. Poll the status endpoint to track progress.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, inputs]
+              properties:
+                sessionId:
+                  type: string
+                  description: Session ID returned by the create endpoint.
+                inputs:
+                  type: object
+                  description: Input values for the workflow graph.
+                  example:
+                    user_prompt: "Generate a monthly report."
+      responses:
+        '202':
+          description: Accepted — workflow started in the background.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                  workflowId:
+                    type: string
+                    description: Handle for the background workflow.
+        '400':
+          description: Invalid request.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Session is currently executing.
+
+  /api/sessions/session.cancel:
+    post:
+      tags: [Sessions]
+      summary: Cancel a session
+      operationId: cancelSession
+      description: >-
+        Requests cancellation of a running or queued session. Returns the
+        updated status on success.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId]
+              properties:
+                sessionId:
+                  type: string
+      responses:
+        '200':
+          description: OK — session cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId:
+                    type: string
+                  status:
+                    type: string
+                    example: CANCELLED
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Session is not in a cancellable state.
+
+  /api/sessions/session.delete:
+    delete:
+      tags: [Sessions]
+      summary: Delete a session
+      operationId: deleteSession
+      description: Permanently removes a session and its history.
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/sessions/session.user.list:
+    get:
+      tags: [Sessions]
+      summary: List sessions
+      operationId: listSessions
+      description: Returns all sessions belonging to the authenticated user.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    blueprintId:
+                      type: string
+                    status:
+                      type: string
+                    createdAt:
+                      type: string
+                      format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/blueprints/available.blueprints.summary.get:
+    get:
+      tags: [Blueprints]
+      summary: List blueprints
+      operationId: listBlueprints
+      description: >-
+        Returns lightweight summaries of all blueprints available to the
+        authenticated user. Includes ID, name, description, and timestamps.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BlueprintSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/blueprints/blueprint.info.get:
+    get:
+      tags: [Blueprints]
+      summary: Get blueprint details
+      operationId: getBlueprint
+      description: Returns full information about a specific blueprint.
+      parameters:
+        - name: blueprintId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Blueprint'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Blueprint not found.
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        Session token obtained via the Device Authorization flow.
+        Include as `Authorization: Bearer {session_id}`.
+
+  parameters:
+    SessionId:
+      name: sessionId
+      in: query
+      required: true
+      schema:
+        type: string
+      description: The session ID.
+
+  responses:
+    Unauthorized:
+      description: Authentication required.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Insufficient permissions.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        error_type:
+          type: string
+
+    DeviceAuthorizationResponse:
+      type: object
+      properties:
+        device_code:
+          type: string
+          description: Opaque token used when polling for the session token.
+        user_code:
+          type: string
+          description: Code the user enters at the verification URI.
+          example: ABCD-1234
+        verification_uri:
+          type: string
+          format: uri
+          description: URI the user must open to complete authentication.
+        verification_uri_complete:
+          type: string
+          format: uri
+          description: URI with the user code pre-filled.
+        expires_in:
+          type: integer
+          description: Seconds until the device code expires.
+          example: 600
+        interval:
+          type: integer
+          description: Minimum polling interval in seconds.
+          example: 5
+
+    DeviceTokenRequest:
+      type: object
+      required: [device_code]
+      properties:
+        device_code:
+          type: string
+          description: The device code from the authorization response.
+
+    DeviceTokenPending:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [authorization_pending, slow_down]
+
+    DeviceTokenSuccess:
+      type: object
+      properties:
+        session_id:
+          type: string
+          description: Bearer token for subsequent API requests.
+        username:
+          type: string
+          description: Authenticated user identifier.
+        expires_in:
+          type: integer
+          description: Token lifetime in seconds.
+
+    CreateSessionRequest:
+      type: object
+      required: [blueprintId]
+      properties:
+        blueprintId:
+          type: string
+          description: ID of the blueprint to instantiate.
+
+    ExecuteSessionRequest:
+      type: object
+      required: [sessionId, inputs]
+      properties:
+        sessionId:
+          type: string
+          description: Session ID returned by the create endpoint.
+        inputs:
+          type: object
+          description: Input values for the workflow graph.
+          example:
+            user_prompt: "What is Kubernetes?"
+        stream:
+          type: boolean
+          description: When true, the response is an NDJSON event stream.
+          default: false
+
+    SessionChat:
+      type: object
+      description: Conversation history and final output.
+      properties:
+        messages:
+          type: array
+          items:
+            type: object
+        output:
+          type: object
+
+    BlueprintSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Blueprint:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        metadata:
+          type: object
+        spec:
+          type: object
+          description: The full blueprint specification.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

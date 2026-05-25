@@ -72,6 +72,46 @@ http {
            return 307 ${IDENTITY_HOST}/api/${DOLLAR}1${DOLLAR}is_args${DOLLAR}args;
         }
 
+        # ── Public API ────────────────────────────────────────────────────────
+        # Internal auth validation subrequest (called by auth_request)
+        location = /_auth_validate {
+           internal;
+           proxy_pass http://${IDENTITY_IP}:${IDENTITY_PORT}/api/auth-validate/validate;
+           proxy_pass_request_body off;
+           proxy_set_header Content-Length "";
+           proxy_set_header X-Original-URI ${DOLLAR}request_uri;
+           proxy_set_header Authorization ${DOLLAR}http_authorization;
+           proxy_set_header Cookie ${DOLLAR}http_cookie;
+        }
+
+        # Public API auth endpoints (no authentication required)
+        location /api/auth/ {
+           proxy_pass http://${IDENTITY_IP}:${IDENTITY_PORT}/api/device-auth/;
+           proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+           proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
+           proxy_set_header Content-Type ${DOLLAR}http_content_type;
+        }
+
+        # Public API — authenticated endpoints (token validated via auth_request)
+        location /api/ {
+           auth_request /_auth_validate;
+           auth_request_set ${DOLLAR}authenticated_user ${DOLLAR}upstream_http_x_authenticated_user;
+
+           proxy_pass http://${MULTIAGENT_IP}:${MULTIAGENT_PORT}/api/;
+           proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+           proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
+           proxy_set_header X-Authenticated-User ${DOLLAR}authenticated_user;
+           proxy_cookie_path / /;
+
+           proxy_connect_timeout 600s;
+           proxy_send_timeout 600s;
+           proxy_read_timeout 600s;
+           send_timeout 600s;
+           proxy_buffering off;
+        }
+
         location /api1/ {
            proxy_pass http://${RAG_IP}:${RAG_PORT}/api/;
            proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
