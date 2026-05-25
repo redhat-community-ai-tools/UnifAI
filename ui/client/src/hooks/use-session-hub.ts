@@ -522,6 +522,7 @@ export function useSessionHub({
     inputs: { user_prompt: string };
     scope?: "public" | "private";
     loggedInUser?: string;
+    files?: File[];
   };
 
   const triggerExecution = useCallback(
@@ -546,6 +547,7 @@ export function useSessionHub({
             if (raw && raw !== "default") return raw;
             return user?.username || "default";
           })(),
+          files: sessionPayload.files,
         });
 
         await streamCompletePromise;

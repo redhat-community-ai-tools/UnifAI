@@ -101,11 +101,10 @@ class SessionService:
             raise ValueError(
                 "File attachments are not supported — Gemini File API key is not configured."
             )
-        self._stage(session_id, inputs, files=files)
         record = self._manager.get_record(session_id)
         handle = self._engine.generate_handle(session_id)
         record.update_context(engine_handle=handle)
-        self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
+        self._projector.apply(record, inputs or {}, files=files, logged_in_user=logged_in_user)
 
         session = self._manager.get_session(session_id)
         execution_ctx = session.run_context.with_scope(scope)
@@ -147,7 +146,9 @@ class SessionService:
         return True
 
     # ---- Private staging ----
-    
+
+    _BUSY_STATUSES = frozenset({"QUEUED", "RUNNING"})
+
     def _stage(
         self,
         session_id: str,
@@ -163,8 +164,6 @@ class SessionService:
 
         Raises ValueError if the session is already executing.
         """
-        _BUSY_STATUSES = frozenset({"QUEUED", "RUNNING"})
-
         record = self._manager.get_record(session_id)
         record.update_context(engine_handle=None)
         if record.status.name in self._BUSY_STATUSES:
@@ -172,7 +171,7 @@ class SessionService:
                 f"Session {session_id} is already {record.status.name} — "
                 f"wait for it to finish before submitting again."
             )
-        self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
+        self._projector.apply(record, inputs or {}, files=files,logged_in_user=logged_in_user)
 
     def list_for_user(self, identity: Identity) -> list:
         """

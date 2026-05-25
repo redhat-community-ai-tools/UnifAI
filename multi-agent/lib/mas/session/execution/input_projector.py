@@ -51,6 +51,7 @@ class SessionInputProjector:
         record: SessionRecord,
         inputs: Dict[str, Any],
         logged_in_user: str = "",
+        files: Optional[List[FileUploadRequest]] = None,
     ) -> None:
         """
         Project raw inputs onto the record's graph state, making the

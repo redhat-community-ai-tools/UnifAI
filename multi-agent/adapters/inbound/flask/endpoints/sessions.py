@@ -140,13 +140,7 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
 
 @sessions_bp.route("/user.session.submit", methods=["POST"])
 @with_require_identity_authorization
-@from_body({
-    "session_id": fields.Str(data_key="sessionId", required=True),
-    "inputs": fields.Dict(data_key="inputs", required=True),
-    "scope": fields.Str(data_key="scope", load_default="public"),
-    "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
-})
-def submit_user_session(identity, session_id, inputs, scope, session_type):
+def submit_user_session(identity):
     """
     Fire-and-forget execute for Temporal-backed sessions.
     Supports both application/json and multipart/form-data (for file attachments).
@@ -175,6 +169,7 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
         session_id = payload.get("sessionId")
         inputs = payload.get("inputs", {})
         scope = payload.get("scope", "public")
+        session_type = payload.get("sessionType", "Personal")
 
         raw_files = request.files.getlist("files")
         if len(raw_files) > limits.max_files:
@@ -195,6 +190,7 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
         session_id = payload.get("sessionId")
         inputs = payload.get("inputs", {})
         scope = payload.get("scope", "public")
+        session_type = payload.get("sessionType", "Personal")
 
     if not session_id or not isinstance(session_id, str):
         return jsonify({"error": "sessionId must be a non-empty string"}), 400
@@ -400,33 +396,7 @@ def subscribe_session(session_id):
     resp.headers["X-Accel-Buffering"] = "no"
     return resp
 
-@sessions_bp.route("/session.files.upload", methods=["POST"])
-def upload_session_files():
-    """Upload files to Google's servers via Gemini File API.
-    """
-    try:
-        session_id = request.form.get("sessionId")
-        svc = current_app.container.session_service
-        files = svc.upload_files(session_id)
 
-        uploaded_files = request.files.getlist("files")
-        if not uploaded_files:
-            return jsonify({"error": "No files provided"}), 400
-        if len(uploaded_files) > FILE_MAX_COUNT:
-            return jsonify({"error": f"Maximum {FILE_MAX_COUNT} files allowed"}), 400
-            
-        return jsonify(files), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    except FileUploadError as e:
-        status = 503 if e.retriable else 502
-        return jsonify({"error": str(e), "retriable": e.retriable}), status
-    except (TypeError, ValueError) as e:
-        return jsonify({"error": str(e)}), 400
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 409
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 # ---------- Session meta ----------
 
 @sessions_bp.route("/session.meta", methods=["GET"])
