@@ -4,6 +4,9 @@ Temporal activity wrapper for graph node and condition execution.
 Composes a channel from the factory (adapter wiring) and delegates
 the actual execution to the domain-level NodeExecutor.
 
+The @heartbeat decorator sends periodic heartbeats while the sync
+activity body runs.  Cancellation is handled at the workflow level.
+
 pydantic_data_converter handles GraphState serialization/deserialization
 automatically — no manual .serialize()/.deserialize() calls needed.
 """
@@ -14,6 +17,7 @@ from temporalio import activity
 from mas.core.channels import ChannelFactory
 from mas.engine.distributed.node_executor import NodeExecutor
 from mas.graph.state.graph_state import GraphState
+from inbound.temporal.activities.heartbeat import heartbeat
 from temporal.models import ExecuteNodeParams, EvaluateConditionParams
 
 
@@ -32,6 +36,7 @@ class GraphNodeActivities:
         self._channel_factory = channel_factory
 
     @activity.defn(name="execute_graph_node")
+    @heartbeat(interval=3)
     def execute_node(self, params: ExecuteNodeParams) -> GraphState:
         channel = None
         if self._channel_factory and params.session_id:

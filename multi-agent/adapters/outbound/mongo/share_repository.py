@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from mas.sharing.repository.base import ShareRepository
 from mas.sharing.models import ShareInvite, ShareStatus, ShareCleanupConfig, ShareCleanupResult
+from mas.core.identity import Identity
 from global_utils.utils.util import get_mongo_url
 
 
@@ -12,11 +13,15 @@ class MongoShareRepository(ShareRepository):
         client = pymongo.MongoClient(mongo_uri)
         self._col = client[db_name][coll_name]
         
-        # Create indexes following existing patterns
         self._col.create_index([("share_id", pymongo.ASCENDING)], unique=True)
-        self._col.create_index([("recipient_user_id", 1), ("status", 1), ("created_at", -1)])
-        self._col.create_index([("sender_user_id", 1), ("status", 1), ("created_at", -1)])
-        # TTL index for automatic expiration
+        self._col.create_index([
+            ("recipient_identity.type", 1), ("recipient_identity.id", 1),
+            ("status", 1), ("created_at", -1),
+        ])
+        self._col.create_index([
+            ("sender_identity.type", 1), ("sender_identity.id", 1),
+            ("status", 1), ("created_at", -1),
+        ])
         self._col.create_index("expires_at", expireAfterSeconds=0)
 
     def save(self, invite: ShareInvite) -> str:
@@ -47,10 +52,13 @@ class MongoShareRepository(ShareRepository):
         )
         return result.modified_count == 1
 
-    def list_for_recipient(self, recipient_user_id: str, 
+    def list_for_recipient(self, recipient: Identity, 
                           status: Optional[ShareStatus] = None,
                           skip: int = 0, limit: int = 100) -> List[ShareInvite]:
-        query = {"recipient_user_id": recipient_user_id}
+        query = {
+            "recipient_identity.type": recipient.type.value,
+            "recipient_identity.id": recipient.id,
+        }
         if status:
             query["status"] = status.value
             
@@ -61,10 +69,13 @@ class MongoShareRepository(ShareRepository):
         
         return [ShareInvite(**doc) for doc in cursor]
 
-    def list_for_sender(self, sender_user_id: str,
+    def list_for_sender(self, sender: Identity,
                        status: Optional[ShareStatus] = None,
                        skip: int = 0, limit: int = 100) -> List[ShareInvite]:
-        query = {"sender_user_id": sender_user_id}
+        query = {
+            "sender_identity.type": sender.type.value,
+            "sender_identity.id": sender.id,
+        }
         if status:
             query["status"] = status.value
             

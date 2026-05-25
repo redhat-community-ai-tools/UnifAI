@@ -1,15 +1,20 @@
+import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 from mas.session.management.user_session_manager import UserSessionManager
 from mas.session.execution.foreground_runner import ForegroundSessionRunner
 from mas.session.execution.input_projector import SessionInputProjector
-from mas.session.execution.ports import BackgroundSessionSubmitter, SubmitSessionRequest, FileUploadRequest
+from mas.session.execution.ports import BackgroundSessionEngine, SubmitSessionRequest, FileUploadRequest
+from mas.session.domain.status import SessionStatus
 from mas.session.domain.workflow_session import WorkflowSession
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.dto import SessionListItem
 from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
 from mas.session.domain.exceptions import BlueprintNotFoundError
+from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
+
+logger = logging.getLogger(__name__)
 
 class SessionService:
     """
@@ -25,20 +30,25 @@ class SessionService:
         manager: UserSessionManager,
         foreground_runner: ForegroundSessionRunner,
         input_projector: SessionInputProjector,
-        background_submitter: Optional[BackgroundSessionSubmitter] = None,
+        background_engine: Optional[BackgroundSessionEngine] = None,
     ):
         self._manager = manager
         self._foreground = foreground_runner
         self._projector = input_projector
-        self._submitter = background_submitter
+        self._engine = background_engine
 
-    def create(self, user_id: str, blueprint_id: str, metadata: Dict[str, Any] | SessionMeta | None = None) -> str:
+    def create(
+        self,
+        identity: Identity,
+        blueprint_id: str,
+        metadata: Dict[str, Any] | SessionMeta | None = None,
+    ) -> str:
         """
         Create a new session record and return its run_id.
         Lightweight — no graph compilation or blueprint resolution.
         """
         return self._manager.create_session(
-            user_id=user_id,
+            identity=identity,
             blueprint_id=blueprint_id,
             metadata=SessionMeta.model_validate(metadata or {}),
         )
@@ -51,6 +61,7 @@ class SessionService:
         inputs: Dict[str, Any],
         scope: str = "public",
         stream: bool = False,
+        logged_in_user: str = "",
     ) -> Any:
         """
         Execute the session graph.
@@ -62,7 +73,7 @@ class SessionService:
         The execution runs on a background thread; lifecycle transitions
         are handled internally by the runner.
         """
-        self._stage(session_id, inputs)
+        self._stage(session_id, inputs, logged_in_user=logged_in_user)
         session = self._manager.get_session(session_id)
         return self._foreground.run(
             session=session,
@@ -70,20 +81,20 @@ class SessionService:
             stream=stream,
         )
 
-    def submit(
-        self,
-        session_id: str,
-        inputs: Dict[str, Any],
-        scope: str = "public",
-        files: Optional[List[FileUploadRequest]] = None,
-    ) -> str:
+    def submit(self, session_id: str, inputs: Dict[str, Any],
+               scope: str = "public", logged_in_user: str = "", 
+               files: Optional[List[FileUploadRequest]] = None,) -> str:
         """
         Non-blocking submit: stage inputs, then start a background workflow
         and return its handle/ID immediately (HTTP 202 pattern).
+
+        The engine handle is persisted atomically with input staging
+        (before the workflow starts), eliminating the race window where
+        a cancel request could arrive before the handle is in Mongo.
         """
-        if self._submitter is None:
+        if self._engine is None:
             raise TypeError(
-                "No BackgroundSessionSubmitter configured — "
+                "No BackgroundSessionEngine configured — "
                 "submit() is not available for this engine."
             )
         if files and not self._projector.supports_file_upload:
@@ -91,28 +102,83 @@ class SessionService:
                 "File attachments are not supported — Gemini File API key is not configured."
             )
         self._stage(session_id, inputs, files=files)
+        record = self._manager.get_record(session_id)
+        handle = self._engine.generate_handle(session_id)
+        record.update_context(engine_handle=handle)
+        self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
+
         session = self._manager.get_session(session_id)
         execution_ctx = session.run_context.with_scope(scope)
         request = SubmitSessionRequest(execution_context=execution_ctx)
-        return self._submitter.submit(session, request)
+        self._engine.submit(session, request)
+
+        return handle
+
+    def cancel(self, session_id: str) -> bool:
+        """Request cancellation of a running or queued background session.
+
+        Only checks eligibility and delegates to the adapter.  The actual
+        lifecycle transition (CANCELLED status, channel close) happens inside
+        the workflow's CancelledError handler via BackgroundLifecycleHandler,
+        keeping lifecycle ownership in a single place.
+
+        Returns True if cancellation was requested, False if the session
+        is not in a cancellable state or the engine call failed.
+        """
+        if self._engine is None:
+            raise TypeError(
+                "No BackgroundSessionEngine configured — "
+                "cancel() is not available for this engine."
+            )
+        record = self._manager.get_record(session_id)
+        if record.status not in (SessionStatus.QUEUED, SessionStatus.RUNNING):
+            return False
+        handle = record.engine_handle
+        if handle is None:
+            return False
+        try:
+            self._engine.cancel(handle)
+        except Exception:
+            logger.warning(
+                "Failed to cancel background workflow %s for session %s",
+                handle, session_id, exc_info=True,
+            )
+            return False
+        return True
 
     # ---- Private staging ----
-
+    
     def _stage(
         self,
         session_id: str,
         inputs: Dict[str, Any],
+        logged_in_user: str = "",
         files: Optional[List[FileUploadRequest]] = None,
     ) -> None:
-        """Project raw inputs onto the record and persist (QUEUED)."""
-        record = self._manager.get_record(session_id)
-        self._projector.apply(record, inputs or {}, files=files)
+        """Project raw inputs onto the record and persist (QUEUED).
 
-    def list_for_user(self, user_id: str) -> list:
+        Clears any stale engine_handle from a previous background run
+        so that cancel() won't target a dead workflow if this session
+        is now being executed via the foreground run() path.
+
+        Raises ValueError if the session is already executing.
+        """
+        _BUSY_STATUSES = frozenset({"QUEUED", "RUNNING"})
+
+        record = self._manager.get_record(session_id)
+        record.update_context(engine_handle=None)
+        if record.status.name in self._BUSY_STATUSES:
+            raise ValueError(
+                f"Session {session_id} is already {record.status.name} — "
+                f"wait for it to finish before submitting again."
+            )
+        self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
+
+    def list_for_user(self, identity: Identity) -> list:
         """
         List all sessions created by a user.
         """
-        return self._manager.list_sessions_ids(user_id)
+        return self._manager.list_sessions_ids(identity)
 
     def get(self, run_id: str) -> WorkflowSession:
         """
@@ -140,17 +206,34 @@ class SessionService:
         record = self._manager.get_record(run_id)
         return record.graph_state.model_dump(mode="json")
 
+    def get_meta(self, run_id: str) -> SessionMeta:
+        """Return the persisted metadata for a session."""
+        record = self._manager.get_record(run_id)
+        return record.metadata
+
+    def update_meta(self, run_id: str, meta: SessionMeta) -> SessionMeta:
+        """Whole-replace the session metadata and persist.
+
+        The caller is expected to send the *complete* desired state so that
+        whatever the GUI considers canonical is reflected atomically — no
+        partial-update merge is performed.
+        """
+        record = self._manager.get_record(run_id)
+        record.metadata = meta
+        self._manager.save_record(record)
+        return record.metadata
+
     def get_chat(self, run_id: str) -> SessionChat:
         """
         Get only messages and output for a session (lightweight, projected from DB).
         """
         return self._manager.get_chat(run_id)
 
-    def list_user_sessions(self, user_id: str) -> list:
+    def list_user_sessions(self, identity: Identity) -> list:
         """
         List all sessions created by a user (metadata only, no messages).
         """
-        docs = self._manager.list_docs(user_id)
+        docs = self._manager.list_docs(identity)
         items = []
 
         for doc in docs:
@@ -169,16 +252,16 @@ class SessionService:
 
         return items
 
-    def get_user_blueprints(self, user_id) -> List[str]:
+    def get_user_blueprints(self, identity: Identity) -> List[str]:
         """
         Get all blueprints created by a user.
         """
-        docs = self._manager.list_docs(user_id)
+        docs = self._manager.list_docs(identity)
         return list({d.get("blueprint_id") for d in docs})
 
     def group_count(
         self,
-        user_id: str,
+        identity: Identity,
         group_by: List[str],
         filter: Dict[str, Any] = None
     ) -> List[GroupedCount]:
@@ -186,11 +269,11 @@ class SessionService:
         Group sessions by specified fields and return counts.
         Performs efficient server-side grouping via the session manager.
         """
-        return self._manager.group_count(user_id, group_by, filter)
+        return self._manager.group_count(identity, group_by, filter)
 
-    def count(self, user_id: str, filter: Dict[str, Any] = None) -> int:
+    def count(self, identity: Identity, filter: Dict[str, Any] = None) -> int:
         """Count sessions matching filter criteria for a user."""
-        return self._manager.count(user_id, filter)
+        return self._manager.count(identity, filter)
 
     def delete(self, run_id: str) -> bool:
         """
@@ -206,11 +289,9 @@ class SessionService:
         """
         return self._manager.count_system(since)
 
-    def get_distinct_users(self, since: Optional[datetime] = None) -> List[str]:
-        """
-        Get distinct user IDs from all sessions.
-        """
-        return self._manager.get_distinct_users(since)
+    def get_distinct_identities(self, since: Optional[datetime] = None) -> List[Dict[str, str]]:
+        """Get distinct (type, id) pairs from all sessions."""
+        return self._manager.get_distinct_identities(since)
 
     def group_count_system(
         self,

@@ -10,9 +10,7 @@ The iterator delegates execution policy to ExecutionHandler implementations,
 keeping the iterator focused on its core responsibility: step-by-step control.
 """
 
-import time
 from typing import Iterator, Optional, List, Callable, Dict, Any
-from enum import Enum
 
 from ..primitives import (
     AgentAction,
@@ -70,7 +68,7 @@ class AgentIterator:
             strategy: AgentStrategy,
             execution_handler: ExecutionHandler,
             stream: Optional[Callable[[Dict[str, Any]], None]] = None,
-            on_action: Optional[Callable[[AgentAction], bool]] = None
+            on_action: Optional[Callable[[AgentAction], bool]] = None,
     ):
         """
         Initialize clean agent iterator.
@@ -215,7 +213,6 @@ class AgentIterator:
             return self.__next__()
 
         except Exception as e:
-            # Create error step
             error_step = AgentStep(
                 StepType.ERROR,
                 e,

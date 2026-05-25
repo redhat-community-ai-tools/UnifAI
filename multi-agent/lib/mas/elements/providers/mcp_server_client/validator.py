@@ -1,20 +1,18 @@
 """
 elements/providers/mcp_server_client/validator.py
 
-Validator for MCP Provider — lightweight HTTP probe (no MCP SDK).
+Validator for MCP Provider — uses McpProviderFactory for a real connection probe.
 
-Auth-method-aware:
-  - ``access_token`` → includes ``bearer_token`` from config in the probe.
-  - ``sign_in``      → delegates to ``core/auth`` for the full token lifecycle
-                        (lookup → validity check → refresh → failure).
-  - ``none``         → probes without auth headers.
+Uses the same transport path as the wizard and runtime (McpProviderFactory),
+and resolves auth credentials via ``core/auth`` before probing.
 """
 
 import time
 import logging
-from typing import Any, Dict, List
+from concurrent.futures import CancelledError
+from typing import List
 
-import httpx
+import anyio
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.elements.common.validator import (
     BaseElementValidator,
@@ -23,30 +21,26 @@ from mas.elements.common.validator import (
     ValidationMessage,
     ValidationCode,
 )
-from mas.core.auth.errors import TokenExpiredError
-from mas.elements.providers.mcp_server_client.config import McpProviderConfig
+from mas.elements.providers.mcp_server_client.config import (
+    McpAuthMethod,
+    McpProviderConfig,
+)
+from mas.elements.providers.mcp_server_client.mcp_provider_factory import McpProviderFactory
 
 logger = logging.getLogger(__name__)
-
-_MCP_INIT_BODY = {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "initialize",
-    "params": {
-        "protocolVersion": "2024-11-05",
-        "capabilities": {},
-        "clientInfo": {"name": "unifai-probe", "version": "1.0"},
-    },
-}
 
 
 class McpProviderValidator(BaseElementValidator):
     """
-    Validates MCP Provider configuration via lightweight HTTP probe.
+    Validates MCP Provider configuration.
 
-    Sends a JSON-RPC initialize request directly with httpx.
-    Resolves auth headers via ``core/auth`` before probing.
+    Uses McpProviderFactory.create_async() for a real MCP connection probe,
+    matching the same transport path the wizard and runtime use.
     """
+
+    def __init__(self, factory: McpProviderFactory = None):
+        super().__init__()
+        self._factory = factory or McpProviderFactory()
 
     def validate(
         self,
@@ -57,7 +51,13 @@ class McpProviderValidator(BaseElementValidator):
 
         try:
             with get_async_bridge() as bridge:
-                bridge.run(self._probe_connection(config, context, messages))
+                bridge.run(self._check_connection(config, context, messages))
+        except (CancelledError, TimeoutError) as e:
+            messages.append(self._error(
+                ValidationCode.NETWORK_TIMEOUT.value,
+                str(e),
+                field="mcp_url",
+            ))
         except Exception as e:
             messages.append(self._error(
                 ValidationCode.ENDPOINT_UNREACHABLE.value,
@@ -67,92 +67,67 @@ class McpProviderValidator(BaseElementValidator):
 
         return self._build_report(messages=messages)
 
-    async def _probe_connection(
+    async def _check_connection(
         self,
         config: McpProviderConfig,
         context: ValidationContext,
         messages: List[ValidationMessage],
     ) -> None:
-        mcp_url = str(config.mcp_url).rstrip("/")
-        headers: Dict[str, Any] = {
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-        }
+        lookup_id = getattr(config, "server_identifier", "") or str(config.mcp_url)
+        scheme_type = getattr(config, "scheme_type", "") or ""
 
-        server_id = getattr(config, "server_identifier", "")
-        scheme_type = getattr(config, "scheme_type", "")
+        auth_method = getattr(config, "auth_method", None)
+        is_sign_in = auth_method == McpAuthMethod.SIGN_IN or getattr(
+            auth_method, "value", None,
+        ) == McpAuthMethod.SIGN_IN.value
 
-        if server_id and context.user_id and context.auth_service:
-            try:
-                auth_headers = await context.auth_service.get_headers(
-                    context.user_id, server_id,
-                    scheme_type=scheme_type,
+        auth_cred = None
+        if context.auth_service:
+            # For SIGN_IN (OAuth), credentials are stored per human member, never on a team.
+            # credential_lookup_user_id() handles the owner-vs-credential-user resolution.
+            lookup_user = context.credential_lookup_user_id() if is_sign_in else (context.user_id or "").strip()
+            if lookup_user:
+                auth_cred = context.auth_service.bind(
+                    lookup_user, lookup_id, scheme_type=scheme_type,
                 )
-                headers.update(auth_headers)
-            except TokenExpiredError:
-                messages.append(self._error(
-                    "AUTH_EXPIRED",
-                    "Authentication expired — sign in again or update your access token",
-                    field="mcp_url",
-                ))
-                return
-            except Exception as exc:
-                logger.debug("Failed to get auth headers for validation: %s", exc)
-                messages.append(self._error(
-                    "AUTH_EXPIRED",
-                    "Authentication failed — sign in again or update your access token",
-                    field="mcp_url",
-                ))
-                return
-
-        if config.additional_headers:
-            headers.update(config.additional_headers)
-
-        timeout = min(context.timeout_seconds, 10.0)
-        start = time.time()
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    mcp_url, json=_MCP_INIT_BODY, headers=headers,
-                )
-            elapsed = (time.time() - start) * 1000
-        except httpx.TimeoutException:
-            messages.append(self._error(
-                ValidationCode.NETWORK_TIMEOUT.value,
-                f"Connection timed out after {timeout}s",
-                field="mcp_url",
-            ))
-            return
-        except Exception as exc:
-            messages.append(self._error(
-                ValidationCode.ENDPOINT_UNREACHABLE.value,
-                f"Connection failed: {exc}",
-                field="mcp_url",
-            ))
-            return
+            start = time.time()
+            with anyio.fail_after(context.timeout_seconds):
+                await self._factory.create_async(config, auth_credential=auth_cred)
 
-        if 200 <= resp.status_code < 300:
+            elapsed = (time.time() - start) * 1000
             messages.append(self._info(
                 "CONNECTION_OK",
                 f"Connected to MCP server at {config.mcp_url} ({elapsed:.0f}ms)",
                 field="mcp_url",
             ))
-        elif resp.status_code == 401:
+
+        except TimeoutError:
             messages.append(self._error(
-                ValidationCode.INVALID_CREDENTIALS.value,
-                "Server rejected the credentials — sign in again or update your access token",
+                ValidationCode.NETWORK_TIMEOUT.value,
+                f"Connection timed out after {context.timeout_seconds}s",
                 field="mcp_url",
             ))
-        elif resp.status_code == 403:
-            messages.append(self._error(
-                ValidationCode.INVALID_CREDENTIALS.value,
-                "Authenticated but not authorized — check your scopes or contact the server administrator",
-                field="mcp_url",
-            ))
-        else:
-            messages.append(self._error(
-                ValidationCode.ENDPOINT_UNREACHABLE.value,
-                f"Server returned unexpected status {resp.status_code}",
-                field="mcp_url",
-            ))
+        except RuntimeError:
+            raise
+        except Exception as e:
+            error_msg = str(e)
+            if "401" in error_msg or "Unauthorized" in error_msg:
+                messages.append(self._error(
+                    ValidationCode.INVALID_CREDENTIALS.value,
+                    "Server rejected the credentials — sign in again or update your access token",
+                    field="mcp_url",
+                ))
+            elif "403" in error_msg or "Forbidden" in error_msg:
+                messages.append(self._error(
+                    ValidationCode.INVALID_CREDENTIALS.value,
+                    "Authenticated but not authorized — check your scopes or contact the server administrator",
+                    field="mcp_url",
+                ))
+            else:
+                messages.append(self._error(
+                    ValidationCode.ENDPOINT_UNREACHABLE.value,
+                    f"Connection failed: {e}",
+                    field="mcp_url",
+                ))

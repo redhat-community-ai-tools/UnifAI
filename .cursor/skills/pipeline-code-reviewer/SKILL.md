@@ -98,6 +98,12 @@ Verify consistency with the project's:
 - Repository pattern, service naming, DTO mapping.
 - Logging strategy, error handling strategy.
 - Correct but inconsistent with project = **ALIGNMENT ISSUE**
+**Error Handling Correctness** (beyond alignment):
+- Catch blocks that swallow exceptions without logging or rethrowing = **MAJOR**
+- Generic catch-all (`catch Exception`, `catch Throwable`) where specific handling is possible = **MINOR**
+- Errors handled in the wrong layer (e.g., infrastructure errors surfacing in domain) = **MAJOR**
+- Missing error propagation to caller when failure matters = **MAJOR**
+
 
 ### 6. Design Compliance
 
@@ -122,8 +128,12 @@ Reviewing without codebase exploration is a failure of this phase.
 If this is a re-review after sending code back:
 1. Retrieve the previous review's issue list.
 2. For EACH issue previously flagged:
-   - Verify it was actually fixed (read the code, don't trust claims).
-   - If partially fixed, flag as STILL OPEN with specifics.
+   - Re-read the ORIGINAL file where the issue was located — not just the diff or the changed
+     lines. Confirm the fix is present in its full context.
+   - Check that the fix did not introduce a regression in adjacent code in the same file.
+   - If you cannot locate the fix by reading the file directly, mark it as NOT FIXED regardless
+     of what the Coder claims.
+   - If partially fixed, flag as STILL OPEN with specifics on what remains.
    - If fixed but introduced a new issue, flag as REGRESSION.
 3. Add a "Previous Issues Resolution" table to the output:
 
@@ -132,6 +142,37 @@ If this is a re-review after sending code back:
 | ... | Fixed / Partially Fixed / Not Fixed / Regression | ... |
 
 Do NOT approve if any CRITICAL or MAJOR issue from the previous review is not fully resolved.
+Do NOT approve based on the Coder's summary of changes — verify every claim by reading source files directly.
+
+### 9. Identity Object Compliance (STRICT)
+
+The `multi-agent` module uses a structured `Identity` object (`mas.core.identity.Identity` — with fields `type`, `id`, `display_name`) for resource ownership instead of flat `user_id` strings.
+
+**In `multi-agent/` code** — any new or modified code that handles ownership or scoping of blueprints, resources, sessions, shares, or templates MUST use `Identity`, not a flat `user_id` string:
+- Service methods accepting `user_id: str` for ownership where `identity: Identity` is the established pattern = **MAJOR**
+- Mongo queries filtering by flat `user_id` instead of `identity.type` + `identity.id` = **MAJOR**
+- New API endpoints passing `user_id` to services without resolving it to `Identity` at the adapter boundary = **MAJOR**
+
+**Legitimate `user_id` uses in `multi-agent/`** — these are NOT violations:
+- OAuth credentials and `credential_user_id` (keyed per human)
+- Collaboration participants (always a human in the room)
+- `X-Authenticated-User` header (the logged-in human)
+
+**In other modules** (outside `multi-agent/`): If code handles resource ownership with a flat `user_id`, flag it as **WARNING — Identity migration recommended** but do NOT block approval. These modules have not yet adopted the `Identity` model.
+
+### 10. Security Spot-Check (STRICT)
+
+Check for:
+- Secrets, API keys, or credentials hardcoded in source files.
+- User-controlled input passed to SQL, shell commands, file paths, or eval without sanitization.
+- Missing authorization checks on controller/adapter entry points.
+- Sensitive data (passwords, tokens, PII) logged or included in error responses.
+- Insecure deserialization or unsafe use of reflection.
+
+For each finding: show exact location, explain the attack surface.
+- Hardcoded secrets or injection risk = **CRITICAL**
+- Missing authz check = **MAJOR**
+- Sensitive data in logs/errors = **MAJOR**
 
 ## Review Rules
 
@@ -181,7 +222,15 @@ Deviations from the approved design, if any.
 List the specific source files you read and what claims they verified or contradicted.
 
 ### Code Health Score: X/10
-Brief reasoning.
+| Score | Meaning |
+|-------|---------|
+| 9-10 | No issues, or only trivial nits |
+| 7-8 | Minor issues only, no architectural or duplication concerns |
+| 5-6 | At least one MAJOR issue, or several MINORs |
+| 3-4 | Multiple MAJOR issues or one CRITICAL |
+| 1-2 | Fundamental architectural violation or security critical |
+
+The score must be consistent with the verdict: a CLEAN verdict cannot accompany a score below 7.
 
 ### Verdict
 

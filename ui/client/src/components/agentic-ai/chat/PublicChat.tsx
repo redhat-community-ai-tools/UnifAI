@@ -3,7 +3,6 @@ import { useRoute } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import ChatInterface from "@/components/agentic-ai/chat/ChatInterface";
-import { SessionPayload } from "@/components/agentic-ai/ExecutionTab";
 import { StreamingDataProvider } from "@/components/agentic-ai/StreamingDataContext";
 import { Loader2, MessageSquare, Clock, Plus, Trash2, LogOut } from "lucide-react";
 import WorkflowStatusBanner, { WorkflowBannerMessages } from "@/components/shared/WorkflowStatusBanner";
@@ -56,12 +55,15 @@ export default function PublicChat() {
     isDeleting,
     chatHistory,
     runId,
+    isLiveRequest,
     handleNewChat,
     handleSessionSelect,
     handleDeleteChat,
     confirmDeleteChat,
     cancelDeleteChat,
     triggerExecution,
+    handleCancelSession,
+    isSubmitting,
     showDeleteModal,
     setShowDeleteModal,
     chatToDelete,
@@ -372,13 +374,18 @@ export default function PublicChat() {
               <ChatInterface
                 runId={runId}
                 triggerExecution={triggerExecution}
+                onCancelSession={handleCancelSession}
                 initialMessages={chatHistory}
+                sessionStatus={selectedSession?.status}
+                statusMessage={selectedSession?.statusMessage}
                 blueprintExists={true}
                 isSharingDisabled={isSharingDisabled}
                 blueprintValid={isBlueprintValid}
                 isValidatingBlueprint={isValidatingBlueprint}
                 isBlueprintGraphHidden={true}
                 isChatOnlyMode={true}
+                isLiveRequest={isLiveRequest}
+                isSubmitting={isSubmitting}
               />
             </StreamingDataProvider>
           )}

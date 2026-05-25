@@ -1,5 +1,21 @@
 import axios from '@/http/axiosAgentConfig';
 
+export const FILE_MAX_COUNT = 3;
+export const FILE_MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
+
+export interface FileReference {
+  file_uri: string;
+  mime_type: string;
+  display_name: string;
+  size_bytes: number;
+  uploaded_at: string;
+}
+
+export interface UploadResult {
+  files: FileReference[];
+  errors: { filename: string; error: string }[];
+}
+
 export interface CreateSessionParams {
   blueprintId: string;
   userId: string;
@@ -18,8 +34,8 @@ export interface SubmitSessionParams {
   sessionId: string;
   inputs: Record<string, any>;
   scope?: 'public' | 'private';
-  loggedInUser?: string;
   files?: File[];
+  userId: string;
 }
 
 /**
@@ -59,11 +75,39 @@ export async function submitSession(params: SubmitSessionParams): Promise<Submit
 }
 
 /**
+ * Cancel Session Response
+ */
+export interface CancelSessionResponse {
+  sessionId: string;
+  status: 'CANCELLED';
+}
+
+/**
+ * Cancel a running session.
+ * Signals the backend to cancel the workflow for this session.
+ * Silently ignores 409 (session already completed/failed/cancelled).
+ *
+ * @param sessionId - The session to cancel
+ * @returns Cancel confirmation, or null if session was not cancellable
+ */
+export async function cancelSession(sessionId: string): Promise<CancelSessionResponse | null> {
+  try {
+    const response = await axios.post('/sessions/session.cancel', { sessionId });
+    return response.data;
+  } catch (err: any) {
+    if (err.response?.status === 409) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
  * Redis Stream Status Response
  */
 export interface StreamStatusResponse {
   session_id: string;
-  status: 'running' | 'completed' | 'failed' | 'unknown';
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown';
   started_at: string | null;
   completed_at: string | null;
   failed_at: string | null;
@@ -124,4 +168,69 @@ export async function subscribeToSessionStream(sessionId: string): Promise<Respo
     console.error('Error subscribing to stream:', err);
     return null;
   }
+}
+
+/**
+ * Upload files to Google's servers via the Gemini File API.
+ * Returns successful file references and any per-file errors.
+ */
+export async function uploadSessionFiles(
+  sessionId: string,
+  files: File[],
+): Promise<UploadResult> {
+  const formData = new FormData();
+  formData.append("sessionId", sessionId);
+  files.forEach((f) => formData.append("files", f));
+  const resp = await axios.post(
+    "/sessions/session.files.upload",
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+      validateStatus: (s: number) => s === 200 || s === 207,
+    },
+  );
+  return resp.data;
+}
+
+/**
+ * Upload files (if any), then trigger execution with file references in inputs.
+ * Handles partial and total upload failures.
+ */
+export async function sendMessageWithFiles(
+  sessionId: string,
+  message: string,
+  files: File[],
+  triggerExecution: (payload: any) => Promise<string>,
+  onPartialFailure?: (failedNames: string) => void,
+): Promise<void> {
+  let fileRefs: FileReference[] = [];
+  if (files.length > 0) {
+    const result = await uploadSessionFiles(sessionId, files);
+    fileRefs = result.files;
+
+    if (result.files.length === 0 && result.errors.length > 0) {
+      const failedNames = result.errors.map((e) => e.filename).join(", ");
+      throw new Error(`All files failed to upload: ${failedNames}`);
+    }
+
+    if (result.errors.length > 0) {
+      const failedNames = result.errors.map((e) => e.filename).join(", ");
+      onPartialFailure?.(failedNames);
+    }
+  }
+  await triggerExecution({
+    sessionId,
+    inputs: {
+      user_prompt: message,
+      ...(fileRefs.length > 0 && {
+        file_references: fileRefs.map((r) => ({
+          file_uri: r.file_uri,
+          mime_type: r.mime_type,
+          display_name: r.display_name,
+          size_bytes: r.size_bytes,
+          uploaded_at: r.uploaded_at,
+        })),
+      }),
+    },
+  });
 }

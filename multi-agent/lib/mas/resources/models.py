@@ -4,6 +4,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field, field_validator
 from mas.core.enums import ResourceCategory
 from mas.core.field_hints import HiddenHint
+from mas.core.identity import Identity
 
 
 class Resource(BaseModel):
@@ -12,21 +13,22 @@ class Resource(BaseModel):
     
     cfg_dict is plain JSON; we do NOT store the Pydantic instance.
     """
-    rid: str = Field(default_factory=lambda: uuid4().hex, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())  # public key
-    user_id: str = Field(default="admin", json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())  # tenant
+    rid: str = Field(default_factory=lambda: uuid4().hex, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
+    identity: Identity = Field(json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     category: ResourceCategory = Field(json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
-    type: str = Field(json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())  # e.g. "openai"
-    name: str  # user label (unique per user+cat+type)
+    type: str = Field(json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
+    name: str
     version: int = Field(default=1, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
-    cfg_dict: Dict[str, Any] = Field(json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())  # raw config
+    cfg_dict: Dict[str, Any] = Field(json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     nested_refs: List[str] = Field(default_factory=list, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
+    contributed_by: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     created: datetime = Field(default_factory=datetime.utcnow, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     updated: datetime = Field(default_factory=datetime.utcnow, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
 
 
 class ResourceQuery(BaseModel):
     """Query object for finding resources with pagination and filtering."""
-    user_id: str = Field(..., description="User ID to filter resources")
+    identity: Identity = Field(..., description="Owner identity to filter resources")
     category: Optional[ResourceCategory] = Field(None, description="Resource category filter")
     type: Optional[str] = Field(None, description="Resource type filter")
 

@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
 import { Plus, Info } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
 import { CategorySidebar } from '../components/agentic-ai/workspace/CategorySidebar';
 import { ElementGrid } from '../components/agentic-ai/workspace/ElementGrid';
@@ -11,6 +10,7 @@ import { ElementForm } from '../components/agentic-ai/workspace/ElementForm';
 import { ElementType, ElementInstance } from '../types/workspace';
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
+import { useView } from "@/contexts/ViewContext";
 
 export default function UserWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -21,6 +21,8 @@ export default function UserWorkspace() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [elementToDelete, setElementToDelete] = useState<ElementInstance | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const { viewMode, selectedTeam } = useView();
+  const isTeam = viewMode === "team";
   const {
     categories,
     elementInstances,
@@ -35,15 +37,13 @@ export default function UserWorkspace() {
     deleteElement
   } = useWorkspaceData();
 
-  // Fetch element instances when element type is selected
   useEffect(() => {
     if (selectedElementType) {
       fetchElementInstances(selectedElementType.category, selectedElementType.type);
     }
-  }, [selectedElementType, fetchElementInstances]);
+  }, [selectedElementType, fetchElementInstances, viewMode, selectedTeam?.id]);
 
   const handleElementTypeSelect = async (category: string, elementType: ElementType) => {
-    // Ensure category is set before element type to avoid race conditions
     setSelectedCategory(category);
     setSelectedElementType(elementType);
     await Promise.all([
@@ -94,17 +94,14 @@ export default function UserWorkspace() {
 
   const confirmDeleteElement = async () => {
     if (!elementToDelete || !selectedElementType) return;
-
     setIsDeleting(true);
     try {
       await deleteElement(elementToDelete.rid);
-      // Refresh instances
       await fetchElementInstances(selectedElementType.category, selectedElementType.type);
       setShowDeleteModal(false);
       setElementToDelete(null);
     } catch (error) {
       console.error('Error deleting element:', error);
-      // Error handling is done in the deleteElement function via toast
     } finally {
       setIsDeleting(false);
     }
@@ -116,108 +113,101 @@ export default function UserWorkspace() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
+    <>
+      <Header title={isTeam ? "Team Inventory" : "User Workspace"} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header title="User Workspace" onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
+      <main className="flex-1 overflow-y-auto p-6 bg-background-dark">
+        <div className="grid grid-cols-12 gap-6 h-full">
+          <div className="col-span-12 md:col-span-3 lg:col-span-2">
+            <CategorySidebar
+              categories={categories}
+              selectedCategory={selectedCategory}
+              selectedElementType={selectedElementType}
+              onElementTypeSelect={handleElementTypeSelect}
+              isLoading={isLoading}
+            />
+          </div>
 
-        <main className="flex-1 overflow-y-auto p-6 bg-background-dark">
-          <div className="grid grid-cols-12 gap-6 h-full">
-            {/* Categories Sidebar */}
-            <div className="col-span-12 md:col-span-3 lg:col-span-2">
-              <CategorySidebar
-                categories={categories}
-                selectedCategory={selectedCategory}
-                selectedElementType={selectedElementType}
-                onElementTypeSelect={handleElementTypeSelect}
-                isLoading={isLoading}
-              />
-            </div>
+          <div className="col-span-12 md:col-span-9 lg:col-span-10">
+            <div className="flex flex-col h-full">
+              {selectedElementType && (
+                <div className="flex justify-between items-center mb-6 sticky top-0 z-10 pb-4 pt-px -mt-px bg-[hsl(var(--background-dark))] shadow-[0_4px_12px_-2px_rgba(0,0,0,0.4)]">
+                  <div>
+                    <h2 className="text-2xl font-heading font-bold">
+                      {selectedElementType.name} Instances
+                    </h2>
+                    <p className="text-gray-400 text-sm">
+                      {isTeam
+                        ? `Shared ${selectedElementType.name.toLowerCase()} configurations from your team`
+                        : `Manage your ${selectedElementType.name.toLowerCase()} configurations`}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const guidesUrl = `/guides?section=agentic-inventory`;
+                        window.open(guidesUrl, '_blank');
+                      }}
+                      className="border-gray-700 hover:bg-background-dark"
+                      title="View guides"
+                    >
+                      <Info className="h-4 w-4" />
+                    </Button>
 
-            {/* Main Content Area */}
-            <div className="col-span-12 md:col-span-9 lg:col-span-10">
-              <div className="flex flex-col h-full">
-                {/* Header with Create Button */}
-                {selectedElementType && (
-                  <div className="flex justify-between items-center mb-6 sticky top-0 z-10 pb-4 pt-px -mt-px bg-[hsl(var(--background-dark))] shadow-[0_4px_12px_-2px_rgba(0,0,0,0.4)]">
-                    <div>
-                      <h2 className="text-2xl font-heading font-bold">
-                        {selectedElementType.name} Instances
-                      </h2>
-                      <p className="text-gray-400 text-sm">
-                        Manage your {selectedElementType.name.toLowerCase()} configurations
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
+                    <UmamiTrack
+                      event={UmamiEvents.AGENT_REPOSITORY_CREATE_NEW_BUTTON}
+                      eventData={{ elementType: selectedElementType?.name }}
+                    >
                       <Button
-                        variant="outline"
-                        onClick={() => {
-                          const guidesUrl = `/guides?section=agentic-inventory`;
-                          window.open(guidesUrl, '_blank');
-                        }}
-                        className="border-gray-700 hover:bg-background-dark"
-                        title="View guides"
+                        onClick={handleCreateNew}
+                        className="bg-primary hover:bg-opacity-80"
+                        disabled={!elementSchema}
                       >
-                        <Info className="h-4 w-4" />
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create New
                       </Button>
+                    </UmamiTrack>
+                  </div>
+                </div>
+              )}
 
-                      <UmamiTrack 
-                        event={UmamiEvents.AGENT_REPOSITORY_CREATE_NEW_BUTTON}
-                        eventData={{ elementType: selectedElementType?.name }}
-                      >
-                        <Button 
-                          onClick={handleCreateNew}
-                          className="bg-primary hover:bg-opacity-80"
-                          disabled={!elementSchema}
-                        >
-                          <Plus className="h-4 w-4 mr-2" />
-                          Create New
-                        </Button>
-                      </UmamiTrack>
+              <div className="flex-1">
+                {selectedElementType ? (
+                  <ElementGrid
+                    elements={elementInstances}
+                    elementType={selectedElementType}
+                    isLoading={isLoadingInstances}
+                    onEditElement={handleEditElement}
+                    onDeleteElement={handleDeleteElement}
+                    elementSchema={elementSchema}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center text-gray-400">
+                      <p className="text-lg font-medium mb-2">Select an element type</p>
+                      <p className="text-sm">Choose a category and element type from the sidebar to view instances</p>
                     </div>
                   </div>
                 )}
-
-                {/* Elements Grid */}
-                <div className="flex-1">
-                  {selectedElementType ? (
-                    <ElementGrid
-                      elements={elementInstances}
-                      elementType={selectedElementType}
-                      isLoading={isLoadingInstances}
-                      onEditElement={handleEditElement}
-                      onDeleteElement={handleDeleteElement}
-                      elementSchema={elementSchema}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-center text-gray-400">
-                        <p className="text-lg font-medium mb-2">Select an element type</p>
-                        <p className="text-sm">Choose a category and element type from the sidebar to view instances</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Element Form Modal */}
-          {isFormOpen && selectedElementType && elementSchema && (
-            <ElementForm
-              isOpen={isFormOpen}
-              onClose={() => setIsFormOpen(false)}
-              elementType={selectedElementType}
-              elementSchema={elementSchema}
-              elementActions={elementActions}
-              editingElement={editingElement}
-              existingNames={existingNames}
-              onSave={handleSaveElement}
-            />
-          )}
-        </main>
-      </div>
+        {isFormOpen && selectedElementType && elementSchema && (
+          <ElementForm
+            isOpen={isFormOpen}
+            onClose={() => setIsFormOpen(false)}
+            elementType={selectedElementType}
+            elementSchema={elementSchema}
+            elementActions={elementActions}
+            editingElement={editingElement}
+            existingNames={existingNames}
+            onSave={handleSaveElement}
+          />
+        )}
+      </main>
 
       <AlertDialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
         <AlertDialogContent className="bg-background-card border-gray-800">
@@ -230,7 +220,7 @@ export default function UserWorkspace() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel 
+            <AlertDialogCancel
               onClick={cancelDeleteElement}
               className="bg-background-dark border-gray-700 hover:bg-background-surface"
             >
@@ -246,6 +236,6 @@ export default function UserWorkspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

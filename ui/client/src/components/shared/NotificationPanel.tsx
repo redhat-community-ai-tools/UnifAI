@@ -4,7 +4,7 @@ import { FaTimes, FaCheck, FaUser, FaCube, FaBell } from 'react-icons/fa';
 import { Badge } from '@/components/ui/badge';
 import SimpleTooltip from '@/components/shared/SimpleTooltip';
 import { useNotifications } from '@/contexts/NotificationContext';
-import { ShareInvite } from '@/api/shares';
+import { ShareInvite, formatShareSenderLabel } from '@/api/shares';
 
 interface NotificationPanelProps {
   isOpen: boolean;
@@ -142,7 +142,7 @@ export default function NotificationPanel({ isOpen, onClose }: NotificationPanel
                         <div className="flex items-center gap-4 text-xs text-gray-400 mb-2">
                           <span className="flex items-center gap-1">
                             <FaUser className="w-3 h-3" />
-                            from {notification.sender_user_id}
+                            from {formatShareSenderLabel(notification)}
                           </span>
                           <span className="flex items-center gap-1">
                             <FaCube className="w-3 h-3" />

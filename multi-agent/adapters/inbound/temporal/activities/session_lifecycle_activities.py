@@ -11,6 +11,7 @@ from temporal.models import (
     BeginSessionParams,
     CompleteSessionParams,
     FailSessionParams,
+    CancelSessionParams,
 )
 
 
@@ -33,3 +34,7 @@ class SessionLifecycleActivities:
     @activity.defn(name="fail_session")
     def fail_session(self, params: FailSessionParams) -> None:
         self._handler.fail(params.run_id, params.error_message)
+
+    @activity.defn(name="cancel_session")
+    def cancel_session(self, params: CancelSessionParams) -> None:
+        self._handler.cancel(params.run_id)

@@ -21,6 +21,7 @@ from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.status import SessionStatus
 from mas.session.execution.ports import FileUploadRequest, IFileUploadService
+from mas.session.domain.constants import CANCELLED_TAG
 from mas.session.management.utils import derive_title
 from mas.session.repository.repository import SessionRepository
 
@@ -49,7 +50,7 @@ class SessionInputProjector:
         self,
         record: SessionRecord,
         inputs: Dict[str, Any],
-        files: Optional[List[FileUploadRequest]] = None,
+        logged_in_user: str = "",
     ) -> None:
         """
         Project raw inputs onto the record's graph state, making the
@@ -86,8 +87,15 @@ class SessionInputProjector:
                     role=Role.USER,
                     content=prompt,
                     file_attachments=attachments or None,
+                    sender_id=logged_in_user or None,
                 )
             )
 
+        # Persist acting user for OAuth on the durable record so Temporal / workers always
+        # see tags after reload. with_credential_user() rejects team ids automatically.
+        record.run_context = record.run_context.with_credential_user(logged_in_user)
+
+        record.metadata.status_message = None
+        record.metadata.tags.pop(CANCELLED_TAG, None)
         record.status = SessionStatus.QUEUED
         self._repo.save(record)

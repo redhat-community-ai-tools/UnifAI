@@ -26,9 +26,12 @@ export interface AgenticStats {
 }
 
 // Fetch active sessions
-export async function fetchActiveSessions(userId?: string): Promise<string[]> {
+export async function fetchActiveSessions(userId?: string, identityType?: string): Promise<string[]> {
   const userIdParam = userId || 'default';
-  const response = await axios.get(`/sessions/session.user.blueprints.get?userId=${userIdParam}`);
+  const idType = identityType || 'user';
+  const response = await axios.get(
+    `/sessions/session.user.blueprints.get?userId=${userIdParam}&identityType=${idType}`
+  );
   return response.data || [];
 }
 
@@ -42,16 +45,22 @@ export async function fetchBlueprintSessionCounts(userId?: string): Promise<Reco
 }
 
 // Fetch all resources for a user
-export async function fetchAllResources(userId?: string): Promise<any[]> {
+export async function fetchAllResources(userId?: string, identityType?: string): Promise<any[]> {
   const userIdParam = userId || 'default';
-  const response = await axios.get(`/resources/resources.list?userId=${userIdParam}`);
+  const idType = identityType || 'user';
+  const response = await axios.get(
+    `/resources/resources.list?userId=${userIdParam}&identityType=${idType}`
+  );
   return response.data?.resources || [];
 }
 
 // Fetch resources by category
-export async function fetchResourcesByCategory(category: string, userId?: string): Promise<any[]> {
+export async function fetchResourcesByCategory(category: string, userId?: string, identityType?: string): Promise<any[]> {
   const userIdParam = userId || 'default';
-  const response = await axios.get(`/resources/resources.list?userId=${userIdParam}&category=${category}`);
+  const idType = identityType || 'user';
+  const response = await axios.get(
+    `/resources/resources.list?userId=${userIdParam}&identityType=${idType}&category=${category}`
+  );
   return response.data?.resources || [];
 }
 
@@ -68,9 +77,12 @@ export async function fetchResourceCategories(): Promise<string[]> {
 }
 
 // Fetch agentic stats summary - uses aggregated backend endpoint for optimal performance
-export async function fetchAgenticStats(userId?: string): Promise<AgenticStats> {
+export async function fetchAgenticStats(userId?: string, identityType?: string): Promise<AgenticStats> {
   const userIdParam = userId || 'default';
-  const response = await axios.get(`/statistics/stats.get?userId=${userIdParam}`);
+  const idType = identityType || 'user';
+  const response = await axios.get(
+    `/statistics/stats.get?userId=${userIdParam}&identityType=${idType}`
+  );
   const data = response.data;
   
   // Normalize categories on frontend (backend returns raw categories)

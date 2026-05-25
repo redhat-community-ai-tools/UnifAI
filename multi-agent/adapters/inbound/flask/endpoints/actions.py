@@ -2,9 +2,11 @@ import logging
 
 from flask import Blueprint, jsonify, current_app
 
-logger = logging.getLogger(__name__)
+from inbound.flask.decorators import with_authenticated_user
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
+
+logger = logging.getLogger(__name__)
 
 actions_bp = Blueprint("actions", __name__)
 
@@ -80,17 +82,17 @@ def list_actions(category=None, type=None, action_type=None, tags=None):
 
 
 @actions_bp.route("/action.execute", methods=["POST"])
+@with_authenticated_user
 @from_body({
     "uid": fields.Str(required=True),
     "input_data": fields.Dict(data_key="inputData", required=False, load_default={}),
     "context": fields.Dict(required=False, load_default={}),
-    "user_id": fields.Str(data_key="userId", required=False, load_default=""),
 })
-def execute_action(uid, input_data, context, user_id):
+def execute_action(authenticated_user, uid, input_data, context):
     """Execute a specific action by UID (synchronously)."""
     try:
-        if user_id and "user_id" not in input_data:
-            input_data["user_id"] = user_id
+        if authenticated_user:
+            input_data["user_id"] = authenticated_user
 
         svc = current_app.container.actions_service
         result = svc.execute_action_sync(uid, input_data, context)

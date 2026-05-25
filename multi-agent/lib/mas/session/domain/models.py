@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from mas.core.dto import GroupedCount
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
 
@@ -71,13 +71,32 @@ class RuntimeElement:
 
 
 class SessionMeta(BaseModel):
-    """Session metadata with Pydantic validation."""
-    title: str | None = None
+    """Session metadata — canonical container for all session-level context.
+
+    The model intentionally accepts unknown fields (``extra="allow"``) so that
+    callers can attach arbitrary key-value pairs without a schema change.  This
+    makes ``POST /session.meta`` a single, forward-compatible write endpoint:
+    the GUI can push its full notion of session state in one call and new fields
+    are persisted automatically.
+
+    Live/ephemeral fields (``typing_users``, ``participants``) are stored here
+    when sent by the caller, but the ``session.meta`` endpoint additionally
+    syncs them to the collaboration store (Redis) so real-time features work.
+    """
+    model_config = ConfigDict(extra="allow")
+
+    title: Optional[str] = None
     tags: Dict[str, str] = Field(default_factory=dict)
     source: Optional[str] = None
+    status_message: Optional[str] = None
+    # Live/presence fields — forwarded to the collaboration store when present.
+    participants: Optional[List[str]] = None  # user ids currently in the session
+    typing_users: Optional[List[str]] = None  # user ids currently typing
 
 
 class SessionChat(BaseModel):
     """Lightweight projection of a session's chat-relevant graph state."""
     messages: List = Field(default_factory=list)
     output: str = ""
+    status: Optional[str] = None
+    status_message: Optional[str] = None

@@ -3,12 +3,17 @@ from typing import List, Mapping, Any, Dict, Optional
 from datetime import datetime
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.models import SessionChat, TimeSeriesPoint, SystemAnalyticsData
+from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 
 
 class SessionRepository(ABC):
     """
     Abstract persistence API for session records.
+
+    Owner-scoped methods accept an ``Identity`` (user or team) rather than
+    a raw ``user_id`` string so that team-owned sessions are properly
+    isolated from personal ones.
     """
 
     @abstractmethod
@@ -27,13 +32,13 @@ class SessionRepository(ABC):
         ...
 
     @abstractmethod
-    def list_runs(self, user_id: str) -> List[str]:
-        """Return all run_ids for the given user."""
+    def list_runs(self, identity: Identity) -> List[str]:
+        """Return all run_ids owned by the given identity."""
         ...
 
     @abstractmethod
-    def list_docs(self, user_id: str) -> List[Mapping[str, Any]]:
-        """Return all session documents for a user in a single query."""
+    def list_docs(self, identity: Identity) -> List[Mapping[str, Any]]:
+        """Return all session documents for an identity in a single query."""
         ...
 
     @abstractmethod
@@ -42,26 +47,26 @@ class SessionRepository(ABC):
         ...
 
     @abstractmethod
-    def count(self, user_id: str, filter: Dict[str, Any]) -> int:
-        """Count sessions matching filter criteria for a user."""
+    def count(self, identity: Identity, filter: Dict[str, Any]) -> int:
+        """Count sessions matching filter criteria for an identity."""
         ...
     
     @abstractmethod
     def group_count(
-        self, 
-        user_id: str, 
+        self,
+        identity: Identity,
         group_by: List[str],
         filter: Dict[str, Any] = None
     ) -> List[GroupedCount]:
         """
         Group documents by specified fields and return counts.
         Implementation should perform efficient server-side grouping.
-        
+
         Args:
-            user_id: The user ID to filter by
+            identity: The owning identity (user or team) to filter by
             group_by: List of field names to group by
             filter: Optional additional filter criteria
-            
+
         Returns:
             List of GroupedCount DTOs with grouped field values and count.
             Example: [GroupedCount(fields={"blueprint_id": "bp-123"}, count=10), ...]
@@ -84,21 +89,17 @@ class SessionRepository(ABC):
         ...
 
     @abstractmethod
-    def get_distinct_users(self, since: Optional[datetime] = None) -> List[str]:
-        """
-        Get distinct user IDs from all sessions.
-        
-        Args:
-            since: Optional cutoff datetime - only include sessions started after this time
-            
-        Returns:
-            List of distinct user IDs
+    def get_distinct_identities(self, since: Optional[datetime] = None) -> List[Dict[str, str]]:
+        """Get distinct (type, id) pairs from all sessions.
+
+        Returns a list of ``{"type": "user"|"team", "id": "..."}`` dicts
+        so that callers can distinguish users from teams with the same id.
         """
         ...
 
     @abstractmethod
     def group_count_system(
-        self, 
+        self,
         group_by: List[str],
         since: Optional[datetime] = None
     ) -> List[GroupedCount]:
@@ -117,15 +118,15 @@ class SessionRepository(ABC):
 
     @abstractmethod
     def get_session_activity_series(
-        self, 
+        self,
         since: Optional[datetime] = None
     ) -> List[TimeSeriesPoint]:
         """
         Get session activity data grouped by appropriate time intervals.
-        
+
         The implementation determines the appropriate time granularity
         (hourly, daily, monthly) based on the time range.
-        
+
         Args:
             since: Optional cutoff datetime - only include sessions started after this time.
                    None means all-time data.
@@ -138,12 +139,12 @@ class SessionRepository(ABC):
 
     @abstractmethod
     def get_system_analytics(
-        self, 
+        self,
         since: Optional[datetime] = None
     ) -> SystemAnalyticsData:
         """
         Get aggregated system analytics data for admin dashboards.
-        
+
         Returns grouped session data for building user activity and
         top blueprints views. Implementations should optimize for
         efficiency (e.g., batching multiple aggregations).
@@ -154,4 +155,9 @@ class SessionRepository(ABC):
         Returns:
             SystemAnalyticsData containing user and blueprint groupings.
         """
+        ...
+
+    @abstractmethod
+    def delete_by_identity(self, identity: Identity) -> int:
+        """Delete all sessions owned by *identity*.  Returns the count of deleted documents."""
         ...

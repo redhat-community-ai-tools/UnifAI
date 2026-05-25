@@ -42,7 +42,11 @@ export default function NewGraph({ onBack, editBlueprintId }: NewGraphProps) {
     isLoadingBlueprint,
     editBlueprintName,
     editBlueprintDescription,
-  } = useGraphCreationLogic({ onSaveComplete: onBack, editBlueprintId });
+  } = useGraphCreationLogic({
+    onSaveComplete: onBack,
+    editBlueprintId,
+    onEditLockDenied: () => onBack?.(),
+  });
 
   const [saveModalOpen, setSaveModalOpen] = useState(false);
 

@@ -1,8 +1,24 @@
+export interface SessionError extends Error {
+  sessionStatus?: string;
+}
+
+export function createSessionError(message: string, sessionStatus: string): SessionError {
+  const error = new Error(message) as SessionError;
+  error.sessionStatus = sessionStatus;
+  return error;
+}
+
+export function isSessionCancellation(error: unknown): boolean {
+  return (error as SessionError)?.sessionStatus === 'CANCELLED';
+}
+
 export interface Message {
   id: string;
   content: string;
   sender: 'user' | 'ai';
+  senderName?: string;
   finalAnswer?: string;
+  isCancelled?: boolean;
   streamLogs?: StreamLogEntry[];
   workPlans?: WorkPlanSnapshot[];
   fileNames?: string[];

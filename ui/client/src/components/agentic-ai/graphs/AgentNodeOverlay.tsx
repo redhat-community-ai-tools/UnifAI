@@ -9,7 +9,7 @@ import NodeValidationIndicator from "./NodeValidationIndicator";
 // Types
 // ---------------------------------------------------------------------------
 
-export type NodeStatus = "IDLE" | "PROGRESS" | "DONE";
+export type NodeStatus = "IDLE" | "PROGRESS" | "DONE" | "CANCELLED";
 
 /**
  * Per-node overlay: status border ring, header (icon + label + status pill),
@@ -43,7 +43,7 @@ export function AgentNodeOverlay({
   onValidationClick: (result: ElementValidationResult) => void;
   onBadgeClick: (elementId: string) => void;
 }) {
-  const hasStatus = nodeStatus === "PROGRESS" || nodeStatus === "DONE";
+  const hasStatus = nodeStatus === "PROGRESS" || nodeStatus === "DONE" || nodeStatus === "CANCELLED";
   const hdrHeight = hdr.hasElements ? NODE_HEADER_HEIGHT : hdr.nodeHeight;
   const icon = nodeIconForType(hdr.nodeType);
   const circleSize = Math.max(20 / sx, 26);

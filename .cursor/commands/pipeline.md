@@ -4,49 +4,88 @@ You are a pipeline orchestrator. You will drive a multi-agent development workfl
 
 The user's input determines which mode to run. Parse the input as follows:
 
-**Mode 1 — full** (default): Run all 5 phases end-to-end. Optionally accepts an existing design file — if a file path is provided, skip Phase 1 and use that file as the design input for Phase 2, then continue through all remaining phases (2 → 3 → 4 → 5).
+**Mode 1 — full** (default): Run all 5 phases end-to-end. Accepts a Jira ticket, a free-text prompt, or an existing design file. If a file path is provided, skip Phase 1 and use that file as the design input for Phase 2, then continue through all remaining phases (2 → 3 → 4 → 5).
 ```
-/pipeline full <task or Jira ticket>               (start from Phase 1)
-/pipeline full <path-to-existing-design-file>      (start from Phase 2 with existing plan)
+/pipeline full <Jira ticket ID or URL>             (start from Phase 1 — fetch ticket via MCP)
+/pipeline full <free-text task prompt>             (start from Phase 1)
+/pipeline full <path-to-existing-design-file>      (start from Phase 2 with existing design)
 /pipeline <task or Jira ticket>                    (no mode keyword = full from Phase 1)
 ```
-To detect whether the argument is a file or a task description: check if the argument is a valid file path that exists on disk. If it is a file, read it and use it as the Phase 1 design output, then start at Phase 2. If it is not a file, treat it as a task description and start at Phase 1.
 
-**Mode 3 — implement**: You already have an approved design. Skip Phases 1-2. Start at Phase 3 (Implementation), using the provided file as the approved design. Continue through Phases 4-5.
+**Mode 2 — design-only**: Run only Phase 1 (Design). Stop after the design document is produced. Do NOT continue to Phase 2. Accepts a Jira ticket ID/URL or a free-text prompt.
+```
+/pipeline design-only <Jira ticket ID>             (e.g. PROJ-123 — fetched via Atlassian MCP)
+/pipeline design-only <Jira ticket URL>            (full Jira URL — fetched via Atlassian MCP)
+/pipeline design-only <free-text task prompt>      (used directly as the task description)
+```
+
+**Mode 3 — design-and-review**: Run Phase 1 (Design) then Phase 2 (Design Review), including revision loops if needed. Stop after the reviewer approves or the revision limit is hit. Do NOT continue to Phase 3. Accepts the same inputs as `design-only`.
+```
+/pipeline design-and-review <Jira ticket ID>
+/pipeline design-and-review <Jira ticket URL>
+/pipeline design-and-review <free-text task prompt>
+```
+
+**Mode 4 — implement**: You already have an approved design. Skip Phases 1-2. Start at Phase 3 (Implementation), using the provided file as the approved design. Continue through Phases 4-5.
 ```
 /pipeline implement <path-to-approved-design>
 ```
 
-**Mode 4 — review-only**: Run only Phase 2 (Design Review) on an existing design. Stop after the verdict. Do NOT continue to Phase 3 even if approved.
+**Mode 5 — review-only**: Run only Phase 2 (Design Review) on an existing design document. Stop after the verdict. Do NOT continue to Phase 3 even if approved.
 ```
 /pipeline review-only <path-to-design-file>
 ```
 
-**Mode 5 — code-review-only**: Run only Phase 4 (Code Review) on existing code changes. Stop after the verdict. Do NOT continue to Phase 5 even if clean.
+**Mode 6 — code-review-only**: Run only Phase 4 (Code Review) on existing code changes. Stop after the verdict. Do NOT continue to Phase 5 even if clean.
 ```
 /pipeline code-review-only [files/folders]
 ```
 
-**Mode 6 — qa-only**: Run only Phase 5 (QA) on existing code changes. Stop after the verdict.
+**Mode 7 — qa-only**: Run only Phase 5 (QA) on existing code changes. Stop after the verdict.
 ```
 /pipeline qa-only [files/folders]
 ```
 
-**Mode 7 — debug**: Run a structured debug session to diagnose and fix an issue. Accepts an error description, stack trace, or path to an error log file.
+**Mode 8 — debug**: Run a structured debug session to diagnose and fix an issue. Accepts an error description, stack trace, or path to an error log file.
 ```
 /pipeline debug <error description or symptom>
 /pipeline debug <path-to-error-log>
 ```
 
+### ADR File Flag
+
+Modes that include Phase 1 (`full`, `design-only`, `design-and-review`) accept an optional `--adr` flag. When present, the Designer writes the design to a file at `docs/designs/<slug>-adr.md` following the ADR template at `.cursor/files/ADR - Architecture Review Template.md`. The flag can appear anywhere in the command:
+
+```
+/pipeline design-only --adr <task prompt>
+/pipeline full --adr <Jira ticket ID>
+/pipeline design-and-review --adr <task prompt>
+```
+
+If `--adr` is not present and the user did not explicitly request a file, no file is created. The design is produced only in-chat.
+
+When an ADR file is created, record its path in the pipeline state (`ADR File: <path>`). The Design Reviewer will use this path to annotate the file with feedback after completing the in-chat review.
+
+### Design Input Resolution
+
+Modes that start at Phase 1 (`full`, `design-only`, `design-and-review`) accept three types of input. Resolve the input in this order:
+
+1. **Jira ticket ID** — matches pattern `[A-Z]+-\d+` (e.g. `PROJ-123`). Fetch the ticket details using the Atlassian MCP tool. If MCP is unavailable, state what is missing and proceed with available context.
+2. **Jira ticket URL** — argument starts with `http` and contains a recognisable Jira URL pattern (e.g. `.atlassian.net/browse/`). Fetch ticket details the same way.
+3. **Free-text prompt** — everything else. Use the text directly as the task description passed to the Designer.
+
+After resolving the input, pass the full task context (title, description, acceptance criteria) to the Designer skill.
+
 ### Mode Parsing Rules
 
-1. Check the first word after `/pipeline` against the mode keywords: `full`, `implement`, `review-only`, `code-review-only`, `qa-only`, `debug`.
+1. Strip the `--adr` flag from the input if present (set an internal `adr_requested = true` flag). Then check the first word after `/pipeline` against the mode keywords: `full`, `design-only`, `design-and-review`, `implement`, `review-only`, `code-review-only`, `qa-only`, `debug`.
 2. If none of the keywords match, treat the entire input as a task description and use **full** mode.
 3. For modes that accept a file path, read that file and use its contents as the input artifact for the starting phase.
-4. For **full** mode: check if the argument (after the optional `full` keyword) is a path to an existing file. If yes, read the file, use it as the design, and start at Phase 2. If not a file, treat it as a task description and start at Phase 1.
-5. For `review-only`, `code-review-only`, `qa-only`, and `debug` — these are single-phase runs. Execute ONLY that phase. Do NOT continue to subsequent phases.
-6. For **debug** mode: check if the argument is a path to an existing file. If yes, read the file as the error log input. If not, treat the entire argument as an error description or symptom.
-7. Announce the detected mode at the start: "Pipeline mode: **<mode>** — starting at Phase <N>."
+4. For **full** mode: after resolving design input (see above), if the argument is an existing file path on disk, read it as the design and start at Phase 2. Otherwise resolve it as a Jira ticket or free-text and start at Phase 1.
+5. For `design-only` and `review-only` and `code-review-only` and `qa-only` — these are single-phase runs. Execute ONLY that one phase. Do NOT continue to subsequent phases.
+6. For `design-and-review` — execute Phase 1 and Phase 2 (with revision loops) only. Stop before Phase 3.
+7. For **debug** mode: check if the argument is a path to an existing file. If yes, read the file as the error log input. If not, treat the entire argument as an error description or symptom.
+8. Announce the detected mode at the start: "Pipeline mode: **<mode>** — starting at Phase <N>."
 
 CRITICAL RULE: When a review phase produces a verdict that is NOT approval, you MUST execute the revision loop described below. You are FORBIDDEN from proceeding to the next phase until the reviewer approves. This is non-negotiable.
 
@@ -63,6 +102,7 @@ Code Iterations: <N>/2
 QA Iterations: <N>/2
 Blocking Verdict: <verdict from last review, or NONE>
 Feedback Items To Address: <count, or NONE>
+ADR File: <file path, or NONE>
 --- END STATE ---
 ```
 
@@ -78,8 +118,11 @@ Execute the phases applicable to the selected mode, IN ORDER. Do not skip phases
 2. Adopt the Designer agent persona described in that skill.
 3. Analyze the task, explore the codebase, and produce the technical design following the skill's output format.
 4. Present the design under a `## PHASE 1: DESIGN` header.
-5. Update and display the pipeline state tracker.
-6. Proceed to Phase 2.
+5. **ADR file output (optional):** Check whether the user included the `--adr` flag in their pipeline command or explicitly requested a design file. If yes, instruct the Designer to write the design to `docs/designs/<slug>-adr.md` following the ADR template at `.cursor/files/ADR - Architecture Review Template.md`. Record the file path in the pipeline state as `ADR File: <path>`. If no flag was provided, set `ADR File: NONE`.
+ - The Designer must report the generated file path in the format: "**ADR file written to:** `<path>`" so you can extract and record it.
+ - Parse the Designer's output for this marker and update the pipeline state accordingly.
+6. Update and display the pipeline state tracker.
+7. Proceed to Phase 2.
 
 ---
 
@@ -87,9 +130,10 @@ Execute the phases applicable to the selected mode, IN ORDER. Do not skip phases
 
 1. Read the skill file at `.cursor/skills/pipeline-design-reviewer/SKILL.md`.
 2. Switch persona to the Design Reviewer.
-3. Critically review the design produced in Phase 1, following the skill's review dimensions.
+3. Critically review the **full design produced in Phase 1** (the in-chat output), following the skill's review dimensions.
 4. Present the review under a `## PHASE 2: DESIGN REVIEW` header.
-5. Extract the verdict. Then follow the DESIGN REVIEW VERDICT HANDLER below.
+5. **ADR file annotation (only if ADR File is not NONE):** Pass the `ADR File` path from the pipeline state as input context to the reviewer skill. The reviewer skill handles the file annotation as defined in its own instructions (Part 2 of its output format).
+6. Extract the verdict. Then follow the DESIGN REVIEW VERDICT HANDLER below.
 
 #### DESIGN REVIEW VERDICT HANDLER
 
@@ -260,13 +304,13 @@ IF verdict is FAIL:
 
 After all applicable phases pass (or after a single-phase mode completes), produce a final summary.
 
-For **multi-phase modes** (full, design-review, implement):
+For **multi-phase modes** (full, design-and-review, implement):
 
 ```
 ## PIPELINE COMPLETE
 
 ### Task
-<original task description or input file>
+<original task description, Jira ticket, or input file>
 
 ### Pipeline Mode
 <mode used>
@@ -277,25 +321,25 @@ For **multi-phase modes** (full, design-review, implement):
 (only include phases that were executed)
 
 ### Files Changed
-<list of all files created or modified>
+<list of all files created or modified, or "None" for design-only modes>
 
 ### Key Decisions
 <important architectural or implementation decisions made during the pipeline>
 ```
 
-For **single-phase modes** (review-only, code-review-only, qa-only):
+For **single-phase modes** (design-only, review-only, code-review-only, qa-only):
 
 ```
 ## <PHASE NAME> COMPLETE
 
 ### Input
-<file or description provided>
+<Jira ticket, free-text prompt, or file provided>
 
 ### Verdict
-<final verdict>
+<final verdict or "Design produced" for design-only>
 
 ### Findings Summary
-<key findings, if any>
+<key findings, or design document location for design-only>
 
 ### Items Addressed in Revision Loops
 <list, or "None — approved on first pass">

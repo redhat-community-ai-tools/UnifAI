@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 /**
- * Axios instance for the backend (admin config, cross-cutting concerns).
+ * Axios instance for the platform backend (admin config, etc.). Team and
+ * directory APIs live on Identity (`/api3`), not here.
  * Proxied via /api4 -> http://127.0.0.1:8005/api
  */
 export const backendApi = axios.create({
@@ -24,3 +25,5 @@ backendApi.interceptors.response.use(
     return Promise.reject(new Error(errorMsg));
   },
 );
+
+export default backendApi;

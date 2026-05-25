@@ -20,7 +20,8 @@ class ProviderBuilder(CategoryBuilder):
         if server_id and deps and deps.auth_service:
             ctx_holder = getattr(deps, "execution_ctx", None)
             if ctx_holder:
-                cred = deps.auth_service.bind_lazy(ctx_holder, server_id, scheme_type)
+                resolver = lambda _h=ctx_holder: _h.context.credential_user_id()
+                cred = deps.auth_service.bind_lazy(resolver, server_id, scheme_type)
                 if cred:
                     return {"auth_credential": cred}
 

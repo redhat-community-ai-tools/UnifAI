@@ -44,12 +44,14 @@ function ActiveNodesStatusBar({
               className={`flex items-center gap-1 px-2 py-1 rounded ${
                 status === "PROGRESS"
                   ? "bg-blue-500 bg-opacity-50"
-                  : "bg-green-500 bg-opacity-50"
+                  : status === "CANCELLED"
+                    ? "bg-gray-500 bg-opacity-50"
+                    : "bg-green-500 bg-opacity-50"
               }`}
             >
               <motion.div
                 className={`w-2 h-2 rounded-full ${
-                  status === "PROGRESS" ? "bg-blue-400" : "bg-green-400"
+                  status === "PROGRESS" ? "bg-blue-400" : status === "CANCELLED" ? "bg-gray-400" : "bg-green-400"
                 }`}
                 animate={
                   status === "PROGRESS"
@@ -64,7 +66,7 @@ function ActiveNodesStatusBar({
               />
               <span className="truncate max-w-20">{nodeName}</span>
               <span className="text-xs opacity-75">
-                {status === "PROGRESS" ? "Running" : "Done"}
+                {status === "PROGRESS" ? "Running" : status === "CANCELLED" ? "Stopped" : "Done"}
               </span>
             </div>
           );
@@ -95,6 +97,9 @@ export type GraphDisplayProps = {
   isValidating?: boolean;
   /** Enable live node status tracking from streaming data. */
   isLiveRequest?: boolean;
+  /** Whether the session was cancelled by the user. When true, nodes that
+   *  were still in PROGRESS are marked CANCELLED instead of DONE. */
+  isCancelled?: boolean;
   /** Whether the graph container is actually visible (not collapsed to zero
    *  width by carousel mode). Drives re-application of node visuals after
    *  the panel becomes visible again. Defaults to `true`. */
@@ -116,6 +121,7 @@ export default function GraphDisplay({
   validationResults,
   isValidating = false,
   isLiveRequest = false,
+  isCancelled = false,
   isGraphVisible = true,
 }: GraphDisplayProps): React.ReactElement {
   // ── JointJS graph hook (imperative init, layout, SVG injection) ─────
@@ -257,7 +263,9 @@ export default function GraphDisplay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveRequest]);
 
-  // When execution ends → mark all nodes as DONE and keep them visible
+  // When execution ends → mark nodes with their final status.
+  // On cancellation: PROGRESS → CANCELLED, DONE stays DONE, IDLE stays IDLE.
+  // On normal completion: PROGRESS → DONE, DONE stays DONE, IDLE stays IDLE.
   useEffect(() => {
     if (!isLiveRequest && wasLiveRef.current) {
       wasLiveRef.current = false;
@@ -265,13 +273,26 @@ export default function GraphDisplay({
 
       const graph = graphRef.current;
       if (graph) {
-        const doneMap: Record<string, NodeStatus> = {};
+        const prevMap = nodeStatusMapRef.current;
+        const finalMap: Record<string, NodeStatus> = {};
         for (const el of graph.getElements()) {
-          applyNodeVisual(el, "DONE");
-          doneMap[el.id as string] = "DONE";
+          const id = el.id as string;
+          const prev = prevMap[id];
+          let finalStatus: NodeStatus;
+          if (isCancelled && prev === "PROGRESS") {
+            finalStatus = "CANCELLED";
+          } else if (prev === "DONE") {
+            finalStatus = "DONE";
+          } else if (!isCancelled && prev === "PROGRESS") {
+            finalStatus = "DONE";
+          } else {
+            finalStatus = "IDLE";
+          }
+          applyNodeVisual(el, finalStatus);
+          finalMap[id] = finalStatus;
         }
-        nodeStatusMapRef.current = doneMap;
-        setNodeStatusMap(doneMap);
+        nodeStatusMapRef.current = finalMap;
+        setNodeStatusMap(finalMap);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -438,6 +459,11 @@ export default function GraphDisplay({
                   transition={{ duration: 1.5, repeat: Infinity }}
                 />
                 Live Tracking
+              </>
+            ) : isCancelled ? (
+              <>
+                <div className="w-2 h-2 bg-gray-400 rounded-full" />
+                Session Stopped
               </>
             ) : (
               <>

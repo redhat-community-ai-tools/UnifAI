@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/contexts/AuthContext";
 import {
   fetchAgenticStats,
   fetchActiveSessions,
@@ -7,37 +6,37 @@ import {
   fetchResourceCategories,
 } from "@/api/agentic";
 import { fetchResolvedBlueprints } from "@/api/blueprints";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 
 export function useAgenticData() {
-  const { user } = useAuth();
-  const userId = user?.username || "default";
+  const { userId, identityType } = useWorkspaceIdentity();
 
   // Use aggregated stats endpoint for optimal performance
   const agenticStats = useQuery({
-    queryKey: ["agenticStats", userId],
-    queryFn: () => fetchAgenticStats(userId),
+    queryKey: ["agenticStats", userId, identityType],
+    queryFn: () => fetchAgenticStats(userId, identityType),
     staleTime: 0,
   });
 
   // Individual queries for granular data when needed by components
   const workflows = useQuery({
-    queryKey: ["blueprints", userId],
-    queryFn: () => fetchResolvedBlueprints(userId),
+    queryKey: ["blueprints", userId, identityType],
+    queryFn: () => fetchResolvedBlueprints(userId, identityType),
     staleTime: 0,
   });
 
   const activeSessions = useQuery({
-    queryKey: ["activeSessions", userId],
-    queryFn: () => fetchActiveSessions(userId),
+    queryKey: ["activeSessions", userId, identityType],
+    queryFn: () => fetchActiveSessions(userId, identityType),
     staleTime: 0,
   });
-
+  
   // blueprintSessionCounts is now always sourced from agenticStats
   // No separate query needed - follows SOLID principles by using aggregated endpoint
 
   const resources = useQuery({
-    queryKey: ["allResources", userId],
-    queryFn: () => fetchAllResources(userId),
+    queryKey: ["allResources", userId, identityType],
+    queryFn: () => fetchAllResources(userId, identityType),
     staleTime: 0,
   });
 

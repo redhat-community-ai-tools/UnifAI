@@ -10,8 +10,8 @@ import { GraphNode } from "../../pages/AgenticWorkflows"
 import { useStreamingData, NodeEntry } from "./StreamingDataContext"
 import axios from '../../http/axiosAgentConfig'
 import { GraphFlow } from './graphs/interfaces'
-import { useAuth } from "@/contexts/AuthContext";
 import { fetchResolvedBlueprints } from "@/api/blueprints";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 
 interface LogEntry {
   id: string;
@@ -69,7 +69,7 @@ export default function ExecutionStream({
   const [isPaused, setIsPaused] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const { nodeListRef } = useStreamingData();
-  const { user } = useAuth();
+  const { userId: contextUserId, identityType } = useWorkspaceIdentity();
 
   const extractNodeData = (graphFlow: GraphFlow): { id: string; name: string; description: string | null }[] => {
     if (!graphFlow || !graphFlow.plan) {
@@ -90,7 +90,7 @@ export default function ExecutionStream({
   // Create agent nodes from selected graph nodes on component mount
   useEffect(() => {
     const getGraphNodes = async () => {
-      const blueprintObjects = await fetchResolvedBlueprints(user?.username || "default");
+      const blueprintObjects = await fetchResolvedBlueprints(contextUserId, identityType);
       
       // Find the specific graph flow by blueprint_id
       const targetBlueprintObj = blueprintObjects.find((blueprintObj: any, index: number) => 

@@ -201,7 +201,6 @@ class CustomAgentNode(
 
         except Exception as e:
             print(f"CustomAgent {self.uid}: Error processing task: {e}")
-            # Create error agent result and send it
             error_result = AgentResult(
                 content=f"Error processing task: {str(e)}",
                 agent_id=self.uid,

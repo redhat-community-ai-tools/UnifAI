@@ -250,6 +250,15 @@ export const STATUS_STYLES = {
     label: "Complete",
     boxShadow: "0 0 8px rgba(34,197,94,0.4), 0 0 3px rgba(34,197,94,0.25)",
   },
+  CANCELLED: {
+    stroke: "rgba(156, 163, 175, 0.7)",
+    strokeWidth: 2,
+    filter: "url(#cancelledGlow)",
+    dotColor: "rgb(156, 163, 175)",
+    bgColor: "rgba(156, 163, 175, 0.2)",
+    label: "Stopped",
+    boxShadow: "0 0 8px rgba(156,163,175,0.4), 0 0 3px rgba(156,163,175,0.25)",
+  },
   IDLE: {
     stroke: "rgba(255,255,255,0.12)",
     strokeWidth: 1,
@@ -325,6 +334,15 @@ export function injectStatusGlowFilters(paperEl: HTMLElement): void {
     { x: "-20%", y: "-20%", w: "140%", h: "140%" },
     [
       { dx: "0", dy: "0", stdDeviation: "4", "flood-color": "rgba(34,197,94,0.4)", "flood-opacity": "0.6" },
+      { dx: "0", dy: "2", stdDeviation: "4", "flood-color": "#000", "flood-opacity": "0.25" },
+    ],
+  );
+
+  upsertFilter(
+    "cancelledGlow",
+    { x: "-20%", y: "-20%", w: "140%", h: "140%" },
+    [
+      { dx: "0", dy: "0", stdDeviation: "4", "flood-color": "rgba(156,163,175,0.4)", "flood-opacity": "0.6" },
       { dx: "0", dy: "2", stdDeviation: "4", "flood-color": "#000", "flood-opacity": "0.25" },
     ],
   );

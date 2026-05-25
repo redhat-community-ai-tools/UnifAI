@@ -52,6 +52,17 @@ Before creating anything new, check if:
 
 If reusable logic exists, USE IT. Do NOT duplicate.
 
+### Identity Object Usage (STRICT — multi-agent only)
+
+The `multi-agent` module uses a structured `Identity` object for resource ownership instead of flat `user_id` strings. When writing code in `multi-agent/`:
+
+- Use `Identity` (`from mas.core.identity import Identity`) for all ownership and scoping of blueprints, resources, sessions, shares, and templates.
+- At the API boundary (Flask adapters), resolve raw `userId` + `identityType` params into an `Identity` object using `resolve_identity()` or the `@with_require_identity_authorization` decorator. Never pass flat `user_id` deeper than the adapter layer.
+- Use the `identity_q()` helper for MongoDB queries scoped to an owner.
+- `user_id` remains correct for human-specific concerns: OAuth credentials (`credential_user_id`), collaboration participants, and auth headers.
+
+When working in modules outside `multi-agent/`, follow the existing ownership pattern in that module (typically flat `user_id`). Do not introduce `Identity` dependencies into modules that don't already use it unless explicitly instructed. Report any ownership-related `user_id` usage in the implementation summary (see "Identity migration gaps" in the Output Format section).
+
 ### Quality Standards
 
 - All functions require type hints.
@@ -85,4 +96,5 @@ Before listing changes, provide:
 After all changes, provide:
 - **Reuse summary**: list existing components leveraged.
 - **Architecture check**: confirm dependency direction is correct, no business logic leakage.
+- **Identity migration gaps**: list any files outside `multi-agent/` where ownership-related code uses flat `user_id` instead of the `Identity` object. For each, state the file path, the usage, and that it is a candidate for future migration to `mas.core.identity.Identity`. If none, state "None — all ownership code uses Identity."
 - **Files changed**: total count of new and modified files.

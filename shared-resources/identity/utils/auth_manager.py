@@ -18,6 +18,8 @@ config = AppConfig.get_instance()
 
 logger = logging.getLogger('auth_manager')
 
+
+
 class AuthManager:
     def __init__(self, app=None, redis_store=None):
         self.app = app
@@ -169,6 +171,17 @@ class AuthManager:
                     session_expires_at.timestamp()
                 )
                 self.redis_store.hset(identity_session_key(session_id), session_data, ttl_seconds=ttl_seconds)
+
+                logger.info(
+                    "User %s authenticated successfully",
+                    userinfo.get('preferred_username'),
+                )
+                svc = current_app.extensions.get('team_service')
+                if svc:
+                    svc.cache_user_groups(
+                        userinfo.get('preferred_username'),
+                        token.get('access_token'),
+                    )
                 # Redirect to frontend with auth status and state parameter
                 # Frontend will extract the original URL from state and restore it
                 state_param = f"&state={quote(request_state, safe='')}" if request_state else ""
@@ -249,13 +262,57 @@ class AuthManager:
             
             # Add admin permission based on config (checks admin_allowed_users)
             user['is_admin'] = self._check_admin_permission(user)
-          
 
+            session_data = self._get_server_session() or {}
             return jsonify({
                 'user': user,
-                'authenticated': True
+                'authenticated': True,
+                'access_token': session_data.get('access_token'),
             })
         
+        @self.app.route('/api/auth/user/groups')
+        def get_user_groups():
+            """Return the logged-in user's ROVER/directory groups (cached in Redis).
+
+            Query ``fresh=1`` (or ``true``) skips the Redis cache and re-fetches
+            from the directory so UI reloads reflect Rover membership changes.
+
+            On every call, also syncs ``group_members`` on teams in
+            MongoDB so the effective member count stays accurate.
+            """
+            if not self.is_authenticated():
+                return jsonify({'error': 'Not authenticated'}), 401
+
+            session_data = self._get_server_session() or {}
+            username = session_data.get('username')
+            if not username:
+                return jsonify({'groups': []}), 200
+
+            fresh = request.args.get('fresh', '').lower() in ('1', 'true', 'yes')
+            groups = None
+            cache = current_app.extensions.get('user_groups_cache')
+            if cache and not fresh:
+                groups = cache.get_groups(username)
+
+            if groups is None:
+                access_token = session_data.get('access_token')
+                svc = current_app.extensions.get('team_service')
+                if svc:
+                    groups = svc.fetch_user_groups_as_dicts(username, access_token)
+                    if cache:
+                        cache.set_groups(username, groups)
+
+            if groups:
+                try:
+                    svc = current_app.extensions.get('team_service')
+                    if svc:
+                        svc.refresh_group_members(groups)
+                except Exception:
+                    logger.debug("group-member refresh skipped", exc_info=True)
+
+            return jsonify({'groups': [g['group_id'] for g in (groups or [])]
+                            }), 200
+
         @self.app.route('/api/auth/refresh', methods=['POST'])
         def refresh_token():
             """Refresh access token"""

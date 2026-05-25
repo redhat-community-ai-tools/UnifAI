@@ -18,7 +18,9 @@ from flask_cors import CORS
 from config.app_config import AppConfig
 from config.logging_config import LoggingConfig
 from global_utils.flask.request_rules import RequestRules
-from bootstrap.factories import build_auth_stack
+from bootstrap.factories import build_auth_stack, build_team_service
+from utils.user_groups_cache import UserGroupsCache
+from utils.directory_cache import DirectoryCache
 
 
 def create_app() -> Flask:
@@ -57,20 +59,21 @@ def create_app() -> Flask:
         origins=os.environ.get("FRONTEND_URL", "http://localhost:5000"),
     )
     
-    #build auth stack
-    auth_manager = build_auth_stack(app, config)
-    # redis_store = RedisKVStore(
-    # host=config.redis_ip,
-    # port=config.redis_port,
-    # db=config.redis_db,
-    # password=config.redis_password,
-    # decode_responses=config.redis_decode_responses,
-    # )
-    # Initialize Authentication Manager
-    # auth_manager = AuthManager(app, redis_store)
-
-    # Store auth_manager in app extensions for easy access
+    auth_manager, redis_store = build_auth_stack(app, config)
     app.extensions['auth_manager'] = auth_manager
+    app.extensions['redis_store'] = redis_store
+
+    user_groups_cache = UserGroupsCache(
+        redis_store,
+        ttl=config.user_groups_cache_ttl,
+    )
+    app.extensions['user_groups_cache'] = user_groups_cache
+    app.extensions['directory_cache'] = DirectoryCache(
+        redis_store,
+        ttl_seconds=config.directory_cache_ttl,
+    )
+
+    app.extensions['team_service'] = build_team_service(config, user_groups_cache=user_groups_cache)
     # Register HTTP adapters (blueprints)
     _register_blueprints(app)
     

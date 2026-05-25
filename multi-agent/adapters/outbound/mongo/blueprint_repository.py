@@ -1,10 +1,12 @@
 import pymongo
 from uuid import uuid4
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintSummary
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.core.enums import ResourceCategory
+from mas.core.identity import Identity
+from outbound.mongo.helpers import identity_q
 from global_utils.utils.util import get_mongo_url
 
 
@@ -17,17 +19,24 @@ class MongoBlueprintRepository(BlueprintRepository):
         self._col = client[db_name][coll_name]
         self._col.create_index([("blueprint_id", pymongo.ASCENDING)], unique=True)
         self._col.create_index("rid_refs")
+        self._col.create_index(
+            [("identity.type", pymongo.ASCENDING),
+             ("identity.id", pymongo.ASCENDING),
+             ("updated_at", pymongo.DESCENDING)],
+            background=True,
+        )
 
-    def save(self, user_id, spec: BlueprintDraft, rid_refs: list[str], metadata: Dict[str, Any] = {}) -> str:
+    def save(self, identity: Identity, spec: BlueprintDraft,
+             rid_refs: list[str], metadata: Dict[str, Any] = {}) -> str:
         new_id = str(uuid4())
         doc = {
             "blueprint_id": new_id,
-            "user_id": user_id,
+            "identity": identity.model_dump(mode="json"),
             "created_at": getattr(spec, "created_at", datetime.now(timezone.utc)),
             "updated_at": datetime.now(timezone.utc),
             "spec_dict": spec.model_dump(mode="json"),
             "rid_refs": rid_refs,
-            "metadata": metadata
+            "metadata": metadata,
         }
         self._col.insert_one(doc)
         return new_id
@@ -70,6 +79,11 @@ class MongoBlueprintRepository(BlueprintRepository):
         res = self._col.delete_one({"blueprint_id": blueprint_id})
         return res.deleted_count == 1
 
+    def delete_by_identity(self, identity: Identity) -> int:
+        """Delete all blueprints owned by the given identity. Returns count."""
+        result = self._col.delete_many(identity_q(identity))
+        return result.deleted_count
+
     def load_many(self, blueprint_ids: List[str]) -> List[BlueprintDocument]:
         """Load multiple blueprint documents by their IDs in a single $in query."""
         if not blueprint_ids:
@@ -82,15 +96,14 @@ class MongoBlueprintRepository(BlueprintRepository):
     def exists(self, blueprint_id: str) -> bool:
         return self._col.count_documents({"blueprint_id": blueprint_id}, limit=1) == 1
 
-    # --------- listing & counting with optional user filter -------
-    def _user_q(self, user_id: str | None) -> Dict[str, Any]:
-        return {} if user_id is None else {"user_id": user_id}
+    # --------- listing & counting with identity filter -------
 
     def list_ids(
-            self, *, user_id: str | None = None, skip=0, limit=100, sort_desc=True
+            self, *, identity: Optional[Identity] = None,
+            skip=0, limit=100, sort_desc=True
     ) -> List[str]:
         cur = (
-            self._col.find(self._user_q(user_id), {"blueprint_id": 1})
+            self._col.find(identity_q(identity), {"blueprint_id": 1})
             .sort("updated_at", pymongo.DESCENDING if sort_desc else pymongo.ASCENDING)
             .skip(skip)
             .limit(limit)
@@ -98,16 +111,13 @@ class MongoBlueprintRepository(BlueprintRepository):
         return [d["blueprint_id"] for d in cur]
 
     def list_docs(
-            self,
-            *,
-            user_id: str | None = None,
-            skip: int = 0,
-            limit: int = 100,
-            sort_desc: bool = True,
+            self, *,
+            identity: Optional[Identity] = None,
+            skip: int = 0, limit: int = 100, sort_desc: bool = True,
     ) -> List[BlueprintDocument]:
         """Return BlueprintDocument objects for bulk operations."""
         cursor = (
-            self._col.find(self._user_q(user_id))
+            self._col.find(identity_q(identity))
             .sort("updated_at", pymongo.DESCENDING if sort_desc else pymongo.ASCENDING)
             .skip(skip)
             .limit(limit)
@@ -115,17 +125,14 @@ class MongoBlueprintRepository(BlueprintRepository):
         return [BlueprintDocument(**raw) for raw in cursor]
 
     def list_summaries(
-            self,
-            *,
-            user_id: str | None = None,
-            skip: int = 0,
-            limit: int = 100,
-            sort_desc: bool = True,
+            self, *,
+            identity: Optional[Identity] = None,
+            skip: int = 0, limit: int = 100, sort_desc: bool = True,
     ) -> List[BlueprintSummary]:
         projection = {
             "_id": 0,
             "blueprint_id": 1,
-            "user_id": 1,
+            "identity": 1,
             "created_at": 1,
             "updated_at": 1,
             "metadata": 1,
@@ -133,7 +140,7 @@ class MongoBlueprintRepository(BlueprintRepository):
             "spec_dict.description": 1,
         }
         cursor = (
-            self._col.find(self._user_q(user_id), projection)
+            self._col.find(identity_q(identity), projection)
             .sort("updated_at", pymongo.DESCENDING if sort_desc else pymongo.ASCENDING)
             .skip(skip)
             .limit(limit)
@@ -143,7 +150,7 @@ class MongoBlueprintRepository(BlueprintRepository):
             spec = doc.get("spec_dict", {})
             summaries.append(BlueprintSummary(
                 blueprint_id=doc["blueprint_id"],
-                user_id=doc["user_id"],
+                identity=Identity(**doc["identity"]),
                 name=spec.get("name", "Untitled blueprint"),
                 description=spec.get("description", ""),
                 created_at=doc["created_at"],
@@ -158,14 +165,14 @@ class MongoBlueprintRepository(BlueprintRepository):
 
     def count_usage(self, rid: str) -> int:
         fields = [
-                     f"spec_dict.{cat}.rid"  # direct catalogue entry
+                     f"spec_dict.{cat}.rid"
                      for cat in ResourceCategory.list_values()
                  ] + [
-                     f"spec_dict.{cat}.config.rid"  # nested inside another resource
+                     f"spec_dict.{cat}.config.rid"
                      for cat in ResourceCategory.list_values()
                  ]
         ors = [{fld: rid} for fld in fields]
         return self._col.count_documents({"$or": ors})
 
-    def count(self, user_id: str | None = None) -> int:
-        return self._col.count_documents(self._user_q(user_id))
+    def count(self, identity: Optional[Identity] = None) -> int:
+        return self._col.count_documents(identity_q(identity))

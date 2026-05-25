@@ -311,12 +311,11 @@ class AgentCapableMixin(Generic[T]):
             action_executor=action_executor
         )
         
-        # Create clean iterator with dependency injection
         iterator = AgentIterator(
             strategy=strategy,
             execution_handler=execution_handler,
             stream=self._stream if self.is_streaming() else None,
-            on_action=on_action
+            on_action=on_action,
         )
         
         # Set initial messages
@@ -364,7 +363,6 @@ class AgentCapableMixin(Generic[T]):
         
         try:
             for step in iterator:
-                # Collect intermediate steps if requested
                 if config.return_intermediate:
                     result["steps"].append(step)
                 
@@ -463,7 +461,6 @@ class AgentCapableMixin(Generic[T]):
         
         try:
             for step in iterator:
-                # Yield step event
                 yield {
                     "type": f"agent_{step.type.value}",
                     "data": self._serialize_step(step),
@@ -471,7 +468,6 @@ class AgentCapableMixin(Generic[T]):
                     "metadata": step.metadata
                 }
                 
-                # Track actions for summary
                 if step.type == StepType.ACTION:
                     action = step.data
                     pending_actions.append(action)

@@ -6,6 +6,7 @@ must follow:
 
     begin  →  execute_graph  →  complete
                                  (or fail on error)
+                                 (or cancel on SessionCancelledException)
 
 The ordering lives HERE, in the application layer — not inside any
 infrastructure adapter.  Each adapter (Temporal, Celery, RQ, …)
@@ -19,6 +20,7 @@ session from QUEUED → RUNNING.
 from typing import Protocol, runtime_checkable
 
 from mas.graph.state.graph_state import GraphState
+from mas.session.domain.exceptions import SessionCancelledException
 
 
 @runtime_checkable
@@ -26,11 +28,16 @@ class BackgroundSessionOps(Protocol):
     """
     Engine-specific mechanics for background session execution.
 
-    Each background engine implements these four async operations.
+    Each background engine implements these five async operations.
     The runner calls them in the canonical order.
 
     Temporal implements them as workflow activities / child workflows.
     Celery implements them as direct service calls inside a task.
+
+    Each engine is responsible for translating its native cancel signal
+    (e.g. asyncio.CancelledError, SoftTimeLimitExceeded) into
+    SessionCancelledException inside its ops methods. The runner catches
+    it and calls cancel().
     """
 
     async def begin(self) -> GraphState:
@@ -49,6 +56,10 @@ class BackgroundSessionOps(Protocol):
         """Mark FAILED, persist."""
         ...
 
+    async def cancel(self) -> None:
+        """Mark CANCELLED, close channels, persist."""
+        ...
+
 
 class BackgroundSessionRunner:
     """
@@ -57,6 +68,11 @@ class BackgroundSessionRunner:
     This is the single source of truth for the ordering rule.
     Infrastructure adapters supply BackgroundSessionOps; this class
     ensures they are called in the correct sequence.
+
+    Handles all terminal transitions:
+      - COMPLETED via complete()
+      - FAILED via fail()
+      - CANCELLED via cancel()
 
     Mirrors ForegroundSessionRunner for the background path.
     """
@@ -77,6 +93,9 @@ class BackgroundSessionRunner:
             final_state = await ops.execute_graph(seeded_state)
             await ops.complete(final_state)
             return final_state
+        except SessionCancelledException:
+            await ops.cancel()
+            raise
         except Exception as e:
             await ops.fail(e)
             raise

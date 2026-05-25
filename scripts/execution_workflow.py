@@ -116,7 +116,10 @@ class UnifAIClient:
     def __init__(self, config: WorkflowConfig):
         self.config = config
         self.session = requests.Session()
-        self.session.headers.update({"Content-Type": "application/json"})
+        self.session.headers.update({
+            "Content-Type": "application/json",
+            "X-Authenticated-User": config.user_shortcut,
+        })
         self.session.verify = False  # Disable SSL verification for internal routes
 
     def _url(self, endpoint: str) -> str:
@@ -238,7 +241,7 @@ def submit_session(client: UnifAIClient, session_id: str) -> dict:
         "sessionId": session_id,
         "inputs": {"user_prompt": client.config.user_question},
         # "scope": "public",
-        "loggedInUser": client.config.user_shortcut,
+        "userId": client.config.user_shortcut,
     }
 
     print(f"[2/5] Submitting session with prompt: '{client.config.user_question[:50]}...'")

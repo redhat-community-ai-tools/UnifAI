@@ -176,7 +176,6 @@ class AgentActionExecutor:
             return observations
             
         except Exception as e:
-            # Handle unexpected execution errors
             return [
                 AgentObservation(
                     action_id=action.id,

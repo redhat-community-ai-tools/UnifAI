@@ -6,4 +6,4 @@ PyJWT
 python-dotenv
 pydantic
 pydantic-settings
-redis
+ldap3
