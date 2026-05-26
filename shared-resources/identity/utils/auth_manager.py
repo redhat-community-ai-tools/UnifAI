@@ -2,12 +2,19 @@
 Authentication Manager for Keycloak SSO Integration
 Handles user authentication, session management, and token validation
 """
+import base64
+import json
 from datetime import datetime, timedelta
 from functools import wraps
+import os
+import secrets
+import threading
+from urllib.parse import quote
+import requests as _http
 from typing import Any
 import os, uuid, logging
 import requests as http_requests
-from flask import request, jsonify, session, redirect, url_for, current_app
+from flask import request, jsonify, session, redirect, current_app
 from authlib.integrations.flask_client import OAuth
 from authlib.common.errors import AuthlibBaseError
 from config.app_config import AppConfig
@@ -55,6 +62,12 @@ class AuthManager:
         self._setup_session_configuration(app)
 
     def _setup_keycloak(self):
+        if config.local_auth_enabled:
+            from utils.dev_oauth_client import DevOAuthClient
+            self.keycloak_client = DevOAuthClient()
+            logger.info("Local auth mode -- using DevOAuthClient (Keycloak bypassed)")
+            return
+
         keycloak_base_url = config.keycloak_base_url
         client_id = config.client_id
         client_secret = config.client_secret
@@ -108,6 +121,17 @@ class AuthManager:
             return 0
         remaining = float(session_expires_at) - datetime.now().timestamp()
         return max(0, int(remaining))
+
+    def _oauth_callback_redirect_uri(self) -> str:
+        """
+        OAuth redirect URI for /api/auth/callback.
+
+        Local dev: http://hostname_local:port/api/auth/callback
+        Production: {identity_host}/api/auth/callback (IDENTITY_HOST env)
+        """
+        if config.backend_env == "production":
+            return f"{config.identity_host.rstrip('/')}/api/auth/callback"
+        return f"http://{config.hostname_local}:{config.port}/api/auth/callback"
     
     def _register_auth_routes(self):
         """Register authentication routes"""
@@ -122,14 +146,7 @@ class AuthManager:
             if not client_state:
                 return jsonify({'error': 'State parameter is required'}), 400
             
-            # Get the OAuth callback redirect URI
-            redirect_uri = config.get(
-                'redirect_url',
-                url_for('auth_callback', _external=True, _scheme='https') 
-                if config.backend_env == "production" 
-                else f"http://{config.hostname_local}:{config.port}/api/auth/callback"
-            )
-            
+            redirect_uri = self._oauth_callback_redirect_uri()
             # Pass the client-provided state through to Keycloak
             # Keycloak will echo it back in the callback
             return self.keycloak_client.authorize_redirect(redirect_uri, state=client_state)
@@ -140,9 +157,78 @@ class AuthManager:
             # Get the state parameter that Keycloak echoed back
             # This contains the original URL encoded by the frontend
             request_state = request.args.get('state', '')
-            
+
+            # Detect CLI flow: state is a base64 JSON with {"cli": true, "callbackUrl": "..."}
+            cli_callback_url = None
             try:
-                # Process the OAuth callback - exchange authorization code for tokens
+                state_data = json.loads(base64.b64decode(request_state).decode())
+                if state_data.get('cli') and state_data.get('callbackUrl'):
+                    cli_callback_url = state_data['callbackUrl']
+            except Exception:
+                pass
+
+            if cli_callback_url:
+                # CLI flow: exchange code directly with Keycloak (no Flask session/cookie needed).
+                # The browser cannot maintain the Flask session cookie across the Keycloak redirect
+                # because the login goes to localhost:13456 but Keycloak redirects back to
+                # 127.0.0.1:13456 — different cookie domains in Chrome, so the session is empty.
+                # A direct back-channel exchange bypasses the cookie entirely.
+                # Security: Keycloak still binds the code to redirect_uri, preventing replay attacks.
+                code = request.args.get('code', '')
+                kc_error = request.args.get('error', '')
+                if kc_error or not code:
+                    logger.error(f"CLI auth callback: Keycloak returned error={kc_error or 'no code'}")
+                    return redirect(f"{cli_callback_url}?auth=error")
+                try:
+                    redirect_uri = self._oauth_callback_redirect_uri()
+                    realm = config.get('keycloak_realm', 'master')
+                    token_url = (
+                        f"{config.keycloak_base_url}/realms/{realm}"
+                        f"/protocol/openid-connect/token"
+                    )
+                    userinfo_url = (
+                        f"{config.keycloak_base_url}/realms/{realm}"
+                        f"/protocol/openid-connect/userinfo"
+                    )
+                    token_resp = _http.post(token_url, data={
+                        'grant_type': 'authorization_code',
+                        'code': code,
+                        'redirect_uri': redirect_uri,
+                        'client_id': config.client_id,
+                        'client_secret': config.client_secret,
+                    }, timeout=15)
+                    token_resp.raise_for_status()
+                    token = token_resp.json()
+
+                    userinfo_resp = _http.get(
+                        userinfo_url,
+                        headers={'Authorization': f"Bearer {token['access_token']}"},
+                        timeout=15,
+                    )
+                    userinfo_resp.raise_for_status()
+                    userinfo = userinfo_resp.json()
+
+                    user_data = {
+                        'username': userinfo.get('preferred_username'),
+                        'email': userinfo.get('email'),
+                        'name': userinfo.get('name'),
+                        'sub': userinfo.get('sub'),
+                    }
+                    logger.info(f"CLI user '{user_data['username']}' authenticated successfully")
+                    user_b64 = (
+                        base64.urlsafe_b64encode(json.dumps(user_data).encode())
+                        .decode()
+                        .rstrip('=')
+                    )
+                    return redirect(
+                        f"{cli_callback_url}?auth=success&user={quote(user_b64, safe='')}"
+                    )
+                except Exception as exc:
+                    logger.error(f"CLI auth token exchange failed: {exc}")
+                    return redirect(f"{cli_callback_url}?auth=error")
+
+            # GUI flow: standard authlib session-based exchange
+            try:
                 token = self.keycloak_client.authorize_access_token()
                 userinfo = self.keycloak_client.userinfo()
 
@@ -171,6 +257,9 @@ class AuthManager:
                     session_expires_at.timestamp()
                 )
                 self.redis_store.hset(identity_session_key(session_id), session_data, ttl_seconds=ttl_seconds)
+                
+                logger.info(f"User {userinfo.get('preferred_username')} authenticated successfully")
+
 
                 logger.info(
                     "User %s authenticated successfully",
@@ -204,7 +293,7 @@ class AuthManager:
             if session.get('session_id'):      
                 self.redis_store.delete(identity_session_key(session.get('session_id')))
             refresh_token_val = (session_data or {}).get('refresh_token') if session_data else None
-            if refresh_token_val:
+            if refresh_token_val and not config.local_auth_enabled:
                 try:
                     keycloak_base_url = config.keycloak_base_url
                     realm = config.get('keycloak_realm', 'master')
@@ -218,7 +307,6 @@ class AuthManager:
                         },
                         timeout=10,
                     )
-                    # Keycloak returns 204 No Content (or 200) on successful token revocation
                     if resp.ok:
                         logger.info(f"Keycloak session revoked for user {username}")
                     else:
@@ -331,7 +419,12 @@ class AuthManager:
                 return jsonify({'message': 'Token refreshed successfully'})
             else:
                 return jsonify({'error': 'Failed to refresh token'}), 401
-    
+
+        @self.app.route('/api/auth/config')
+        def auth_config():
+            """Return auth configuration for the login page."""
+            return jsonify({'local_auth': config.local_auth_enabled})
+
     def is_authenticated(self):
         """Check if user is authenticated and session is valid"""
         session_data = self._get_server_session()

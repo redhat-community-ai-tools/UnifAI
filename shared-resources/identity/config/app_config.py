@@ -19,6 +19,9 @@ class AppConfig(SharedConfig):
     port: str = "13456"
     secret_key: str = ""
 
+    # Local auth (dev bypass -- set via local-development env_generator)
+    local_auth_enabled: bool = False
+
     # Keycloak Configuration
     keycloak_base_url: str = ""
     client_id: str = ""
@@ -29,6 +32,9 @@ class AppConfig(SharedConfig):
 
     frontend_url: str = "http://localhost:5000"    
     backend_env: str = "development"
+
+    # Public identity service base URL (env: IDENTITY_HOST). Used for OAuth redirect_uri in production.
+    identity_host: str = "http://127.0.0.1:13456"
 
     # Multi-agent connection
     multiagent_host: str = "localhost"

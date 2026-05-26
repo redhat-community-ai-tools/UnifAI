@@ -1,0 +1,152 @@
+local_auth: true   # Set false to use real Keycloak SSO
+
+python:
+  min: "3.11"
+  max: "3.13"
+
+infrastructure:
+  mongo:
+    image: "docker.io/library/mongo:latest"
+    ports: ["27017:27017"]
+    label: "MongoDB"
+    stop_timeout: 30
+  rabbitmq:
+    image: "docker.io/library/rabbitmq:3-management"
+    ports: ["5672:5672", "15672:15672"]
+    label: "RabbitMQ"
+  qdrant:
+    image: "docker.io/qdrant/qdrant:latest"
+    ports: ["6333:6333", "6334:6334"]
+    label: "Qdrant"
+  redis:
+    image: "docker.io/library/redis:latest"
+    ports: ["6379:6379"]
+    label: "Redis"
+  temporal:
+    image: "docker.io/temporalio/temporal:latest"
+    ports: ["7233:7233", "8233:8233"]
+    label: "Temporal"
+    command: "server start-dev --ip 0.0.0.0 --ui-port 8233"
+
+services:
+  backend:
+    directory: "backend"
+    port: 8005
+    host: "127.0.0.1"
+    type: python
+    health_endpoint: "/api/health/"
+    infrastructure: [mongo]
+    env_file: ".env"
+    env_entries:
+      hostname_local: "127.0.0.1"
+      secret_key: "<AUTO_GENERATE>"
+    venv:
+      strategy: "requirements"
+    launch: "python -m run.dev"
+
+  rag:
+    directory: "rag"
+    port: 13457
+    host: "127.0.0.1"
+    type: python
+    health_endpoint: "/api/health/"
+    infrastructure: [mongo, rabbitmq, qdrant]
+    env_file: ".env"
+    env_entries:
+      hostname_local: "127.0.0.1"
+      port: "13457"
+      secret_key: "<AUTO_GENERATE>"
+    venv:
+      strategy: "requirements"
+    launch: "python -m bootstrap.flask_app"
+
+  multi-agent:
+    directory: "multi-agent"
+    port: 8002
+    host: "127.0.0.1"
+    type: python
+    health_endpoint: "/api/health/"
+    infrastructure: [mongo, redis, temporal]
+    env_file: ".env"
+    env_entries:
+      secret_key: "<AUTO_GENERATE>"
+    venv:
+      strategy: "custom"
+      commands:
+        - "{python} -m venv venv"
+        - "venv/bin/pip install -e .[all]"
+        - "venv/bin/pip install -e ../global_utils"
+    launch: "HOSTNAME=0.0.0.0 mas api dev"
+
+  identity:
+    directory: "shared-resources/identity"
+    port: 13456
+    host: "127.0.0.1"
+    type: python
+    health_endpoint: "/api/health/"
+    infrastructure: [redis]
+    env_file: ".env"
+    env_entries:
+      keycloak_base_url: "https://auth.stage.redhat.com/auth"
+      client_id: "<REPLACE_WITH_YOUR_CLIENT_ID>"
+      client_secret: "<REPLACE_WITH_YOUR_CLIENT_SECRET>"
+      keycloak_realm: "EmployeeIDP"
+      hostname_local: "127.0.0.1"
+      port: "13456"
+      frontend_url: "http://127.0.0.1:5000"
+      backend_env: "development"
+      secret_key: "<AUTO_GENERATE>"
+    venv:
+      strategy: "toml"
+    launch: "python -m bootstrap.flask_app"
+
+  ui:
+    directory: "ui"
+    port: 5000
+    host: "0.0.0.0"
+    type: node
+    infrastructure: []
+    env_file: ".env.local"
+    env_entries:
+      DEV_PORT: "5000"
+      DEV_HOST: "0.0.0.0"
+      RAG_HOST: "http://127.0.0.1:13457"
+      MULTIAGENT_HOST: "http://127.0.0.1:8002"
+      IDENTITY_HOST: "http://127.0.0.1:13456"
+      BACKEND_HOST: "http://127.0.0.1:8005"
+    venv:
+      strategy: "node"
+    launch: "npm start"
+
+  celery-worker:
+    directory: "rag"
+    type: python
+    is_primary: false
+    infrastructure: [mongo, rabbitmq, qdrant]
+    env_file: ".env"
+    venv:
+      strategy: "none"
+    launch: >-
+      celery -A infrastructure.celery.app worker
+      -Q document_queue,slack_queue -l info
+
+  temporal-worker:
+    directory: "multi-agent"
+    type: python
+    is_primary: false
+    infrastructure: [mongo, redis, temporal]
+    env_file: ".env"
+    venv:
+      strategy: "none"
+    launch: "mas temporal-worker --threads 20"
+
+groups:
+  all:          [backend, rag, multi-agent, identity, ui, celery-worker, temporal-worker]
+  services:     [backend, rag, multi-agent, identity, ui]
+  workers:      [celery-worker, temporal-worker]
+  agents:       [multi-agent, temporal-worker]
+  rag-stack:    [rag, celery-worker]
+  backend-only: [backend, identity]
+
+logging:
+  directory: "/tmp/unifai-dev/logs"
