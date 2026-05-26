@@ -33,6 +33,9 @@ class AppConfig(SharedConfig):
     frontend_url: str = "http://localhost:5000"    
     backend_env: str = "development"
 
+    # Public identity service base URL (env: IDENTITY_HOST). Used for OAuth redirect_uri in production.
+    identity_host: str = "http://127.0.0.1:13456"
+
     # Multi-agent connection
     multiagent_host: str = "localhost"
     multiagent_port: str = "8002"

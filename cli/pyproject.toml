@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unifai-cli"
+version = "0.1.0"
+description = "UnifAI CLI — interactive terminal interface for the multi-agent platform"
+requires-python = ">=3.11"
+license = {text = "Proprietary"}
+
+dependencies = [
+    "typer",
+    "rich",
+    "questionary",
+    "pyyaml",
+    "requests",
+    "pydantic-settings",
+]
+
+[project.scripts]
+unifai = "unifai_cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["unifai_cli*"]
