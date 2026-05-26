@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unifai-dev"
+version = "0.1.0"
+description = "UnifAI local development tool"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml",
+    "typer",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[project.scripts]
+unifai-dev = "devtool.cli:main"

@@ -5,6 +5,8 @@ import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 import { visualizer } from 'rollup-plugin-visualizer'; // Import the build analyzer plugin
 
+const parsedDevPort = parseInt(process.env.DEV_PORT ?? '', 10);
+
 export default defineConfig({
   plugins: [
     react(),
@@ -26,7 +28,8 @@ export default defineConfig({
     }),
   ],
   server: {
-    port: 5173, // Or whatever port Vite is running on by default
+    port: Number.isFinite(parsedDevPort) ? parsedDevPort : 5173,
+    host: process.env.DEV_HOST || undefined,
     proxy: {
       // Proxy for api1
       '/api1': {

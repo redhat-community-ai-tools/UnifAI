@@ -33,3 +33,8 @@ class ChatMessage(BaseModel):
     metadata: Dict[str, Any] = {}
 
     model_config = ConfigDict(frozen=True)
+
+    @property
+    def is_cancelled(self) -> bool:
+        """Check if this message has been marked as cancelled."""
+        return bool(self.metadata.get("is_cancelled"))

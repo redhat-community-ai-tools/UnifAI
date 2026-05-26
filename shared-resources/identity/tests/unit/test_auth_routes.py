@@ -151,6 +151,88 @@ def test_protected_user_profile_allows_authenticated_user(client) -> None:
     assert j.get("message")
 
 
+class TestAuthConfig:
+    def test_auth_config_returns_local_auth_false_by_default(self, client, monkeypatch) -> None:
+        from utils import auth_manager as am
+
+        monkeypatch.setattr(am.config, "local_auth_enabled", False, raising=False)
+        r = client.get("/api/auth/config")
+        assert r.status_code == 200
+        assert r.get_json() == {"local_auth": False}
+
+    def test_auth_config_returns_local_auth_true(self, client, monkeypatch) -> None:
+        from utils import auth_manager as am
+
+        monkeypatch.setattr(am.config, "local_auth_enabled", True, raising=False)
+        r = client.get("/api/auth/config")
+        assert r.status_code == 200
+        assert r.get_json() == {"local_auth": True}
+
+
+class TestLocalAuth:
+    """Exercises the full auth flow through ``DevOAuthClient``."""
+
+    def _login_dev_user(self, client, identity_app):
+        """Perform a dev-user login through the callback route and return the client."""
+        from utils.dev_oauth_client import DevOAuthClient
+
+        auth_mgr = identity_app.extensions["auth_manager"]
+        auth_mgr.keycloak_client = DevOAuthClient()
+
+        state = "eyJ0ZXN0IjoiZGV2In0"
+        r = client.get(f"/api/auth/callback?code=dev-code&state={state}", follow_redirects=False)
+        assert r.status_code == 302, r.data
+        assert "auth=success" in (r.location or "")
+        return client
+
+    def test_login_redirects_to_callback_with_dev_code(self, client, identity_app) -> None:
+        from utils.dev_oauth_client import DevOAuthClient
+
+        auth_mgr = identity_app.extensions["auth_manager"]
+        auth_mgr.keycloak_client = DevOAuthClient()
+
+        r = client.get("/api/auth/login?state=test123", follow_redirects=False)
+        assert r.status_code == 302
+        loc = r.location or ""
+        assert "code=dev-code" in loc
+        assert "state=test123" in loc
+
+    def test_callback_creates_dev_user_session(self, client, identity_app) -> None:
+        self._login_dev_user(client, identity_app)
+        r = client.get("/api/auth/user")
+        assert r.status_code == 200
+        user = (r.get_json() or {}).get("user", {})
+        assert user.get("username") == "dev-user"
+        assert user.get("email") == "dev@local.dev"
+
+    def test_get_user_returns_dev_user_profile(self, client, identity_app) -> None:
+        self._login_dev_user(client, identity_app)
+        r = client.get("/api/auth/user")
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data.get("authenticated") is True
+        user = data.get("user", {})
+        assert user.get("name") == "Dev User"
+        assert user.get("sub") == "local:dev-user"
+
+    def test_logout_clears_dev_session(self, client, identity_app) -> None:
+        self._login_dev_user(client, identity_app)
+        r = client.get("/api/auth/user")
+        assert r.status_code == 200
+
+        r = client.post("/api/auth/logout")
+        assert r.status_code == 200
+
+        r = client.get("/api/auth/user")
+        assert r.status_code == 401
+
+    def test_refresh_succeeds_for_dev_session(self, client, identity_app) -> None:
+        self._login_dev_user(client, identity_app)
+        r = client.post("/api/auth/refresh")
+        assert r.status_code == 200
+        assert (r.get_json() or {}).get("message") == "Token refreshed successfully"
+
+
 class TestRefreshTokenSuccess:
     def test_post_refresh_succeeds_when_keycloak_accepts(
         self, client, identity_app, monkeypatch

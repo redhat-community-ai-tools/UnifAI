@@ -19,6 +19,9 @@ class AppConfig(SharedConfig):
     port: str = "13456"
     secret_key: str = ""
 
+    # Local auth (dev bypass -- set via local-development env_generator)
+    local_auth_enabled: bool = False
+
     # Keycloak Configuration
     keycloak_base_url: str = ""
     client_id: str = ""
