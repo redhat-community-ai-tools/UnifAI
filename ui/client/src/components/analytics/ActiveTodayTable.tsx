@@ -12,6 +12,7 @@ interface ActiveTodayTableProps {
     status_breakdown?: {
       COMPLETED?: number;
       FAILED?: number;
+      PENDING?: number;
     };
   }>;
   page: number;
@@ -85,6 +86,11 @@ export function ActiveTodayTable({ users, page, setPage, itemsPerPage, timeRange
                       {user.status_breakdown?.FAILED && user.status_breakdown.FAILED > 0 && (
                         <Badge variant="outline" className="border-error text-error text-xs">
                           ✗ {user.status_breakdown.FAILED}
+                        </Badge>
+                      )}
+                      {user.status_breakdown?.PENDING && user.status_breakdown.PENDING > 0 && (
+                        <Badge variant="outline" className="border-yellow-500 text-yellow-500 text-xs">
+                          ◷ {user.status_breakdown.PENDING}
                         </Badge>
                       )}
                     </div>

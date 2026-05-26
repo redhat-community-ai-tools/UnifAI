@@ -319,6 +319,15 @@ class MongoSessionRepository(SessionRepository):
                         ]
                     }
                 },
+                "pending_runs": {
+                    "$sum": {
+                        "$cond": [
+                            {"$eq": [f"${self._STATUS_FIELD}", SessionStatus.PENDING.value]},
+                            1,
+                            0
+                        ]
+                    }
+                },
                 "last_run": {"$max": f"${self._TIME_FIELD}"},
                 "avg_duration_ms": {
                     "$avg": {
@@ -358,6 +367,7 @@ class MongoSessionRepository(SessionRepository):
                 total_runs=doc.get("total_runs", 0),
                 completed_runs=doc.get("completed_runs", 0),
                 failed_runs=doc.get("failed_runs", 0),
+                pending_runs=doc.get("pending_runs", 0),
                 last_run=doc.get("last_run"),
                 avg_duration_ms=doc.get("avg_duration_ms"),
                 users=doc.get("users", [])

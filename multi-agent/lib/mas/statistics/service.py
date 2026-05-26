@@ -7,11 +7,14 @@ from mas.resources.service import ResourcesService
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
+from mas.session.domain.status import SessionStatus
 from global_utils.utils.time_utils import format_utc_iso
 from .models import (
     StatisticsResponse, ResourceCategoryStats, SystemStatsResponse,
     TotalStats, UserActivity, BlueprintUsage
 )
+
+_NON_RUNNABLE_STATUSES = frozenset({SessionStatus.PENDING.value})
 
 logger = logging.getLogger(__name__)
 
@@ -292,7 +295,9 @@ class StatisticsService:
         Returns:
             List of UserActivity models sorted by run count descending
         """
-        # Aggregate run counts and status breakdown by user
+        # Aggregate run counts and status breakdown by user.
+        # PENDING sessions are tracked in status_breakdown but excluded
+        # from run_count (a session that hasn't started isn't a "run").
         user_data: Dict[str, UserActivity] = {}
         for item in status_counts:
             user_id = item.get("user_id")
@@ -305,7 +310,8 @@ class StatisticsService:
             if user_id not in user_data:
                 user_data[user_id] = UserActivity(user_id=user_id)
             
-            user_data[user_id].run_count += count
+            if status not in _NON_RUNNABLE_STATUSES:
+                user_data[user_id].run_count += count
             if status:
                 current = user_data[user_id].status_breakdown.get(status, 0)
                 user_data[user_id].status_breakdown[status] = current + count
@@ -324,8 +330,13 @@ class StatisticsService:
         for user_id, activity in user_data.items():
             activity.blueprints_used = len(user_blueprints.get(user_id, set()))
         
-        # Sort by run count descending
-        result = sorted(user_data.values(), key=lambda x: x.run_count, reverse=True)
+        # Filter out users with no actual runs (only PENDING sessions)
+        # and sort by run count descending
+        result = sorted(
+            (a for a in user_data.values() if a.run_count > 0),
+            key=lambda x: x.run_count,
+            reverse=True,
+        )
         
         if limit:
             result = result[:limit]
@@ -340,6 +351,9 @@ class StatisticsService:
         Derive total_runs, unique_users, and status_breakdown from
         user+status grouped counts, avoiding separate DB round-trips.
         
+        PENDING sessions are included in status_breakdown (for the pie chart)
+        but excluded from total_runs (a session that hasn't started isn't a "run").
+        
         Args:
             status_counts: Sessions grouped by user_id and status
             
@@ -352,13 +366,15 @@ class StatisticsService:
         
         for item in status_counts:
             count = item.count
-            total_runs += count
+            status = item.get("status")
+            
+            if status not in _NON_RUNNABLE_STATUSES:
+                total_runs += count
             
             user_id = item.get("user_id")
             if user_id:
                 user_ids.add(user_id)
             
-            status = item.get("status")
             if status:
                 status_breakdown[status] = status_breakdown.get(status, 0) + count
         
@@ -381,31 +397,37 @@ class StatisticsService:
         Returns:
             List of BlueprintUsage models sorted by run count descending
         """
-        # Sort by total_runs to get top blueprints first
-        sorted_stats = sorted(blueprint_stats, key=lambda s: s.total_runs, reverse=True)[:limit]
+        # Sort by effective runs (excluding PENDING) to get top blueprints first
+        sorted_stats = sorted(
+            blueprint_stats,
+            key=lambda s: s.total_runs - s.pending_runs,
+            reverse=True,
+        )[:limit]
         
         # Batch lookup blueprint names (only for top N)
         blueprint_ids = [s.blueprint_id for s in sorted_stats]
         blueprint_names = self._batch_get_blueprint_names(blueprint_ids)
         
-        # Transform to BlueprintUsage models
+        # Transform to BlueprintUsage models.
+        # run_count excludes PENDING sessions (not yet started).
         result = []
         for stats in sorted_stats:
             terminal_runs = stats.completed_runs + stats.failed_runs
+            effective_runs = stats.total_runs - stats.pending_runs
             success_rate = round((stats.completed_runs / terminal_runs) * 100, 1) if terminal_runs > 0 else 0.0
             avg_duration_seconds = max(0.0, stats.avg_duration_ms / 1000.0) if stats.avg_duration_ms is not None else None
             
             result.append(BlueprintUsage(
                 blueprint_id=stats.blueprint_id,
                 blueprint_name=blueprint_names[stats.blueprint_id],
-                run_count=stats.total_runs,
+                run_count=effective_runs,
                 unique_users=len(stats.users),
                 avg_duration_seconds=avg_duration_seconds,
                 last_run_at=stats.last_run,
                 success_rate=success_rate,
                 completed_runs=stats.completed_runs,
                 failed_runs=stats.failed_runs,
-                in_progress_runs=stats.total_runs - terminal_runs,
+                in_progress_runs=effective_runs - terminal_runs,
                 user_list=stats.users
             ))
         

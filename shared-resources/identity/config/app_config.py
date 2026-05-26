@@ -28,7 +28,7 @@ class AppConfig(SharedConfig):
     client_secret: str = ""
     keycloak_realm: str = ""
     version: str = "1.0.0"
-    admin_allowed_users: list = []  # Populate with user_ids (usernames) to grant admin access
+    admin_allowed_users: list = ["yhabushi"]  # Populate with user_ids (usernames) to grant admin access
 
     frontend_url: str = "http://localhost:5000"    
     backend_env: str = "development"
