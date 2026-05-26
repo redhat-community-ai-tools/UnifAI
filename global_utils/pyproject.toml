@@ -25,13 +25,14 @@ docling         = ["httpx>=0.25.0"]
 embedding       = ["httpx>=0.25.0"]
 async-bridge    = ["anyio"]
 codegen         = ["datamodel-code-generator", "jsonschema"]
+identity-client = ["requests"]
 
 rag             = ["global_utils[flask,apiargs,celery,docling,embedding]"]
 backend         = ["global_utils[flask,apiargs,redis]"]
-multi-agent     = ["global_utils[flask,apiargs,async-bridge,codegen]"]
-identity        = ["global_utils[flask,redis]"]
+multi-agent     = ["global_utils[flask,apiargs,async-bridge,codegen,identity-client]"]
+identity        = ["global_utils[flask,redis,identity-client]"]
 
-all             = ["global_utils[flask,apiargs,redis,celery,docling,embedding,async-bridge,codegen]"]
+all             = ["global_utils[flask,apiargs,redis,celery,docling,embedding,async-bridge,codegen,identity-client]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
