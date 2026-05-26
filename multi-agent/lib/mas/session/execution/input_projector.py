@@ -20,7 +20,7 @@ from mas.elements.llms.common.chat.file_attachment import FileAttachment
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.status import SessionStatus
-from mas.session.execution.ports import FileUploadRequest, IFileUploadService
+from mas.session.execution.ports import FileUploadLimits, FileUploadRequest, IFileUploadService
 from mas.session.domain.constants import CANCELLED_TAG
 from mas.session.management.utils import derive_title
 from mas.session.repository.repository import SessionRepository
@@ -37,14 +37,35 @@ class SessionInputProjector:
         self,
         repository: SessionRepository,
         file_upload_service: Optional[IFileUploadService] = None,
+        file_upload_limits: Optional[FileUploadLimits] = None,
     ) -> None:
         self._repo = repository
         self._file_upload_service = file_upload_service
+        self._limits = file_upload_limits
 
     @property
     def supports_file_upload(self) -> bool:
         """Whether a file upload service is configured."""
         return self._file_upload_service is not None
+
+    def _validate_files(self, files: List[FileUploadRequest]) -> None:
+        """Validate file upload batch against configured limits.
+
+        Raises:
+            ValueError: If any file violates the upload constraints.
+        """
+        if not self._limits:
+            return
+        if len(files) > self._limits.max_files:
+            raise ValueError(f"Maximum {self._limits.max_files} files allowed")
+        for f in files:
+            if len(f.file_bytes) < self._limits.min_file_size_bytes:
+                raise ValueError(f"File '{f.file_name}' is empty")
+            if len(f.file_bytes) > self._limits.max_file_size_bytes:
+                max_mb = self._limits.max_file_size_bytes // (1024 * 1024)
+                raise ValueError(f"File '{f.file_name}' exceeds {max_mb}MB limit")
+            if f.mime_type not in self._limits.allowed_mime_types:
+                raise ValueError(f"Unsupported file type: {f.mime_type}")
 
     def apply(
         self,
@@ -63,10 +84,12 @@ class SessionInputProjector:
             if title := derive_title(inputs):
                 record.metadata.title = title
 
+        inputs.pop("file_attachments", None)
         record.graph_state.update(inputs)
 
         attachments: List[FileAttachment] = []
         if files and self._file_upload_service:
+            self._validate_files(files)
             results = self._file_upload_service.upload_batch(files)
             now = datetime.now(timezone.utc).isoformat()
             attachments = [

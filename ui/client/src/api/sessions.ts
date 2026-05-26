@@ -2,6 +2,9 @@ import axios from '@/http/axiosAgentConfig';
 
 export const FILE_MAX_COUNT = 3;
 export const FILE_MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
+export const FILE_ALLOWED_MIME_TYPES = [
+  "application/pdf", "text/csv", "text/plain", "text/html", "text/markdown",
+] as const;
 
 export interface CreateSessionParams {
   blueprintId: string;

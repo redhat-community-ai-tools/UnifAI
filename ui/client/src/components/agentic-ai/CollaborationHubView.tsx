@@ -33,6 +33,7 @@ import {
 import { MemberDisplay, buildMemberDisplay } from "@/utils/memberDisplay";
 import type { ChatSessionData } from "@/types/session";
 import { transformSessionData } from "@/utils/sessionHelpers";
+import type { SessionPayload } from "./ExecutionTab";
 
 const COLLAB_POLL_INTERVAL = 3000;
 const COLLAB_HEARTBEAT_INTERVAL = 30000;
@@ -102,7 +103,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
   // ── Local execution (current user triggers run) ────────────────────────
   const triggerExecution = useCallback(
-    async (sessionPayload: { sessionId: string; inputs: { user_prompt: string }; scope?: "public" | "private"; loggedInUser?: string; files?: File[] }) => {
+    async (sessionPayload: SessionPayload) => {
       try {
         hub.setIsLiveRequest(true);
         setIsSubmitting(true);

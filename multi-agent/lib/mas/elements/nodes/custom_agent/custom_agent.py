@@ -1,10 +1,14 @@
 import logging
-from datetime import datetime, timezone, timedelta
 from typing import Callable, Optional, Any, List, ClassVar, Set, Dict
 from copy import deepcopy
 from mas.graph.state.state_view import StateView
 from mas.graph.state.graph_state import Channel
-from mas.elements.llms.common.chat.file_attachment import FILE_ATTACHMENT_TTL_HOURS, get_attachment_field
+from mas.elements.llms.common.chat.file_attachment import (
+    filter_active_attachments,
+    format_attachment_lines,
+    get_attachment_field,
+    partition_attachments,
+)
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.nodes.common.base_node import BaseNode
@@ -129,11 +133,12 @@ class CustomAgentNode(
                 attachments_raw = state.get(Channel.FILE_ATTACHMENTS, [])
             except Exception as e:
                 logger.warning("Error checking file attachments: %s", e)
-            if self._has_active_file_attachments(attachments_raw):
+            active = filter_active_attachments(attachments_raw)
+            if active:
                 try:
                     att_dicts = [
                         a.model_dump() if hasattr(a, "model_dump") else a
-                        for a in attachments_raw
+                        for a in active
                     ]
                     builtin_tools.append(self._file_retrieve_tool_factory(attachments=att_dicts))
                     logger.info("Injected read_attached_file tool with %d attachments", len(att_dicts))
@@ -141,23 +146,6 @@ class CustomAgentNode(
                     logger.warning("Failed to create file retrieve tool: %s", e)
 
         return builtin_tools
-
-    def _has_active_file_attachments(self, attachments: list) -> bool:
-        """Check if any non-expired file attachments exist."""
-        if not attachments:
-            return False
-        now = datetime.now(timezone.utc)
-        ttl = timedelta(hours=FILE_ATTACHMENT_TTL_HOURS)
-        for a in attachments:
-            uploaded_at = get_attachment_field(a, "uploaded_at", "")
-            if not uploaded_at:
-                return True
-            try:
-                if (now - datetime.fromisoformat(uploaded_at)) < ttl:
-                    return True
-            except (ValueError, TypeError):
-                return True
-        return False
 
     # ========== TASK PROCESSING ==========
 
@@ -257,18 +245,22 @@ class CustomAgentNode(
         if not thread_id:
             return None
 
-        file_attachments = self.workspaces.get_variable(thread_id, "file_attachments", []) or []
+        raw_attachments = self.workspaces.get_variable(thread_id, "file_attachments", []) or []
+        active, expired = partition_attachments(raw_attachments)
         facts = self.workspaces.get_facts(thread_id) or []
 
         parts: List[str] = []
-        if file_attachments:
-            file_lines = [
-                f"- {get_attachment_field(att, 'file_name')} ({get_attachment_field(att, 'mime_type')}) -> {get_attachment_field(att, 'file_uri')}"
-                for att in file_attachments
-            ]
+        if active:
             parts.append(
                 "ATTACHED FILES (use the read_attached_file tool to access these before proceeding):\n"
-                + "\n".join(file_lines)
+                + "\n".join(format_attachment_lines(active))
+            )
+        if expired:
+            expired_names = [get_attachment_field(att, "file_name") for att in expired]
+            parts.append(
+                "EXPIRED FILE ATTACHMENTS (these files have expired after 48 hours "
+                "and can no longer be accessed — inform the user they need to re-upload):\n"
+                + "\n".join(f"- {name}" for name in expired_names)
             )
         if facts:
             parts.append("WORKSPACE CONTEXT:\n" + "\n".join(f"- {f}" for f in facts))

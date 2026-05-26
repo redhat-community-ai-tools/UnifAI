@@ -232,8 +232,6 @@ def submit_user_session(identity):
         return jsonify({"error": str(e), "retriable": e.retriable}), status
     except (TypeError, ValueError) as e:
         return jsonify({"error": str(e)}), 400
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 409
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

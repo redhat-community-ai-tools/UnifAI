@@ -20,6 +20,7 @@ import remarkGfm from "remark-gfm";
 import axios from "../../../http/axiosAgentConfig";
 import { MarkdownComponents, preprocessText } from "./helpers/TextComponents";
 import { SessionPayload } from "../ExecutionTab";
+import { FILE_MAX_COUNT, FILE_MAX_SIZE_BYTES, FILE_ALLOWED_MIME_TYPES } from "@/api/sessions";
 import { useStreamingData } from "../StreamingDataContext";
 import { Message, StreamLogEntry, WorkPlanSnapshot, isSessionCancellation } from "./types";
 import { StreamLogDisplay } from "./StreamLogDisplay";
@@ -846,30 +847,23 @@ export default function ChatInterface({
   // Completion → Final answer appears and streaming stops
   // Cleanup → All intervals are properly cleared
   // ── File attachment handlers ──────────────────────────────────────────
-  // These must match the server-side FileUploadLimits configured in AppConfig.
-  // See: multi-agent/config/app_config.py (file_upload_* fields)
-  const ALLOWED_FILE_TYPES = [
-    "application/pdf", "text/csv", "text/plain", "text/html", "text/markdown",
-  ];
-  const MAX_FILES = 3;
-  const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
     if (!selectedFiles.length) return;
 
     const totalFiles = attachedFiles.length + selectedFiles.length;
-    if (totalFiles > MAX_FILES) {
-      toast({ title: "Too many files", description: `Maximum ${MAX_FILES} files allowed.`, variant: "destructive" });
+    if (totalFiles > FILE_MAX_COUNT) {
+      toast({ title: "Too many files", description: `Maximum ${FILE_MAX_COUNT} files allowed.`, variant: "destructive" });
       return;
     }
 
     for (const file of selectedFiles) {
-      if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+      if (!(FILE_ALLOWED_MIME_TYPES as readonly string[]).includes(file.type)) {
         toast({ title: "Unsupported file type", description: `"${file.name}" is not a supported file type. Allowed: PDF, CSV, TXT, HTML, Markdown.`, variant: "destructive" });
         return;
       }
-      if (file.size > MAX_FILE_SIZE) {
+      if (file.size > FILE_MAX_SIZE_BYTES) {
         toast({ title: "File too large", description: `"${file.name}" exceeds the 20MB limit.`, variant: "destructive" });
         return;
       }
@@ -1606,7 +1600,7 @@ export default function ChatInterface({
             {/* Paperclip button inside textarea, bottom-left */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              disabled={isInputDisabled || attachedFiles.length >= MAX_FILES}
+              disabled={isInputDisabled || attachedFiles.length >= FILE_MAX_COUNT}
               className="absolute bottom-2.5 left-2.5 p-1 rounded text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title="Attach file (PDF, CSV, TXT, HTML, Markdown)"
               type="button"

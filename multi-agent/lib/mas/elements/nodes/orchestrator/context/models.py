@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Any, Set
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 
-from mas.elements.llms.common.chat.file_attachment import get_attachment_field
+from mas.elements.llms.common.chat.file_attachment import format_attachment_lines
 
 
 class CycleTriggerReason(Enum):
@@ -380,10 +380,7 @@ class OrchestratorContext(BaseModel):
             sections.append(
                 "📎 FILE ATTACHMENTS (MUST instruct agents to read these via read_attached_file tool):"
             )
-            for att in self.file_attachments:
-                sections.append(
-                    f"  - {get_attachment_field(att, 'file_name')} ({get_attachment_field(att, 'mime_type')}) -> {get_attachment_field(att, 'file_uri')}"
-                )
+            sections.extend(format_attachment_lines(self.file_attachments, prefix="  - "))
             sections.append("")
 
         sections.extend([

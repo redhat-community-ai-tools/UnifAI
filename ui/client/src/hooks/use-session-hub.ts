@@ -33,8 +33,9 @@ import {
 } from "@/utils/sessionHelpers";
 import type { FlowObject } from "@/components/agentic-ai/graphs/interfaces";
 
+import type { SessionPayload } from "@/components/agentic-ai/ExecutionTab";
 // Re-export so consumers don't need a separate import
-export type { SessionPayload } from "@/components/agentic-ai/ExecutionTab";
+export type { SessionPayload };
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -516,14 +517,6 @@ export function useSessionHub({
   }, [showAddFlowModal]);
 
   // ── Execution ──────────────────────────────────────────────────────────
-
-  type SessionPayload = {
-    sessionId: string;
-    inputs: { user_prompt: string };
-    scope?: "public" | "private";
-    loggedInUser?: string;
-    files?: File[];
-  };
 
   const triggerExecution = useCallback(
     async (sessionPayload: SessionPayload): Promise<string> => {

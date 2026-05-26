@@ -10,7 +10,6 @@ from mas.session.domain.workflow_session import WorkflowSession
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.dto import SessionListItem
 from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
-from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 
@@ -99,7 +98,7 @@ class SessionService:
             )
         if files and not self._projector.supports_file_upload:
             raise ValueError(
-                "File attachments are not supported — Gemini File API key is not configured."
+                "File attachments are not supported for this deployment."
             )
         record = self._manager.get_record(session_id)
         handle = self._engine.generate_handle(session_id)

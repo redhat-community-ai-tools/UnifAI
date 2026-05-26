@@ -91,13 +91,14 @@ class FileUploadResult:
 
 @dataclass(frozen=True)
 class FileUploadLimits:
-    """Authoritative upload constraints — shared between adapter validation and UI hints."""
-    max_files: int = 3
-    max_file_size_bytes: int = 20 * 1024 * 1024
-    min_file_size_bytes: int = 1
-    allowed_mime_types: tuple = (
-        "application/pdf", "text/csv", "text/plain", "text/html", "text/markdown",
-    )
+    """Authoritative upload constraints — shared between adapter validation and UI hints.
+
+    Must be constructed explicitly from config to avoid default drift.
+    """
+    max_files: int
+    max_file_size_bytes: int
+    min_file_size_bytes: int
+    allowed_mime_types: tuple[str, ...]
 
 
 class IFileUploadService(ABC):

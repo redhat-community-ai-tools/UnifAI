@@ -262,6 +262,7 @@ class AppContainer(metaclass=SingletonMeta):
         self.input_projector = SessionInputProjector(
             repository=self.session_repo,
             file_upload_service=file_upload_service,
+            file_upload_limits=self.file_upload_limits,
         )
 
         self.channel_factory = self._create_channel_factory(cfg)
