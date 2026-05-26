@@ -10,19 +10,15 @@ import {
   DeclineShareRequest 
 } from '@/api/shares';
 import { useAuth } from './AuthContext';
+import { useView } from './ViewContext';
 
 interface NotificationContextType {
-  // State
   receivedNotifications: ShareInvite[];
   sentNotifications: ShareInvite[];
   isLoading: boolean;
   error: string | null;
-  
-  // Computed
   pendingNotificationsCount: number;
   hasUnreadNotifications: boolean;
-  
-  // Actions
   refreshNotifications: () => Promise<void>;
   sendNotification: (request: CreateShareRequest) => Promise<void>;
   acceptNotification: (shareId: string) => Promise<void>;
@@ -38,12 +34,16 @@ interface NotificationProviderProps {
 
 export const NotificationProvider: React.FC<NotificationProviderProps> = ({ children }) => {
   const { user, isAuthenticated } = useAuth();
+  const { viewMode, selectedTeam, teams } = useView();
   const [receivedNotifications, setReceivedNotifications] = useState<ShareInvite[]>([]);
   const [sentNotifications, setSentNotifications] = useState<ShareInvite[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const userId = user?.username || '';
+  const contextUserId = viewMode === 'team' && selectedTeam
+    ? selectedTeam.id
+    : userId;
 
   // Computed values
   const pendingNotificationsCount = receivedNotifications.filter(
@@ -61,9 +61,19 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
 
     try {
       // Fetch both received and sent notifications in parallel
+      const sentTeamName =
+        viewMode === 'team' && selectedTeam
+          ? (
+              selectedTeam.name?.trim()
+              || teams.find((t) => t.id === selectedTeam.id)?.name?.trim()
+              || ''
+            )
+          : '';
       const [receivedResponse, sentResponse] = await Promise.all([
         listShares('received', userId),
-        listShares('sent', userId)
+        viewMode === 'team' && selectedTeam
+          ? listShares('sent', selectedTeam.id, undefined, 0, 100, 'team', sentTeamName || undefined)
+          : listShares('sent', userId),
       ]);
 
       setReceivedNotifications(receivedResponse.invites);
@@ -76,24 +86,30 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     }
   };
 
-  // Send a new notification
   const sendNotification = async (request: CreateShareRequest) => {
     setError(null);
     
     try {
-      const requestWithSender = {
+      const senderType = viewMode === 'team' && selectedTeam ? 'team' : 'user';
+      const senderDisplayName =
+        senderType === 'team'
+          ? (
+              selectedTeam?.name?.trim()
+              || teams.find((t) => t.id === selectedTeam?.id)?.name?.trim()
+              || selectedTeam?.id
+            )
+          : (user?.username || contextUserId);
+      await createShare({
         ...request,
-        senderUserId: userId
-      };
-      
-      await createShare(requestWithSender);
-      
-      // Refresh sent notifications after creating a new one
+        senderIdentityId: contextUserId,
+        senderType,
+        senderDisplayName,
+      });
       await refreshNotifications();
     } catch (err) {
       console.error('Failed to send notification:', err);
       setError(err instanceof Error ? err.message : 'Failed to send notification');
-      throw err; // Re-throw to allow components to handle it
+      throw err;
     }
   };
 
@@ -102,12 +118,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     setError(null);
     
     try {
-      const request: AcceptShareRequest = {
-        shareId,
-        recipientUserId: userId
-      };
-      
-      await acceptShare(request);
+      await acceptShare({ shareId });
       
       // Update the local state to reflect the change
       setReceivedNotifications(prev => 
@@ -129,12 +140,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     setError(null);
     
     try {
-      const request: DeclineShareRequest = {
-        shareId,
-        recipientUserId: userId
-      };
-      
-      await declineShare(request);
+      await declineShare({ shareId });
       
       // Update the local state to reflect the change
       setReceivedNotifications(prev => 
@@ -163,7 +169,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       setSentNotifications([]);
       setError(null);
     }
-  }, [isAuthenticated, userId]);
+  }, [isAuthenticated, userId, viewMode, selectedTeam?.id, teams]);
 
   // Set up periodic refresh (every 30 seconds)
   useEffect(() => {
@@ -174,7 +180,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
-  }, [isAuthenticated, userId]);
+  }, [isAuthenticated, userId, viewMode, selectedTeam?.id, teams]);
 
   const value: NotificationContextType = {
     receivedNotifications,

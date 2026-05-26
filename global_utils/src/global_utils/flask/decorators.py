@@ -3,16 +3,113 @@ Flask decorators for access control.
 
 Pluggable so each app can supply its own way to get the current user
 and to check admin status (e.g. from config, DB, or admin config service).
+
+Also provides identity-session decorators that validate callers against
+a Redis-backed server session written by the Identity service after
+Keycloak login.  These are generic (no MAS/domain concepts) and can be
+consumed by any Flask-based service.
 """
 from functools import wraps
-from flask import session, jsonify, request, current_app, g
 from typing import Any, Callable
+
+from flask import g, jsonify, request, session
 
 from global_utils.redis import get_identity_session, get_identity_username
 
-# g attribute names (single place for both helpers as all modules will use the same functions)
 G_IDENTITY_SESSION = "identity_session"
 G_IDENTITY_USERNAME = "identity_username"
+
+
+def require_identity_session(
+    get_redis_store: Callable[[], Any],
+    get_session_id: Callable[[], str | None] | None = None,
+) -> Callable:
+    """
+    Decorator factory: require a valid identity server session in Redis.
+
+    A session is "valid" when :meth:`UserSessionData.has_auth_credentials`
+    is true (username + access_token present — same bar as the identity
+    service ``is_authenticated``).
+
+    Each app supplies:
+      - ``get_redis_store()`` -> store with ``hget``
+        (e.g. :class:`global_utils.redis.RedisKVStore`)
+      - ``get_session_id()`` -> str | None
+        (optional; default: ``session.get("session_id")``)
+
+    On success: sets ``g.identity_session`` to a :class:`UserSessionData`.
+    On failure: 401 with JSON; unexpected errors: 500 with ``error_type``.
+    """
+    get_sid = get_session_id or (lambda: session.get("session_id"))
+
+    def decorator(f: Callable) -> Callable:
+        @wraps(f)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            try:
+                data = get_identity_session(get_redis_store(), get_sid())
+                if data is None or not data.has_auth_credentials():
+                    return (
+                        jsonify({
+                            "error": "Not authenticated",
+                            "error_type": "AUTHENTICATION_REQUIRED",
+                        }),
+                        401,
+                    )
+                setattr(g, G_IDENTITY_SESSION, data)
+                return f(*args, **kwargs)
+            except Exception as e:
+                return (
+                    jsonify({
+                        "error": f"Access control error: {e!s}",
+                        "error_type": "ACCESS_CONTROL_ERROR",
+                    }),
+                    500,
+                )
+        return wrapped
+    return decorator
+
+
+def require_identity_username(
+    get_redis_store: Callable[[], Any],
+    get_session_id: Callable[[], str | None] | None = None,
+) -> Callable:
+    """
+    Decorator factory: require a non-empty ``username`` from the Redis server session.
+
+    Weaker than :func:`require_identity_session` (does not check access_token).
+    Prefer the full session decorator for API paths that need the same bar as
+    the identity service.
+
+    On success: sets ``g.identity_username`` (see :data:`G_IDENTITY_USERNAME`).
+    """
+    get_sid = get_session_id or (lambda: session.get("session_id"))
+
+    def decorator(f: Callable) -> Callable:
+        @wraps(f)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            try:
+                username = get_identity_username(get_redis_store(), get_sid())
+                if not username:
+                    return (
+                        jsonify({
+                            "error": "Not authenticated",
+                            "error_type": "AUTHENTICATION_REQUIRED",
+                        }),
+                        401,
+                    )
+                setattr(g, G_IDENTITY_USERNAME, username)
+                return f(*args, **kwargs)
+            except Exception as e:
+                return (
+                    jsonify({
+                        "error": f"Access control error: {e!s}",
+                        "error_type": "ACCESS_CONTROL_ERROR",
+                    }),
+                    500,
+                )
+        return wrapped
+    return decorator
+
 
 def require_admin_access(get_current_user, is_admin):
     """
@@ -51,91 +148,4 @@ def require_admin_access(get_current_user, is_admin):
                     "error_type": "ACCESS_CONTROL_ERROR",
                 }), 500
         return decorated_function
-    return decorator
-
-def require_identity_session(
-    get_redis_store: Callable[[], Any],
-    get_session_id: Callable[[], str | None] | None = None,
-) -> Callable:
-    """
-    Decorator factory: require a valid identity server session in Redis.
-    A session is "valid" when :class:`UserSessionData.has_auth_credentials` is true
-    (same idea as the identity service ``is_authenticated`` w.r.t. username + access_token).
-    Each app supplies:
-      - get_redis_store() -> store with ``hget`` (e.g. :class:`global_utils.redis.RedisKVStore`)
-      - get_session_id() -> str | None (optional; default: ``session.get("session_id")``)
-    On success: sets ``g.identity_session`` to a :class:`UserSessionData` (see
-    :data:`G_IDENTITY_SESSION` for the string key if you use ``getattr``/``setattr``).
-    On failure: 401 with JSON; unexpected errors: 500 with error_type.
-    """
-    get_sid = get_session_id or (lambda: session.get("session_id"))
-    def decorator(f: Callable) -> Callable:
-        @wraps(f)
-        def wrapped(*args: Any, **kwargs: Any) -> Any:
-            try:
-                data = get_identity_session(get_redis_store(), get_sid())
-                if data is None or not data.has_auth_credentials():
-                    return (
-                        jsonify(
-                            {
-                                "error": "Not authenticated",
-                                "error_type": "AUTHENTICATION_REQUIRED",
-                            }
-                        ),
-                        401,
-                    )
-                setattr(g, G_IDENTITY_SESSION, data)
-                return f(*args, **kwargs)
-            except Exception as e:
-                return (
-                    jsonify(
-                        {
-                            "error": f"Access control error: {e!s}",
-                            "error_type": "ACCESS_CONTROL_ERROR",
-                        }
-                    ),
-                    500,
-                )
-        return wrapped
-    return decorator
-
-def require_identity_username(
-    get_redis_store: Callable[[], Any],
-    get_session_id: Callable[[], str | None] | None = None,
-) -> Callable:
-    """
-    Decorator factory: require a non-empty ``username`` from the Redis server session.
-    Weaker than :func:`require_identity_session` (does not check access_token).
-    Prefer the full session decorator for API paths that need the same bar as identity.
-    On success: sets ``g.identity_username`` (see :data:`G_IDENTITY_USERNAME`).
-    """
-    get_sid = get_session_id or (lambda: session.get("session_id"))
-    def decorator(f: Callable) -> Callable:
-        @wraps(f)
-        def wrapped(*args: Any, **kwargs: Any) -> Any:
-            try:
-                username = get_identity_username(get_redis_store(), get_sid())
-                if not username:
-                    return (
-                        jsonify(
-                            {
-                                "error": "Not authenticated",
-                                "error_type": "AUTHENTICATION_REQUIRED",
-                            }
-                        ),
-                        401,
-                    )
-                setattr(g, G_IDENTITY_USERNAME, username)
-                return f(*args, **kwargs)
-            except Exception as e:
-                return (
-                    jsonify(
-                        {
-                            "error": f"Access control error: {e!s}",
-                            "error_type": "ACCESS_CONTROL_ERROR",
-                        }
-                    ),
-                    500,
-                )
-        return wrapped
     return decorator

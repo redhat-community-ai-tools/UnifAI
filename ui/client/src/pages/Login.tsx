@@ -2,11 +2,15 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
+import { generateColorPalette } from '@/lib/colorUtils';
 import { FaBuilding } from 'react-icons/fa';
 import { HiSparkles } from 'react-icons/hi';
 
 export default function Login() {
   const { login, isLoading: authLoading } = useAuth();
+  const { primaryHex } = useTheme();
+  const [primary, secondary] = generateColorPalette(primaryHex || "#A60000", 2);
 
   const handleSSOLogin = () => {
     login();
@@ -16,7 +20,10 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-[#0D1117] via-[#161B22] to-[#1a1f2e]">
         <div className="absolute inset-0 opacity-30">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse" />
+          <div
+            className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full blur-3xl animate-pulse"
+            style={{ backgroundColor: `${primary}33` }}
+          />
           <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse delay-1000" />
         </div>
       </div>
@@ -32,7 +39,10 @@ export default function Login() {
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-700 mb-4"
+            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4"
+            style={{
+              background: `linear-gradient(135deg, ${primary}, ${secondary})`,
+            }}
           >
             <HiSparkles className="w-8 h-8 text-white" />
           </motion.div>

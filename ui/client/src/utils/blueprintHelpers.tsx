@@ -21,6 +21,7 @@ import {
 export interface FlowMetadata {
   name?: string;
   description?: string;
+  contributedBy?: string;
 }
 
 /**
@@ -60,6 +61,7 @@ export const convertGraphFlowToFlowObject = (
     name,
     description,
     icon: <IconComponent className="h-4 w-4 mr-2" />,
+    contributedBy: flowData.contributedBy,
   };
 };
 

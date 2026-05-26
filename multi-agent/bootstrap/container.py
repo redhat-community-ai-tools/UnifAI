@@ -31,6 +31,7 @@ from mas.sharing.service import ShareService
 from mas.statistics.service import StatisticsService
 from mas.validation.service import ElementValidationService
 from mas.templates.service import TemplateService
+from mas.collaboration.service import CollaborationService
 
 # Auth layer
 from mas.core.auth.service import AuthService, AuthStrategyRegistry
@@ -58,6 +59,8 @@ from outbound.mongo.auth_token_repository import MongoCredentialStore
 from outbound.redis.auth_pending_store import RedisFlowStateStore
 from outbound.auth.http_oauth_client import HttpxAuthClient
 
+from mas.core.identity.ports import IdentityProvider
+from global_utils.identity_client import IdentityClient
 from global_utils.utils.singleton import SingletonMeta
 from global_utils.utils.util import get_redis_url
 
@@ -101,13 +104,15 @@ class AppContainer(metaclass=SingletonMeta):
             coll_name=cfg.blueprint_coll
         )
 
+        self.resource_repo = MongoResourceRepository(
+            cfg.mongodb_port,
+            mongodb_ip=cfg.mongodb_ip,
+            db_name=cfg.mongo_db,
+            coll_name=cfg.resources_coll,
+        )
+
         resource_registry = ResourcesRegistry(
-            repo=MongoResourceRepository(
-                cfg.mongodb_port,
-                mongodb_ip=cfg.mongodb_ip,
-                db_name=cfg.mongo_db,
-                coll_name=cfg.resources_coll,
-            ),
+            repo=self.resource_repo,
             bp_repo=self.blueprint_repo,
         )
 
@@ -245,6 +250,18 @@ class AppContainer(metaclass=SingletonMeta):
             background_engine=background_engine,
         )
 
+        # Single shared IdentityClient — the only object that makes HTTP calls
+        # to the Identity pod.  The identity_provider port adapter and the
+        # directory provider both delegate to it.
+        identity_base = (cfg.directory_sso_url or cfg.identity_host or "").rstrip("/")
+        self.identity_client = IdentityClient(base_url=identity_base)
+
+        self.identity_provider: IdentityProvider = self._build_identity_auth_provider(
+            cfg, self.identity_client
+        )
+
+        self.directory_provider = self._build_directory_provider(cfg, self.identity_client)
+
         self.share_repo = MongoShareRepository(
             db_name=cfg.mongo_db,
             coll_name=cfg.shares_coll
@@ -276,6 +293,10 @@ class AppContainer(metaclass=SingletonMeta):
             resources_service=self.resources_service,
         )
 
+        self.collaboration_service = self._create_collaboration_service(
+            cfg, self.session_repo, self.identity_provider
+        )
+
         self._initialized = True
 
     @staticmethod
@@ -293,8 +314,85 @@ class AppContainer(metaclass=SingletonMeta):
         return LocalChannelFactory()
 
     @staticmethod
+    def _create_collaboration_service(cfg: AppConfig, session_repo, identity_provider):
+        redis_url = get_redis_url()
+        if redis_url:
+            from outbound.redis import RedisCollaborationStore
+            store = RedisCollaborationStore(redis_url=redis_url)
+            return CollaborationService(
+                store=store,
+                session_repo=session_repo,
+                identity_provider=identity_provider,
+                presence_ttl=cfg.collaboration_presence_ttl,
+                edit_lock_ttl=cfg.collaboration_edit_lock_ttl_sec,
+            )
+        return None
+
+    @staticmethod
     def _create_background_engine(engine_name: str):
         if engine_name == "temporal":
             from outbound.temporal.session_engine import TemporalSessionEngine
             return TemporalSessionEngine()
         return None
+
+    @staticmethod
+    def _build_identity_auth_provider(
+        cfg: AppConfig, identity_client: IdentityClient
+    ) -> "IdentityProvider":
+        """Build the IdentityProvider adapter based on configuration.
+
+        - "pod"  → production HTTP adapter (requires Identity pod)
+        - "dev"  → permissive local-dev adapter (no external calls)
+        - "noop" → single-user mode (no teams)
+        - ""     → auto-detect: "pod" when identity_client is configured, else "dev"
+        """
+        mode = (cfg.identity_provider_mode or "").strip().lower()
+
+        if not mode:
+            mode = "pod" if identity_client.configured else "dev"
+
+        if mode == "pod":
+            from outbound.identity.identity_pod_provider import IdentityPodProvider
+            logger.info("Identity provider: pod (%s)", identity_client._base)
+            return IdentityPodProvider(identity_client=identity_client)
+
+        if mode == "dev":
+            from outbound.identity.dev_provider import DevIdentityProvider
+            logger.info("Identity provider: dev (permissive)")
+            return DevIdentityProvider()
+
+        if mode == "noop":
+            from outbound.identity.noop_provider import NoOpIdentityProvider
+            logger.info("Identity provider: noop (no teams)")
+            return NoOpIdentityProvider()
+
+        raise ValueError(
+            f"Unknown identity_provider_mode: '{mode}'. Supported: pod, dev, noop"
+        )
+
+    @staticmethod
+    def _build_directory_provider(cfg: AppConfig, identity_client: IdentityClient):
+        provider_name = cfg.directory_provider.strip().lower()
+        if not provider_name:
+            return None
+
+        if provider_name == "sso":
+            return AppContainer._build_directory_client(cfg, identity_client)
+
+        raise ValueError(
+            f"Unknown directory_provider: '{provider_name}'. Supported: sso"
+        )
+
+    @staticmethod
+    def _build_directory_client(cfg: AppConfig, identity_client: IdentityClient):
+        from outbound.identity_directory_client import IdentityDirectoryClient
+
+        if not identity_client.configured:
+            raise ValueError(
+                "identity_host or directory_sso_url is required when directory_provider='sso'"
+            )
+        logger.info("Directory provider: identity (%s)", identity_client._base)
+        return IdentityDirectoryClient(
+            identity_client=identity_client,
+            timeout=cfg.directory_timeout,
+        )

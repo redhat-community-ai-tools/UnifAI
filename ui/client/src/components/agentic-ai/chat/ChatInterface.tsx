@@ -26,6 +26,9 @@ import { useToast } from "@/hooks/use-toast";
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
 import WorkflowStatusBanner, { WorkflowBannerMessages } from '@/components/shared/WorkflowStatusBanner';
+import { useAuth } from "@/contexts/AuthContext";
+import { MemberDisplay, buildMemberDisplay } from "@/utils/memberDisplay";
+import { CollabAvatar } from "@/components/shared/CollabAvatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +41,7 @@ import {
   downloadFile,
   buildExportFilename,
 } from "./exportSession";
+import { sendTypingSignal as sendTypingSignalApi } from "@/api/collaboration";
 
 const TERMINAL_STATUSES = ['CANCELLED', 'FAILED', 'COMPLETED'] as const;
 const isTerminalStatus = (status?: string): boolean =>
@@ -47,6 +51,7 @@ const isTerminalStatus = (status?: string): boolean =>
 interface BackendMessage {
   content: string;
   role: "user" | "assistant";
+  sender_id?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -65,8 +70,14 @@ interface ChatInterfaceProps {
   isChatOnlyMode?: boolean;
   onSetCarouselMode?: (mode: 'normal' | 'chat' | 'graph') => void;
   carouselMode?: 'normal' | 'chat' | 'graph';
+  onQueueMessage?: (message: string) => void;
+  queuedMessageToProcess?: string | null;
+  onQueuedMessageProcessed?: () => void;
   isLiveRequest?: boolean;
   isSubmitting?: boolean;
+  collaborationMode?: boolean;
+  teamMembers?: MemberDisplay[];
+  typingUsers?: string[];
 }
 
 export default function ChatInterface({
@@ -84,8 +95,14 @@ export default function ChatInterface({
   isChatOnlyMode = false,
   onSetCarouselMode,
   carouselMode = 'normal',
+  onQueueMessage,
+  queuedMessageToProcess,
+  onQueuedMessageProcessed,
   isLiveRequest = false,
   isSubmitting = false,
+  collaborationMode = false,
+  teamMembers = [],
+  typingUsers = [],
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -96,6 +113,7 @@ export default function ChatInterface({
   const [workPlanData, setWorkPlanData] = useState<Record<string, WorkPlanSnapshot[]>>({});
   const [streamLogData, setStreamLogData] = useState<Record<string, StreamLogEntry[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const streamingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const workplanStreamingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -103,7 +121,9 @@ export default function ChatInterface({
   const streamLogDataRef = useRef<Record<string, StreamLogEntry[]>>({});
   const { nodeListRef, clearStream } = useStreamingData();
   const { toast } = useToast();
+  const { user: authUser } = useAuth();
   const [userPromptsMap, setUserPromptsMap] = useState<Record<string, string>>({});
+  const userPromptsMapRef = useRef<Record<string, string>>({});
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelledExpanded, setCancelledExpanded] = useState<Record<string, boolean>>({});
@@ -137,6 +157,52 @@ export default function ChatInterface({
     });
     activeUserMessageIdRef.current = null;
   }, []);
+
+  // Typing indicator: debounced POST to collaboration endpoint.
+  // Leading debounce prevents firing on every keystroke; the "start typing"
+  // signal is sent at most once per TYPING_DEBOUNCE_MS window.
+  const TYPING_DEBOUNCE_MS = 2000;
+  const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingSentRef = useRef(0);
+  const sendTypingSignal = useCallback(() => {
+    if (!collaborationMode || !runId) return;
+    const username = authUser?.username || "default";
+    const now = Date.now();
+    if (now - lastTypingSentRef.current >= TYPING_DEBOUNCE_MS) {
+      lastTypingSentRef.current = now;
+      sendTypingSignalApi(runId, username, true).catch(() => {});
+    }
+    // Reset the auto-clear timer on every keystroke
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      sendTypingSignalApi(runId, username, false).catch(() => {});
+    }, 4000);
+  }, [collaborationMode, runId, authUser?.username]);
+
+  const clearTypingSignal = useCallback(() => {
+    if (!collaborationMode || !runId) return;
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    const username = authUser?.username || "default";
+    sendTypingSignalApi(runId, username, false).catch(() => {});
+  }, [collaborationMode, runId, authUser?.username]);
+
+  const memberCache = useRef<Map<string, MemberDisplay>>(new Map());
+  const resolveMember = useCallback((senderName: string): MemberDisplay => {
+    const found = teamMembers.find(m => m.id === senderName);
+    if (found) {
+      memberCache.current.set(senderName, found);
+      return found;
+    }
+    const cached = memberCache.current.get(senderName);
+    if (cached) return cached;
+    const built = buildMemberDisplay(senderName, memberCache.current.size + teamMembers.length);
+    memberCache.current.set(senderName, built);
+    return built;
+  }, [teamMembers]);
+
+  useEffect(() => {
+    userPromptsMapRef.current = userPromptsMap;
+  }, [userPromptsMap]);
 
   // ────────────────────────────────────────────────────────────────────────────────
   // Auto-expanding textarea configuration
@@ -228,21 +294,26 @@ export default function ChatInterface({
     if (!blueprintValid) {
       return "This chat cannot be continued - workflow validation failed";
     }
+    if (isLiveRequest) {
+      return "AI is processing — please wait...";
+    }
     return "Ask a question about your data...";
-  }, [blueprintExists, isSharingDisabled, isValidatingBlueprint, blueprintValid]);
+  }, [blueprintExists, isSharingDisabled, isValidatingBlueprint, blueprintValid, isLiveRequest]);
 
+  // Transform backend messages to frontend format with stable IDs
   const isInputDisabled = useMemo(
-    () => !blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint || isTyping || isLiveRequest,
-    [blueprintExists, isSharingDisabled, blueprintValid, isValidatingBlueprint, isTyping, isLiveRequest]
+    () => !blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint || isLiveRequest,
+    [blueprintExists, isSharingDisabled, blueprintValid, isValidatingBlueprint, isLiveRequest]
   );
 
   // Transform backend messages to frontend format (streamLogs/workPlans, managed separately)
   const transformBackendMessagesToFrontend = useCallback(
     (backendMessages: BackendMessage[]): Message[] => {
       return backendMessages.map((msg, index) => ({
-        id: `${Date.now()}-${index}`,
+        id: `msg-${index}`,
         content: msg.content,
         sender: msg.role === "user" ? "user" : "ai",
+        senderName: msg.sender_id || undefined,
         ...(msg.role === "assistant" && {
           finalAnswer: msg.content,
         }),
@@ -252,11 +323,59 @@ export default function ChatInterface({
     [],
   );
 
-  // Initialize messages from props or default
+  // Track the last synced message count so polls with no new messages are a no-op
+  const lastSyncedCountRef = useRef(0);
+  const lastRunIdRef = useRef(runId);
+  if (runId !== lastRunIdRef.current) {
+    lastRunIdRef.current = runId;
+    lastSyncedCountRef.current = 0;
+  }
+
+  // Initialize / sync messages from props.
+  // Skip while actively streaming to avoid clobbering in-flight state.
   useEffect(() => {
+    if (isTyping || currentStreamingMessageId) return;
     if (initialMessages && initialMessages.length > 0) {
+      if (initialMessages.length === lastSyncedCountRef.current) return;
+      lastSyncedCountRef.current = initialMessages.length;
       const transformedMessages =
         transformBackendMessagesToFrontend(initialMessages);
+
+      // Preserve stream log / workplan data across message ID changes.
+      // During collaboration polling, messages are re-synced with stable IDs
+      // (msg-0, msg-1, …) that differ from the transient streaming IDs.
+      // Match AI messages from the end so the welcome message is skipped.
+      const oldAiMsgs = messages.filter(m => m.sender === 'ai');
+      const newAiMsgs = transformedMessages.filter(m => m.sender === 'ai');
+      let streamDataChanged = false;
+
+      for (let i = 0; i < Math.min(oldAiMsgs.length, newAiMsgs.length); i++) {
+        const oldMsg = oldAiMsgs[oldAiMsgs.length - 1 - i];
+        const newMsg = newAiMsgs[newAiMsgs.length - 1 - i];
+        if (oldMsg.id === newMsg.id) continue;
+
+        if (streamLogDataRef.current[oldMsg.id]) {
+          streamLogDataRef.current[newMsg.id] = streamLogDataRef.current[oldMsg.id];
+          delete streamLogDataRef.current[oldMsg.id];
+          streamDataChanged = true;
+        }
+        if (workPlanDataRef.current[oldMsg.id]) {
+          workPlanDataRef.current[newMsg.id] = workPlanDataRef.current[oldMsg.id];
+          delete workPlanDataRef.current[oldMsg.id];
+          streamDataChanged = true;
+        }
+        if (userPromptsMapRef.current[oldMsg.id]) {
+          userPromptsMapRef.current[newMsg.id] = userPromptsMapRef.current[oldMsg.id];
+          delete userPromptsMapRef.current[oldMsg.id];
+          streamDataChanged = true;
+        }
+      }
+
+      if (streamDataChanged) {
+        setStreamLogData({ ...streamLogDataRef.current });
+        setWorkPlanData({ ...workPlanDataRef.current });
+        setUserPromptsMap({ ...userPromptsMapRef.current });
+      }
 
       // Fallback for sessions cancelled before is_cancelled was deployed
       const hasCancelledFromBackend = transformedMessages.some((m) => m.isCancelled);
@@ -273,8 +392,8 @@ export default function ChatInterface({
       }
 
       setMessages(transformedMessages);
-    } else {
-      // Default welcome message when no initial messages
+    } else if (lastSyncedCountRef.current !== 0 || messages.length === 0) {
+      lastSyncedCountRef.current = 0;
       setMessages([
         {
           id: "welcome",
@@ -286,18 +405,26 @@ export default function ChatInterface({
     }
   }, [initialMessages, sessionStatus, statusMessage, transformBackendMessagesToFrontend]);
 
-  // useEffect(() => {
-  //   scrollToBottom();
-  // }, [messages]);
+  // Auto-scroll when new messages are added
+  const prevMessageCountRef = useRef(0);
+  useEffect(() => {
+    if (messages.length > prevMessageCountRef.current) {
+      scrollToBottom();
+    }
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length]);
 
   // Adjust textarea height when input or expanded state changes
   useEffect(() => {
     adjustTextareaHeight();
   }, [inputMessage, isExpanded, adjustTextareaHeight]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const scrollToBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (container) {
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    }
+  }, []);
 
   // Map stream type to status
   const mapStreamToStatus = (
@@ -715,7 +842,23 @@ export default function ChatInterface({
     const messageContent = messageToSend || inputMessage;
     if (messageContent.trim() === "") return;
 
-    // Check if flow is loaded (runId should not be empty or null)
+    if (isTyping || isLiveRequest) {
+      if (onQueueMessage) {
+        onQueueMessage(messageContent);
+        setInputMessage("");
+        setTimeout(() => {
+          resetTextareaHeight();
+          textareaRef.current?.focus();
+        }, 0);
+      } else {
+        toast({
+          title: "Please wait",
+          description: "AI is still processing. Your message will be sent once it finishes.",
+        });
+      }
+      return;
+    }
+
     if (!runId || runId.trim() === "") {
       toast({
         title: "No Flow Loaded",
@@ -730,11 +873,13 @@ export default function ChatInterface({
       id: Date.now().toString(),
       content: messageContent,
       sender: "user",
+      senderName: collaborationMode ? (authUser?.username || "default") : undefined,
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage("");
     setIsTyping(true);
+    clearTypingSignal();
     wasCancelledByUserRef.current = false;
     activeUserMessageIdRef.current = userMessage.id;
 
@@ -773,7 +918,7 @@ export default function ChatInterface({
         sessionId: runId || "",
         inputs: { user_prompt: messageContent },
         scope: "public",
-        loggedInUser: "default",
+        loggedInUser: authUser?.username || "default",
       };
 
       const response = await triggerExecution(sessionPayload);
@@ -862,12 +1007,25 @@ export default function ChatInterface({
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
-  // Clean up interval on unmount
+  // Clean up intervals on unmount
   useEffect(() => {
     return () => {
       stopStreamingLogs();
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      void clearTypingSignal();
     };
-  }, []);
+  }, [clearTypingSignal]);
+
+  // Process queued messages when backend becomes available
+  const handleSendMessageRef = useRef<((msg?: string) => Promise<void>) | null>(null);
+  handleSendMessageRef.current = handleSendMessage;
+
+  useEffect(() => {
+    if (queuedMessageToProcess && !isTyping && !isLiveRequest) {
+      handleSendMessageRef.current?.(queuedMessageToProcess);
+      onQueuedMessageProcessed?.();
+    }
+  }, [queuedMessageToProcess, isTyping, isLiveRequest, onQueuedMessageProcessed]);
 
   // Memoized typing indicator
   const TypingIndicator = useMemo(
@@ -1149,7 +1307,7 @@ export default function ChatInterface({
   };
 
   return (
-    <Card className="bg-background-card shadow-card border-gray-800 flex flex-col h-full max-h-[82.5vh]">
+    <Card className={`bg-background-card shadow-card border-gray-800 flex flex-col h-full ${collaborationMode ? "" : "max-h-[82.5vh]"}`}>
       <CardHeader className="py-4 px-6 flex flex-row justify-between items-center flex-shrink-0">
         <CardTitle className="text-lg font-heading">AI Assistant</CardTitle>
         <div className="flex space-x-1 items-center">
@@ -1233,58 +1391,91 @@ export default function ChatInterface({
         </div>
       </CardHeader>
       <CardContent className="flex-1 overflow-hidden p-0 flex flex-col min-h-0">
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
           <AnimatePresence>
-            {messages.map((message) => (
-              <motion.div
-                key={message.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-                className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`max-w-[90%] rounded-2xl p-3 ${
-                    message.sender === "user"
-                      ? message.isCancelled
-                        ? "bg-gray-800/50 text-gray-100 rounded-tr-none border border-gray-700"
-                        : "bg-primary text-white rounded-tr-none"
-                      : "bg-background-dark border border-gray-800 rounded-tl-none"
-                  }`}
+            {messages.map((message) => {
+              const member = collaborationMode && message.sender === "user" && message.senderName
+                ? resolveMember(message.senderName)
+                : null;
+              return (
+                <motion.div
+                  key={message.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  {/* AI-generated indicator inside message bubble */}
-                  {message.sender === "ai" && (
-                    <div 
-                      className="mb-2.5 pb-2 border-b border-gray-700/30"
-                      role="status"
-                      aria-label="AI-generated content"
-                    >
-                      <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border" style={{ borderColor: `hsl(var(--primary) / 0.3)` }}>
-                        <Sparkles 
-                          className="h-3.5 w-3.5" 
-                          style={{ color: `hsl(var(--primary) / 0.85)` }}
-                          aria-hidden="true" 
-                        />
-                        <span className="text-xs font-medium text-gray-300/90 tracking-wide">
-                          AI Generated
-                        </span>
+                  {/* User avatar + bubble in collab mode */}
+                  {collaborationMode && message.sender === "user" && member ? (
+                    <div className="flex items-end gap-2 max-w-[90%]">
+                      <div className="flex flex-col items-end flex-1 min-w-0">
+                        <span className="text-[10px] text-gray-400 mb-1 mr-1">{member.name}</span>
+                        <div className="bg-primary text-white rounded-2xl rounded-tr-none p-3 w-full">
+                          <MessageContent message={message} />
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0 mb-1">
+                        <CollabAvatar member={member} size="sm" />
                       </div>
                     </div>
+                  ) : (
+                    <div
+                      className={`max-w-[90%] rounded-2xl p-3 ${
+                        message.sender === "user"
+                          ? message.isCancelled
+                            ? "bg-gray-800/50 text-gray-100 rounded-tr-none border border-gray-700"
+                            : "bg-primary text-white rounded-tr-none"
+                          : "bg-background-dark border border-gray-800 rounded-tl-none"
+                      }`}
+                    >
+                      {message.sender === "ai" && (
+                        <div 
+                          className="mb-2.5 pb-2 border-b border-gray-700/30"
+                          role="status"
+                          aria-label="AI-generated content"
+                        >
+                          <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border" style={{ borderColor: `hsl(var(--primary) / 0.3)` }}>
+                            <Sparkles 
+                              className="h-3.5 w-3.5" 
+                              style={{ color: `hsl(var(--primary) / 0.85)` }}
+                              aria-hidden="true" 
+                            />
+                            <span className="text-xs font-medium text-gray-300/90 tracking-wide">
+                              AI Generated
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <MessageContent message={message} />
+                      {message.sender === "ai" && message.finalAnswer && (
+                        <MessageActions message={message} />
+                      )}
+                    </div>
                   )}
-                  <MessageContent message={message} />
-                  {/* Action buttons for AI messages */}
-                  {message.sender === "ai" && message.finalAnswer && (
-                    <MessageActions message={message} />
-                  )}
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
             {/* Show loading indicator when:
                 1. isTyping - user just sent a message
                 2. isLiveRequest && currentStreamingMessageId && !isTyping - reconnection to active stream */}
             {(isTyping || (isLiveRequest && currentStreamingMessageId && !isTyping)) && 
               (isChatOnlyMode ? ChatOnlyLoader : TypingIndicator)}
           </AnimatePresence>
+          {collaborationMode && typingUsers.length > 0 && (
+            <div className="flex items-center gap-2 px-1 py-1">
+              <div className="flex -space-x-1">
+                {typingUsers.slice(0, 3).map((u) => {
+                  const m = resolveMember(u);
+                  return <CollabAvatar key={m.id} member={m} size="xs" />;
+                })}
+              </div>
+              <span className="text-xs text-gray-400 italic">
+                {typingUsers.length === 1
+                  ? `${typingUsers[0]} is typing...`
+                  : `${typingUsers.slice(0, 2).join(", ")}${typingUsers.length > 2 ? ` +${typingUsers.length - 2}` : ""} are typing...`}
+              </span>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
         <div className="p-4 border-t border-gray-800 flex-shrink-0">
@@ -1307,7 +1498,10 @@ export default function ChatInterface({
             <Textarea
               ref={textareaRef}
               value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
+              onChange={(e) => {
+                setInputMessage(e.target.value);
+                if (collaborationMode && e.target.value.trim()) sendTypingSignal();
+              }}
               onKeyDown={handleKeyDown}
               placeholder={getInputPlaceholder()}
               className={`bg-background-dark resize-none transition-[height] duration-200 ease-out w-full pr-12 ${

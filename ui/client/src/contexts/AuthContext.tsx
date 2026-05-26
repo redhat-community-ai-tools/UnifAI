@@ -1,6 +1,7 @@
 import { api } from '@/http/authClient';
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { loadAnalytics } from '@/components/shared/LoadAnalytics';
+import { setAuthenticatedUser } from '@/http/axiosAgentConfig';
 
 export interface User {
   username: string;
@@ -13,6 +14,7 @@ export interface User {
 
 export interface AuthContextType {
   user: User | null;
+  accessToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: () => void;
@@ -28,6 +30,7 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -40,14 +43,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await api.get('/auth/user');
       if (response.data.authenticated && response.data.user) {
         setUser(response.data.user);
+        setAccessToken(response.data.access_token ?? null);
         setIsAuthenticated(true);
       } else {
         setUser(null);
+        setAccessToken(null);
         setIsAuthenticated(false);
       }
     } catch (error) {
       console.error('Auth check failed:', error);
       setUser(null);
+      setAccessToken(null);
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
@@ -57,7 +63,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Initiate login by redirecting to backend auth endpoint
   const login = () => {
     const path = window.location.pathname + window.location.search;
-    // After SSO, return to the app root instead of the login screen
+    // After identity login, return to the app root instead of the login screen
     const originalUrl =
       path === '/login' || path.startsWith('/login?') ? '/' : path || '/';
     const stateData = { originalUrl };
@@ -134,6 +140,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, []);
 
+  useEffect(() => {
+    setAuthenticatedUser(user?.username ?? '');
+  }, [user]);
+
   // Set up token refresh and expiration checking
   useEffect(() => {
     if (!isAuthenticated || !user) return;
@@ -171,6 +181,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value: AuthContextType = {
     user,
+    accessToken,
     isAuthenticated,
     isLoading,
     login,

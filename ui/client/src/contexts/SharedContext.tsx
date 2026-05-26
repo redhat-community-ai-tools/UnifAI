@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 
+export type SharedPanelView = 'list' | 'send-choice' | 'send-user' | 'send-team';
+
 export interface ShareItem {
   itemKind: 'resource' | 'blueprint';
   itemId: string;
@@ -7,19 +9,13 @@ export interface ShareItem {
 }
 
 export interface SharedContextType {
-  // Panel state
   isSharedPanelOpen: boolean;
-  sharedPanelView: 'list' | 'send';
-  
-  // Share item data for send view
+  sharedPanelView: SharedPanelView;
   shareItem: ShareItem | null;
-  
-  // Panel controls
-  openSharedPanel: (view?: 'list' | 'send') => void;
+
+  openSharedPanel: (view?: SharedPanelView) => void;
   closeSharedPanel: () => void;
-  setSharedPanelView: (view: 'list' | 'send') => void;
-  
-  // Share item controls
+  setSharedPanelView: (view: SharedPanelView) => void;
   setShareItem: (item: ShareItem | null) => void;
   openShareForItem: (item: ShareItem) => void;
 }
@@ -28,10 +24,10 @@ const SharedContext = createContext<SharedContextType | undefined>(undefined);
 
 export function SharedProvider({ children }: { children: React.ReactNode }) {
   const [isSharedPanelOpen, setIsSharedPanelOpen] = useState(false);
-  const [sharedPanelView, setSharedPanelView] = useState<'list' | 'send'>('list');
+  const [sharedPanelView, setSharedPanelView] = useState<SharedPanelView>('list');
   const [shareItem, setShareItem] = useState<ShareItem | null>(null);
 
-  const openSharedPanel = useCallback((view: 'list' | 'send' = 'list') => {
+  const openSharedPanel = useCallback((view: SharedPanelView = 'list') => {
     setSharedPanelView(view);
     setIsSharedPanelOpen(true);
   }, []);
@@ -43,7 +39,7 @@ export function SharedProvider({ children }: { children: React.ReactNode }) {
 
   const openShareForItem = useCallback((item: ShareItem) => {
     setShareItem(item);
-    setSharedPanelView('send');
+    setSharedPanelView('send-choice');
     setIsSharedPanelOpen(true);
   }, []);
 

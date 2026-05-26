@@ -1,17 +1,17 @@
-import { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { useLocation } from "wouter";
-import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
+import { useView } from "@/contexts/ViewContext";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { Users, Network, Play, Plus, LoaderCircle, AlertTriangle } from "lucide-react";
+import { Plus, LoaderCircle, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-// Agentic AI components
 import AgentFlowGraph from "@/components/agentic-ai/AgentFlowGraph";
 import NewGraph from "../workspace/NewGraph";
 import type { SavedBlueprintInfo } from "@/hooks/use-graph-creation-logic";
@@ -44,6 +44,8 @@ export default function AgenticWorkflows() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { cacheBlueprintValidationResults } = useAgenticAI();
+  const { selectedTeam } = useView();
+  const { isTeam: isTeamWorkspace, userId: contextUserId, displayName: userDisplayName, identityType } = useWorkspaceIdentity();
   const [, navigate] = useLocation();
   
   // Handle validation changes from the flow graph
@@ -71,19 +73,32 @@ export default function AgenticWorkflows() {
       setBuiltGraphId(graphId);
       setBuiltGraphName(graphName);
 
+      if (!isTeamWorkspace && !user?.username) {
+        toast({
+          title: "Authentication required",
+          description: "Sign in before starting a workflow session.",
+          variant: "destructive",
+        });
+        setIsLoadingFlow(false);
+        return;
+      }
+
       const selectedBlueprint = {
         blueprintId: graphId,
-        userId: user?.username || "default",
+        userId: contextUserId,
+        displayName: userDisplayName,
+        identityType,
       };
 
       const response = await axios.post(
         "/sessions/user.session.create",
         selectedBlueprint,
       );
-      setSelectedGraphId(response.data);
+      const sessionId = response.data;
+      setSelectedGraphId(sessionId);
 
-      // Navigate to Agentic Chats page (client-side navigation preserves context/cache)
-      navigate("/agentic-chats");
+      // Navigate to Agentic Chats page, passing the new session ID so it auto-selects
+      navigate(`/agentic-chats?runId=${encodeURIComponent(sessionId)}`);
     } catch (error: any) {
       console.error("Error create new graph session:", error);
       toast({
@@ -120,14 +135,11 @@ export default function AgenticWorkflows() {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
-
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header
-          title="Agentic AI System"
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-        />
+    <>
+      <Header
+        title={isTeamWorkspace ? `Team Workflows — ${selectedTeam?.name ?? 'Team'}` : "Agentic AI System"}
+        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+      />
 
         <main className="flex-1 overflow-y-auto bg-background-dark">
           {showGraphBuilder ? (
@@ -203,10 +215,9 @@ export default function AgenticWorkflows() {
                   </CardHeader>
                   <CardContent className="pt-2 px-4 pb-4">
                     <p className="text-sm text-gray-400">
-                      Configure your agent workflow. Select a pre-existing
-                      flow and click "Load Workflow" to execute it, or click
-                      "Build Workflow" to create a custom workflow with
-                      drag-and-drop components.
+                      {isTeamWorkspace
+                        ? `Browse and manage shared workflows for ${selectedTeam?.name ?? 'your team'}. Select a workflow and click "Load Workflow" to execute it, or build a new one to share with your team.`
+                        : 'Configure your agent workflow. Select a pre-existing flow and click "Load Workflow" to execute it, or click "Build Workflow" to create a custom workflow with drag-and-drop components.'}
                     </p>
                   </CardContent>
                 </Card>
@@ -223,7 +234,6 @@ export default function AgenticWorkflows() {
         </main>
 
         <StatusBar />
-      </div>
-    </div>
+    </>
   );
 }

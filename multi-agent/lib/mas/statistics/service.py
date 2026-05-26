@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from mas.blueprints.service import BlueprintService
 from mas.session.service import SessionService
 from mas.resources.service import ResourcesService
+from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
 from global_utils.utils.time_utils import format_utc_iso
@@ -58,7 +59,7 @@ class StatisticsService:
         self._session_service = session_service
         self._resources_service = resources_service
 
-    def get_all(self, user_id: str) -> StatisticsResponse:
+    def get_all(self, identity: Identity) -> StatisticsResponse:
         """
         Get aggregated statistics for all features.
         Returns all stats in a single response for optimal performance.
@@ -73,14 +74,13 @@ class StatisticsService:
             StatisticsResponse: Pydantic model containing all statistics
         """
         # Get blueprint IDs (workflow domain)
-        blueprint_ids = self._get_user_blueprint_ids(user_id)
+        blueprint_ids = self._get_user_blueprint_ids(identity)
         total_workflows = len(blueprint_ids)
         
         # Get session statistics
-        session_stats = self._get_session_stats(user_id, blueprint_ids)
-        
+        session_stats = self._get_session_stats(identity, blueprint_ids)
         # Get resource statistics
-        resource_stats = self._get_resource_stats(user_id)
+        resource_stats = self._get_resource_stats(identity)
 
         return StatisticsResponse(
             totalWorkflows=total_workflows,
@@ -91,7 +91,7 @@ class StatisticsService:
             resourcesByCategory=resource_stats["by_category"]
         )
 
-    def _get_user_blueprint_ids(self, user_id: str) -> Set[str]:
+    def _get_user_blueprint_ids(self, identity: Identity) -> Set[str]:
         """
         Get all blueprint IDs belonging to a user.
         
@@ -101,21 +101,14 @@ class StatisticsService:
         Returns:
             Set of blueprint IDs owned by the user
         """
-        return set(self._blueprint_service.list_ids(user_id=user_id))
+        return set(self._blueprint_service.list_ids(identity=identity))
 
-    def _get_session_stats(self, user_id: str, valid_blueprint_ids: Set[str]) -> SessionStats:
+    def _get_session_stats(self, identity: Identity, valid_blueprint_ids: Set[str]) -> SessionStats:
         """
-        Get session statistics for a user.
-        
-        Args:
-            user_id: The user ID to get session stats for
-            valid_blueprint_ids: Set of blueprint IDs that the user owns
-            
-        Returns:
-            SessionStats with active_count and by_blueprint counts
+        Get session statistics for an identity (user or team).
         """
         # Get blueprints that have sessions for this user
-        blueprints_with_sessions = set(self._session_service.get_user_blueprints(user_id))
+        blueprints_with_sessions = set(self._session_service.get_user_blueprints(identity))
         
         # Active = blueprints the user owns AND has sessions for
         active_blueprint_ids = valid_blueprint_ids & blueprints_with_sessions
@@ -123,7 +116,7 @@ class StatisticsService:
         
         # Get session counts using group_count() - returns GroupedCount DTOs
         session_counts = self._session_service.group_count(
-            user_id, 
+            identity,
             group_by=["blueprint_id"]
         )
         
@@ -158,7 +151,7 @@ class StatisticsService:
             if item.get("blueprint_id") in valid_blueprint_ids
         }
 
-    def _get_resource_stats(self, user_id: str) -> ResourceStats:
+    def _get_resource_stats(self, identity: Identity) -> ResourceStats:
         """
         Get resource statistics for a user.
         
@@ -170,15 +163,14 @@ class StatisticsService:
         """
         # Get resource aggregation using group_count() - returns GroupedCount DTOs
         resources_grouped = self._resources_service.group_count(
-            user_id, 
+            identity,
             group_by=["category", "type"]
         )
         
         # Transform to ResourceCategoryStats format
         by_category = self._transform_resource_counts(resources_grouped)
-        
         # Get total resources count
-        total = self._resources_service.count(user_id)
+        total = self._resources_service.count(identity)
         
         return ResourceStats(
             total=total,

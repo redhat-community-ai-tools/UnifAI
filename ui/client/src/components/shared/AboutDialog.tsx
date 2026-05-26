@@ -28,7 +28,7 @@ interface AboutDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const MODULE_NAMES = ["Backend", "MultiAgent", "RAG", "SSO", "UI"];
+const MODULE_NAMES = ["Backend", "MultiAgent", "RAG", "Identity", "UI"];
 
 const COLOR_OPTIONS = [
   { hex: "#A60000", name: "Red" },
@@ -54,7 +54,7 @@ export default function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
   const clientMap: Record<string, typeof api> = {
     RAG: api,
     MultiAgent: axios,
-    SSO: apiAuth,
+    Identity: apiAuth,
     Backend: backendApi,
   };
 

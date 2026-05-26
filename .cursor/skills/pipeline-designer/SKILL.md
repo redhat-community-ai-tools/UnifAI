@@ -47,6 +47,12 @@ Before writing any design, answer all of the following. Address each explicitly 
   - Does the design specify a graceful degradation path?
 - Every external dependency MUST have an explicit failure mode documented in Edge Cases & Risks.
 
+### External Dependency Local Development & Partial-Access Deployment Check
+- For every new external dependency (MCP server, OAuth provider, Redis, external API, third-party service):
+  - **Local development**: How does a developer run and test the feature locally without access to the real external dependency? Specify whether the design uses a mock, stub, in-memory fake, local container (e.g. LocalStack, fake-gcs-server), or environment-gated bypass. The chosen approach MUST be documented.
+  - **Deployment without this dependency**: How does the system behave in an environment where this specific dependency is unreachable or its credentials are not provisioned, while other services remain available? The design must specify whether the feature degrades gracefully, is feature-flagged off, or uses a fallback adapter. The rest of the system MUST continue to function normally.
+- Every external dependency MUST have both a local-dev strategy and a partial-access deployment strategy documented in Edge Cases & Risks. "Requires access to the real service" is NOT an acceptable answer for either.
+
 ### LLM / AI Provider Compatibility Check
 - Does the feature wire a specific LLM provider (Gemini, OpenAI, Anthropic, etc.)?
 - If yes, check for known provider-specific behavioral constraints that affect multi-turn or tool-use correctness (e.g., required fields in function-call parts, streaming chunk structure, retry behavior).
@@ -94,38 +100,74 @@ Before writing the design, you MUST verify the following by reading actual sourc
 
 ## Output Format
 
-Produce a structured design document with these sections:
+Produce a structured design document following the ADR template at `.cursor/files/ADR - Architecture Review Template.md`. The design MUST include all of the following sections (mapped from the template):
 
-### 1. Overview
-- Problem statement (2-3 sentences)
-- Proposed solution (2-3 sentences)
-- Success metrics / acceptance criteria (bullet list)
+### 1. Executive Summary
+| Section | Details |
+|---------|---------|
+| **Problem Statement** | *2-3 sentences* |
+| **High-Level Solution** | *2-3 sentences* |
+| **Success Metrics** | *Acceptance criteria / measurable outcomes* |
 
 ### 2. Affected Components
 | Layer | Component | Action (New/Modified) | File Path |
 |-------|-----------|----------------------|-----------|
 | Domain | ... | ... | ... |
 | Application | ... | ... | ... |
-| Adapter | ... | ... | ... |
+| Adapter — UI / Frontend | ... | ... | ... |
+| Adapter — API / Inbound | ... | ... | ... |
+| Adapter — Outbound | ... | ... | ... |
+| Database | ... | ... | ... |
+| Config / Infra | ... | ... | ... |
 
 ### 3. Technical Design
 
-For each component:
+For each affected component:
 - **Purpose**: what it does
 - **Interfaces/Ports**: signatures with type hints
 - **Dependencies**: what it depends on
 - **Key logic**: pseudocode or bullet-point flow (not full implementation)
 
+#### 3a. Architecture & AI Strategy
+Include this subsection only if the feature involves LLM / AI components. Cover: model choice, context strategy, output validation, and provider-specific constraints.
+
 ### 4. Data Flow
 Describe the request/response flow through the layers, from adapter entry to domain logic and back.
 
-### 5. Edge Cases & Risks
-- Known edge cases and how they are handled
-- Migration or backward-compatibility risks
-- Performance considerations
+### 5. Risk & Reliability
+
+#### 5a. Edge Cases & Failure Modes
+Known edge cases, migration/backward-compatibility risks, and performance considerations.
+
+#### 5b. External Dependency Failure Modes
+For every external dependency: failure scenario, silent vs noisy behavior, and degradation path.
+
+#### 5c. Local Development & Partial-Access Deployment
+For every external dependency: local dev strategy and deployment-without-this-dependency strategy.
+
+#### 5d. AI-Specific Risks
+Include only if the feature involves LLM / AI components. Cover: LLM failure fallback, data privacy, cost control, and performance handling.
 
 ### 6. Open Questions
 List anything that needs clarification before implementation begins.
+
+## Optional ADR File Output
+
+The pipeline orchestrator may instruct you to write the design to a file. This is **not the default** — only do this when the orchestrator explicitly passes the `--adr` flag or the user requests a file.
+
+When instructed to write a file:
+1. Read the ADR template at `.cursor/files/ADR - Architecture Review Template.md`.
+2. Populate every section of the template with the design content.
+3. Ensure the `docs/designs/` directory exists (create it if it doesn't).
+4. Write the file to `docs/designs/<jira-id>-<short-title>-adr.md`, where:
+   - `<jira-id>` is the lowercase Jira ticket key (e.g., `unif-1234`)
+   - `<short-title>` is a kebab-case label of **2–4 words max** capturing the feature's primary noun/action (e.g., `google-oauth`, `rate-limiting`, `user-export`)
+   - If no Jira ticket is available, use only `<short-title>-adr.md`
+   - Examples: `unif-1234-google-oauth-adr.md`, `plat-567-rate-limiting-adr.md`
+5. Leave section **7. Reviewer Feedback** empty — it will be populated by the Design Reviewer.
+6. Report the file path in your output using this exact format: "**ADR file written to:** `<path>`"
+
+When NOT instructed to write a file, produce the design only in-chat under the `## PHASE 1: DESIGN` header.
 
 ## Rules
 

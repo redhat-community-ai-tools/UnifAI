@@ -26,6 +26,12 @@ class ChatMessage(BaseModel):
     tool_calls: Optional[List[ToolCall]] = None
     tool_call_id: Optional[str] = None
     additional_kwargs: Optional[Dict[str, Any]] = None
+    sender_id: Optional[str] = None
     metadata: Dict[str, Any] = {}
 
     model_config = ConfigDict(frozen=True)
+
+    @property
+    def is_cancelled(self) -> bool:
+        """Check if this message has been marked as cancelled."""
+        return bool(self.metadata.get("is_cancelled"))

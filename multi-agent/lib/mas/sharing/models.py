@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, UTC
-from typing import Dict, Any, Optional
+from typing import Dict, List, Any, Optional
 from uuid import uuid4
 from pydantic import BaseModel, Field, computed_field
 from enum import Enum
+
+from mas.core.identity import Identity
 
 
 class ShareStatus(str, Enum):
@@ -20,8 +22,8 @@ class ShareItemKind(str, Enum):
 class ShareInvite(BaseModel):
     """Share invitation with TTL and snapshot for deterministic copying."""
     share_id: str = Field(default_factory=lambda: str(uuid4()))
-    sender_user_id: str
-    recipient_user_id: str
+    sender_identity: Identity
+    recipient_identity: Identity
     item_kind: ShareItemKind
     item_id: str
     item_name: str
@@ -35,17 +37,23 @@ class ShareInvite(BaseModel):
     ttl_days: int = Field(default=10, description="Time to live in days")
     expires_at: datetime = Field(default_factory=lambda: datetime.now(UTC) + timedelta(days=10))
     
+    # Full set of identity ids authorised to own the shared item.
+    # Populated by the endpoint when the caller shares on behalf of a team so
+    # that both the individual user id and the team id are accepted during
+    # cloning (dependency traversal also uses this list).  Empty means only
+    # sender_identity.id is trusted — preserving legacy behaviour.
+    authorized_owner_ids: List[str] = Field(default_factory=list)
+
     # Result tracking for idempotency
     result_mapping: Dict[str, str] = Field(default_factory=dict)
-    
+
     @computed_field
     @property
     def is_expired(self) -> bool:
         """Check if the invitation has expired."""
         return datetime.now(UTC) > self.expires_at
-    
+
     def __init__(self, **data):
-        # Set expires_at based on ttl_days if not provided
         if 'expires_at' not in data and 'ttl_days' in data:
             data['expires_at'] = datetime.now(UTC) + timedelta(days=data['ttl_days'])
         elif 'expires_at' not in data:

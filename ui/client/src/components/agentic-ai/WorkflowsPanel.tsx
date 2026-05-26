@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import { Trash2, Users, Pencil, Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { useAuth } from "@/contexts/AuthContext";
+import { useView } from "@/contexts/ViewContext";
 import { useShared } from "@/contexts/SharedContext";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,6 +23,8 @@ import { convertGraphFlowToFlowObject } from "@/utils/blueprintHelpers";
 import ShareWorkflow from "./ShareWorkflow";
 import { BlueprintValidationResult } from "@/types/validation";
 import { useBlueprintValidation } from "@/hooks/use-blueprint-validation";
+import { useTeamEditLockPoll } from "@/hooks/use-team-edit-lock-poll";
+import { cn } from "@/lib/utils";
 
 export interface WorkflowsPanelProps {
   selectedFlow: FlowObject | null;
@@ -56,7 +59,6 @@ export default function WorkflowsPanel({
     interactive: true,
   },
 }: WorkflowsPanelProps): React.ReactElement {
-  // State for available graph flows
   const [graphFlows, setGraphFlows] = useState<FlowObject[]>([]);
   const [activeFlowIds, setActiveFlowIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -70,8 +72,11 @@ export default function WorkflowsPanel({
   
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  const { user } = useAuth();
+  const { selectedTeam } = useView();
   const { openShareForItem } = useShared();
+  const { isTeam, userId: contextUserId, identityType } = useWorkspaceIdentity();
+  const workspaceScopeRef = useRef({ contextUserId, identityType });
+  workspaceScopeRef.current = { contextUserId, identityType };
   
   // Blueprint validation hook
   const {
@@ -86,6 +91,13 @@ export default function WorkflowsPanel({
     showToastOnFailure: true,
   });
 
+  const blueprintEditLocks = useTeamEditLockPoll(
+    selectedTeam?.id,
+    "blueprint",
+    graphFlows.map((f) => f.id),
+    isTeam && graphFlows.length > 0,
+  );
+
   const filteredFlows = useMemo(() => {
     const normalizedSearch = (searchQuery ?? "").trim().toLowerCase();
     if (!normalizedSearch) return graphFlows;
@@ -96,19 +108,29 @@ export default function WorkflowsPanel({
     );
   }, [graphFlows, searchQuery]);
 
-  // Fetch available blueprints from API (resolved – references replaced with actual data)
-  const fetchAvailableFlows = async (): Promise<void> => {
+  // Fetch available blueprints from API (resolved – references replaced with actual data).
+  // `forceAutoSelect` bypasses the `selectedFlow` check so the first item is always
+  // picked after a scope change (where the closure still sees the stale value).
+  const fetchAvailableFlows = async (forceAutoSelect = false): Promise<void> => {
+    const scopeAtStart = { contextUserId, identityType };
     try {
-      const userId = user?.username || "default";
-      // Use summary endpoint - returns name, description, metadata without heavy spec_dict.
-      // Full resolved data is fetched on selection for the graph + sharing status.
-      const summaries = await fetchBlueprintSummaries(userId);
+      const summaries = await fetchBlueprintSummaries(contextUserId, identityType);
 
-      // Convert summaries to FlowObject format
+      if (
+        workspaceScopeRef.current.contextUserId !== scopeAtStart.contextUserId ||
+        workspaceScopeRef.current.identityType !== scopeAtStart.identityType
+      ) {
+        return;
+      }
+
       const processedFlows = summaries
         .map((summary, index) =>
           convertGraphFlowToFlowObject(
-            { name: summary.name, description: summary.description },
+            {
+              name: summary.name,
+              description: summary.description,
+              contributedBy: summary.metadata?.contributed_by,
+            },
             index,
             summary.blueprint_id
           ),
@@ -118,14 +140,19 @@ export default function WorkflowsPanel({
       setGraphFlows(processedFlows);
 
       // Auto-select the first flow if none is selected and flows are available
-      if (processedFlows.length > 0 && !selectedFlow) {
+      if (processedFlows.length > 0 && (forceAutoSelect || !selectedFlow)) {
         onFlowSelect(processedFlows[0]);
       }
     } catch (error) {
       console.error("Error fetching available blueprints:", error);
       throw error;
     } finally {
-      setIsLoading(false);
+      if (
+        workspaceScopeRef.current.contextUserId === scopeAtStart.contextUserId &&
+        workspaceScopeRef.current.identityType === scopeAtStart.identityType
+      ) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -133,26 +160,39 @@ export default function WorkflowsPanel({
   const fetchActiveFlows = async (): Promise<void> => {
     if (!showActiveStatus) return;
 
+    const scopeAtStart = { contextUserId, identityType };
     try {
-      const userId = user?.username || "default";
-      const activeSessions = await fetchActiveSessions(userId);
+      const activeSessions = await fetchActiveSessions(contextUserId, identityType);
+      if (
+        workspaceScopeRef.current.contextUserId !== scopeAtStart.contextUserId ||
+        workspaceScopeRef.current.identityType !== scopeAtStart.identityType
+      ) {
+        return;
+      }
       setActiveFlowIds(activeSessions || []);
     } catch (error) {
       console.error("Error fetching active flows:", error);
-      setActiveFlowIds([]);
+      if (
+        workspaceScopeRef.current.contextUserId === scopeAtStart.contextUserId &&
+        workspaceScopeRef.current.identityType === scopeAtStart.identityType
+      ) {
+        setActiveFlowIds([]);
+      }
     }
   };
 
-  // Effect to load graph flows from API
   useEffect(() => {
+    onFlowSelect(null);
+    setSelectedBlueprintData(null);
+    setGraphFlows([]);
     setIsLoading(true);
     Promise.all([
-      fetchAvailableFlows(),
+      fetchAvailableFlows(true),
       fetchActiveFlows(),
     ]).finally(() => {
       setIsLoading(false);
     });
-  }, [user]);
+  }, [contextUserId, identityType]);
 
   // Trigger validation when selected flow changes
   useEffect(() => {
@@ -181,8 +221,12 @@ export default function WorkflowsPanel({
 
     const fetchBlueprintData = async () => {
       try {
-        const userId = user?.username || 'default';
-        const blueprint = await fetchResolvedBlueprint(selectedFlow.id, userId);
+        const blueprint = await fetchResolvedBlueprint(
+          selectedFlow.id,
+          contextUserId,
+          identityType,
+          isTeam ? selectedTeam!.name : undefined,
+        );
         if (cancelled) return;
         if (blueprint) {
           setSelectedBlueprintData({
@@ -199,7 +243,7 @@ export default function WorkflowsPanel({
 
     fetchBlueprintData();
     return () => { cancelled = true; };
-  }, [selectedFlow?.id, user?.username]);
+  }, [selectedFlow?.id, contextUserId]);
 
   const handleFlowSelect = (flow: FlowObject): void => {
     onFlowSelect(flow);
@@ -333,7 +377,20 @@ export default function WorkflowsPanel({
                 </div>
               </div>
             ) : (
-              filteredFlows.map((flow) => (
+              filteredFlows.map((flow) => {
+                const bpLock = blueprintEditLocks[flow.id];
+                const bpLockUnknown = bpLock === "unknown";
+                const bpLockedByOther =
+                  isTeam &&
+                  !bpLockUnknown &&
+                  !!bpLock &&
+                  !!user?.username &&
+                  bpLock.userId !== user.username;
+                const bpLockedByLabel = bpLockUnknown
+                  ? "unknown"
+                  : bpLock?.displayName?.trim() || bpLock?.userId || "another teammate";
+
+                return (
                 <motion.div
                   key={flow.id}
                   className={`px-4 py-2 border-l-2 cursor-pointer ${
@@ -357,15 +414,39 @@ export default function WorkflowsPanel({
                         </span>
                       )}
                       {showEditButton && (
-                        <SimpleTooltip content={<p>Edit this workflow</p>}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 hover:bg-primary/20 hover:text-primary"
-                            onClick={(e) => handleEditClick(flow, e)}
+                        <SimpleTooltip
+                          side="left"
+                          align="center"
+                          collisionPadding={12}
+                          content={
+                            bpLockUnknown ? (
+                              <p>Could not verify edit lock — try again shortly</p>
+                            ) : bpLockedByOther ? (
+                              <p>Currently being edited by {bpLockedByLabel}</p>
+                            ) : (
+                              <p>Edit this workflow</p>
+                            )
+                          }
+                        >
+                          <span
+                            className={cn(
+                              "inline-flex",
+                              (bpLockedByOther || bpLockUnknown) && "cursor-not-allowed",
+                            )}
                           >
-                            <Pencil className="h-3 w-3" />
-                          </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className={cn(
+                                "h-6 w-6 p-0 hover:bg-primary/20 hover:text-primary",
+                                (bpLockedByOther || bpLockUnknown) && "pointer-events-none",
+                              )}
+                              onClick={(e) => handleEditClick(flow, e)}
+                              disabled={bpLockedByOther || bpLockUnknown}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          </span>
                         </SimpleTooltip>
                       )}
                       <SimpleTooltip content={<p>Share this workflow</p>}>
@@ -395,8 +476,17 @@ export default function WorkflowsPanel({
                   <p className="text-xs text-gray-400 mt-1 truncate">
                     {flow.description}
                   </p>
+                  {flow.contributedBy && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="inline-flex items-center gap-1 text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
+                        <Users className="h-2.5 w-2.5" />
+                        {flow.contributedBy}
+                      </span>
+                    </div>
+                  )}
                 </motion.div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

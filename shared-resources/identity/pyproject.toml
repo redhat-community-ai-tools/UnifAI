@@ -13,6 +13,7 @@ readme = "README.md"
 dependencies = [
     "flask",
     "flask-cors",
+    "PyYAML",
     "requests",
     "Authlib",
     "PyJWT",
@@ -20,11 +21,12 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "gunicorn",
+    "ldap3",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["bootstrap*", "adapters*", "config*", "utils*"]
+include = ["bootstrap*", "adapters*", "config*", "utils*", "teams*", "directory*"]
 
 [project.optional-dependencies]
 dev = [

@@ -18,7 +18,7 @@ export interface SubmitSessionParams {
   sessionId: string;
   inputs: Record<string, any>;
   scope?: 'public' | 'private';
-  loggedInUser?: string;
+  userId: string;
 }
 
 /**

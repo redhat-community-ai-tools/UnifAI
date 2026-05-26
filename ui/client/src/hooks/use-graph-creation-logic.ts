@@ -9,11 +9,18 @@ import {
 } from "@/types/graph";
 import { getCategoryDisplay } from "@/components/shared/helpers";
 import { useAuth } from "@/contexts/AuthContext";
+import { useView } from "@/contexts/ViewContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { deriveThemeColors } from "@/lib/colorUtils";
 import axios from "../http/axiosAgentConfig";
 import * as yaml from "js-yaml";
 import { saveBlueprint, updateBlueprint } from "@/api/blueprints";
+import {
+  acquireTeamEditLock,
+  heartbeatTeamEditLock,
+  releaseTeamEditLock,
+} from "@/api/collaborationEditLock";
 import { loadBlueprintForEditing } from "@/hooks/use-load-blueprint";
 
 const defaultYamlState: YamlFlowState = {
@@ -58,10 +65,12 @@ interface UseGraphCreationLogicOptions {
   onSaveComplete?: (savedBlueprint?: SavedBlueprintInfo) => void;
   /** When provided, load this blueprint for editing instead of starting with an empty canvas */
   editBlueprintId?: string | null;
+  /** Team workspace: invoked when another user holds the blueprint edit lock */
+  onEditLockDenied?: () => void;
 }
 
 export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}) => {
-  const { onSaveComplete, editBlueprintId } = options;
+  const { onSaveComplete, editBlueprintId, onEditLockDenied } = options;
   const { toast } = useToast();
   const { primaryHex } = useTheme();
   const themeColors = useMemo(() => deriveThemeColors(primaryHex), [primaryHex]);
@@ -118,9 +127,12 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
   const [editBlueprintName, setEditBlueprintName] = useState("");
   const [editBlueprintDescription, setEditBlueprintDescription] = useState("");
   const blueprintLoadedRef = useRef(false);
+  const blueprintEditLockActiveRef = useRef(false);
+  const [blueprintEditLockHeld, setBlueprintEditLockHeld] = useState(false);
 
   const { user } = useAuth();
-  const USER_ID = user?.username || "default";
+  const { selectedTeam } = useView();
+  const { isTeam, userId: USER_ID, displayName: USER_DISPLAY_NAME, identityType } = useWorkspaceIdentity();
 
   // Stable refs for callbacks embedded in node data (avoids stale closures)
   const deleteNodeRef = useRef<(id: string) => void>(() => {});
@@ -571,10 +583,18 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
   }, [stableDeleteNode, stableAttachCondition, stableRemoveCondition]);
 
   const loadBuildingBlocks = useCallback(async () => {
+    if (!isTeam && !user?.username) {
+      setIsLoadingBlocks(false);
+      return;
+    }
+    if (!USER_ID) {
+      setIsLoadingBlocks(false);
+      return;
+    }
     try {
       setIsLoadingBlocks(true);
       const response = await axios.get(
-        `/resources/resources.list?userId=${USER_ID}`,
+        `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}`,
       );
       const allBlocks = response.data.resources.map(transformResourceToBlock);
 
@@ -609,7 +629,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     } finally {
       setIsLoadingBlocks(false);
     }
-  }, [toast, USER_ID]);
+  }, [toast, USER_ID, identityType, isTeam, user?.username]);
 
   useEffect(() => {
     loadBuildingBlocks();
@@ -622,17 +642,92 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load existing blueprint for editing once building blocks are ready
+  // Load existing blueprint for editing once building blocks are ready (team: acquire edit lock first)
   useEffect(() => {
     if (!editBlueprintId || isLoadingBlocks || blueprintLoadedRef.current) return;
-    blueprintLoadedRef.current = true;
 
-    loadBlueprintForEditing(
-      editBlueprintId,
-      allBlocksData,
-      conditionsData,
-    )
-      .then((result) => {
+    let cancelled = false;
+
+    const releaseLockIfHeld = async () => {
+      if (
+        !blueprintEditLockActiveRef.current ||
+        !isTeam ||
+        !selectedTeam ||
+        !user?.username ||
+        !editBlueprintId
+      ) {
+        return;
+      }
+      blueprintEditLockActiveRef.current = false;
+      setBlueprintEditLockHeld(false);
+      await releaseTeamEditLock({
+        teamId: selectedTeam.id,
+        entityKind: "blueprint",
+        entityId: editBlueprintId,
+        userId: user.username,
+      });
+    };
+
+    const run = async () => {
+      if (isTeam && selectedTeam && user?.username) {
+        try {
+          const lockResult = await acquireTeamEditLock({
+            teamId: selectedTeam.id,
+            entityKind: "blueprint",
+            entityId: editBlueprintId,
+            userId: user.username,
+            displayName: user.name?.trim() || user.username,
+          });
+          if (cancelled) {
+            if (lockResult.acquired) {
+              await releaseTeamEditLock({
+                teamId: selectedTeam.id,
+                entityKind: "blueprint",
+                entityId: editBlueprintId,
+                userId: user.username,
+              });
+            }
+            return;
+          }
+          if (!lockResult.acquired) {
+            toast({
+              title: "Someone else is editing this workflow",
+              description: `Currently being edited by ${lockResult.lockedBy.displayName || lockResult.lockedBy.userId}.`,
+              variant: "destructive",
+            });
+            blueprintEditLockActiveRef.current = false;
+            setBlueprintEditLockHeld(false);
+            setIsLoadingBlueprint(false);
+            onEditLockDenied?.();
+            return;
+          }
+          blueprintEditLockActiveRef.current = true;
+          setBlueprintEditLockHeld(true);
+        } catch {
+          if (cancelled) return;
+          toast({
+            title: "Could not open workflow editor",
+            description: "Failed to acquire edit lock. Try again shortly.",
+            variant: "destructive",
+          });
+          blueprintEditLockActiveRef.current = false;
+          setBlueprintEditLockHeld(false);
+          setIsLoadingBlueprint(false);
+          onEditLockDenied?.();
+          return;
+        }
+      }
+
+      blueprintLoadedRef.current = true;
+
+      try {
+        const result = await loadBlueprintForEditing(
+          editBlueprintId,
+          allBlocksData,
+          conditionsData,
+        );
+        if (cancelled) return;
+
         const nodesWithCallbacks = result.nodes.map((node) => ({
           ...node,
           data: {
@@ -651,21 +746,82 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         setEditBlueprintName(result.name);
         setEditBlueprintDescription(result.description);
         setIsLoadingBlueprint(false);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("Failed to load blueprint for editing:", err);
+        await releaseLockIfHeld();
+        if (cancelled) return;
         setIsEditMode(false);
         setEditBlueprintName("");
         setEditBlueprintDescription("");
         setIsLoadingBlueprint(false);
         toast({
           title: "Failed to load blueprint",
-          description: "Could not load the blueprint for editing. Starting with a blank canvas.",
+          description:
+            "Could not load the blueprint for editing. Starting with a blank canvas.",
           variant: "destructive",
         });
         initializeDefaultNodes();
-      });
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+      void releaseLockIfHeld();
+    };
+    // Intentionally keyed like the original hook: blocks/callbacks are read when
+    // isLoadingBlocks becomes false, not on every blocks refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editBlueprintId, isLoadingBlocks]);
+
+  useEffect(() => {
+    if (
+      !blueprintEditLockHeld ||
+      !isTeam ||
+      !selectedTeam ||
+      !editBlueprintId ||
+      !user?.username
+    ) {
+      return;
+    }
+    const teamId = selectedTeam.id;
+    const bpId = editBlueprintId;
+    const displayName = user.name?.trim() || user.username;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    interval = window.setInterval(() => {
+      void heartbeatTeamEditLock({
+        teamId,
+        entityKind: "blueprint",
+        entityId: bpId,
+        userId: user.username,
+        displayName,
+      }).catch((err: unknown) => {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 501) return;
+        if (interval != null) window.clearInterval(interval);
+        interval = undefined;
+        setBlueprintEditLockHeld(false);
+        blueprintEditLockActiveRef.current = false;
+        toast({
+          title: "Edit lock lost",
+          description: "We could not renew the team edit lock. Editing is disabled.",
+          variant: "destructive",
+        });
+      });
+    }, 45_000);
+    return () => {
+      if (interval != null) window.clearInterval(interval);
+    };
+  }, [
+    blueprintEditLockHeld,
+    isTeam,
+    selectedTeam?.id,
+    editBlueprintId,
+    user?.username,
+    user?.name,
+    toast,
+  ]);
 
   // Sync allBlocks data to existing nodes when blocks change
   useEffect(() => {
@@ -975,7 +1131,16 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
           response = await updateBlueprint(editBlueprintId, yamlString);
           blueprintId = editBlueprintId;
         } else {
-          response = await saveBlueprint(yamlString, USER_ID);
+          if (!USER_ID) {
+            toast({
+              title: "❌ Cannot save workflow",
+              description: "Sign in or select a workspace before saving.",
+              variant: "destructive",
+            });
+            setIsSaving(false);
+            return;
+          }
+          response = await saveBlueprint(yamlString, USER_ID, USER_DISPLAY_NAME, identityType);
           blueprintId = response.blueprint_id;
         }
 
@@ -1017,7 +1182,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         setIsSaving(false);
       }
     },
-    [yamlFlow, toast, onSaveComplete, USER_ID, isEditMode, editBlueprintId],
+    [yamlFlow, toast, onSaveComplete, USER_ID, identityType, isEditMode, editBlueprintId],
   );
 
   useEffect(() => {

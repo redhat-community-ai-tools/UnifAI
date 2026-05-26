@@ -144,7 +144,23 @@ If this is a re-review after sending code back:
 Do NOT approve if any CRITICAL or MAJOR issue from the previous review is not fully resolved.
 Do NOT approve based on the Coder's summary of changes — verify every claim by reading source files directly.
 
-### 9. Security Spot-Check (STRICT)
+### 9. Identity Object Compliance (STRICT)
+
+The `multi-agent` module uses a structured `Identity` object (`mas.core.identity.Identity` — with fields `type`, `id`, `display_name`) for resource ownership instead of flat `user_id` strings.
+
+**In `multi-agent/` code** — any new or modified code that handles ownership or scoping of blueprints, resources, sessions, shares, or templates MUST use `Identity`, not a flat `user_id` string:
+- Service methods accepting `user_id: str` for ownership where `identity: Identity` is the established pattern = **MAJOR**
+- Mongo queries filtering by flat `user_id` instead of `identity.type` + `identity.id` = **MAJOR**
+- New API endpoints passing `user_id` to services without resolving it to `Identity` at the adapter boundary = **MAJOR**
+
+**Legitimate `user_id` uses in `multi-agent/`** — these are NOT violations:
+- OAuth credentials and `credential_user_id` (keyed per human)
+- Collaboration participants (always a human in the room)
+- `X-Authenticated-User` header (the logged-in human)
+
+**In other modules** (outside `multi-agent/`): If code handles resource ownership with a flat `user_id`, flag it as **WARNING — Identity migration recommended** but do NOT block approval. These modules have not yet adopted the `Identity` model.
+
+### 10. Security Spot-Check (STRICT)
 
 Check for:
 - Secrets, API keys, or credentials hardcoded in source files.

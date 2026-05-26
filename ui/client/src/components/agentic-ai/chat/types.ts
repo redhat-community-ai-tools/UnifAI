@@ -16,6 +16,7 @@ export interface Message {
   id: string;
   content: string;
   sender: 'user' | 'ai';
+  senderName?: string;
   finalAnswer?: string;
   isCancelled?: boolean;
   streamLogs?: StreamLogEntry[];

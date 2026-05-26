@@ -81,9 +81,6 @@ class WorkflowSession:
     def recompile(self) -> None:
         self.executable_graph = self.builder.compile_from_plan(self.rt_graph_plan)
 
-    def get_user_id(self) -> str:
-        return self.record.user_id
-
     def get_run_id(self) -> str:
         return self.record.run_id
 

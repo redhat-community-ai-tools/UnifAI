@@ -1,12 +1,12 @@
 * @odaiodeh @nirsisr
 global_utils/ @odaiodeh @nirsisr @Lina-AbuYousef
 multi-agent/ @odaiodeh @nirsisr @Lina-AbuYousef
-ci/ @sfiresht @yhabushi79 @MayaCrmi
-helm/ @sfiresht @yhabushi79 @MayaCrmi
+ci/ @sfiresht @yhabushi79 @MayaCrmi @shanitzvii 
+helm/ @sfiresht @yhabushi79 @MayaCrmi @shanitzvii 
 rag/ @odaiodeh @nirsisr @Lina-AbuYousef
 ui/ @nirsisr @Lina-AbuYousef @MayaCrmi
 shared-resources/ @yhabushi79 @nirsisr @sfiresht
 backend/ @sfiresht @yhabushi79 @odaiodeh @nirsisr @Lina-AbuYousef @MayaCrmi
-.github/ @sfiresht @yhabushi79 @odaiodeh @nirsisr @Lina-AbuYousef @MayaCrmi
-.cursor/ @sfiresht @yhabushi79 @odaiodeh @nirsisr @Lina-AbuYousef @MayaCrmi 
-tests/ @sfiresht @yhabushi @odaiodeh @nirsisr @labuyous @mcarmi @shanitzvii 
+.github/ @sfiresht @yhabushi79 @odaiodeh @nirsisr @Lina-AbuYousef @MayaCrmi @shanitzvii @omrisaba-rh
+.cursor/ @sfiresht @yhabushi79 @odaiodeh @nirsisr @Lina-AbuYousef @MayaCrmi @shanitzvii @omrisaba-rh
+tests/ @sfiresht @yhabushi79 @odaiodeh @nirsisr @Lina-AbuYousef @MayaCrmi @shanitzvii @omrisaba-rh

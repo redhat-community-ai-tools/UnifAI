@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pydantic import BaseModel
 
+from mas.core.identity import Identity
 from mas.resources.models import Resource
 from mas.resources.registry import ResourcesRegistry
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintResource, StepDef
@@ -46,11 +47,33 @@ class CloneContext:
     receives this as an opaque bundle and never needs to reason about users.
 
     Attributes:
-        sender_user_id:    Original owner; used for ownership validation and logging.
-        recipient_user_id: The user who will own all cloned resources/blueprints.
+        sender_id:             Primary sender identity id used for display / logging.
+        recipient_id:          The user/team id who will own all cloned resources/blueprints.
+        authorized_owner_ids:  Full set of identity ids authorised to be the resource owner.
+                               When empty the cloner falls back to ``{sender_id}``.
+                               For team shares this should include both the team id and the
+                               individual user, so resources owned by either are accepted.
+        is_team_contribution:  When True the share targets a team workspace and
+                               sender_id is recorded as the contributor.
     """
-    sender_user_id: str
-    recipient_user_id: str
+    sender_id: str
+    recipient_id: str
+    sender_display_name: Optional[str] = None
+    authorized_owner_ids: frozenset = field(default_factory=frozenset)
+    is_team_contribution: bool = False
+
+    def is_authorized_owner(self, identity_id: str) -> bool:
+        """Return True when *identity_id* is allowed to be the resource owner."""
+        pool = self.authorized_owner_ids or frozenset({self.sender_id})
+        return identity_id in pool
+
+    @property
+    def contributed_by(self) -> Optional[str]:
+        return self.sender_id if self.is_team_contribution else None
+
+    @property
+    def sender_label(self) -> str:
+        return self.sender_display_name or self.sender_id
 
 
 class ShareCloner:
@@ -73,9 +96,16 @@ class ShareCloner:
         self.blueprints = blueprint_service
         self.elements = element_registry
 
+    @staticmethod
+    def _recipient_identity(ctx: CloneContext) -> Identity:
+        """Build the correct Identity for the recipient of a share."""
+        if ctx.is_team_contribution:
+            return Identity.team(ctx.recipient_id)
+        return Identity.user(ctx.recipient_id)
+
     def clone_resource_graph(self, *, root_rid: str, ctx: CloneContext) -> Tuple[Dict[str, str], Dict[str, str]]:
         """Clone resource and all its dependencies."""
-        logger.info(f"Starting resource graph clone: {root_rid} from {ctx.sender_user_id} to {ctx.recipient_user_id}")
+        logger.info(f"Starting resource graph clone: {root_rid} from {ctx.sender_id} to {ctx.recipient_id}")
 
         # Single pass: Load resources + compute dependencies + cache models
         closure_data = self._compute_closure({root_rid}, ctx)
@@ -91,18 +121,19 @@ class ShareCloner:
 
     def clone_blueprint(self, *, blueprint_id: str, ctx: CloneContext) -> Tuple[str, Dict[str, str], Dict[str, str]]:
         """Clone blueprint and all its dependencies."""
-        logger.info(f"Starting blueprint clone: {blueprint_id} from {ctx.sender_user_id} to {ctx.recipient_user_id}")
+        logger.info(f"Starting blueprint clone: {blueprint_id} from {ctx.sender_id} to {ctx.recipient_id}")
 
         try:
             # Load and validate blueprint
             bp_doc = self.blueprints.get_blueprint_draft_doc(blueprint_id)
-            if bp_doc.user_id != ctx.sender_user_id:
+            if not ctx.is_authorized_owner(bp_doc.identity.id):
                 raise ValueError(f"Blueprint {blueprint_id} not owned by sender")
 
             draft = BlueprintDraft(**bp_doc.spec_dict)
-
-            # Use pre-computed external refs from the blueprint document
-            external_rids = set(bp_doc.rid_refs)
+            # Union stored rid_refs with a fresh walk of the draft (avoids stale rid_refs).
+            external_rids = set(bp_doc.rid_refs or [])
+            external_rids |= RefWalker.external_rids(draft)
+            recipient = self._recipient_identity(ctx)
 
             # Clone dependencies and build RID mapping
             rid_mapping, name_conflicts, resources_cloned = self._clone_dependencies(
@@ -112,9 +143,15 @@ class ShareCloner:
             # Clone blueprint with proper ref handling and new step UIDs
             new_draft = self._clone_blueprint_draft(draft, rid_mapping, ctx)
 
+            # Build metadata for the cloned blueprint
+            bp_metadata = {}
+            if ctx.is_team_contribution:
+                bp_metadata["contributed_by"] = ctx.sender_id
+
             new_blueprint_id = self.blueprints.save_draft(
-                user_id=ctx.recipient_user_id,
-                draft_dict=new_draft.model_dump(mode="json")
+                identity=recipient,
+                draft_dict=new_draft.model_dump(mode="json"),
+                metadata=bp_metadata or None,
             )
 
             logger.info(f"Blueprint clone completed: {new_blueprint_id}, {resources_cloned} resources cloned")
@@ -132,7 +169,6 @@ class ShareCloner:
 
         logger.debug(f"Found external references: {external_rids}")
 
-        # Single pass: Load + analyze + cache all resource data
         closure_data = self._compute_closure(external_rids, ctx)
 
         if not closure_data:
@@ -190,7 +226,7 @@ class ShareCloner:
     def _compute_closure(self, root_rids: Set[str], ctx: CloneContext) -> Dict[str, ResourceCacheData]:
         """
         Compute resource closure and cache all data in a single pass.
-        
+
         Returns cached data for all resources in the dependency closure.
         Only includes resources owned by the sender.
         """
@@ -208,8 +244,11 @@ class ShareCloner:
                 # Load and validate resource
                 doc = self.resources.get(rid)
 
-                if doc.user_id != ctx.sender_user_id:
-                    logger.warning(f"Resource {rid} not owned by {ctx.sender_user_id}, owned by {doc.user_id}")
+                if not ctx.is_authorized_owner(doc.identity.id):
+                    logger.warning(
+                        f"Resource {rid} not owned by an authorized sender "
+                        f"(owner={doc.identity.id}, authorized={ctx.authorized_owner_ids or {ctx.sender_id}})"
+                    )
                     continue
 
                 # Create schema model and compute dependencies
@@ -244,10 +283,11 @@ class ShareCloner:
         """Clone a single resource using pre-computed data."""
         original_doc = cache_data.doc
         new_rid = rid_mapping[original_doc.rid]
+        recipient = self._recipient_identity(ctx)
 
         new_name = self._resolve_name_conflict(
-            original_doc.category, original_doc.type,
-            original_doc.name, ctx
+            recipient, original_doc.category,
+            original_doc.type, original_doc.name, ctx
         )
 
         # Use typed model for clean remapping (Ref objects), then dump to dict
@@ -261,13 +301,14 @@ class ShareCloner:
 
         return Resource(
             rid=new_rid,
-            user_id=ctx.recipient_user_id,
+            identity=recipient,
             category=original_doc.category,
             type=original_doc.type,
             name=new_name,
             version=1,
             cfg_dict=new_cfg_dict,
-            nested_refs=new_nested_refs
+            nested_refs=new_nested_refs,
+            contributed_by=ctx.contributed_by,
         )
 
     def _batch_create_resources(self, docs: List[Resource]) -> None:
@@ -276,15 +317,23 @@ class ShareCloner:
         for doc in docs:
             self.resources.create(doc)
 
-    def _resolve_name_conflict(self, category: str, type_: str,
-                               preferred_name: str,
+    def _resolve_name_conflict(self, identity: Identity, category: str,
+                               type_: str, preferred_name: str,
                                ctx: CloneContext) -> str:
-        """Resolve name conflicts by adding '(from sender)' suffix."""
-        base_name = f"{preferred_name} (from {ctx.sender_user_id})"
+        """Resolve name conflicts.
+
+        Team contributions keep the original name; user-to-user shares get a
+        "(from <sender>)" suffix so the recipient can tell where it came from.
+        """
+        if ctx.is_team_contribution:
+            base_name = preferred_name
+        else:
+            base_name = f"{preferred_name} (from {ctx.sender_label})"
+
         current_name = base_name
 
         for counter in range(2, 101):
-            existing = self.resources._repo.find_by_name(ctx.recipient_user_id, category, type_, current_name)
+            existing = self.resources.exists_by_name(identity, category, type_, current_name)
             if not existing:
                 return current_name
 
@@ -306,9 +355,14 @@ class ShareCloner:
             for category in ResourceCategory
         }
 
+        if ctx.is_team_contribution:
+            clone_name = draft.name
+        else:
+            clone_name = f"{draft.name} (from {ctx.sender_label})"
+
         return BlueprintDraft(
             plan=self._clone_plan(draft.plan, rid_mapping),
-            name=f"{draft.name} (from {ctx.sender_user_id})",
+            name=clone_name,
             description=draft.description,
             **resource_fields
         )

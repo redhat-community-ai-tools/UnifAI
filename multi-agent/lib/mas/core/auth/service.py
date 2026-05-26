@@ -12,7 +12,7 @@ at build time so they can call ``get_headers()`` with no args.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, Optional, Union, TYPE_CHECKING
 
 from .errors import TokenExpiredError
 from .credentials.models import (
@@ -53,31 +53,34 @@ class AuthHandle:
     ``await attempt_recovery()`` without passing user_id and
     server_identifier every time.
 
-    Accepts either a plain ``user_id`` string or an
-    ``ExecutionContextHolder`` for deferred resolution (session build
-    time, when the user context isn't available yet).
+    Accepts either a plain ``user_id`` string or a zero-arg callable that
+    returns the user-id at runtime (deferred resolution for session build
+    time, when the executing user isn't known yet).
     """
 
     def __init__(
         self,
         auth_service: AuthService,
-        user_id: Union[str, Any],
+        user_id: Union[str, Callable[[], str]],
         server_identifier: str,
         scheme_type: str = "",
         config: Optional[Dict[str, Any]] = None,
     ):
         self._svc = auth_service
-        self._user_id_or_holder = user_id
+        self._user_id_or_resolver = user_id
         self._server_id = server_identifier
         self._scheme_type = scheme_type
         self._config = config or {}
 
     @property
     def _user_id(self) -> str:
-        uid = self._user_id_or_holder
+        uid = self._user_id_or_resolver
         if isinstance(uid, str):
             return uid
-        return uid.user_id
+        try:
+            return uid()
+        except RuntimeError:
+            return ""
 
     async def get_headers(self) -> Dict[str, str]:
         return await self._svc.get_headers(
@@ -320,18 +323,23 @@ class AuthService:
 
     def bind_lazy(
         self,
-        ctx_holder: Any,
+        user_id_resolver: Callable[[], str],
         server_identifier: str,
         scheme_type: str = "",
     ) -> Optional[AuthCredential]:
-        """Create a credential handle with deferred user_id resolution."""
+        """Create a credential handle with deferred user_id resolution.
+
+        The resolver is called at runtime when the credential is actually
+        needed, not at build time.  This keeps the auth layer decoupled
+        from execution-context specifics.
+        """
         if not server_identifier:
             return None
 
         config = self._resolve_config("", server_identifier)
         return AuthHandle(
             auth_service=self,
-            user_id=ctx_holder,
+            user_id=user_id_resolver,
             server_identifier=server_identifier,
             scheme_type=scheme_type,
             config=config,

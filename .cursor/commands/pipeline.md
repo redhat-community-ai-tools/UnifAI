@@ -52,6 +52,20 @@ The user's input determines which mode to run. Parse the input as follows:
 /pipeline debug <path-to-error-log>
 ```
 
+### ADR File Flag
+
+Modes that include Phase 1 (`full`, `design-only`, `design-and-review`) accept an optional `--adr` flag. When present, the Designer writes the design to a file at `docs/designs/<slug>-adr.md` following the ADR template at `.cursor/files/ADR - Architecture Review Template.md`. The flag can appear anywhere in the command:
+
+```
+/pipeline design-only --adr <task prompt>
+/pipeline full --adr <Jira ticket ID>
+/pipeline design-and-review --adr <task prompt>
+```
+
+If `--adr` is not present and the user did not explicitly request a file, no file is created. The design is produced only in-chat.
+
+When an ADR file is created, record its path in the pipeline state (`ADR File: <path>`). The Design Reviewer will use this path to annotate the file with feedback after completing the in-chat review.
+
 ### Design Input Resolution
 
 Modes that start at Phase 1 (`full`, `design-only`, `design-and-review`) accept three types of input. Resolve the input in this order:
@@ -64,7 +78,7 @@ After resolving the input, pass the full task context (title, description, accep
 
 ### Mode Parsing Rules
 
-1. Check the first word after `/pipeline` against the mode keywords: `full`, `design-only`, `design-and-review`, `implement`, `review-only`, `code-review-only`, `qa-only`, `debug`.
+1. Strip the `--adr` flag from the input if present (set an internal `adr_requested = true` flag). Then check the first word after `/pipeline` against the mode keywords: `full`, `design-only`, `design-and-review`, `implement`, `review-only`, `code-review-only`, `qa-only`, `debug`.
 2. If none of the keywords match, treat the entire input as a task description and use **full** mode.
 3. For modes that accept a file path, read that file and use its contents as the input artifact for the starting phase.
 4. For **full** mode: after resolving design input (see above), if the argument is an existing file path on disk, read it as the design and start at Phase 2. Otherwise resolve it as a Jira ticket or free-text and start at Phase 1.
@@ -88,6 +102,7 @@ Code Iterations: <N>/2
 QA Iterations: <N>/2
 Blocking Verdict: <verdict from last review, or NONE>
 Feedback Items To Address: <count, or NONE>
+ADR File: <file path, or NONE>
 --- END STATE ---
 ```
 
@@ -103,8 +118,11 @@ Execute the phases applicable to the selected mode, IN ORDER. Do not skip phases
 2. Adopt the Designer agent persona described in that skill.
 3. Analyze the task, explore the codebase, and produce the technical design following the skill's output format.
 4. Present the design under a `## PHASE 1: DESIGN` header.
-5. Update and display the pipeline state tracker.
-6. Proceed to Phase 2.
+5. **ADR file output (optional):** Check whether the user included the `--adr` flag in their pipeline command or explicitly requested a design file. If yes, instruct the Designer to write the design to `docs/designs/<slug>-adr.md` following the ADR template at `.cursor/files/ADR - Architecture Review Template.md`. Record the file path in the pipeline state as `ADR File: <path>`. If no flag was provided, set `ADR File: NONE`.
+ - The Designer must report the generated file path in the format: "**ADR file written to:** `<path>`" so you can extract and record it.
+ - Parse the Designer's output for this marker and update the pipeline state accordingly.
+6. Update and display the pipeline state tracker.
+7. Proceed to Phase 2.
 
 ---
 
@@ -112,9 +130,10 @@ Execute the phases applicable to the selected mode, IN ORDER. Do not skip phases
 
 1. Read the skill file at `.cursor/skills/pipeline-design-reviewer/SKILL.md`.
 2. Switch persona to the Design Reviewer.
-3. Critically review the design produced in Phase 1, following the skill's review dimensions.
+3. Critically review the **full design produced in Phase 1** (the in-chat output), following the skill's review dimensions.
 4. Present the review under a `## PHASE 2: DESIGN REVIEW` header.
-5. Extract the verdict. Then follow the DESIGN REVIEW VERDICT HANDLER below.
+5. **ADR file annotation (only if ADR File is not NONE):** Pass the `ADR File` path from the pipeline state as input context to the reviewer skill. The reviewer skill handles the file annotation as defined in its own instructions (Part 2 of its output format).
+6. Extract the verdict. Then follow the DESIGN REVIEW VERDICT HANDLER below.
 
 #### DESIGN REVIEW VERDICT HANDLER
 

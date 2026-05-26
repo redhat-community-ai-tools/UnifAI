@@ -73,6 +73,7 @@ class ForegroundSessionRunner:
         scope: str,
     ) -> GraphState:
         self._lifecycle.begin(session.record, scope)
+        # Staging (SessionInputProjector) already merged credential_user_id onto the record.
         session.execution_holder.context = session.record.run_context
 
         try:

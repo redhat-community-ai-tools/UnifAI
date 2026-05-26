@@ -16,7 +16,7 @@ from global_utils.utils.util import get_mongo_url
 class MongoTemplateRepository(TemplateRepository):
     """
     MongoDB-backed template storage.
-    
+
     Uses the same patterns as MongoBlueprintRepository for consistency.
     """
 

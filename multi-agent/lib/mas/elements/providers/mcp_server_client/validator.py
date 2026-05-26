@@ -21,7 +21,10 @@ from mas.elements.common.validator import (
     ValidationMessage,
     ValidationCode,
 )
-from mas.elements.providers.mcp_server_client.config import McpProviderConfig
+from mas.elements.providers.mcp_server_client.config import (
+    McpAuthMethod,
+    McpProviderConfig,
+)
 from mas.elements.providers.mcp_server_client.mcp_provider_factory import McpProviderFactory
 
 logger = logging.getLogger(__name__)
@@ -70,19 +73,26 @@ class McpProviderValidator(BaseElementValidator):
         context: ValidationContext,
         messages: List[ValidationMessage],
     ) -> None:
-        """
-        Async MCP connection check using McpProviderFactory.
-        
-        Uses anyio.fail_after INSIDE the async function for timeout control.
-        """
-        start = time.time()
+        lookup_id = getattr(config, "server_identifier", "") or str(config.mcp_url)
+        scheme_type = getattr(config, "scheme_type", "") or ""
+
+        auth_method = getattr(config, "auth_method", None)
+        is_sign_in = auth_method == McpAuthMethod.SIGN_IN or getattr(
+            auth_method, "value", None,
+        ) == McpAuthMethod.SIGN_IN.value
 
         auth_cred = None
-        if context.user_id and context.auth_service:
-            lookup_id = getattr(config, "server_identifier", "") or str(config.mcp_url)
-            auth_cred = context.auth_service.bind(context.user_id, lookup_id)
+        if context.auth_service:
+            # For SIGN_IN (OAuth), credentials are stored per human member, never on a team.
+            # credential_lookup_user_id() handles the owner-vs-credential-user resolution.
+            lookup_user = context.credential_lookup_user_id() if is_sign_in else (context.user_id or "").strip()
+            if lookup_user:
+                auth_cred = context.auth_service.bind(
+                    lookup_user, lookup_id, scheme_type=scheme_type,
+                )
 
         try:
+            start = time.time()
             with anyio.fail_after(context.timeout_seconds):
                 await self._factory.create_async(config, auth_credential=auth_cred)
 

@@ -125,6 +125,8 @@ affinity: {}
 
 # Identity specific configuration - this is what your templates are looking for
 
+# LDAP directory search requires these on the Identity pod (process env wins over local .env).
+# Optional bind account: set DIRECTORY_LDAP_BIND_DN / DIRECTORY_LDAP_BIND_PASSWORD (or a secret mount).
 backend:
   image:
     repository: images.paas.redhat.com/unifai/identity
@@ -135,5 +137,18 @@ backend:
     port: 5555
   type: ClusterIP
   env:
-    - name: LOG_LEVEL
-      value: debug
+    LOG_LEVEL: debug
+    # DIRECTORY_LDAP_BIND_DN: ""
+    # DIRECTORY_LDAP_BIND_PASSWORD: ""
+
+# TODO : follow up story for sso-nginx GENIE-812
+# nginx:
+#   image:
+#     repository: images.paas.redhat.com/unifai/ui
+#     tag: "latest"
+#     pullPolicy: Always
+
+#   service:
+#     name: sso-nginx
+#     port: 7777
+#   type: ClusterIP

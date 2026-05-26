@@ -403,7 +403,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
           sessionId: runId,
           inputs: sessionPayload.inputs || {},
           scope: 'public',
-          loggedInUser: user?.username || '',
+          userId: user?.username || '',
         });
 
         await streamCompletePromise;

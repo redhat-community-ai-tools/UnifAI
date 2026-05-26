@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 from datetime import datetime
 from ..models import ShareInvite, ShareStatus, ShareCleanupConfig, ShareCleanupResult
+from mas.core.identity import Identity
 
 
 class ShareRepository(ABC):
@@ -22,17 +23,17 @@ class ShareRepository(ABC):
         pass
 
     @abstractmethod
-    def list_for_recipient(self, recipient_user_id: str, 
+    def list_for_recipient(self, recipient: Identity, 
                           status: Optional[ShareStatus] = None,
                           skip: int = 0, limit: int = 100) -> List[ShareInvite]:
-        """List invites for recipient."""
+        """List invites for recipient, scoped by identity type and id."""
         pass
 
     @abstractmethod
-    def list_for_sender(self, sender_user_id: str,
+    def list_for_sender(self, sender: Identity,
                        status: Optional[ShareStatus] = None,
                        skip: int = 0, limit: int = 100) -> List[ShareInvite]:
-        """List invites sent by user."""
+        """List invites sent by identity, scoped by identity type and id."""
         pass
 
     @abstractmethod

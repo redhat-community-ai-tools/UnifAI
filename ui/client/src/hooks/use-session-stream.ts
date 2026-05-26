@@ -217,7 +217,7 @@ export function useSessionStream(options: UseSessionStreamOptions): UseSessionSt
    * 1. POST /user.session.submit (fire & forget, returns 202)
    * 2. GET /session.stream.subscribe (real-time events)
    * 
-   * @param params - Session submission parameters (sessionId, inputs, scope, loggedInUser)
+   * @param params - Session submission parameters (sessionId, inputs, scope, userId)
    */
   const submitAndSubscribe = useCallback(async (params: SubmitSessionParams): Promise<void> => {
     // Cancel any existing stream

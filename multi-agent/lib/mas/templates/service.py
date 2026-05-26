@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from uuid import uuid4
 from datetime import datetime, timezone
 
+from mas.core.identity import Identity, IdentityType
 from mas.blueprints.models.blueprint import BlueprintDraft
 from mas.catalog.element_registry import ElementRegistry
 from mas.templates.repository.repository import TemplateRepository
@@ -273,7 +274,7 @@ class TemplateService:
     def materialize(
             self,
             template_id: str,
-            user_id: str,
+            identity: Identity,
             user_input: Dict[str, Any],
             blueprint_name: Optional[str] = None,
             save_resources: bool = True,
@@ -286,7 +287,7 @@ class TemplateService:
         
         Args:
             template_id: Template to instantiate
-            user_id: User who owns the result
+            identity: Identity who owns the result
             user_input: User-provided values
             blueprint_name: Optional name override
             save_resources: If True, save resources and create $refs (default)
@@ -323,7 +324,7 @@ class TemplateService:
         blueprint_id, resource_ids = self._save_blueprint(
             blueprint=result.blueprint,
             template=template,
-            user_id=user_id,
+            identity=identity,
             save_resources=save_resources,
         )
 
@@ -352,7 +353,7 @@ class TemplateService:
             self,
             blueprint: BlueprintDraft,
             template: Template,
-            user_id: str,
+            identity: Identity,
             save_resources: bool,
     ) -> Tuple[str, List[str]]:
         """Save blueprint (and optionally resources). Returns (blueprint_id, resource_ids)."""
@@ -364,17 +365,17 @@ class TemplateService:
 
         if save_resources and self._resources_service is not None:
             materializer = ResourceMaterializer(self._resources_service)
-            mat_result = materializer.materialize(blueprint, user_id)
+            mat_result = materializer.materialize(blueprint, identity)
 
             blueprint_id = self._blueprint_service.save_draft(
-                user_id=user_id,
+                identity=identity,
                 draft_dict=mat_result.blueprint_draft.model_dump(mode="json"),
                 metadata=metadata,
             )
             return blueprint_id, mat_result.resource_ids
         else:
             blueprint_id = self._blueprint_service.save_draft(
-                user_id=user_id,
+                identity=identity,
                 draft_dict=blueprint.model_dump(mode="json"),
                 metadata=metadata,
             )

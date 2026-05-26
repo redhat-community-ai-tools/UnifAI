@@ -19,6 +19,15 @@ import { ItemValidationResult } from "./FieldValidation";
 
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
+import { useAuth } from "@/contexts/AuthContext";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
+import { useToast } from "@/hooks/use-toast";
+import {
+  acquireTeamEditLock,
+  heartbeatTeamEditLock,
+  releaseTeamEditLock,
+} from "@/api/collaborationEditLock";
+import { LoaderCircle } from "lucide-react";
 
 function normalizeElementName(v: string): string {
   return v.trim().toLowerCase();
@@ -57,6 +66,130 @@ export const ElementForm: React.FC<ElementFormProps> = ({
   const [populateResults, setPopulateResults] = useState<{ [fieldName: string]: string[] | any }>({});
 
   const { fetchResourcesForCategory } = useWorkspaceData();
+  const { user } = useAuth();
+  const { isTeam: isTeamWorkspace, userId: teamId } = useWorkspaceIdentity();
+  const { toast } = useToast();
+  const needsResourceEditLock =
+    isOpen && isTeamWorkspace && !!editingElement?.rid && !!user?.username;
+  const [resourceEditLockReady, setResourceEditLockReady] = useState(true);
+  const [resourceLockHeld, setResourceLockHeld] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setResourceEditLockReady(true);
+      setResourceLockHeld(false);
+      return;
+    }
+    if (!needsResourceEditLock || !user?.username) {
+      setResourceEditLockReady(true);
+      setResourceLockHeld(false);
+      return;
+    }
+
+    setResourceEditLockReady(false);
+    setResourceLockHeld(false);
+    let cancelled = false;
+    let lockTaken = false;
+    const rid = editingElement!.rid;
+    const displayName = user.name?.trim() || user.username;
+
+    (async () => {
+      try {
+        const result = await acquireTeamEditLock({
+          teamId,
+          entityKind: "resource",
+          entityId: rid,
+          userId: user.username,
+          displayName,
+        });
+        if (cancelled) return;
+        if (!result.acquired) {
+          toast({
+            title: "Someone else is editing this element",
+            description: `Currently being edited by ${result.lockedBy.displayName || result.lockedBy.userId}.`,
+            variant: "destructive",
+          });
+          onClose();
+          return;
+        }
+        lockTaken = true;
+        setResourceLockHeld(true);
+        setResourceEditLockReady(true);
+      } catch {
+        if (cancelled) return;
+        toast({
+          title: "Could not start editing",
+          description: "Failed to acquire edit lock. Try again.",
+          variant: "destructive",
+        });
+        onClose();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (lockTaken) {
+        void releaseTeamEditLock({
+          teamId,
+          entityKind: "resource",
+          entityId: rid,
+          userId: user.username,
+        });
+        setResourceLockHeld(false);
+      }
+    };
+  }, [
+    isOpen,
+    needsResourceEditLock,
+    teamId,
+    editingElement?.rid,
+    user?.username,
+    user?.name,
+    onClose,
+    toast,
+  ]);
+
+  useEffect(() => {
+    if (!resourceLockHeld || !needsResourceEditLock || !user?.username || !editingElement?.rid) {
+      return;
+    }
+    const rid = editingElement.rid;
+    const displayName = user.name?.trim() || user.username;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    interval = window.setInterval(() => {
+      void heartbeatTeamEditLock({
+        teamId,
+        entityKind: "resource",
+        entityId: rid,
+        userId: user.username,
+        displayName,
+      }).catch((err: unknown) => {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 501) return;
+        if (interval != null) window.clearInterval(interval);
+        interval = undefined;
+        setResourceLockHeld(false);
+        toast({
+          title: "Edit lock lost",
+          description: "We could not renew the team edit lock. The editor will close.",
+          variant: "destructive",
+        });
+        onClose();
+      });
+    }, 45_000);
+    return () => {
+      if (interval != null) window.clearInterval(interval);
+    };
+  }, [
+    resourceLockHeld,
+    needsResourceEditLock,
+    teamId,
+    editingElement?.rid,
+    user?.username,
+    user?.name,
+    toast,
+    onClose,
+  ]);
 
   const existingNamesSet = useMemo(
     () =>
@@ -776,6 +909,14 @@ export const ElementForm: React.FC<ElementFormProps> = ({
           <DialogDescription>{elementSchema.description}</DialogDescription>
         </DialogHeader>
 
+        {needsResourceEditLock && !resourceEditLockReady ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-2 text-gray-400">
+            <LoaderCircle className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm">Reserving edit access…</p>
+          </div>
+        ) : null}
+
+        {!(needsResourceEditLock && !resourceEditLockReady) ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -866,6 +1007,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
             </UmamiTrack>
           </DialogFooter>
         </form>
+        ) : null}
       </DialogContent>
     </Dialog>
   );
