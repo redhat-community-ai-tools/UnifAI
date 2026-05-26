@@ -10,7 +10,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import axios from "@/http/axiosAgentConfig";
-import { cancelSession } from "@/api/sessions";
+import { cancelSession, submitSession } from "@/api/sessions";
 import {
   joinSession as joinSessionApi,
   leaveSession as leaveSessionApi,
@@ -102,16 +102,17 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
   // ── Local execution (current user triggers run) ────────────────────────
   const triggerExecution = useCallback(
-    async (sessionPayload: { sessionId: string; inputs: { user_prompt: string }; scope?: "public" | "private"; loggedInUser?: string }) => {
+    async (sessionPayload: { sessionId: string; inputs: { user_prompt: string }; scope?: "public" | "private"; loggedInUser?: string; files?: File[] }) => {
       try {
         hub.setIsLiveRequest(true);
         setIsSubmitting(true);
 
-        await axios.post("/sessions/user.session.submit", {
+        await submitSession({
           sessionId: sessionPayload.sessionId,
           inputs: sessionPayload.inputs,
           scope: hub.globalScope,
           userId: user?.username || "default",
+          files: sessionPayload.files,
         });
         setIsSubmitting(false);
         subscribeRemoteStream(sessionPayload.sessionId);

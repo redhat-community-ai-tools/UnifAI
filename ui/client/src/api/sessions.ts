@@ -3,19 +3,6 @@ import axios from '@/http/axiosAgentConfig';
 export const FILE_MAX_COUNT = 3;
 export const FILE_MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 
-export interface FileReference {
-  file_uri: string;
-  mime_type: string;
-  display_name: string;
-  size_bytes: number;
-  uploaded_at: string;
-}
-
-export interface UploadResult {
-  files: FileReference[];
-  errors: { filename: string; error: string }[];
-}
-
 export interface CreateSessionParams {
   blueprintId: string;
   userId: string;
@@ -172,67 +159,3 @@ export async function subscribeToSessionStream(sessionId: string): Promise<Respo
   }
 }
 
-/**
- * Upload files to Google's servers via the Gemini File API.
- * Returns successful file references and any per-file errors.
- */
-export async function uploadSessionFiles(
-  sessionId: string,
-  files: File[],
-): Promise<UploadResult> {
-  const formData = new FormData();
-  formData.append("sessionId", sessionId);
-  files.forEach((f) => formData.append("files", f));
-  const resp = await axios.post(
-    "/sessions/session.files.upload",
-    formData,
-    {
-      headers: { "Content-Type": "multipart/form-data" },
-      validateStatus: (s: number) => s === 200 || s === 207,
-    },
-  );
-  return resp.data;
-}
-
-/**
- * Upload files (if any), then trigger execution with file references in inputs.
- * Handles partial and total upload failures.
- */
-export async function sendMessageWithFiles(
-  sessionId: string,
-  message: string,
-  files: File[],
-  triggerExecution: (payload: any) => Promise<string>,
-  onPartialFailure?: (failedNames: string) => void,
-): Promise<void> {
-  let fileRefs: FileReference[] = [];
-  if (files.length > 0) {
-    const result = await uploadSessionFiles(sessionId, files);
-    fileRefs = result.files;
-
-    if (result.files.length === 0 && result.errors.length > 0) {
-      const failedNames = result.errors.map((e) => e.filename).join(", ");
-      throw new Error(`All files failed to upload: ${failedNames}`);
-    }
-
-    if (result.errors.length > 0) {
-      const failedNames = result.errors.map((e) => e.filename).join(", ");
-      onPartialFailure?.(failedNames);
-    }
-  }
-  await triggerExecution({
-    sessionId,
-    inputs: {
-      user_prompt: message,
-      ...(fileRefs.length > 0 && {
-        file_references: fileRefs.map((r) => ({
-          file_uri: r.file_uri,
-          mime_type: r.mime_type,
-          display_name: r.display_name,
-          size_bytes: r.size_bytes,
-          uploaded_at: r.uploaded_at,
-        })),
-      }),
-    },
-  });
-}
