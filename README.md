@@ -193,51 +193,7 @@ The RAG module feeds the multi-agent system with indexed enterprise knowledge:
 
 ## Quick Start
 
-### Prerequisites
-
-- Python 3.11+
-- Node.js 22+ and PNPM
-- MongoDB
-- Qdrant
-
-Optional: Redis (for distributed streaming), Temporal (for distributed execution), RabbitMQ (for async RAG pipelines), Keycloak (for auth).
-
-### Multi-Agent Backend
-
-```bash
-cd multi-agent
-pip install -e ".[all]"
-
-# Configure
-export ENGINE_NAME=langgraph
-export MONGODB_IP=localhost
-
-# Run
-mas api --dev
-```
-
-### RAG Backend
-
-```bash
-cd rag
-pip install -r requirements.txt
-
-# Run Flask server
-python -m flask run --port 8001
-
-# Run Celery workers (separate terminal)
-celery -A app.celery worker
-```
-
-### UI
-
-```bash
-cd ui
-pnpm install --frozen-lockfile
-pnpm dev
-```
-
-The UI runs at `http://localhost:5173` and proxies API requests to the backends.
+For a complete walkthrough — setting up virtual environments, installing dependencies, and running all services locally — see the **[Local Development Guide](local-development/LOCAL_DEV_GUIDE.md)**.
 
 ### Deployment
 
