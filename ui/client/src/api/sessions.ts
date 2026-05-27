@@ -16,7 +16,6 @@ export interface SessionChatResponse {
 export interface CreateSessionParams {
   blueprintId: string;
   teamId?: string;
-  userId?: string;
   metadata?: Record<string, any>;
 }
 

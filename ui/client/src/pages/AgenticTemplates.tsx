@@ -12,6 +12,7 @@ import { useTemplates } from '@/hooks/use-templates';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { createSession } from '@/api/sessions';
+import { useWorkspaceIdentity } from '@/hooks/use-workspace-identity';
 import { TemplateListItem, TemplateFormData } from '@/types/templates';
 
 type ViewMode = 'catalog' | 'detail';
@@ -23,6 +24,7 @@ export default function AgenticTemplates() {
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const templateDetailRef = useRef<TemplateDetailViewRef>(null);
   const { user } = useAuth();
+  const { teamId } = useWorkspaceIdentity();
   const { toast } = useToast();
 
   const {
@@ -91,7 +93,11 @@ export default function AgenticTemplates() {
     setIsCreatingSession(true);
     try {
       // Create a new chat session with the blueprint
-      await createSession({ blueprintId: instantiationResult.blueprint_id, userId: user.username });
+      const params: { blueprintId: string; teamId?: string } = {
+        blueprintId: instantiationResult.blueprint_id,
+      };
+      if (teamId) params.teamId = teamId;
+      await createSession(params);
       resetInstantiation();
       navigate('/agentic-chats');
     } catch (err) {
@@ -104,7 +110,7 @@ export default function AgenticTemplates() {
     } finally {
       setIsCreatingSession(false);
     }
-  }, [instantiationResult, user, resetInstantiation, navigate, toast]);
+  }, [instantiationResult, user, teamId, resetInstantiation, navigate, toast]);
 
   const handleCloseProgress = useCallback(() => {
     resetInstantiation();
