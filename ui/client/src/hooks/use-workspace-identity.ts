@@ -17,7 +17,7 @@ export interface WorkspaceIdentity {
 /**
  * Single source of truth for "who owns the current workspace".
  *
- * The backend resolves the authenticated user from the session (X-Session-Id).
+ * The backend resolves the authenticated user from the session cookie.
  * For team context, the UI only needs to send the teamId — the backend
  * validates membership and resolves the display name server-side.
  */

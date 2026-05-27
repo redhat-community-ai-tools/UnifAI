@@ -160,7 +160,7 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
 
     const inputData = buildInputWithDependencies(value, fieldNameMapping);
 
-    return executeAction(validationAction.uid, inputData, userId);
+    return executeAction(validationAction.uid, inputData);
   };
 
   // Validate using ApiHint (direct API call)

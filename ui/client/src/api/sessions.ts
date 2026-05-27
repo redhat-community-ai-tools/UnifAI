@@ -162,9 +162,8 @@ export async function subscribeToSessionStream(sessionId: string): Promise<Respo
       `/api2/sessions/session.subscribe?sessionId=${sessionId}`,
       {
         method: 'GET',
-        headers: {
-          'Accept': 'application/x-ndjson',
-        },
+        headers: { 'Accept': 'application/x-ndjson' },
+        credentials: 'include',
       }
     );
     

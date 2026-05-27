@@ -80,7 +80,7 @@ export const AuthFieldRenderer: React.FC<AuthFieldRendererProps> = ({
     setStatus('checking');
 
     try {
-      const data = await executeAction(actionUid, inputData, userId);
+      const data = await executeAction(actionUid, inputData);
 
 
       if (data.status === 'authenticated') {

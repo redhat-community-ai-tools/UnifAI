@@ -28,11 +28,14 @@ def _is_admin(user_id):
 #  Read — template + stored values
 # ─────────────────────────────────────────────────────────────────────────────
 @admin_config_bp.route("/config.get", methods=["GET"])
+@require_admin_access(_get_current_user, _is_admin)
 def get_config():
     """
     Return the full admin config template merged with stored values.
 
     The UI uses this to render the admin configuration page dynamically.
+    Requires admin access since the config may contain sensitive values
+    (including the admin usernames list itself).
     """
     try:
         svc = current_app.container.admin_config_service

@@ -89,7 +89,7 @@ export function ViewProvider({ children }: { children: React.ReactNode }) {
         roverGroupIds = undefined;
       }
 
-      const fetched = await listUserTeams(user.username, roverGroupIds);
+      const fetched = await listUserTeams(roverGroupIds);
       const mapped = fetched.map(toTeamInfo);
       setTeams(mapped);
       teamsListSucceededRef.current = true;

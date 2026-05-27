@@ -178,10 +178,11 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
 
 
 @sessions_bp.route("/session.cancel", methods=["POST"])
+@with_require_team_session
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def cancel_session(session_id):
+def cancel_session(identity, session_id):
     try:
         svc = current_app.container.session_service
         cancelled = svc.cancel(session_id=session_id)
@@ -196,10 +197,11 @@ def cancel_session(session_id):
 
 
 @sessions_bp.route("/session.state.get", methods=["GET"])
+@with_require_team_session
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def get_session_state(session_id):
+def get_session_state(identity, session_id):
     try:
         svc = current_app.container.session_service
         state = svc.get_state(run_id=session_id)
@@ -209,10 +211,11 @@ def get_session_state(session_id):
 
 
 @sessions_bp.route("/session.chat.get", methods=["GET"])
+@with_require_team_session
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def get_session_chat(session_id):
+def get_session_chat(identity, session_id):
     try:
         svc = current_app.container.session_service
         chat = svc.get_chat(run_id=session_id)
@@ -222,10 +225,11 @@ def get_session_chat(session_id):
 
 
 @sessions_bp.route("/session.status.get", methods=["GET"])
+@with_require_team_session
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def get_session_status(session_id):
+def get_session_status(identity, session_id):
     try:
         svc = current_app.container.session_service
         status = svc.get_status(run_id=session_id)
@@ -255,10 +259,11 @@ def get_user_blueprints(identity):
 
 
 @sessions_bp.route("/session.delete", methods=["DELETE"])
+@with_require_team_session
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def delete_session(session_id):
+def delete_session(identity, session_id):
     """
     Delete a session by session_id.
     Returns success: true if deleted, false if not found.
@@ -275,10 +280,11 @@ def delete_session(session_id):
 # ---------- Stream monitoring ----------
 
 @sessions_bp.route("/session.stream.status", methods=["GET"])
+@with_require_team_session
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def get_stream_status(session_id):
+def get_stream_status(identity, session_id):
     """Return metadata about a session's event stream."""
     monitor = current_app.container.channel_factory.create_monitor()
     if monitor is None or not monitor.is_available():
@@ -293,7 +299,8 @@ def get_stream_status(session_id):
 
 
 @sessions_bp.route("/session.stream.active", methods=["GET"])
-def list_active_streams():
+@with_require_team_session
+def list_active_streams(identity):
     """List all currently active (running) session streams."""
     monitor = current_app.container.channel_factory.create_monitor()
     if monitor is None or not monitor.is_available():
@@ -306,10 +313,11 @@ def list_active_streams():
 
 
 @sessions_bp.route("/session.subscribe", methods=["GET"])
+@with_require_team_session
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def subscribe_session(session_id):
+def subscribe_session(identity, session_id):
     """
     Stream session events as NDJSON.
     Late-joining clients receive the full event history (replay)

@@ -10,11 +10,12 @@ Routes:
 
 import logging
 
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, g, jsonify, request, current_app
 from global_utils.helpers.apiargs import from_body, from_query
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.core.auth.credentials.models import ClientConfig
 from webargs import fields
+from inbound.flask.identity import with_require_team_session
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +46,14 @@ def exchange_code(code, state):
 
 
 @credentials_bp.route("/status", methods=["GET"])
+@with_require_team_session
 @from_query({
-    "user_id": fields.Str(data_key="userId", required=True),
     "server_identifier": fields.Str(data_key="serverIdentifier", required=True),
 })
-def token_status(user_id, server_identifier):
-    """Check whether a user has a valid credential for an auth server."""
+def token_status(identity, server_identifier):
+    """Check whether the authenticated user has a valid credential for an auth server."""
     try:
+        user_id = g.identity_username
         store = current_app.container.credential_store
         cred = store.find_by_server(user_id=user_id, server_identifier=server_identifier)
         if cred and cred.is_valid():
@@ -70,6 +72,7 @@ def token_status(user_id, server_identifier):
 
 
 @credentials_bp.route("/client-config.save", methods=["POST"])
+@with_require_team_session
 @from_body({
     "client_id": fields.Str(data_key="clientId", required=True),
     "client_secret": fields.Str(data_key="clientSecret", required=False, load_default=None),
@@ -81,7 +84,7 @@ def token_status(user_id, server_identifier):
     "protocol_type": fields.Str(data_key="protocolType", required=False, load_default="oauth2"),
 })
 def save_client_config(
-    client_id, client_secret, server_identifier,
+    identity, client_id, client_secret, server_identifier,
     authorization_endpoint, token_endpoint, scopes,
     extra_authorize_params, protocol_type,
 ):
@@ -111,10 +114,11 @@ def save_client_config(
 
 
 @credentials_bp.route("/client-config.get", methods=["GET"])
+@with_require_team_session
 @from_query({
     "server_identifier": fields.Str(data_key="serverIdentifier", required=True),
 })
-def get_client_config(server_identifier):
+def get_client_config(identity, server_identifier):
     """Get OAuth client config for an auth server (secret is masked)."""
     try:
         store = current_app.container.server_config_store

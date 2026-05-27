@@ -49,22 +49,19 @@ export interface TeamsListResponse {
 
 export async function createTeam(
   name: string,
-  createdBy: string,
   members: TeamMember[]
 ): Promise<Team> {
   const { data } = await identityApi.post<Team>('/teams/team.create', {
     name,
-    createdBy,
     members,
   });
   return data;
 }
 
 export async function listUserTeams(
-  userId: string,
   groupIds?: string[],
 ): Promise<Team[]> {
-  const params: Record<string, string> = { userId };
+  const params: Record<string, string> = {};
   if (groupIds !== undefined) {
     params.groupIds = groupIds.join(',');
   }
@@ -104,9 +101,9 @@ export async function updateTeam(
  * data is invisible (no team to access it through) and can be swept by a
  * background job.
  */
-export async function deleteTeam(teamId: string, requestedBy: string): Promise<void> {
+export async function deleteTeam(teamId: string): Promise<void> {
   await identityApi.delete('/teams/team.delete', {
-    params: { teamId, requestedBy },
+    params: { teamId },
   });
 
   try {

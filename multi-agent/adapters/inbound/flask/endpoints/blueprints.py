@@ -190,11 +190,12 @@ def save_blueprint(identity, blueprint_raw=None, metadata=None):
 
 
 @blueprints_bp.route("/blueprint.update", methods=["PUT"])
+@with_require_team_session
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
     "blueprint_raw": fields.Str(data_key="blueprintRaw", required=True),
 })
-def update_blueprint(blueprint_id, blueprint_raw):
+def update_blueprint(identity, blueprint_id, blueprint_raw):
     """Update an existing blueprint in-place, keeping the same ID."""
     try:
         parsed = _extract_blueprint_data(
@@ -223,10 +224,11 @@ def update_blueprint(blueprint_id, blueprint_raw):
 
 
 @blueprints_bp.route("/blueprint.info.get", methods=["GET"])
+@with_require_team_session
 @from_query({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True)
 })
-def get_blueprint_info(blueprint_id):
+def get_blueprint_info(identity, blueprint_id):
     """
     Get blueprint information.
     """
@@ -257,14 +259,14 @@ def blueprint_draft_schema_get():
 
 
 @blueprints_bp.route("/remove.blueprint", methods=["DELETE"])
+@with_require_team_session
 @from_query({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True)
 })
-def remove_blueprint(blueprint_id):
+def remove_blueprint(identity, blueprint_id):
     """
     Delete a blueprint by its ID.
     """
-    # TODO: Add authorization check - verify user has permission to delete this blueprint
     try:
         svc = current_app.container.blueprint_service
         
@@ -297,11 +299,12 @@ def remove_blueprint(blueprint_id):
 
 
 @blueprints_bp.route("/blueprint.metadata.set", methods=["PUT"])
+@with_require_team_session
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
     "metadata": fields.Dict(required=True),
 })
-def set_metadata(blueprint_id, metadata):
+def set_metadata(identity, blueprint_id, metadata):
     """
     Set the metadata dictionary for a blueprint.
     """

@@ -3,8 +3,10 @@ Inbound identity adapter — Flask middleware for session validation and authori
 
 This module is the MAS entry point for all identity concerns at the HTTP layer:
 
-- ``with_require_team_session``: validates the Redis-backed server session via
-  ``X-Session-Id`` and resolves a user-or-team Identity.
+- ``with_require_team_session``: validates the Redis-backed server session and
+  resolves a user-or-team Identity.  Session ID is read from the
+  ``unifai_session_id`` HttpOnly cookie (browser) with a fallback to the
+  ``X-Session-Id`` header (CLI / scripts).
 - ``require_admin_access``: gates endpoints to configured admin users.
 - ``build_team_session_decorator``: one-time startup wiring that connects the
   generic ``global_utils`` session decorator to MAS's container (Redis store,
@@ -19,6 +21,7 @@ from functools import wraps
 
 from flask import Flask, current_app, g, jsonify, request
 
+from global_utils.redis.constants import SESSION_COOKIE_NAME
 from mas.core.identity import Identity as DomainIdentity
 from mas.core.identity.ports import IdentityProvider
 
@@ -100,9 +103,16 @@ def build_team_session_decorator(app: Flask, container: object) -> bool:
 
     from global_utils.flask.decorators import require_team_session
 
+    def _get_session_id() -> str:
+        """Cookie first (browser), then X-Session-Id header (CLI/scripts)."""
+        return (
+            request.cookies.get(SESSION_COOKIE_NAME, "").strip()
+            or request.headers.get("X-Session-Id", "").strip()
+        )
+
     decorator = require_team_session(
         get_redis_store=lambda: redis_store,
-        get_session_id=lambda: request.headers.get("X-Session-Id", "").strip(),
+        get_session_id=_get_session_id,
         check_team_membership=(
             provider.is_member if provider.requires_authentication else None
         ),
@@ -118,7 +128,8 @@ def build_team_session_decorator(app: Flask, container: object) -> bool:
 def with_require_team_session(f):
     """Validate caller via Redis session + resolve Identity.
 
-    Reads the ``X-Session-Id`` header and validates the server session in
+    Reads the session ID from the ``unifai_session_id`` cookie (browser)
+    or the ``X-Session-Id`` header (CLI/scripts) and validates it in
     Redis.  On success, injects ``identity`` (:class:`Identity`) as a
     keyword argument and sets ``g.identity_username`` to the human
     username from the session.

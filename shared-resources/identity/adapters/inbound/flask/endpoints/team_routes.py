@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, current_app, request
+from utils.auth_manager import require_auth, get_current_user
 
 team_bp = Blueprint("teams", __name__)
 
@@ -9,17 +10,26 @@ def _serialize_team(team):
     return d
 
 
+def _get_authenticated_username():
+    """Return the username of the currently authenticated user, or None."""
+    user = get_current_user()
+    return user.get("username") if user else None
+
+
 @team_bp.route("/team.create", methods=["POST"])
+@require_auth
 def create_team():
     svc = current_app.extensions["team_service"]
     body = request.get_json(silent=True) or {}
 
     name = body.get("name")
-    created_by = body.get("createdBy")
+    created_by = _get_authenticated_username()
     members = body.get("members", [])
 
-    if not name or not created_by:
-        return jsonify({"error": "name and createdBy are required"}), 400
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    if not created_by:
+        return jsonify({"error": "Could not determine authenticated user"}), 401
 
     try:
         team = svc.create(name=name, created_by=created_by, members=members)
@@ -32,13 +42,20 @@ def create_team():
 
 @team_bp.route("/teams.list", methods=["GET"])
 def list_teams():
+    """List teams for a user.
+
+    Accepts ``userId`` as a query parameter for backward compatibility with
+    server-to-server calls (e.g. MAS IdentityClient).  When omitted and a
+    valid cookie session exists, the authenticated user is used instead.
+    """
     svc = current_app.extensions["team_service"]
     user_id = request.args.get("userId", "").strip()
+
+    if not user_id:
+        user_id = _get_authenticated_username() or ""
     if not user_id:
         return jsonify({"error": "userId parameter is required"}), 400
 
-    # ``groupIds`` omitted => unknown / legacy (do not filter by Rover groups).
-    # Present but empty => caller knows the user has no Rover groups (strict).
     if "groupIds" in request.args:
         group_ids_str = request.args.get("groupIds", "").strip()
         group_ids = (
@@ -73,6 +90,7 @@ def get_team():
 
 
 @team_bp.route("/team.update", methods=["PUT"])
+@require_auth
 def update_team():
     svc = current_app.extensions["team_service"]
     body = request.get_json(silent=True) or {}
@@ -97,14 +115,16 @@ def update_team():
 
 
 @team_bp.route("/team.delete", methods=["DELETE"])
+@require_auth
 def delete_team():
     svc = current_app.extensions["team_service"]
     team_id = request.args.get("teamId", "").strip()
-    requested_by = request.args.get("requestedBy", "").strip()
     if not team_id:
         return jsonify({"error": "teamId parameter is required"}), 400
+
+    requested_by = _get_authenticated_username()
     if not requested_by:
-        return jsonify({"error": "requestedBy parameter is required"}), 400
+        return jsonify({"error": "Could not determine authenticated user"}), 401
 
     try:
         team = svc.get(team_id)

@@ -75,7 +75,6 @@ export const AuthSelector: React.FC<AuthSelectorProps> = ({
       const data = await executeAction(
         actionUid,
         { server_identifier: serverIdentifier },
-        userId,
       );
 
       if (data.status === 'authenticated') {

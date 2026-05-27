@@ -14,12 +14,12 @@ import requests as _http
 from typing import Any
 import os, uuid, logging
 import requests as http_requests
-from flask import request, jsonify, session, redirect, current_app
+from flask import request, jsonify, make_response, session, redirect, current_app
 from authlib.integrations.flask_client import OAuth
 from authlib.common.errors import AuthlibBaseError
 from config.app_config import AppConfig
 from urllib.parse import quote
-from global_utils.redis.constants import identity_session_key
+from global_utils.redis.constants import identity_session_key, SESSION_COOKIE_NAME
 
 config = AppConfig.get_instance()
 
@@ -121,6 +121,20 @@ class AuthManager:
             return 0
         remaining = float(session_expires_at) - datetime.now().timestamp()
         return max(0, int(remaining))
+
+    def _session_cookie_kwargs(self, max_age: int | None = None) -> dict:
+        """Build kwargs for ``response.set_cookie(SESSION_COOKIE_NAME, ...)``.
+
+        Uses ``Lax`` SameSite (all requests are same-origin via the proxy).
+        ``Secure`` mirrors the Flask session cookie config so dev/prod both work.
+        """
+        return {
+            "httponly": True,
+            "secure": config.session_cookie_secure,
+            "samesite": "Lax",
+            "path": "/",
+            "max_age": max_age or config.permanent_session_lifetime * 3600,
+        }
 
     def _oauth_callback_redirect_uri(self) -> str:
         """
@@ -282,7 +296,12 @@ class AuthManager:
                 # Frontend will extract the original URL from state and restore it
                 state_param = f"&state={quote(request_state, safe='')}" if request_state else ""
                 final_url = f"{config.frontend_url}/?auth=success{state_param}"
-                return redirect(final_url)
+                resp = make_response(redirect(final_url))
+                resp.set_cookie(
+                    SESSION_COOKIE_NAME, session_id,
+                    **self._session_cookie_kwargs(),
+                )
+                return resp
                 
             except AuthlibBaseError as e:
                 logger.error(f"Authentication error: {str(e)}")
@@ -328,7 +347,9 @@ class AuthManager:
           
             session.clear()
             logger.info(f"User {username} logged out")
-            return jsonify({'message': 'Logged out successfully'})
+            resp = make_response(jsonify({'message': 'Logged out successfully'}))
+            resp.delete_cookie(SESSION_COOKIE_NAME, path="/")
+            return resp
         
         @self.app.route('/api/auth/user')
         def get_current_user():
@@ -359,12 +380,19 @@ class AuthManager:
             user['is_admin'] = self._check_admin_permission(user)
 
             session_data = self._get_server_session() or {}
-            return jsonify({
+            sid = session.get('session_id')
+            resp = make_response(jsonify({
                 'user': user,
                 'authenticated': True,
                 'access_token': session_data.get('access_token'),
-                'session_id': session.get('session_id'),
-            })
+                'session_id': sid,
+            }))
+            if sid:
+                resp.set_cookie(
+                    SESSION_COOKIE_NAME, sid,
+                    **self._session_cookie_kwargs(),
+                )
+            return resp
         
         @self.app.route('/api/auth/user/groups')
         def get_user_groups():

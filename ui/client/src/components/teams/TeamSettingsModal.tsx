@@ -181,13 +181,7 @@ export default function TeamSettingsModal({ open, onOpenChange, team }: TeamSett
       if (isEditing) {
         await updateTeam(team.id, { name: teamName.trim(), members });
       } else {
-        if (!user?.username) {
-          setError("Authentication required");
-          setSaving(false);
-          isSubmittingRef.current = false;
-          return;
-        }
-        await createTeam(teamName.trim(), user.username, members);
+        await createTeam(teamName.trim(), members);
       }
       onOpenChange(false);
       void refreshTeams();
@@ -201,10 +195,10 @@ export default function TeamSettingsModal({ open, onOpenChange, team }: TeamSett
   };
 
   const handleDelete = async () => {
-    if (!team || !user?.username || isDeleting) return;
+    if (!team || isDeleting) return;
     setIsDeleting(true);
     try {
-      await deleteTeam(team.id, user.username);
+      await deleteTeam(team.id);
       setDeleteConfirmOpen(false);
       onOpenChange(false);
       void refreshTeams();

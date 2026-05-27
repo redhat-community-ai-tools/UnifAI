@@ -32,10 +32,11 @@ def save_resource(identity, category=None, type=None, name=None, config=None):
 
 
 @resources_bp.route("/resource.get", methods=["GET"])
+@with_require_team_session
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def get_resource(resource_id):
+def get_resource(identity, resource_id):
     """Get a single resource by ID."""
     svc = current_app.container.resources_service
     try:
@@ -88,12 +89,13 @@ def list_resources(identity, category=None, type=None, limit=1000, offset=0):
 
 
 @resources_bp.route("/resource.update", methods=["PUT"])
+@with_require_team_session
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "config": fields.Dict(required=True),
     "name": fields.Str(required=False),
 })
-def update_resource(resource_id, config, name=None):
+def update_resource(identity, resource_id, config, name=None):
     svc = current_app.container.resources_service
     try:
         doc = svc.update(resource_id, config=config, name=name)
@@ -107,10 +109,11 @@ def update_resource(resource_id, config, name=None):
 
 
 @resources_bp.route("/resource.delete", methods=["DELETE"])
+@with_require_team_session
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def delete_resource(resource_id):
+def delete_resource(identity, resource_id):
     # TODO: Add authorization check - verify user has permission to delete this resource
     svc = current_app.container.resources_service
     try:
@@ -217,10 +220,11 @@ def validate_resources(identity, resource_ids, timeout_seconds, max_workers):
 
 
 @resources_bp.route("/resource.card", methods=["GET"])
+@with_require_team_session
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def get_resource_card(resource_id):
+def get_resource_card(identity, resource_id):
     """
     Get the element card for a saved resource.
 
@@ -240,10 +244,11 @@ def get_resource_card(resource_id):
 
 
 @resources_bp.route("/resources.cards", methods=["POST"])
+@with_require_team_session
 @from_body({
     "resource_ids": fields.List(fields.Str(), data_key="resourceIds", required=True),
 })
-def get_resource_cards(resource_ids):
+def get_resource_cards(identity, resource_ids):
     """
     Get element cards for multiple resources.
 
