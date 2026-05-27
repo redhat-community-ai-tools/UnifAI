@@ -61,13 +61,13 @@ export default function AgenticTemplates() {
   }, [setSelectedTemplate]);
 
   const handleGenerateWorkflow = useCallback(async (data: TemplateFormData) => {
-    if (!selectedTemplate || !user) return;
+    if (!selectedTemplate) return;
     
     // Generate a blueprint name based on template name
     const blueprintName = `${selectedTemplate.name} - ${new Date().toLocaleDateString()}`;
     
-    await materialize(selectedTemplate.template_id, data, user.username, blueprintName);
-  }, [selectedTemplate, materialize, user]);
+    await materialize(selectedTemplate.template_id, data, blueprintName);
+  }, [selectedTemplate, materialize]);
 
   const handleRetryInstantiation = useCallback(() => {
     resetInstantiation();

@@ -4,7 +4,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/contexts/AuthContext";
 import { FaSave, FaUndo } from "react-icons/fa";
 import {
   updateAdminConfigSection,
@@ -24,7 +23,6 @@ export default function AdminConfigSection({
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { user } = useAuth();
 
   const [values, setValues] = useState<Record<string, unknown>>(() =>
     buildInitialValues(section.fields),
@@ -38,7 +36,7 @@ export default function AdminConfigSection({
 
   const mutation = useMutation({
     mutationFn: (vals: Record<string, unknown>) =>
-      updateAdminConfigSection(section.key, vals, user?.username),
+      updateAdminConfigSection(section.key, vals),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin_config"] });
       queryClient.invalidateQueries({ queryKey: ["admin-access"] });

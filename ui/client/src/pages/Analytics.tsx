@@ -43,8 +43,8 @@ export default function Analytics() {
 
   // Fetch system-wide stats data
   const { data: analytics, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ['systemStats', timeRange, user?.username || user?.sub],
-    queryFn: () => fetchSystemWideStats(timeRange, user?.username || user?.sub),
+    queryKey: ['systemStats', timeRange],
+    queryFn: () => fetchSystemWideStats(timeRange),
     staleTime: 60000,
     gcTime: 300000,
     refetchInterval: 30000,

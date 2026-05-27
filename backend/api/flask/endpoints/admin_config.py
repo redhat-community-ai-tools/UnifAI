@@ -9,6 +9,9 @@ Provides REST API for admin configuration:
 from flask import Blueprint, jsonify, current_app, request
 from global_utils.helpers.apiargs import from_body, from_query
 from global_utils.flask.decorators import require_admin_access
+from global_utils.redis import get_identity_username
+from global_utils.redis.client import build_redis_client
+from global_utils.redis.constants import SESSION_COOKIE_NAME
 from webargs import fields
 import logging
 
@@ -18,8 +21,11 @@ admin_config_bp = Blueprint("admin_config", __name__)
 
 
 def _get_current_user(req):
-    """Current user from X-Username/X-User-Id header (set by gateway)."""
-    return req.headers.get("X-Username") or req.headers.get("X-User-Id")
+    """Resolve current user from the unifai_session_id cookie via Redis."""
+    session_id = req.cookies.get(SESSION_COOKIE_NAME, "").strip()
+    if not session_id:
+        return None
+    return get_identity_username(build_redis_client(), session_id)
 
 def _is_admin(user_id):
     return current_app.container.admin_config_service.is_admin(user_id)
@@ -85,20 +91,22 @@ def update_section(section_key, values):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Access check — is the given email an admin?
+#  Access check — is the current user an admin?
 # ─────────────────────────────────────────────────────────────────────────────
 @admin_config_bp.route("/access.check", methods=["GET"])
-@from_query({
-    "username": fields.Str(required=True),
-})
-def access_check(username):
+def access_check():
     """
-    Check whether *username* is in the admin_usernames list.
+    Check whether the authenticated user is in the admin_usernames list.
+
+    Resolves username from session cookie.
 
     Returns:
         is_admin: bool
     """
     try:
+        username = _get_current_user(request)
+        if not username:
+            return jsonify({"is_admin": False}), 200
         svc = current_app.container.admin_config_service
         is_admin = svc.is_admin(username)
         return jsonify({"is_admin": is_admin}), 200

@@ -114,7 +114,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
   // ── Local execution (current user triggers run) ────────────────────────
   const triggerExecution = useCallback(
-    async (sessionPayload: { sessionId: string; inputs: { user_prompt: string }; scope?: "public" | "private"; loggedInUser?: string }) => {
+    async (sessionPayload: { sessionId: string; inputs: { user_prompt: string }; scope?: "public" | "private" }) => {
       try {
         hub.setIsLiveRequest(true);
         setIsSubmitting(true);
@@ -180,28 +180,26 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
   // ── Presence: join / leave / heartbeat ─────────────────────────────────
   const joinSession = useCallback(async (sessionId: string) => {
-    const username = user?.username || "default";
     try {
-      await joinSessionApi(sessionId, username, user?.name || username);
+      await joinSessionApi(sessionId);
       joinedSessionRef.current = sessionId;
     } catch { /* degrade gracefully */ }
-  }, [user]);
+  }, []);
 
   const leaveSession = useCallback(async (sessionId: string) => {
-    const username = user?.username || "default";
     try {
-      await leaveSessionApi(sessionId, username);
+      await leaveSessionApi(sessionId);
     } catch { /* best-effort */ }
     if (joinedSessionRef.current === sessionId) joinedSessionRef.current = null;
-  }, [user]);
+  }, []);
 
   const sendHeartbeat = useCallback(async () => {
     const sid = joinedSessionRef.current;
     if (!sid) return;
     try {
-      await sendHeartbeatApi(sid, user?.username || "default");
+      await sendHeartbeatApi(sid);
     } catch { /* best-effort */ }
-  }, [user]);
+  }, []);
 
   // ── Participant tracking ───────────────────────────────────────────────
   const fetchParticipants = useCallback(async (sessionId: string) => {

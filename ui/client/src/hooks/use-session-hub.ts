@@ -511,7 +511,6 @@ export function useSessionHub({
     sessionId: string;
     inputs: { user_prompt: string };
     scope?: "public" | "private";
-    loggedInUser?: string;
   };
 
   const triggerExecution = useCallback(

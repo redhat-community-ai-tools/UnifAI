@@ -10,6 +10,7 @@ from bootstrap.app_container import (
     retrieval_service,
 )
 from global_utils.helpers.apiargs import from_query, from_body
+from infrastructure.http.session import with_session_user, with_session_user_or_internal
 from infrastructure.sources.document.config import DocConfigManager
 from shared.logger import logger
 
@@ -39,14 +40,16 @@ def upload_docs(files):
 
 
 @docs_bp.route("/validate", methods=["POST"])
+@with_session_user
 @from_body({
     "files": fields.List(fields.Dict(), required=True),
-    "username": fields.Str(required=True),
     "check_duplicates": fields.Bool(required=False, load_default=True)
 })
-def validate_files(files, username, check_duplicates):
+def validate_files(username, files, check_duplicates):
     """
     Validate files before upload.
+    
+    Username is resolved from the session cookie.
     
     This endpoint performs pre-upload validation including:
     - File extension validation (must be in supported list)
@@ -56,7 +59,6 @@ def validate_files(files, username, check_duplicates):
     Request body:
         files: List of file metadata objects with 'name' and 'size' keys
                Example: [{"name": "document.pdf", "size": 1024000}]
-        username: Username of the person uploading files
         check_duplicates: Whether to check for duplicate filenames (default: true)
     
     Response:
@@ -163,15 +165,15 @@ def get_available_tags(cursor="", limit=50, search_regex=None):
 
 
 @docs_bp.route("/query.match", methods=["GET"])
+@with_session_user_or_internal
 @from_query({
     "query": fields.Str(required=True),
     "top_k_results": fields.Int(required=False, load_default=15),
     "scope": fields.Str(required=False, load_default="public"),
-    "logged_in_user": fields.Str(required=False, load_default="default", data_key="loggedInUser"),
     "doc_ids": fields.List(fields.Str(), required=False, load_default=None, data_key="docIds"),
     "tags": fields.List(fields.Str(), required=False, load_default=None),
 })
-def query_match(query, top_k_results, scope, logged_in_user, doc_ids, tags):
+def query_match(username, query, top_k_results, scope, doc_ids, tags):
     """
     Search documents using semantic similarity.
     Optionally filter by document IDs or tags.
@@ -180,7 +182,6 @@ def query_match(query, top_k_results, scope, logged_in_user, doc_ids, tags):
         query: Search query text
         top_k_results: Number of results to return (default: 5)
         scope: "public" or "private" - filters by upload_by if private
-        logged_in_user: Username for private scope filtering
         doc_ids: Optional list of document IDs to filter by
         tags: Optional list of tags to filter by
     """
@@ -190,7 +191,7 @@ def query_match(query, top_k_results, scope, logged_in_user, doc_ids, tags):
             query=query,
             limit=top_k_results,
             scope=scope,
-            user=logged_in_user,
+            user=username,
             doc_ids=doc_ids,
             tags=tags,
         )

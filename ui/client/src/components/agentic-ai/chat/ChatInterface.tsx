@@ -167,25 +167,23 @@ export default function ChatInterface({
   const lastTypingSentRef = useRef(0);
   const sendTypingSignal = useCallback(() => {
     if (!collaborationMode || !runId) return;
-    const username = authUser?.username || "default";
     const now = Date.now();
     if (now - lastTypingSentRef.current >= TYPING_DEBOUNCE_MS) {
       lastTypingSentRef.current = now;
-      sendTypingSignalApi(runId, username, true).catch(() => {});
+      sendTypingSignalApi(runId, true).catch(() => {});
     }
     // Reset the auto-clear timer on every keystroke
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(() => {
-      sendTypingSignalApi(runId, username, false).catch(() => {});
+      sendTypingSignalApi(runId, false).catch(() => {});
     }, 4000);
-  }, [collaborationMode, runId, authUser?.username]);
+  }, [collaborationMode, runId]);
 
   const clearTypingSignal = useCallback(() => {
     if (!collaborationMode || !runId) return;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
-    const username = authUser?.username || "default";
-    sendTypingSignalApi(runId, username, false).catch(() => {});
-  }, [collaborationMode, runId, authUser?.username]);
+    sendTypingSignalApi(runId, false).catch(() => {});
+  }, [collaborationMode, runId]);
 
   const memberCache = useRef<Map<string, MemberDisplay>>(new Map());
   const resolveMember = useCallback((senderName: string): MemberDisplay => {
@@ -919,7 +917,6 @@ export default function ChatInterface({
         sessionId: runId || "",
         inputs: { user_prompt: messageContent },
         scope: "public",
-        loggedInUser: authUser?.username || "default",
       };
 
       const response = await triggerExecution(sessionPayload);

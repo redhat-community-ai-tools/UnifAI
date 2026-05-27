@@ -2,30 +2,24 @@ import axios from "@/http/axiosAgentConfig";
 
 export const joinSession = async (
   sessionId: string,
-  userId: string,
-  displayName: string,
   role = "collaborator",
 ) => {
   return axios.post("/collaboration/session.join", {
     sessionId,
-    userId,
-    displayName,
     role,
   });
 };
 
 export const leaveSession = async (
   sessionId: string,
-  userId: string,
 ) => {
-  return axios.post("/collaboration/session.leave", { sessionId, userId });
+  return axios.post("/collaboration/session.leave", { sessionId });
 };
 
 export const sendHeartbeat = async (
   sessionId: string,
-  userId: string,
 ) => {
-  return axios.post("/collaboration/session.heartbeat", { sessionId, userId });
+  return axios.post("/collaboration/session.heartbeat", { sessionId });
 };
 
 export const fetchParticipants = async (sessionId: string) => {
@@ -44,12 +38,10 @@ export const fetchTypingUsers = async (sessionId: string) => {
 
 export const sendTypingSignal = async (
   sessionId: string,
-  userId: string,
   isTyping: boolean,
 ) => {
   return axios.post("/collaboration/session.typing", {
     sessionId,
-    userId,
     isTyping,
   });
 };

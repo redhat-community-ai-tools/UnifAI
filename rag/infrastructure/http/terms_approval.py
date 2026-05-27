@@ -1,25 +1,19 @@
 """Terms approval endpoints - driving adapter."""
 from flask import Blueprint, jsonify
-from webargs import fields
 
 from bootstrap.app_container import terms_approval_service
-from global_utils.helpers.apiargs import from_query, from_body
+from infrastructure.http.session import with_session_user
 from shared.logger import logger
 
 terms_approval_bp = Blueprint("terms_approval", __name__)
 
 
 @terms_approval_bp.route("/user.approval.status.get", methods=["GET"])
-@from_query({"username": fields.Str(required=True)})
+@with_session_user
 def check_user_approval(username):
     """
-    Check if a user has approved the AI transparency notice.
-    
-    Args:
-        username: Username of the current user
-        
-    Returns:
-        JSON response indicating if user is approved
+    Check if the current user has approved the AI transparency notice.
+    Username resolved from session cookie.
     """
     try:
         result = terms_approval_service().check_approval_status(username)
@@ -30,16 +24,11 @@ def check_user_approval(username):
 
 
 @terms_approval_bp.route("/user.approval.record.post", methods=["POST"])
-@from_body({"username": fields.Str(required=True)})
+@with_session_user
 def approve_user(username):
     """
-    Record a user's approval of the AI transparency notice.
-    
-    Args:
-        username: Username of the user who approved
-        
-    Returns:
-        JSON response indicating success
+    Record the current user's approval of the AI transparency notice.
+    Username resolved from session cookie.
     """
     try:
         result = terms_approval_service().record_approval(username)

@@ -34,7 +34,7 @@ interface UseTemplatesReturn {
   instantiationResult: MaterializeResponse | null;
   fetchTemplates: (category?: string, tags?: string) => Promise<TemplateListItem[] | null>;
   fetchTemplateDetail: (templateId: string) => Promise<{ detail: TemplateDetail; schema: TemplateInputSchema } | null>;
-  materialize: (templateId: string, formData: TemplateFormData, userId: string, blueprintName?: string) => Promise<MaterializeResponse | null>;
+  materialize: (templateId: string, formData: TemplateFormData, blueprintName?: string) => Promise<MaterializeResponse | null>;
   resetInstantiation: () => void;
   getCategories: () => TemplateCategory[];
   setSelectedTemplate: (template: TemplateListItem | null) => void;
@@ -299,7 +299,6 @@ export const useTemplates = (): UseTemplatesReturn => {
   const materialize = useCallback(async (
     templateId: string,
     formData: TemplateFormData,
-    userId: string,
     blueprintName?: string
   ): Promise<MaterializeResponse | null> => {
     try {
@@ -337,7 +336,6 @@ export const useTemplates = (): UseTemplatesReturn => {
 
       const result = await materializeTemplate({
         templateId,
-        userId,
         input,
         blueprintName
       });

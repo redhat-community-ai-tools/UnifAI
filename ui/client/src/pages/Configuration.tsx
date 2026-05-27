@@ -8,7 +8,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
 import { useAdminAccess } from "@/hooks/use-admin-access";
-import { useAuth } from "@/contexts/AuthContext";
 import { AccessDenied } from "@/components/shared/AccessDenied";
 import {
   getAdminConfig,
@@ -81,15 +80,14 @@ function PageShell({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function AdminConfigTabs() {
-  const { user } = useAuth();
   const {
     data: config,
     isLoading,
     isError,
     error,
   } = useQuery<AdminConfigResponse>({
-    queryKey: ["admin_config", user?.username],
-    queryFn: () => getAdminConfig(user?.username),
+    queryKey: ["admin_config"],
+    queryFn: () => getAdminConfig(),
     staleTime: 30 * 1000,
     refetchOnMount: true,
   });

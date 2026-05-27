@@ -24,6 +24,13 @@ from global_utils.utils.util import get_mongo_url
 # ══════════════════════════════════════════════════════════════════════════════
 
 @lru_cache(maxsize=1)
+def redis_client():
+    """Shared Redis client for session lookups."""
+    from global_utils.redis.client import build_redis_client
+    return build_redis_client()
+
+
+@lru_cache(maxsize=1)
 def mongo_client() -> MongoClient:
     """Shared MongoDB client (connection pool)."""
     return MongoClient(get_mongo_url())
@@ -585,6 +592,7 @@ def clear_all_caches():
         clear_all_caches()  # Fresh instances will be created on next access
     """
     # Infrastructure
+    redis_client.cache_clear()
     mongo_client.cache_clear()
     pipeline_monitoring_db.cache_clear()
     data_sources_db.cache_clear()

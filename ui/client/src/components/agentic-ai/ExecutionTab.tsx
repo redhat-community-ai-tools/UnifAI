@@ -21,7 +21,6 @@ export type SessionPayload = {
   sessionId: string;
   inputs: { user_prompt: string };
   scope?: 'public' | 'private';
-  loggedInUser?: string;
 };
 
 type ExecutionTabProps = {

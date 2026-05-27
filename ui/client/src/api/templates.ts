@@ -72,7 +72,6 @@ export async function validateTemplateInput(params: ValidateInputParams): Promis
 
 export interface MaterializeParams {
   templateId: string;
-  userId: string;
   input: Record<string, Record<string, Record<string, any>>>;
   blueprintName?: string;
   skipValidation?: boolean;

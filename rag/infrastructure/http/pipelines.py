@@ -4,19 +4,20 @@ from webargs import fields
 
 from bootstrap.app_container import pipeline_dispatch_service
 from global_utils.helpers.apiargs import from_body
+from infrastructure.http.session import with_session_user
 from shared.logger import logger
 
 pipelines_bp = Blueprint("pipelines", __name__)
 
 
 @pipelines_bp.route("/embed", methods=["PUT"])
+@with_session_user
 @from_body({
     "data": fields.List(fields.Dict(), required=True),
     "source_type": fields.Str(required=True),
-    "logged_in_user": fields.Str(required=True),
     "skip_validation": fields.Bool(required=False, load_default=False),
 })
-def start_pipeline(data, source_type, logged_in_user, skip_validation):
+def start_pipeline(username, data, source_type, skip_validation):
     """
     Register sources and dispatch pipeline tasks.
     
@@ -28,7 +29,7 @@ def start_pipeline(data, source_type, logged_in_user, skip_validation):
         result = pipeline_dispatch_service().start_pipeline(
             data=data,
             source_type=source_type,
-            upload_by=logged_in_user,
+            upload_by=username,
             skip_validation=skip_validation,
         )
         

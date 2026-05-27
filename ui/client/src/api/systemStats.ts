@@ -21,11 +21,8 @@ import type { SystemStatsResponse, TimeRange } from '@/types/systemStats';
  * 
  * Requires admin access.
  */
-export async function fetchSystemWideStats(timeRange: TimeRange = 'all', userId?: string): Promise<SystemStatsResponse> {
+export async function fetchSystemWideStats(timeRange: TimeRange = 'all'): Promise<SystemStatsResponse> {
   const params: Record<string, string> = { time_range: timeRange };
-  if (userId) {
-    params.userId = userId;
-  }
   const response = await axios.get<SystemStatsResponse>('/statistics/stats.system.get', { params });
   return response.data;
 }

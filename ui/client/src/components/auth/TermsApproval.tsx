@@ -20,15 +20,15 @@ const TermsApproval: React.FC<TermsApprovalProps> = ({ children }) => {
   // Check approval status when user is authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
-      checkUserApprovalStatus(user.username);
+      checkUserApprovalStatus();
     }
   }, [isAuthenticated, user]);
 
-  const checkUserApprovalStatus = async (username: string) => {
-    if (!username) return;
+  const checkUserApprovalStatus = async () => {
+    if (!user?.username) return;
     
     // Check sessionStorage first - if user accepted in this session, don't show modal
-    const sessionKey = `ai_transparency_accepted_${username}`;
+    const sessionKey = `ai_transparency_accepted_${user.username}`;
     const sessionAccepted = sessionStorage.getItem(sessionKey);
     if (sessionAccepted === 'true') {
       // User already accepted in this session, don't show modal
@@ -37,7 +37,7 @@ const TermsApproval: React.FC<TermsApprovalProps> = ({ children }) => {
     
     setIsCheckingApproval(true);
     try {
-      const approvalStatus = await checkUserApproval(username);
+      const approvalStatus = await checkUserApproval();
       
       if (!approvalStatus.approved) {
         setShowModal(true);
@@ -65,7 +65,7 @@ const TermsApproval: React.FC<TermsApprovalProps> = ({ children }) => {
         
         // Verify the approval was saved to database
         try {
-          const approvalStatus = await checkUserApproval(user.username);
+          const approvalStatus = await checkUserApproval();
           if (!approvalStatus.approved) {
             console.warn("User approval was not saved properly");
           }
