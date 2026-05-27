@@ -136,21 +136,21 @@ def require_team_session(
         instead of relying on the client to send ``displayName``.
 
     Identity resolution:
-      - **New contract:** if ``teamId`` is present in the request (query or
-        body), the workspace is treated as a team; otherwise personal.  The
-        authenticated user is always resolved from the session — no need for
-        the client to send ``userId``.
-      - **Legacy contract (backward-compat):** ``userId`` + ``identityType``
-        still works for callers that haven't migrated (e.g. CLI).
+      - If ``teamId`` is present in the request (query, body, or kwargs),
+        the identity is resolved as a team.
+      - Otherwise, the identity is the authenticated user from the Redis
+        session (no client-supplied ``userId`` needed).
 
     On success, sets on ``flask.g``:
       - ``g.identity_session``  → :class:`UserSessionData`
-      - ``g.identity_username`` → ``str``
+      - ``g.identity_username`` → ``str`` (the human username from Redis)
       - ``g.identity``          → :class:`Identity`
 
-    The decorated function receives two extra keyword arguments:
-      - ``identity``           → the resolved :class:`Identity`
-      - ``authenticated_user`` → the human username from the Redis session
+    The decorated function receives one extra keyword argument:
+      - ``identity`` → the resolved :class:`Identity`
+
+    Endpoints that need the raw human username (e.g. collaboration locks,
+    presence, admin gates) should read ``g.identity_username``.
     """
     def decorator(f: Callable) -> Callable:
         @wraps(f)
@@ -172,10 +172,9 @@ def require_team_session(
                 setattr(g, G_IDENTITY_SESSION, data)
                 setattr(g, G_IDENTITY_USERNAME, username)
 
-                # ── 2. Parse identity params ──────────────────────────
+                # ── 2. Resolve identity (session user + optional team) ─
                 body = request.get_json(silent=True) or {}
 
-                # New contract: teamId signals team workspace
                 team_id = str(
                     request.args.get("teamId")
                     or body.get("teamId")
@@ -185,7 +184,6 @@ def require_team_session(
                 ).strip()
 
                 if team_id:
-                    # ── New path: teamId present → team workspace ─────
                     if check_team_membership is not None and not check_team_membership(username, team_id):
                         return (
                             jsonify({
@@ -198,62 +196,12 @@ def require_team_session(
                     if resolve_display_name is not None:
                         display_name = resolve_display_name(username, team_id)
                     identity = resolve_identity(team_id, "team", display_name)
-
                 else:
-                    # ── Legacy compat: userId/identityType ────────────
-                    user_id = str(
-                        request.args.get("userId")
-                        or body.get("userId")
-                        or kwargs.get("userId")
-                        or kwargs.get("user_id")
-                        or ""
-                    ).strip()
-                    identity_type = str(
-                        request.args.get("identityType")
-                        or body.get("identityType")
-                        or kwargs.get("identityType")
-                        or kwargs.get("identity_type")
-                        or "user"
-                    ).strip().lower() or "user"
-                    display_name = str(
-                        request.args.get("displayName")
-                        or body.get("displayName")
-                        or kwargs.get("displayName")
-                        or kwargs.get("display_name")
-                        or ""
-                    )
-
-                    if not user_id:
-                        user_id = username
-                        identity_type = "user"
-
-                    # ── Authorize ─────────────────────────────────────
-                    if identity_type == "team":
-                        if check_team_membership is not None and not check_team_membership(username, user_id):
-                            return (
-                                jsonify({
-                                    "error": "Access denied: you are not a member of this team",
-                                    "error_type": "TEAM_ACCESS_DENIED",
-                                }),
-                                403,
-                            )
-                        if not display_name and resolve_display_name is not None:
-                            display_name = resolve_display_name(username, user_id)
-                    elif user_id.casefold() != username.casefold():
-                        return (
-                            jsonify({
-                                "error": "Access denied: userId does not match authenticated user",
-                                "error_type": "USER_ACCESS_DENIED",
-                            }),
-                            403,
-                        )
-
-                    identity = resolve_identity(user_id, identity_type, display_name)
+                    identity = resolve_identity(username, "user")
 
                 # ── 3. Set context ────────────────────────────────────
                 setattr(g, G_IDENTITY, identity)
                 kwargs["identity"] = identity
-                kwargs["authenticated_user"] = username
 
                 return f(*args, **kwargs)
             except ValueError as e:

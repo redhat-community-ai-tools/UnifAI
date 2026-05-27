@@ -3,7 +3,7 @@ Flask collaboration endpoints — session presence, join/leave, and typing.
 """
 import logging
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, g, jsonify
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 
@@ -31,14 +31,14 @@ def _collab_service():
     "session_id": fields.Str(data_key="sessionId", required=True),
     "role": fields.Str(data_key="role", load_default="collaborator"),
 })
-def join_session(identity, authenticated_user, session_id, role):
+def join_session(identity, session_id, role):
     svc, err = _collab_service()
     if err:
         return err
     try:
         participants = svc.join_session(
             session_id=session_id,
-            user_id=authenticated_user,
+            user_id=g.identity_username,
             role=role,
         )
         return jsonify(participants.model_dump(mode="json")), 200
@@ -56,12 +56,12 @@ def join_session(identity, authenticated_user, session_id, role):
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def leave_session(identity, authenticated_user, session_id):
+def leave_session(identity, session_id):
     svc, err = _collab_service()
     if err:
         return err
     try:
-        svc.leave_session(session_id=session_id, user_id=authenticated_user)
+        svc.leave_session(session_id=session_id, user_id=g.identity_username)
         return jsonify({"success": True}), 200
     except Exception:
         logger.exception("leave_session failed")
@@ -73,12 +73,12 @@ def leave_session(identity, authenticated_user, session_id):
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def heartbeat(identity, authenticated_user, session_id):
+def heartbeat(identity, session_id):
     svc, err = _collab_service()
     if err:
         return err
     try:
-        svc.heartbeat(session_id=session_id, user_id=authenticated_user)
+        svc.heartbeat(session_id=session_id, user_id=g.identity_username)
         return jsonify({"success": True}), 200
     except Exception:
         logger.exception("heartbeat failed")
@@ -92,12 +92,12 @@ def heartbeat(identity, authenticated_user, session_id):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def get_participants(identity, authenticated_user, session_id):
+def get_participants(identity, session_id):
     svc, err = _collab_service()
     if err:
         return err
     try:
-        participants = svc.get_participants(session_id, user_id=authenticated_user)
+        participants = svc.get_participants(session_id, user_id=g.identity_username)
         return jsonify(participants.model_dump(mode="json")), 200
     except KeyError:
         return jsonify({"error": f"Session {session_id} not found"}), 404
@@ -113,12 +113,12 @@ def get_participants(identity, authenticated_user, session_id):
 @from_query({
     "team_id": fields.Str(data_key="teamId", required=True),
 })
-def get_team_sessions(identity, authenticated_user, team_id):
+def get_team_sessions(identity, team_id):
     svc, err = _collab_service()
     if err:
         return err
     try:
-        index = svc.get_team_sessions(team_id, user_id=authenticated_user)
+        index = svc.get_team_sessions(team_id, user_id=g.identity_username)
         return jsonify(index.model_dump(mode="json")), 200
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
@@ -129,13 +129,14 @@ def get_team_sessions(identity, authenticated_user, team_id):
 
 @collaboration_bp.route("/user.active_sessions", methods=["GET"])
 @with_require_team_session
-def get_user_active_sessions(identity, authenticated_user):
+def get_user_active_sessions(identity):
     svc, err = _collab_service()
     if err:
         return err
+    username = g.identity_username
     try:
-        session_ids = svc.get_user_active_sessions(authenticated_user)
-        return jsonify({"userId": authenticated_user, "activeSessions": session_ids}), 200
+        session_ids = svc.get_user_active_sessions(username)
+        return jsonify({"userId": username, "activeSessions": session_ids}), 200
     except Exception:
         logger.exception("get_user_active_sessions failed")
         return jsonify({"error": "Internal server error"}), 500
@@ -149,15 +150,16 @@ def get_user_active_sessions(identity, authenticated_user):
     "session_id": fields.Str(data_key="sessionId", required=True),
     "is_typing": fields.Bool(data_key="isTyping", load_default=True),
 })
-def set_typing(identity, authenticated_user, session_id, is_typing):
+def set_typing(identity, session_id, is_typing):
     svc, err = _collab_service()
     if err:
         return err
+    username = g.identity_username
     try:
         if is_typing:
-            svc.set_typing(session_id=session_id, user_id=authenticated_user)
+            svc.set_typing(session_id=session_id, user_id=username)
         else:
-            svc.clear_typing(session_id=session_id, user_id=authenticated_user)
+            svc.clear_typing(session_id=session_id, user_id=username)
         return jsonify({"success": True}), 200
     except Exception:
         logger.exception("set_typing failed")
@@ -169,12 +171,12 @@ def set_typing(identity, authenticated_user, session_id, is_typing):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def get_typing(identity, authenticated_user, session_id):
+def get_typing(identity, session_id):
     svc, err = _collab_service()
     if err:
         return err
     try:
-        users = svc.get_typing_users(session_id, user_id=authenticated_user)
+        users = svc.get_typing_users(session_id, user_id=g.identity_username)
         return jsonify({"sessionId": session_id, "typingUsers": users}), 200
     except KeyError:
         return jsonify({"error": f"Session {session_id} not found"}), 404

@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, current_app, Response, request
+from flask import Blueprint, g, jsonify, current_app, Response, request
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import json
@@ -66,7 +66,7 @@ def _check_session_busy(session_id: str, session_type: str, svc):
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
     "metadata": fields.Dict(data_key="metadata", required=False, load_default=lambda: {}, dump_default=lambda: {})
 })
-def create_user_session(identity, authenticated_user, blueprint_id, metadata):
+def create_user_session(identity, blueprint_id, metadata):
     try:
         session_svc = current_app.container.session_service
         run_id = session_svc.create(identity=identity,
@@ -93,7 +93,7 @@ def create_user_session(identity, authenticated_user, blueprint_id, metadata):
     "scope": fields.Str(data_key="scope", load_default="public"),
     "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
 })
-def execute_user_session(identity, authenticated_user, session_id, inputs, stream_mode, stream, scope, session_type):
+def execute_user_session(identity, session_id, inputs, stream_mode, stream, scope, session_type):
     """
     Execute (or stream) an existing session.
     - If `stream` is False (default), returns the full result as JSON.
@@ -145,7 +145,7 @@ def execute_user_session(identity, authenticated_user, session_id, inputs, strea
     "scope": fields.Str(data_key="scope", load_default="public"),
     "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
 })
-def submit_user_session(identity, authenticated_user, session_id, inputs, scope, session_type):
+def submit_user_session(identity, session_id, inputs, scope, session_type):
     """
     Fire-and-forget execute for Temporal-backed sessions.
     Starts the Temporal workflow in the background and returns HTTP 202
@@ -236,7 +236,7 @@ def get_session_status(session_id):
 
 @sessions_bp.route("/session.user.list", methods=["GET"])
 @with_require_team_session
-def list_user_sessions(identity, authenticated_user):
+def list_user_sessions(identity):
     try:
         svc = current_app.container.session_service
         return jsonify(svc.list_user_sessions(identity)), 200
@@ -246,7 +246,7 @@ def list_user_sessions(identity, authenticated_user):
 
 @sessions_bp.route("/session.user.blueprints.get", methods=["GET"])
 @with_require_team_session
-def get_user_blueprints(identity, authenticated_user):
+def get_user_blueprints(identity):
     try:
         svc = current_app.container.session_service
         return jsonify(svc.get_user_blueprints(identity)), 200
@@ -343,7 +343,7 @@ def subscribe_session(session_id):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def get_session_meta(identity, authenticated_user, session_id):
+def get_session_meta(identity, session_id):
     """Return the full metadata object for a session.
 
     Combines the persisted ``SessionMeta`` with live presence data from the
@@ -359,12 +359,9 @@ def get_session_meta(identity, authenticated_user, session_id):
 
         collab = getattr(current_app.container, "collaboration_service", None)
         if collab is not None and collab.is_available():
-            # Redis is authoritative for live presence — always override Mongo.
-            # (model_dump always emits the key even when None, so setdefault
-            # would never trigger; an explicit assignment is required.)
             payload["typing_users"] = collab.get_typing_users(session_id)
             try:
-                participants_obj = collab.get_participants(session_id, user_id=authenticated_user)
+                participants_obj = collab.get_participants(session_id, user_id=g.identity_username)
                 payload["participants"] = [
                     p.user_id for p in participants_obj.participants
                 ]
@@ -380,7 +377,7 @@ def get_session_meta(identity, authenticated_user, session_id):
 
 @sessions_bp.route("/session.meta", methods=["POST"])
 @with_require_team_session
-def update_session_meta(identity, authenticated_user):
+def update_session_meta(identity):
     """Whole-replace the metadata for a session.
 
     Accepts the **complete** desired metadata state as JSON.  Unknown fields

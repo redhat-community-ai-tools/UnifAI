@@ -5,11 +5,15 @@ Flask decorators for identity resolution and authorization.
 endpoints.  It validates a Redis-backed server session (via ``X-Session-Id``
 header) and resolves a user-or-team Identity — replacing the legacy
 header-trust decorators.
+
+The decorator injects a single ``identity`` keyword argument.  Endpoints
+that need the raw human username (collaboration, admin gates) read
+``g.identity_username`` instead.
 """
 import logging
 from functools import wraps
 
-from flask import Flask, current_app, jsonify, request
+from flask import Flask, current_app, g, jsonify, request
 
 from mas.core.identity.ports import IdentityProvider
 
@@ -23,9 +27,8 @@ logger = logging.getLogger(__name__)
 def require_admin_access(f):
     """Gate an endpoint to users listed in ``admin_allowed_users``.
 
-    Prefers ``authenticated_user`` injected by ``with_require_team_session``
-    (server-validated).  Falls back to ``userId`` / ``user_id`` from kwargs or
-    query params for backward compatibility.
+    Reads the human username from ``g.identity_username`` (set by
+    ``with_require_team_session``).  Must be stacked below it.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -38,17 +41,11 @@ def require_admin_access(f):
                     "error_type": "FEATURE_DISABLED",
                 }), 403
 
-            user_id = (
-                kwargs.get("authenticated_user")
-                or kwargs.get("user_id")
-                or kwargs.get("userId")
-                or request.args.get("user_id")
-                or request.args.get("userId")
-            )
+            user_id = getattr(g, "identity_username", None)
 
             if not user_id:
                 return jsonify({
-                    "error": "Access denied: user_id is required",
+                    "error": "Access denied: user identification is required",
                     "error_type": "AUTHENTICATION_REQUIRED",
                 }), 401
 
@@ -117,10 +114,9 @@ def with_require_team_session(f):
     """Validate caller via Redis session + resolve Identity.
 
     Reads the ``X-Session-Id`` header and validates the server session in
-    Redis.  On success, injects into kwargs:
-
-      - ``identity`` — resolved :class:`Identity` (user or team)
-      - ``authenticated_user`` — the validated username from the Redis session
+    Redis.  On success, injects ``identity`` (:class:`Identity`) as a
+    keyword argument and sets ``g.identity_username`` to the human
+    username from the session.
 
     Requires :func:`build_team_session_decorator` to have been called at
     startup.  If Redis was not available at startup, returns 503.

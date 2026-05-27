@@ -303,7 +303,7 @@ def instantiate_template(template_id, input):
     "blueprint_name": fields.Str(data_key="blueprintName", required=False, load_default=None),
     "skip_validation": fields.Bool(data_key="skipValidation", required=False, load_default=False),
 })
-def materialize_template(identity, authenticated_user, template_id, input=None,
+def materialize_template(identity, template_id, input=None,
                          blueprint_name=None, skip_validation=False):
     """
     Instantiate template and save blueprint to user's account.

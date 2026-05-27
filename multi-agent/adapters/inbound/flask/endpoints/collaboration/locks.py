@@ -3,7 +3,7 @@ Flask collaboration endpoints — team-scoped workspace edit locks.
 """
 import logging
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, g, jsonify
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 
@@ -39,7 +39,7 @@ def _holder_to_json(holder):
     "entity_kind": fields.Str(data_key="entityKind", required=True),
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def edit_lock_acquire(identity, authenticated_user, team_id, entity_kind, entity_id):
+def edit_lock_acquire(identity, team_id, entity_kind, entity_id):
     svc, err = _collab_service()
     if err:
         return err
@@ -48,7 +48,7 @@ def edit_lock_acquire(identity, authenticated_user, team_id, entity_kind, entity
             team_id=team_id,
             entity_kind=entity_kind,
             entity_id=entity_id,
-            user_id=authenticated_user,
+            user_id=g.identity_username,
         )
         body = {"acquired": acquired}
         if not acquired and holder is not None:
@@ -70,12 +70,12 @@ def edit_lock_acquire(identity, authenticated_user, team_id, entity_kind, entity
     "entity_kind": fields.Str(data_key="entityKind", required=True),
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def edit_lock_release(identity, authenticated_user, team_id, entity_kind, entity_id):
+def edit_lock_release(identity, team_id, entity_kind, entity_id):
     svc, err = _collab_service()
     if err:
         return err
     try:
-        svc.release_team_edit_lock(team_id, entity_kind, entity_id, authenticated_user)
+        svc.release_team_edit_lock(team_id, entity_kind, entity_id, g.identity_username)
         return jsonify({"success": True}), 200
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
@@ -93,13 +93,13 @@ def edit_lock_release(identity, authenticated_user, team_id, entity_kind, entity
     "entity_kind": fields.Str(data_key="entityKind", required=True),
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def edit_lock_heartbeat(identity, authenticated_user, team_id, entity_kind, entity_id):
+def edit_lock_heartbeat(identity, team_id, entity_kind, entity_id):
     svc, err = _collab_service()
     if err:
         return err
     try:
         renewed = svc.renew_team_edit_lock(
-            team_id, entity_kind, entity_id, authenticated_user
+            team_id, entity_kind, entity_id, g.identity_username
         )
         return jsonify({"renewed": renewed}), 200
     except PermissionError as e:
@@ -118,12 +118,12 @@ def edit_lock_heartbeat(identity, authenticated_user, team_id, entity_kind, enti
     "entity_kind": fields.Str(data_key="entityKind", required=True),
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def edit_lock_status(identity, authenticated_user, team_id, entity_kind, entity_id):
+def edit_lock_status(identity, team_id, entity_kind, entity_id):
     svc, err = _collab_service()
     if err:
         return err
     try:
-        holder = svc.get_team_edit_lock(team_id, entity_kind, entity_id, authenticated_user)
+        holder = svc.get_team_edit_lock(team_id, entity_kind, entity_id, g.identity_username)
         return jsonify({"locked": holder is not None, "lockedBy": _holder_to_json(holder)}), 200
     except PermissionError as e:
         return jsonify({"error": str(e)}), 403
@@ -141,12 +141,12 @@ def edit_lock_status(identity, authenticated_user, team_id, entity_kind, entity_
     "entity_kind": fields.Str(data_key="entityKind", required=True),
     "entity_ids": fields.List(fields.Str(), data_key="entityIds", required=True),
 })
-def edit_lock_statuses(identity, authenticated_user, team_id, entity_kind, entity_ids):
+def edit_lock_statuses(identity, team_id, entity_kind, entity_ids):
     svc, err = _collab_service()
     if err:
         return err
     try:
-        batch = svc.get_team_edit_locks_batch(team_id, entity_kind, entity_ids, authenticated_user)
+        batch = svc.get_team_edit_locks_batch(team_id, entity_kind, entity_ids, g.identity_username)
         locks = {
             entity_id: _holder_to_json(holder) if holder is not None else None
             for entity_id, holder in batch.items()

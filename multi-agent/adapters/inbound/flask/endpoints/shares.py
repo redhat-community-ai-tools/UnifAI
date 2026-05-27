@@ -1,6 +1,6 @@
 import logging
 
-from flask import Blueprint, jsonify, current_app, request
+from flask import Blueprint, g, jsonify, current_app, request
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 from mas.core.identity import IdentityType
@@ -27,7 +27,6 @@ shares_bp = Blueprint("shares", __name__)
 })
 def create_share(
     identity,
-    authenticated_user,
     recipient_user_id,
     item_kind,
     item_id,
@@ -39,6 +38,7 @@ def create_share(
 ):
     """Create share invitation."""
     try:
+        username = g.identity_username
         identity_provider = current_app.container.identity_provider
         sender_type_norm = str(sender_type or "user").strip().lower()
         claimed_owner = str(sender_identity_id or "").strip()
@@ -47,15 +47,15 @@ def create_share(
                 return jsonify(
                     {"error": "senderIdentityId (team id) is required when senderType is team"},
                 ), 400
-            if not identity_provider.is_member(authenticated_user, claimed_owner):
+            if not identity_provider.is_member(username, claimed_owner):
                 return jsonify({"error": "Not authorized to share as this team"}), 403
             effective_sender_id = claimed_owner
         else:
-            if claimed_owner and claimed_owner.casefold() != authenticated_user.casefold():
+            if claimed_owner and claimed_owner.casefold() != username.casefold():
                 return jsonify(
                     {"error": "senderIdentityId must match the authenticated user for personal shares"},
                 ), 403
-            effective_sender_id = authenticated_user
+            effective_sender_id = username
 
         # Validate item_kind
         try:
@@ -66,22 +66,22 @@ def create_share(
         recipient_raw = str(recipient_user_id).strip()
 
         directory = current_app.container.directory_provider
-        if directory and recipient_raw.casefold() != authenticated_user.casefold():
+        if directory and recipient_raw.casefold() != username.casefold():
             resolved = directory.get_user(recipient_raw)
             if not resolved:
                 return jsonify({"error": f"Recipient '{recipient_raw}' not found in directory"}), 400
 
         # Auto-accept self-copy: persist recipient as the canonical session username so
-        # accept_invite(..., recipient_user_id=authenticated_user) always matches.
+        # accept_invite(..., recipient_user_id=username) always matches.
         recipient_effective = (
-            authenticated_user
-            if (auto_accept and recipient_raw.casefold() == authenticated_user.casefold())
+            username
+            if (auto_accept and recipient_raw.casefold() == username.casefold())
             else recipient_raw
         )
 
         # For team shares the resource may be owned by either the user or the team.
         authorized_owner_ids = (
-            {authenticated_user, effective_sender_id}
+            {username, effective_sender_id}
             if sender_type_norm == "team"
             else {effective_sender_id}
         )
@@ -120,11 +120,11 @@ def create_share(
 @from_body({
     "share_id": fields.Str(data_key="shareId", required=True),
 })
-def accept_share(identity, authenticated_user, share_id):
+def accept_share(identity, share_id):
     """Accept share invitation."""
     try:
         svc = current_app.container.share_service
-        result = svc.accept_invite(share_id, recipient_user_id=authenticated_user)
+        result = svc.accept_invite(share_id, recipient_user_id=g.identity_username)
 
         return jsonify({
             "status": "success",
@@ -144,11 +144,11 @@ def accept_share(identity, authenticated_user, share_id):
 @from_body({
     "share_id": fields.Str(data_key="shareId", required=True),
 })
-def decline_share(identity, authenticated_user, share_id):
+def decline_share(identity, share_id):
     """Decline share invitation."""
     try:
         svc = current_app.container.share_service
-        svc.decline_invite(share_id, recipient_user_id=authenticated_user)
+        svc.decline_invite(share_id, recipient_user_id=g.identity_username)
 
         return jsonify({"status": "success"}), 200
 
@@ -168,7 +168,7 @@ def decline_share(identity, authenticated_user, share_id):
     "item_id": fields.Str(data_key="itemId", required=True),
     "sender_team_id": fields.Str(data_key="senderTeamId", required=False, load_default=None),
 })
-def share_to_team(identity, authenticated_user, team_name, item_kind, item_id, sender_team_id=None):
+def share_to_team(identity, team_name, item_kind, item_id, sender_team_id=None):
     """Share item directly to a team workspace.
 
     When the resource is owned by a team (rather than the calling user personally),
@@ -177,21 +177,22 @@ def share_to_team(identity, authenticated_user, team_name, item_kind, item_id, s
     validation against the resource passes correctly.
     """
     try:
+        username = g.identity_username
         identity_provider = current_app.container.identity_provider
 
         # Resolve the destination team and verify the caller is a member.
-        dest_team_id = identity_provider.resolve_team_id(authenticated_user, team_name)
+        dest_team_id = identity_provider.resolve_team_id(username, team_name)
         if dest_team_id is None:
             return jsonify({"error": "Not authorized to share to this team"}), 403
 
         # Determine effective sender: team-owned resource or personal resource.
         if sender_team_id:
             sender_team_id = str(sender_team_id).strip()
-            if not identity_provider.is_member(authenticated_user, sender_team_id):
+            if not identity_provider.is_member(username, sender_team_id):
                 return jsonify({"error": "Not authorized to share as this team"}), 403
             effective_sender_id = sender_team_id
         else:
-            effective_sender_id = authenticated_user
+            effective_sender_id = username
 
         try:
             kind = ShareItemKind(item_kind)
@@ -204,18 +205,18 @@ def share_to_team(identity, authenticated_user, team_name, item_kind, item_id, s
         # omitted we still auto-include every team the user is a member of so that
         # team-owned resources are shareable without requiring the caller to name
         # the source team explicitly.
-        authorized_owner_ids = {authenticated_user}
+        authorized_owner_ids = {username}
         if sender_team_id:
             authorized_owner_ids.add(sender_team_id)
         elif identity_provider.requires_authentication:
-            team_ids = identity_provider.get_team_ids(authenticated_user)
+            team_ids = identity_provider.get_team_ids(username)
             if team_ids:
                 authorized_owner_ids.update(team_ids)
             else:
                 logger.warning(
                     "Could not fetch teams for %s during share_to_team; "
                     "ownership pool limited to the authenticated user",
-                    authenticated_user,
+                    username,
                 )
 
         svc = current_app.container.share_service
@@ -243,11 +244,11 @@ def share_to_team(identity, authenticated_user, team_name, item_kind, item_id, s
 @from_body({
     "share_id": fields.Str(data_key="shareId", required=True),
 })
-def cancel_share(identity, authenticated_user, share_id):
+def cancel_share(identity, share_id):
     """Cancel share invitation."""
     try:
         svc = current_app.container.share_service
-        svc.cancel_invite(share_id, sender_user_id=authenticated_user)
+        svc.cancel_invite(share_id, sender_user_id=g.identity_username)
 
         return jsonify({"status": "success"}), 200
 
@@ -267,7 +268,7 @@ def cancel_share(identity, authenticated_user, share_id):
     "skip": fields.Int(required=False, load_default=0),
     "limit": fields.Int(required=False, load_default=100),
 })
-def list_shares(identity, authenticated_user, direction="received", status=None, skip=0, limit=100):
+def list_shares(identity, direction="received", status=None, skip=0, limit=100):
     """List share invitations."""
     try:
         status_enum = None
@@ -308,9 +309,10 @@ def list_shares(identity, authenticated_user, direction="received", status=None,
 @from_query({
     "share_id": fields.Str(data_key="shareId", required=True),
 })
-def get_share(identity, authenticated_user, share_id):
+def get_share(identity, share_id):
     """Get share invitation details."""
     try:
+        username = g.identity_username
         svc = current_app.container.share_service
         invite = svc.get_invite(share_id)
 
@@ -318,10 +320,10 @@ def get_share(identity, authenticated_user, share_id):
         identity_provider = current_app.container.identity_provider
         sender_ok = (
             invite.sender_identity.type == IdentityType.TEAM
-            and identity_provider.is_member(authenticated_user, invite.sender_identity.id)
-        ) or ShareService._principal_matches_identity(invite.sender_identity, authenticated_user)
+            and identity_provider.is_member(username, invite.sender_identity.id)
+        ) or ShareService._principal_matches_identity(invite.sender_identity, username)
         recipient_ok = ShareService._principal_matches_identity(
-            invite.recipient_identity, authenticated_user
+            invite.recipient_identity, username
         )
         if not (sender_ok or recipient_ok):
             return jsonify({"error": "Not authorized to view this invitation"}), 403

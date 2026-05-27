@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, g, jsonify, current_app
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
@@ -16,7 +16,7 @@ resources_bp = Blueprint("resources", __name__)
     "name": fields.Str(required=True),
     "config": fields.Dict(required=True),
 })
-def save_resource(identity, authenticated_user, category=None, type=None, name=None, config=None):
+def save_resource(identity, category=None, type=None, name=None, config=None):
     svc = current_app.container.resources_service
     try:
         doc = svc.create(identity=identity,
@@ -55,7 +55,7 @@ def get_resource(resource_id):
     "limit": fields.Int(required=False, load_default=1000),
     "offset": fields.Int(required=False, load_default=0),
 })
-def list_resources(identity, authenticated_user, category=None, type=None, limit=1000, offset=0):
+def list_resources(identity, category=None, type=None, limit=1000, offset=0):
     """
     Get resources with flexible filtering and pagination:
     - identity: scopes to user or team workspace
@@ -144,15 +144,16 @@ def get_resource_schema():
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_resource(identity, authenticated_user, resource_id, timeout_seconds):
+def validate_resource(identity, resource_id, timeout_seconds):
     """Validate a saved resource and its dependencies."""
     svc = current_app.container.resources_service
+    username = g.identity_username
     try:
         result = svc.validate_resource(
             rid=resource_id,
-            user_id=authenticated_user,
+            user_id=username,
             timeout_seconds=timeout_seconds,
-            credential_user_id=authenticated_user,
+            credential_user_id=username,
         )
         return jsonify(result.model_dump()), 200
     except KeyError as e:
@@ -170,7 +171,7 @@ def validate_resource(identity, authenticated_user, resource_id, timeout_seconds
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
     "max_workers": fields.Int(data_key="maxWorkers", load_default=10),
 })
-def validate_resources(identity, authenticated_user, resource_ids, timeout_seconds, max_workers):
+def validate_resources(identity, resource_ids, timeout_seconds, max_workers):
     """
     Validate multiple resources in parallel.
 
@@ -189,9 +190,9 @@ def validate_resources(identity, authenticated_user, resource_ids, timeout_secon
         ]
 
     Results are returned in the same order as the input resourceIds.
-    User identity is resolved from the Redis session (X-Session-Id header).
     """
     svc = current_app.container.resources_service
+    username = g.identity_username
 
     # Validate input
     if not resource_ids:
@@ -203,10 +204,10 @@ def validate_resources(identity, authenticated_user, resource_ids, timeout_secon
     try:
         results = svc.validate_resources(
             rids=resource_ids,
-            user_id=authenticated_user,
+            user_id=username,
             timeout_seconds=timeout_seconds,
             max_workers=max_workers,
-            credential_user_id=authenticated_user,
+            credential_user_id=username,
         )
         return jsonify([r.model_dump() for r in results]), 200
     except RuntimeError as e:

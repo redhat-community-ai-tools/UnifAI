@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, current_app, request
+from flask import Blueprint, g, jsonify, current_app, request
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import yaml
@@ -87,7 +87,7 @@ def _extract_blueprint_data(
 
 @blueprints_bp.route("/available.blueprints.get", methods=["GET"])
 @with_require_team_session
-def available_doc_list(identity, authenticated_user):
+def available_doc_list(identity):
     try:
         svc = current_app.container.blueprint_service
         docs = svc.list_draft_docs(identity=identity)
@@ -98,7 +98,7 @@ def available_doc_list(identity, authenticated_user):
 
 @blueprints_bp.route("/available.blueprints.summary.get", methods=["GET"])
 @with_require_team_session
-def available_blueprint_summaries(identity, authenticated_user):
+def available_blueprint_summaries(identity):
     """
     Return lightweight blueprint summaries (id, name, description,
     timestamps, metadata) without the full spec.
@@ -119,7 +119,7 @@ def available_blueprint_summaries(identity, authenticated_user):
     "limit": fields.Int(data_key="limit", required=False, load_default=100),
     "sort_desc": fields.Bool(data_key="sortDesc", required=False, load_default=True),
 })
-def available_resolved_doc_list(identity, authenticated_user, blueprint_id=None, skip=0, limit=100, sort_desc=True):
+def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, sort_desc=True):
     try:
         svc = current_app.container.blueprint_service
 
@@ -152,7 +152,7 @@ def available_resolved_doc_list(identity, authenticated_user, blueprint_id=None,
     "blueprint_raw": fields.Str(data_key="blueprintRaw", required=False),
     "metadata": fields.Dict(data_key="metadata", required=False, load_default=lambda: {})
 })
-def save_blueprint(identity, authenticated_user, blueprint_raw=None, metadata=None):
+def save_blueprint(identity, blueprint_raw=None, metadata=None):
     """
     Save a blueprint draft.
     
@@ -328,15 +328,16 @@ def set_metadata(blueprint_id, metadata):
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_blueprint(identity, authenticated_user, blueprint_id, timeout_seconds):
+def validate_blueprint(identity, blueprint_id, timeout_seconds):
     """Validate all elements in a saved blueprint."""
     svc = current_app.container.blueprint_service
+    username = g.identity_username
     try:
         result = svc.validate_blueprint(
             blueprint_id=blueprint_id,
-            user_id=authenticated_user,
+            user_id=username,
             timeout_seconds=timeout_seconds,
-            credential_user_id=authenticated_user,
+            credential_user_id=username,
         )
         return jsonify(result.model_dump()), 200
     except BlueprintNotFoundError as e:

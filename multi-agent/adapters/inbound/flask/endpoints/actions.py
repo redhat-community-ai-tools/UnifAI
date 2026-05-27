@@ -1,6 +1,6 @@
 import logging
 
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, g, jsonify, current_app
 
 from inbound.flask.decorators import with_require_team_session
 from global_utils.helpers.apiargs import from_body, from_query
@@ -88,11 +88,10 @@ def list_actions(category=None, type=None, action_type=None, tags=None):
     "input_data": fields.Dict(data_key="inputData", required=False, load_default={}),
     "context": fields.Dict(required=False, load_default={}),
 })
-def execute_action(identity, authenticated_user, uid, input_data, context):
+def execute_action(identity, uid, input_data, context):
     """Execute a specific action by UID (synchronously)."""
     try:
-        if authenticated_user:
-            input_data["user_id"] = authenticated_user
+        input_data["user_id"] = g.identity_username
 
         svc = current_app.container.actions_service
         result = svc.execute_action_sync(uid, input_data, context)

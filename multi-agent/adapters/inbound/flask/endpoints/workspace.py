@@ -10,7 +10,7 @@ workspace_bp = Blueprint("workspace", __name__)
 
 @workspace_bp.route("/workspace.cleanup", methods=["DELETE"])
 @with_require_team_session
-def cleanup_workspace(identity, authenticated_user):
+def cleanup_workspace(identity):
     """Delete all resources, blueprints, and sessions owned by the authenticated identity."""
 
     container = current_app.container

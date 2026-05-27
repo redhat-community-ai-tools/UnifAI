@@ -12,7 +12,7 @@ statistics_bp = Blueprint("statistics", __name__)
 
 @statistics_bp.route("/stats.get", methods=["GET"])
 @with_require_team_session
-def get_all(identity, authenticated_user):
+def get_all(identity):
     """
     Get aggregated statistics for all features (identity-scoped).
     Returns all stats in a single response for optimal performance.
@@ -44,7 +44,7 @@ def get_all(identity, authenticated_user):
         )
     ),
 })
-def get_system_stats(identity, authenticated_user, time_range):
+def get_system_stats(identity, time_range):
     """
     Get comprehensive system-wide statistics for workflows, users, and blueprints.
     Returns all key metrics in a single response for the admin dashboard.
@@ -58,7 +58,6 @@ def get_system_stats(identity, authenticated_user, time_range):
     
     Query params:
         time_range (str): Time range filter - 'today', '7days', '30days', or 'all' (default: 'all')
-        userId (str, required): User ID for access control (must be in admin_allowed_users list)
     """
     try:
         container = current_app.container
