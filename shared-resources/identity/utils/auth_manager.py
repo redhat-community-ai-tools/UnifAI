@@ -126,9 +126,16 @@ class AuthManager:
         """
         OAuth redirect URI for /api/auth/callback.
 
-        Local dev: http://hostname_local:port/api/auth/callback
-        Production: {identity_host}/api/auth/callback (IDENTITY_HOST env)
+        If ``OAUTH_CALLBACK_URL`` is set (recommended for local dev) it is
+        used as-is so the redirect goes through the frontend proxy and the
+        session cookie lands on the same domain the browser uses.
+
+        Fallback:
+          Production  → ``{IDENTITY_HOST}/api/auth/callback``
+          Development → ``http://{hostname_local}:{port}/api/auth/callback``
         """
+        if config.oauth_callback_url:
+            return config.oauth_callback_url
         if config.backend_env == "production":
             return f"{config.identity_host.rstrip('/')}/api/auth/callback"
         return f"http://{config.hostname_local}:{config.port}/api/auth/callback"
@@ -356,6 +363,7 @@ class AuthManager:
                 'user': user,
                 'authenticated': True,
                 'access_token': session_data.get('access_token'),
+                'session_id': session.get('session_id'),
             })
         
         @self.app.route('/api/auth/user/groups')
