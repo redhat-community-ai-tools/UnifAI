@@ -9,8 +9,6 @@ Input staging (projecting raw inputs onto GraphState) is NOT this class's
 job — that belongs to SessionInputProjector.  This class only manages
 execution state transitions: begin → complete | fail.
 """
-from datetime import datetime, timezone
-
 from mas.graph.state.graph_state import GraphState
 from mas.session.repository.repository import SessionRepository
 from mas.session.domain.session_record import SessionRecord
@@ -59,7 +57,7 @@ class SessionLifecycle:
         if record.status == SessionStatus.CANCELLED:
             return
         record.graph_state = final_state
-        record.update_context(finished_at=datetime.now(timezone.utc))
+        record.run_context = record.run_context.mark_finished()
         record.status = SessionStatus.COMPLETED
         self._repo.save(record)
 
@@ -74,7 +72,7 @@ class SessionLifecycle:
         """
         if record.status == SessionStatus.CANCELLED:
             return
-        record.update_context(finished_at=datetime.now(timezone.utc))
+        record.run_context = record.run_context.mark_finished()
         record.status = SessionStatus.FAILED
         self._repo.save(record)
 
@@ -89,7 +87,7 @@ class SessionLifecycle:
         """
         if record.status == SessionStatus.CANCELLED:
             return
-        record.update_context(finished_at=datetime.now(timezone.utc))
+        record.run_context = record.run_context.mark_finished()
         record.status = SessionStatus.CANCELLED
         record.metadata.tags[CANCELLED_TAG] = "true"
         record.metadata.status_message = CANCELLED_STATUS_MESSAGE

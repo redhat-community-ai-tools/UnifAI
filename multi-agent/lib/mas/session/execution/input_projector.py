@@ -118,6 +118,7 @@ class SessionInputProjector:
         # Persist acting user for OAuth on the durable record so Temporal / workers always
         # see tags after reload. with_credential_user() rejects team ids automatically.
         record.run_context = record.run_context.with_credential_user(logged_in_user)
+        record.run_context = record.run_context.mark_active()
 
         record.metadata.status_message = None
         record.metadata.tags.pop(CANCELLED_TAG, None)

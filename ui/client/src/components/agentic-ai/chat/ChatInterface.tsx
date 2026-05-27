@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Send, Square, Trash2, Loader2, Sparkles, Info, Copy, RotateCcw,
-  ThumbsUp, ThumbsDown, Check, Columns3, MessageSquare, Network,
+  ThumbsUp, ThumbsDown, Check,
   Maximize2, Minimize2, Download, FileText, FileJson, Paperclip, X,
   Ban, ChevronDown, ChevronUp,
 } from "lucide-react";
@@ -31,6 +31,7 @@ import WorkflowStatusBanner, { WorkflowBannerMessages } from '@/components/share
 import { useAuth } from "@/contexts/AuthContext";
 import { MemberDisplay, buildMemberDisplay } from "@/utils/memberDisplay";
 import { CollabAvatar } from "@/components/shared/CollabAvatar";
+import { ViewModeToggle, type CarouselMode } from "@/components/shared/ViewModeToggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -71,8 +72,8 @@ interface ChatInterfaceProps {
   isValidatingBlueprint?: boolean;
   isBlueprintGraphHidden?: boolean;
   isChatOnlyMode?: boolean;
-  onSetCarouselMode?: (mode: 'normal' | 'chat' | 'graph') => void;
-  carouselMode?: 'normal' | 'chat' | 'graph';
+  onSetCarouselMode?: (mode: CarouselMode) => void;
+  carouselMode?: CarouselMode;
   onQueueMessage?: (message: string) => void;
   queuedMessageToProcess?: string | null;
   onQueuedMessageProcessed?: () => void;
@@ -1401,46 +1402,11 @@ export default function ChatInterface({
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
-              {/* Carousel Mode Switch - 3 icons for Split/Chat/Graph views */}
               {onSetCarouselMode && !isChatOnlyMode && (
-                <div className="flex items-center bg-background-surface border border-gray-700 rounded-lg p-0.5">
-                  {/* Split View */}
-                  <button
-                    onClick={() => onSetCarouselMode('normal')}
-                    className={`p-1.5 rounded-md transition-all duration-200 ${
-                      carouselMode === 'normal'
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                    }`}
-                    title="Split View"
-                  >
-                    <Columns3 className="h-4 w-4" />
-                  </button>
-                  {/* Full Chat View */}
-                  <button
-                    onClick={() => onSetCarouselMode('chat')}
-                    className={`p-1.5 rounded-md transition-all duration-200 ${
-                      carouselMode === 'chat'
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                    }`}
-                    title="Full Chat View"
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                  </button>
-                  {/* Full Graph View */}
-                  <button
-                    onClick={() => onSetCarouselMode('graph')}
-                    className={`p-1.5 rounded-md transition-all duration-200 ${
-                      carouselMode === 'graph'
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                    }`}
-                    title="Full Graph View"
-                  >
-                    <Network className="h-4 w-4" />
-                  </button>
-                </div>
+                <ViewModeToggle
+                  mode={carouselMode ?? 'normal'}
+                  onModeChange={onSetCarouselMode}
+                />
               )}
             </>
           )}

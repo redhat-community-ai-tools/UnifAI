@@ -26,6 +26,7 @@ class ExecutionContext(BaseModel):
     engine_handle: Optional[str] = None
 
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_active_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
 
     tags: Dict[str, Any] = Field(default_factory=dict)
@@ -78,8 +79,12 @@ class ExecutionContext(BaseModel):
             return ""
         return self.identity.id
 
+    def mark_active(self) -> ExecutionContext:
+        return self.model_copy(update={"last_active_at": datetime.now(timezone.utc)})
+
     def mark_finished(self) -> ExecutionContext:
-        return self.model_copy(update={"finished_at": datetime.now(timezone.utc)})
+        now = datetime.now(timezone.utc)
+        return self.model_copy(update={"finished_at": now, "last_active_at": now})
 
 
 class ExecutionContextHolder:

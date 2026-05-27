@@ -45,8 +45,9 @@ export const transformSessionData = (
   const blueprintId = sessionData.blueprint_id;
   const blueprintExists = sessionData.blueprint_exists;
   const fromSharedLink = sessionData.metadata?.source === 'public_link';
-  const timestamp = new Date(sessionData.started_at);
-  const lastActive = formatRelativeTimestamp(sessionData.started_at);
+  const activityTimestamp = sessionData.last_active_at || sessionData.started_at;
+  const timestamp = new Date(activityTimestamp);
+  const lastActive = formatRelativeTimestamp(activityTimestamp);
   const preview = fromSharedLink ? 'From chat experience' : 'Click to load messages...';
 
   return {
