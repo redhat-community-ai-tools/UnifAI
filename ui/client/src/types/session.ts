@@ -28,6 +28,7 @@ export interface ChatSessionData {
   blueprint_id: string;
   session_id: string;
   started_at: string;
+  last_active_at?: string;
   blueprint_exists: boolean;
 }
 
