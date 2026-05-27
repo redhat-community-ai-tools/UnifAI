@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import axios from "../http/axiosAgentConfig";
 import {
   ElementCategory,
   ElementType,
@@ -8,34 +7,20 @@ import {
   CatalogResponse,
 } from "../types/workspace";
 import { useToast } from "./use-toast";
-import { catalogService } from "@/api/catalog";
+import { catalogService, getElementSpec } from "@/api/catalog";
+import { listActions } from "@/api/actions";
+import {
+  listResources,
+  getResource,
+  getResourceSchema,
+  saveResource,
+  updateResource,
+  deleteResource,
+  type ResourceInstance,
+  type ResourcesListResponse,
+} from "@/api/resources";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
-
-// Types for Resources API responses
-interface ResourceInstance {
-  rid: string;
-  user_id: string;
-  category: string;
-  type: string;
-  name: string;
-  version: number;
-  cfg_dict: any;
-  nested_refs: string[];
-  contributed_by?: string;
-  created: string;
-  updated: string;
-}
-
-interface ResourcesListResponse {
-  resources: ResourceInstance[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    has_more: boolean;
-  };
-}
 
 export const useWorkspaceData = () => {
   const [categories, setCategories] = useState<ElementCategory[]>([]);
@@ -98,14 +83,10 @@ export const useWorkspaceData = () => {
         setError(null);
         setElementInstances([]);
 
-        const params = new URLSearchParams({ category, type });
-        if (TEAM_ID) params.set("teamId", TEAM_ID);
-        const response = await axios.get<ResourcesListResponse>(
-          `/resources/resources.list?${params.toString()}`,
-        );
+        const response = await listResources({ category, type, teamId: TEAM_ID });
 
         // Transform ResourceInstance to ElementInstance format
-        const instances: ElementInstance[] = response.data.resources.map(
+        const instances: ElementInstance[] = response.resources.map(
           (resource: ResourceInstance) => ({
             rid: resource.rid,
             name: resource.name,
@@ -148,11 +129,7 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        const response = await axios.get<ResourceInstance>(
-          `/resources/resource.get?resourceId=${resourceId}`,
-        );
-
-        return response.data;
+        return await getResource(resourceId);
       } catch (err: any) {
         const errorMessage =
           err.response?.data?.error || "Failed to fetch resource";
@@ -175,13 +152,9 @@ export const useWorkspaceData = () => {
   const fetchResourcesForCategory = useCallback(
     async (category: string) => {
       try {
-        const params = new URLSearchParams({ category });
-        if (TEAM_ID) params.set("teamId", TEAM_ID);
-        const response = await axios.get<ResourcesListResponse>(
-          `/resources/resources.list?${params.toString()}`,
-        );
+        const response = await listResources({ category, teamId: TEAM_ID });
 
-        return response.data.resources.map((resource: ResourceInstance) => ({
+        return response.resources.map((resource: ResourceInstance) => ({
           rid: resource.rid,
           name: resource.name,
           type: resource.type,
@@ -210,17 +183,9 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        // First fetch the resource schema (first-level schema)
-        const resourceSchemaResponse = await axios.get(
-          "/resources/resource.schema",
-        );
-        const resourceSchema = resourceSchemaResponse.data;
+        const resourceSchema = await getResourceSchema();
 
-        // Then fetch the element-specific schema (cfg_dict schema)
-        const elementSchemaResponse = await axios.get<ElementSchema>(
-          `/catalog/element.spec.get?category=${category}&type=${type}`,
-        );
-        const elementSchema = elementSchemaResponse.data;
+        const elementSchema = await getElementSpec<ElementSchema>(category, type);
 
         // Combine both schemas into a unified schema
         const combinedSchema: ElementSchema = {
@@ -277,12 +242,10 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        const response = await axios.get<any>(
-          `/actions/actions.list?category=${category}&type=${type}`,
-        );
+        const actions = await listActions(category, type);
 
-        setElementActions(response.data.actions || []);
-        return response.data.actions || [];
+        setElementActions(actions);
+        return actions;
       } catch (err: any) {
         const errorMessage =
           err.response?.data?.error || "Failed to fetch element actions";
@@ -311,62 +274,56 @@ export const useWorkspaceData = () => {
 
         if (rid) {
           // Update existing resource
-          const response = await axios.put("/resources/resource.update", {
+          const response = await updateResource({
             resourceId: rid,
             config: elementData.cfg_dict,
             name: elementData.name,
           });
           
           // Update the resource mapping immediately
-          if (response.data) {
+          if (response) {
             addOrUpdateResource({
-              rid: response.data.rid || rid,
-              name: response.data.name || elementData.name,
-              category: response.data.category || category,
-              type: response.data.type || type,
+              rid: response.rid || rid,
+              name: response.name || elementData.name,
+              category: response.category || category,
+              type: response.type || type,
             });
             // Revalidate resource after update
-            revalidateResourceAndAncestors(response.data.rid || rid);
+           revalidateResourceAndAncestors(response.rid || rid);
           }
           
           toast({
             title: "Success",
             description: "Element updated successfully",
           });
-          return response.data;
+          return response;
         } else {
           // Create new resource
           const { cfg_dict, ...firstLevelFields } = elementData;
-          const savePayload: Record<string, any> = {
+          const response = await saveResource({
             category,
             type,
             config: cfg_dict,
+            teamId: TEAM_ID,
             ...firstLevelFields,
-          };
-          if (TEAM_ID) savePayload.teamId = TEAM_ID;
-
-          const response = await axios.post(
-            "/resources/resource.save",
-            savePayload,
-          );
+          });
           
           // Update the resource mapping immediately
-          if (response.data) {
+          if (response) {
             addOrUpdateResource({
-              rid: response.data.rid,
-              name: response.data.name || elementData.name,
-              category: response.data.category || category,
-              type: response.data.type || type,
+              rid: response.rid,
+              name: response.name || elementData.name,
+              category: response.category || category,
+              type: response.type || type,
             });
-            // Validate new resource immediately after creation
-            revalidateResourceAndAncestors(response.data.rid);
+            revalidateResourceAndAncestors(response.rid);
           }
           
           toast({
             title: "Success",
             description: "Element created successfully",
           });
-          return response.data;
+          return response;
         }
       } catch (err: any) {
         const errorMessage =
@@ -393,7 +350,7 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        await axios.delete(`/resources/resource.delete?resourceId=${rid}`);
+        await deleteResource(rid);
         
         removeResource(rid);
         

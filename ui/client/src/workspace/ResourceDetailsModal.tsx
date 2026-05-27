@@ -6,7 +6,7 @@ import { FileText } from 'lucide-react';
 import { maskSecretFieldsInConfig } from '../utils/maskSecretFields';
 import { simplifyConfigForDisplay } from '../utils/displayUtils';
 import { ElementSchema } from '../types/workspace';
-import axios from '../http/axiosAgentConfig';
+import { getElementSpec } from '@/api/catalog';
 import { useAgenticAI } from '@/contexts/AgenticAIContext';
 
 interface ResourceDetailsModalProps {
@@ -29,10 +29,11 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
       const fetchSchema = async () => {
         try {
           // Fetch the element-specific schema
-          const response = await axios.get<ElementSchema>(
-            `/catalog/element.spec.get?category=${element.workspaceData?.category}&type=${element.workspaceData?.type}`
+          const schema = await getElementSpec<ElementSchema>(
+            element.workspaceData!.category,
+            element.workspaceData!.type,
           );
-          setElementSchema(response.data);
+          setElementSchema(schema);
         } catch (error) {
           console.error('Error fetching element schema:', error);
           setElementSchema(null);

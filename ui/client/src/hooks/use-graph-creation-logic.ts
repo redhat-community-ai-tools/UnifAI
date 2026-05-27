@@ -13,7 +13,8 @@ import { useView } from "@/contexts/ViewContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { deriveThemeColors } from "@/lib/colorUtils";
-import axios from "../http/axiosAgentConfig";
+import { listResources } from "@/api/resources";
+import { validateGraphYaml } from "@/api/graph";
 import * as yaml from "js-yaml";
 import { saveBlueprint, updateBlueprint } from "@/api/blueprints";
 import {
@@ -172,17 +173,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         sortKeys: false,
       });
 
-      const response = await axios.post(
-        "/graph/validation/all.validate",
-        yamlString,
-        {
-          headers: {
-            "Content-Type": "text/plain",
-          },
-        },
-      );
-
-      const { validation_result, fix_suggestions } = response.data;
+      const { validation_result, fix_suggestions } = await validateGraphYaml(yamlString);
 
       setValidationResult(validation_result);
       setFixSuggestions(fix_suggestions || []);
@@ -589,12 +580,8 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     }
     try {
       setIsLoadingBlocks(true);
-      const params = new URLSearchParams();
-      if (TEAM_ID) params.set("teamId", TEAM_ID);
-      const response = await axios.get(
-        `/resources/resources.list?${params.toString()}`,
-      );
-      const allBlocks = response.data.resources.map(transformResourceToBlock);
+      const response = await listResources({ teamId: TEAM_ID });
+      const allBlocks = response.resources.map(transformResourceToBlock);
 
       setAllBlocksData(allBlocks);
 

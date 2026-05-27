@@ -15,8 +15,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Loader2, RefreshCw, ChevronDown, Check, CheckCheck, X } from 'lucide-react';
-import axios from "../../../http/axiosAgentConfig";
-import { executeAction } from '@/api/actions';
+import { executeAction, callDynamicEndpoint } from '@/api/actions';
 import { useAuth } from "@/contexts/AuthContext";
 import { OptionItem, normalizeOptions } from './fieldPopulationUtils';
 
@@ -319,20 +318,7 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     const method = (populateHint.method || 'POST').toUpperCase();
     const endpoint = populateHint.endpoint;
 
-    let response;
-    if (method == 'GET') {
-      // For GET requests, send data as query params
-      response = await axios.get(endpoint, { params: requestBody });
-    } else {
-      // For POST/PUT/PATCH, send data in body
-      response = await axios({
-        method: method.toLowerCase(),
-        url: endpoint,
-        data: requestBody
-      });
-    }
-
-    return response.data;
+    return callDynamicEndpoint(endpoint, method, requestBody);
   };
 
   const performPopulation = async (cursor: string | null = null, searchRegex: string | null = null) => {

@@ -9,8 +9,13 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import axios from "@/http/axiosAgentConfig";
-import { cancelSession } from "@/api/sessions";
+import {
+  cancelSession,
+  submitSession,
+  listUserSessions,
+  getSessionStatus,
+  getSessionState,
+} from "@/api/sessions";
 import {
   joinSession as joinSessionApi,
   leaveSession as leaveSessionApi,
@@ -114,7 +119,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
         hub.setIsLiveRequest(true);
         setIsSubmitting(true);
 
-        await axios.post("/sessions/user.session.submit", {
+        await submitSession({
           sessionId: sessionPayload.sessionId,
           inputs: sessionPayload.inputs,
           scope: hub.globalScope,
@@ -133,10 +138,8 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
           streamCompleteResolverRef.current = done;
           const statusPoll = setInterval(async () => {
             try {
-              const statusRes = await axios.get(
-                `/sessions/session.status.get?sessionId=${sessionPayload.sessionId}`,
-              );
-              if (statusRes.data !== "RUNNING" && statusRes.data !== "QUEUED") done();
+              const statusData = await getSessionStatus(sessionPayload.sessionId);
+              if (statusData !== "RUNNING" && statusData !== "QUEUED") done();
             } catch { /* ignore */ }
           }, 2000);
         });
@@ -150,10 +153,8 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
       let output: unknown;
       try {
-        const res = await axios.get(
-          `/sessions/session.state.get?sessionId=${sessionPayload.sessionId}`,
-        );
-        output = res.data.output;
+        const stateData = await getSessionState(sessionPayload.sessionId);
+        output = stateData.output;
       } catch (err) {
         console.error("Error fetching session state:", err);
       }
@@ -226,11 +227,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
     sessionListPollCounterRef.current += 1;
     if (sessionListPollCounterRef.current % 5 === 0) {
       try {
-        const params = new URLSearchParams();
-        if (hub.teamId) params.set("teamId", hub.teamId);
-        const listRes = await axios.get(
-          `/sessions/session.user.list?${params.toString()}`,
-        );
+        const sessionsData = await listUserSessions(hub.teamId);
         const transformApiDataToSessions = (apiData: ChatSessionData[]) =>
           apiData.map((sd, i) => {
             const base = transformSessionData(sd, i);
@@ -239,7 +236,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
               sharing = !(sd.metadata?.public_usage_scope ?? false);
             return { ...base, isSharingDisabled: sharing };
           });
-        const sorted = sortSessionsByTimestamp(transformApiDataToSessions(listRes.data));
+        const sorted = sortSessionsByTimestamp(transformApiDataToSessions(sessionsData));
         hub.setChatSessions(sorted);
         await Promise.allSettled(sorted.map(s => fetchParticipants(s.id)));
       } catch { /* ignore */ }
@@ -247,10 +244,8 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
     if (!isLiveRequestRef.current) {
       try {
-        const statusRes = await axios.get(
-          `/sessions/session.status.get?sessionId=${session.id}`,
-        );
-        const busy = statusRes.data === "RUNNING" || statusRes.data === "QUEUED";
+        const statusData = await getSessionStatus(session.id);
+        const busy = statusData === "RUNNING" || statusData === "QUEUED";
         setIsSessionBusy(busy);
       } catch {
         setIsSessionBusy(false);

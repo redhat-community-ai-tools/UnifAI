@@ -156,11 +156,35 @@ The `multi-agent` module uses a structured `Identity` object (`mas.core.identity
 **Legitimate `user_id` uses in `multi-agent/`** — these are NOT violations:
 - OAuth credentials and `credential_user_id` (keyed per human)
 - Collaboration participants (always a human in the room)
-- `X-Authenticated-User` header (the logged-in human)
+- `g.identity_username` reads (the human behind the session, used for admin gates and collaboration)
 
 **In other modules** (outside `multi-agent/`): If code handles resource ownership with a flat `user_id`, flag it as **WARNING — Identity migration recommended** but do NOT block approval. These modules have not yet adopted the `Identity` model.
 
-### 10. Security Spot-Check (STRICT)
+### 10. Frontend API Layer Enforcement (STRICT)
+
+The UI (`ui/client/src/`) uses a centralized API layer. All HTTP calls MUST go through `src/api/*.ts` modules, which in turn use the shared axios instances from `src/http/`:
+
+| Client | File | Base URL | Service |
+|--------|------|----------|---------|
+| Multi-Agent | `http/axiosAgentConfig.ts` | `/api2` | MAS endpoints (sends `X-Session-Id`) |
+| RAG | `http/queryClient.ts` | `/api1` | RAG/pipeline endpoints |
+| Identity | `http/authClient.ts` | `/api3` | Auth/directory endpoints |
+| Backend | `http/backendClient.ts` | `/api4` | Platform admin/config |
+
+**Violations:**
+- Components, hooks, contexts, or pages making direct `axios.get/post/put/delete` calls instead of calling a function from `src/api/` = **MAJOR**
+- Duplicating an API call that already exists in `src/api/` = **MAJOR**
+- Importing an axios instance directly into non-API-layer files (e.g. `import axios from '@/http/axiosAgentConfig'` in a hook or component) = **MAJOR**
+- Using raw `fetch()` for backend REST endpoints (static config/assets are acceptable) = **MINOR**
+
+**Acceptable exceptions:**
+- `src/api/sessions.ts` using `fetch()` for NDJSON streaming (axios doesn't support streaming bodies)
+- Static asset fetches (`/config.json`, guide YAML files)
+- `AuthContext.tsx` calling `/api3/auth/*` directly (bootstrap-level auth before API layer is available)
+
+When reviewing frontend code, verify that new HTTP calls are added to the appropriate `src/api/` module and consumed via that module — not inlined into components or hooks.
+
+### 11. Security Spot-Check (STRICT)
 
 Check for:
 - Secrets, API keys, or credentials hardcoded in source files.

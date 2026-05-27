@@ -3,7 +3,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import axios from '@/http/axiosAgentConfig';
+import { getSessionChat as getSessionChatApi } from '@/api/sessions';
 import { ChatSession, SessionStateData, ChatMessage } from '@/types/session';
 import { getPreviewText } from '@/utils/sessionHelpers';
 
@@ -12,8 +12,7 @@ import { getPreviewText } from '@/utils/sessionHelpers';
  */
 export const fetchSessionState = async (sessionId: string): Promise<SessionStateData | null> => {
   try {
-    const response = await axios.get(`/sessions/session.chat.get?sessionId=${sessionId}`);
-    return response.data;
+    return await getSessionChatApi(sessionId) as SessionStateData;
   } catch (err) {
     console.error('Error fetching session state:', err);
     return null;
@@ -25,11 +24,11 @@ export const fetchSessionState = async (sessionId: string): Promise<SessionState
  */
 export const fetchSessionChat = async (sessionId: string): Promise<{ messages: ChatMessage[]; status?: string; statusMessage?: string } | null> => {
   try {
-    const response = await axios.get(`/sessions/session.chat.get?sessionId=${sessionId}`);
+    const data = await getSessionChatApi(sessionId);
     return {
-      messages: response.data?.messages ?? [],
-      status: response.data?.status,
-      statusMessage: response.data?.status_message ?? undefined,
+      messages: data?.messages ?? [],
+      status: data?.status,
+      statusMessage: data?.status_message ?? undefined,
     };
   } catch (err) {
     console.error('Error fetching session chat:', err);

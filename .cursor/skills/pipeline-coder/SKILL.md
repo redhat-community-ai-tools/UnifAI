@@ -57,11 +57,21 @@ If reusable logic exists, USE IT. Do NOT duplicate.
 The `multi-agent` module uses a structured `Identity` object for resource ownership instead of flat `user_id` strings. When writing code in `multi-agent/`:
 
 - Use `Identity` (`from mas.core.identity import Identity`) for all ownership and scoping of blueprints, resources, sessions, shares, and templates.
-- At the API boundary (Flask adapters), resolve raw `userId` + `identityType` params into an `Identity` object using `resolve_identity()` or the `@with_require_identity_authorization` decorator. Never pass flat `user_id` deeper than the adapter layer.
+- At the API boundary (Flask adapters), identity is resolved automatically by the `@with_require_team_session` decorator (validates the Redis session via `X-Session-Id` and injects `identity` as a kwarg). Never pass flat `user_id` deeper than the adapter layer.
 - Use the `identity_q()` helper for MongoDB queries scoped to an owner.
 - `user_id` remains correct for human-specific concerns: OAuth credentials (`credential_user_id`), collaboration participants, and auth headers.
 
 When working in modules outside `multi-agent/`, follow the existing ownership pattern in that module (typically flat `user_id`). Do not introduce `Identity` dependencies into modules that don't already use it unless explicitly instructed. Report any ownership-related `user_id` usage in the implementation summary (see "Identity migration gaps" in the Output Format section).
+
+### Frontend API Layer (STRICT — ui/client/src only)
+
+All HTTP calls in the UI MUST be centralized in `src/api/*.ts` modules. Components, hooks, contexts, and pages consume these modules — they never import axios instances or make HTTP calls directly.
+
+- **API modules** (`src/api/`): Import the appropriate client from `src/http/` (`axiosAgentConfig` for `/api2`, `queryClient` for `/api1`, `authClient` for `/api3`, `backendClient` for `/api4`). Export typed async functions.
+- **Consumers** (hooks, components, pages): Import and call functions from `src/api/`. Never import axios or make `fetch()` calls for REST endpoints.
+- **Exception**: `src/api/sessions.ts` may use raw `fetch()` for NDJSON streaming. `AuthContext.tsx` may call identity auth endpoints directly (bootstrap-level).
+
+When adding a new backend call, first check if the API module for that domain already exists (`api/sessions.ts`, `api/blueprints.ts`, `api/resources.ts`, etc.). Add the new function there, then import it from the consumer.
 
 ### Quality Standards
 

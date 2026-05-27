@@ -1,12 +1,53 @@
 import axios from '@/http/axiosAgentConfig';
+import type { ChatSessionData } from '@/types/session';
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SessionChatResponse {
+  messages?: any[];
+  output?: string;
+  status?: string;
+  status_message?: string;
+  [key: string]: any;
+}
 
 export interface CreateSessionParams {
   blueprintId: string;
   teamId?: string;
+  userId?: string;
+  metadata?: Record<string, any>;
 }
 
-export async function createSession(params: CreateSessionParams) {
+export async function createSession(params: CreateSessionParams): Promise<string> {
   const response = await axios.post('/sessions/user.session.create', params);
+  return response.data;
+}
+
+export async function listUserSessions(teamId?: string | null): Promise<ChatSessionData[]> {
+  const params = new URLSearchParams();
+  if (teamId) params.set('teamId', teamId);
+  const response = await axios.get(`/sessions/session.user.list?${params.toString()}`);
+  return response.data;
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  await axios.delete(`/sessions/session.delete?sessionId=${sessionId}`);
+}
+
+export async function getSessionChat(sessionId: string): Promise<SessionChatResponse> {
+  const response = await axios.get(`/sessions/session.chat.get?sessionId=${sessionId}`);
+  return response.data;
+}
+
+export async function getSessionStatus(sessionId: string): Promise<string> {
+  const response = await axios.get(`/sessions/session.status.get?sessionId=${sessionId}`);
+  return response.data;
+}
+
+export async function getSessionState(sessionId: string): Promise<any> {
+  const response = await axios.get(`/sessions/session.state.get?sessionId=${sessionId}`);
   return response.data;
 }
 

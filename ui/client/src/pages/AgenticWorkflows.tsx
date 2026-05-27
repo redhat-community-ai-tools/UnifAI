@@ -15,7 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import AgentFlowGraph from "@/components/agentic-ai/AgentFlowGraph";
 import NewGraph from "../workspace/NewGraph";
 import type { SavedBlueprintInfo } from "@/hooks/use-graph-creation-logic";
-import axios from "../http/axiosAgentConfig";
+import { createSession } from "@/api/sessions";
 
 import { FlowObject } from "@/components/agentic-ai/graphs/interfaces";
 import { BlueprintValidationResult } from "@/types/validation";
@@ -86,11 +86,7 @@ export default function AgenticWorkflows() {
       const createBody: Record<string, string> = { blueprintId: graphId };
       if (teamId) createBody.teamId = teamId;
 
-      const response = await axios.post(
-        "/sessions/user.session.create",
-        createBody,
-      );
-      const sessionId = response.data;
+      const sessionId = await createSession(createBody as any);
       setSelectedGraphId(sessionId);
 
       // Navigate to Agentic Chats page, passing the new session ID so it auto-selects

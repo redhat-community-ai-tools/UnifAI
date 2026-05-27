@@ -11,7 +11,12 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import axios from "@/http/axiosAgentConfig";
+import {
+  createSession,
+  listUserSessions,
+  deleteSession,
+  getSessionChat,
+} from "@/api/sessions";
 import { fetchResolvedBlueprint } from "@/api/blueprints";
 import { useStreamingData } from "@/components/agentic-ai/StreamingDataContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -404,13 +409,9 @@ export function useSessionHub({
     try {
       setIsLoading(true);
       setError(null);
-      const params = new URLSearchParams();
-      if (teamId) params.set("teamId", teamId);
-      const response = await axios.get(
-        `/sessions/session.user.list?${params.toString()}`,
-      );
+      const sessionsData = await listUserSessions(teamId);
       const sorted = sortSessionsByTimestamp(
-        transformApiDataToSessions(response.data),
+        transformApiDataToSessions(sessionsData),
       );
       setChatSessions(sorted);
 
@@ -442,7 +443,7 @@ export function useSessionHub({
     if (!chatToDelete) return;
     setIsDeleting(true);
     try {
-      await axios.delete(`/sessions/session.delete?sessionId=${chatToDelete.id}`);
+      await deleteSession(chatToDelete.id);
       setChatSessions((prev) => prev.filter((s) => s.id !== chatToDelete.id));
       if (selectedSession?.id === chatToDelete.id) {
         setSelectedSession(null);
@@ -475,14 +476,10 @@ export function useSessionHub({
       const graphId = selectedFlowForModal.id || `graph-${Date.now()}`;
       const createBody: Record<string, string> = { blueprintId: graphId };
       if (teamId) createBody.teamId = teamId;
-      await axios.post("/sessions/user.session.create", createBody);
-      const params = new URLSearchParams();
-      if (teamId) params.set("teamId", teamId);
-      const response = await axios.get(
-        `/sessions/session.user.list?${params.toString()}`,
-      );
+      await createSession(createBody as any);
+      const sessionsData = await listUserSessions(teamId);
       const sorted = sortSessionsByTimestamp(
-        transformApiDataToSessions(response.data),
+        transformApiDataToSessions(sessionsData),
       );
       setChatSessions(sorted);
       const newest = sorted.find((s) => s.blueprintId === graphId);
@@ -535,10 +532,8 @@ export function useSessionHub({
 
         await streamCompletePromise;
 
-        const session_response = await axios.get(
-          `/sessions/session.chat.get?sessionId=${sessionPayload.sessionId}`,
-        );
-        const { output, status, status_message } = session_response.data;
+        const sessionData = await getSessionChat(sessionPayload.sessionId);
+        const { output, status, status_message } = sessionData;
 
         if (status === "CANCELLED") {
           throw createSessionError(status_message || "Workflow was stopped.", "CANCELLED");
@@ -547,7 +542,7 @@ export function useSessionHub({
           throw createSessionError(status_message || "Workflow failed.", "FAILED");
         }
 
-        return output;
+        return output ?? "";
       } catch (err) {
         console.error("Error in session execution:", err);
         setIsLiveRequest(false);

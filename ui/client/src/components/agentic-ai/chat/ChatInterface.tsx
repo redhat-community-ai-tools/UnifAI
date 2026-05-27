@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import axios from "../../../http/axiosAgentConfig";
+import { getSessionChat } from "@/api/sessions";
 import { MarkdownComponents, preprocessText } from "./helpers/TextComponents";
 import { SessionPayload } from "../ExecutionTab";
 import { useStreamingData } from "../StreamingDataContext";
@@ -768,8 +768,8 @@ export default function ChatInterface({
       if (wasReconnection && runId) {
         (async () => {
           try {
-            const response = await axios.get(`/sessions/session.chat.get?sessionId=${runId}`);
-            const { output: finalAnswer, status, status_message } = response.data;
+            const sessionData = await getSessionChat(runId);
+            const { output: finalAnswer, status, status_message } = sessionData;
 
             if (status === 'CANCELLED') {
               markMessageAsCancelled(messageId);

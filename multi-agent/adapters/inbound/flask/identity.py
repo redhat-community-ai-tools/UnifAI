@@ -19,6 +19,7 @@ from functools import wraps
 
 from flask import Flask, current_app, g, jsonify, request
 
+from mas.core.identity import Identity as DomainIdentity
 from mas.core.identity.ports import IdentityProvider
 
 logger = logging.getLogger(__name__)
@@ -133,5 +134,15 @@ def with_require_team_session(f):
                 "error": "Session validation not available",
                 "error_type": "SERVICE_UNAVAILABLE",
             }), 503
-        return decorator(f)(*args, **kwargs)
+
+        @wraps(f)
+        def _convert_identity(*inner_args, **inner_kwargs):
+            gu_identity = inner_kwargs.get("identity")
+            if gu_identity is not None and not isinstance(gu_identity, DomainIdentity):
+                inner_kwargs["identity"] = DomainIdentity.model_validate(
+                    gu_identity.model_dump()
+                )
+            return f(*inner_args, **inner_kwargs)
+
+        return decorator(_convert_identity)(*args, **kwargs)
     return decorated

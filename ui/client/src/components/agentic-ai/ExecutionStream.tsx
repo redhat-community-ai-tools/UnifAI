@@ -6,9 +6,7 @@ import {
   Pause, Play, Trash2, Download, Info, AlertCircle, CheckCircle,
   Search, User, FileSearch, GitPullRequest, Database, Code, MessageSquare, Brain, Wrench, Layers
 } from "lucide-react";
-import { GraphNode } from "../../pages/AgenticWorkflows"
-import { useStreamingData, NodeEntry } from "./StreamingDataContext"
-import axios from '../../http/axiosAgentConfig'
+import { useStreamingData } from "./StreamingDataContext"
 import { GraphFlow } from './graphs/interfaces'
 import { fetchResolvedBlueprints } from "@/api/blueprints";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";

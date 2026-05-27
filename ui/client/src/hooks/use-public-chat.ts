@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import axios from '@/http/axiosAgentConfig';
+import {
+  createSession,
+  listUserSessions,
+  deleteSession,
+  getSessionChat,
+} from '@/api/sessions';
 import { ChatSession, ChatMessage, ChatSessionData } from '@/types/session';
 import { checkSessionSharingStatus } from '@/hooks/use-sharing-status';
 import {transformSessionData, sortSessionsByTimestamp,} from '@/utils/sessionHelpers';
@@ -109,8 +114,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
 
     setIsLoading(true);
     try {
-      const response = await axios.get('/sessions/session.user.list');
-      const allSessions: ChatSessionData[] = response.data;
+      const allSessions: ChatSessionData[] = await listUserSessions();
 
       // Filter sessions for this blueprint
       const blueprintSessions = allSessions.filter(
@@ -129,12 +133,10 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
       if (sortedSessions.length === 0 && !selectedSession && !runId) {
         // Auto-create a new chat session - do this synchronously without loading states
         try {
-          const createResponse = await axios.post('/sessions/user.session.create', {
+          const newSessionId = await createSession({
             blueprintId: blueprintId,
             metadata: { source: 'public_link' },
           });
-
-          const newSessionId = createResponse.data;
 
           // Validate that we got a session ID
           if (!newSessionId || typeof newSessionId !== 'string') {
@@ -162,10 +164,8 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
           setSelectedSession(tempSession);
 
           // Refresh sessions list to get proper data (do this in background, don't wait)
-          axios
-            .get('/sessions/session.user.list')
-            .then(async (refreshResponse) => {
-              const refreshSessions: ChatSessionData[] = refreshResponse.data;
+          listUserSessions()
+            .then(async (refreshSessions) => {
               const refreshBlueprintSessions = refreshSessions.filter(
                 (session) => session.blueprint_id === blueprintId && session.blueprint_exists
               );
@@ -254,7 +254,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
 
     setIsDeleting(true);
     try {
-      await axios.delete(`/sessions/session.delete?sessionId=${chatToDelete.id}`);
+      await deleteSession(chatToDelete.id);
 
       // Remove the deleted session from the list
       setSessions((prevSessions) => prevSessions.filter((session) => session.id !== chatToDelete.id));
@@ -296,12 +296,10 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
 
     setIsCreatingSession(true);
     try {
-      const response = await axios.post('/sessions/user.session.create', {
+      const newSessionId = await createSession({
         blueprintId: blueprintId,
         metadata: { source: 'public_link' },
       });
-
-      const newSessionId = response.data;
 
       // Create a temporary session object for the new session
       const tempSession: ChatSession = {
@@ -322,8 +320,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
       setRunId(newSessionId);
 
       // Refresh sessions list to get proper data (this will update the list but preserve selection)
-      const response2 = await axios.get('/sessions/session.user.list');
-      const allSessions: ChatSessionData[] = response2.data;
+      const allSessions: ChatSessionData[] = await listUserSessions();
       const blueprintSessions = allSessions.filter(
         (session) => session.blueprint_id === blueprintId && session.blueprint_exists
       );
@@ -405,8 +402,8 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
 
         await streamCompletePromise;
 
-        const sessionResponse = await axios.get(`/sessions/session.chat.get?sessionId=${runId}`);
-        const { output, status, status_message } = sessionResponse.data;
+        const sessionData = await getSessionChat(runId);
+        const { output, status, status_message } = sessionData;
 
         if (status === 'CANCELLED') {
           throw createSessionError(status_message || 'Workflow was stopped.', 'CANCELLED');

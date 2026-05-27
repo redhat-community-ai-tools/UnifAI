@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback, useRef } from 'react';
-import axios from '@/http/axiosAgentConfig';
 import { useWorkspaceIdentity } from '@/hooks/use-workspace-identity';
 import { catalogService } from '@/api/catalog';
+import { listResources, validateResource } from '@/api/resources';
 import { ElementValidationResult, CachedValidationResult, BlueprintValidationResult, BlueprintValidationRequest, CachedBlueprintValidationResult } from '@/types/validation';
 import { validateBlueprint as validateBlueprintApi } from '@/api/blueprints';
 
@@ -203,11 +203,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
   // Helper: Fetch validation from API and cache result
   const fetchAndCacheValidation = useCallback(async (rid: string): Promise<ElementValidationResult> => {
     try {
-      const response = await axios.post<ElementValidationResult>(
-        '/resources/resource.validate',
-        { resourceId: rid },
-      );
-      const result = response.data;
+      const result = await validateResource(rid);
       updateDependencyParentMap(rid, result.dependency_results);
       cacheValidationResult(rid, result);
       return result;
@@ -240,23 +236,13 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
       await Promise.all(
         categories.map(async (category) => {
           try {
-            const listParams = new URLSearchParams({
+            const response = await listResources({
               category,
               limit: "1000",
+              teamId: TEAM_ID,
             });
-            if (TEAM_ID) {
-              listParams.set("teamId", TEAM_ID);
-            }
-            const response = await axios.get<{
-              resources: Array<{
-                rid: string;
-                name: string;
-                category: string;
-                type: string;
-              }>;
-            }>(`/resources/resources.list?${listParams.toString()}`);
 
-            response.data.resources.forEach((resource) => {
+            response.resources.forEach((resource) => {
               nameMap.set(resource.rid, resource.name);
               resourceMap.set(resource.rid, {
                 rid: resource.rid,

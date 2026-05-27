@@ -2,8 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
-import axios from "../../../http/axiosAgentConfig";
-import { executeAction } from '@/api/actions';
+import { executeAction, callDynamicEndpoint } from '@/api/actions';
 import { useAuth } from "@/contexts/AuthContext";
 import { FieldValidationTwoFactorAuth } from './FieldValidationTwoFactorAuth';
 
@@ -179,20 +178,7 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
     const method = (validationHint.method || 'POST').toUpperCase();
     const endpoint = validationHint.endpoint;
 
-    let response;
-    if (method === 'GET') {
-      // For GET requests, send data as query params
-      response = await axios.get(endpoint, { params: requestBody });
-    } else {
-      // For POST/PUT/PATCH, send data in body
-      response = await axios({
-        method: method.toLowerCase(),
-        url: endpoint,
-        data: requestBody
-      });
-    }
-
-    return response.data;
+    return callDynamicEndpoint(endpoint, method, requestBody);
   };
 
   const performValidation = async (value: any) => {

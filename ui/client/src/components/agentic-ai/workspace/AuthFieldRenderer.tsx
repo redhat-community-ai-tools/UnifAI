@@ -14,7 +14,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Lock, LogIn, Loader2 } from 'lucide-react';
-import axios from "../../../http/axiosAgentConfig";
+import { executeAction } from '@/api/actions';
 import { useAuth } from "@/contexts/AuthContext";
 
 interface AuthFieldRendererProps {
@@ -80,13 +80,7 @@ export const AuthFieldRenderer: React.FC<AuthFieldRendererProps> = ({
     setStatus('checking');
 
     try {
-      const response = await axios.post('/actions/action.execute', {
-        uid: actionUid,
-        inputData,
-        userId,
-      });
-
-      const data = response.data;
+      const data = await executeAction(actionUid, inputData, userId);
 
 
       if (data.status === 'authenticated') {

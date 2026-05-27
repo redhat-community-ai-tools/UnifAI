@@ -30,3 +30,10 @@ export const catalogService = {
   },
 };
 
+export async function getElementSpec<T = any>(category: string, type: string): Promise<T> {
+  const response = await axios.get<T>(
+    `/catalog/element.spec.get?category=${category}&type=${type}`,
+  );
+  return response.data;
+}
+
