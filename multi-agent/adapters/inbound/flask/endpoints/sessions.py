@@ -6,7 +6,7 @@ from pydantic.json import pydantic_encoder
 from mas.core.channels import with_heartbeats
 from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.session.domain.models import SessionMeta
-from inbound.flask.decorators import with_require_team_session
+from inbound.flask.identity import with_require_team_session
 
 sessions_bp = Blueprint("sessions", __name__)
 

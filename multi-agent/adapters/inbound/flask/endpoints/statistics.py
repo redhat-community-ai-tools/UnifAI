@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, current_app
 from global_utils.helpers.apiargs import from_query
 from webargs import fields, validate
 import logging
-from inbound.flask.decorators import require_admin_access, with_require_team_session
+from inbound.flask.identity import require_admin_access, with_require_team_session
 from mas.statistics.models import TimeRangePreset
 
 logger = logging.getLogger(__name__)

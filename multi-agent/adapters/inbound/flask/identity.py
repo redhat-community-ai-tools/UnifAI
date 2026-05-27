@@ -1,14 +1,18 @@
 """
-Flask decorators for identity resolution and authorization.
+Inbound identity adapter — Flask middleware for session validation and authorization.
 
-``with_require_team_session`` is the single auth decorator for all MAS
-endpoints.  It validates a Redis-backed server session (via ``X-Session-Id``
-header) and resolves a user-or-team Identity — replacing the legacy
-header-trust decorators.
+This module is the MAS entry point for all identity concerns at the HTTP layer:
 
-The decorator injects a single ``identity`` keyword argument.  Endpoints
-that need the raw human username (collaboration, admin gates) read
-``g.identity_username`` instead.
+- ``with_require_team_session``: validates the Redis-backed server session via
+  ``X-Session-Id`` and resolves a user-or-team Identity.
+- ``require_admin_access``: gates endpoints to configured admin users.
+- ``build_team_session_decorator``: one-time startup wiring that connects the
+  generic ``global_utils`` session decorator to MAS's container (Redis store,
+  IdentityProvider port).
+
+The heavy lifting (Redis reads, identity resolution) is in
+``global_utils.flask.decorators``; this module supplies MAS-specific wiring and
+the thin runtime proxy that endpoints import.
 """
 import logging
 from functools import wraps

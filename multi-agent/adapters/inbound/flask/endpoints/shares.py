@@ -6,7 +6,7 @@ from webargs import fields
 from mas.core.identity import IdentityType
 from mas.sharing.models import ShareItemKind, ShareStatus
 from mas.sharing.service import ShareService
-from inbound.flask.decorators import with_require_team_session
+from inbound.flask.identity import with_require_team_session
 
 logger = logging.getLogger(__name__)
 

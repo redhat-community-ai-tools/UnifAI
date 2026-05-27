@@ -1,7 +1,7 @@
 import logging
 
 from flask import Blueprint, jsonify, current_app
-from inbound.flask.decorators import with_require_team_session
+from inbound.flask.identity import with_require_team_session
 
 logger = logging.getLogger(__name__)
 

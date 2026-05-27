@@ -3,7 +3,7 @@ from flask import Blueprint, g, jsonify, current_app
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 from mas.resources.errors import ResourceInUseError
-from inbound.flask.decorators import with_require_team_session
+from inbound.flask.identity import with_require_team_session
 
 resources_bp = Blueprint("resources", __name__)
 

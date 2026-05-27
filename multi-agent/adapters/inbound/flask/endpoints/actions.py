@@ -2,7 +2,7 @@ import logging
 
 from flask import Blueprint, g, jsonify, current_app
 
-from inbound.flask.decorators import with_require_team_session
+from inbound.flask.identity import with_require_team_session
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 

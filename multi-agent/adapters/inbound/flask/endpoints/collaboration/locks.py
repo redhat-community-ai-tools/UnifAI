@@ -7,7 +7,7 @@ from flask import Blueprint, current_app, g, jsonify
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 
-from inbound.flask.decorators import with_require_team_session
+from inbound.flask.identity import with_require_team_session
 
 logger = logging.getLogger(__name__)
 

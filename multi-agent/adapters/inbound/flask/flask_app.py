@@ -1,7 +1,7 @@
 from flask import Flask
 from config.app_config import AppConfig
 from .endpoints import register_all_endpoints
-from .decorators import build_team_session_decorator
+from .identity import build_team_session_decorator
 from flask_cors import CORS
 from global_utils.flask.request_rules import RequestRules
 import os

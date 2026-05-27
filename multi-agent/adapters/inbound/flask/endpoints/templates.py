@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, current_app
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import logging
-from inbound.flask.decorators import with_require_team_session
+from inbound.flask.identity import with_require_team_session
 
 from mas.templates.errors import (
     TemplateNotFoundError,

@@ -1,116 +1,25 @@
 """
 Flask decorators for access control.
 
-Pluggable so each app can supply its own way to get the current user
-and to check admin status (e.g. from config, DB, or admin config service).
+Provides pluggable decorator factories consumed by any Flask-based service:
 
-Also provides identity-session decorators that validate callers against
-a Redis-backed server session written by the Identity service after
-Keycloak login.  These are generic (no MAS/domain concepts) and can be
-consumed by any Flask-based service.
+- ``require_team_session``: validates a Redis-backed server session and resolves
+  a user-or-team Identity.  The single auth decorator for services that need
+  team-aware identity context (e.g. MAS).
+- ``require_admin_access``: gates endpoints to admin users via caller-supplied
+  callbacks.
 """
 from functools import wraps
 from typing import Any, Callable
 
-from flask import g, jsonify, request, session
+from flask import g, jsonify, request
 
 from global_utils.identity import resolve_identity
-from global_utils.redis import get_identity_session, get_identity_username
+from global_utils.redis import get_identity_session
 
 G_IDENTITY_SESSION = "identity_session"
 G_IDENTITY_USERNAME = "identity_username"
 G_IDENTITY = "identity"
-
-
-def require_identity_session(
-    get_redis_store: Callable[[], Any],
-    get_session_id: Callable[[], str | None] | None = None,
-) -> Callable:
-    """
-    Decorator factory: require a valid identity server session in Redis.
-
-    A session is "valid" when :meth:`UserSessionData.has_auth_credentials`
-    is true (username + access_token present — same bar as the identity
-    service ``is_authenticated``).
-
-    Each app supplies:
-      - ``get_redis_store()`` -> store with ``hget``
-        (e.g. :class:`global_utils.redis.RedisKVStore`)
-      - ``get_session_id()`` -> str | None
-        (optional; default: ``session.get("session_id")``)
-
-    On success: sets ``g.identity_session`` to a :class:`UserSessionData`.
-    On failure: 401 with JSON; unexpected errors: 500 with ``error_type``.
-    """
-    get_sid = get_session_id or (lambda: session.get("session_id"))
-
-    def decorator(f: Callable) -> Callable:
-        @wraps(f)
-        def wrapped(*args: Any, **kwargs: Any) -> Any:
-            try:
-                data = get_identity_session(get_redis_store(), get_sid())
-                if data is None or not data.has_auth_credentials():
-                    return (
-                        jsonify({
-                            "error": "Not authenticated",
-                            "error_type": "AUTHENTICATION_REQUIRED",
-                        }),
-                        401,
-                    )
-                setattr(g, G_IDENTITY_SESSION, data)
-                return f(*args, **kwargs)
-            except Exception as e:
-                return (
-                    jsonify({
-                        "error": f"Access control error: {e!s}",
-                        "error_type": "ACCESS_CONTROL_ERROR",
-                    }),
-                    500,
-                )
-        return wrapped
-    return decorator
-
-
-def require_identity_username(
-    get_redis_store: Callable[[], Any],
-    get_session_id: Callable[[], str | None] | None = None,
-) -> Callable:
-    """
-    Decorator factory: require a non-empty ``username`` from the Redis server session.
-
-    Weaker than :func:`require_identity_session` (does not check access_token).
-    Prefer the full session decorator for API paths that need the same bar as
-    the identity service.
-
-    On success: sets ``g.identity_username`` (see :data:`G_IDENTITY_USERNAME`).
-    """
-    get_sid = get_session_id or (lambda: session.get("session_id"))
-
-    def decorator(f: Callable) -> Callable:
-        @wraps(f)
-        def wrapped(*args: Any, **kwargs: Any) -> Any:
-            try:
-                username = get_identity_username(get_redis_store(), get_sid())
-                if not username:
-                    return (
-                        jsonify({
-                            "error": "Not authenticated",
-                            "error_type": "AUTHENTICATION_REQUIRED",
-                        }),
-                        401,
-                    )
-                setattr(g, G_IDENTITY_USERNAME, username)
-                return f(*args, **kwargs)
-            except Exception as e:
-                return (
-                    jsonify({
-                        "error": f"Access control error: {e!s}",
-                        "error_type": "ACCESS_CONTROL_ERROR",
-                    }),
-                    500,
-                )
-        return wrapped
-    return decorator
 
 
 def require_team_session(
@@ -122,9 +31,7 @@ def require_team_session(
     """Decorator factory: validate Redis session + resolve user-or-team Identity.
 
     Combines session validation (via Redis) with identity resolution into a
-    single decorator pass.  Intended as the successor to
-    :func:`require_identity_session` for endpoints that also need team-aware
-    identity context.
+    single decorator pass.
 
     Each app supplies:
       - ``get_redis_store()`` → store with ``hget``
