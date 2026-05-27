@@ -118,7 +118,6 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
           sessionId: sessionPayload.sessionId,
           inputs: sessionPayload.inputs,
           scope: hub.globalScope,
-          userId: user?.username || "default",
         });
         setIsSubmitting(false);
         subscribeRemoteStream(sessionPayload.sessionId);
@@ -227,8 +226,10 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
     sessionListPollCounterRef.current += 1;
     if (sessionListPollCounterRef.current % 5 === 0) {
       try {
+        const params = new URLSearchParams();
+        if (hub.teamId) params.set("teamId", hub.teamId);
         const listRes = await axios.get(
-          `/sessions/session.user.list?userId=${hub.contextUserId}&identityType=${hub.identityType}`,
+          `/sessions/session.user.list?${params.toString()}`,
         );
         const transformApiDataToSessions = (apiData: ChatSessionData[]) =>
           apiData.map((sd, i) => {
@@ -271,7 +272,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
       const currentUser = user?.username || "default";
       setTypingUsers(allTyping.filter((u: string) => u !== currentUser));
     } catch { /* ignore */ }
-  }, [loadSessionMessages, fetchParticipants, user?.username, hub.contextUserId, hub.identityType]);
+  }, [loadSessionMessages, fetchParticipants, user?.username, hub.teamId]);
 
   const getSessionParticipantMembers = useCallback((sessionId: string): MemberDisplay[] => {
     const participants = sessionParticipants[sessionId];

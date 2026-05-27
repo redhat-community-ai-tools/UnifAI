@@ -7,7 +7,7 @@ from flask import Blueprint, current_app, jsonify
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 
-from inbound.flask.decorators import with_authenticated_user
+from inbound.flask.decorators import with_require_team_session
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +33,13 @@ def _holder_to_json(holder):
 
 
 @collaboration_locks_bp.route("/edit_lock.acquire", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "team_id": fields.Str(data_key="teamId", required=True),
     "entity_kind": fields.Str(data_key="entityKind", required=True),
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def edit_lock_acquire(authenticated_user, team_id, entity_kind, entity_id):
+def edit_lock_acquire(identity, authenticated_user, team_id, entity_kind, entity_id):
     svc, err = _collab_service()
     if err:
         return err
@@ -64,13 +64,13 @@ def edit_lock_acquire(authenticated_user, team_id, entity_kind, entity_id):
 
 
 @collaboration_locks_bp.route("/edit_lock.release", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "team_id": fields.Str(data_key="teamId", required=True),
     "entity_kind": fields.Str(data_key="entityKind", required=True),
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def edit_lock_release(authenticated_user, team_id, entity_kind, entity_id):
+def edit_lock_release(identity, authenticated_user, team_id, entity_kind, entity_id):
     svc, err = _collab_service()
     if err:
         return err
@@ -87,13 +87,13 @@ def edit_lock_release(authenticated_user, team_id, entity_kind, entity_id):
 
 
 @collaboration_locks_bp.route("/edit_lock.heartbeat", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "team_id": fields.Str(data_key="teamId", required=True),
     "entity_kind": fields.Str(data_key="entityKind", required=True),
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def edit_lock_heartbeat(authenticated_user, team_id, entity_kind, entity_id):
+def edit_lock_heartbeat(identity, authenticated_user, team_id, entity_kind, entity_id):
     svc, err = _collab_service()
     if err:
         return err
@@ -112,13 +112,13 @@ def edit_lock_heartbeat(authenticated_user, team_id, entity_kind, entity_id):
 
 
 @collaboration_locks_bp.route("/edit_lock.status", methods=["GET"])
-@with_authenticated_user
+@with_require_team_session
 @from_query({
     "team_id": fields.Str(data_key="teamId", required=True),
     "entity_kind": fields.Str(data_key="entityKind", required=True),
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def edit_lock_status(authenticated_user, team_id, entity_kind, entity_id):
+def edit_lock_status(identity, authenticated_user, team_id, entity_kind, entity_id):
     svc, err = _collab_service()
     if err:
         return err
@@ -135,13 +135,13 @@ def edit_lock_status(authenticated_user, team_id, entity_kind, entity_id):
 
 
 @collaboration_locks_bp.route("/edit_lock.statuses", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "team_id": fields.Str(data_key="teamId", required=True),
     "entity_kind": fields.Str(data_key="entityKind", required=True),
     "entity_ids": fields.List(fields.Str(), data_key="entityIds", required=True),
 })
-def edit_lock_statuses(authenticated_user, team_id, entity_kind, entity_ids):
+def edit_lock_statuses(identity, authenticated_user, team_id, entity_kind, entity_ids):
     svc, err = _collab_service()
     if err:
         return err

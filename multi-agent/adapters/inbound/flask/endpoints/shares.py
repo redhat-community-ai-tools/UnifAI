@@ -6,10 +6,7 @@ from webargs import fields
 from mas.core.identity import IdentityType
 from mas.sharing.models import ShareItemKind, ShareStatus
 from mas.sharing.service import ShareService
-from inbound.flask.decorators import (
-    with_identity,
-    with_authenticated_user,
-)
+from inbound.flask.decorators import with_require_team_session
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +14,7 @@ shares_bp = Blueprint("shares", __name__)
 
 
 @shares_bp.route("/share.create", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "recipient_user_id": fields.Str(data_key="recipientUserId", required=True),
     "item_kind": fields.Str(data_key="itemKind", required=True),
@@ -29,6 +26,7 @@ shares_bp = Blueprint("shares", __name__)
     "auto_accept": fields.Bool(data_key="autoAccept", required=False, load_default=False),
 })
 def create_share(
+    identity,
     authenticated_user,
     recipient_user_id,
     item_kind,
@@ -73,8 +71,8 @@ def create_share(
             if not resolved:
                 return jsonify({"error": f"Recipient '{recipient_raw}' not found in directory"}), 400
 
-        # Auto-accept self-copy: persist recipient as the canonical auth header value so
-        # accept_invite(..., recipient_user_id=X-Authenticated-User) always matches.
+        # Auto-accept self-copy: persist recipient as the canonical session username so
+        # accept_invite(..., recipient_user_id=authenticated_user) always matches.
         recipient_effective = (
             authenticated_user
             if (auto_accept and recipient_raw.casefold() == authenticated_user.casefold())
@@ -118,11 +116,11 @@ def create_share(
 
 
 @shares_bp.route("/share.accept", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "share_id": fields.Str(data_key="shareId", required=True),
 })
-def accept_share(authenticated_user, share_id):
+def accept_share(identity, authenticated_user, share_id):
     """Accept share invitation."""
     try:
         svc = current_app.container.share_service
@@ -142,11 +140,11 @@ def accept_share(authenticated_user, share_id):
 
 
 @shares_bp.route("/share.decline", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "share_id": fields.Str(data_key="shareId", required=True),
 })
-def decline_share(authenticated_user, share_id):
+def decline_share(identity, authenticated_user, share_id):
     """Decline share invitation."""
     try:
         svc = current_app.container.share_service
@@ -163,14 +161,14 @@ def decline_share(authenticated_user, share_id):
 
 
 @shares_bp.route("/share.to_team", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "team_name": fields.Str(data_key="teamName", required=True),
     "item_kind": fields.Str(data_key="itemKind", required=True),
     "item_id": fields.Str(data_key="itemId", required=True),
     "sender_team_id": fields.Str(data_key="senderTeamId", required=False, load_default=None),
 })
-def share_to_team(authenticated_user, team_name, item_kind, item_id, sender_team_id=None):
+def share_to_team(identity, authenticated_user, team_name, item_kind, item_id, sender_team_id=None):
     """Share item directly to a team workspace.
 
     When the resource is owned by a team (rather than the calling user personally),
@@ -241,11 +239,11 @@ def share_to_team(authenticated_user, team_name, item_kind, item_id, sender_team
 
 
 @shares_bp.route("/share.cancel", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "share_id": fields.Str(data_key="shareId", required=True),
 })
-def cancel_share(authenticated_user, share_id):
+def cancel_share(identity, authenticated_user, share_id):
     """Cancel share invitation."""
     try:
         svc = current_app.container.share_service
@@ -262,14 +260,14 @@ def cancel_share(authenticated_user, share_id):
 
 
 @shares_bp.route("/shares.list", methods=["GET"])
-@with_identity
+@with_require_team_session
 @from_query({
     "direction": fields.Str(required=False, load_default="received"),
     "status": fields.Str(required=False),
     "skip": fields.Int(required=False, load_default=0),
     "limit": fields.Int(required=False, load_default=100),
 })
-def list_shares(identity, direction="received", status=None, skip=0, limit=100):
+def list_shares(identity, authenticated_user, direction="received", status=None, skip=0, limit=100):
     """List share invitations."""
     try:
         status_enum = None
@@ -306,11 +304,11 @@ def list_shares(identity, direction="received", status=None, skip=0, limit=100):
 
 
 @shares_bp.route("/share.get", methods=["GET"])
-@with_authenticated_user
+@with_require_team_session
 @from_query({
     "share_id": fields.Str(data_key="shareId", required=True),
 })
-def get_share(authenticated_user, share_id):
+def get_share(identity, authenticated_user, share_id):
     """Get share invitation details."""
     try:
         svc = current_app.container.share_service

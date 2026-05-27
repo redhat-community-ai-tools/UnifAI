@@ -55,7 +55,7 @@ export default function ShareWorkflow({
     setIsLoading(true);
     try {
       const newScope = checked ? "public" : "private";
-      await setBlueprintMetadata(blueprintId, { usageScope: newScope }, user?.username || "");
+      await setBlueprintMetadata(blueprintId, { usageScope: newScope });
       setEnabled(checked);
       setShareLink(checked ? constructShareLink(blueprintId) : null);
       toast({

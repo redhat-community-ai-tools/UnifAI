@@ -34,16 +34,14 @@ interface NotificationProviderProps {
 
 export const NotificationProvider: React.FC<NotificationProviderProps> = ({ children }) => {
   const { user, isAuthenticated } = useAuth();
-  const { viewMode, selectedTeam, teams } = useView();
+  const { viewMode, selectedTeam } = useView();
   const [receivedNotifications, setReceivedNotifications] = useState<ShareInvite[]>([]);
   const [sentNotifications, setSentNotifications] = useState<ShareInvite[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const userId = user?.username || '';
-  const contextUserId = viewMode === 'team' && selectedTeam
-    ? selectedTeam.id
-    : userId;
+  const teamId = viewMode === 'team' && selectedTeam ? selectedTeam.id : null;
 
   // Computed values
   const pendingNotificationsCount = receivedNotifications.filter(
@@ -60,20 +58,9 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     setError(null);
 
     try {
-      // Fetch both received and sent notifications in parallel
-      const sentTeamName =
-        viewMode === 'team' && selectedTeam
-          ? (
-              selectedTeam.name?.trim()
-              || teams.find((t) => t.id === selectedTeam.id)?.name?.trim()
-              || ''
-            )
-          : '';
       const [receivedResponse, sentResponse] = await Promise.all([
-        listShares('received', userId),
-        viewMode === 'team' && selectedTeam
-          ? listShares('sent', selectedTeam.id, undefined, 0, 100, 'team', sentTeamName || undefined)
-          : listShares('sent', userId),
+        listShares('received'),
+        listShares('sent', undefined, 0, 100, teamId),
       ]);
 
       setReceivedNotifications(receivedResponse.invites);
@@ -90,20 +77,10 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     setError(null);
     
     try {
-      const senderType = viewMode === 'team' && selectedTeam ? 'team' : 'user';
-      const senderDisplayName =
-        senderType === 'team'
-          ? (
-              selectedTeam?.name?.trim()
-              || teams.find((t) => t.id === selectedTeam?.id)?.name?.trim()
-              || selectedTeam?.id
-            )
-          : (user?.username || contextUserId);
       await createShare({
         ...request,
-        senderIdentityId: contextUserId,
-        senderType,
-        senderDisplayName,
+        senderIdentityId: teamId || undefined,
+        senderType: teamId ? 'team' : 'user',
       });
       await refreshNotifications();
     } catch (err) {
@@ -164,12 +141,11 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     if (isAuthenticated && userId) {
       refreshNotifications();
     } else {
-      // Clear notifications when user logs out
       setReceivedNotifications([]);
       setSentNotifications([]);
       setError(null);
     }
-  }, [isAuthenticated, userId, viewMode, selectedTeam?.id, teams]);
+  }, [isAuthenticated, userId, teamId]);
 
   // Set up periodic refresh (every 30 seconds)
   useEffect(() => {
@@ -177,10 +153,10 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
 
     const interval = setInterval(() => {
       refreshNotifications();
-    }, 30000); // 30 seconds
+    }, 30000);
 
     return () => clearInterval(interval);
-  }, [isAuthenticated, userId, viewMode, selectedTeam?.id, teams]);
+  }, [isAuthenticated, userId, teamId]);
 
   const value: NotificationContextType = {
     receivedNotifications,

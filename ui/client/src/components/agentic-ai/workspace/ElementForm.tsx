@@ -67,7 +67,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
 
   const { fetchResourcesForCategory } = useWorkspaceData();
   const { user } = useAuth();
-  const { isTeam: isTeamWorkspace, userId: teamId } = useWorkspaceIdentity();
+  const { isTeam: isTeamWorkspace, teamId } = useWorkspaceIdentity();
   const { toast } = useToast();
   const needsResourceEditLock =
     isOpen && isTeamWorkspace && !!editingElement?.rid && !!user?.username;

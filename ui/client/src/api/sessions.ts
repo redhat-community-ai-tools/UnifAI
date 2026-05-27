@@ -2,7 +2,7 @@ import axios from '@/http/axiosAgentConfig';
 
 export interface CreateSessionParams {
   blueprintId: string;
-  userId: string;
+  teamId?: string;
 }
 
 export async function createSession(params: CreateSessionParams) {
@@ -18,7 +18,6 @@ export interface SubmitSessionParams {
   sessionId: string;
   inputs: Record<string, any>;
   scope?: 'public' | 'private';
-  userId: string;
 }
 
 /**

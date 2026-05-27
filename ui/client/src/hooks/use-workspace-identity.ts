@@ -5,12 +5,8 @@ import { useView } from "@/contexts/ViewContext";
 export interface WorkspaceIdentity {
   /** True when the active workspace is a team workspace. */
   isTeam: boolean;
-  /** Owner id: team id in team view, else the logged-in user's username. */
-  userId: string;
-  /** Display name: team name in team view, else the user's name. */
-  displayName: string;
-  /** Identity type discriminator for API calls. */
-  identityType: "team" | "user";
+  /** Team ID when in team view, null otherwise. Send as `teamId` in API calls. */
+  teamId: string | null;
   /**
    * The logged-in user's username — always the human, even in team view.
    * Use for credential/OAuth lookups where the key is per-member, not per-team.
@@ -21,12 +17,9 @@ export interface WorkspaceIdentity {
 /**
  * Single source of truth for "who owns the current workspace".
  *
- * Replaces the repeated pattern of:
- * ```
- * const isTeam = viewMode === "team" && !!selectedTeam;
- * const contextUserId = isTeam ? selectedTeam!.id : (user?.username || "default");
- * const identityType = isTeam ? "team" : "user";
- * ```
+ * The backend resolves the authenticated user from the session (X-Session-Id).
+ * For team context, the UI only needs to send the teamId — the backend
+ * validates membership and resolves the display name server-side.
  */
 export function useWorkspaceIdentity(): WorkspaceIdentity {
   const { user } = useAuth();
@@ -36,10 +29,8 @@ export function useWorkspaceIdentity(): WorkspaceIdentity {
     const isTeam = viewMode === "team" && !!selectedTeam;
     return {
       isTeam,
-      userId: isTeam ? selectedTeam!.id : (user?.username || "default"),
-      displayName: isTeam ? selectedTeam!.name : (user?.name || "User"),
-      identityType: isTeam ? "team" : "user",
+      teamId: isTeam ? selectedTeam!.id : null,
       credentialUserId: user?.username || "default",
     };
-  }, [viewMode, selectedTeam, user?.username, user?.name]);
+  }, [viewMode, selectedTeam, user?.username]);
 }

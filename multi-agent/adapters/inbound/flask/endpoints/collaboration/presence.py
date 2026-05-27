@@ -7,7 +7,7 @@ from flask import Blueprint, current_app, jsonify
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 
-from inbound.flask.decorators import with_authenticated_user
+from inbound.flask.decorators import with_require_team_session
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +26,12 @@ def _collab_service():
 # ── Join / Leave / Heartbeat ────────────────────────────────────────
 
 @collaboration_bp.route("/session.join", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
     "role": fields.Str(data_key="role", load_default="collaborator"),
 })
-def join_session(authenticated_user, session_id, role):
+def join_session(identity, authenticated_user, session_id, role):
     svc, err = _collab_service()
     if err:
         return err
@@ -52,11 +52,11 @@ def join_session(authenticated_user, session_id, role):
 
 
 @collaboration_bp.route("/session.leave", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def leave_session(authenticated_user, session_id):
+def leave_session(identity, authenticated_user, session_id):
     svc, err = _collab_service()
     if err:
         return err
@@ -69,11 +69,11 @@ def leave_session(authenticated_user, session_id):
 
 
 @collaboration_bp.route("/session.heartbeat", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def heartbeat(authenticated_user, session_id):
+def heartbeat(identity, authenticated_user, session_id):
     svc, err = _collab_service()
     if err:
         return err
@@ -88,11 +88,11 @@ def heartbeat(authenticated_user, session_id):
 # ── Queries ─────────────────────────────────────────────────────────
 
 @collaboration_bp.route("/session.participants", methods=["GET"])
-@with_authenticated_user
+@with_require_team_session
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def get_participants(authenticated_user, session_id):
+def get_participants(identity, authenticated_user, session_id):
     svc, err = _collab_service()
     if err:
         return err
@@ -109,11 +109,11 @@ def get_participants(authenticated_user, session_id):
 
 
 @collaboration_bp.route("/team.sessions", methods=["GET"])
-@with_authenticated_user
+@with_require_team_session
 @from_query({
     "team_id": fields.Str(data_key="teamId", required=True),
 })
-def get_team_sessions(authenticated_user, team_id):
+def get_team_sessions(identity, authenticated_user, team_id):
     svc, err = _collab_service()
     if err:
         return err
@@ -128,8 +128,8 @@ def get_team_sessions(authenticated_user, team_id):
 
 
 @collaboration_bp.route("/user.active_sessions", methods=["GET"])
-@with_authenticated_user
-def get_user_active_sessions(authenticated_user):
+@with_require_team_session
+def get_user_active_sessions(identity, authenticated_user):
     svc, err = _collab_service()
     if err:
         return err
@@ -144,12 +144,12 @@ def get_user_active_sessions(authenticated_user):
 # ── Typing indicators ────────────────────────────────────────────
 
 @collaboration_bp.route("/session.typing", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
     "is_typing": fields.Bool(data_key="isTyping", load_default=True),
 })
-def set_typing(authenticated_user, session_id, is_typing):
+def set_typing(identity, authenticated_user, session_id, is_typing):
     svc, err = _collab_service()
     if err:
         return err
@@ -165,11 +165,11 @@ def set_typing(authenticated_user, session_id, is_typing):
 
 
 @collaboration_bp.route("/session.typing", methods=["GET"])
-@with_authenticated_user
+@with_require_team_session
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def get_typing(authenticated_user, session_id):
+def get_typing(identity, authenticated_user, session_id):
     svc, err = _collab_service()
     if err:
         return err

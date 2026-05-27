@@ -1,7 +1,7 @@
 import { api } from '@/http/authClient';
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { loadAnalytics } from '@/components/shared/LoadAnalytics';
-import { setAuthenticatedUser } from '@/http/axiosAgentConfig';
+import { setSessionId } from '@/http/axiosAgentConfig';
 
 export interface User {
   username: string;
@@ -44,16 +44,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (response.data.authenticated && response.data.user) {
         setUser(response.data.user);
         setAccessToken(response.data.access_token ?? null);
+        setSessionId(response.data.session_id ?? '');
         setIsAuthenticated(true);
       } else {
         setUser(null);
         setAccessToken(null);
+        setSessionId('');
         setIsAuthenticated(false);
       }
     } catch (error) {
       console.error('Auth check failed:', error);
       setUser(null);
       setAccessToken(null);
+      setSessionId('');
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
@@ -79,6 +82,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       setUser(null);
       setIsAuthenticated(false);
+      setSessionId('');
       window.location.href = '/login';
     }
   };
@@ -140,10 +144,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, []);
 
-  useEffect(() => {
-    setAuthenticatedUser(user?.username ?? '');
-  }, [user]);
-
   // Set up token refresh and expiration checking
   useEffect(() => {
     if (!isAuthenticated || !user) return;
@@ -166,6 +166,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.error('Token refresh failed:', error);
         setUser(null);
         setIsAuthenticated(false);
+        setSessionId('');
         window.location.href = '/login';
       }
     }

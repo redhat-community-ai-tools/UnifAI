@@ -26,40 +26,38 @@ export interface AgenticStats {
 }
 
 // Fetch active sessions
-export async function fetchActiveSessions(userId?: string, identityType?: string): Promise<string[]> {
-  const userIdParam = userId || 'default';
-  const idType = identityType || 'user';
+export async function fetchActiveSessions(teamId?: string | null): Promise<string[]> {
+  const params = new URLSearchParams();
+  if (teamId) params.set("teamId", teamId);
   const response = await axios.get(
-    `/sessions/session.user.blueprints.get?userId=${userIdParam}&identityType=${idType}`
+    `/sessions/session.user.blueprints.get?${params.toString()}`
   );
   return response.data || [];
 }
 
 // Fetch session counts by blueprint_id
 // Note: This data is available from the aggregated stats endpoint for better performance
-export async function fetchBlueprintSessionCounts(userId?: string): Promise<Record<string, number>> {
-  const userIdParam = userId || 'default';
-  // Use the aggregated stats endpoint instead of a separate endpoint
-  const stats = await fetchAgenticStats(userIdParam);
+export async function fetchBlueprintSessionCounts(teamId?: string | null): Promise<Record<string, number>> {
+  const stats = await fetchAgenticStats(teamId);
   return stats.blueprintSessionCounts || {};
 }
 
 // Fetch all resources for a user
-export async function fetchAllResources(userId?: string, identityType?: string): Promise<any[]> {
-  const userIdParam = userId || 'default';
-  const idType = identityType || 'user';
+export async function fetchAllResources(teamId?: string | null): Promise<any[]> {
+  const params = new URLSearchParams();
+  if (teamId) params.set("teamId", teamId);
   const response = await axios.get(
-    `/resources/resources.list?userId=${userIdParam}&identityType=${idType}`
+    `/resources/resources.list?${params.toString()}`
   );
   return response.data?.resources || [];
 }
 
 // Fetch resources by category
-export async function fetchResourcesByCategory(category: string, userId?: string, identityType?: string): Promise<any[]> {
-  const userIdParam = userId || 'default';
-  const idType = identityType || 'user';
+export async function fetchResourcesByCategory(category: string, teamId?: string | null): Promise<any[]> {
+  const params = new URLSearchParams({ category });
+  if (teamId) params.set("teamId", teamId);
   const response = await axios.get(
-    `/resources/resources.list?userId=${userIdParam}&identityType=${idType}&category=${category}`
+    `/resources/resources.list?${params.toString()}`
   );
   return response.data?.resources || [];
 }
@@ -77,11 +75,11 @@ export async function fetchResourceCategories(): Promise<string[]> {
 }
 
 // Fetch agentic stats summary - uses aggregated backend endpoint for optimal performance
-export async function fetchAgenticStats(userId?: string, identityType?: string): Promise<AgenticStats> {
-  const userIdParam = userId || 'default';
-  const idType = identityType || 'user';
+export async function fetchAgenticStats(teamId?: string | null): Promise<AgenticStats> {
+  const params = new URLSearchParams();
+  if (teamId) params.set("teamId", teamId);
   const response = await axios.get(
-    `/statistics/stats.get?userId=${userIdParam}&identityType=${idType}`
+    `/statistics/stats.get?${params.toString()}`
   );
   const data = response.data;
   

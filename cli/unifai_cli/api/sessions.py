@@ -6,13 +6,13 @@ from typing import Any, Optional
 from unifai_cli.api.base import MASClient
 
 # Auth requirements per multi-agent/adapters/inbound/flask/endpoints/sessions.py
-# (read from @with_require_identity_authorization / @with_authenticated_user decorators).
+# (all auth endpoints now use @with_require_team_session — X-Session-Id header).
 #
-# CLI method              | Backend route              | userId + X-Authenticated-User
-# ------------------------|----------------------------|------------------------------
-# create_session          | user.session.create        | YES (body userId + header)
-# submit_session          | user.session.submit        | YES (body userId + header)
-# execute_session         | user.session.execute       | YES (body userId + header)
+# CLI method              | Backend route              | Requires session
+# ------------------------|----------------------------|-----------------
+# create_session          | user.session.create        | YES
+# submit_session          | user.session.submit        | YES
+# execute_session         | user.session.execute       | YES
 # run_session_turn        | submit + session.subscribe | YES on submit only
 # get_session_chat        | session.chat.get           | NO
 # get_session_status      | session.status.get         | NO

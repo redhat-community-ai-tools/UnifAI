@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, current_app
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import logging
-from inbound.flask.decorators import with_require_identity_authorization
+from inbound.flask.decorators import with_require_team_session
 
 from mas.templates.errors import (
     TemplateNotFoundError,
@@ -296,14 +296,14 @@ def instantiate_template(template_id, input):
 
 
 @templates_bp.route("/template.materialize", methods=["POST"])
-@with_require_identity_authorization
+@with_require_team_session
 @from_body({
     "template_id": fields.Str(data_key="templateId", required=True),
     "input": fields.Dict(required=True),
     "blueprint_name": fields.Str(data_key="blueprintName", required=False, load_default=None),
     "skip_validation": fields.Bool(data_key="skipValidation", required=False, load_default=False),
 })
-def materialize_template(identity, template_id, input=None,
+def materialize_template(identity, authenticated_user, template_id, input=None,
                          blueprint_name=None, skip_validation=False):
     """
     Instantiate template and save blueprint to user's account.

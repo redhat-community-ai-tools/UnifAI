@@ -74,9 +74,9 @@ export default function WorkflowsPanel({
 
   const { selectedTeam } = useView();
   const { openShareForItem } = useShared();
-  const { isTeam, userId: contextUserId, identityType } = useWorkspaceIdentity();
-  const workspaceScopeRef = useRef({ contextUserId, identityType });
-  workspaceScopeRef.current = { contextUserId, identityType };
+  const { isTeam, teamId } = useWorkspaceIdentity();
+  const workspaceScopeRef = useRef({ teamId });
+  workspaceScopeRef.current = { teamId };
   
   // Blueprint validation hook
   const {
@@ -112,14 +112,11 @@ export default function WorkflowsPanel({
   // `forceAutoSelect` bypasses the `selectedFlow` check so the first item is always
   // picked after a scope change (where the closure still sees the stale value).
   const fetchAvailableFlows = async (forceAutoSelect = false): Promise<void> => {
-    const scopeAtStart = { contextUserId, identityType };
+    const scopeAtStart = { teamId };
     try {
-      const summaries = await fetchBlueprintSummaries(contextUserId, identityType);
+      const summaries = await fetchBlueprintSummaries(teamId);
 
-      if (
-        workspaceScopeRef.current.contextUserId !== scopeAtStart.contextUserId ||
-        workspaceScopeRef.current.identityType !== scopeAtStart.identityType
-      ) {
+      if (workspaceScopeRef.current.teamId !== scopeAtStart.teamId) {
         return;
       }
 
@@ -147,10 +144,7 @@ export default function WorkflowsPanel({
       console.error("Error fetching available blueprints:", error);
       throw error;
     } finally {
-      if (
-        workspaceScopeRef.current.contextUserId === scopeAtStart.contextUserId &&
-        workspaceScopeRef.current.identityType === scopeAtStart.identityType
-      ) {
+      if (workspaceScopeRef.current.teamId === scopeAtStart.teamId) {
         setIsLoading(false);
       }
     }
@@ -160,22 +154,16 @@ export default function WorkflowsPanel({
   const fetchActiveFlows = async (): Promise<void> => {
     if (!showActiveStatus) return;
 
-    const scopeAtStart = { contextUserId, identityType };
+    const scopeAtStart = { teamId };
     try {
-      const activeSessions = await fetchActiveSessions(contextUserId, identityType);
-      if (
-        workspaceScopeRef.current.contextUserId !== scopeAtStart.contextUserId ||
-        workspaceScopeRef.current.identityType !== scopeAtStart.identityType
-      ) {
+      const activeSessions = await fetchActiveSessions(teamId);
+      if (workspaceScopeRef.current.teamId !== scopeAtStart.teamId) {
         return;
       }
       setActiveFlowIds(activeSessions || []);
     } catch (error) {
       console.error("Error fetching active flows:", error);
-      if (
-        workspaceScopeRef.current.contextUserId === scopeAtStart.contextUserId &&
-        workspaceScopeRef.current.identityType === scopeAtStart.identityType
-      ) {
+      if (workspaceScopeRef.current.teamId === scopeAtStart.teamId) {
         setActiveFlowIds([]);
       }
     }
@@ -192,7 +180,7 @@ export default function WorkflowsPanel({
     ]).finally(() => {
       setIsLoading(false);
     });
-  }, [contextUserId, identityType]);
+  }, [teamId]);
 
   // Trigger validation when selected flow changes
   useEffect(() => {
@@ -223,9 +211,7 @@ export default function WorkflowsPanel({
       try {
         const blueprint = await fetchResolvedBlueprint(
           selectedFlow.id,
-          contextUserId,
-          identityType,
-          isTeam ? selectedTeam!.name : undefined,
+          teamId,
         );
         if (cancelled) return;
         if (blueprint) {
@@ -243,7 +229,7 @@ export default function WorkflowsPanel({
 
     fetchBlueprintData();
     return () => { cancelled = true; };
-  }, [selectedFlow?.id, contextUserId]);
+  }, [selectedFlow?.id, teamId]);
 
   const handleFlowSelect = (flow: FlowObject): void => {
     onFlowSelect(flow);

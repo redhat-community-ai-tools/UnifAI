@@ -61,6 +61,7 @@ from outbound.auth.http_oauth_client import HttpxAuthClient
 
 from mas.core.identity.ports import IdentityProvider
 from global_utils.identity_client import IdentityClient
+from global_utils.redis import RedisKVStore, build_redis_client
 from global_utils.utils.singleton import SingletonMeta
 from global_utils.utils.util import get_redis_url
 
@@ -248,6 +249,12 @@ class AppContainer(metaclass=SingletonMeta):
             foreground_runner=foreground_runner,
             input_projector=self.input_projector,
             background_engine=background_engine,
+        )
+
+        # Redis KV store for session validation decorators.
+        # Reuses the lru_cache'd client from build_redis_client().
+        self.redis_store: RedisKVStore | None = (
+            RedisKVStore(build_redis_client()) if redis_url else None
         )
 
         # Single shared IdentityClient — the only object that makes HTTP calls

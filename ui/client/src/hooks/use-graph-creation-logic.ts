@@ -132,7 +132,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
 
   const { user } = useAuth();
   const { selectedTeam } = useView();
-  const { isTeam, userId: USER_ID, displayName: USER_DISPLAY_NAME, identityType } = useWorkspaceIdentity();
+  const { isTeam, teamId: TEAM_ID } = useWorkspaceIdentity();
 
   // Stable refs for callbacks embedded in node data (avoids stale closures)
   const deleteNodeRef = useRef<(id: string) => void>(() => {});
@@ -587,14 +587,12 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
       setIsLoadingBlocks(false);
       return;
     }
-    if (!USER_ID) {
-      setIsLoadingBlocks(false);
-      return;
-    }
     try {
       setIsLoadingBlocks(true);
+      const params = new URLSearchParams();
+      if (TEAM_ID) params.set("teamId", TEAM_ID);
       const response = await axios.get(
-        `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}`,
+        `/resources/resources.list?${params.toString()}`,
       );
       const allBlocks = response.data.resources.map(transformResourceToBlock);
 
@@ -629,7 +627,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     } finally {
       setIsLoadingBlocks(false);
     }
-  }, [toast, USER_ID, identityType, isTeam, user?.username]);
+  }, [toast, TEAM_ID, isTeam, user?.username]);
 
   useEffect(() => {
     loadBuildingBlocks();
@@ -1131,16 +1129,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
           response = await updateBlueprint(editBlueprintId, yamlString);
           blueprintId = editBlueprintId;
         } else {
-          if (!USER_ID) {
-            toast({
-              title: "❌ Cannot save workflow",
-              description: "Sign in or select a workspace before saving.",
-              variant: "destructive",
-            });
-            setIsSaving(false);
-            return;
-          }
-          response = await saveBlueprint(yamlString, USER_ID, USER_DISPLAY_NAME, identityType);
+          response = await saveBlueprint(yamlString, TEAM_ID);
           blueprintId = response.blueprint_id;
         }
 
@@ -1182,7 +1171,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         setIsSaving(false);
       }
     },
-    [yamlFlow, toast, onSaveComplete, USER_ID, identityType, isEditMode, editBlueprintId],
+    [yamlFlow, toast, onSaveComplete, TEAM_ID, isEditMode, editBlueprintId],
   );
 
   useEffect(() => {

@@ -10,7 +10,7 @@ from mas.blueprints.exceptions import (
     BlueprintSaveError,
     BlueprintMetadataError,
 )
-from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
+from inbound.flask.decorators import with_require_team_session
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +86,8 @@ def _extract_blueprint_data(
 
 
 @blueprints_bp.route("/available.blueprints.get", methods=["GET"])
-@with_require_identity_authorization
-def available_doc_list(identity):
+@with_require_team_session
+def available_doc_list(identity, authenticated_user):
     try:
         svc = current_app.container.blueprint_service
         docs = svc.list_draft_docs(identity=identity)
@@ -97,8 +97,8 @@ def available_doc_list(identity):
 
 
 @blueprints_bp.route("/available.blueprints.summary.get", methods=["GET"])
-@with_require_identity_authorization
-def available_blueprint_summaries(identity):
+@with_require_team_session
+def available_blueprint_summaries(identity, authenticated_user):
     """
     Return lightweight blueprint summaries (id, name, description,
     timestamps, metadata) without the full spec.
@@ -112,14 +112,14 @@ def available_blueprint_summaries(identity):
 
 
 @blueprints_bp.route("/available.blueprints.resolved.get", methods=["GET"])
-@with_require_identity_authorization
+@with_require_team_session
 @from_query({
     "blueprint_id": fields.Str(data_key="blueprintId", required=False, load_default=None),
     "skip": fields.Int(data_key="skip", required=False, load_default=0),
     "limit": fields.Int(data_key="limit", required=False, load_default=100),
     "sort_desc": fields.Bool(data_key="sortDesc", required=False, load_default=True),
 })
-def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, sort_desc=True):
+def available_resolved_doc_list(identity, authenticated_user, blueprint_id=None, skip=0, limit=100, sort_desc=True):
     try:
         svc = current_app.container.blueprint_service
 
@@ -147,12 +147,12 @@ def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, 
 
 
 @blueprints_bp.route("/blueprint.save", methods=["POST"])
-@with_require_identity_authorization
+@with_require_team_session
 @from_body({
     "blueprint_raw": fields.Str(data_key="blueprintRaw", required=False),
     "metadata": fields.Dict(data_key="metadata", required=False, load_default=lambda: {})
 })
-def save_blueprint(identity, blueprint_raw=None, metadata=None):
+def save_blueprint(identity, authenticated_user, blueprint_raw=None, metadata=None):
     """
     Save a blueprint draft.
     
@@ -323,19 +323,18 @@ def set_metadata(blueprint_id, metadata):
         return jsonify({"error": str(e)}), 500
 
 @blueprints_bp.route("/blueprint.validate", methods=["POST"])
-@with_authenticated_user
+@with_require_team_session
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
-    "user_id": fields.Str(data_key="userId", load_default=""),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_blueprint(authenticated_user, blueprint_id, user_id, timeout_seconds):
+def validate_blueprint(identity, authenticated_user, blueprint_id, timeout_seconds):
     """Validate all elements in a saved blueprint."""
     svc = current_app.container.blueprint_service
     try:
         result = svc.validate_blueprint(
             blueprint_id=blueprint_id,
-            user_id=user_id,
+            user_id=authenticated_user,
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,
         )

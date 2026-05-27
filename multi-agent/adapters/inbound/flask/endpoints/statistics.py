@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, current_app
 from global_utils.helpers.apiargs import from_query
 from webargs import fields, validate
 import logging
-from inbound.flask.decorators import require_admin_access, with_require_identity_authorization
+from inbound.flask.decorators import require_admin_access, with_require_team_session
 from mas.statistics.models import TimeRangePreset
 
 logger = logging.getLogger(__name__)
@@ -11,8 +11,8 @@ statistics_bp = Blueprint("statistics", __name__)
 
 
 @statistics_bp.route("/stats.get", methods=["GET"])
-@with_require_identity_authorization
-def get_all(identity):
+@with_require_team_session
+def get_all(identity, authenticated_user):
     """
     Get aggregated statistics for all features (identity-scoped).
     Returns all stats in a single response for optimal performance.
@@ -32,6 +32,7 @@ def get_all(identity):
 
 
 @statistics_bp.route("/stats.system.get", methods=["GET"])
+@with_require_team_session
 @require_admin_access
 @from_query({
     "time_range": fields.Str(
@@ -42,9 +43,8 @@ def get_all(identity):
             error="Time range must be one of {choices}"
         )
     ),
-    "user_id": fields.Str(data_key="userId", required=True)
 })
-def get_system_stats(time_range, user_id):
+def get_system_stats(identity, authenticated_user, time_range):
     """
     Get comprehensive system-wide statistics for workflows, users, and blueprints.
     Returns all key metrics in a single response for the admin dashboard.

@@ -109,7 +109,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
 
     setIsLoading(true);
     try {
-      const response = await axios.get(`/sessions/session.user.list?userId=${user.username}`);
+      const response = await axios.get('/sessions/session.user.list');
       const allSessions: ChatSessionData[] = response.data;
 
       // Filter sessions for this blueprint
@@ -131,7 +131,6 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
         try {
           const createResponse = await axios.post('/sessions/user.session.create', {
             blueprintId: blueprintId,
-            userId: user.username,
             metadata: { source: 'public_link' },
           });
 
@@ -164,7 +163,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
 
           // Refresh sessions list to get proper data (do this in background, don't wait)
           axios
-            .get(`/sessions/session.user.list?userId=${user.username}`)
+            .get('/sessions/session.user.list')
             .then(async (refreshResponse) => {
               const refreshSessions: ChatSessionData[] = refreshResponse.data;
               const refreshBlueprintSessions = refreshSessions.filter(
@@ -299,7 +298,6 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     try {
       const response = await axios.post('/sessions/user.session.create', {
         blueprintId: blueprintId,
-        userId: user.username,
         metadata: { source: 'public_link' },
       });
 
@@ -324,7 +322,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
       setRunId(newSessionId);
 
       // Refresh sessions list to get proper data (this will update the list but preserve selection)
-      const response2 = await axios.get(`/sessions/session.user.list?userId=${user.username}`);
+      const response2 = await axios.get('/sessions/session.user.list');
       const allSessions: ChatSessionData[] = response2.data;
       const blueprintSessions = allSessions.filter(
         (session) => session.blueprint_id === blueprintId && session.blueprint_exists
@@ -403,7 +401,6 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
           sessionId: runId,
           inputs: sessionPayload.inputs || {},
           scope: 'public',
-          userId: user?.username || '',
         });
 
         await streamCompletePromise;

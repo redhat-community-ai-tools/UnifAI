@@ -1,9 +1,7 @@
 import logging
 
 from flask import Blueprint, jsonify, current_app
-from global_utils.helpers.apiargs import from_body
-from webargs import fields
-from mas.core.identity import Identity, IdentityType
+from inbound.flask.decorators import with_require_team_session
 
 logger = logging.getLogger(__name__)
 
@@ -11,19 +9,9 @@ workspace_bp = Blueprint("workspace", __name__)
 
 
 @workspace_bp.route("/workspace.cleanup", methods=["DELETE"])
-@from_body({
-    "identity_type": fields.Str(data_key="identityType", required=True),
-    "identity_id": fields.Str(data_key="identityId", required=True),
-})
-def cleanup_workspace(identity_type, identity_id):
-    """Delete all resources, blueprints, and sessions owned by an identity."""
-
-    try:
-        id_type = IdentityType(identity_type)
-    except ValueError:
-        return jsonify({"error": f"Invalid identityType: {identity_type}"}), 400
-
-    identity = Identity(type=id_type, id=identity_id)
+@with_require_team_session
+def cleanup_workspace(identity, authenticated_user):
+    """Delete all resources, blueprints, and sessions owned by the authenticated identity."""
 
     container = current_app.container
     resources_deleted = container.resource_repo.delete_by_identity(identity)
@@ -32,13 +20,13 @@ def cleanup_workspace(identity_type, identity_id):
 
     logger.info(
         "workspace.cleanup identity=%s/%s deleted resources=%d blueprints=%d sessions=%d",
-        identity_type, identity_id,
+        identity.type.value, identity.id,
         resources_deleted, blueprints_deleted, sessions_deleted,
     )
 
     return jsonify({
         "status": "cleaned",
-        "identity": {"type": identity_type, "id": identity_id},
+        "identity": {"type": identity.type.value, "id": identity.id},
         "deleted": {
             "resources": resources_deleted,
             "blueprints": blueprints_deleted,

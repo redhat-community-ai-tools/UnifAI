@@ -51,7 +51,7 @@ export const useWorkspaceData = () => {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const { addOrUpdateResource, removeResource, revalidateResourceAndAncestors } = useAgenticAI();
-  const { userId: USER_ID, displayName: USER_DISPLAY_NAME, identityType } = useWorkspaceIdentity();
+  const { teamId: TEAM_ID } = useWorkspaceIdentity();
 
   // Fetch all available categories and element types
   const fetchCategories = useCallback(async () => {
@@ -98,8 +98,10 @@ export const useWorkspaceData = () => {
         setError(null);
         setElementInstances([]);
 
+        const params = new URLSearchParams({ category, type });
+        if (TEAM_ID) params.set("teamId", TEAM_ID);
         const response = await axios.get<ResourcesListResponse>(
-          `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}&category=${category}&type=${type}`,
+          `/resources/resources.list?${params.toString()}`,
         );
 
         // Transform ResourceInstance to ElementInstance format
@@ -136,7 +138,7 @@ export const useWorkspaceData = () => {
         setIsLoadingInstances(false);
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, TEAM_ID],
   );
 
   // Fetch single resource by ID
@@ -173,8 +175,10 @@ export const useWorkspaceData = () => {
   const fetchResourcesForCategory = useCallback(
     async (category: string) => {
       try {
+        const params = new URLSearchParams({ category });
+        if (TEAM_ID) params.set("teamId", TEAM_ID);
         const response = await axios.get<ResourcesListResponse>(
-          `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}&category=${category}`,
+          `/resources/resources.list?${params.toString()}`,
         );
 
         return response.data.resources.map((resource: ResourceInstance) => ({
@@ -196,7 +200,7 @@ export const useWorkspaceData = () => {
         return [];
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, TEAM_ID],
   );
 
   // Fetch element schema for form generation (combines resource schema + element-specific schema)
@@ -333,15 +337,13 @@ export const useWorkspaceData = () => {
         } else {
           // Create new resource
           const { cfg_dict, ...firstLevelFields } = elementData;
-          const savePayload = {
-            userId: USER_ID,
-            identityType: identityType,
-            displayName: USER_DISPLAY_NAME,
+          const savePayload: Record<string, any> = {
             category,
             type,
             config: cfg_dict,
             ...firstLevelFields,
           };
+          if (TEAM_ID) savePayload.teamId = TEAM_ID;
 
           const response = await axios.post(
             "/resources/resource.save",
@@ -381,7 +383,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, TEAM_ID],
   );
 
   // Delete element using Resources API

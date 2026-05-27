@@ -45,7 +45,7 @@ export default function AgenticWorkflows() {
   const { toast } = useToast();
   const { cacheBlueprintValidationResults } = useAgenticAI();
   const { selectedTeam } = useView();
-  const { isTeam: isTeamWorkspace, userId: contextUserId, displayName: userDisplayName, identityType } = useWorkspaceIdentity();
+  const { isTeam: isTeamWorkspace, teamId } = useWorkspaceIdentity();
   const [, navigate] = useLocation();
   
   // Handle validation changes from the flow graph
@@ -83,16 +83,12 @@ export default function AgenticWorkflows() {
         return;
       }
 
-      const selectedBlueprint = {
-        blueprintId: graphId,
-        userId: contextUserId,
-        displayName: userDisplayName,
-        identityType,
-      };
+      const createBody: Record<string, string> = { blueprintId: graphId };
+      if (teamId) createBody.teamId = teamId;
 
       const response = await axios.post(
         "/sessions/user.session.create",
-        selectedBlueprint,
+        createBody,
       );
       const sessionId = response.data;
       setSelectedGraphId(sessionId);

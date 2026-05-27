@@ -18,9 +18,9 @@ class IdentityProvider(ABC):
     @property
     @abstractmethod
     def requires_authentication(self) -> bool:
-        """Whether HTTP requests must carry X-Authenticated-User.
+        """Whether requests must be authenticated (via X-Session-Id / Redis session).
 
-        True  → requests without the header get 401.
+        True  → unauthenticated requests get 401; team membership is enforced.
         False → anonymous/unauthenticated access is permitted.
         """
         ...

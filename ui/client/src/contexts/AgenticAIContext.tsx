@@ -72,12 +72,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
   const [error, setError] = useState<string | null>(null);
   /** Bumped when workspace or credential user changes so consumers re-run validateResources. */
   const [validationRevision, setValidationRevision] = useState(0);
-  const {
-    userId: USER_ID,
-    displayName: WORKSPACE_DISPLAY_NAME,
-    identityType: WORKSPACE_IDENTITY_TYPE,
-    credentialUserId: CREDENTIAL_USER_ID,
-  } = useWorkspaceIdentity();
+  const { teamId: TEAM_ID } = useWorkspaceIdentity();
   
   // Use ref to access latest cache without causing re-renders in callbacks
   const validationCacheRef = useRef(validationCache);
@@ -210,7 +205,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
     try {
       const response = await axios.post<ElementValidationResult>(
         '/resources/resource.validate',
-        { resourceId: rid, userId: CREDENTIAL_USER_ID },
+        { resourceId: rid },
       );
       const result = response.data;
       updateDependencyParentMap(rid, result.dependency_results);
@@ -225,7 +220,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
       cacheValidationResult(rid, errorResult);
       return errorResult;
     }
-  }, [CREDENTIAL_USER_ID, cacheValidationResult, createErrorResult, updateDependencyParentMap]);
+  }, [cacheValidationResult, createErrorResult, updateDependencyParentMap]);
 
   // ==================== Resource Mapping Functions ====================
 
@@ -246,13 +241,11 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
         categories.map(async (category) => {
           try {
             const listParams = new URLSearchParams({
-              userId: USER_ID,
               category,
               limit: "1000",
-              identityType: WORKSPACE_IDENTITY_TYPE,
             });
-            if (WORKSPACE_DISPLAY_NAME) {
-              listParams.set("displayName", WORKSPACE_DISPLAY_NAME);
+            if (TEAM_ID) {
+              listParams.set("teamId", TEAM_ID);
             }
             const response = await axios.get<{
               resources: Array<{
@@ -287,7 +280,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
     } finally {
       setIsLoading(false);
     }
-  }, [USER_ID, WORKSPACE_IDENTITY_TYPE, WORKSPACE_DISPLAY_NAME]);
+  }, [TEAM_ID]);
 
   // Get resource name from a ref (falls back to type if no name)
   const getResourceName = useCallback((ref: string | any): string => {
@@ -673,10 +666,7 @@ return String(ref);
     setBlueprintValidationStatus(blueprintId, 'loading');
     
     try {
-      const result = await validateBlueprintApi({
-        ...request,
-        userId: request.userId || CREDENTIAL_USER_ID,
-      });
+      const result = await validateBlueprintApi(request);
       
       // Cache the result
       cacheBlueprintResult(blueprintId, result);
@@ -687,14 +677,13 @@ return String(ref);
       setBlueprintValidationStatus(blueprintId, 'invalid');
       throw error;
     }
-  }, [setBlueprintValidationStatus, cacheBlueprintResult, CREDENTIAL_USER_ID]);
+  }, [setBlueprintValidationStatus, cacheBlueprintResult]);
 
   // ==================== Effects ====================
 
-  // Results were keyed only by rid; team view cached INVALID (wrong userId) until we
-  // cleared. Also invalidate when switching team or user so ElementGrid re-validates.
+  // Invalidate when switching team so ElementGrid re-validates.
   useEffect(() => {
-    const key = `${USER_ID}|${CREDENTIAL_USER_ID}`;
+    const key = TEAM_ID || "__personal__";
     if (prevWorkspaceCredentialKeyRef.current === null) {
       prevWorkspaceCredentialKeyRef.current = key;
       return;
@@ -707,14 +696,12 @@ return String(ref);
     setValidationStatusMap(new Map());
     setDependencyParentMap(new Map());
     setValidationRevision((r) => r + 1);
-  }, [USER_ID, CREDENTIAL_USER_ID]);
+  }, [TEAM_ID]);
 
-  // Fetch resources when user changes or component mounts
+  // Fetch resources when workspace changes or component mounts
   useEffect(() => {
-    if (USER_ID) {
-      fetchAllResources();
-    }
-  }, [USER_ID, WORKSPACE_IDENTITY_TYPE, fetchAllResources]);
+    fetchAllResources();
+  }, [fetchAllResources]);
 
   // ==================== Context Value ====================
 
