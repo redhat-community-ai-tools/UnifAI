@@ -37,7 +37,7 @@ from mas.elements.nodes.common.agent.execution import (
 from mas.elements.nodes.common.agent.constants import (
     EarlyStoppingPolicy, ExecutionDefaults, StrategyType, ErrorMessages
 )
-from mas.core.contracts import SupportsStreaming
+from mas.core.contracts import SupportsAgentScoping, SupportsStreaming
 from global_utils.utils.async_bridge import get_async_bridge
 
 T = TypeVar("T", bound=SupportsStreaming)
@@ -208,6 +208,20 @@ class AgentCapableMixin(Generic[T]):
         self._tool_executor_manager.add_pre_execution_hook(standard_pre_hook)
         self._tool_executor_manager.add_post_execution_hook(standard_post_hook)
     
+    def _scope_tools_for_agent(self, tools: List[BaseTool]) -> List[BaseTool]:
+        """Replace scoping-aware tools with per-agent proxies.
+
+        Only tools implementing SupportsAgentScoping are affected.
+        All other tools pass through unchanged.
+        """
+        scoped: List[BaseTool] = []
+        for tool in tools:
+            if isinstance(tool, SupportsAgentScoping):
+                scoped.append(tool.scoped_for_agent(self.uid))
+            else:
+                scoped.append(tool)
+        return scoped
+
     def create_strategy(
         self,
         tools: List[BaseTool],
@@ -236,6 +250,8 @@ class AgentCapableMixin(Generic[T]):
         Raises:
             ValueError: If strategy_type is unknown
         """
+        tools = self._scope_tools_for_agent(tools)
+
         if parser is None:
             parser = ToolCallParser()
         

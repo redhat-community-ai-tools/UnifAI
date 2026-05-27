@@ -40,6 +40,18 @@ class LLMSupportsStreaming(ABC):
         ...
 
 
+@runtime_checkable
+class SupportsAgentScoping(Protocol):
+    """A tool that produces per-agent isolated proxies.
+
+    Must be idempotent — may be called multiple times with the same
+    agent_uid (e.g., OrchestratorNode rebuilds strategy per phase).
+    Returns the same underlying state on repeated calls.
+    """
+
+    def scoped_for_agent(self, agent_uid: str) -> Any: ...
+
+
 class SessionRegistry(Protocol):
     def register(self, category: ResourceCategory, rid: str, 
                 instance: Any, config: Any, spec: Any) -> None: ...

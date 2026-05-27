@@ -384,8 +384,16 @@ class ResourcesService:
         credential_user_id: str = "",
     ) -> ElementValidationResult:
         """Validate configs in order and return result for target rid."""
+        dep_configs: dict = {}
+        for cfg_meta in ordered_configs:
+            if hasattr(cfg_meta.config, "model_dump"):
+                dep_configs[cfg_meta.rid] = cfg_meta.config.model_dump()
+            elif hasattr(cfg_meta.config, "dict"):
+                dep_configs[cfg_meta.rid] = cfg_meta.config.dict()
+
         context = ValidationContext(
             timeout_seconds=timeout_seconds,
+            dependency_configs=dep_configs,
             user_id=user_id,
             credential_user_id=credential_user_id,
             auth_service=self._auth_service,

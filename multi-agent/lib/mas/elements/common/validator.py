@@ -112,6 +112,7 @@ class ValidationContext(BaseModel):
     """
     timeout_seconds: float = 10.0
     dependency_results: Dict[str, ElementValidationResult] = Field(default_factory=dict)
+    dependency_configs: Dict[str, dict] = Field(default_factory=dict)
     user_id: str = Field(
         default="",
         description="Workspace owner id (may be a team id when validating team resources).",
