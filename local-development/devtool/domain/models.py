@@ -47,6 +47,8 @@ class InfraComponent:
 class VenvConfig:
     strategy: VenvStrategy
     commands: list[str] = field(default_factory=list)
+    global_utils_extra: str | None = None
+    pip_extras: str | None = None
 
 
 @dataclass(frozen=True)
