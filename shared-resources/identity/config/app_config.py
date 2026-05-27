@@ -1,15 +1,8 @@
 from pathlib import Path
-from typing import Any, Dict, Type
-
-import yaml
-from dotenv import dotenv_values
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from global_utils.config.config import SharedConfig
-from global_utils.config.sources import JsonSource, YamlSource
 
 _IDENTITY_ROOT = Path(__file__).resolve().parent.parent
-_IDENTITY_ENV_FILE = _IDENTITY_ROOT / ".env"
 _IDENTITY_DIRECTORY_YAML = _IDENTITY_ROOT / "directory.yaml"
 
 class AppConfig(SharedConfig):
@@ -35,6 +28,12 @@ class AppConfig(SharedConfig):
 
     # Public identity service base URL (env: IDENTITY_HOST). Used for OAuth redirect_uri in production.
     identity_host: str = "http://127.0.0.1:13456"
+
+    # Override the OAuth callback URL so the redirect goes through the
+    # frontend proxy (Vite / nginx) and the session cookie lands on the
+    # same domain the browser uses.  Leave empty to fall back to the
+    # legacy direct-to-identity-host behaviour.
+    oauth_callback_url: str = ""
 
     # Multi-agent connection
     multiagent_host: str = "localhost"
