@@ -359,6 +359,9 @@ def get_session_meta(identity, session_id):
 
         collab = getattr(current_app.container, "collaboration_service", None)
         if collab is not None and collab.is_available():
+            # Redis is authoritative for live presence — always override Mongo.
+            # (model_dump always emits the key even when None, so setdefault
+            # would never trigger; an explicit assignment is required.)
             payload["typing_users"] = collab.get_typing_users(session_id)
             try:
                 participants_obj = collab.get_participants(session_id, user_id=g.identity_username)
