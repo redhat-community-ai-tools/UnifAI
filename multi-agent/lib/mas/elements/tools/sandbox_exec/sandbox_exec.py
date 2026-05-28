@@ -2,16 +2,17 @@
 
 Provides each agent its own workspace (git worktree or plain directory)
 and Podman container, all running on a shared VM via an ssh_exec tool.
+All commands run inside the container — the agent uses standard shell
+commands (ls, cat, python, pip) like a developer.
 """
 
 from __future__ import annotations
 
-import base64
 import re
 import shlex
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Dict, Literal, Tuple
+from typing import Any, Dict, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -22,24 +23,10 @@ _SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_\-]")
 _EXIT_SENTINEL = "___SANDBOX_EXIT___"
 
 
-class SandboxExecInput(BaseModel):
-    """Input schema for the multi-action sandbox tool."""
+class SandboxShellInput(BaseModel):
+    """Input schema for the sandbox shell tool."""
 
-    action: Literal["exec", "write_file", "read_file", "list_files"] = Field(
-        "exec",
-        description=(
-            "Action to perform: "
-            "'list_files' lists workspace files (optional glob via 'path'). "
-            "'read_file' reads a file (requires 'path'). "
-            "'write_file' writes content to a file (requires 'path' and 'content'). "
-            "'exec' runs a command in the container (requires 'cmd')."
-        ),
-    )
-    cmd: str = Field("", description="Shell command to run (for action='exec')")
-    path: str = Field(
-        "", description="File path relative to /workspace (for read/write/list)"
-    )
-    content: str = Field("", description="File content (for action='write_file')")
+    cmd: str = Field(..., description="Shell command to run in the sandbox container")
 
 
 @dataclass
@@ -63,7 +50,7 @@ class SandboxExecTool(BaseTool):
 
     name: str = "sandbox_exec"
     description: str = ""
-    args_schema = SandboxExecInput
+    args_schema = SandboxShellInput
 
     def __init__(
         self,
@@ -72,25 +59,33 @@ class SandboxExecTool(BaseTool):
         workspace_path: str,
         git_repo_url: str,
         git_token: str,
+        container_image: str = "python:3.11-slim",
+        output_limit: int = 10000,
     ) -> None:
         super().__init__()
         self._ssh = ssh_exec_tool
         self._workspace_path = workspace_path
         self._git_repo_url = git_repo_url
         self._git_token = git_token
+        self._container_image = container_image
+        self._output_limit = output_limit
         self._agent_states: Dict[str, AgentSandboxState] = {}
         self._states_lock = threading.Lock()
 
         safe_host = _SANITIZE_RE.sub("_", getattr(ssh_exec_tool, "_host", "vm"))
         self.name = f"sandbox_exec_{safe_host}"
         self.description = (
-            f"Interact with an isolated sandbox on the VM.\n\n"
-            f"Actions:\n"
-            f"- list_files: list workspace files (optional 'path' as glob pattern)\n"
-            f"- read_file: read a file ('path' relative to /workspace)\n"
-            f"- write_file: write a file ('path' + 'content')\n"
-            f"- exec: run a shell command in the container ('cmd')\n\n"
-            f"Start with list_files to explore, then read_file to inspect code."
+            f"Run a shell command in an isolated sandbox container on the VM.\n\n"
+            f"The sandbox provides:\n"
+            f"- A Podman container ({container_image}) with /workspace mounted\n"
+            f"- Your project files at /workspace (git clone or empty directory)\n"
+            f"- Full shell access: ls, cat, python, pip, git, etc.\n\n"
+            f"Examples:\n"
+            f"- ls /workspace              # list files\n"
+            f"- cat /workspace/main.py     # read a file\n"
+            f"- python /workspace/main.py  # run code\n"
+            f"- pip install pandas          # install packages\n\n"
+            f"The working directory is /workspace."
         )
 
     def scoped_for_agent(self, agent_uid: str) -> BaseTool:
@@ -113,11 +108,11 @@ class SandboxExecTool(BaseTool):
 
 
 class _SandboxAgentProxy(BaseTool):
-    """Per-agent proxy — delegates SSH to parent, maintains own workspace + container."""
+    """Per-agent proxy — all commands run inside the agent's Podman container."""
 
     name: str = "sandbox_proxy"
     description: str = ""
-    args_schema = SandboxExecInput
+    args_schema = SandboxShellInput
 
     def __init__(self, parent: SandboxExecTool, agent_uid: str) -> None:
         super().__init__()
@@ -128,30 +123,18 @@ class _SandboxAgentProxy(BaseTool):
 
     def run(self, *args: Any, **kwargs: Any) -> str:
         inp = self.args_schema(**kwargs)
-
-        if inp.action == "exec" and not inp.cmd:
-            return "ERROR: 'cmd' is required for action='exec'"
-        if inp.action == "write_file" and (not inp.path or not inp.content):
-            return "ERROR: 'path' and 'content' are required for action='write_file'"
-        if inp.action == "read_file" and not inp.path:
-            return "ERROR: 'path' is required for action='read_file'"
+        if not inp.cmd.strip():
+            return "ERROR: 'cmd' is required"
 
         state = self._parent._agent_states[self._uid]
         self._ensure_workspace(state)
+        self._ensure_container(state)
 
         try:
-            if inp.action == "list_files":
-                return self._list_files(state, inp.path)
-            elif inp.action == "read_file":
-                return self._read_file(state, inp.path)
-            elif inp.action == "write_file":
-                return self._write_file(state, inp.path, inp.content)
-            elif inp.action == "exec":
-                self._ensure_container(state)
-                return self._exec(state, inp.cmd)
+            output = self._run_in_container(state, inp.cmd)
+            return self._truncate(output)
         except Exception as exc:
             return f"ERROR: {exc}"
-        return "ERROR: unknown action"
 
     # ── SSH execution ──────────────────────────────────────────────────
 
@@ -208,7 +191,12 @@ class _SandboxAgentProxy(BaseTool):
             state.workspace_ready = True
 
     def _ensure_container(self, state: AgentSandboxState) -> None:
-        """Provision Podman container on first exec action."""
+        """Ensure the agent's Podman container is running, reusing if it already exists.
+
+        Checks the VM first — if a container with this name is already running,
+        it is reused (preserving installed packages, env vars, processes).
+        Only creates a new container if none exists.
+        """
         if state.container_ready:
             return
         with state.lock:
@@ -216,59 +204,29 @@ class _SandboxAgentProxy(BaseTool):
                 return
             name = shlex.quote(state.container_name)
             wt = shlex.quote(state.workspace_path)
+            image = shlex.quote(self._parent._container_image)
+
+            check_cmd = f"podman inspect --format '{{{{.State.Running}}}}' {name} 2>/dev/null"
+            exit_code, running = self._run_ssh(check_cmd)
+            if exit_code == 0 and "true" in running.strip().lower():
+                state.container_ready = True
+                return
+
             cmd = (
                 f"podman run -d --replace --name {name} "
                 f"--timeout 7200 --network slirp4netns "
                 f"-v {wt}:/workspace:Z "
-                f"python:3.11-slim sleep infinity"
+                f"{image} sleep infinity"
             )
             exit_code, output = self._run_ssh(cmd)
             if exit_code != 0:
                 raise RuntimeError(f"Container provision failed: {output}")
             state.container_ready = True
 
-    # ── Action implementations ─────────────────────────────────────────
+    # ── Container execution ────────────────────────────────────────────
 
-    def _list_files(self, state: AgentSandboxState, pattern: str) -> str:
-        wt = shlex.quote(state.workspace_path)
-        if pattern:
-            cmd = f"find {wt} -name {shlex.quote(pattern)} -type f | sort"
-        else:
-            cmd = f"find {wt} -type f -not -path '*/.git/*' | sort"
-        exit_code, output = self._run_ssh(cmd)
-        if exit_code != 0:
-            return f"ERROR: {output}"
-        prefix = state.workspace_path.rstrip("/") + "/"
-        lines = output.strip().splitlines()
-        relative = [
-            ln[len(prefix):] if ln.startswith(prefix) else ln for ln in lines
-        ]
-        return "\n".join(relative) if relative else "(no files found)"
-
-    def _read_file(self, state: AgentSandboxState, path: str) -> str:
-        full = f"{state.workspace_path}/{path}"
-        cmd = f"cat {shlex.quote(full)}"
-        exit_code, output = self._run_ssh(cmd)
-        if exit_code != 0:
-            return f"ERROR: {output}"
-        return output
-
-    def _write_file(
-        self, state: AgentSandboxState, path: str, content: str,
-    ) -> str:
-        full = f"{state.workspace_path}/{path}"
-        dir_path = "/".join(full.split("/")[:-1])
-        encoded = base64.b64encode(content.encode()).decode()
-        cmd = (
-            f"mkdir -p {shlex.quote(dir_path)} && "
-            f"echo {shlex.quote(encoded)} | base64 -d > {shlex.quote(full)}"
-        )
-        exit_code, output = self._run_ssh(cmd)
-        if exit_code != 0:
-            return f"ERROR: {output}"
-        return f"File written: {path}"
-
-    def _exec(self, state: AgentSandboxState, cmd: str) -> str:
+    def _run_in_container(self, state: AgentSandboxState, cmd: str) -> str:
+        """Execute *cmd* inside the agent's Podman container."""
         name = shlex.quote(state.container_name)
         inner = f"cd /workspace && {cmd}"
         full_cmd = f"podman exec {name} bash -c {shlex.quote(inner)}"
@@ -279,4 +237,14 @@ class _SandboxAgentProxy(BaseTool):
             self._ensure_container(state)
             exit_code, output = self._run_ssh(full_cmd)
 
+        if exit_code != 0 and output:
+            return f"(exit code {exit_code})\n{output}"
         return output
+
+    def _truncate(self, output: str) -> str:
+        """Tail-truncate output if it exceeds the configured limit."""
+        limit = self._parent._output_limit
+        if len(output) <= limit:
+            return output
+        notice = f"\n\n(output truncated — {len(output)} chars total, showing last {limit})"
+        return output[-(limit - len(notice)):] + notice

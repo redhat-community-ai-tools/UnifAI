@@ -31,6 +31,8 @@ class SandboxExecToolFactory(
                 workspace_path=cfg.workspace_path,
                 git_repo_url=cfg.git_repo_url,
                 git_token=cfg.git_token,
+                container_image=cfg.container_image,
+                output_limit=cfg.output_limit,
             )
         except Exception as e:
             raise PluginConfigurationError(

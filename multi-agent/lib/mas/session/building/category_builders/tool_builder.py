@@ -1,6 +1,6 @@
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
-from .category_builder import CategoryBuilder, BlueprintSpec
+from .category_builder import CategoryBuilder, BlueprintSpec, ResourceSpec
 from mas.core.enums import ResourceCategory
 from mas.core.contracts import SessionRegistry
 from mas.core.element_deps import ElementDeps
@@ -10,8 +10,25 @@ from mas.elements.common.exceptions import PluginConfigurationError
 class ToolBuilder(CategoryBuilder):
     category = ResourceCategory.TOOL
 
-    def _iter_specs(self, bp: BlueprintSpec):
-        return bp.tools
+    def _iter_specs(self, bp: BlueprintSpec) -> Iterable[ResourceSpec]:
+        """Return tools sorted so ToolRef dependencies are built after their targets."""
+        no_deps: list[ResourceSpec] = []
+        has_deps: list[ResourceSpec] = []
+        for resource in bp.tools:
+            if self._has_tool_ref(resource.config):
+                has_deps.append(resource)
+            else:
+                no_deps.append(resource)
+        return no_deps + has_deps
+
+    @staticmethod
+    def _has_tool_ref(config: Any) -> bool:
+        """Check if a tool config contains any ToolRef field."""
+        from mas.core.ref.models import ToolRef
+        for field_name in config.model_fields:
+            if isinstance(getattr(config, field_name, None), ToolRef):
+                return True
+        return False
 
     def _extra_kwargs(
         self, cfg: Any, session_registry: SessionRegistry, deps: Optional[ElementDeps] = None,

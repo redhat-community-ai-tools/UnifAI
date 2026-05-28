@@ -51,6 +51,17 @@ class NodeDeploymentExtractor:
             elif category == ResourceCategory.RETRIEVER:
                 retrievers.append(spec)
 
+        # Walk collected tool configs for transitive deps (e.g. sandbox_exec → ssh_exec)
+        transitive_rids: Set[str] = set()
+        for tool_spec in tools:
+            transitive_rids.update(
+                _collect_refs(tool_spec.config.model_dump(mode="json"))
+            )
+        for rid in transitive_rids - dep_rids:
+            found = self._find_resource_spec(rid)
+            if found is not None and found[0] == ResourceCategory.TOOL:
+                tools.append(found[1])
+
         mini_bp = BlueprintSpec(
             providers=providers,
             llms=llms,

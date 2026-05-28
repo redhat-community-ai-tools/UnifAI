@@ -37,3 +37,11 @@ class SandboxExecToolConfig(BaseToolConfig):
         "/home/lab-user",
         description="Base workspace directory on the VM",
     )
+    container_image: str = Field(
+        "python:3.11-slim",
+        description="Container image for the sandbox (e.g., node:20-slim, golang:1.22)",
+    )
+    output_limit: int = Field(
+        10000,
+        description="Max characters of command output to return (tail-truncated)",
+    )

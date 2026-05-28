@@ -570,9 +570,10 @@ class OrchestratorNode(
             phase_tools = phase_provider.get_tools_for_phase(phase_name)
             all_phase_tools.update(phase_tools)
 
-        # Add all phase tools to strategy's tool registry so they're available to executor
+        # Add phase tools that aren't already registered (preserves scoped proxies)
         for tool in all_phase_tools:
-            strategy.all_tools[tool.name] = tool
+            if tool.name not in strategy.all_tools:
+                strategy.all_tools[tool.name] = tool
 
         # Run agent
         result = self.run_agent(

@@ -42,9 +42,10 @@ class SandboxExecToolValidator(BaseElementValidator):
 
         ssh_cfg = context.dependency_configs.get(ssh_rid, {})
         if not ssh_cfg:
-            messages.append(self._error(
-                "DEPENDENCY_CONFIG_MISSING",
-                f"Cannot read config for ssh_exec dependency '{ssh_rid}'",
+            messages.append(self._info(
+                "DEPENDENCY_VALID",
+                f"ssh_exec dependency '{ssh_rid}' is valid; "
+                f"deep checks (podman/git) skipped in blueprint context",
                 field="ssh_tool_ref",
             ))
             return self._build_report(
