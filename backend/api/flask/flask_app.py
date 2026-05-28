@@ -36,7 +36,7 @@ def create_app(config: AppConfig = None) -> Flask:
         "origins": trusted_origins or ["*"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": bool(trusted_origins),
+        "supports_credentials": True,
     }})
 
     container = AppContainer(config)

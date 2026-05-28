@@ -29,7 +29,7 @@ def create_app(container, config: AppConfig = None) -> Flask:
                                      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
                                      "allow_headers": ["Content-Type", "Authorization",
                                                        "X-Session-Id"],
-                                     "supports_credentials": bool(trusted_origins)}})
+                                     "supports_credentials": True}})
 
     app.container = container
     register_all_endpoints(app)
