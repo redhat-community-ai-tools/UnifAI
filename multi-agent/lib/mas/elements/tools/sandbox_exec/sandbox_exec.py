@@ -1,9 +1,9 @@
 """Sandbox execution tool with per-agent isolation.
 
-Provides each agent its own workspace (git worktree or plain directory)
+Provides each agent its own workspace (git clone or plain directory)
 and Podman container, all running on a shared VM via an ssh_exec tool.
 All commands run inside the container — the agent uses standard shell
-commands (ls, cat, python, pip) like a developer.
+commands (ls, cat, python, pip, git) like a developer.
 """
 
 from __future__ import annotations
@@ -171,32 +171,35 @@ class _SandboxAgentProxy(BaseTool):
                 return
 
             safe_uid = _SANITIZE_RE.sub("_", self._uid)
-            ws = shlex.quote(self._parent._workspace_path)
+            agent_path = f"{self._parent._workspace_path}/agent-{safe_uid}"
+            agent_dir = shlex.quote(agent_path)
 
             if self._parent._git_repo_url:
-                wt_path = f"{self._parent._workspace_path}/wt-{safe_uid}"
-                wt = shlex.quote(wt_path)
+                bare = shlex.quote(f"{self._parent._workspace_path}/repo.git")
+                remote_url = self._parent._git_repo_url
+                if self._parent._git_token:
+                    remote_url = remote_url.replace(
+                        "://", f"://oauth2:{self._parent._git_token}@"
+                    )
                 cmd = (
-                    f"cd {ws}/repo.git && "
-                    f"git worktree add {wt} HEAD 2>/dev/null || true"
+                    f"if [ -d {agent_dir}/.git ]; then "
+                    f"echo 'exists'; "
+                    f"else "
+                    f"git clone {bare} {agent_dir} 2>/dev/null && "
+                    f"git -C {agent_dir} remote set-url origin "
+                    f"{shlex.quote(remote_url)}; "
+                    f"fi"
                 )
             else:
-                wt_path = f"{self._parent._workspace_path}/agent-{safe_uid}"
-                wt = shlex.quote(wt_path)
-                cmd = f"mkdir -p {wt}"
+                cmd = f"mkdir -p {agent_dir}"
 
             self._run_ssh(cmd)
-            state.workspace_path = wt_path
+            state.workspace_path = agent_path
             state.container_name = f"sandbox-{safe_uid}"
             state.workspace_ready = True
 
     def _ensure_container(self, state: AgentSandboxState) -> None:
-        """Ensure the agent's Podman container is running, reusing if it already exists.
-
-        Checks the VM first — if a container with this name is already running,
-        it is reused (preserving installed packages, env vars, processes).
-        Only creates a new container if none exists.
-        """
+        """Ensure the agent's Podman container is running, reusing if it already exists."""
         if state.container_ready:
             return
         with state.lock:
