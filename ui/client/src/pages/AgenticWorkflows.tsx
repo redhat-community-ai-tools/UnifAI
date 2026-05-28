@@ -2,7 +2,6 @@ import React, { useState, useCallback } from "react";
 import { useLocation } from "wouter";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
-import { useAuth } from "@/contexts/AuthContext";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useView } from "@/contexts/ViewContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
@@ -41,7 +40,6 @@ export default function AgenticWorkflows() {
   const [isFlowValid, setIsFlowValid] = useState<boolean>(true);
   const [isValidatingFlow, setIsValidatingFlow] = useState<boolean>(false);
   const [currentValidationResult, setCurrentValidationResult] = useState<BlueprintValidationResult | null>(null);
-  const { user } = useAuth();
   const { toast } = useToast();
   const { cacheBlueprintValidationResults } = useAgenticAI();
   const { selectedTeam } = useView();
@@ -72,16 +70,6 @@ export default function AgenticWorkflows() {
       // Set the graph ID and name
       setBuiltGraphId(graphId);
       setBuiltGraphName(graphName);
-
-      if (!isTeamWorkspace && !user?.username) {
-        toast({
-          title: "Authentication required",
-          description: "Sign in before starting a workflow session.",
-          variant: "destructive",
-        });
-        setIsLoadingFlow(false);
-        return;
-      }
 
       const createBody: Record<string, string> = { blueprintId: graphId };
       if (teamId) createBody.teamId = teamId;

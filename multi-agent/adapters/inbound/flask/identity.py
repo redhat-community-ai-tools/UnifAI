@@ -66,8 +66,9 @@ def require_admin_access(f):
             return f(*args, **kwargs)
 
         except Exception as e:
+            logger.error("Access control error", exc_info=True)
             return jsonify({
-                "error": f"Access control error: {str(e)}",
+                "error": "Access control error",
                 "error_type": "ACCESS_CONTROL_ERROR",
             }), 500
 

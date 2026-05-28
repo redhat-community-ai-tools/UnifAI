@@ -102,7 +102,7 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
       - ``"Personal"`` (default): rejects when status is QUEUED or RUNNING.
       - ``"Shared"``: rejects when status is LOCKED, IN_USE, QUEUED, or RUNNING.
     """
-    logged_in_user = identity.id
+    logged_in_user = g.identity_username
     svc = current_app.container.session_service
 
     busy_response = _check_session_busy(session_id, session_type, svc)
@@ -166,7 +166,7 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
             session_id=session_id,
             inputs=inputs,
             scope=scope,
-            logged_in_user=identity.id,
+            logged_in_user=g.identity_username,
         )
         return jsonify({"sessionId": session_id, "workflowId": workflow_id}), 202
     except TypeError as e:
