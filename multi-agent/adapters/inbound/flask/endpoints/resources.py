@@ -150,12 +150,13 @@ def get_resource_schema():
 def validate_resource(identity, resource_id, timeout_seconds):
     """Validate a saved resource and its dependencies."""
     svc = current_app.container.resources_service
+    username = g.identity_username
     try:
         result = svc.validate_resource(
             rid=resource_id,
-            user_id=identity.id,
+            user_id=username,
             timeout_seconds=timeout_seconds,
-            credential_user_id=g.identity_username,
+            credential_user_id=username,
         )
         return jsonify(result.model_dump()), 200
     except KeyError as e:
@@ -194,6 +195,7 @@ def validate_resources(identity, resource_ids, timeout_seconds, max_workers):
     Results are returned in the same order as the input resourceIds.
     """
     svc = current_app.container.resources_service
+    username = g.identity_username
 
     # Validate input
     if not resource_ids:
@@ -205,10 +207,10 @@ def validate_resources(identity, resource_ids, timeout_seconds, max_workers):
     try:
         results = svc.validate_resources(
             rids=resource_ids,
-            user_id=identity.id,
+            user_id=username,
             timeout_seconds=timeout_seconds,
             max_workers=max_workers,
-            credential_user_id=g.identity_username,
+            credential_user_id=username,
         )
         return jsonify([r.model_dump() for r in results]), 200
     except RuntimeError as e:

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { executeAction, callDynamicEndpoint } from '@/api/actions';
+import { useAuth } from "@/contexts/AuthContext";
 import { FieldValidationTwoFactorAuth } from './FieldValidationTwoFactorAuth';
 
 
@@ -49,6 +50,9 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
   onValidationChange,
   onInputChange,
 }) => {
+  const { user } = useAuth();
+  const userId = user?.username || "";
+
   const [validationState, setValidationState] = useState<{
     isValidating: boolean;
     isValid: boolean | null;
@@ -166,6 +170,9 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
     
     // Build request body with current field and dependencies
     const requestBody = buildInputWithDependencies(value, fieldNameMapping);
+    if (userId) {
+      requestBody.userId = userId;
+    }
 
     // Determine the HTTP method (default to POST)
     const method = (validationHint.method || 'POST').toUpperCase();

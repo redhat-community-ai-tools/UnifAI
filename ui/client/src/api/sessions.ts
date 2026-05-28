@@ -32,21 +32,21 @@ export async function listUserSessions(teamId?: string | null): Promise<ChatSess
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
-  await axios.delete('/sessions/session.delete', { params: { sessionId } });
+  await axios.delete(`/sessions/session.delete?sessionId=${sessionId}`);
 }
 
 export async function getSessionChat(sessionId: string): Promise<SessionChatResponse> {
-  const response = await axios.get('/sessions/session.chat.get', { params: { sessionId } });
+  const response = await axios.get(`/sessions/session.chat.get?sessionId=${sessionId}`);
   return response.data;
 }
 
 export async function getSessionStatus(sessionId: string): Promise<string> {
-  const response = await axios.get('/sessions/session.status.get', { params: { sessionId } });
+  const response = await axios.get(`/sessions/session.status.get?sessionId=${sessionId}`);
   return response.data;
 }
 
 export async function getSessionState(sessionId: string): Promise<any> {
-  const response = await axios.get('/sessions/session.state.get', { params: { sessionId } });
+  const response = await axios.get(`/sessions/session.state.get?sessionId=${sessionId}`);
   return response.data;
 }
 
@@ -133,9 +133,8 @@ export interface StreamStatusResponse {
  */
 export async function getSessionStreamStatus(sessionId: string): Promise<StreamStatusResponse | null> {
   try {
-    const response = await axios.get('/sessions/session.stream.status', {
-      params: { sessionId },
-      timeout: 5000,
+    const response = await axios.get(`/sessions/session.stream.status?sessionId=${sessionId}`, {
+      timeout: 5000, // 5 second timeout to prevent hanging
     });
     return response.data;
   } catch (err: any) {
@@ -159,9 +158,8 @@ export async function getSessionStreamStatus(sessionId: string): Promise<StreamS
  */
 export async function subscribeToSessionStream(sessionId: string): Promise<Response | null> {
   try {
-    const params = new URLSearchParams({ sessionId });
     const response = await fetch(
-      `/api2/sessions/session.subscribe?${params.toString()}`,
+      `/api2/sessions/session.subscribe?sessionId=${sessionId}`,
       {
         method: 'GET',
         headers: { 'Accept': 'application/x-ndjson' },

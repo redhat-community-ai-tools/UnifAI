@@ -74,7 +74,7 @@ export default function WorkflowsPanel({
 
   const { selectedTeam } = useView();
   const { openShareForItem } = useShared();
-  const { isTeam, teamId, credentialUserId } = useWorkspaceIdentity();
+  const { isTeam, teamId } = useWorkspaceIdentity();
   const workspaceScopeRef = useRef({ teamId });
   workspaceScopeRef.current = { teamId };
   
@@ -170,7 +170,6 @@ export default function WorkflowsPanel({
   };
 
   useEffect(() => {
-    const scopeAtStart = { teamId };
     onFlowSelect(null);
     setSelectedBlueprintData(null);
     setGraphFlows([]);
@@ -179,9 +178,7 @@ export default function WorkflowsPanel({
       fetchAvailableFlows(true),
       fetchActiveFlows(),
     ]).finally(() => {
-      if (workspaceScopeRef.current.teamId === scopeAtStart.teamId) {
-        setIsLoading(false);
-      }
+      setIsLoading(false);
     });
   }, [teamId]);
 
@@ -373,8 +370,8 @@ export default function WorkflowsPanel({
                   isTeam &&
                   !bpLockUnknown &&
                   !!bpLock &&
-                  !!credentialUserId &&
-                  bpLock.userId !== credentialUserId;
+                  !!user?.username &&
+                  bpLock.userId !== user.username;
                 const bpLockedByLabel = bpLockUnknown
                   ? "unknown"
                   : bpLock?.displayName?.trim() || bpLock?.userId || "another teammate";

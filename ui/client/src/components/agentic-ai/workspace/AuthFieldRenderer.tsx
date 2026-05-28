@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Lock, LogIn, Loader2 } from 'lucide-react';
 import { executeAction } from '@/api/actions';
+import { useAuth } from "@/contexts/AuthContext";
 
 interface AuthFieldRendererProps {
   fieldName: string;
@@ -35,6 +36,9 @@ export const AuthFieldRenderer: React.FC<AuthFieldRendererProps> = ({
   onValidationChange,
   onInputChange,
 }) => {
+  const { user } = useAuth();
+  const userId = user?.username || "";
+
   const authHint = fieldSchema?.hints?.auth;
   const actionUid = authHint?.action_uid;
   const dependencies = authHint?.dependencies || {};
@@ -53,9 +57,9 @@ export const AuthFieldRenderer: React.FC<AuthFieldRendererProps> = ({
   );
 
   const checkAuth = useCallback(async () => {
-    if (!actionUid) return;
+    if (!actionUid || !userId) return;
 
-    const inputData: Record<string, any> = {};
+    const inputData: Record<string, any> = { user_id: userId };
     Object.entries(dependencies).forEach(([configField, actionField]) => {
       const val = formData[configField];
       if (val !== undefined) {
@@ -108,7 +112,7 @@ export const AuthFieldRenderer: React.FC<AuthFieldRendererProps> = ({
       setMessage('Failed to check authentication status');
       onValidationChange(fieldName, false);
     }
-  }, [actionUid, formData, dependencies, fieldName, onValidationChange]);
+  }, [actionUid, userId, formData, dependencies, fieldName, onValidationChange]);
 
   useEffect(() => {
     if (lastCheckedKeyRef.current === dependencyKey) return;

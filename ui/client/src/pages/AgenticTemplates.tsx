@@ -9,6 +9,7 @@ import {
 } from '@/components/agentic-ai/templates';
 import type { TemplateDetailViewRef } from '@/components/agentic-ai/templates';
 import { useTemplates } from '@/hooks/use-templates';
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { createSession } from '@/api/sessions';
 import { useWorkspaceIdentity } from '@/hooks/use-workspace-identity';
@@ -22,6 +23,7 @@ export default function AgenticTemplates() {
   const [viewMode, setViewMode] = useState<ViewMode>('catalog');
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const templateDetailRef = useRef<TemplateDetailViewRef>(null);
+  const { user } = useAuth();
   const { teamId } = useWorkspaceIdentity();
   const { toast } = useToast();
 
@@ -79,10 +81,10 @@ export default function AgenticTemplates() {
   }, [resetInstantiation, navigate]);
 
   const handleNavigateToChat = useCallback(async () => {
-    if (!instantiationResult?.blueprint_id) {
+    if (!instantiationResult?.blueprint_id || !user) {
       toast({
         title: 'Error',
-        description: 'Could not create chat session. Missing workflow information.',
+        description: 'Could not create chat session. Missing workflow or user information.',
         variant: 'destructive'
       });
       return;
@@ -90,6 +92,7 @@ export default function AgenticTemplates() {
 
     setIsCreatingSession(true);
     try {
+      // Create a new chat session with the blueprint
       const params: { blueprintId: string; teamId?: string } = {
         blueprintId: instantiationResult.blueprint_id,
       };
@@ -107,7 +110,7 @@ export default function AgenticTemplates() {
     } finally {
       setIsCreatingSession(false);
     }
-  }, [instantiationResult, teamId, resetInstantiation, navigate, toast]);
+  }, [instantiationResult, user, teamId, resetInstantiation, navigate, toast]);
 
   const handleCloseProgress = useCallback(() => {
     resetInstantiation();

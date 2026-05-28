@@ -18,11 +18,7 @@ class IdentityProvider(ABC):
     @property
     @abstractmethod
     def requires_authentication(self) -> bool:
-        """Whether requests must be authenticated via Redis session.
-
-        The primary session token is the ``unifai_session_id`` cookie
-        (browser); the ``X-Session-Id`` header is accepted as a fallback
-        for CLI/scripts.
+        """Whether requests must be authenticated (via X-Session-Id / Redis session).
 
         True  → unauthenticated requests get 401; team membership is enforced.
         False → anonymous/unauthenticated access is permitted.

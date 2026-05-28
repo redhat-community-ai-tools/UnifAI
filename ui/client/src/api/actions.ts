@@ -12,9 +12,9 @@ export async function executeAction(
 }
 
 export async function listActions(category: string, type: string): Promise<any[]> {
-  const response = await axios.get('/actions/actions.list', {
-    params: { category, type },
-  });
+  const response = await axios.get(
+    `/actions/actions.list?category=${category}&type=${type}`,
+  );
   return response.data.actions || [];
 }
 

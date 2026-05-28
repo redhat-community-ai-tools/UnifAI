@@ -27,16 +27,11 @@ def create_app(config: AppConfig = None) -> Flask:
     app.version = config.get("version", "1.0.0")
     app.secret_key = config.get("secret_key", os.urandom(24))
     # CORS
-    trusted_origins = [
-        o.strip()
-        for o in config.get("trusted_origins", os.environ.get("TRUSTED_ORIGINS", "")).split(",")
-        if o.strip()
-    ]
     CORS(app, resources={r"/api/*": {
-        "origins": trusted_origins or ["*"],
+        "origins": "*",
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": bool(trusted_origins),
+        "supports_credentials": True,
     }})
 
     container = AppContainer(config)

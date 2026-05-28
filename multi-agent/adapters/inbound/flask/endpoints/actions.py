@@ -85,7 +85,7 @@ def list_actions(category=None, type=None, action_type=None, tags=None):
 @with_require_team_session
 @from_body({
     "uid": fields.Str(required=True),
-    "input_data": fields.Dict(data_key="inputData", required=False, load_default=dict),
+    "input_data": fields.Dict(data_key="inputData", required=False, load_default={}),
     "context": fields.Dict(required=False, load_default={}),
 })
 def execute_action(identity, uid, input_data, context):

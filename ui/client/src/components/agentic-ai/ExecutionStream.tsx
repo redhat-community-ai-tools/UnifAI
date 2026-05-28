@@ -87,13 +87,11 @@ export default function ExecutionStream({
   
   // Create agent nodes from selected graph nodes on component mount
   useEffect(() => {
-    let aborted = false;
-
     const getGraphNodes = async () => {
       const blueprintObjects = await fetchResolvedBlueprints(teamId);
       
       // Find the specific graph flow by blueprint_id
-      const targetBlueprintObj = blueprintObjects.find((blueprintObj: any) => 
+      const targetBlueprintObj = blueprintObjects.find((blueprintObj: any, index: number) => 
         blueprintObj.blueprint_id === blueprintId
       );
   
@@ -102,7 +100,6 @@ export default function ExecutionStream({
   
     const fetchAndSetNodes = async () => {
       const nodeData = await getGraphNodes();
-      if (aborted) return;
       
       const nodes = nodeData.map((node: { id: string; name: string; description: string | null }) => ({
         id: node.id,
@@ -116,8 +113,7 @@ export default function ExecutionStream({
     };
   
     fetchAndSetNodes();
-    return () => { aborted = true; };
-  }, [blueprintId, teamId]);
+  }, [blueprintId]);
 
   // Set up polling interval to get real-time node data
   useEffect(() => {

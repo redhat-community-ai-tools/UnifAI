@@ -166,7 +166,7 @@ The UI (`ui/client/src/`) uses a centralized API layer. All HTTP calls MUST go t
 
 | Client | File | Base URL | Service |
 |--------|------|----------|---------|
-| Multi-Agent | `http/axiosAgentConfig.ts` | `/api2` | MAS endpoints (uses `unifai_session_id` cookie; accepts `X-Session-Id` header as CLI/script fallback) |
+| Multi-Agent | `http/axiosAgentConfig.ts` | `/api2` | MAS endpoints (sends `X-Session-Id`) |
 | RAG | `http/queryClient.ts` | `/api1` | RAG/pipeline endpoints |
 | Identity | `http/authClient.ts` | `/api3` | Auth/directory endpoints |
 | Backend | `http/backendClient.ts` | `/api4` | Platform admin/config |

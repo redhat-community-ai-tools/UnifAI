@@ -73,11 +73,6 @@ def create_share(
 
         # Auto-accept self-copy: persist recipient as the canonical session username so
         # accept_invite(..., recipient_user_id=username) always matches.
-        if auto_accept and recipient_raw.casefold() != username.casefold():
-            return jsonify(
-                {"error": "autoAccept is only allowed when the recipient is the session user"},
-            ), 400
-
         recipient_effective = (
             username
             if (auto_accept and recipient_raw.casefold() == username.casefold())
@@ -253,7 +248,7 @@ def cancel_share(identity, share_id):
     """Cancel share invitation."""
     try:
         svc = current_app.container.share_service
-        svc.cancel_invite(share_id, sender_user_id=identity.id)
+        svc.cancel_invite(share_id, sender_user_id=g.identity_username)
 
         return jsonify({"status": "success"}), 200
 
@@ -286,12 +281,7 @@ def list_shares(identity, direction="received", status=None, skip=0, limit=100):
         svc = current_app.container.share_service
 
         if direction == "received":
-            from mas.core.identity import Identity, IdentityType
-            user_identity = Identity(
-                id=g.identity_username,
-                type=IdentityType.USER,
-            )
-            invites = svc.list_received_invites(user_identity, status_enum, skip, limit)
+            invites = svc.list_received_invites(identity, status_enum, skip, limit)
         elif direction == "sent":
             invites = svc.list_sent_invites(identity, status_enum, skip, limit)
         else:

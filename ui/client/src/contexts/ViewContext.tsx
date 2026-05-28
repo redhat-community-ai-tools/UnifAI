@@ -87,7 +87,6 @@ export function ViewProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // Groups endpoint may not be available; fall back gracefully
         roverGroupIds = undefined;
-        setUserGroups([]);
       }
 
       const fetched = await listUserTeams(roverGroupIds);

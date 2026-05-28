@@ -57,7 +57,7 @@ If reusable logic exists, USE IT. Do NOT duplicate.
 The `multi-agent` module uses a structured `Identity` object for resource ownership instead of flat `user_id` strings. When writing code in `multi-agent/`:
 
 - Use `Identity` (`from mas.core.identity import Identity`) for all ownership and scoping of blueprints, resources, sessions, shares, and templates.
-- At the API boundary (Flask adapters), identity is resolved automatically by the `@with_require_team_session` decorator (validates the Redis session by first reading the `unifai_session_id` cookie and falling back to the `X-Session-Id` header, then injects `identity` as a kwarg into Flask adapters). Never pass flat `user_id` deeper than the adapter layer.
+- At the API boundary (Flask adapters), identity is resolved automatically by the `@with_require_team_session` decorator (validates the Redis session via `X-Session-Id` and injects `identity` as a kwarg). Never pass flat `user_id` deeper than the adapter layer.
 - Use the `identity_q()` helper for MongoDB queries scoped to an owner.
 - `user_id` remains correct for human-specific concerns: OAuth credentials (`credential_user_id`), collaboration participants, and auth headers.
 
