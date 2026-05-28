@@ -678,6 +678,8 @@ return String(ref);
       return;
     }
     prevWorkspaceCredentialKeyRef.current = key;
+    setUuidToNameMap(new Map());
+    setUuidToResourceMap(new Map());
     setValidationCache(new Map());
     setValidationStatusMap(new Map());
     setDependencyParentMap(new Map());

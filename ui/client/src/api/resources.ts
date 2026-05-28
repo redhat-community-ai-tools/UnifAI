@@ -45,9 +45,9 @@ export async function listResources(params: ListResourcesParams): Promise<Resour
 }
 
 export async function getResource(resourceId: string): Promise<ResourceInstance> {
-  const response = await axios.get<ResourceInstance>(
-    `/resources/resource.get?resourceId=${resourceId}`,
-  );
+  const response = await axios.get<ResourceInstance>('/resources/resource.get', {
+    params: { resourceId },
+  });
   return response.data;
 }
 
@@ -82,7 +82,7 @@ export async function updateResource(payload: UpdateResourcePayload): Promise<an
 }
 
 export async function deleteResource(resourceId: string): Promise<void> {
-  await axios.delete(`/resources/resource.delete?resourceId=${resourceId}`);
+  await axios.delete('/resources/resource.delete', { params: { resourceId } });
 }
 
 export async function validateResource(resourceId: string): Promise<ElementValidationResult> {
