@@ -264,7 +264,32 @@ class ConditionalHint(BaseModel):
         }
 
 
-def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint]) -> Dict[str, Any]:
+class RefFilterHint(BaseModel):
+    """Hint to restrict a Ref field's dropdown to a specific resource type.
+
+    The UI should filter the reference options to only show resources
+    whose ``type`` matches ``allowed_type``.
+
+    Example::
+
+        json_schema_extra=RefFilterHint(allowed_type="ssh_exec").to_hints()
+    """
+
+    allowed_type: str = Field(
+        ...,
+        description="Only show resources with this type in the dropdown",
+    )
+
+    def to_hints(self) -> Dict[str, Any]:
+        """Return the proper structure for json_schema_extra hints."""
+        return {
+            "hints": {
+                "ref_filter": self.model_dump()
+            }
+        }
+
+
+def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, RefFilterHint]) -> Dict[str, Any]:
     """
     Combine multiple hints into a single json_schema_extra structure.
     

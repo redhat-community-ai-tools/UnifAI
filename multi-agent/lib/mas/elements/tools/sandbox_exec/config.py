@@ -4,7 +4,7 @@ from pydantic import Field
 
 from mas.elements.tools.common.base_config import BaseToolConfig
 from mas.core.ref.models import ToolRef
-from mas.core.field_hints import SecretHint
+from mas.core.field_hints import RefFilterHint, SecretHint
 from .identifiers import Identifier
 
 
@@ -17,7 +17,9 @@ class SandboxExecToolConfig(BaseToolConfig):
 
     type: Literal[Identifier.TYPE] = Identifier.TYPE
     ssh_tool_ref: ToolRef = Field(
-        ..., description="Reference to an existing ssh_exec resource (the VM)"
+        ...,
+        description="Reference to an existing ssh_exec resource (the VM)",
+        json_schema_extra=RefFilterHint(allowed_type="ssh_exec").to_hints(),
     )
     git_repo_url: str = Field(
         "",

@@ -644,8 +644,10 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
     const category = extractCategoryFromField(fieldSchema);
 
     if (category) {
+      const refTypeFilter = fieldSchema?.hints?.ref_filter?.allowed_type;
       const validOptions = (refOptions[category] || [])
         .filter((option: any) => option.rid && option.rid.trim() !== "")
+        .filter((option: any) => !refTypeFilter || option.type === refTypeFilter)
         .sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""));
 
       return (
