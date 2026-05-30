@@ -49,6 +49,7 @@ class AppConfig(SharedConfig):
     # MongoDB — teams collection (lives in the "users" DB alongside user approval terms)
     mongo_db: str = "users"
     teams_coll: str = "teams"
+    api_tokens_coll: str = "api_tokens"
 
     # ── LDAP / Directory settings ──────────────────────────────────────────
     # Stable LDAP structural params (base DNs, object classes, search attrs)
