@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CR Intelligence — UnifAI</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #21262d;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            color: #58a6ff;
+        }
+        .header .meta {
+            font-size: 0.8rem;
+            color: #8b949e;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .metric-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.25rem;
+            transition: border-color 0.2s;
+        }
+        .metric-card:hover { border-color: #58a6ff; }
+        .metric-card .label {
+            font-size: 0.75rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+        .metric-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #58a6ff;
+        }
+        .metric-card .unit {
+            font-size: 0.8rem;
+            color: #8b949e;
+            margin-left: 0.25rem;
+        }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        @media (max-width: 900px) {
+            .charts-grid { grid-template-columns: 1fr; }
+        }
+        .chart-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+        .chart-card h2 {
+            font-size: 0.85rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+        .chart-card canvas { max-height: 280px; }
+        .table-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .table-card h2 {
+            font-size: 0.85rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid #21262d;
+        }
+        th {
+            color: #8b949e;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+        td { font-size: 0.9rem; }
+        .bar {
+            height: 8px;
+            background: #58a6ff;
+            border-radius: 4px;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 0.5rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .badge-open { background: #1f6f2b; color: #3fb950; }
+        .badge-merged { background: #2d1f6f; color: #a371f7; }
+        .footer {
+            text-align: center;
+            padding-top: 2rem;
+            border-top: 1px solid #21262d;
+            color: #8b949e;
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CR Intelligence Dashboard</h1>
+        <div class="meta">
+            Last {{ metrics.lookback_days }} days &middot; Generated {{ metrics.generated_at[:10] }}
+        </div>
+    </div>
+
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="label">Open PRs Awaiting Review</div>
+            <div class="value">{{ metrics.open_prs }}</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Avg Time to First Review</div>
+            <div class="value">{{ metrics.avg_time_to_first_review_hours }}<span class="unit">hrs</span></div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Avg Time to Merge</div>
+            <div class="value">{{ metrics.avg_time_to_merge_hours }}<span class="unit">hrs</span></div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Avg Review Cycles per PR</div>
+            <div class="value">{{ metrics.avg_review_cycles }}</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Total PRs ({{ metrics.lookback_days }}d)</div>
+            <div class="value">{{ metrics.total_prs }}</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Comments per PR</div>
+            <div class="value">{{ metrics.comments_per_pr }}</div>
+        </div>
+    </div>
+
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h2>Weekly Activity Trend</h2>
+            <canvas id="trendChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h2>Review Comments by File Type</h2>
+            <canvas id="fileTypeChart"></canvas>
+        </div>
+    </div>
+
+    <div class="table-card">
+        <h2>Top Reviewers</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Reviewer</th>
+                    <th>Comments</th>
+                    <th>PRs Reviewed</th>
+                    <th>Activity</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for reviewer in metrics.top_reviewers %}
+                <tr>
+                    <td>{{ reviewer.name }}</td>
+                    <td>{{ reviewer.comments }}</td>
+                    <td>{{ reviewer.prs_reviewed }}</td>
+                    <td>
+                        {% set max_comments = metrics.top_reviewers[0].comments if metrics.top_reviewers else 1 %}
+                        {% set width = (reviewer.comments / max_comments * 100) | int %}
+                        <span class="bar" style="width: {{ width }}px;"></span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="footer">
+        CR Intelligence &middot; UnifAI &middot; Data refreshes weekly via GitHub Actions
+    </div>
+
+    <script>
+        const metrics = {{ metrics_json }};
+
+        const chartColors = {
+            blue: '#58a6ff',
+            purple: '#a371f7',
+            green: '#3fb950',
+            orange: '#d29922',
+            red: '#f85149',
+            gray: '#8b949e',
+        };
+
+        const chartDefaults = {
+            color: '#8b949e',
+            borderColor: '#30363d',
+        };
+        Chart.defaults.color = chartDefaults.color;
+        Chart.defaults.borderColor = chartDefaults.borderColor;
+
+        // Weekly trend chart
+        const trendCtx = document.getElementById('trendChart').getContext('2d');
+        new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: metrics.weekly_trend.map(w => w.week),
+                datasets: [
+                    {
+                        label: 'PRs Opened',
+                        data: metrics.weekly_trend.map(w => w.prs_opened),
+                        borderColor: chartColors.blue,
+                        backgroundColor: chartColors.blue + '20',
+                        fill: true,
+                        tension: 0.3,
+                    },
+                    {
+                        label: 'PRs Merged',
+                        data: metrics.weekly_trend.map(w => w.prs_merged),
+                        borderColor: chartColors.purple,
+                        backgroundColor: chartColors.purple + '20',
+                        fill: true,
+                        tension: 0.3,
+                    },
+                    {
+                        label: 'Comments',
+                        data: metrics.weekly_trend.map(w => w.comments),
+                        borderColor: chartColors.green,
+                        backgroundColor: chartColors.green + '20',
+                        fill: true,
+                        tension: 0.3,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#21262d' } },
+                    x: { grid: { color: '#21262d' } },
+                },
+            },
+        });
+
+        // File type chart
+        const fileTypeCtx = document.getElementById('fileTypeChart').getContext('2d');
+        const fileData = Object.entries(metrics.file_extensions)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8);
+
+        new Chart(fileTypeCtx, {
+            type: 'doughnut',
+            data: {
+                labels: fileData.map(([ext]) => ext),
+                datasets: [{
+                    data: fileData.map(([, count]) => count),
+                    backgroundColor: [
+                        chartColors.blue,
+                        chartColors.purple,
+                        chartColors.green,
+                        chartColors.orange,
+                        chartColors.red,
+                        '#79c0ff',
+                        '#d2a8ff',
+                        '#56d364',
+                    ],
+                    borderWidth: 0,
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom' },
+                },
+            },
+        });
+    </script>
+</body>
+</html>

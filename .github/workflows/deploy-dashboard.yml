@@ -1,0 +1,54 @@
+name: CR Intelligence Dashboard
+
+on:
+  push:
+    branches:
+      - cr-intelligence-dashboard
+    paths:
+      - 'cr-intelligence/**'
+      - '.github/workflows/deploy-dashboard.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * 1'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  pull-requests: read
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r cr-intelligence/requirements.txt
+
+      - name: Build dashboard
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.repository }}
+        run: python cr-intelligence/scripts/build_dashboard.py
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: cr-intelligence/output
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
