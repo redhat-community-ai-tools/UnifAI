@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CR Intelligence — UnifAI</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #21262d;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            color: #58a6ff;
+        }
+        .header .meta {
+            font-size: 0.8rem;
+            color: #8b949e;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .metric-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.25rem;
+            transition: border-color 0.2s;
+        }
+        .metric-card:hover { border-color: #58a6ff; }
+        .metric-card .label {
+            font-size: 0.75rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+        .metric-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #58a6ff;
+        }
+        .metric-card .unit {
+            font-size: 0.8rem;
+            color: #8b949e;
+            margin-left: 0.25rem;
+        }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        @media (max-width: 900px) {
+            .charts-grid { grid-template-columns: 1fr; }
+        }
+        .chart-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.5rem;
+        }
+        .chart-card h2 {
+            font-size: 0.85rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+        .chart-card canvas { max-height: 280px; }
+        .table-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .table-card h2 {
+            font-size: 0.85rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid #21262d;
+        }
+        th {
+            color: #8b949e;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+        td { font-size: 0.9rem; }
+        .bar {
+            height: 8px;
+            background: #58a6ff;
+            border-radius: 4px;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 0.5rem;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .badge-open { background: #1f6f2b; color: #3fb950; }
+        .badge-merged { background: #2d1f6f; color: #a371f7; }
+        .footer {
+            text-align: center;
+            padding-top: 2rem;
+            border-top: 1px solid #21262d;
+            color: #8b949e;
+            font-size: 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CR Intelligence Dashboard</h1>
+        <div class="meta">
+            Last 60 days &middot; Generated 2026-05-30
+        </div>
+    </div>
+
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="label">Open PRs Awaiting Review</div>
+            <div class="value">15</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Avg Time to First Review</div>
+            <div class="value">37.4<span class="unit">hrs</span></div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Avg Time to Merge</div>
+            <div class="value">216.2<span class="unit">hrs</span></div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Avg Review Cycles per PR</div>
+            <div class="value">2.6</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Total PRs (60d)</div>
+            <div class="value">54</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Comments per PR</div>
+            <div class="value">18.7</div>
+        </div>
+    </div>
+
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h2>Weekly Activity Trend</h2>
+            <canvas id="trendChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h2>Review Comments by File Type</h2>
+            <canvas id="fileTypeChart"></canvas>
+        </div>
+    </div>
+
+    <div class="table-card">
+        <h2>Top Reviewers</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Reviewer</th>
+                    <th>Comments</th>
+                    <th>PRs Reviewed</th>
+                    <th>Activity</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+                <tr>
+                    <td>coderabbitai[bot]</td>
+                    <td>271</td>
+                    <td>32</td>
+                    <td>
+                        
+                        
+                        <span class="bar" style="width: 100px;"></span>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <td>sfiresht</td>
+                    <td>231</td>
+                    <td>22</td>
+                    <td>
+                        
+                        
+                        <span class="bar" style="width: 85px;"></span>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <td>MayaCrmi</td>
+                    <td>211</td>
+                    <td>17</td>
+                    <td>
+                        
+                        
+                        <span class="bar" style="width: 77px;"></span>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <td>Nirsisr</td>
+                    <td>101</td>
+                    <td>9</td>
+                    <td>
+                        
+                        
+                        <span class="bar" style="width: 37px;"></span>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <td>Lina-AbuYousef</td>
+                    <td>100</td>
+                    <td>9</td>
+                    <td>
+                        
+                        
+                        <span class="bar" style="width: 36px;"></span>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <td>yhabushi79</td>
+                    <td>42</td>
+                    <td>11</td>
+                    <td>
+                        
+                        
+                        <span class="bar" style="width: 15px;"></span>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <td>odaiodeh</td>
+                    <td>38</td>
+                    <td>8</td>
+                    <td>
+                        
+                        
+                        <span class="bar" style="width: 14px;"></span>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <td>qodo-code-review[bot]</td>
+                    <td>8</td>
+                    <td>3</td>
+                    <td>
+                        
+                        
+                        <span class="bar" style="width: 2px;"></span>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <td>shanitzvii</td>
+                    <td>5</td>
+                    <td>1</td>
+                    <td>
+                        
+                        
+                        <span class="bar" style="width: 1px;"></span>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <td>ItzikEzra-rh</td>
+                    <td>1</td>
+                    <td>1</td>
+                    <td>
+                        
+                        
+                        <span class="bar" style="width: 0px;"></span>
+                    </td>
+                </tr>
+                
+            </tbody>
+        </table>
+    </div>
+
+    <div class="footer">
+        CR Intelligence &middot; UnifAI &middot; Data refreshes weekly via GitHub Actions
+    </div>
+
+    <script>
+        const metrics = {"total_prs": 54, "open_prs": 15, "merged_prs": 34, "total_comments": 1008, "avg_time_to_first_review_hours": 37.4, "avg_time_to_merge_hours": 216.2, "avg_review_cycles": 2.6, "comments_per_pr": 18.7, "file_extensions": {".yaml": 73, ".groovy": 53, ".sh": 40, ".md": 40, ".py": 556, ".ts": 39, ".tsx": 164, ".txt": 12, ".yml": 6, "other": 15, ".toml": 2, ".docx": 2, ".png": 6}, "weekly_trend": [{"week": "2026-W14", "prs_opened": 3, "prs_merged": 1, "comments": 44}, {"week": "2026-W15", "prs_opened": 6, "prs_merged": 6, "comments": 85}, {"week": "2026-W16", "prs_opened": 3, "prs_merged": 3, "comments": 137}, {"week": "2026-W17", "prs_opened": 5, "prs_merged": 6, "comments": 150}, {"week": "2026-W18", "prs_opened": 7, "prs_merged": 3, "comments": 71}, {"week": "2026-W19", "prs_opened": 8, "prs_merged": 5, "comments": 122}, {"week": "2026-W20", "prs_opened": 4, "prs_merged": 3, "comments": 194}, {"week": "2026-W21", "prs_opened": 6, "prs_merged": 7, "comments": 126}], "top_reviewers": [{"name": "coderabbitai[bot]", "comments": 271, "prs_reviewed": 32}, {"name": "sfiresht", "comments": 231, "prs_reviewed": 22}, {"name": "MayaCrmi", "comments": 211, "prs_reviewed": 17}, {"name": "Nirsisr", "comments": 101, "prs_reviewed": 9}, {"name": "Lina-AbuYousef", "comments": 100, "prs_reviewed": 9}, {"name": "yhabushi79", "comments": 42, "prs_reviewed": 11}, {"name": "odaiodeh", "comments": 38, "prs_reviewed": 8}, {"name": "qodo-code-review[bot]", "comments": 8, "prs_reviewed": 3}, {"name": "shanitzvii", "comments": 5, "prs_reviewed": 1}, {"name": "ItzikEzra-rh", "comments": 1, "prs_reviewed": 1}], "lookback_days": 60, "generated_at": "2026-05-30T15:47:57.498882+00:00"};
+
+        const chartColors = {
+            blue: '#58a6ff',
+            purple: '#a371f7',
+            green: '#3fb950',
+            orange: '#d29922',
+            red: '#f85149',
+            gray: '#8b949e',
+        };
+
+        const chartDefaults = {
+            color: '#8b949e',
+            borderColor: '#30363d',
+        };
+        Chart.defaults.color = chartDefaults.color;
+        Chart.defaults.borderColor = chartDefaults.borderColor;
+
+        // Weekly trend chart
+        const trendCtx = document.getElementById('trendChart').getContext('2d');
+        new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: metrics.weekly_trend.map(w => w.week),
+                datasets: [
+                    {
+                        label: 'PRs Opened',
+                        data: metrics.weekly_trend.map(w => w.prs_opened),
+                        borderColor: chartColors.blue,
+                        backgroundColor: chartColors.blue + '20',
+                        fill: true,
+                        tension: 0.3,
+                    },
+                    {
+                        label: 'PRs Merged',
+                        data: metrics.weekly_trend.map(w => w.prs_merged),
+                        borderColor: chartColors.purple,
+                        backgroundColor: chartColors.purple + '20',
+                        fill: true,
+                        tension: 0.3,
+                    },
+                    {
+                        label: 'Comments',
+                        data: metrics.weekly_trend.map(w => w.comments),
+                        borderColor: chartColors.green,
+                        backgroundColor: chartColors.green + '20',
+                        fill: true,
+                        tension: 0.3,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#21262d' } },
+                    x: { grid: { color: '#21262d' } },
+                },
+            },
+        });
+
+        // File type chart
+        const fileTypeCtx = document.getElementById('fileTypeChart').getContext('2d');
+        const fileData = Object.entries(metrics.file_extensions)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8);
+
+        new Chart(fileTypeCtx, {
+            type: 'doughnut',
+            data: {
+                labels: fileData.map(([ext]) => ext),
+                datasets: [{
+                    data: fileData.map(([, count]) => count),
+                    backgroundColor: [
+                        chartColors.blue,
+                        chartColors.purple,
+                        chartColors.green,
+                        chartColors.orange,
+                        chartColors.red,
+                        '#79c0ff',
+                        '#d2a8ff',
+                        '#56d364',
+                    ],
+                    borderWidth: 0,
+                }],
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom' },
+                },
+            },
+        });
+    </script>
+</body>
+</html>
