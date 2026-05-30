@@ -162,6 +162,93 @@
             color: #8b949e;
             font-size: 0.75rem;
         }
+
+        .suggestion-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .suggestion-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .suggestion-category {
+            background: #58a6ff20;
+            color: #58a6ff;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+        .suggestion-count {
+            font-size: 0.75rem;
+            color: #8b949e;
+        }
+        .suggestion-label {
+            font-size: 0.7rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+        .suggestion-rules { margin-bottom: 1rem; }
+        .suggestion-rules ul {
+            list-style: none;
+            padding: 0;
+        }
+        .suggestion-rules li {
+            padding: 0.3rem 0;
+            padding-left: 1rem;
+            position: relative;
+            font-size: 0.85rem;
+        }
+        .suggestion-rules li::before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #3fb950;
+        }
+        .suggestion-example {
+            margin-bottom: 1rem;
+        }
+        .suggestion-example blockquote {
+            border-left: 2px solid #8b949e;
+            padding-left: 1rem;
+            margin: 0.5rem 0;
+            font-size: 0.85rem;
+            color: #e6edf3;
+            font-style: italic;
+        }
+        .suggestion-prompt { margin-bottom: 0.5rem; }
+        .prompt-box {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.8rem;
+            color: #3fb950;
+            word-break: break-word;
+            cursor: pointer;
+            position: relative;
+        }
+        .prompt-box:hover {
+            border-color: #3fb950;
+        }
+        .prompt-box::after {
+            content: "click to copy";
+            position: absolute;
+            top: 0.5rem;
+            right: 0.75rem;
+            font-size: 0.65rem;
+            color: #8b949e;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
     </style>
 </head>
 <body>
@@ -176,11 +263,15 @@
     <div class="metrics-grid">
         <div class="metric-card">
             <div class="label">Open PRs Awaiting Review</div>
-            <div class="value">15</div>
+            <div class="value">11</div>
         </div>
         <div class="metric-card">
             <div class="label">Avg Time to First Review</div>
-            <div class="value">37.4<span class="unit">hrs</span></div>
+            <div class="value">37.8<span class="unit">hrs</span></div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Avg Review to Merge</div>
+            <div class="value">181.7<span class="unit">hrs</span></div>
         </div>
         <div class="metric-card">
             <div class="label">Avg Time to Merge</div>
@@ -192,11 +283,11 @@
         </div>
         <div class="metric-card">
             <div class="label">Total PRs</div>
-            <div class="value">54</div>
+            <div class="value">50</div>
         </div>
         <div class="metric-card">
             <div class="label">Comments per PR</div>
-            <div class="value">18.7</div>
+            <div class="value">13.2</div>
         </div>
     </div>
 
@@ -206,27 +297,27 @@
     <div class="metrics-grid">
         <div class="metric-card ai">
             <div class="label">AI Comments</div>
-            <div class="value">279</div>
+            <div class="value">264</div>
         </div>
         <div class="metric-card human">
             <div class="label">Human Comments</div>
-            <div class="value">729</div>
+            <div class="value">394</div>
         </div>
         <div class="metric-card coverage">
             <div class="label">AI File Coverage</div>
-            <div class="value">39.1<span class="unit">%</span></div>
+            <div class="value">36.2<span class="unit">%</span></div>
         </div>
         <div class="metric-card">
             <div class="label">PRs with Both AI + Human</div>
-            <div class="value">27</div>
+            <div class="value">22</div>
         </div>
         <div class="metric-card">
             <div class="label">Files Only Humans Flagged</div>
-            <div class="value">120</div>
+            <div class="value">111</div>
         </div>
         <div class="metric-card">
             <div class="label">Files Only AI Flagged</div>
-            <div class="value">67</div>
+            <div class="value">74</div>
         </div>
     </div>
 
@@ -237,8 +328,8 @@
             Of the files humans left comments on, how many did AI also review?
         </p>
         <div class="coverage-bar-container">
-            <div class="coverage-bar-fill" style="width: 39.1%; background: linear-gradient(90deg, #d29922, #f78166);">
-                39.1%
+            <div class="coverage-bar-fill" style="width: 36.2%; background: linear-gradient(90deg, #d29922, #f78166);">
+                36.2%
             </div>
         </div>
         <div class="legend">
@@ -251,8 +342,8 @@
     <div class="insight-card">
         <div class="insight-title">Key Insight</div>
         <div class="insight-text">
-            AI reviews cover <strong>39.1%</strong> of the files that humans comment on.
-            The remaining <strong>120 files</strong> represent the gap where
+            AI reviews cover <strong>36.2%</strong> of the files that humans comment on.
+            The remaining <strong>111 files</strong> represent the gap where
             team-specific knowledge could improve AI coverage — reducing human reviewer workload.
         </div>
     </div>
@@ -305,8 +396,8 @@
                 
                 <tr>
                     <td>sfiresht</td>
-                    <td>231</td>
-                    <td>22</td>
+                    <td>102</td>
+                    <td>12</td>
                     <td>
                         
                         
@@ -315,46 +406,35 @@
                 </tr>
                 
                 <tr>
-                    <td>MayaCrmi</td>
-                    <td>211</td>
-                    <td>17</td>
+                    <td>Nirsisr</td>
+                    <td>98</td>
+                    <td>8</td>
                     <td>
                         
                         
-                        <span class="bar bar-human" style="width: 91px;"></span>
+                        <span class="bar bar-human" style="width: 96px;"></span>
                     </td>
                 </tr>
                 
                 <tr>
-                    <td>Nirsisr</td>
-                    <td>101</td>
-                    <td>9</td>
+                    <td>MayaCrmi</td>
+                    <td>69</td>
+                    <td>11</td>
                     <td>
                         
                         
-                        <span class="bar bar-human" style="width: 43px;"></span>
+                        <span class="bar bar-human" style="width: 67px;"></span>
                     </td>
                 </tr>
                 
                 <tr>
                     <td>Lina-AbuYousef</td>
-                    <td>100</td>
-                    <td>9</td>
+                    <td>64</td>
+                    <td>6</td>
                     <td>
                         
                         
-                        <span class="bar bar-human" style="width: 43px;"></span>
-                    </td>
-                </tr>
-                
-                <tr>
-                    <td>yhabushi79</td>
-                    <td>42</td>
-                    <td>11</td>
-                    <td>
-                        
-                        
-                        <span class="bar bar-human" style="width: 18px;"></span>
+                        <span class="bar bar-human" style="width: 62px;"></span>
                     </td>
                 </tr>
                 
@@ -365,29 +445,18 @@
                     <td>
                         
                         
-                        <span class="bar bar-human" style="width: 16px;"></span>
+                        <span class="bar bar-human" style="width: 37px;"></span>
                     </td>
                 </tr>
                 
                 <tr>
-                    <td>shanitzvii</td>
-                    <td>5</td>
-                    <td>1</td>
+                    <td>yhabushi79</td>
+                    <td>23</td>
+                    <td>7</td>
                     <td>
                         
                         
-                        <span class="bar bar-human" style="width: 2px;"></span>
-                    </td>
-                </tr>
-                
-                <tr>
-                    <td>ItzikEzra-rh</td>
-                    <td>1</td>
-                    <td>1</td>
-                    <td>
-                        
-                        
-                        <span class="bar bar-human" style="width: 0px;"></span>
+                        <span class="bar bar-human" style="width: 22px;"></span>
                     </td>
                 </tr>
                 
@@ -395,12 +464,296 @@
         </table>
     </div>
 
+    <!-- Learning Suggestions Section -->
+    <h2 class="section-title">CodeRabbit Learning Suggestions</h2>
+
+    <div class="insight-card" style="border-left-color: #3fb950; margin-bottom: 1.5rem;">
+        <div class="insight-title" style="color: #3fb950;">How This Works</div>
+        <div class="insight-text">
+            These suggestions are generated from <strong>355</strong> human review comments
+            (90.1% of all human comments) that were resolved with actual code changes —
+            meaning the team agreed AND the author fixed it. These are high-value patterns to teach CodeRabbit.
+        </div>
+    </div>
+
+    
+    <div class="suggestion-card">
+        <div class="suggestion-header">
+            <span class="suggestion-category">ARCHITECTURE</span>
+            <span class="suggestion-count">109 actionable comments</span>
+        </div>
+
+        <div class="suggestion-rules">
+            <div class="suggestion-label">Team Rules Identified:</div>
+            <ul>
+                
+                <li>Establish Clear Architectural Layers and Boundaries: Ensure code resides in its appropriate architectural layer (e.g., domain, service, adapter, UI hook) and promote the extraction of reusable components.</li>
+                
+                <li>Prioritize Object-Oriented Encapsulation: Design cohesive classes that encapsulate related logic and state, explicitly managing dependencies through constructors or factory methods.</li>
+                
+            </ul>
+        </div>
+
+        
+        <div class="suggestion-example">
+            <div class="suggestion-label">Best Example:</div>
+            <blockquote>{'file_path': 'local-development/devtool/services/python_detector.py', 'comment_text': '@shanitzvii is python detector should be in services? is a domain code or an adapter code?'}</blockquote>
+        </div>
+        
+
+        
+        <div class="suggestion-prompt">
+            <div class="suggestion-label">Copy to teach CodeRabbit:</div>
+            <div class="prompt-box">@coderabbitai Review code for architectural compliance: 1. Verify that code is placed in its correct architectural layer (e.g., domain, service, adapter, UI hook) and that reusable components are extracted. 2. Ensure object-oriented design principles are applied, favoring classes for encapsulation and clear dependency management (e.g., constructor injection, factory patterns).</div>
+        </div>
+        
+    </div>
+    
+    <div class="suggestion-card">
+        <div class="suggestion-header">
+            <span class="suggestion-category">ERROR_HANDLING</span>
+            <span class="suggestion-count">4 actionable comments</span>
+        </div>
+
+        <div class="suggestion-rules">
+            <div class="suggestion-label">Team Rules Identified:</div>
+            <ul>
+                
+                <li>Anticipate and explicitly handle potential failure states, especially for external dependencies or edge cases, rather than assuming success.</li>
+                
+                <li>Implement rollback or compensatory actions for multi-step operations to prevent data inconsistency from partial failures.</li>
+                
+                <li>Differentiate between various error types and provide specific, actionable feedback to users or logs, instead of generic error messages.</li>
+                
+            </ul>
+        </div>
+
+        
+        <div class="suggestion-example">
+            <div class="suggestion-label">Best Example:</div>
+            <blockquote>{'file': 'ui/client/src/api/teams.ts', 'comment': "maya this is a warning cursor gave me idk how much this is a real issue but worth looking at it:\n\n`Two-step delete without rollback — if workspace.cleanup succeeds but team.delete fails, you've deleted all the team's resources/blueprints/sessions but the team still exists. The user sees the team but all its data is gone.`"}</blockquote>
+        </div>
+        
+
+        
+        <div class="suggestion-prompt">
+            <div class="suggestion-label">Copy to teach CodeRabbit:</div>
+            <div class="prompt-box">@coderabbitai Review error handling for robustness: ensure all potential failure states (especially for external services or multi-step processes) are explicitly considered. Verify that partial failures lead to consistent states (e.g., through rollbacks). Additionally, check for differentiation of error types and specific, informative feedback to users or logs.</div>
+        </div>
+        
+    </div>
+    
+    <div class="suggestion-card">
+        <div class="suggestion-header">
+            <span class="suggestion-category">NAMING</span>
+            <span class="suggestion-count">15 actionable comments</span>
+        </div>
+
+        <div class="suggestion-rules">
+            <div class="suggestion-label">Team Rules Identified:</div>
+            <ul>
+                
+                <li>**Be Specific and Descriptive:** Names must precisely describe the entity's purpose, details, or role. Avoid generic or overly broad terms.</li>
+                
+                <li>**Be Accurate and Consistent:** Names must reflect actual functionality, content, or type. Maintain consistency for similar entities and avoid misleading names.</li>
+                
+                <li>**Avoid Ambiguity and Redundancy:** Ensure names are unique within their context and don't introduce unnecessary duplication or confusion.</li>
+                
+            </ul>
+        </div>
+
+        
+        <div class="suggestion-example">
+            <div class="suggestion-label">Best Example:</div>
+            <blockquote>{'file_path': 'shared-resources/identity/directory/config.py', 'comment_text': "if this is a config file, it should be under config, if it's for just modeling it should have another name (as the name config is very misleading here I think), anyway, we want to seaprate the configs into a specific location for easier management."}</blockquote>
+        </div>
+        
+
+        
+        <div class="suggestion-prompt">
+            <div class="suggestion-label">Copy to teach CodeRabbit:</div>
+            <div class="prompt-box">@coderabbitai As a crucial part of our code quality, please meticulously review all naming conventions (variables, functions, classes, files). Ensure names are **highly specific and descriptive** of their exact purpose, content, or functionality. Verify they are **accurate**, not misleading, and **consistent** with similar entities across the codebase. Finally, check for any **ambiguity or redundancy** in naming that could lead to confusion.</div>
+        </div>
+        
+    </div>
+    
+    <div class="suggestion-card">
+        <div class="suggestion-header">
+            <span class="suggestion-category">TESTING</span>
+            <span class="suggestion-count">7 actionable comments</span>
+        </div>
+
+        <div class="suggestion-rules">
+            <div class="suggestion-label">Team Rules Identified:</div>
+            <ul>
+                
+                <li>Isolate Test-Specific Configurations: Clearly distinguish and separate configuration values (e.g., resource sizes, environment variables) that are exclusively for testing environments from production or default settings.</li>
+                
+                <li>Test Realistic Constraints & Scenarios: Ensure tests account for known system limitations (e.g., size limits, API boundaries) and cover both successful outcomes and anticipated failure conditions.</li>
+                
+                <li>Maintain Clear Test Scope: The purpose, setup, and expected behavior of individual tests or test suites must be unambiguous and well-defined.</li>
+                
+            </ul>
+        </div>
+
+        
+        <div class="suggestion-example">
+            <div class="suggestion-label">Best Example:</div>
+            <blockquote>{'file': 'rag/tests/factories/document_factory.py', 'comment': 'I remember we have a document size limitation in the GUI by nginx—should we take that into account in this testing?'}</blockquote>
+        </div>
+        
+
+        
+        <div class="suggestion-prompt">
+            <div class="suggestion-label">Copy to teach CodeRabbit:</div>
+            <div class="prompt-box">@coderabbitai When reviewing testing code, verify that test configurations are clearly separated from production settings. Ensure tests cover critical system constraints (e.g., size limits), validate both success and failure paths, and have an unambiguous scope.</div>
+        </div>
+        
+    </div>
+    
+    <div class="suggestion-card">
+        <div class="suggestion-header">
+            <span class="suggestion-category">PERFORMANCE</span>
+            <span class="suggestion-count">7 actionable comments</span>
+        </div>
+
+        <div class="suggestion-rules">
+            <div class="suggestion-label">Team Rules Identified:</div>
+            <ul>
+                
+                <li>Avoid redundant work: Eliminate duplicate checks, computations, or similar code paths.</li>
+                
+                <li>Execute conditionally: Perform expensive operations (e.g., builds, imports) only when strictly necessary, using conditional logic or lazy loading.</li>
+                
+                <li>Optimize resource interactions: Minimize round-trips and overhead for database, network, or external service calls.</li>
+                
+            </ul>
+        </div>
+
+        
+        <div class="suggestion-example">
+            <div class="suggestion-label">Best Example:</div>
+            <blockquote>{'file': 'multi-agent/lib/mas/session/service.py', 'comment': 'The current approach of saving the workflow_id into run_context.tags after engine.submit() has a few issues: 1. **Extra DB round-trip** — `get_record()` is called a 3rd time (line 91) just to save the handle, adding a 2nd write. The method currently does 3 reads + 2 writes. 2. **Race window** — Between engin'}</blockquote>
+        </div>
+        
+
+        
+        <div class="suggestion-prompt">
+            <div class="suggestion-label">Copy to teach CodeRabbit:</div>
+            <div class="prompt-box">@coderabbitai Review this code for performance issues, focusing on avoiding redundant computations, minimizing resource-intensive operations (e.g., database round-trips, full rebuilds), and leveraging conditional execution or lazy loading to optimize execution paths.</div>
+        </div>
+        
+    </div>
+    
+    <div class="suggestion-card">
+        <div class="suggestion-header">
+            <span class="suggestion-category">SECURITY</span>
+            <span class="suggestion-count">16 actionable comments</span>
+        </div>
+
+        <div class="suggestion-rules">
+            <div class="suggestion-label">Team Rules Identified:</div>
+            <ul>
+                
+                <li>Never commit sensitive credentials (e.g., passwords, API keys, private keys) directly into source control. Instead, use dedicated secret management systems or secure environment variable injection for runtime access.</li>
+                
+                <li>Implement robust and secure authentication token management. This includes clearly defining the source, secure storage (e.g., hashing, encryption), and lifecycle (lifetime, renewal, revocation) of all tokens. Centralize user identification and authorization logic through dedicated, secure services (e.g., SSO), avoiding direct passing of sensitive identifiers.</li>
+                
+            </ul>
+        </div>
+
+        
+        <div class="suggestion-example">
+            <div class="suggestion-label">Best Example:</div>
+            <blockquote>{'file_path': 'shared-resources/redis/.env_redis', 'comment_text': 'same quesiton about the password - should it be committed here?'}</blockquote>
+        </div>
+        
+
+        
+        <div class="suggestion-prompt">
+            <div class="suggestion-label">Copy to teach CodeRabbit:</div>
+            <div class="prompt-box">@coderabbitai Please review the code for security vulnerabilities related to credential and authentication token management. Specifically, check for: 1. **Hardcoded Secrets:** Are any passwords, API keys, or other sensitive credentials committed directly to the repository? If so, recommend moving them to a secure secret management system or environment variables. 2. **Insecure Token Handling:** Is the application handling authentication tokens (e.g., user tokens, session IDs) securely? Verify that tokens are not exposed, are securely stored (e.g., hashed, encrypted), have well-defined lifecycles, and that user identification relies on secure, centralized services.</div>
+        </div>
+        
+    </div>
+    
+    <div class="suggestion-card">
+        <div class="suggestion-header">
+            <span class="suggestion-category">STYLE</span>
+            <span class="suggestion-count">145 actionable comments</span>
+        </div>
+
+        <div class="suggestion-rules">
+            <div class="suggestion-label">Team Rules Identified:</div>
+            <ul>
+                
+                <li>Remove obsolete, irrelevant, or temporary comments and design files.</li>
+                
+                <li>Maintain consistency in naming conventions, file paths, and project structure.</li>
+                
+                <li>Avoid redundant declarations or unnecessary code constructs.</li>
+                
+            </ul>
+        </div>
+
+        
+        <div class="suggestion-example">
+            <div class="suggestion-label">Best Example:</div>
+            <blockquote>{'file': '.github/workflows/build-images.yaml', 'comment': 'why the context for ui is not like backend or multiagent ?\nis shared-resources/sso-backend should be ./shared-resources/sso-backend \nassuming you are at UnifAI main folder , all folders  should be align with "./" ,right ?'}</blockquote>
+        </div>
+        
+
+        
+        <div class="suggestion-prompt">
+            <div class="suggestion-label">Copy to teach CodeRabbit:</div>
+            <div class="prompt-box">@coderabbitai Review this PR for style and consistency. Flag any obsolete, irrelevant, or temporary comments and suggest removal of design files if they are no longer relevant. Ensure naming conventions, file paths (e.g., local paths prefixed with './' if applicable), and project structure are consistent. Identify and highlight any redundant declarations or unnecessary code constructs.</div>
+        </div>
+        
+    </div>
+    
+    <div class="suggestion-card">
+        <div class="suggestion-header">
+            <span class="suggestion-category">LOGIC</span>
+            <span class="suggestion-count">52 actionable comments</span>
+        </div>
+
+        <div class="suggestion-rules">
+            <div class="suggestion-label">Team Rules Identified:</div>
+            <ul>
+                
+                <li>Justify necessity and purpose: Ensure every element (variable, field, change) has a clear, non-redundant purpose.</li>
+                
+                <li>Verify functionality and handle edge cases: Confirm the code works as expected and addresses potential failure scenarios or common environmental issues.</li>
+                
+                <li>Prioritize automation and logical encapsulation: Automate manual processes and encapsulate related logic for efficiency and maintainability.</li>
+                
+            </ul>
+        </div>
+
+        
+        <div class="suggestion-example">
+            <div class="suggestion-label">Best Example:</div>
+            <blockquote>{'file_path': 'multi-agent/lib/mas/core/execution_context.py', 'comment_text': "isn't finished_at is the same as last_active_at, if so why do you need another field that has the same value?"}</blockquote>
+        </div>
+        
+
+        
+        <div class="suggestion-prompt">
+            <div class="suggestion-label">Copy to teach CodeRabbit:</div>
+            <div class="prompt-box">@coderabbitai Review for logical soundness and efficiency. Check if new logic, variables, or fields are clearly justified, avoid redundancy, and contribute positively to functionality or automation. Flag any potential bugs or missing edge case handling.</div>
+        </div>
+        
+    </div>
+    
+
+    
+
     <div class="footer">
         CR Intelligence &middot; UnifAI &middot; Powered by Gemini 2.5 Flash &middot; Data refreshes weekly
     </div>
 
     <script>
-        const metrics = {"total_prs": 54, "open_prs": 15, "merged_prs": 34, "total_comments": 1008, "avg_time_to_first_review_hours": 37.4, "avg_time_to_merge_hours": 216.2, "avg_review_cycles": 2.6, "comments_per_pr": 18.7, "file_extensions": {".yaml": 73, ".groovy": 53, ".sh": 40, ".md": 40, ".py": 556, ".ts": 39, ".tsx": 164, ".txt": 12, ".yml": 6, "other": 15, ".toml": 2, ".docx": 2, ".png": 6}, "weekly_trend": [{"week": "2026-W14", "prs_opened": 3, "prs_merged": 1, "comments": 44, "ai_comments": 5, "human_comments": 39}, {"week": "2026-W15", "prs_opened": 6, "prs_merged": 6, "comments": 85, "ai_comments": 43, "human_comments": 42}, {"week": "2026-W16", "prs_opened": 3, "prs_merged": 3, "comments": 137, "ai_comments": 23, "human_comments": 114}, {"week": "2026-W17", "prs_opened": 5, "prs_merged": 6, "comments": 150, "ai_comments": 15, "human_comments": 135}, {"week": "2026-W18", "prs_opened": 7, "prs_merged": 3, "comments": 71, "ai_comments": 65, "human_comments": 6}, {"week": "2026-W19", "prs_opened": 8, "prs_merged": 5, "comments": 122, "ai_comments": 31, "human_comments": 91}, {"week": "2026-W20", "prs_opened": 4, "prs_merged": 3, "comments": 194, "ai_comments": 15, "human_comments": 179}, {"week": "2026-W21", "prs_opened": 6, "prs_merged": 7, "comments": 126, "ai_comments": 43, "human_comments": 83}], "top_reviewers": [{"name": "sfiresht", "comments": 231, "prs_reviewed": 22}, {"name": "MayaCrmi", "comments": 211, "prs_reviewed": 17}, {"name": "Nirsisr", "comments": 101, "prs_reviewed": 9}, {"name": "Lina-AbuYousef", "comments": 100, "prs_reviewed": 9}, {"name": "yhabushi79", "comments": 42, "prs_reviewed": 11}, {"name": "odaiodeh", "comments": 38, "prs_reviewed": 8}, {"name": "shanitzvii", "comments": 5, "prs_reviewed": 1}, {"name": "ItzikEzra-rh", "comments": 1, "prs_reviewed": 1}], "lookback_days": 60, "generated_at": "2026-05-30T16:41:15.961282+00:00", "ai_total_comments": 279, "human_total_comments": 729, "ai_coverage_pct": 39.1, "overlap_files_count": 77, "ai_only_files_count": 67, "human_only_files_count": 120, "prs_with_both_count": 27, "category_comparison": [{"category": "ARCHITECTURE", "ai_count": 19, "human_count": 259}, {"category": "ERROR_HANDLING", "ai_count": 22, "human_count": 10}, {"category": "NAMING", "ai_count": 3, "human_count": 25}, {"category": "TESTING", "ai_count": 2, "human_count": 19}, {"category": "PERFORMANCE", "ai_count": 1, "human_count": 7}, {"category": "SECURITY", "ai_count": 40, "human_count": 31}, {"category": "STYLE", "ai_count": 86, "human_count": 238}, {"category": "LOGIC", "ai_count": 106, "human_count": 140}], "ai_categories": {"STYLE": 86, "LOGIC": 106, "SECURITY": 40, "TESTING": 2, "ARCHITECTURE": 19, "ERROR_HANDLING": 22, "NAMING": 3, "PERFORMANCE": 1}, "human_categories": {"STYLE": 238, "LOGIC": 140, "TESTING": 19, "ARCHITECTURE": 259, "NAMING": 25, "SECURITY": 31, "PERFORMANCE": 7, "ERROR_HANDLING": 10}};
+        const metrics = {"total_prs": 50, "open_prs": 11, "merged_prs": 34, "total_comments": 658, "avg_time_to_first_review_hours": 37.8, "avg_time_to_merge_hours": 216.2, "avg_time_review_to_merge_hours": 181.7, "avg_review_cycles": 2.6, "comments_per_pr": 13.2, "file_extensions": {".yaml": 42, ".groovy": 27, ".sh": 23, ".md": 26, ".py": 370, ".ts": 23, ".tsx": 121, ".yml": 6, "other": 11, ".txt": 5, ".toml": 1, ".docx": 1, ".png": 2}, "weekly_trend": [{"week": "2026-W14", "prs_opened": 3, "prs_merged": 1, "comments": 29, "ai_comments": 5, "human_comments": 24}, {"week": "2026-W15", "prs_opened": 6, "prs_merged": 6, "comments": 59, "ai_comments": 43, "human_comments": 16}, {"week": "2026-W16", "prs_opened": 3, "prs_merged": 3, "comments": 92, "ai_comments": 23, "human_comments": 69}, {"week": "2026-W17", "prs_opened": 5, "prs_merged": 6, "comments": 91, "ai_comments": 15, "human_comments": 76}, {"week": "2026-W18", "prs_opened": 7, "prs_merged": 3, "comments": 68, "ai_comments": 65, "human_comments": 3}, {"week": "2026-W19", "prs_opened": 8, "prs_merged": 5, "comments": 84, "ai_comments": 31, "human_comments": 53}, {"week": "2026-W20", "prs_opened": 3, "prs_merged": 3, "comments": 107, "ai_comments": 15, "human_comments": 92}, {"week": "2026-W21", "prs_opened": 4, "prs_merged": 7, "comments": 66, "ai_comments": 28, "human_comments": 38}], "top_reviewers": [{"name": "sfiresht", "comments": 102, "prs_reviewed": 12}, {"name": "Nirsisr", "comments": 98, "prs_reviewed": 8}, {"name": "MayaCrmi", "comments": 69, "prs_reviewed": 11}, {"name": "Lina-AbuYousef", "comments": 64, "prs_reviewed": 6}, {"name": "odaiodeh", "comments": 38, "prs_reviewed": 8}, {"name": "yhabushi79", "comments": 23, "prs_reviewed": 7}], "lookback_days": 60, "generated_at": "2026-05-30T17:58:20.726448+00:00", "ai_total_comments": 264, "human_total_comments": 394, "ai_coverage_pct": 36.2, "overlap_files_count": 63, "ai_only_files_count": 74, "human_only_files_count": 111, "prs_with_both_count": 22, "category_comparison": [{"category": "ARCHITECTURE", "ai_count": 18, "human_count": 121}, {"category": "ERROR_HANDLING", "ai_count": 31, "human_count": 5}, {"category": "NAMING", "ai_count": 4, "human_count": 15}, {"category": "TESTING", "ai_count": 4, "human_count": 7}, {"category": "PERFORMANCE", "ai_count": 1, "human_count": 7}, {"category": "SECURITY", "ai_count": 50, "human_count": 21}, {"category": "STYLE", "ai_count": 46, "human_count": 160}, {"category": "LOGIC", "ai_count": 110, "human_count": 58}], "ai_categories": {"LOGIC": 110, "SECURITY": 50, "ARCHITECTURE": 18, "TESTING": 4, "STYLE": 46, "ERROR_HANDLING": 31, "NAMING": 4, "PERFORMANCE": 1}, "human_categories": {"STYLE": 160, "LOGIC": 58, "PERFORMANCE": 7, "SECURITY": 21, "ARCHITECTURE": 121, "NAMING": 15, "TESTING": 7, "ERROR_HANDLING": 5}, "learning_suggestions": [{"category": "ARCHITECTURE", "comment_count": 109, "rules": ["Establish Clear Architectural Layers and Boundaries: Ensure code resides in its appropriate architectural layer (e.g., domain, service, adapter, UI hook) and promote the extraction of reusable components.", "Prioritize Object-Oriented Encapsulation: Design cohesive classes that encapsulate related logic and state, explicitly managing dependencies through constructors or factory methods."], "best_example": {"file_path": "local-development/devtool/services/python_detector.py", "comment_text": "@shanitzvii is python detector should be in services? is a domain code or an adapter code?"}, "coderabbit_prompt": "@coderabbitai Review code for architectural compliance: 1. Verify that code is placed in its correct architectural layer (e.g., domain, service, adapter, UI hook) and that reusable components are extracted. 2. Ensure object-oriented design principles are applied, favoring classes for encapsulation and clear dependency management (e.g., constructor injection, factory patterns)."}, {"category": "ERROR_HANDLING", "comment_count": 4, "rules": ["Anticipate and explicitly handle potential failure states, especially for external dependencies or edge cases, rather than assuming success.", "Implement rollback or compensatory actions for multi-step operations to prevent data inconsistency from partial failures.", "Differentiate between various error types and provide specific, actionable feedback to users or logs, instead of generic error messages."], "best_example": {"file": "ui/client/src/api/teams.ts", "comment": "maya this is a warning cursor gave me idk how much this is a real issue but worth looking at it:\n\n`Two-step delete without rollback \u2014 if workspace.cleanup succeeds but team.delete fails, you've deleted all the team's resources/blueprints/sessions but the team still exists. The user sees the team but all its data is gone.`"}, "coderabbit_prompt": "@coderabbitai Review error handling for robustness: ensure all potential failure states (especially for external services or multi-step processes) are explicitly considered. Verify that partial failures lead to consistent states (e.g., through rollbacks). Additionally, check for differentiation of error types and specific, informative feedback to users or logs."}, {"category": "NAMING", "comment_count": 15, "rules": ["**Be Specific and Descriptive:** Names must precisely describe the entity's purpose, details, or role. Avoid generic or overly broad terms.", "**Be Accurate and Consistent:** Names must reflect actual functionality, content, or type. Maintain consistency for similar entities and avoid misleading names.", "**Avoid Ambiguity and Redundancy:** Ensure names are unique within their context and don't introduce unnecessary duplication or confusion."], "best_example": {"file_path": "shared-resources/identity/directory/config.py", "comment_text": "if this is a config file, it should be under config, if it's for just modeling it should have another name (as the name config is very misleading here I think), anyway, we want to seaprate the configs into a specific location for easier management."}, "coderabbit_prompt": "@coderabbitai As a crucial part of our code quality, please meticulously review all naming conventions (variables, functions, classes, files). Ensure names are **highly specific and descriptive** of their exact purpose, content, or functionality. Verify they are **accurate**, not misleading, and **consistent** with similar entities across the codebase. Finally, check for any **ambiguity or redundancy** in naming that could lead to confusion."}, {"category": "TESTING", "comment_count": 7, "rules": ["Isolate Test-Specific Configurations: Clearly distinguish and separate configuration values (e.g., resource sizes, environment variables) that are exclusively for testing environments from production or default settings.", "Test Realistic Constraints & Scenarios: Ensure tests account for known system limitations (e.g., size limits, API boundaries) and cover both successful outcomes and anticipated failure conditions.", "Maintain Clear Test Scope: The purpose, setup, and expected behavior of individual tests or test suites must be unambiguous and well-defined."], "best_example": {"file": "rag/tests/factories/document_factory.py", "comment": "I remember we have a document size limitation in the GUI by nginx\u2014should we take that into account in this testing?"}, "coderabbit_prompt": "@coderabbitai When reviewing testing code, verify that test configurations are clearly separated from production settings. Ensure tests cover critical system constraints (e.g., size limits), validate both success and failure paths, and have an unambiguous scope."}, {"category": "PERFORMANCE", "comment_count": 7, "rules": ["Avoid redundant work: Eliminate duplicate checks, computations, or similar code paths.", "Execute conditionally: Perform expensive operations (e.g., builds, imports) only when strictly necessary, using conditional logic or lazy loading.", "Optimize resource interactions: Minimize round-trips and overhead for database, network, or external service calls."], "best_example": {"file": "multi-agent/lib/mas/session/service.py", "comment": "The current approach of saving the workflow_id into run_context.tags after engine.submit() has a few issues: 1. **Extra DB round-trip** \u2014 `get_record()` is called a 3rd time (line 91) just to save the handle, adding a 2nd write. The method currently does 3 reads + 2 writes. 2. **Race window** \u2014 Between engin"}, "coderabbit_prompt": "@coderabbitai Review this code for performance issues, focusing on avoiding redundant computations, minimizing resource-intensive operations (e.g., database round-trips, full rebuilds), and leveraging conditional execution or lazy loading to optimize execution paths."}, {"category": "SECURITY", "comment_count": 16, "rules": ["Never commit sensitive credentials (e.g., passwords, API keys, private keys) directly into source control. Instead, use dedicated secret management systems or secure environment variable injection for runtime access.", "Implement robust and secure authentication token management. This includes clearly defining the source, secure storage (e.g., hashing, encryption), and lifecycle (lifetime, renewal, revocation) of all tokens. Centralize user identification and authorization logic through dedicated, secure services (e.g., SSO), avoiding direct passing of sensitive identifiers."], "best_example": {"file_path": "shared-resources/redis/.env_redis", "comment_text": "same quesiton about the password - should it be committed here?"}, "coderabbit_prompt": "@coderabbitai Please review the code for security vulnerabilities related to credential and authentication token management. Specifically, check for: 1. **Hardcoded Secrets:** Are any passwords, API keys, or other sensitive credentials committed directly to the repository? If so, recommend moving them to a secure secret management system or environment variables. 2. **Insecure Token Handling:** Is the application handling authentication tokens (e.g., user tokens, session IDs) securely? Verify that tokens are not exposed, are securely stored (e.g., hashed, encrypted), have well-defined lifecycles, and that user identification relies on secure, centralized services."}, {"category": "STYLE", "comment_count": 145, "rules": ["Remove obsolete, irrelevant, or temporary comments and design files.", "Maintain consistency in naming conventions, file paths, and project structure.", "Avoid redundant declarations or unnecessary code constructs."], "best_example": {"file": ".github/workflows/build-images.yaml", "comment": "why the context for ui is not like backend or multiagent ?\nis shared-resources/sso-backend should be ./shared-resources/sso-backend \nassuming you are at UnifAI main folder , all folders  should be align with \"./\" ,right ?"}, "coderabbit_prompt": "@coderabbitai Review this PR for style and consistency. Flag any obsolete, irrelevant, or temporary comments and suggest removal of design files if they are no longer relevant. Ensure naming conventions, file paths (e.g., local paths prefixed with './' if applicable), and project structure are consistent. Identify and highlight any redundant declarations or unnecessary code constructs."}, {"category": "LOGIC", "comment_count": 52, "rules": ["Justify necessity and purpose: Ensure every element (variable, field, change) has a clear, non-redundant purpose.", "Verify functionality and handle edge cases: Confirm the code works as expected and addresses potential failure scenarios or common environmental issues.", "Prioritize automation and logical encapsulation: Automate manual processes and encapsulate related logic for efficiency and maintainability."], "best_example": {"file_path": "multi-agent/lib/mas/core/execution_context.py", "comment_text": "isn't finished_at is the same as last_active_at, if so why do you need another field that has the same value?"}, "coderabbit_prompt": "@coderabbitai Review for logical soundness and efficiency. Check if new logic, variables, or fields are clearly justified, avoid redundancy, and contribute positively to functionality or automation. Flag any potential bugs or missing edge case handling."}], "actionable_comments": 355, "actionable_pct": 90.1};
 
         const colors = {
             ai: '#f78166',
@@ -575,6 +928,18 @@
                     x: { grid: { color: '#21262d' } },
                 },
             },
+        });
+
+        // Copy prompt on click
+        document.querySelectorAll('.prompt-box').forEach(box => {
+            box.addEventListener('click', () => {
+                navigator.clipboard.writeText(box.textContent.replace('click to copy', '').trim());
+                box.style.borderColor = '#3fb950';
+                box.setAttribute('data-copied', 'true');
+                const original = box.style.cssText;
+                box.style.background = '#0f2d1a';
+                setTimeout(() => { box.style.background = ''; box.style.borderColor = ''; }, 1500);
+            });
         });
     </script>
 </body>
