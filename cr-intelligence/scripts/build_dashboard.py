@@ -27,6 +27,7 @@ TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
 DATA_DIR = Path(__file__).parent.parent / "data"
 
 AI_BOTS = {"coderabbitai", "coderabbitai[bot]", "github-actions[bot]", "gemini-cr-bot"}
+BOT_AUTHORS = {"dependabot[bot]", "renovate[bot]", "github-actions[bot]"}
 
 CATEGORIES = [
     "ARCHITECTURE",
@@ -51,11 +52,17 @@ def collect_pr_data(repo):
     for pr in repo.get_pulls(state="all", sort="updated", direction="desc"):
         if pr.updated_at < since:
             break
+        if pr.draft:
+            continue
+        if pr.user and pr.user.login.lower() in BOT_AUTHORS:
+            continue
+
+        pr_author = pr.user.login if pr.user else ""
 
         pr_info = {
             "number": pr.number,
             "title": pr.title,
-            "author": pr.user.login,
+            "author": pr_author,
             "state": pr.state,
             "created_at": pr.created_at.isoformat(),
             "merged_at": pr.merged_at.isoformat() if pr.merged_at else None,
@@ -65,6 +72,7 @@ def collect_pr_data(repo):
             "reviewers": [],
             "time_to_first_review_hours": None,
             "time_to_merge_hours": None,
+            "time_review_to_merge_hours": None,
         }
 
         comments = list(pr.get_review_comments())
@@ -79,13 +87,26 @@ def collect_pr_data(repo):
             delta = first_review_time - pr.created_at
             pr_info["time_to_first_review_hours"] = round(delta.total_seconds() / 3600, 1)
 
+            if pr.merged_at:
+                delta_review_to_merge = pr.merged_at - first_review_time
+                pr_info["time_review_to_merge_hours"] = round(delta_review_to_merge.total_seconds() / 3600, 1)
+
         if pr.merged_at:
             delta = pr.merged_at - pr.created_at
             pr_info["time_to_merge_hours"] = round(delta.total_seconds() / 3600, 1)
 
         for comment in comments:
             reviewer = comment.user.login if comment.user else "unknown"
+            if reviewer == pr_author:
+                continue
             is_ai = reviewer.lower() in AI_BOTS or "[bot]" in reviewer.lower()
+
+            # Detect if comment was likely addressed with code changes
+            comment_time = comment.created_at
+            commits_after = [c for c in pr.get_commits()
+                            if c.commit.author and c.commit.author.date > comment_time]
+            resolved_with_change = len(commits_after) > 0
+
             review_comments.append({
                 "body": comment.body,
                 "path": comment.path,
@@ -93,6 +114,7 @@ def collect_pr_data(repo):
                 "is_ai": is_ai,
                 "pr_number": pr.number,
                 "created_at": comment.created_at.isoformat(),
+                "resolved_with_change": resolved_with_change,
             })
             reviewers_activity[reviewer]["comments"] += 1
             reviewers_activity[reviewer]["prs_reviewed"].add(pr.number)
@@ -169,6 +191,73 @@ Comments:
     return classified
 
 
+def generate_learning_suggestions(review_comments):
+    """Generate CodeRabbit learning suggestions per category using Gemini."""
+    if not GEMINI_API_KEY:
+        return []
+
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel("gemini-2.5-flash")
+
+    # Only use human comments that were resolved with code changes
+    actionable_comments = [
+        c for c in review_comments
+        if not c.get("is_ai") and c.get("resolved_with_change")
+    ]
+
+    # Group by category
+    by_category = defaultdict(list)
+    for c in actionable_comments:
+        by_category[c.get("category", "STYLE")].append(c)
+
+    suggestions = []
+    for cat in CATEGORIES:
+        cat_comments = by_category.get(cat, [])
+        if len(cat_comments) < 2:
+            continue
+
+        sample = cat_comments[:10]
+        comments_text = "\n---\n".join(
+            f"File: {c['path']}\nReviewer: {c['reviewer']}\nComment: {c['body'][:400]}"
+            for c in sample
+        )
+
+        prompt = f"""You are analyzing code review comments from a software team.
+These comments were all resolved by the author making actual code changes (not dismissed).
+They are all in the category: {cat}
+
+Based on these real team comments, extract:
+1. "rules": The top 2-3 rules/patterns this team enforces (short, actionable statements)
+2. "best_example": The single best example comment (most clear and representative) - include the file path and the comment text
+3. "coderabbit_prompt": A ready-to-use CodeRabbit learning prompt that captures this team's pattern. Format it as if replying to CodeRabbit: "@coderabbitai [instruction]"
+
+Return ONLY valid JSON with these three keys.
+
+Team comments:
+{comments_text}"""
+
+        try:
+            response = model.generate_content(prompt)
+            text = response.text.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+
+            result = json.loads(text)
+            suggestions.append({
+                "category": cat,
+                "comment_count": len(cat_comments),
+                "rules": result.get("rules", []),
+                "best_example": result.get("best_example", ""),
+                "coderabbit_prompt": result.get("coderabbit_prompt", ""),
+            })
+        except Exception as e:
+            print(f"  Warning: Suggestion generation failed for {cat} ({e})")
+
+        time.sleep(1)
+
+    return suggestions
+
+
 def compute_metrics(prs_data, review_comments, reviewers_summary):
     """Compute dashboard metrics from raw data."""
     merged_prs = [p for p in prs_data if p["merged_at"]]
@@ -176,10 +265,12 @@ def compute_metrics(prs_data, review_comments, reviewers_summary):
 
     ttfr_values = [p["time_to_first_review_hours"] for p in prs_data if p["time_to_first_review_hours"] is not None]
     ttm_values = [p["time_to_merge_hours"] for p in merged_prs if p["time_to_merge_hours"] is not None]
+    ttrm_values = [p["time_review_to_merge_hours"] for p in merged_prs if p["time_review_to_merge_hours"] is not None]
     cycle_values = [p["review_cycles"] for p in prs_data if p["review_cycles"] > 0]
 
     avg_time_to_first_review = round(sum(ttfr_values) / len(ttfr_values), 1) if ttfr_values else 0
     avg_time_to_merge = round(sum(ttm_values) / len(ttm_values), 1) if ttm_values else 0
+    avg_time_review_to_merge = round(sum(ttrm_values) / len(ttrm_values), 1) if ttrm_values else 0
     avg_review_cycles = round(sum(cycle_values) / len(cycle_values), 1) if cycle_values else 0
 
     comments_per_pr = round(len(review_comments) / len(prs_data), 1) if prs_data else 0
@@ -255,6 +346,7 @@ def compute_metrics(prs_data, review_comments, reviewers_summary):
         "total_comments": len(review_comments),
         "avg_time_to_first_review_hours": avg_time_to_first_review,
         "avg_time_to_merge_hours": avg_time_to_merge,
+        "avg_time_review_to_merge_hours": avg_time_review_to_merge,
         "avg_review_cycles": avg_review_cycles,
         "comments_per_pr": comments_per_pr,
         "file_extensions": dict(file_extensions),
@@ -299,13 +391,25 @@ def main():
         print("Classifying comments with Gemini 2.5 Flash...")
         review_comments = classify_comments(review_comments)
         print("  Classification complete")
+
+        print("Generating CodeRabbit learning suggestions...")
+        learning_suggestions = generate_learning_suggestions(review_comments)
+        print(f"  Generated suggestions for {len(learning_suggestions)} categories")
     else:
         print("  Skipping classification (no GEMINI_API_KEY)")
         for c in review_comments:
             c["category"] = "STYLE"
+        learning_suggestions = []
 
     print("Computing metrics...")
     metrics = compute_metrics(prs_data, review_comments, reviewers_summary)
+    metrics["learning_suggestions"] = learning_suggestions
+
+    # Count actionable vs dismissed comments
+    actionable = sum(1 for c in review_comments if not c.get("is_ai") and c.get("resolved_with_change"))
+    total_human = sum(1 for c in review_comments if not c.get("is_ai"))
+    metrics["actionable_comments"] = actionable
+    metrics["actionable_pct"] = round(actionable / total_human * 100, 1) if total_human else 0
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     snapshot_file = DATA_DIR / f"snapshot_{datetime.now().strftime('%Y%m%d')}.json"

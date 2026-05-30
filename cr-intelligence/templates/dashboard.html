@@ -162,6 +162,93 @@
             color: #8b949e;
             font-size: 0.75rem;
         }
+
+        .suggestion-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .suggestion-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .suggestion-category {
+            background: #58a6ff20;
+            color: #58a6ff;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }
+        .suggestion-count {
+            font-size: 0.75rem;
+            color: #8b949e;
+        }
+        .suggestion-label {
+            font-size: 0.7rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+        .suggestion-rules { margin-bottom: 1rem; }
+        .suggestion-rules ul {
+            list-style: none;
+            padding: 0;
+        }
+        .suggestion-rules li {
+            padding: 0.3rem 0;
+            padding-left: 1rem;
+            position: relative;
+            font-size: 0.85rem;
+        }
+        .suggestion-rules li::before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #3fb950;
+        }
+        .suggestion-example {
+            margin-bottom: 1rem;
+        }
+        .suggestion-example blockquote {
+            border-left: 2px solid #8b949e;
+            padding-left: 1rem;
+            margin: 0.5rem 0;
+            font-size: 0.85rem;
+            color: #e6edf3;
+            font-style: italic;
+        }
+        .suggestion-prompt { margin-bottom: 0.5rem; }
+        .prompt-box {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.8rem;
+            color: #3fb950;
+            word-break: break-word;
+            cursor: pointer;
+            position: relative;
+        }
+        .prompt-box:hover {
+            border-color: #3fb950;
+        }
+        .prompt-box::after {
+            content: "click to copy";
+            position: absolute;
+            top: 0.5rem;
+            right: 0.75rem;
+            font-size: 0.65rem;
+            color: #8b949e;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
     </style>
 </head>
 <body>
@@ -181,6 +268,10 @@
         <div class="metric-card">
             <div class="label">Avg Time to First Review</div>
             <div class="value">{{ metrics.avg_time_to_first_review_hours }}<span class="unit">hrs</span></div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Avg Review to Merge</div>
+            <div class="value">{{ metrics.avg_time_review_to_merge_hours }}<span class="unit">hrs</span></div>
         </div>
         <div class="metric-card">
             <div class="label">Avg Time to Merge</div>
@@ -317,6 +408,59 @@
             </tbody>
         </table>
     </div>
+
+    <!-- Learning Suggestions Section -->
+    <h2 class="section-title">CodeRabbit Learning Suggestions</h2>
+
+    <div class="insight-card" style="border-left-color: #3fb950; margin-bottom: 1.5rem;">
+        <div class="insight-title" style="color: #3fb950;">How This Works</div>
+        <div class="insight-text">
+            These suggestions are generated from <strong>{{ metrics.actionable_comments }}</strong> human review comments
+            ({{ metrics.actionable_pct }}% of all human comments) that were resolved with actual code changes —
+            meaning the team agreed AND the author fixed it. These are high-value patterns to teach CodeRabbit.
+        </div>
+    </div>
+
+    {% for suggestion in metrics.learning_suggestions %}
+    <div class="suggestion-card">
+        <div class="suggestion-header">
+            <span class="suggestion-category">{{ suggestion.category }}</span>
+            <span class="suggestion-count">{{ suggestion.comment_count }} actionable comments</span>
+        </div>
+
+        <div class="suggestion-rules">
+            <div class="suggestion-label">Team Rules Identified:</div>
+            <ul>
+                {% for rule in suggestion.rules %}
+                <li>{{ rule }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        {% if suggestion.best_example %}
+        <div class="suggestion-example">
+            <div class="suggestion-label">Best Example:</div>
+            <blockquote>{{ suggestion.best_example }}</blockquote>
+        </div>
+        {% endif %}
+
+        {% if suggestion.coderabbit_prompt %}
+        <div class="suggestion-prompt">
+            <div class="suggestion-label">Copy to teach CodeRabbit:</div>
+            <div class="prompt-box">{{ suggestion.coderabbit_prompt }}</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    {% if not metrics.learning_suggestions %}
+    <div class="insight-card">
+        <div class="insight-text" style="color: #8b949e;">
+            No learning suggestions generated — either Gemini API key is not configured,
+            or there aren't enough actionable comments in the analyzed period.
+        </div>
+    </div>
+    {% endif %}
 
     <div class="footer">
         CR Intelligence &middot; UnifAI &middot; Powered by Gemini 2.5 Flash &middot; Data refreshes weekly
@@ -498,6 +642,18 @@
                     x: { grid: { color: '#21262d' } },
                 },
             },
+        });
+
+        // Copy prompt on click
+        document.querySelectorAll('.prompt-box').forEach(box => {
+            box.addEventListener('click', () => {
+                navigator.clipboard.writeText(box.textContent.replace('click to copy', '').trim());
+                box.style.borderColor = '#3fb950';
+                box.setAttribute('data-copied', 'true');
+                const original = box.style.cssText;
+                box.style.background = '#0f2d1a';
+                setTimeout(() => { box.style.background = ''; box.style.borderColor = ''; }, 1500);
+            });
         });
     </script>
 </body>
