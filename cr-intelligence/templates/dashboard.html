@@ -22,17 +22,20 @@
             padding-bottom: 1rem;
             border-bottom: 1px solid #21262d;
         }
-        .header h1 {
-            font-size: 1.5rem;
-            color: #58a6ff;
+        .header h1 { font-size: 1.5rem; color: #58a6ff; }
+        .header .meta { font-size: 0.8rem; color: #8b949e; }
+
+        .section-title {
+            font-size: 1.1rem;
+            color: #e6edf3;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #21262d;
         }
-        .header .meta {
-            font-size: 0.8rem;
-            color: #8b949e;
-        }
+
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 1rem;
             margin-bottom: 2rem;
         }
@@ -45,31 +48,30 @@
         }
         .metric-card:hover { border-color: #58a6ff; }
         .metric-card .label {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: #8b949e;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 0.5rem;
         }
         .metric-card .value {
-            font-size: 2rem;
+            font-size: 1.8rem;
             font-weight: 700;
             color: #58a6ff;
         }
-        .metric-card .unit {
-            font-size: 0.8rem;
-            color: #8b949e;
-            margin-left: 0.25rem;
-        }
+        .metric-card .unit { font-size: 0.75rem; color: #8b949e; margin-left: 0.2rem; }
+        .metric-card.ai .value { color: #f78166; }
+        .metric-card.human .value { color: #3fb950; }
+        .metric-card.coverage .value { color: #d29922; }
+
         .charts-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 1.5rem;
             margin-bottom: 2rem;
         }
-        @media (max-width: 900px) {
-            .charts-grid { grid-template-columns: 1fr; }
-        }
+        @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+
         .chart-card {
             background: #161b22;
             border: 1px solid #30363d;
@@ -77,13 +79,15 @@
             padding: 1.5rem;
         }
         .chart-card h2 {
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: #8b949e;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 1rem;
         }
         .chart-card canvas { max-height: 280px; }
+        .chart-card.full-width { grid-column: 1 / -1; }
+
         .table-card {
             background: #161b22;
             border: 1px solid #30363d;
@@ -92,44 +96,65 @@
             margin-bottom: 2rem;
         }
         .table-card h2 {
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: #8b949e;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 1rem;
         }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            text-align: left;
-            padding: 0.6rem 1rem;
-            border-bottom: 1px solid #21262d;
-        }
-        th {
-            color: #8b949e;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-        }
-        td { font-size: 0.9rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 0.6rem 1rem; border-bottom: 1px solid #21262d; }
+        th { color: #8b949e; font-size: 0.7rem; text-transform: uppercase; }
+        td { font-size: 0.85rem; }
         .bar {
             height: 8px;
-            background: #58a6ff;
             border-radius: 4px;
             display: inline-block;
             vertical-align: middle;
             margin-right: 0.5rem;
         }
-        .badge {
-            display: inline-block;
-            padding: 0.15rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            font-weight: 600;
+        .bar-ai { background: #f78166; }
+        .bar-human { background: #3fb950; }
+
+        .insight-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-left: 3px solid #d29922;
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
         }
-        .badge-open { background: #1f6f2b; color: #3fb950; }
-        .badge-merged { background: #2d1f6f; color: #a371f7; }
+        .insight-card .insight-title {
+            font-size: 0.75rem;
+            color: #d29922;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+        .insight-card .insight-text { font-size: 0.9rem; line-height: 1.5; }
+
+        .coverage-bar-container {
+            background: #21262d;
+            border-radius: 8px;
+            height: 32px;
+            position: relative;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+        .coverage-bar-fill {
+            height: 100%;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            padding-left: 1rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: width 0.5s;
+        }
+
+        .legend { display: flex; gap: 1.5rem; margin-top: 0.5rem; }
+        .legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #8b949e; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
         .footer {
             text-align: center;
             padding-top: 2rem;
@@ -147,6 +172,7 @@
         </div>
     </div>
 
+    <!-- Overview Metrics -->
     <div class="metrics-grid">
         <div class="metric-card">
             <div class="label">Open PRs Awaiting Review</div>
@@ -161,11 +187,11 @@
             <div class="value">{{ metrics.avg_time_to_merge_hours }}<span class="unit">hrs</span></div>
         </div>
         <div class="metric-card">
-            <div class="label">Avg Review Cycles per PR</div>
+            <div class="label">Avg Review Cycles</div>
             <div class="value">{{ metrics.avg_review_cycles }}</div>
         </div>
         <div class="metric-card">
-            <div class="label">Total PRs ({{ metrics.lookback_days }}d)</div>
+            <div class="label">Total PRs</div>
             <div class="value">{{ metrics.total_prs }}</div>
         </div>
         <div class="metric-card">
@@ -174,10 +200,80 @@
         </div>
     </div>
 
+    <!-- AI vs Human Section -->
+    <h2 class="section-title">AI vs Human Review Analysis</h2>
+
+    <div class="metrics-grid">
+        <div class="metric-card ai">
+            <div class="label">AI Comments</div>
+            <div class="value">{{ metrics.ai_total_comments }}</div>
+        </div>
+        <div class="metric-card human">
+            <div class="label">Human Comments</div>
+            <div class="value">{{ metrics.human_total_comments }}</div>
+        </div>
+        <div class="metric-card coverage">
+            <div class="label">AI File Coverage</div>
+            <div class="value">{{ metrics.ai_coverage_pct }}<span class="unit">%</span></div>
+        </div>
+        <div class="metric-card">
+            <div class="label">PRs with Both AI + Human</div>
+            <div class="value">{{ metrics.prs_with_both_count }}</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Files Only Humans Flagged</div>
+            <div class="value">{{ metrics.human_only_files_count }}</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Files Only AI Flagged</div>
+            <div class="value">{{ metrics.ai_only_files_count }}</div>
+        </div>
+    </div>
+
+    <!-- Coverage Bar -->
+    <div class="chart-card" style="margin-bottom: 1.5rem;">
+        <h2>AI Coverage of Human-Reviewed Files</h2>
+        <p style="font-size: 0.8rem; color: #8b949e; margin-bottom: 0.75rem;">
+            Of the files humans left comments on, how many did AI also review?
+        </p>
+        <div class="coverage-bar-container">
+            <div class="coverage-bar-fill" style="width: {{ metrics.ai_coverage_pct }}%; background: linear-gradient(90deg, #d29922, #f78166);">
+                {{ metrics.ai_coverage_pct }}%
+            </div>
+        </div>
+        <div class="legend">
+            <div class="legend-item"><div class="legend-dot" style="background: #d29922;"></div> Covered by AI</div>
+            <div class="legend-item"><div class="legend-dot" style="background: #21262d;"></div> Human-only (AI gap)</div>
+        </div>
+    </div>
+
+    <!-- Insight -->
+    <div class="insight-card">
+        <div class="insight-title">Key Insight</div>
+        <div class="insight-text">
+            AI reviews cover <strong>{{ metrics.ai_coverage_pct }}%</strong> of the files that humans comment on.
+            The remaining <strong>{{ metrics.human_only_files_count }} files</strong> represent the gap where
+            team-specific knowledge could improve AI coverage — reducing human reviewer workload.
+        </div>
+    </div>
+
+    <!-- Charts Row: Category Comparison + Weekly AI vs Human -->
     <div class="charts-grid">
         <div class="chart-card">
-            <h2>Weekly Activity Trend</h2>
-            <canvas id="trendChart"></canvas>
+            <h2>Comment Categories: AI vs Human</h2>
+            <canvas id="categoryChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h2>Weekly: AI vs Human Comments</h2>
+            <canvas id="aiHumanWeeklyChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Radar Chart -->
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h2>Review Focus Radar: AI vs Human</h2>
+            <canvas id="radarChart"></canvas>
         </div>
         <div class="chart-card">
             <h2>Review Comments by File Type</h2>
@@ -185,8 +281,17 @@
         </div>
     </div>
 
+    <!-- Activity Trend -->
+    <div class="charts-grid">
+        <div class="chart-card full-width">
+            <h2>Weekly Activity Trend</h2>
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Top Reviewers Table -->
     <div class="table-card">
-        <h2>Top Reviewers</h2>
+        <h2>Top Human Reviewers</h2>
         <table>
             <thead>
                 <tr>
@@ -205,7 +310,7 @@
                     <td>
                         {% set max_comments = metrics.top_reviewers[0].comments if metrics.top_reviewers else 1 %}
                         {% set width = (reviewer.comments / max_comments * 100) | int %}
-                        <span class="bar" style="width: {{ width }}px;"></span>
+                        <span class="bar bar-human" style="width: {{ width }}px;"></span>
                     </td>
                 </tr>
                 {% endfor %}
@@ -214,29 +319,148 @@
     </div>
 
     <div class="footer">
-        CR Intelligence &middot; UnifAI &middot; Data refreshes weekly via GitHub Actions
+        CR Intelligence &middot; UnifAI &middot; Powered by Gemini 2.5 Flash &middot; Data refreshes weekly
     </div>
 
     <script>
         const metrics = {{ metrics_json }};
 
-        const chartColors = {
+        const colors = {
+            ai: '#f78166',
+            human: '#3fb950',
             blue: '#58a6ff',
             purple: '#a371f7',
-            green: '#3fb950',
             orange: '#d29922',
             red: '#f85149',
             gray: '#8b949e',
         };
 
-        const chartDefaults = {
-            color: '#8b949e',
-            borderColor: '#30363d',
-        };
-        Chart.defaults.color = chartDefaults.color;
-        Chart.defaults.borderColor = chartDefaults.borderColor;
+        Chart.defaults.color = '#8b949e';
+        Chart.defaults.borderColor = '#30363d';
 
-        // Weekly trend chart
+        // Category Comparison (horizontal bar)
+        const catCtx = document.getElementById('categoryChart').getContext('2d');
+        const catData = metrics.category_comparison || [];
+        new Chart(catCtx, {
+            type: 'bar',
+            data: {
+                labels: catData.map(c => c.category),
+                datasets: [
+                    {
+                        label: 'AI',
+                        data: catData.map(c => c.ai_count),
+                        backgroundColor: colors.ai + 'cc',
+                        borderRadius: 3,
+                    },
+                    {
+                        label: 'Human',
+                        data: catData.map(c => c.human_count),
+                        backgroundColor: colors.human + 'cc',
+                        borderRadius: 3,
+                    },
+                ],
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                    x: { beginAtZero: true, grid: { color: '#21262d' } },
+                    y: { grid: { display: false } },
+                },
+            },
+        });
+
+        // AI vs Human Weekly
+        const aiHumanCtx = document.getElementById('aiHumanWeeklyChart').getContext('2d');
+        new Chart(aiHumanCtx, {
+            type: 'bar',
+            data: {
+                labels: metrics.weekly_trend.map(w => w.week),
+                datasets: [
+                    {
+                        label: 'AI Comments',
+                        data: metrics.weekly_trend.map(w => w.ai_comments || 0),
+                        backgroundColor: colors.ai + 'cc',
+                        borderRadius: 3,
+                    },
+                    {
+                        label: 'Human Comments',
+                        data: metrics.weekly_trend.map(w => w.human_comments || 0),
+                        backgroundColor: colors.human + 'cc',
+                        borderRadius: 3,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                    y: { beginAtZero: true, stacked: false, grid: { color: '#21262d' } },
+                    x: { grid: { color: '#21262d' } },
+                },
+            },
+        });
+
+        // Radar Chart: AI vs Human focus areas
+        const radarCtx = document.getElementById('radarChart').getContext('2d');
+        const radarLabels = catData.map(c => c.category);
+        const aiTotal = catData.reduce((sum, c) => sum + c.ai_count, 0) || 1;
+        const humanTotal = catData.reduce((sum, c) => sum + c.human_count, 0) || 1;
+        new Chart(radarCtx, {
+            type: 'radar',
+            data: {
+                labels: radarLabels,
+                datasets: [
+                    {
+                        label: 'AI Focus',
+                        data: catData.map(c => Math.round(c.ai_count / aiTotal * 100)),
+                        borderColor: colors.ai,
+                        backgroundColor: colors.ai + '30',
+                        pointBackgroundColor: colors.ai,
+                    },
+                    {
+                        label: 'Human Focus',
+                        data: catData.map(c => Math.round(c.human_count / humanTotal * 100)),
+                        borderColor: colors.human,
+                        backgroundColor: colors.human + '30',
+                        pointBackgroundColor: colors.human,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        grid: { color: '#21262d' },
+                        angleLines: { color: '#21262d' },
+                        pointLabels: { font: { size: 10 } },
+                    },
+                },
+            },
+        });
+
+        // File type doughnut
+        const fileTypeCtx = document.getElementById('fileTypeChart').getContext('2d');
+        const fileData = Object.entries(metrics.file_extensions)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8);
+        new Chart(fileTypeCtx, {
+            type: 'doughnut',
+            data: {
+                labels: fileData.map(([ext]) => ext),
+                datasets: [{
+                    data: fileData.map(([, count]) => count),
+                    backgroundColor: [colors.blue, colors.purple, colors.human, colors.orange, colors.red, '#79c0ff', '#d2a8ff', '#56d364'],
+                    borderWidth: 0,
+                }],
+            },
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } },
+        });
+
+        // Weekly trend line
         const trendCtx = document.getElementById('trendChart').getContext('2d');
         new Chart(trendCtx, {
             type: 'line',
@@ -246,26 +470,23 @@
                     {
                         label: 'PRs Opened',
                         data: metrics.weekly_trend.map(w => w.prs_opened),
-                        borderColor: chartColors.blue,
-                        backgroundColor: chartColors.blue + '20',
-                        fill: true,
-                        tension: 0.3,
+                        borderColor: colors.blue,
+                        backgroundColor: colors.blue + '20',
+                        fill: true, tension: 0.3,
                     },
                     {
                         label: 'PRs Merged',
                         data: metrics.weekly_trend.map(w => w.prs_merged),
-                        borderColor: chartColors.purple,
-                        backgroundColor: chartColors.purple + '20',
-                        fill: true,
-                        tension: 0.3,
+                        borderColor: colors.purple,
+                        backgroundColor: colors.purple + '20',
+                        fill: true, tension: 0.3,
                     },
                     {
-                        label: 'Comments',
+                        label: 'Total Comments',
                         data: metrics.weekly_trend.map(w => w.comments),
-                        borderColor: chartColors.green,
-                        backgroundColor: chartColors.green + '20',
-                        fill: true,
-                        tension: 0.3,
+                        borderColor: colors.orange,
+                        backgroundColor: colors.orange + '20',
+                        fill: true, tension: 0.3,
                     },
                 ],
             },
@@ -275,39 +496,6 @@
                 scales: {
                     y: { beginAtZero: true, grid: { color: '#21262d' } },
                     x: { grid: { color: '#21262d' } },
-                },
-            },
-        });
-
-        // File type chart
-        const fileTypeCtx = document.getElementById('fileTypeChart').getContext('2d');
-        const fileData = Object.entries(metrics.file_extensions)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 8);
-
-        new Chart(fileTypeCtx, {
-            type: 'doughnut',
-            data: {
-                labels: fileData.map(([ext]) => ext),
-                datasets: [{
-                    data: fileData.map(([, count]) => count),
-                    backgroundColor: [
-                        chartColors.blue,
-                        chartColors.purple,
-                        chartColors.green,
-                        chartColors.orange,
-                        chartColors.red,
-                        '#79c0ff',
-                        '#d2a8ff',
-                        '#56d364',
-                    ],
-                    borderWidth: 0,
-                }],
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: 'bottom' },
                 },
             },
         });

@@ -32,6 +32,7 @@ jobs:
       - name: Build dashboard
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           REPO_NAME: ${{ github.repository }}
         run: python cr-intelligence/scripts/build_dashboard.py
 
