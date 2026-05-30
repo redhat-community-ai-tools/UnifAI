@@ -22,17 +22,20 @@
             padding-bottom: 1rem;
             border-bottom: 1px solid #21262d;
         }
-        .header h1 {
-            font-size: 1.5rem;
-            color: #58a6ff;
+        .header h1 { font-size: 1.5rem; color: #58a6ff; }
+        .header .meta { font-size: 0.8rem; color: #8b949e; }
+
+        .section-title {
+            font-size: 1.1rem;
+            color: #e6edf3;
+            margin: 2.5rem 0 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #21262d;
         }
-        .header .meta {
-            font-size: 0.8rem;
-            color: #8b949e;
-        }
+
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 1rem;
             margin-bottom: 2rem;
         }
@@ -45,31 +48,30 @@
         }
         .metric-card:hover { border-color: #58a6ff; }
         .metric-card .label {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: #8b949e;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 0.5rem;
         }
         .metric-card .value {
-            font-size: 2rem;
+            font-size: 1.8rem;
             font-weight: 700;
             color: #58a6ff;
         }
-        .metric-card .unit {
-            font-size: 0.8rem;
-            color: #8b949e;
-            margin-left: 0.25rem;
-        }
+        .metric-card .unit { font-size: 0.75rem; color: #8b949e; margin-left: 0.2rem; }
+        .metric-card.ai .value { color: #f78166; }
+        .metric-card.human .value { color: #3fb950; }
+        .metric-card.coverage .value { color: #d29922; }
+
         .charts-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 1.5rem;
             margin-bottom: 2rem;
         }
-        @media (max-width: 900px) {
-            .charts-grid { grid-template-columns: 1fr; }
-        }
+        @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+
         .chart-card {
             background: #161b22;
             border: 1px solid #30363d;
@@ -77,13 +79,15 @@
             padding: 1.5rem;
         }
         .chart-card h2 {
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: #8b949e;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 1rem;
         }
         .chart-card canvas { max-height: 280px; }
+        .chart-card.full-width { grid-column: 1 / -1; }
+
         .table-card {
             background: #161b22;
             border: 1px solid #30363d;
@@ -92,44 +96,65 @@
             margin-bottom: 2rem;
         }
         .table-card h2 {
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: #8b949e;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 1rem;
         }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            text-align: left;
-            padding: 0.6rem 1rem;
-            border-bottom: 1px solid #21262d;
-        }
-        th {
-            color: #8b949e;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-        }
-        td { font-size: 0.9rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 0.6rem 1rem; border-bottom: 1px solid #21262d; }
+        th { color: #8b949e; font-size: 0.7rem; text-transform: uppercase; }
+        td { font-size: 0.85rem; }
         .bar {
             height: 8px;
-            background: #58a6ff;
             border-radius: 4px;
             display: inline-block;
             vertical-align: middle;
             margin-right: 0.5rem;
         }
-        .badge {
-            display: inline-block;
-            padding: 0.15rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            font-weight: 600;
+        .bar-ai { background: #f78166; }
+        .bar-human { background: #3fb950; }
+
+        .insight-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-left: 3px solid #d29922;
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
         }
-        .badge-open { background: #1f6f2b; color: #3fb950; }
-        .badge-merged { background: #2d1f6f; color: #a371f7; }
+        .insight-card .insight-title {
+            font-size: 0.75rem;
+            color: #d29922;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+        .insight-card .insight-text { font-size: 0.9rem; line-height: 1.5; }
+
+        .coverage-bar-container {
+            background: #21262d;
+            border-radius: 8px;
+            height: 32px;
+            position: relative;
+            overflow: hidden;
+            margin: 1rem 0;
+        }
+        .coverage-bar-fill {
+            height: 100%;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            padding-left: 1rem;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: width 0.5s;
+        }
+
+        .legend { display: flex; gap: 1.5rem; margin-top: 0.5rem; }
+        .legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #8b949e; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
         .footer {
             text-align: center;
             padding-top: 2rem;
@@ -147,6 +172,7 @@
         </div>
     </div>
 
+    <!-- Overview Metrics -->
     <div class="metrics-grid">
         <div class="metric-card">
             <div class="label">Open PRs Awaiting Review</div>
@@ -161,11 +187,11 @@
             <div class="value">216.2<span class="unit">hrs</span></div>
         </div>
         <div class="metric-card">
-            <div class="label">Avg Review Cycles per PR</div>
+            <div class="label">Avg Review Cycles</div>
             <div class="value">2.6</div>
         </div>
         <div class="metric-card">
-            <div class="label">Total PRs (60d)</div>
+            <div class="label">Total PRs</div>
             <div class="value">54</div>
         </div>
         <div class="metric-card">
@@ -174,10 +200,80 @@
         </div>
     </div>
 
+    <!-- AI vs Human Section -->
+    <h2 class="section-title">AI vs Human Review Analysis</h2>
+
+    <div class="metrics-grid">
+        <div class="metric-card ai">
+            <div class="label">AI Comments</div>
+            <div class="value">279</div>
+        </div>
+        <div class="metric-card human">
+            <div class="label">Human Comments</div>
+            <div class="value">729</div>
+        </div>
+        <div class="metric-card coverage">
+            <div class="label">AI File Coverage</div>
+            <div class="value">39.1<span class="unit">%</span></div>
+        </div>
+        <div class="metric-card">
+            <div class="label">PRs with Both AI + Human</div>
+            <div class="value">27</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Files Only Humans Flagged</div>
+            <div class="value">120</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">Files Only AI Flagged</div>
+            <div class="value">67</div>
+        </div>
+    </div>
+
+    <!-- Coverage Bar -->
+    <div class="chart-card" style="margin-bottom: 1.5rem;">
+        <h2>AI Coverage of Human-Reviewed Files</h2>
+        <p style="font-size: 0.8rem; color: #8b949e; margin-bottom: 0.75rem;">
+            Of the files humans left comments on, how many did AI also review?
+        </p>
+        <div class="coverage-bar-container">
+            <div class="coverage-bar-fill" style="width: 39.1%; background: linear-gradient(90deg, #d29922, #f78166);">
+                39.1%
+            </div>
+        </div>
+        <div class="legend">
+            <div class="legend-item"><div class="legend-dot" style="background: #d29922;"></div> Covered by AI</div>
+            <div class="legend-item"><div class="legend-dot" style="background: #21262d;"></div> Human-only (AI gap)</div>
+        </div>
+    </div>
+
+    <!-- Insight -->
+    <div class="insight-card">
+        <div class="insight-title">Key Insight</div>
+        <div class="insight-text">
+            AI reviews cover <strong>39.1%</strong> of the files that humans comment on.
+            The remaining <strong>120 files</strong> represent the gap where
+            team-specific knowledge could improve AI coverage — reducing human reviewer workload.
+        </div>
+    </div>
+
+    <!-- Charts Row: Category Comparison + Weekly AI vs Human -->
     <div class="charts-grid">
         <div class="chart-card">
-            <h2>Weekly Activity Trend</h2>
-            <canvas id="trendChart"></canvas>
+            <h2>Comment Categories: AI vs Human</h2>
+            <canvas id="categoryChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h2>Weekly: AI vs Human Comments</h2>
+            <canvas id="aiHumanWeeklyChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Radar Chart -->
+    <div class="charts-grid">
+        <div class="chart-card">
+            <h2>Review Focus Radar: AI vs Human</h2>
+            <canvas id="radarChart"></canvas>
         </div>
         <div class="chart-card">
             <h2>Review Comments by File Type</h2>
@@ -185,8 +281,17 @@
         </div>
     </div>
 
+    <!-- Activity Trend -->
+    <div class="charts-grid">
+        <div class="chart-card full-width">
+            <h2>Weekly Activity Trend</h2>
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Top Reviewers Table -->
     <div class="table-card">
-        <h2>Top Reviewers</h2>
+        <h2>Top Human Reviewers</h2>
         <table>
             <thead>
                 <tr>
@@ -199,24 +304,13 @@
             <tbody>
                 
                 <tr>
-                    <td>coderabbitai[bot]</td>
-                    <td>271</td>
-                    <td>32</td>
-                    <td>
-                        
-                        
-                        <span class="bar" style="width: 100px;"></span>
-                    </td>
-                </tr>
-                
-                <tr>
                     <td>sfiresht</td>
                     <td>231</td>
                     <td>22</td>
                     <td>
                         
                         
-                        <span class="bar" style="width: 85px;"></span>
+                        <span class="bar bar-human" style="width: 100px;"></span>
                     </td>
                 </tr>
                 
@@ -227,7 +321,7 @@
                     <td>
                         
                         
-                        <span class="bar" style="width: 77px;"></span>
+                        <span class="bar bar-human" style="width: 91px;"></span>
                     </td>
                 </tr>
                 
@@ -238,7 +332,7 @@
                     <td>
                         
                         
-                        <span class="bar" style="width: 37px;"></span>
+                        <span class="bar bar-human" style="width: 43px;"></span>
                     </td>
                 </tr>
                 
@@ -249,7 +343,7 @@
                     <td>
                         
                         
-                        <span class="bar" style="width: 36px;"></span>
+                        <span class="bar bar-human" style="width: 43px;"></span>
                     </td>
                 </tr>
                 
@@ -260,7 +354,7 @@
                     <td>
                         
                         
-                        <span class="bar" style="width: 15px;"></span>
+                        <span class="bar bar-human" style="width: 18px;"></span>
                     </td>
                 </tr>
                 
@@ -271,18 +365,7 @@
                     <td>
                         
                         
-                        <span class="bar" style="width: 14px;"></span>
-                    </td>
-                </tr>
-                
-                <tr>
-                    <td>qodo-code-review[bot]</td>
-                    <td>8</td>
-                    <td>3</td>
-                    <td>
-                        
-                        
-                        <span class="bar" style="width: 2px;"></span>
+                        <span class="bar bar-human" style="width: 16px;"></span>
                     </td>
                 </tr>
                 
@@ -293,7 +376,7 @@
                     <td>
                         
                         
-                        <span class="bar" style="width: 1px;"></span>
+                        <span class="bar bar-human" style="width: 2px;"></span>
                     </td>
                 </tr>
                 
@@ -304,7 +387,7 @@
                     <td>
                         
                         
-                        <span class="bar" style="width: 0px;"></span>
+                        <span class="bar bar-human" style="width: 0px;"></span>
                     </td>
                 </tr>
                 
@@ -313,29 +396,148 @@
     </div>
 
     <div class="footer">
-        CR Intelligence &middot; UnifAI &middot; Data refreshes weekly via GitHub Actions
+        CR Intelligence &middot; UnifAI &middot; Powered by Gemini 2.5 Flash &middot; Data refreshes weekly
     </div>
 
     <script>
-        const metrics = {"total_prs": 54, "open_prs": 15, "merged_prs": 34, "total_comments": 1008, "avg_time_to_first_review_hours": 37.4, "avg_time_to_merge_hours": 216.2, "avg_review_cycles": 2.6, "comments_per_pr": 18.7, "file_extensions": {".yaml": 73, ".groovy": 53, ".sh": 40, ".md": 40, ".py": 556, ".ts": 39, ".tsx": 164, ".txt": 12, ".yml": 6, "other": 15, ".toml": 2, ".docx": 2, ".png": 6}, "weekly_trend": [{"week": "2026-W14", "prs_opened": 3, "prs_merged": 1, "comments": 44}, {"week": "2026-W15", "prs_opened": 6, "prs_merged": 6, "comments": 85}, {"week": "2026-W16", "prs_opened": 3, "prs_merged": 3, "comments": 137}, {"week": "2026-W17", "prs_opened": 5, "prs_merged": 6, "comments": 150}, {"week": "2026-W18", "prs_opened": 7, "prs_merged": 3, "comments": 71}, {"week": "2026-W19", "prs_opened": 8, "prs_merged": 5, "comments": 122}, {"week": "2026-W20", "prs_opened": 4, "prs_merged": 3, "comments": 194}, {"week": "2026-W21", "prs_opened": 6, "prs_merged": 7, "comments": 126}], "top_reviewers": [{"name": "coderabbitai[bot]", "comments": 271, "prs_reviewed": 32}, {"name": "sfiresht", "comments": 231, "prs_reviewed": 22}, {"name": "MayaCrmi", "comments": 211, "prs_reviewed": 17}, {"name": "Nirsisr", "comments": 101, "prs_reviewed": 9}, {"name": "Lina-AbuYousef", "comments": 100, "prs_reviewed": 9}, {"name": "yhabushi79", "comments": 42, "prs_reviewed": 11}, {"name": "odaiodeh", "comments": 38, "prs_reviewed": 8}, {"name": "qodo-code-review[bot]", "comments": 8, "prs_reviewed": 3}, {"name": "shanitzvii", "comments": 5, "prs_reviewed": 1}, {"name": "ItzikEzra-rh", "comments": 1, "prs_reviewed": 1}], "lookback_days": 60, "generated_at": "2026-05-30T15:47:57.498882+00:00"};
+        const metrics = {"total_prs": 54, "open_prs": 15, "merged_prs": 34, "total_comments": 1008, "avg_time_to_first_review_hours": 37.4, "avg_time_to_merge_hours": 216.2, "avg_review_cycles": 2.6, "comments_per_pr": 18.7, "file_extensions": {".yaml": 73, ".groovy": 53, ".sh": 40, ".md": 40, ".py": 556, ".ts": 39, ".tsx": 164, ".txt": 12, ".yml": 6, "other": 15, ".toml": 2, ".docx": 2, ".png": 6}, "weekly_trend": [{"week": "2026-W14", "prs_opened": 3, "prs_merged": 1, "comments": 44, "ai_comments": 5, "human_comments": 39}, {"week": "2026-W15", "prs_opened": 6, "prs_merged": 6, "comments": 85, "ai_comments": 43, "human_comments": 42}, {"week": "2026-W16", "prs_opened": 3, "prs_merged": 3, "comments": 137, "ai_comments": 23, "human_comments": 114}, {"week": "2026-W17", "prs_opened": 5, "prs_merged": 6, "comments": 150, "ai_comments": 15, "human_comments": 135}, {"week": "2026-W18", "prs_opened": 7, "prs_merged": 3, "comments": 71, "ai_comments": 65, "human_comments": 6}, {"week": "2026-W19", "prs_opened": 8, "prs_merged": 5, "comments": 122, "ai_comments": 31, "human_comments": 91}, {"week": "2026-W20", "prs_opened": 4, "prs_merged": 3, "comments": 194, "ai_comments": 15, "human_comments": 179}, {"week": "2026-W21", "prs_opened": 6, "prs_merged": 7, "comments": 126, "ai_comments": 43, "human_comments": 83}], "top_reviewers": [{"name": "sfiresht", "comments": 231, "prs_reviewed": 22}, {"name": "MayaCrmi", "comments": 211, "prs_reviewed": 17}, {"name": "Nirsisr", "comments": 101, "prs_reviewed": 9}, {"name": "Lina-AbuYousef", "comments": 100, "prs_reviewed": 9}, {"name": "yhabushi79", "comments": 42, "prs_reviewed": 11}, {"name": "odaiodeh", "comments": 38, "prs_reviewed": 8}, {"name": "shanitzvii", "comments": 5, "prs_reviewed": 1}, {"name": "ItzikEzra-rh", "comments": 1, "prs_reviewed": 1}], "lookback_days": 60, "generated_at": "2026-05-30T16:41:15.961282+00:00", "ai_total_comments": 279, "human_total_comments": 729, "ai_coverage_pct": 39.1, "overlap_files_count": 77, "ai_only_files_count": 67, "human_only_files_count": 120, "prs_with_both_count": 27, "category_comparison": [{"category": "ARCHITECTURE", "ai_count": 19, "human_count": 259}, {"category": "ERROR_HANDLING", "ai_count": 22, "human_count": 10}, {"category": "NAMING", "ai_count": 3, "human_count": 25}, {"category": "TESTING", "ai_count": 2, "human_count": 19}, {"category": "PERFORMANCE", "ai_count": 1, "human_count": 7}, {"category": "SECURITY", "ai_count": 40, "human_count": 31}, {"category": "STYLE", "ai_count": 86, "human_count": 238}, {"category": "LOGIC", "ai_count": 106, "human_count": 140}], "ai_categories": {"STYLE": 86, "LOGIC": 106, "SECURITY": 40, "TESTING": 2, "ARCHITECTURE": 19, "ERROR_HANDLING": 22, "NAMING": 3, "PERFORMANCE": 1}, "human_categories": {"STYLE": 238, "LOGIC": 140, "TESTING": 19, "ARCHITECTURE": 259, "NAMING": 25, "SECURITY": 31, "PERFORMANCE": 7, "ERROR_HANDLING": 10}};
 
-        const chartColors = {
+        const colors = {
+            ai: '#f78166',
+            human: '#3fb950',
             blue: '#58a6ff',
             purple: '#a371f7',
-            green: '#3fb950',
             orange: '#d29922',
             red: '#f85149',
             gray: '#8b949e',
         };
 
-        const chartDefaults = {
-            color: '#8b949e',
-            borderColor: '#30363d',
-        };
-        Chart.defaults.color = chartDefaults.color;
-        Chart.defaults.borderColor = chartDefaults.borderColor;
+        Chart.defaults.color = '#8b949e';
+        Chart.defaults.borderColor = '#30363d';
 
-        // Weekly trend chart
+        // Category Comparison (horizontal bar)
+        const catCtx = document.getElementById('categoryChart').getContext('2d');
+        const catData = metrics.category_comparison || [];
+        new Chart(catCtx, {
+            type: 'bar',
+            data: {
+                labels: catData.map(c => c.category),
+                datasets: [
+                    {
+                        label: 'AI',
+                        data: catData.map(c => c.ai_count),
+                        backgroundColor: colors.ai + 'cc',
+                        borderRadius: 3,
+                    },
+                    {
+                        label: 'Human',
+                        data: catData.map(c => c.human_count),
+                        backgroundColor: colors.human + 'cc',
+                        borderRadius: 3,
+                    },
+                ],
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                    x: { beginAtZero: true, grid: { color: '#21262d' } },
+                    y: { grid: { display: false } },
+                },
+            },
+        });
+
+        // AI vs Human Weekly
+        const aiHumanCtx = document.getElementById('aiHumanWeeklyChart').getContext('2d');
+        new Chart(aiHumanCtx, {
+            type: 'bar',
+            data: {
+                labels: metrics.weekly_trend.map(w => w.week),
+                datasets: [
+                    {
+                        label: 'AI Comments',
+                        data: metrics.weekly_trend.map(w => w.ai_comments || 0),
+                        backgroundColor: colors.ai + 'cc',
+                        borderRadius: 3,
+                    },
+                    {
+                        label: 'Human Comments',
+                        data: metrics.weekly_trend.map(w => w.human_comments || 0),
+                        backgroundColor: colors.human + 'cc',
+                        borderRadius: 3,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                    y: { beginAtZero: true, stacked: false, grid: { color: '#21262d' } },
+                    x: { grid: { color: '#21262d' } },
+                },
+            },
+        });
+
+        // Radar Chart: AI vs Human focus areas
+        const radarCtx = document.getElementById('radarChart').getContext('2d');
+        const radarLabels = catData.map(c => c.category);
+        const aiTotal = catData.reduce((sum, c) => sum + c.ai_count, 0) || 1;
+        const humanTotal = catData.reduce((sum, c) => sum + c.human_count, 0) || 1;
+        new Chart(radarCtx, {
+            type: 'radar',
+            data: {
+                labels: radarLabels,
+                datasets: [
+                    {
+                        label: 'AI Focus',
+                        data: catData.map(c => Math.round(c.ai_count / aiTotal * 100)),
+                        borderColor: colors.ai,
+                        backgroundColor: colors.ai + '30',
+                        pointBackgroundColor: colors.ai,
+                    },
+                    {
+                        label: 'Human Focus',
+                        data: catData.map(c => Math.round(c.human_count / humanTotal * 100)),
+                        borderColor: colors.human,
+                        backgroundColor: colors.human + '30',
+                        pointBackgroundColor: colors.human,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        grid: { color: '#21262d' },
+                        angleLines: { color: '#21262d' },
+                        pointLabels: { font: { size: 10 } },
+                    },
+                },
+            },
+        });
+
+        // File type doughnut
+        const fileTypeCtx = document.getElementById('fileTypeChart').getContext('2d');
+        const fileData = Object.entries(metrics.file_extensions)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8);
+        new Chart(fileTypeCtx, {
+            type: 'doughnut',
+            data: {
+                labels: fileData.map(([ext]) => ext),
+                datasets: [{
+                    data: fileData.map(([, count]) => count),
+                    backgroundColor: [colors.blue, colors.purple, colors.human, colors.orange, colors.red, '#79c0ff', '#d2a8ff', '#56d364'],
+                    borderWidth: 0,
+                }],
+            },
+            options: { responsive: true, plugins: { legend: { position: 'bottom' } } },
+        });
+
+        // Weekly trend line
         const trendCtx = document.getElementById('trendChart').getContext('2d');
         new Chart(trendCtx, {
             type: 'line',
@@ -345,26 +547,23 @@
                     {
                         label: 'PRs Opened',
                         data: metrics.weekly_trend.map(w => w.prs_opened),
-                        borderColor: chartColors.blue,
-                        backgroundColor: chartColors.blue + '20',
-                        fill: true,
-                        tension: 0.3,
+                        borderColor: colors.blue,
+                        backgroundColor: colors.blue + '20',
+                        fill: true, tension: 0.3,
                     },
                     {
                         label: 'PRs Merged',
                         data: metrics.weekly_trend.map(w => w.prs_merged),
-                        borderColor: chartColors.purple,
-                        backgroundColor: chartColors.purple + '20',
-                        fill: true,
-                        tension: 0.3,
+                        borderColor: colors.purple,
+                        backgroundColor: colors.purple + '20',
+                        fill: true, tension: 0.3,
                     },
                     {
-                        label: 'Comments',
+                        label: 'Total Comments',
                         data: metrics.weekly_trend.map(w => w.comments),
-                        borderColor: chartColors.green,
-                        backgroundColor: chartColors.green + '20',
-                        fill: true,
-                        tension: 0.3,
+                        borderColor: colors.orange,
+                        backgroundColor: colors.orange + '20',
+                        fill: true, tension: 0.3,
                     },
                 ],
             },
@@ -374,39 +573,6 @@
                 scales: {
                     y: { beginAtZero: true, grid: { color: '#21262d' } },
                     x: { grid: { color: '#21262d' } },
-                },
-            },
-        });
-
-        // File type chart
-        const fileTypeCtx = document.getElementById('fileTypeChart').getContext('2d');
-        const fileData = Object.entries(metrics.file_extensions)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 8);
-
-        new Chart(fileTypeCtx, {
-            type: 'doughnut',
-            data: {
-                labels: fileData.map(([ext]) => ext),
-                datasets: [{
-                    data: fileData.map(([, count]) => count),
-                    backgroundColor: [
-                        chartColors.blue,
-                        chartColors.purple,
-                        chartColors.green,
-                        chartColors.orange,
-                        chartColors.red,
-                        '#79c0ff',
-                        '#d2a8ff',
-                        '#56d364',
-                    ],
-                    borderWidth: 0,
-                }],
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { position: 'bottom' },
                 },
             },
         });
