@@ -283,9 +283,12 @@ def compute_metrics(prs_data, review_comments, reviewers_summary):
 
     # Weekly trend
     weekly_data = defaultdict(lambda: {"prs_opened": 0, "prs_merged": 0, "comments": 0, "ai_comments": 0, "human_comments": 0})
+    weekly_prs = defaultdict(list)
+
     for pr in prs_data:
         week = datetime.fromisoformat(pr["created_at"]).strftime("%Y-W%W")
         weekly_data[week]["prs_opened"] += 1
+        weekly_prs[week].append(pr)
         if pr["merged_at"]:
             merge_week = datetime.fromisoformat(pr["merged_at"]).strftime("%Y-W%W")
             weekly_data[merge_week]["prs_merged"] += 1
@@ -300,6 +303,27 @@ def compute_metrics(prs_data, review_comments, reviewers_summary):
 
     sorted_weeks = sorted(weekly_data.keys())[-8:]
     weekly_trend = [{"week": w, **weekly_data[w]} for w in sorted_weeks]
+
+    # Detailed weekly breakdown table
+    weekly_breakdown = []
+    for w in sorted_weeks:
+        w_prs = weekly_prs.get(w, [])
+        w_merged = [p for p in w_prs if p["merged_at"]]
+        w_ttm = [p["time_to_merge_hours"] for p in w_merged if p["time_to_merge_hours"] is not None]
+        w_ttfr = [p["time_to_first_review_hours"] for p in w_prs if p["time_to_first_review_hours"] is not None]
+        w_cycles = [p["review_cycles"] for p in w_prs if p["review_cycles"] > 0]
+
+        weekly_breakdown.append({
+            "week": w,
+            "prs_opened": weekly_data[w]["prs_opened"],
+            "prs_merged": weekly_data[w]["prs_merged"],
+            "avg_time_to_merge": round(sum(w_ttm) / len(w_ttm), 1) if w_ttm else None,
+            "avg_time_to_first_review": round(sum(w_ttfr) / len(w_ttfr), 1) if w_ttfr else None,
+            "avg_cycles": round(sum(w_cycles) / len(w_cycles), 1) if w_cycles else None,
+            "comments": weekly_data[w]["comments"],
+            "ai_comments": weekly_data[w]["ai_comments"],
+            "human_comments": weekly_data[w]["human_comments"],
+        })
 
     # Top reviewers (humans only)
     human_reviewers = {k: v for k, v in reviewers_summary.items() if k.lower() not in AI_BOTS and "[bot]" not in k.lower()}
@@ -351,6 +375,7 @@ def compute_metrics(prs_data, review_comments, reviewers_summary):
         "comments_per_pr": comments_per_pr,
         "file_extensions": dict(file_extensions),
         "weekly_trend": weekly_trend,
+        "weekly_breakdown": weekly_breakdown,
         "top_reviewers": [{"name": name, **data} for name, data in top_reviewers],
         "lookback_days": LOOKBACK_DAYS,
         "generated_at": datetime.now(timezone.utc).isoformat(),

@@ -382,6 +382,39 @@
 
     <!-- Top Reviewers Table -->
     <div class="table-card">
+        <h2>Weekly Breakdown (Last 8 Weeks)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Week</th>
+                    <th>Opened</th>
+                    <th>Merged</th>
+                    <th>Avg Time to First Review</th>
+                    <th>Avg Time to Merge</th>
+                    <th>Avg Cycles</th>
+                    <th>AI Comments</th>
+                    <th>Human Comments</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for week in metrics.weekly_breakdown %}
+                <tr>
+                    <td>{{ week.week }}</td>
+                    <td>{{ week.prs_opened }}</td>
+                    <td>{{ week.prs_merged }}</td>
+                    <td>{{ week.avg_time_to_first_review if week.avg_time_to_first_review is not none else '—' }}{% if week.avg_time_to_first_review is not none %} hrs{% endif %}</td>
+                    <td>{{ week.avg_time_to_merge if week.avg_time_to_merge is not none else '—' }}{% if week.avg_time_to_merge is not none %} hrs{% endif %}</td>
+                    <td>{{ week.avg_cycles if week.avg_cycles is not none else '—' }}</td>
+                    <td><span class="bar bar-ai" style="width: {{ (week.ai_comments * 3) }}px;"></span> {{ week.ai_comments }}</td>
+                    <td><span class="bar bar-human" style="width: {{ (week.human_comments * 3) }}px;"></span> {{ week.human_comments }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Top Human Reviewers Table -->
+    <div class="table-card">
         <h2>Top Human Reviewers</h2>
         <table>
             <thead>
