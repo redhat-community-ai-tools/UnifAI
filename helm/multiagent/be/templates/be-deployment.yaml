@@ -50,10 +50,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: multiagent-be-configmap
-            - configMapRef:
-                name: multiagent-be-security
+            - secretRef:
+                name: multiagent-be-secret
             - configMapRef:
                 name: {{ .Values.globalConfigMapName }}
+            - secretRef:
+                name: {{ .Values.globalSecretName }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}

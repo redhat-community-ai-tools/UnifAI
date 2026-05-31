@@ -5,14 +5,14 @@ properties([
         string(name: "BRANCH", defaultValue: "main", description: "Branch to deploy from."),
         
         // 🚀 Deployment Parameters
-        choice(name: 'deploy_location', choices: ['STAGING', 'PRODUCTION'], description: 'Deployment environment'),
-        choice(name: 'deploy_type', choices: ['FRESH_INSTALL', 'APPLICATION_UPGRADE'], description: 'Deployment Deployment type fresh install - delete everything including shared resources, application upgrade - update only the specified modules'),
+        choice(name: 'deploy_namespace', choices: ['tag-ai--playground', 'tag-ai--playground2'], description: 'Target OpenShift namespace'),
+        choice(name: 'deploy_type', choices: ['FRESH_INSTALL', 'APPLICATION_UPGRADE'], description: 'Deployment type fresh install - delete everything including shared resources, application upgrade - update only the specified modules'),
         string(name: "VERSION", defaultValue: "", description: "DONT SET THIS VALUE!"),
         string(name: "BACKEND_VERSION", defaultValue: "", description: "Image tag for backend"),
         string(name: "RAG_VERSION", defaultValue: "", description: "Image tag for rag"),
         string(name: "MA_VERSION", defaultValue: "", description: "Image tag for multi-agent"),
         string(name: "GUI_VERSION", defaultValue: "", description: "Image tag for UI"),
-        string(name: "IDENTITY_VERSION", defaultValue: "", description: "Image tag for Identity"),
+        string(name: "IDENTITY_VERSION", defaultValue: "", description: "Image tag for identity"),
         string(name: "MODULES_TO_DEPLOY", defaultValue: "", description: "Comma-separated list of modules to update (e.g. rag,multiagent,backend,ui,identity)"),
         booleanParam(name: 'debug_mode', defaultValue: false, description: 'debug the pods'),
     ])
@@ -38,18 +38,16 @@ def buildParams = [
 ]
 
 def secret_lists = [
-    cluster: ['cluster_address', 'cluster_access_token', 'tenant_name', 'namespace', 'jenkins_credentials_id'],
     redis: ['redis_username', 'redis_password'],
-    identity: ['client_id', 'client_secret', 'keycloak_realm', 'keycloak_base_url'],
+    identity_stage: ['client_id', 'client_secret', 'keycloak_realm', 'keycloak_base_url'],
     rabbitmq: ['rmq_username', 'rmq_password'],
     umami: ['umami_username', 'umami_password'],
-    // keycloak: ['keycloak_base_url', 'client_id', 'client_secret', 'keycloak_realm'],
     global_config: ['secret_key', 'vault_role_id', 'vault_secret_id', 'langfuse_base_url', 'langfuse_public_key', 'langfuse_secret_key'],
     multiagent: ['CREDENTIAL_ENCRYPTION_KEY', 'MCP_AUTH_STATE_SECRET'],
     rag: ['default_slack_bot_token', 'default_slack_user_token'],
-    ]
+]
 
-def generateVaultSecretsEnvFile(String vaultBasePath, Map secretMap ) {
+def generateVaultSecretsEnvFile(String vaultBasePath, Map secretMap) {
     def envFilePath = "./vault_secrets.env"
     echo "🔐 Generating Vault secrets env file: ${envFilePath}"
     sh "rm -f ${envFilePath}"
@@ -64,7 +62,7 @@ def generateVaultSecretsEnvFile(String vaultBasePath, Map secretMap ) {
             ],
             vaultSecrets: [
                 [
-                    path: "${vaultBasePath}/${params.deploy_location.toLowerCase()}/${module}",
+                    path: "${vaultBasePath}/staging/${module}",
                     engineVersion: 2,
                     secretValues: secrets.collect { key -> [envVar: key, vaultKey: key] }
                 ]
@@ -102,8 +100,8 @@ def updateGlobalConfigYaml(String filePath) {
     values.each { sectionName, sectionData ->
 
     if (values?.env) {
-        values.env.FRONTEND_URL = "https://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
-        values.env.IDENTITY_HOST = "https://unifai-identity-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
+        values.env.FRONTEND_URL = "https://unifai-ui-${params.deploy_namespace}.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
+        values.env.IDENTITY_HOST = "https://unifai-identity-${params.deploy_namespace}.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
     }
     writeYaml file: filePath, data: values, overwrite: true
     echo "📄 successfully Updated routes values in ${filePath}:\n" + writeYaml(returnText: true, data: values)
@@ -116,6 +114,13 @@ def updateValuesYaml(String filePath , String version) {
     def values = readYaml file: filePath
 
     values.each { sectionName, sectionData ->
+        echo "🔍 DEBUG: section=${sectionName}, type=${sectionData.getClass().getName()}"
+        if (sectionName == 'storage' && sectionData instanceof Map) {
+            if (sectionData.requestedSize == '100Gi') {
+                sectionData.requestedSize = '10Gi'
+                echo "🏷 Updated top-level storage requestedSize: ${sectionData.requestedSize}"
+            }
+        }
         if (sectionData instanceof Map) {
             if (params.debug_mode) {
                 echo "🛠 Setting debug mode in section: ${sectionName}"
@@ -133,25 +138,13 @@ def updateValuesYaml(String filePath , String version) {
                 sectionData.env.VERSION = version
                 echo "🏷 Updated VERSION: ${sectionData.env.VERSION}"
             }
-
-            if (params.deploy_location == 'PRODUCTION') {
-
-                if (sectionData.tolerations instanceof List) {
-                    sectionData.tolerations = [
-                        [
-                            key: "nvidia.com/gpu",
-                            operator: "Exists",
-                            effect: "NoSchedule"
-                        ],
-                        [
-                            key: "tenant",
-                            operator: "Equal",
-                            value: "tag-ai",
-                            effect: "NoSchedule"
-                        ]
-                    ]
-                    echo "🏷 Updated tolerations: ${sectionData.tolerations}"
-                }
+            if (sectionData.storage?.requestedSize == '100Gi') {
+                sectionData.storage.requestedSize = '10Gi'
+                echo "🏷 Updated storage requested size: ${sectionData.storage.requestedSize}"
+            }
+            if (sectionData.storage?.size == '100Gi') {
+                sectionData.storage.size = '10Gi'
+                echo "🏷 Updated storage size: ${sectionData.storage.size}"
             }
         }
     }
@@ -169,7 +162,6 @@ def deployModules(module){
 
 def deleteRunningApplication(){
     echo("Removing running UnifAI application")
-    // cleanOldDataflow()
     def charts = ["backend", "rag", "multiagent", "ui", "identity", "shared-resources"]
 
     charts.each { chart ->
@@ -206,7 +198,7 @@ pipeline {
                     echo "Branch            : ${params.BRANCH}"
                     echo "Version           : ${params.VERSION}"
                     echo "Deployment Type   : ${params.deploy_type}"
-                    echo "Deployment Target : ${params.deploy_location}"
+                    echo "Deployment Target : ${params.deploy_namespace}"
                     echo "Debug mode        : ${params.debug_mode}"
                     echo "Modules to deploy : ${params.MODULES_TO_DEPLOY}"
                     echo "Workspace Path:    ${buildParams.DevRoot}/${params.BRANCH}/"
@@ -242,36 +234,28 @@ pipeline {
             steps {
                 dir("${buildParams.DevRoot}/${params.BRANCH}/helm/") {
                     script {
-                        if (params.deploy_location == 'PRODUCTION') {
-                            updateGlobalConfigYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/global-config.yaml")
-                        }
+                        def ClusterAddress = 'https://api.stc-ai-e1-pp.imap.p1.openshiftapps.com:6443'
+                        def NameSpace = params.deploy_namespace
 
-                        // Fetch ALL secrets from Vault (including cluster)
-                        def vaultEnvFile = generateVaultSecretsEnvFile(buildParams.VaultBasePath, secret_lists)
+                        def credentialMap = [
+                            'tag-ai--playground' : 'tenantaccess-tenantaccess-unifai-playground-sa',
+                            'tag-ai--playground2': 'tenantaccess-tenantaccess-unifai-playground2-sa',
+                        ]
+                        def ClusterAccessToken = credentialMap[params.deploy_namespace]
 
-                        // Parse cluster connection details from the generated vault env file
-                        def vaultEnvMap = [:]
-                        readFile(vaultEnvFile).trim().split('\n').each { line ->
-                            if (line && !line.startsWith('#')) {
-                                def parts = line.split('=', 2)
-                                vaultEnvMap[parts[0].trim()] = parts[1].trim()
-                            }
-                        }
-                        def ClusterAddress = vaultEnvMap.cluster_address
-                        def NameSpace = vaultEnvMap.namespace
-                        def ClusterCredsId = vaultEnvMap.jenkins_credentials_id
-
-                        // Non-secret config still passed from UnifAI-secrets for now (umami_url, admin_allowed_users, etc.)
-                        def configEnvFile = "./UnifAI-secrets/${params.deploy_location.toLowerCase()}/.env"
-
+                        updateGlobalConfigYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/global-config.yaml")
+                        
                         withCredentials([
-                            string(credentialsId: "${ClusterCredsId}", variable: 'token'),
+                            string(credentialsId: "${ClusterAccessToken}", variable: 'token'),
                         ]){
                             echo("Creating helm deployment pod")
                             sh("oc login --token=${token} --server=${ClusterAddress}")
                             sh("oc project ${NameSpace}")
+                            def vaultEnvFile = generateVaultSecretsEnvFile(buildParams.VaultBasePath, secret_lists)
+                            def configEnvFile = "./UnifAI-secrets/staging/.env"
                             echo("Deploy Helm container")
                             sh("podman run --replace -dt --env-file=${vaultEnvFile} --env-file=${configEnvFile} --workdir /helm/charts -v .:/helm/charts:Z -v ~/.kube/:/helm/.kube:Z --name helmfile ghcr.io/helmfile/helmfile:latest bash")
+                            
                             def modules = params.MODULES_TO_DEPLOY.tokenize(',')
                             if(params.deploy_type == 'FRESH_INSTALL') {
                                 modules.add(0,'shared-resources')

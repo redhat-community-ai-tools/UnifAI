@@ -85,6 +85,8 @@ class YamlRegistryLoader:
             venv = VenvConfig(
                 strategy=VenvStrategy(venv_raw.get("strategy", "none")),
                 commands=venv_raw.get("commands", []),
+                global_utils_extra=venv_raw.get("global_utils_extra"),
+                pip_extras=venv_raw.get("pip_extras"),
             )
             result[name] = ServiceInfo(
                 name=name,

@@ -12,7 +12,8 @@ global:
 replicaCount: 1
 #command: ["/bin/bash"]
 globalConfigMapName: shared-config
-
+MultiagentSecretName: multiagent-be-secret
+globalSecretName: shared-secret
 env:
   MONGODB_IP: mongodb
   #MONGO_URI: mongodb  # currently using that var but  we need to change to fit the rag vars to try to merge files.

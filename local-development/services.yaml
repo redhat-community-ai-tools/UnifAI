@@ -41,7 +41,8 @@ services:
       hostname_local: "127.0.0.1"
       secret_key: "<AUTO_GENERATE>"
     venv:
-      strategy: "requirements"
+      strategy: "toml"
+      global_utils_extra: "backend"
     launch: "python -m run.dev"
 
   rag:
@@ -57,7 +58,8 @@ services:
       port: "13457"
       secret_key: "<AUTO_GENERATE>"
     venv:
-      strategy: "requirements"
+      strategy: "toml"
+      global_utils_extra: "rag"
     launch: "python -m bootstrap.flask_app"
 
   multi-agent:
@@ -71,11 +73,9 @@ services:
     env_entries:
       secret_key: "<AUTO_GENERATE>"
     venv:
-      strategy: "custom"
-      commands:
-        - "{python} -m venv venv"
-        - "venv/bin/pip install -e .[all]"
-        - "venv/bin/pip install -e ../global_utils"
+      strategy: "toml"
+      pip_extras: "all"
+      global_utils_extra: "multi-agent"
     launch: "HOSTNAME=0.0.0.0 mas api dev"
 
   identity:
@@ -98,6 +98,7 @@ services:
       secret_key: "<AUTO_GENERATE>"
     venv:
       strategy: "toml"
+      global_utils_extra: "identity"
     launch: "python -m bootstrap.flask_app"
 
   ui:

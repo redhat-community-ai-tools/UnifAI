@@ -77,3 +77,20 @@ create_or_update_configmap() {
   
   log_info "ConfigMap '$cm_name' applied successfully"
 }
+
+
+# ==============================================================================
+# ConfigMap / Secret Management
+# ==============================================================================
+
+# Creates or updates a ConfigMap / Secret idempotently
+# Usage: create_or_update_resource <type> <name> --from-literal=KEY=value ...
+create_or_update_resource() {
+  local resource_type=$1; shift
+  local resource_name=$1; shift
+  
+  kubectl create $resource_type "$resource_name" "$@" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  
+  log_info "${resource_type} '${resource_name}' applied successfully"
+}

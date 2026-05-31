@@ -160,7 +160,55 @@ The `multi-agent` module uses a structured `Identity` object (`mas.core.identity
 
 **In other modules** (outside `multi-agent/`): If code handles resource ownership with a flat `user_id`, flag it as **WARNING — Identity migration recommended** but do NOT block approval. These modules have not yet adopted the `Identity` model.
 
-### 10. Frontend API Layer Enforcement (STRICT)
+### 10. Endpoint Thinness Check (STRICT)
+
+Controllers/endpoints MUST be thin. They are allowed ONLY to:
+- Parse and validate the incoming request (path params, query params, body).
+- Call one application service / use case method.
+- Map the result to an HTTP response (status code, response body).
+
+Check for violations:
+- Business logic inside controllers (conditionals, calculations, rule enforcement).
+- Multiple service calls orchestrated within a single endpoint method.
+- Data transformation or enrichment logic in controllers that belongs in a mapper or use case.
+- Repository or infrastructure calls made directly from the controller.
+- Try/catch blocks in controllers that handle domain-specific errors instead of delegating to a global exception handler.
+
+For each finding: show the file path and line number, and explain what logic should be moved and where.
+- Business logic in endpoint = **MAJOR**
+- Orchestration logic in endpoint (multiple service calls) = **MAJOR**
+- Complex data transformation in endpoint = **MAJOR**
+- Trivial mapping in endpoint = **MINOR**
+
+### 11. Coupling & Responsibility Violations (STRICT)
+
+Detect cases where logic is placed in the wrong service, module, or layer:
+
+**Cross-Service Coupling:**
+- Service A directly accessing internals of Service B (its repositories, entities, or private methods).
+- Service A containing business rules that belong to Service B's domain.
+- Shared mutable state or tight temporal coupling between services.
+- A service importing from an unrelated module or bounded context without justification.
+
+**Misplaced Logic:**
+- Validation logic that belongs in domain placed in a controller or adapter.
+- Business rules in infrastructure adapters (e.g., filtering logic in a repository implementation).
+- Orchestration logic in a domain service that should be in an application use case.
+- Logging, metrics, or auditing logic mixed into domain or application services instead of cross-cutting concerns.
+- A service doing work unrelated to its bounded context or named responsibility.
+
+**Detection Method:**
+- Read the service/class name and compare it to the logic it contains. If the logic doesn't match the name's responsibility, flag it.
+- Trace imports: if a service imports from an unrelated module/bounded context, investigate why.
+- Check if a method could be moved entirely to another service without breaking cohesion.
+
+For each finding: show file path and line number, explain which service/layer the logic belongs to and why.
+- Business logic in wrong service = **MAJOR**
+- Cross-service repository access = **CRITICAL**
+- Unrelated orchestration in a domain service = **MAJOR**
+- Minor helper in slightly wrong place = **MINOR**
+
+### 12. Frontend API Layer Enforcement (STRICT)
 
 The UI (`ui/client/src/`) uses a centralized API layer. All HTTP calls MUST go through `src/api/*.ts` modules, which in turn use the shared axios instances from `src/http/`:
 
@@ -183,8 +231,7 @@ The UI (`ui/client/src/`) uses a centralized API layer. All HTTP calls MUST go t
 - `AuthContext.tsx` calling `/api3/auth/*` directly (bootstrap-level auth before API layer is available)
 
 When reviewing frontend code, verify that new HTTP calls are added to the appropriate `src/api/` module and consumed via that module — not inlined into components or hooks.
-
-### 11. Security Spot-Check (STRICT)
+### 13. Security Spot-Check (STRICT)
 
 Check for:
 - Secrets, API keys, or credentials hardcoded in source files.
@@ -193,7 +240,7 @@ Check for:
 - Sensitive data (passwords, tokens, PII) logged or included in error responses.
 - Insecure deserialization or unsafe use of reflection.
 
-For each finding: show exact location, explain the attack surface.
+For each finding: show exact file path and line number, explain the attack surface.
 - Hardcoded secrets or injection risk = **CRITICAL**
 - Missing authz check = **MAJOR**
 - Sensitive data in logs/errors = **MAJOR**
@@ -204,7 +251,7 @@ For each finding: show exact location, explain the attack surface.
 - Do NOT suggest rewriting everything.
 - Do NOT recommend abstractions unless justified.
 - Do NOT approve if major duplication or architectural violations exist.
-- Every claim must reference a specific location and be justified.
+- Every finding MUST include the specific file path AND line number (e.g., `src/order/adapter/OrderController.py:45`). A review comment without a line reference is incomplete.
 - Do NOT assume correctness without verifying against the actual source code.
 
 ## Output Format
@@ -212,31 +259,39 @@ For each finding: show exact location, explain the attack surface.
 Wrap the entire output inside a `## PHASE 4: CODE REVIEW` header.
 
 ### Architecture Violations
-| Issue | Layer | Why It Violates Hex Arch | Severity | Fix |
-|-------|-------|--------------------------|----------|-----|
+| File:Line | Issue | Layer | Why It Violates Hex Arch | Severity | Fix |
+|-----------|-------|-------|--------------------------|----------|-----|
 
 ### Code Duplication Issues
-| Location | Description | Severity | Refactor Recommendation |
-|----------|-------------|----------|------------------------|
+| File:Line | Description | Severity | Refactor Recommendation |
+|-----------|-------------|----------|------------------------|
 
 ### Dead Code Issues
-| Location | Why Dead/Unnecessary | Severity | Removal Recommendation |
-|----------|---------------------|----------|----------------------|
+| File:Line | Why Dead/Unnecessary | Severity | Removal Recommendation |
+|-----------|---------------------|----------|----------------------|
 
 ### Reusability Improvements
-| Existing Component | Where It Should Be Used | Why |
-|-------------------|------------------------|-----|
+| File:Line | Existing Component | Where It Should Be Used | Why |
+|-----------|--------------------|------------------------|-----|
 
 ### Alignment Issues
-| Issue | Expected Pattern | Actual | Fix |
-|-------|-----------------|--------|-----|
+| File:Line | Issue | Expected Pattern | Actual | Fix |
+|-----------|-------|-----------------|--------|-----|
+
+### Endpoint Thinness Violations
+| File:Line | Logic Found in Endpoint | Should Be In | Severity | Fix |
+|-----------|------------------------|--------------|----------|-----|
+
+### Coupling & Misplaced Logic
+| File:Line | Logic Description | Current Location | Correct Location | Severity |
+|-----------|-------------------|------------------|------------------|----------|
 
 ### Design Compliance
 Deviations from the approved design, if any.
 
 ### Efficiency & Clean Code Concerns
-| Issue | Risk | Suggested Improvement |
-|-------|------|-----------------------|
+| File:Line | Issue | Risk | Suggested Improvement |
+|-----------|-------|------|-----------------------|
 
 ### Previous Issues Resolution (only for revision loops)
 | Previous Issue | Status | Evidence |

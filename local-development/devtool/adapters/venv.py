@@ -145,15 +145,18 @@ class LocalVenvManager(VenvManager):
 
         pip = str(self._venv_bin(svc_dir, "pip"))
         global_utils_rel = os.path.relpath(root / "global_utils", svc_dir)
+        extra = service.venv.global_utils_extra
+        gu_spec = f"{global_utils_rel}/[{extra}]" if extra else global_utils_rel
+        svc_spec = f".[{service.venv.pip_extras}]" if service.venv.pip_extras else "."
         if strategy is VenvStrategy.TOML:
             cmds: list[list[str]] = [
-                [pip, "install", "-e", "."],
-                [pip, "install", "-e", global_utils_rel],
+                [pip, "install", "-e", svc_spec],
+                [pip, "install", "-e", gu_spec],
             ]
         else:
             cmds = [
                 [pip, "install", "-r", "requirements.txt"],
-                [pip, "install", "-e", global_utils_rel],
+                [pip, "install", "-e", gu_spec],
             ]
         for cmd in cmds:
             self._run(cmd, svc_dir, log_file)

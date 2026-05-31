@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backend"
+version = "1.0.0"
+description = "UnifAI Backend Service"
+requires-python = ">=3.11"
+license = {text = "Proprietary"}
+
+dependencies = [
+    "pydantic",
+    "pydantic-settings",
+    "gunicorn",
+    "flask",
+    "flask-cors",
+    "pymongo",
+    "python-dotenv",
+    "webargs",
+    "requests",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests", "tests.*", "venv", "venv.*"]
