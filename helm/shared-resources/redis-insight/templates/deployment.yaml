@@ -36,10 +36,14 @@ spec:
           - name: "{{ $key }}"
             value: "{{ $value }}"
           {{- end }}
-          {{- if .Values.redisConfigMapName }}
           envFrom:
+          {{- if .Values.redisConfigMapName }}
             - configMapRef:
                 name: {{ .Values.redisConfigMapName | quote }}
+          {{- end }}
+          {{- if .Values.RedisSecretName }}
+            - secretRef:
+                name: {{ .Values.RedisSecretName }}
           {{- end }}
           ports:
           - containerPort: {{ .Values.service.port }} 

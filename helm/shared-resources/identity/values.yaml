@@ -13,8 +13,9 @@ replicaCount: 1
 #   # Overrides the image tag whose default is the chart appVersion.
 #   tag: ""
 IdentityConfigMapName: identity-config
+IdentitySecretName: identity-secret
 globalConfigMapName: shared-config
-
+globalSecretName: shared-secret
 
 # This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
 imagePullSecrets: []

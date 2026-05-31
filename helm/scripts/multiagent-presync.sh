@@ -1,16 +1,11 @@
 #!/bin/bash
 
-set -x  # Print each command
 set +e  # Disable immediate exit on error
 echo "Starting multiagent-presync hook..."
 # Source common functions
 source "$(dirname "$0")/postsync-lib.sh"
 
-# Note: admin_allowed_users should be a JSON array string, e.g., '["user1","user2"]'
-# This will be parsed by Pydantic Settings as a list type
-# Create configmap
-create_or_update_configmap multiagent-be-security \
-  --from-literal=admin_allowed_users="$admin_allowed_users" \
+#create secret
+create_or_update_resource "secret generic" multiagent-be-secret \
   --from-literal=CREDENTIAL_ENCRYPTION_KEY="$CREDENTIAL_ENCRYPTION_KEY" \
   --from-literal=MCP_AUTH_STATE_SECRET="$MCP_AUTH_STATE_SECRET"
-

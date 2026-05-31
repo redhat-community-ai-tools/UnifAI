@@ -49,6 +49,10 @@ spec:
               name: {{ .Values.globalConfigMapName }}
           - configMapRef:
               name: {{ .Values.IdentityConfigMapName }}
+          - secretRef:
+              name: {{ .Values.IdentitySecretName }}
+          - secretRef:
+              name: {{ .Values.globalSecretName }}
           env:
           {{- range $key, $value := .Values.backend.env }}
             - name: "{{ $key }}"
