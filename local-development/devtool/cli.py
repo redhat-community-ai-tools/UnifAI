@@ -153,6 +153,7 @@ def _create_orchestrator(*, fg: bool = False) -> Orchestrator:
     from devtool.adapters.env_file_store import FilesystemEnvFileStore
     from devtool.adapters.foreground import ForegroundSessionManager
     from devtool.adapters.health_probe import NetworkHealthProbe
+    from devtool.adapters.node_detector import LocalNodeResolver
     from devtool.adapters.process import LocalProcessManager
     from devtool.adapters.python_detector import LocalPythonResolver
     from devtool.adapters.registry_loader import YamlRegistryLoader
@@ -185,6 +186,7 @@ def _create_orchestrator(*, fg: bool = False) -> Orchestrator:
     venv_mgr = LocalVenvManager()
     process_mgr = LocalProcessManager()
     python_resolver = LocalPythonResolver()
+    node_resolver = LocalNodeResolver()
     health_probe = NetworkHealthProbe()
     health = HealthChecker(health_probe)
 
@@ -198,11 +200,11 @@ def _create_orchestrator(*, fg: bool = False) -> Orchestrator:
     )
     diag_svc = DiagnosticService(
         registry, root, runtime, session, process_mgr,
-        health, infra_svc, venv_svc, env_svc,
+        health, infra_svc, venv_svc, env_svc, node_resolver,
     )
     init_svc = InitService(
         registry, root, runtime,
-        infra_svc, venv_svc, env_svc,
+        infra_svc, venv_svc, env_svc, node_resolver,
     )
 
     return Orchestrator(

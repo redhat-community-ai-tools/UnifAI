@@ -31,6 +31,8 @@ def _make_diag(
     registry.all_services.return_value = svcs
     registry.log_dir = root / "logs"
     registry.local_auth = True
+    registry.has_node_services.return_value = False
+    registry.node_min = None
 
     env_service = MagicMock()
     env_service.env_file_exists.return_value = True
@@ -47,6 +49,7 @@ def _make_diag(
         infra_service=MagicMock(),
         venv_service=MagicMock(),
         env_service=env_service,
+        node_resolver=MagicMock(),
     )
 
 

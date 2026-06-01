@@ -4,6 +4,9 @@ python:
   min: "3.11"
   max: "3.13"
 
+node:
+  min: "22"
+
 infrastructure:
   mongo:
     image: "docker.io/library/mongo:latest"
@@ -71,6 +74,7 @@ services:
     infrastructure: [mongo, redis, temporal]
     env_file: ".env"
     env_entries:
+      RAG_BASE_URL: "http://127.0.0.1:13457"
       secret_key: "<AUTO_GENERATE>"
     venv:
       strategy: "toml"
@@ -129,7 +133,7 @@ services:
       strategy: "none"
     launch: >-
       celery -A infrastructure.celery.app worker
-      -Q document_queue,slack_queue -l info
+      -Q document_queue,slack_queue -l info --pool=solo
 
   temporal-worker:
     directory: "multi-agent"

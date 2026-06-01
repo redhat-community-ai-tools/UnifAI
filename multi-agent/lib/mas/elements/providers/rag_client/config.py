@@ -1,8 +1,11 @@
+import os
 from typing import Literal
 from pydantic import Field, HttpUrl
 from mas.elements.providers.common.base_config import ProviderBaseConfig
 from mas.core.field_hints import ActionHint, HintType
 from .identifiers import Identifier
+
+_DEFAULT_RAG_URL = os.environ.get("RAG_BASE_URL", "http://unifai-rag-server:13456")
 
 
 class RagProviderConfig(ProviderBaseConfig):
@@ -13,7 +16,7 @@ class RagProviderConfig(ProviderBaseConfig):
     type: Literal[Identifier.TYPE] = Identifier.TYPE
 
     base_url: HttpUrl = Field(
-        default="http://unifai-rag-server:13456",
+        default=_DEFAULT_RAG_URL,
         description="Base URL of the RAG service",
         json_schema_extra=ActionHint(
             action_uid="rag.validate_connection",
