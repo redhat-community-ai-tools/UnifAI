@@ -122,10 +122,17 @@ class YamlRegistryLoader:
         node_cfg = raw.get("node")
         if not node_cfg:
             return None
-        min_str = str(node_cfg.get("min", ""))
+        min_str = str(node_cfg.get("min", "")).strip()
         if not min_str:
             return None
-        return int(min_str.split(".")[0])
+        major = min_str.split(".")[0].lstrip("vV").rstrip("+")
+        try:
+            return int(major)
+        except ValueError:
+            raise ValueError(
+                f"Invalid node.min version in services.yaml: {min_str!r} "
+                f"(major part {major!r} is not an integer)"
+            )
 
     @staticmethod
     def _parse_python_bounds(
