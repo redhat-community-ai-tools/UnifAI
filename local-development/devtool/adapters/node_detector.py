@@ -21,20 +21,20 @@ class LocalNodeResolver(NodeResolver):
 
         try:
             out = subprocess.check_output(
-                [path, "--version"], text=True,
+                [path, "--version"], text=True, timeout=10,
             ).strip()
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
             raise RuntimeError(
                 f"Found node at {path} but could not determine its version."
-            )
+            ) from e
 
         ver_str = out.lstrip("v")
         try:
             major = int(ver_str.split(".")[0])
-        except (ValueError, IndexError):
+        except (ValueError, IndexError) as e:
             raise RuntimeError(
                 f"Could not parse Node.js version from: {out}"
-            )
+            ) from e
 
         if major < min_major:
             raise RuntimeError(

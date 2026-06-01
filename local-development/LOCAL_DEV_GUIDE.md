@@ -997,7 +997,7 @@ Alternatively, install Docker and the tool will auto-detect it as a fallback.
 
 #### Ghost Celery/Temporal workers after restart
 
-When you run `unifai-dev start` again (or `stop`), the tmux session is terminated via SIGHUP. Celery interprets SIGHUP as a reload signal rather than a termination signal, so the worker process can survive as an orphan. (`destroy` sends Ctrl+C first, which Celery handles correctly — but if a task is mid-flight and the 10 s timeout expires, the same SIGHUP fallback applies.) Symptoms:
+When you run `unifai-dev start` again , the tmux session is terminated via SIGHUP. Celery interprets SIGHUP as a reload signal rather than a termination signal, so the worker process can survive as an orphan. (`destroy` / 'stop' sends Ctrl+C first, which Celery handles correctly — but if a task is mid-flight and the 10 s timeout expires, the same SIGHUP fallback applies.) Symptoms:
 
 - The new worker shows a **pidbox warning**: `A node named celery@... is already using this process mailbox!`
 - Tasks dispatched from RAG are consumed by the ghost (no output in your tmux pane)

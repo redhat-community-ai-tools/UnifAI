@@ -1,28 +1,21 @@
-import os
-from typing import Literal
 from pydantic import Field, HttpUrl
-from mas.elements.providers.common.base_config import ProviderBaseConfig
-from mas.core.field_hints import ActionHint, HintType
-from .identifiers import Identifier
-
-_DEFAULT_RAG_URL = os.environ.get("RAG_BASE_URL", "http://unifai-rag-server:13456")
+from pydantic_settings import SettingsConfigDict
+from global_utils.config.config import SharedConfig
 
 
-class RagProviderConfig(ProviderBaseConfig):
+class RagProviderConfig(SharedConfig):
     """
-    Configuration for RAG service client.
-    Connects to a RAG server for vector database queries and document retrieval.
+    Infrastructure config for RAG service client.
+
+    Unlike other providers, RAG is internal (not in the ElementRegistry or
+    UI catalog), so it inherits SharedConfig instead of ProviderBaseConfig —
+    fields are overridable via ``RAG_``-prefixed env vars / ``.env``.
     """
-    type: Literal[Identifier.TYPE] = Identifier.TYPE
+    model_config = SettingsConfigDict(env_prefix="RAG_")
 
     base_url: HttpUrl = Field(
-        default=_DEFAULT_RAG_URL,
+        default="http://unifai-rag-server:13456",
         description="Base URL of the RAG service",
-        json_schema_extra=ActionHint(
-            action_uid="rag.validate_connection",
-            hint_type=HintType.VALIDATE,
-            field_mapping="is_reachable"
-        ).to_hints()
     )
 
     top_k: int = Field(
