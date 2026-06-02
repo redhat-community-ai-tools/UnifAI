@@ -1,6 +1,9 @@
-name: Cursor Pipeline Agent
+name: Cursor Pipeline Agent1
 
 on:
+  push:
+    branches:
+      - GENIE-1631/story/cursor_github_runner
   workflow_dispatch:
     inputs:
       branch:
