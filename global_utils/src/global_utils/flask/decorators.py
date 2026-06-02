@@ -82,6 +82,10 @@ def require_team_session(
                 # ── 2. Resolve identity (session user + optional team) ─
                 body = request.get_json(silent=True) or {}
 
+                # teamId arrives via the natural transport for each HTTP verb:
+                #   - query param: GET requests (e.g. ?teamId=abc)
+                #   - JSON body:   POST/PUT mutations
+                #   - URL kwargs:  RESTful path params (e.g. /teams/<teamId>/...)
                 team_id = str(
                     request.args.get("teamId")
                     or body.get("teamId")
