@@ -1,0 +1,58 @@
+name: Cursor Pipeline Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to run pipeline on (defaults to current branch)"
+        required: false
+        default: "main"
+      pipeline_args:
+        description: "Arguments after /pipeline (e.g. 'design-only Implement RAG caching')"
+        required: false
+        default: "code-review-only"
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Resolve branch
+        id: branch
+        run: |
+          if [ -n "${{ github.event.inputs.branch }}" ]; then
+            echo "ref=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+          else
+            echo "ref=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Install Cursor CLI
+        run: |
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.cursor/bin" >> $GITHUB_PATH
+
+      - name: Run Cursor Pipeline Agent
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          agent -p "/pipeline ${{ github.event.inputs.pipeline_args }}
+           Do NOT push or commit any changes to the repository" \
+            --model claude-opus-4-6-high-thinking 2>&1 | tee pipeline_output.txt
+
+      - name: Upload pipeline output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-output
+          path: pipeline_output.txt
