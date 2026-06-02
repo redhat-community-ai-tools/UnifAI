@@ -49,7 +49,7 @@ jobs:
         run: |
           agent --trust -p "/pipeline review-only
            Do NOT push or commit any changes to the repository" \
-            --model claude-opus-4-6-high-thinking 2>&1 | tee design_review_output.txt
+            --model claude-4.6-opus-high-thinking 2>&1 | tee design_review_output.txt
 
       - name: Run Code Review
         env:
@@ -57,7 +57,7 @@ jobs:
         run: |
           agent --trust -p "/pipeline code-review-only
            Do NOT push or commit any changes to the repository" \
-            --model claude-opus-4-6-high-thinking 2>&1 | tee code_review_output.txt
+            --model claude-4.6-opus-high-thinking 2>&1 | tee code_review_output.txt
 
       - name: Upload pipeline outputs
         if: always()
