@@ -1,4 +1,4 @@
-name: Cursor Pipeline Agent1
+name: Cursor Pipeline Agent
 
 on:
   pull_request:
@@ -59,11 +59,70 @@ jobs:
            Do NOT push or commit any changes to the repository" \
             --model claude-4.6-opus-high-thinking 2>&1 | tee code_review_output.txt
 
-      - name: Upload pipeline outputs
+      - name: Publish results to Job Summary
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pipeline-outputs
-          path: |
-            design_review_output.txt
-            code_review_output.txt
+        run: |
+          echo "## Design Review" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f design_review_output.txt ]; then
+            cat design_review_output.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_No output produced._" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Code Review" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f code_review_output.txt ]; then
+            cat code_review_output.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_No output produced._" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Evaluate Review Scores
+        if: always()
+        run: |
+          CODE_REVIEW_THRESHOLD=7
+
+          CODE_SCORE=$(grep -oP 'Code Health Score:\s*\K\d+' code_review_output.txt 2>/dev/null || echo "0")
+          DESIGN_VERDICT=$(grep -oP '\*\*(?:APPROVE|NEEDS REVISION|REJECT)\*\*' design_review_output.txt 2>/dev/null | head -1 | tr -d '*')
+
+          if [ -z "$DESIGN_VERDICT" ]; then
+            DESIGN_VERDICT="UNKNOWN"
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Review Gate Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Review | Result | Threshold | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$DESIGN_VERDICT" = "APPROVE" ]; then
+            DESIGN_STATUS="✅ PASS"
+            DESIGN_PASS=true
+          else
+            DESIGN_STATUS="❌ FAIL ($DESIGN_VERDICT)"
+            DESIGN_PASS=false
+          fi
+          echo "| Design Review | $DESIGN_VERDICT | APPROVE | $DESIGN_STATUS |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$CODE_SCORE" -ge "$CODE_REVIEW_THRESHOLD" ]; then
+            CODE_STATUS="✅ PASS"
+            CODE_PASS=true
+          else
+            CODE_STATUS="❌ FAIL"
+            CODE_PASS=false
+          fi
+          echo "| Code Review | $CODE_SCORE/10 | ≥${CODE_REVIEW_THRESHOLD}/10 | $CODE_STATUS |" >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$DESIGN_PASS" = "false" ] || [ "$CODE_PASS" = "false" ]; then
+            echo "::error::Review gate failed. Design: $DESIGN_VERDICT, Code: $CODE_SCORE/10 (threshold: $CODE_REVIEW_THRESHOLD)"
+            exit 1
+          fi
+
+          echo "✅ **All review gates passed.**" >> $GITHUB_STEP_SUMMARY
