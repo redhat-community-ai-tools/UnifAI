@@ -1,4 +1,7 @@
-name: Cursor Pipeline Agent
+name: Cursor Pipeline Review
+
+env:
+  PIPELINE_MODEL: claude-4.6-opus-high-thinking
 
 on:
   pull_request:
@@ -17,19 +20,24 @@ jobs:
     timeout-minutes: 45
 
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
 
     steps:
       - name: Resolve branch
         id: branch
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BRANCH: ${{ github.event.inputs.branch }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GIT_REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.branch }}" ]; then
-            echo "ref=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "ref=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_BRANCH" ]; then
+            echo "ref=$INPUT_BRANCH" >> $GITHUB_OUTPUT
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "ref=$PR_HEAD_REF" >> $GITHUB_OUTPUT
           else
-            echo "ref=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "ref=$GIT_REF_NAME" >> $GITHUB_OUTPUT
           fi
 
       - name: Checkout repository
@@ -43,21 +51,38 @@ jobs:
           curl https://cursor.com/install -fsS | bash
           echo "$HOME/.cursor/bin" >> $GITHUB_PATH
 
+      - name: Validate model availability
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          MODEL_OUTPUT=$(agent --list-models 2>&1) || {
+            echo "::error::Failed to list models. Output: $MODEL_OUTPUT"
+            exit 1
+          }
+          if ! echo "$MODEL_OUTPUT" | grep -q "$PIPELINE_MODEL"; then
+            echo "::error::Model '$PIPELINE_MODEL' is not available. Available models:"
+            echo "$MODEL_OUTPUT"
+            exit 1
+          fi
+
+      # Security: --trust grants the agent full tool access (file read/write, shell).
+      # --force skips interactive confirmation. The agent runs in a read-only
+      # checkout (contents: read permission) so it cannot push changes. The
+      # CURSOR_API_KEY is scoped to this organization's Cursor account only.
       - name: Run Design Review
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          agent --trust -p "/pipeline review-only
-           Do NOT push or commit any changes to the repository" \
-            --model claude-4.6-opus-high-thinking 2>&1 | tee design_review_output.txt
+          agent --trust --force -p "/pipeline review-only -- Do NOT push or commit any changes to the repository" \
+            --model "$PIPELINE_MODEL" 2>&1 | tee design_review_output.txt
 
       - name: Run Code Review
+        if: success()
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          agent --trust -p "/pipeline code-review-only
-           Do NOT push or commit any changes to the repository" \
-            --model claude-4.6-opus-high-thinking 2>&1 | tee code_review_output.txt
+          agent --trust --force -p "/pipeline code-review-only -- Do NOT push or commit any changes to the repository" \
+            --model "$PIPELINE_MODEL" 2>&1 | tee code_review_output.txt
 
       - name: Publish results to Job Summary
         if: always()
@@ -82,47 +107,4 @@ jobs:
 
       - name: Evaluate Review Scores
         if: always()
-        run: |
-          CODE_REVIEW_THRESHOLD=7
-
-          CODE_SCORE=$(grep -oP 'Code Health Score:\s*\K\d+' code_review_output.txt 2>/dev/null || echo "0")
-          DESIGN_VERDICT=$(grep -oP '\*\*(?:APPROVE|NEEDS REVISION|REJECT)\*\*' design_review_output.txt 2>/dev/null | head -1 | tr -d '*')
-
-          if [ -z "$DESIGN_VERDICT" ]; then
-            DESIGN_VERDICT="UNKNOWN"
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Review Gate Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Review | Result | Threshold | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|--------|--------|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-
-          if [ "$DESIGN_VERDICT" = "APPROVE" ]; then
-            DESIGN_STATUS="✅ PASS"
-            DESIGN_PASS=true
-          else
-            DESIGN_STATUS="❌ FAIL ($DESIGN_VERDICT)"
-            DESIGN_PASS=false
-          fi
-          echo "| Design Review | $DESIGN_VERDICT | APPROVE | $DESIGN_STATUS |" >> $GITHUB_STEP_SUMMARY
-
-          if [ "$CODE_SCORE" -ge "$CODE_REVIEW_THRESHOLD" ]; then
-            CODE_STATUS="✅ PASS"
-            CODE_PASS=true
-          else
-            CODE_STATUS="❌ FAIL"
-            CODE_PASS=false
-          fi
-          echo "| Code Review | $CODE_SCORE/10 | ≥${CODE_REVIEW_THRESHOLD}/10 | $CODE_STATUS |" >> $GITHUB_STEP_SUMMARY
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ "$DESIGN_PASS" = "false" ] || [ "$CODE_PASS" = "false" ]; then
-            echo "::error::Review gate failed. Design: $DESIGN_VERDICT, Code: $CODE_SCORE/10 (threshold: $CODE_REVIEW_THRESHOLD)"
-            exit 1
-          fi
-
-          echo "✅ **All review gates passed.**" >> $GITHUB_STEP_SUMMARY
+        run: scripts/evaluate-review-gate.sh

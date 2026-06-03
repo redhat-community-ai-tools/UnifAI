@@ -89,6 +89,24 @@ After resolving the input, pass the full task context (title, description, accep
 
 CRITICAL RULE: When a review phase produces a verdict that is NOT approval, you MUST execute the revision loop described below. You are FORBIDDEN from proceeding to the next phase until the reviewer approves. This is non-negotiable.
 
+### Scope Resolution for Review Modes
+
+Applies to modes: `review-only`, `code-review-only`, `qa-only`.
+
+When determining which files to review:
+
+1. **Explicit scope provided** — if the user passed file paths or folder paths in the command (e.g., `/pipeline code-review-only src/services/`), use those as the review scope. No auto-detection needed.
+
+2. **No explicit scope provided** — auto-detect the PR diff:
+   - Determine the base branch: use the environment variable `GITHUB_BASE_REF` if available, otherwise default to `main`.
+   - Run: `git diff --name-only origin/<base>...HEAD`
+   - If the command produces a non-empty file list, use those files as the review scope. Announce: "Auto-detected PR scope: **N files** changed vs `origin/<base>`."
+   - If the command fails or produces an empty list (e.g., detached HEAD, no remote, no diff), fall back to reviewing the full workspace. Announce: "No PR diff detected — reviewing full workspace."
+
+3. **Passing scope to the review skill** — at the start of the review phase, present the scoped file list as context:
+   - "The following files are in scope for this review:" followed by the file list.
+   - The reviewer MUST focus on these files but MAY reference other files for context (e.g., checking imports, verifying interfaces exist).
+
 ## State Tracking
 
 Maintain a running state tracker throughout the pipeline. After every phase or revision attempt, update and display this tracker:

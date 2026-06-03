@@ -286,13 +286,19 @@ List the specific source files you read and what claims they verified or contrad
 | 3-4 | Multiple MAJOR issues or one CRITICAL |
 | 1-2 | Fundamental architectural violation or security critical |
 
-The score must be consistent with the verdict: a CLEAN verdict cannot accompany a score below 7.
+Assign the score FIRST based on findings, THEN derive the verdict from the score.
+
+Score-verdict consistency rules:
+- **CLEAN** requires score ≥ 7. A score below 7 with a CLEAN verdict is forbidden.
+- **NEEDS REFACTORING** requires score 4-6. At least one MAJOR or several MINORs.
+- **MAJOR CLEANUP REQUIRED** requires score ≤ 3. Multiple MAJORs or a CRITICAL.
+- A score of 7+ with any MAJOR issue is a contradiction — lower the score or downgrade the issue.
 
 ### Verdict
 
 One of:
-- **CLEAN** — Code is production-ready. Proceed to QA.
-- **NEEDS REFACTORING** — Specific issues must be fixed (list them). Loop back to Coder.
-- **MAJOR CLEANUP REQUIRED** — Significant problems found. Loop back to Coder with full issue list.
+- **CLEAN** (score ≥ 7) — Code is production-ready. Proceed to QA.
+- **NEEDS REFACTORING** (score 4-6) — Specific issues must be fixed (list them). Loop back to Coder.
+- **MAJOR CLEANUP REQUIRED** (score ≤ 3) — Significant problems found. Loop back to Coder with full issue list.
 
 If the verdict is not CLEAN, clearly list every item the Coder must address in the next iteration.
