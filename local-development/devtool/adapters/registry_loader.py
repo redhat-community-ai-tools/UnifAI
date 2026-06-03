@@ -49,7 +49,7 @@ class YamlRegistryLoader:
             raw, min_override=min_override, max_override=max_override,
         )
 
-        node_min = YamlRegistryLoader._parse_node_min(raw)
+        node_min = YamlRegistryLoader._parse_node_js_min(raw)
 
         return Registry(
             services=YamlRegistryLoader._parse_services(raw.get("services", {})),
@@ -118,7 +118,7 @@ class YamlRegistryLoader:
         }
 
     @staticmethod
-    def _parse_node_min(raw: dict) -> int | None:
+    def _parse_node_js_min(raw: dict) -> int | None:
         node_cfg = raw.get("node")
         if not node_cfg:
             return None

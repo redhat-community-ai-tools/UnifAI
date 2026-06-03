@@ -1,5 +1,4 @@
 from pydantic import Field, HttpUrl
-from pydantic_settings import SettingsConfigDict
 from global_utils.config.config import SharedConfig
 
 
@@ -9,10 +8,8 @@ class RagProviderConfig(SharedConfig):
 
     Unlike other providers, RAG is internal (not in the ElementRegistry or
     UI catalog), so it inherits SharedConfig instead of ProviderBaseConfig —
-    fields are overridable via ``RAG_``-prefixed env vars / ``.env``.
+    fields are overridable via env vars / ``.env``.
     """
-    model_config = SettingsConfigDict(env_prefix="RAG_")
-
     base_url: HttpUrl = Field(
         default="http://unifai-rag-server:13456",
         description="Base URL of the RAG service",

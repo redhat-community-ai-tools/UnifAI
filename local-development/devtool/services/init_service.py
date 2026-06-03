@@ -46,7 +46,7 @@ class InitService:
 
         if self._registry.has_node_services() and self._registry.node_min is not None:
             try:
-                node_path, node_ver = self._node_resolver.check_node(
+                node_path, node_ver = self._node_resolver.check_node_js(
                     self._registry.node_min,
                 )
                 print(f"  ✔ Node.js: {node_ver} ({node_path})")

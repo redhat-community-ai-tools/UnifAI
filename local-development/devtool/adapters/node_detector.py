@@ -11,7 +11,7 @@ from devtool.ports.node_resolver import NodeResolver
 class LocalNodeResolver(NodeResolver):
     """Discovers the Node.js interpreter on the local filesystem."""
 
-    def check_node(self, min_major: int) -> tuple[str, str]:
+    def check_node_js(self, min_major: int) -> tuple[str, str]:
         path = shutil.which("node")
         if not path:
             raise RuntimeError(

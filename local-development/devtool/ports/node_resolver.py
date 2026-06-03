@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 class NodeResolver(ABC):
 
     @abstractmethod
-    def check_node(self, min_major: int) -> tuple[str, str]:
+    def check_node_js(self, min_major: int) -> tuple[str, str]:
         """Verify that Node.js is installed and meets the minimum version.
 
         Returns ``(resolved_path, version_string)`` — e.g.

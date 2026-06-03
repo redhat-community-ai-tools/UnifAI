@@ -74,7 +74,7 @@ services:
     infrastructure: [mongo, redis, temporal]
     env_file: ".env"
     env_entries:
-      RAG_BASE_URL: "http://127.0.0.1:13457"
+      BASE_URL: "http://127.0.0.1:13457" # RAG_BASE_URL
       secret_key: "<AUTO_GENERATE>"
     venv:
       strategy: "toml"
