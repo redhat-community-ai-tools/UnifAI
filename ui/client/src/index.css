@@ -37,6 +37,8 @@
     --secondary: 216, 13%, 65%;           /* gray (approx Tailwind gray-400 #9CA3AF) */
     --secondary-foreground: 0 0% 98%;
     --success: 95, 40%, 56%;              /* #63993d */
+    --warning: 45 93% 47%;               /* amber/yellow ~#E5A100 */
+    --error: 0 72% 51%;                  /* red ~#DE3B3B */
     --info: 199 89% 55%;                /* blue */
     /* Popover */
     --popover: 222 15% 14%;
@@ -89,6 +91,8 @@
     --secondary: 216, 13%, 65%;
     --secondary-foreground: 240 5.9% 10%;
     --success: 92 44% 41%;
+    --warning: 45 93% 47%;
+    --error: 0 72% 51%;
     --info: 199 89% 45%;
     /* Popover */
     --popover: 0 0% 100%;

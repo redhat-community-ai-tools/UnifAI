@@ -75,10 +75,10 @@ export function BlueprintsTable({ blueprints, colors }: BlueprintsTableProps) {
                                 <span className="text-red-400">Failed</span>
                                 <span className="font-medium">{bp.failed_runs ?? 0}</span>
                               </div>
-                              {(bp.in_progress_runs ?? 0) > 0 && (
+                              {(bp.active_runs ?? 0) > 0 && (
                                 <div className="flex justify-between gap-4">
-                                  <span className="text-yellow-400">In Progress</span>
-                                  <span className="font-medium">{bp.in_progress_runs}</span>
+                                  <span className="text-yellow-400">Active</span>
+                                  <span className="font-medium">{bp.active_runs}</span>
                                 </div>
                               )}
                             </div>

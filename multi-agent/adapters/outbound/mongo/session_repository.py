@@ -8,7 +8,7 @@ from mas.session.repository.repository import SessionRepository
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.models import SessionChat, TimeSeriesPoint, SystemAnalyticsData
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
-from mas.session.domain.status import SessionStatus
+from mas.session.domain.status import SessionStatus, NON_RUNNABLE_STATUSES
 from mas.core.identity import Identity, IdentityFieldKey
 from mas.core.dto import GroupedCount
 
@@ -308,8 +308,9 @@ class MongoSessionRepository(SessionRepository):
         ]
 
     def _blueprint_stats_facet(self) -> list:
-        """Aggregate execution metrics per blueprint."""
+        """Aggregate execution metrics per blueprint (non-runnable statuses excluded)."""
         return [
+            {"$match": {self._STATUS_FIELD: {"$nin": list(NON_RUNNABLE_STATUSES)}}},
             {"$group": {
                 "_id": f"${self._BLUEPRINT_FIELD}",
                 "total_runs": {"$sum": 1},
