@@ -295,8 +295,9 @@ class MongoSessionRepository(SessionRepository):
         ]
 
     def _owner_blueprint_facet(self) -> list:
-        """Group sessions by identity (type+id) and blueprint."""
+        """Group sessions by identity (type+id) and blueprint (non-runnable excluded)."""
         return [
+            {"$match": {self._STATUS_FIELD: {"$nin": list(NON_RUNNABLE_STATUSES)}}},
             {"$group": {
                 "_id": {
                     IdentityFieldKey.IDENTITY_TYPE: f"${self._IDENTITY_TYPE_FIELD}",
@@ -327,6 +328,18 @@ class MongoSessionRepository(SessionRepository):
                     "$sum": {
                         "$cond": [
                             {"$eq": [f"${self._STATUS_FIELD}", SessionStatus.FAILED.value]},
+                            1,
+                            0
+                        ]
+                    }
+                },
+                "active_runs": {
+                    "$sum": {
+                        "$cond": [
+                            {"$in": [f"${self._STATUS_FIELD}", [
+                                SessionStatus.RUNNING.value,
+                                SessionStatus.IN_USE.value,
+                            ]]},
                             1,
                             0
                         ]
@@ -377,6 +390,7 @@ class MongoSessionRepository(SessionRepository):
                 total_runs=doc.get("total_runs", 0),
                 completed_runs=doc.get("completed_runs", 0),
                 failed_runs=doc.get("failed_runs", 0),
+                active_runs=doc.get("active_runs", 0),
                 last_run=doc.get("last_run"),
                 avg_duration_ms=doc.get("avg_duration_ms"),
                 users=doc.get("users", [])

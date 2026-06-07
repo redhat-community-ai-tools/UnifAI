@@ -314,7 +314,8 @@ class StatisticsService:
             elif display_name and display_name != identity_id:
                 user_data[composite_key].display_name = display_name
             
-            user_data[composite_key].run_count += count
+            if status not in NON_RUNNABLE_STATUSES:
+                user_data[composite_key].run_count += count
             if status:
                 current = user_data[composite_key].status_breakdown.get(status, 0)
                 user_data[composite_key].status_breakdown[status] = current + count
@@ -334,15 +335,9 @@ class StatisticsService:
         for key, activity in user_data.items():
             activity.blueprints_used = len(identity_blueprints.get(key, set()))
         
-        def _actual_runs(activity: UserActivity) -> int:
-            return sum(
-                c for s, c in activity.status_breakdown.items()
-                if s not in NON_RUNNABLE_STATUSES
-            )
-
         result = sorted(
-            (a for a in user_data.values() if _actual_runs(a) > 0),
-            key=lambda x: _actual_runs(x),
+            (a for a in user_data.values() if a.run_count > 0),
+            key=lambda x: x.run_count,
             reverse=True,
         )
         
@@ -434,7 +429,7 @@ class StatisticsService:
                 success_rate=success_rate,
                 completed_runs=stats.completed_runs,
                 failed_runs=stats.failed_runs,
-                active_runs=stats.total_runs - terminal_runs,
+                active_runs=stats.active_runs,
                 user_list=stats.users
             ))
         
