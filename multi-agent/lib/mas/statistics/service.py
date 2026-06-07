@@ -7,6 +7,7 @@ from mas.resources.service import ResourcesService
 from mas.core.identity import Identity, IdentityFieldKey
 from mas.core.dto import GroupedCount
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
+from mas.session.domain.status import NON_RUNNABLE_STATUSES
 from global_utils.utils.time_utils import format_utc_iso
 from .models import (
     StatisticsResponse, ResourceCategoryStats, SystemStatsResponse,
@@ -333,7 +334,17 @@ class StatisticsService:
         for key, activity in user_data.items():
             activity.blueprints_used = len(identity_blueprints.get(key, set()))
         
-        result = sorted(user_data.values(), key=lambda x: x.run_count, reverse=True)
+        def _actual_runs(activity: UserActivity) -> int:
+            return sum(
+                c for s, c in activity.status_breakdown.items()
+                if s not in NON_RUNNABLE_STATUSES
+            )
+
+        result = sorted(
+            (a for a in user_data.values() if _actual_runs(a) > 0),
+            key=lambda x: _actual_runs(x),
+            reverse=True,
+        )
         
         if limit:
             result = result[:limit]
@@ -355,23 +366,26 @@ class StatisticsService:
             Tuple of (total_runs, unique_identities, status_breakdown dict)
         """
         total_runs = 0
-        identity_keys: Set[str] = set()
+        active_identity_keys: Set[str] = set()
         status_breakdown: Dict[str, int] = {}
         
         for item in status_counts:
             count = item.count
-            total_runs += count
+            status = item.get("status")
+            is_runnable = status not in NON_RUNNABLE_STATUSES
+            
+            if is_runnable:
+                total_runs += count
             
             identity_id = item.get(IdentityFieldKey.IDENTITY_ID)
             identity_type = item.get(IdentityFieldKey.IDENTITY_TYPE, "user")
-            if identity_id:
-                identity_keys.add(f"{identity_type}:{identity_id}")
+            if identity_id and is_runnable:
+                active_identity_keys.add(f"{identity_type}:{identity_id}")
             
-            status = item.get("status")
             if status:
                 status_breakdown[status] = status_breakdown.get(status, 0) + count
         
-        return total_runs, len(identity_keys), status_breakdown
+        return total_runs, len(active_identity_keys), status_breakdown
 
     def _build_blueprint_usage_list(
         self,
@@ -391,6 +405,7 @@ class StatisticsService:
             List of BlueprintUsage models sorted by run count descending
         """
         # Sort by total_runs to get top blueprints first
+        # (non-runnable statuses are already excluded at the DB layer)
         sorted_stats = sorted(blueprint_stats, key=lambda s: s.total_runs, reverse=True)[:limit]
         
         # Batch lookup blueprint names (only for top N)
@@ -414,7 +429,7 @@ class StatisticsService:
                 success_rate=success_rate,
                 completed_runs=stats.completed_runs,
                 failed_runs=stats.failed_runs,
-                in_progress_runs=stats.total_runs - terminal_runs,
+                active_runs=stats.total_runs - terminal_runs,
                 user_list=stats.users
             ))
         
