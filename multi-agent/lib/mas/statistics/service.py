@@ -387,6 +387,11 @@ class StatisticsService:
         
         return total_runs, len(active_identity_keys), status_breakdown
 
+    @staticmethod
+    def _count_unique_identities(user_entries: List[str]) -> int:
+        """Count distinct identities from 'type:id:display_name' entries."""
+        return len({':'.join(u.split(':')[:2]) for u in user_entries})
+
     def _build_blueprint_usage_list(
         self,
         blueprint_stats: List[BlueprintExecutionStats],
@@ -423,7 +428,7 @@ class StatisticsService:
                 blueprint_id=stats.blueprint_id,
                 blueprint_name=blueprint_names[stats.blueprint_id],
                 run_count=stats.total_runs,
-                unique_users=len(stats.users),
+                unique_users=self._count_unique_identities(stats.users),
                 avg_duration_seconds=avg_duration_seconds,
                 last_run_at=format_utc_iso(stats.last_run) if stats.last_run else None,
                 success_rate=success_rate,

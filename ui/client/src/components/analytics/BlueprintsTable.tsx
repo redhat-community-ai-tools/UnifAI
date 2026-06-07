@@ -99,12 +99,12 @@ export function BlueprintsTable({ blueprints, colors }: BlueprintsTableProps) {
                               <div className="max-h-32 overflow-y-auto">
                                 {bp.user_list && bp.user_list.length > 0 ? (
                                   bp.user_list.map((entry, i) => {
-                                    const [type, ...idParts] = entry.split(':');
-                                    const id = idParts.join(':');
+                                    const [type, id, ...nameParts] = entry.split(':');
+                                    const displayName = nameParts.join(':');
                                     return (
                                       <div key={i} className="text-gray-300 truncate flex items-center gap-1">
                                         {type === 'team' && <span className="text-blue-400">[team]</span>}
-                                        <span>{id || entry}</span>
+                                        <span>{displayName || id || entry}</span>
                                       </div>
                                     );
                                   })

@@ -360,6 +360,8 @@ class MongoSessionRepository(SessionRepository):
                             f"${self._IDENTITY_TYPE_FIELD}",
                             ":",
                             f"${self._IDENTITY_ID_FIELD}",
+                            ":",
+                            {"$ifNull": ["$identity.display_name", ""]},
                         ]
                     }
                 }
