@@ -107,4 +107,4 @@ jobs:
 
       - name: Evaluate Review Scores
         if: always()
-        run: scripts/evaluate-review-gate.sh
+        run: .github/scripts/evaluate-review-gate.sh
