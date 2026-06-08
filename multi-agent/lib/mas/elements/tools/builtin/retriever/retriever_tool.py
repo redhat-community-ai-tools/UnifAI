@@ -7,7 +7,7 @@ from typing import Any, Type, Optional
 from pydantic import BaseModel, Field
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.retrievers.common.base_retriever import BaseRetriever
-from global_utils.utils import to_snake_case
+from global_utils.utils.util import to_snake_case
 
 
 class RetrieverToolArgs(BaseModel):

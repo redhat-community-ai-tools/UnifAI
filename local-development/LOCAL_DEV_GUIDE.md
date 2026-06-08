@@ -995,6 +995,32 @@ Alternatively, install Docker and the tool will auto-detect it as a fallback.
 > [!TIP]
 > Container startup errors are captured in `/tmp/unifai-dev/logs/infra.log`. Check that file if containers silently fail to start.
 
+#### Ghost Celery/Temporal workers after restart
+
+When you run `unifai-dev start` again , the tmux session is terminated via SIGHUP. Celery interprets SIGHUP as a reload signal rather than a termination signal, so the worker process can survive as an orphan. (`destroy` / 'stop' sends Ctrl+C first, which Celery handles correctly — but if a task is mid-flight and the 10 s timeout expires, the same SIGHUP fallback applies.) Symptoms:
+
+- The new worker shows a **pidbox warning**: `A node named celery@... is already using this process mailbox!`
+- Tasks dispatched from RAG are consumed by the ghost (no output in your tmux pane)
+
+**Fix — kill the ghost manually:**
+
+```bash
+pkill -TERM -f 'celery.*worker'
+# or for temporal:
+pkill -TERM -f 'temporal-worker'
+```
+
+Then restart:
+
+```bash
+unifai-dev start rag-stack
+```
+
+> [!NOTE]
+> This only affects portless workers (celery-worker, temporal-worker). Port-based services (backend, rag, etc.) are detected and killed by the port-conflict check on every start.
+
+---
+
 #### Celery worker fails to connect
 
 If the Celery worker crashes with a connection error, RabbitMQ is likely not running. Verify:
@@ -1111,6 +1137,27 @@ Also verify you are connected to the **Red Hat SSO** — authentication-related 
 ---
 
 ### UI & Frontend
+
+#### Node.js version too old
+
+The UI requires **Node.js 22+**. If you use [nvm](https://github.com/nvm-sh/nvm) and your default version is older, `unifai-dev doctor` will report:
+
+```
+  ✖ Node.js: Node.js v18.17.0 is too old (requires 22+).
+```
+
+Fix it by switching to Node.js 22:
+
+```bash
+nvm install 22    # first time only
+nvm use 22
+```
+
+To make Node.js 22 your default so you don't have to run `nvm use` every session:
+
+```bash
+nvm alias default 22
+```
 
 #### `pnpm: command not found`
 

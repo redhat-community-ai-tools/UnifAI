@@ -4,7 +4,9 @@ import { Pagination } from "@/components/shared/Pagination";
 
 interface AllUsersTableProps {
   users: Array<{
-    user_id: string;
+    identity_id: string;
+    identity_type: string;
+    display_name: string;
     run_count: number;
     blueprints_used: number;
   }>;
@@ -22,7 +24,7 @@ export function AllUsersTable({ users, page, setPage, itemsPerPage }: AllUsersTa
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>User ID</TableHead>
+              <TableHead>Identity</TableHead>
               <TableHead className="text-right">Runs</TableHead>
               <TableHead className="text-right">Blueprints</TableHead>
             </TableRow>
@@ -32,7 +34,12 @@ export function AllUsersTable({ users, page, setPage, itemsPerPage }: AllUsersTa
               users.slice(page * itemsPerPage, (page + 1) * itemsPerPage).map((user, idx) => (
                 <TableRow key={idx} className="hover:bg-muted/50">
                   <TableCell className="font-medium text-sm truncate max-w-[200px]">
-                    {user.user_id}
+                    <span className="flex items-center gap-1.5">
+                      {user.identity_type === 'team' && (
+                        <span className="text-xs text-blue-400 font-normal">[team]</span>
+                      )}
+                      {user.display_name || user.identity_id}
+                    </span>
                   </TableCell>
                   <TableCell className="text-right text-sm">{user.run_count}</TableCell>
                   <TableCell className="text-right text-sm">{user.blueprints_used}</TableCell>

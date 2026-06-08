@@ -9,6 +9,7 @@ from pathlib import Path
 
 from devtool.domain.registry import Registry
 from devtool.ports.container_runtime import ContainerRuntime
+from devtool.ports.node_resolver import NodeResolver
 from devtool.services.env_service import EnvService
 from devtool.services.infra_service import InfraService
 from devtool.services.venv_service import VenvService
@@ -24,6 +25,7 @@ class InitService:
         infra_service: InfraService,
         venv_service: VenvService,
         env_service: EnvService,
+        node_resolver: NodeResolver,
     ) -> None:
         self._registry = registry
         self._root = root
@@ -31,6 +33,7 @@ class InitService:
         self._infra_svc = infra_service
         self._venv_svc = venv_service
         self._env_svc = env_service
+        self._node_resolver = node_resolver
 
     def init(self, *, non_interactive: bool = False) -> None:
         """First-time setup: prerequisites, infra, venvs, env, patches."""
@@ -40,6 +43,15 @@ class InitService:
         print("1/6  Checking prerequisites…")
         python, python_minor = self._venv_svc.detect_python()
         print(f"  ✔ Python: {python} ({python_minor})")
+
+        if self._registry.has_node_services() and self._registry.node_min is not None:
+            try:
+                node_path, node_ver = self._node_resolver.check_node_js(
+                    self._registry.node_min,
+                )
+                print(f"  ✔ Node.js: {node_ver} ({node_path})")
+            except RuntimeError as exc:
+                print(f"  ✖ Node.js: {exc}")
 
         print(f"  ✔ Container runtime: {self._runtime.runtime_name}")
 

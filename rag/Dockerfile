@@ -21,6 +21,6 @@ RUN python3 -m venv venv
 # Activate venv and install requirements
 RUN /bin/bash -c "source venv/bin/activate && \
     pip install -e . && \
-    pip install -e ../global_utils/"
+    pip install -e '../global_utils/[rag]'"
 
 ENTRYPOINT ["./entrypoint.sh"]

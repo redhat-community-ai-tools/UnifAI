@@ -7,7 +7,9 @@ import type { TimeRange } from "@/types/systemStats";
 
 interface ActiveTodayTableProps {
   users: Array<{
-    user_id: string;
+    identity_id: string;
+    identity_type: string;
+    display_name: string;
     run_count: number;
     status_breakdown?: {
       COMPLETED?: number;
@@ -62,7 +64,7 @@ export function ActiveTodayTable({ users, page, setPage, itemsPerPage, timeRange
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>User ID</TableHead>
+              <TableHead>Identity</TableHead>
               <TableHead className="text-right">Runs</TableHead>
               <TableHead className="text-right">Status</TableHead>
             </TableRow>
@@ -72,7 +74,12 @@ export function ActiveTodayTable({ users, page, setPage, itemsPerPage, timeRange
               users.slice(page * itemsPerPage, (page + 1) * itemsPerPage).map((user, idx) => (
                 <TableRow key={idx} className="hover:bg-muted/50">
                   <TableCell className="font-medium text-sm truncate max-w-[200px]">
-                    {user.user_id}
+                    <span className="flex items-center gap-1.5">
+                      {user.identity_type === 'team' && (
+                        <span className="text-xs text-blue-400 font-normal">[team]</span>
+                      )}
+                      {user.display_name || user.identity_id}
+                    </span>
                   </TableCell>
                   <TableCell className="text-right text-sm">{user.run_count}</TableCell>
                   <TableCell className="text-right">

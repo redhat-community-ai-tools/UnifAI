@@ -4,6 +4,9 @@ python:
   min: "3.11"
   max: "3.13"
 
+node:
+  min: "22"
+
 infrastructure:
   mongo:
     image: "docker.io/library/mongo:latest"
@@ -41,7 +44,8 @@ services:
       hostname_local: "127.0.0.1"
       secret_key: "<AUTO_GENERATE>"
     venv:
-      strategy: "requirements"
+      strategy: "toml"
+      global_utils_extra: "backend"
     launch: "python -m run.dev"
 
   rag:
@@ -57,7 +61,8 @@ services:
       port: "13457"
       secret_key: "<AUTO_GENERATE>"
     venv:
-      strategy: "requirements"
+      strategy: "toml"
+      global_utils_extra: "rag"
     launch: "python -m bootstrap.flask_app"
 
   multi-agent:
@@ -69,13 +74,12 @@ services:
     infrastructure: [mongo, redis, temporal]
     env_file: ".env"
     env_entries:
+      BASE_URL: "http://127.0.0.1:13457" # RAG_BASE_URL
       secret_key: "<AUTO_GENERATE>"
     venv:
-      strategy: "custom"
-      commands:
-        - "{python} -m venv venv"
-        - "venv/bin/pip install -e .[all]"
-        - "venv/bin/pip install -e ../global_utils"
+      strategy: "toml"
+      pip_extras: "all"
+      global_utils_extra: "multi-agent"
     launch: "HOSTNAME=0.0.0.0 mas api dev"
 
   identity:
@@ -98,6 +102,7 @@ services:
       secret_key: "<AUTO_GENERATE>"
     venv:
       strategy: "toml"
+      global_utils_extra: "identity"
     launch: "python -m bootstrap.flask_app"
 
   ui:
@@ -128,7 +133,7 @@ services:
       strategy: "none"
     launch: >-
       celery -A infrastructure.celery.app worker
-      -Q document_queue,slack_queue -l info
+      -Q document_queue,slack_queue -l info --pool=solo
 
   temporal-worker:
     directory: "multi-agent"

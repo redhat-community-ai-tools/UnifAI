@@ -20,7 +20,7 @@ class BlueprintExecutionStats(BaseModel):
     total_runs: int = Field(0, description="Total number of executions")
     completed_runs: int = Field(0, description="Number of COMPLETED executions")
     failed_runs: int = Field(0, description="Number of FAILED executions")
-    last_run: Optional[str] = Field(None, description="ISO timestamp of most recent execution")
+    last_run: Optional[datetime] = Field(None, description="Timestamp of most recent execution")
     avg_duration_ms: Optional[float] = Field(None, description="Average duration in milliseconds")
     users: List[str] = Field(default_factory=list, description="Distinct runner identities as ``type:id`` strings (e.g. ``user:alice``, ``team:acme``)")
 

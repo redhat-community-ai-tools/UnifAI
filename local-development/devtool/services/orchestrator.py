@@ -92,8 +92,8 @@ class Orchestrator:
 
     def stop(self) -> None:
         if self._session.is_running(SESSION_NAME):
-            self._session.kill_session(SESSION_NAME)
-            print(f"Session '{SESSION_NAME}' destroyed.")
+            self._session.graceful_stop(SESSION_NAME)
+            print("Services stopped.")
         else:
             print(f"No session '{SESSION_NAME}' found.")
 

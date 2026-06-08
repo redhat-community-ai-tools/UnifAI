@@ -68,7 +68,7 @@ Before writing any design, answer all of the following. Address each explicitly 
 
 ## Architectural Constraints
 
-- All designs MUST follow **Hexagonal Architecture (Ports & Adapters)**.
+- Where relevant (for example: backend coding) All designs MUST follow **Hexagonal Architecture (Ports & Adapters)**.
 - Dependencies flow: Adapters → Application → Domain. Never the reverse.
 - Business logic lives ONLY in the Domain layer (or Application layer for orchestration rules).
 - External integrations are accessed through Ports (interfaces) implemented by Adapters.

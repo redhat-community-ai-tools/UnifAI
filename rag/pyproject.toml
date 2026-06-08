@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag"
+version = "1.0.0"
+description = "RAG Service"
+requires-python = ">=3.11"
+license = {text = "Proprietary"}
+
+dependencies = [
+    "flask",
+    "flask-cors",
+    "requests",
+    "tiktoken",
+    "langchain-text-splitters",
+    "numpy",
+    "qdrant-client",
+    "pydantic==2.11.7",
+    "umami-analytics",
+    "pymongo",
+    "webargs",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests", "tests.*", "venv", "venv.*"]

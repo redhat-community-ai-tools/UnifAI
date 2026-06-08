@@ -12,7 +12,7 @@ from core.data_sources.domain.repository import DataSourceRepository
 from core.registration.base_registration import BaseRegistration
 from core.validation.validator import Validator
 from core.data_sources.types.document.validators.factory import DocValidators
-from global_utils.utils import secure_filename, compute_file_md5, cleanup_file
+from global_utils.utils.file_utils import secure_filename, compute_file_md5, cleanup_file
 
 
 @dataclass

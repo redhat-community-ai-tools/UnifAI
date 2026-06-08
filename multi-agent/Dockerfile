@@ -57,6 +57,6 @@ ENV VIRTUAL_ENV=$HOME/app/venv
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
 RUN pip install -e "./app/[all]"
-RUN /bin/bash -c "pip install -e ./global_utils/"
+RUN /bin/bash -c "pip install -e './global_utils/[multi-agent]'"
 
 ENTRYPOINT ["./app/entrypoint.sh"]

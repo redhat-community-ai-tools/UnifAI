@@ -16,8 +16,8 @@ RUN pip3 install --upgrade pip virtualenv
 RUN python3 -m venv venv
 
 RUN /bin/bash -c "source venv/bin/activate && \
-    pip install -r requirements.txt && \
-    pip install -e ../global_utils/"
+    pip install -e . && \
+    pip install -e '../global_utils/[backend]'"
 
 ENV ROLE=flask \
     PORT=8005 \

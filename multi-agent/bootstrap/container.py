@@ -150,7 +150,7 @@ class AppContainer(metaclass=SingletonMeta):
         pending_store = None
         if redis_url:
             import redis as redis_lib
-            redis_client = redis_lib.Redis.from_url(redis_url)
+            redis_client = redis_lib.Redis.from_url(redis_url, socket_timeout=30)
             pending_store = RedisFlowStateStore(
                 redis_client=redis_client,
                 encryption_key=cfg.credential_encryption_key,
