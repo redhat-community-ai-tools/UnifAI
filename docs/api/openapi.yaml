@@ -1,11 +1,79 @@
 openapi: 3.0.3
 info:
   title: UnifAI API
-  description: The UnifAI REST API for programmatic workflow execution.
   version: 1.0.0
-  termsOfService: https://unifai.example.com/terms
   contact:
     name: UnifAI Support
+  description: |
+    The UnifAI REST API enables programmatic access to the multi-agent
+    workflow platform. Build, configure, and execute AI workflows without
+    the UI.
+
+    ## Authentication
+
+    All endpoints require a valid Bearer token. To obtain a token:
+
+    1. **Authenticate via SSO** — Use the UnifAI CLI or browser-based login
+       on a machine with browser access. This completes a standard Red Hat
+       SSO (Keycloak) login and establishes a session.
+
+    2. **Generate an API token** — Call `POST /api/tokens/create` with
+       your active session. The returned token can be used from any machine
+       (CI/CD pipelines, remote servers, scripts) without further browser
+       interaction.
+
+    3. **Include the token** in every request:
+       ```
+       Authorization: Bearer <your_token>
+       ```
+
+    Tokens are valid for 90 days. Unauthenticated requests receive a
+    `401` response with a login URL.
+
+    ## Quick Start
+
+    **Run an existing workflow:**
+    ```bash
+    # 1. Create a session from a blueprint
+    POST /api/sessions/user.session.create
+    { "userId": "you", "blueprintId": "<id>" }
+
+    # 2. Execute it
+    POST /api/sessions/user.session.execute
+    { "userId": "you", "sessionId": "<id>", "inputs": { "user_prompt": "..." } }
+    ```
+
+    **Create resources and a workflow from scratch:**
+    ```bash
+    # 1. Create an LLM
+    POST /api/resources/resource.create { ... }
+
+    # 2. Create a node that uses the LLM
+    POST /api/resources/resource.create { ... }
+
+    # 3. Create a blueprint referencing the node
+    POST /api/blueprints/blueprint.save { ... }
+
+    # 4. Run it
+    POST /api/sessions/user.session.create + execute
+    ```
+
+    **Browse what's available:**
+    ```bash
+    GET /api/blueprints/available.blueprints.summary.get
+    GET /api/resources/resources.list?category=llms
+    GET /api/catalog/elements.list.get?category=tools
+    ```
+
+    ## Key Concepts
+
+    - **Resource** — A configured element (LLM, tool, provider, node, retriever).
+    - **Blueprint** — A workflow graph composed of resources. Defines which nodes
+      run and in what order.
+    - **Session** — A running instance of a blueprint. Supports multi-turn
+      conversations.
+    - **Template** — A pre-built blueprint pattern. Instantiate with your own
+      parameters to create a ready-to-run blueprint.
 
 servers:
   - url: https://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com
@@ -18,11 +86,22 @@ tags:
   - name: Health
     description: Service health and version information.
   - name: Authentication
-    description: Obtain a session token via OAuth 2.0 Device Authorization Grant.
+    description: |
+      Authenticate via SSO and manage API tokens.
+
+      1. Sign in via SSO (requires a browser on the same machine).
+      2. Create an API token using your authenticated session.
+      3. Use the token for all subsequent requests from any machine.
+  - name: Tokens
+    description: Create, list, and revoke API tokens for programmatic access.
   - name: Sessions
     description: Create and execute multi-agent workflow sessions.
   - name: Blueprints
     description: List and inspect available workflow blueprints.
+  - name: Resources
+    description: Create and manage workflow elements (LLMs, tools, providers, nodes, retrievers).
+  - name: Catalog
+    description: Discover available element types and their configuration schemas.
 
 paths:
   /api/health/:
@@ -66,66 +145,149 @@ paths:
                     type: string
                     example: "1.0.0"
 
-  /api/auth/authorize:
-    post:
+  /api/auth/login:
+    get:
       tags: [Authentication]
-      summary: Request device code
-      operationId: createDeviceAuthorization
+      summary: SSO Login
+      operationId: ssoLogin
       description: >-
-        Initiates the OAuth 2.0 Device Authorization Grant. Returns a short-lived
-        user code and a verification URI. Direct the user to open the URI and enter
-        the code to complete authentication.
+        Redirects to the Red Hat SSO (Keycloak) login page. After
+        successful authentication, a session is created. This endpoint
+        must be opened in a browser on the same machine. Use the
+        UnifAI CLI (`unifai auth login`) for an automated flow.
       security: []
+      parameters:
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+          description: >-
+            Encoded state parameter (base64 JSON containing callback info).
+            The CLI generates this automatically.
+      responses:
+        '302':
+          description: Redirects to Keycloak SSO login page.
+
+  /api/tokens/create:
+    post:
+      tags: [Tokens]
+      summary: Create an API token
+      operationId: createToken
+      description: >-
+        Generates a new API token for programmatic access. Requires an active
+        SSO session (authenticated via browser). The returned token can be
+        used from any machine as `Authorization: Bearer <token>`. Tokens
+        expire after 90 days.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: A label to identify this token (e.g., "ci-pipeline", "dev-laptop").
+                  example: "my-automation"
+      responses:
+        '201':
+          description: Token created. The plaintext token is shown only once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: >-
+                      The API token. Save this — it cannot be retrieved again.
+                    example: "unifai_t_7f3a9b2c1d4e5f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f"
+                  name:
+                    type: string
+                    example: "my-automation"
+                  expires_at:
+                    type: string
+                    format: date-time
+                  expires_in:
+                    type: integer
+                    description: Token lifetime in seconds.
+                    example: 7776000
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: A token with this name already exists.
+
+  /api/tokens/list:
+    get:
+      tags: [Tokens]
+      summary: List active tokens
+      operationId: listTokens
+      description: Returns all active (non-revoked) tokens for the authenticated user. No secrets are returned.
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DeviceAuthorizationResponse'
-        '502':
-          description: Authentication server unavailable.
+                type: object
+                properties:
+                  tokens:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                        expires_at:
+                          type: string
+                          format: date-time
+                        last_used_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
-  /api/auth/token:
+  /api/tokens/revoke:
     post:
-      tags: [Authentication]
-      summary: Poll for session token
-      operationId: createDeviceToken
-      description: >-
-        Exchanges a device code for a session token. Poll this endpoint at the
-        interval specified in the authorization response until the user completes
-        login or the code expires.
-      security: []
+      tags: [Tokens]
+      summary: Revoke a token
+      operationId: revokeToken
+      description: Permanently revokes a token by name. The token can no longer be used for authentication.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DeviceTokenRequest'
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: Name of the token to revoke.
+                  example: "my-automation"
       responses:
         '200':
-          description: OK — either authorization pending or token issued.
+          description: Token revoked.
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: '#/components/schemas/DeviceTokenPending'
-                  - $ref: '#/components/schemas/DeviceTokenSuccess'
-              examples:
-                pending:
-                  summary: Awaiting user login
-                  value:
-                    status: authorization_pending
-                success:
-                  summary: Token issued
-                  value:
-                    session_id: "550e8400-e29b-41d4-a716-446655440000"
-                    username: "jdoe"
-                    expires_in: 36000
-        '400':
-          description: Invalid device code or token exchange failure.
-        '410':
-          description: Device code expired. Restart the authorization flow.
+                type: object
+                properties:
+                  revoked:
+                    type: boolean
+                    example: true
+                  name:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Token not found or already revoked.
 
   /api/sessions/user.session.create:
     post:
@@ -287,21 +449,28 @@ paths:
       description: >-
         Starts a background workflow execution and returns immediately with a
         workflow handle. Use this for long-running sessions where blocking is
-        undesirable. Poll the status endpoint to track progress.
+        undesirable. Poll GET /api/sessions/session.status.get to track progress.
+        Retrieve results with GET /api/sessions/session.chat.get once status is COMPLETED.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [sessionId, inputs]
+              required: [userId, sessionId, inputs]
               properties:
+                userId:
+                  type: string
+                  description: Must match the authenticated user.
+                  example: "john.doe"
                 sessionId:
                   type: string
                   description: Session ID returned by the create endpoint.
+                  example: "550e8400-e29b-41d4-a716-446655440000"
                 inputs:
                   type: object
-                  description: Input values for the workflow graph.
+                  description: >-
+                    Input values for the workflow. Same format as the execute endpoint.
                   example:
                     user_prompt: "Generate a monthly report."
       responses:
@@ -331,7 +500,8 @@ paths:
       operationId: cancelSession
       description: >-
         Requests cancellation of a running or queued session. Returns the
-        updated status on success.
+        updated status on success. Only sessions in QUEUED or RUNNING state
+        can be cancelled.
       requestBody:
         required: true
         content:
@@ -342,6 +512,8 @@ paths:
               properties:
                 sessionId:
                   type: string
+                  description: The session to cancel.
+                  example: "550e8400-e29b-41d4-a716-446655440000"
       responses:
         '200':
           description: OK — session cancelled.
@@ -453,6 +625,736 @@ paths:
         '404':
           description: Blueprint not found.
 
+  /api/blueprints/blueprint.save:
+    post:
+      tags: [Blueprints]
+      summary: Create a blueprint
+      operationId: createBlueprint
+      description: >-
+        Creates a new blueprint from a raw definition. The blueprint defines
+        a workflow graph: which nodes to run, in what order, and with what
+        resources. All resources referenced via $ref must already exist.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, blueprintRaw]
+              properties:
+                userId:
+                  type: string
+                  description: Must match the authenticated user.
+                blueprintRaw:
+                  type: object
+                  description: >-
+                    The blueprint definition. Defines the workflow graph — which
+                    nodes to run, in what order, and with what resources.
+                    All resource rids must be created beforehand via
+                    POST /api/resources/resource.create.
+                  required: [llms, providers, tools, nodes, retrievers, conditions, plan]
+                  properties:
+                    llms:
+                      type: array
+                      description: LLM resource references.
+                      items:
+                        type: object
+                        properties:
+                          rid:
+                            type: string
+                            description: Reference to an LLM resource.
+                            example: "$ref:<rid_of_llm>"
+                    providers:
+                      type: array
+                      description: MCP provider resource references.
+                      items:
+                        type: object
+                        properties:
+                          rid:
+                            type: string
+                            description: Reference to a provider resource.
+                            example: "$ref:<rid_of_provider>"
+                    tools:
+                      type: array
+                      description: Tool resource references.
+                      items:
+                        type: object
+                        properties:
+                          rid:
+                            type: string
+                            description: Reference to a tool resource.
+                            example: "$ref:<rid_of_tool>"
+                    nodes:
+                      type: array
+                      description: Node resource references.
+                      items:
+                        type: object
+                        properties:
+                          rid:
+                            type: string
+                            description: Reference to a node resource.
+                            example: "$ref:<rid_of_node>"
+                    retrievers:
+                      type: array
+                      description: Retriever resource references.
+                      items:
+                        type: object
+                        properties:
+                          rid:
+                            type: string
+                            description: Reference to a retriever resource.
+                            example: "$ref:<rid_of_retriever>"
+                    conditions:
+                      type: array
+                      description: Condition resource references (empty array if none).
+                      items:
+                        type: object
+                        properties:
+                          rid:
+                            type: string
+                    plan:
+                      type: array
+                      description: >-
+                        Execution steps defining the workflow graph.
+                        The after field creates edges (execution order) between steps.
+                      items:
+                        type: object
+                        required: [uid, node]
+                        properties:
+                          uid:
+                            type: string
+                            description: Unique step identifier.
+                            example: "step_1"
+                          node:
+                            type: string
+                            description: Reference to the node resource that runs in this step.
+                            example: "$ref:<rid_of_node>"
+                          after:
+                            type: string
+                            description: >-
+                              Step uid that must complete before this one runs.
+                              Omit for the first step. This defines the graph edges.
+                              Use a comma-separated string or array for multiple dependencies.
+                            example: "step_1"
+                          exit_condition:
+                            type: string
+                            description: Reference to a condition resource for branching.
+                            example: "$ref:<rid_of_condition>"
+                          branches:
+                            type: object
+                            description: Branch definitions when using conditions.
+                metadata:
+                  type: object
+                  description: >-
+                    Optional metadata for the blueprint.
+                  properties:
+                    name:
+                      type: string
+                      description: Display name for the blueprint.
+                    description:
+                      type: string
+                      description: What this workflow does.
+            examples:
+              single_agent:
+                summary: "Single agent workflow"
+                description: >-
+                  A simple workflow with one agent node that uses an LLM and tools.
+                  All resources are referenced by their rid (created beforehand).
+                value:
+                  userId: "john.doe"
+                  blueprintRaw: |
+                    {
+                      "llms": [{"rid": "$ref:<rid_of_llm>"}],
+                      "providers": [{"rid": "$ref:<rid_of_mcp_provider>"}],
+                      "tools": [{"rid": "$ref:<rid_of_tool>"}],
+                      "nodes": [{"rid": "$ref:<rid_of_agent_node>"}],
+                      "retrievers": [],
+                      "conditions": [],
+                      "plan": [
+                        {
+                          "uid": "step_1",
+                          "node": "$ref:<rid_of_agent_node>"
+                        }
+                      ]
+                    }
+                  metadata:
+                    name: "My Single Agent"
+                    description: "A simple agent that answers questions"
+              two_agents:
+                summary: "Two agents with handoff"
+                description: >-
+                  Two agent nodes in sequence. The first processes, then hands
+                  off to the second.
+                value:
+                  userId: "john.doe"
+                  blueprintRaw: |
+                    {
+                      "llms": [{"rid": "$ref:<rid_of_llm>"}],
+                      "providers": [],
+                      "tools": [],
+                      "nodes": [
+                        {"rid": "$ref:<rid_of_agent_1>"},
+                        {"rid": "$ref:<rid_of_agent_2>"}
+                      ],
+                      "retrievers": [],
+                      "conditions": [],
+                      "plan": [
+                        {
+                          "uid": "research",
+                          "node": "$ref:<rid_of_agent_1>"
+                        },
+                        {
+                          "uid": "summarize",
+                          "after": "research",
+                          "node": "$ref:<rid_of_agent_2>"
+                        }
+                      ]
+                    }
+                  metadata:
+                    name: "Research & Summarize"
+                    description: "Agent 1 researches, Agent 2 summarizes"
+              orchestrator:
+                summary: "Orchestrator with worker agents"
+                description: >-
+                  An orchestrator node that dynamically delegates to
+                  adjacent worker nodes.
+                value:
+                  userId: "john.doe"
+                  blueprintRaw: |
+                    {
+                      "llms": [{"rid": "$ref:<rid_of_llm>"}],
+                      "providers": [{"rid": "$ref:<rid_of_mcp_provider>"}],
+                      "tools": [{"rid": "$ref:<rid_of_tool>"}],
+                      "nodes": [
+                        {"rid": "$ref:<rid_of_orchestrator>"},
+                        {"rid": "$ref:<rid_of_worker_1>"},
+                        {"rid": "$ref:<rid_of_worker_2>"}
+                      ],
+                      "retrievers": [],
+                      "conditions": [],
+                      "plan": [
+                        {
+                          "uid": "orchestrator",
+                          "node": "$ref:<rid_of_orchestrator>"
+                        },
+                        {
+                          "uid": "worker_1",
+                          "after": "orchestrator",
+                          "node": "$ref:<rid_of_worker_1>"
+                        },
+                        {
+                          "uid": "worker_2",
+                          "after": "orchestrator",
+                          "node": "$ref:<rid_of_worker_2>"
+                        }
+                      ]
+                    }
+                  metadata:
+                    name: "Orchestrated Workflow"
+      responses:
+        '201':
+          description: Blueprint created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  blueprint_id:
+                    type: string
+        '400':
+          description: Invalid blueprint definition.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/templates/template.materialize:
+    post:
+      tags: [Blueprints]
+      summary: Create a blueprint from a template
+      operationId: materializeTemplate
+      description: >-
+        Creates a blueprint by instantiating a pre-built template with
+        user-provided values. This is the simplest way to create a workflow —
+        pick a template, fill in the parameters, and get a ready-to-run blueprint.
+        Use GET /api/templates/templates.list to discover available templates.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, templateId, input]
+              properties:
+                userId:
+                  type: string
+                  description: Must match the authenticated user.
+                templateId:
+                  type: string
+                  description: ID of the template to instantiate.
+                input:
+                  type: object
+                  description: >-
+                    Values for the template's input parameters. Use
+                    GET /api/templates/template.get to see required fields.
+                blueprintName:
+                  type: string
+                  description: Optional name for the created blueprint.
+            examples:
+              basic:
+                summary: "Instantiate a template with LLM selection"
+                value:
+                  userId: "john.doe"
+                  templateId: "tmpl_abc123"
+                  input:
+                    llm_resource_id: "<rid_of_llm>"
+                    system_prompt: "You are a helpful DevOps assistant."
+                  blueprintName: "My DevOps Agent"
+      responses:
+        '201':
+          description: Blueprint created from template.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  blueprint_id:
+                    type: string
+                  template_id:
+                    type: string
+                  fields_filled:
+                    type: integer
+                  name:
+                    type: string
+        '400':
+          description: Invalid input parameters.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Template not found.
+
+  /api/resources/resource.create:
+    post:
+      tags: [Resources]
+      summary: Create a resource
+      operationId: createResource
+      description: >-
+        Validates and creates a new element resource. Returns 422 with
+        validation details if the configuration is invalid (e.g., unreachable
+        server, bad credentials). Resources are the building blocks of
+        blueprints — LLMs, tools, providers, nodes, and retrievers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateResourceRequest'
+            examples:
+              # ── LLMs ─────────────────────────────────────
+              llm_openai:
+                summary: "LLM: OpenAI / OpenAI-compatible"
+                description: >-
+                  Works with OpenAI, Azure OpenAI, or any OpenAI-compatible
+                  endpoint (vLLM, Ollama, Google Gemini via OpenAI compat).
+                value:
+                  userId: "john.doe"
+                  category: llms
+                  type: openai
+                  name: "my-gpt4"
+                  config:
+                    type: openai
+                    model_name: "gpt-4"
+                    api_key: "sk-..."
+                    base_url: "https://api.openai.com/v1"
+                    temperature: 0.7
+                    max_tokens: 4096
+              llm_openai_gemini:
+                summary: "LLM: Google Gemini (via OpenAI-compatible endpoint)"
+                value:
+                  userId: "john.doe"
+                  category: llms
+                  type: openai
+                  name: "gemini-flash"
+                  config:
+                    type: openai
+                    model_name: "gemini-2.0-flash"
+                    api_key: "AIzaSy..."
+                    base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+              llm_google_native:
+                summary: "LLM: Google Gemini (native SDK)"
+                description: Uses Google's native Generative AI SDK. No base_url needed.
+                value:
+                  userId: "john.doe"
+                  category: llms
+                  type: google_genai
+                  name: "gemini-native"
+                  config:
+                    type: google_genai
+                    model_name: "gemini-2.0-flash"
+                    api_key: "AIzaSy..."
+                    temperature: 0.7
+                    max_tokens: 8192
+              # ── Providers ────────────────────────────────
+              provider_mcp_token:
+                summary: "Provider: MCP Server (with API key)"
+                description: >-
+                  For API access, only access_token auth is supported.
+                  The bearer_token is stored securely in the credential store
+                  on save. Fields server_identifier and scheme_type are set
+                  automatically. For MCP servers requiring OAuth sign-in,
+                  use the UnifAI UI.
+                value:
+                  userId: "john.doe"
+                  category: providers
+                  type: mcp_server
+                  name: "my-mcp-server"
+                  config:
+                    type: mcp_server
+                    mcp_url: "https://my-mcp-server.example.com/sse"
+                    transport_type: "streamable_http"
+                    auth_method: "access_token"
+                    bearer_token: "my-api-key-or-token"
+              provider_mcp_no_auth:
+                summary: "Provider: MCP Server (no auth)"
+                value:
+                  userId: "john.doe"
+                  category: providers
+                  type: mcp_server
+                  name: "local-mcp"
+                  config:
+                    type: mcp_server
+                    mcp_url: "http://localhost:8004/sse"
+                    transport_type: "sse"
+              # ── Tools ────────────────────────────────────
+              tool_mcp_proxy:
+                summary: "Tool: MCP Proxy (exposes a tool from an MCP provider)"
+                description: >-
+                  References an existing MCP provider resource via $ref.
+                  The tool_name must match a tool exposed by that server.
+                value:
+                  userId: "john.doe"
+                  category: tools
+                  type: mcp_proxy
+                  name: "search-tool"
+                  config:
+                    type: mcp_proxy
+                    tool_name: "search"
+                    provider: "$ref:<rid_of_mcp_provider>"
+              tool_web_fetch:
+                summary: "Tool: Web Fetch (fetches URLs)"
+                value:
+                  userId: "john.doe"
+                  category: tools
+                  type: web_fetch
+                  name: "web-fetcher"
+                  config:
+                    type: web_fetch
+              tool_ssh:
+                summary: "Tool: SSH Exec (runs commands on remote host)"
+                value:
+                  userId: "john.doe"
+                  category: tools
+                  type: ssh_exec
+                  name: "prod-server-ssh"
+                  config:
+                    type: ssh_exec
+                    host: "10.0.1.50"
+                    port: 22
+                    username: "deploy"
+                    password: "..."
+              tool_oc:
+                summary: "Tool: OpenShift CLI (runs oc commands)"
+                value:
+                  userId: "john.doe"
+                  category: tools
+                  type: oc_exec
+                  name: "my-cluster"
+                  config:
+                    type: oc_exec
+                    server: "https://api.cluster.example.com:6443"
+                    token: "sha256~..."
+                    skip_tls_verify: false
+              # ── Nodes ────────────────────────────────────
+              node_custom_agent:
+                summary: "Node: Custom Agent (LLM + tools)"
+                description: >-
+                  References LLM and tools via $ref:<rid>. Create those
+                  resources first, then use their RIDs here.
+                value:
+                  userId: "john.doe"
+                  category: nodes
+                  type: custom_agent_node
+                  name: "research-agent"
+                  config:
+                    type: custom_agent_node
+                    llm: "$ref:<rid_of_llm>"
+                    tools: ["$ref:<rid_of_tool_1>", "$ref:<rid_of_tool_2>"]
+                    providers: ["$ref:<rid_of_mcp_provider>"]
+                    system_message: "You are a research assistant. Use your tools to find accurate information."
+              node_orchestrator:
+                summary: "Node: Orchestrator (coordinates other nodes)"
+                value:
+                  userId: "john.doe"
+                  category: nodes
+                  type: orchestrator
+                  name: "coordinator"
+                  config:
+                    type: orchestrator
+                    llm: "$ref:<rid_of_llm>"
+                    system_message: "You coordinate research and documentation tasks."
+                    max_rounds: 50
+              # ── Retrievers ──────────────────────────────
+              retriever_docs:
+                summary: "Retriever: Document RAG"
+                value:
+                  userId: "john.doe"
+                  category: retrievers
+                  type: docs_rag
+                  name: "doc-search"
+                  config:
+                    type: docs_rag
+                    top_k_results: 5
+                    threshold: 0.7
+              retriever_slack:
+                summary: "Retriever: Slack Messages"
+                value:
+                  userId: "john.doe"
+                  category: retrievers
+                  type: slack
+                  name: "slack-search"
+                  config:
+                    type: slack
+                    top_k_results: 5
+                    threshold: 0.3
+      responses:
+        '201':
+          description: Resource created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '400':
+          description: Missing or malformed request fields.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: Validation failed — resource not created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Validation failed"
+                  validation:
+                    type: object
+                    description: Detailed validation results per element.
+
+  /api/resources/resource.get:
+    get:
+      tags: [Resources]
+      summary: Get a resource
+      operationId: getResource
+      description: Returns a single resource by ID.
+      parameters:
+        - name: resourceId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Resource not found.
+
+  /api/resources/resources.list:
+    get:
+      tags: [Resources]
+      summary: List resources
+      operationId: listResources
+      description: >-
+        Returns resources for the authenticated user. Filter by category
+        and/or type.
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [llms, tools, providers, nodes, retrievers, conditions]
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1000
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resources:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Resource'
+                  total:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/resources/resource.update:
+    put:
+      tags: [Resources]
+      summary: Update a resource
+      operationId: updateResource
+      description: Updates the configuration of an existing resource.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resourceId, config]
+              properties:
+                resourceId:
+                  type: string
+                name:
+                  type: string
+                config:
+                  type: object
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resource'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Resource not found.
+
+  /api/resources/resource.delete:
+    delete:
+      tags: [Resources]
+      summary: Delete a resource
+      operationId: deleteResource
+      description: Permanently removes a resource.
+      parameters:
+        - name: resourceId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Resource is in use by a blueprint.
+
+  /api/catalog/categories.list.get:
+    get:
+      tags: [Catalog]
+      summary: List element categories
+      operationId: listCategories
+      description: Returns all available resource categories.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example: ["llms", "tools", "providers", "nodes", "retrievers", "conditions"]
+
+  /api/catalog/elements.list.get:
+    get:
+      tags: [Catalog]
+      summary: List element types
+      operationId: listElements
+      description: Returns all available element types within a category.
+      parameters:
+        - name: category
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [llms, tools, providers, nodes, retrievers, conditions]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    name:
+                      type: string
+                    description:
+                      type: string
+
+  /api/catalog/element.spec.get:
+    get:
+      tags: [Catalog]
+      summary: Get element configuration schema
+      operationId: getElementSpec
+      description: >-
+        Returns the full JSON Schema for an element type's configuration.
+        Use this to understand what fields are required when creating a resource.
+      parameters:
+        - name: category
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: JSON Schema for the element's config object.
+
 components:
   securitySchemes:
     BearerAuth:
@@ -494,84 +1396,48 @@ components:
         error_type:
           type: string
 
-    DeviceAuthorizationResponse:
-      type: object
-      properties:
-        device_code:
-          type: string
-          description: Opaque token used when polling for the session token.
-        user_code:
-          type: string
-          description: Code the user enters at the verification URI.
-          example: ABCD-1234
-        verification_uri:
-          type: string
-          format: uri
-          description: URI the user must open to complete authentication.
-        verification_uri_complete:
-          type: string
-          format: uri
-          description: URI with the user code pre-filled.
-        expires_in:
-          type: integer
-          description: Seconds until the device code expires.
-          example: 600
-        interval:
-          type: integer
-          description: Minimum polling interval in seconds.
-          example: 5
-
-    DeviceTokenRequest:
-      type: object
-      required: [device_code]
-      properties:
-        device_code:
-          type: string
-          description: The device code from the authorization response.
-
-    DeviceTokenPending:
-      type: object
-      properties:
-        status:
-          type: string
-          enum: [authorization_pending, slow_down]
-
-    DeviceTokenSuccess:
-      type: object
-      properties:
-        session_id:
-          type: string
-          description: Bearer token for subsequent API requests.
-        username:
-          type: string
-          description: Authenticated user identifier.
-        expires_in:
-          type: integer
-          description: Token lifetime in seconds.
 
     CreateSessionRequest:
       type: object
-      required: [blueprintId]
+      required: [userId, blueprintId]
       properties:
+        userId:
+          type: string
+          description: Must match the authenticated user.
+          example: "john.doe"
         blueprintId:
           type: string
-          description: ID of the blueprint to instantiate.
+          description: >-
+            ID of the blueprint to run. Get available blueprints from
+            GET /api/blueprints/available.blueprints.summary.get.
+          example: "a1b2c3d4e5f6"
 
     ExecuteSessionRequest:
       type: object
-      required: [sessionId, inputs]
+      required: [userId, sessionId, inputs]
       properties:
+        userId:
+          type: string
+          description: Must match the authenticated user.
+          example: "john.doe"
         sessionId:
           type: string
           description: Session ID returned by the create endpoint.
+          example: "550e8400-e29b-41d4-a716-446655440000"
         inputs:
           type: object
-          description: Input values for the workflow graph.
+          description: >-
+            Input values for the workflow. The key depends on the blueprint's
+            entry node configuration. Most workflows expect `user_prompt`.
           example:
             user_prompt: "What is Kubernetes?"
         stream:
           type: boolean
-          description: When true, the response is an NDJSON event stream.
+          description: >-
+            When true, the response is a persistent NDJSON event stream.
+            Events arrive as they are produced (LLM tokens, tool calls, etc.).
+            When false (default), blocks until the workflow completes and
+            returns the full result as JSON.
           default: false
 
     SessionChat:
@@ -619,5 +1485,299 @@ components:
           type: string
           format: date-time
         updatedAt:
+          type: string
+          format: date-time
+
+    CreateResourceRequest:
+      type: object
+      required: [userId, category, type, name, config]
+      properties:
+        userId:
+          type: string
+          description: Must match the authenticated user.
+        category:
+          type: string
+          description: Element category.
+          enum: [llms, tools, providers, nodes, retrievers, conditions]
+        type:
+          type: string
+          description: Element type within the category. See examples for valid values per category.
+        name:
+          type: string
+          description: A human-readable name for this resource.
+        config:
+          type: object
+          description: >-
+            Type-specific configuration. See examples for each type, or use
+            GET /api/catalog/element.spec.get?category=X&type=Y for the full schema.
+
+    ConfigOpenAI:
+      description: "Config for type: openai (category: llms)"
+      type: object
+      required: [type, model_name, api_key, base_url]
+      properties:
+        type:
+          type: string
+          enum: [openai]
+        model_name:
+          type: string
+          description: Model ID (e.g., gpt-4, gpt-4o, gemini-2.0-flash).
+        api_key:
+          type: string
+          description: API key or token.
+        base_url:
+          type: string
+          format: uri
+          description: Base URL for the API endpoint.
+        temperature:
+          type: number
+          description: Sampling temperature (0.0–1.0).
+          default: 0.7
+        max_tokens:
+          type: integer
+          description: Maximum tokens to generate.
+          default: 4096
+        verify_ssl:
+          type: boolean
+          description: Verify SSL certificates.
+          default: true
+
+    ConfigGoogleGenAI:
+      description: "Config for type: google_genai (category: llms)"
+      type: object
+      required: [type, model_name, api_key]
+      properties:
+        type:
+          type: string
+          enum: [google_genai]
+        model_name:
+          type: string
+          description: Gemini model ID (e.g., gemini-2.0-flash, gemini-2.5-pro).
+          default: "gemini-2.0-flash"
+        api_key:
+          type: string
+          description: Google API key.
+        temperature:
+          type: number
+          description: Sampling temperature (0.0–2.0).
+          default: 0.7
+        max_tokens:
+          type: integer
+          description: Maximum tokens to generate.
+          default: 8192
+        top_p:
+          type: number
+          description: Top-p (nucleus) sampling (0.0–1.0). Optional.
+        top_k:
+          type: integer
+          description: Top-k sampling. Optional.
+
+    ConfigMcpServer:
+      description: "Config for type: mcp_server (category: providers)"
+      type: object
+      required: [type, mcp_url]
+      properties:
+        type:
+          type: string
+          enum: [mcp_server]
+        mcp_url:
+          type: string
+          format: uri
+          description: MCP server endpoint URL.
+        transport_type:
+          type: string
+          enum: [streamable_http, sse]
+          description: Transport protocol.
+          default: streamable_http
+        auth_method:
+          type: string
+          enum: [access_token, sign_in]
+          description: "Authentication method. Use access_token for API. sign_in requires the UI."
+          default: access_token
+        bearer_token:
+          type: string
+          description: API key or bearer token (stored securely, cleared from config on save).
+        additional_headers:
+          type: object
+          description: Extra HTTP headers for MCP requests.
+          default: {}
+
+    ConfigMcpProxy:
+      description: "Config for type: mcp_proxy (category: tools)"
+      type: object
+      required: [type, tool_name, provider]
+      properties:
+        type:
+          type: string
+          enum: [mcp_proxy]
+        tool_name:
+          type: string
+          description: Name of the tool exposed by the MCP server.
+        provider:
+          type: string
+          description: "Reference to an MCP provider resource: $ref:<rid_of_provider>."
+
+    ConfigWebFetch:
+      description: "Config for type: web_fetch (category: tools)"
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [web_fetch]
+
+    ConfigSshExec:
+      description: "Config for type: ssh_exec (category: tools)"
+      type: object
+      required: [type, host, username, password]
+      properties:
+        type:
+          type: string
+          enum: [ssh_exec]
+        host:
+          type: string
+          description: IP or hostname of the target machine.
+        port:
+          type: integer
+          description: SSH port.
+          default: 22
+        username:
+          type: string
+          description: SSH username.
+        password:
+          type: string
+          description: SSH password.
+
+    ConfigOcExec:
+      description: "Config for type: oc_exec (category: tools)"
+      type: object
+      required: [type, server, token]
+      properties:
+        type:
+          type: string
+          enum: [oc_exec]
+        server:
+          type: string
+          format: uri
+          description: OpenShift API server URL.
+        token:
+          type: string
+          description: OpenShift authentication token.
+        skip_tls_verify:
+          type: boolean
+          description: Skip TLS certificate verification.
+          default: false
+
+    ConfigCustomAgentNode:
+      description: "Config for type: custom_agent_node (category: nodes)"
+      type: object
+      required: [type, llm]
+      properties:
+        type:
+          type: string
+          enum: [custom_agent_node]
+        llm:
+          type: string
+          description: "Reference to an LLM resource: $ref:<rid_of_llm>."
+        tools:
+          type: array
+          items:
+            type: string
+          description: "List of tool references: [\"$ref:<rid>\", ...]."
+          default: []
+        providers:
+          type: array
+          items:
+            type: string
+          description: "List of MCP provider references: [\"$ref:<rid>\", ...]."
+          default: []
+        retriever:
+          type: string
+          description: "Reference to a retriever resource: $ref:<rid>. Optional."
+        system_message:
+          type: string
+          description: Custom system prompt for the agent.
+          default: ""
+        max_rounds:
+          type: integer
+          description: Maximum agent execution rounds.
+          default: 100
+
+    ConfigOrchestratorNode:
+      description: "Config for type: orchestrator_node (category: nodes)"
+      type: object
+      required: [type, llm]
+      properties:
+        type:
+          type: string
+          enum: [orchestrator_node]
+        llm:
+          type: string
+          description: "Reference to an LLM resource: $ref:<rid_of_llm>."
+        tools:
+          type: array
+          items:
+            type: string
+          description: "Optional domain-specific tools."
+          default: []
+        system_message:
+          type: string
+          description: Domain specialization message.
+          default: ""
+        max_rounds:
+          type: integer
+          description: Maximum planning/execution rounds.
+          default: 100
+
+    ConfigDocsRag:
+      description: "Config for type: docs_rag (category: retrievers)"
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [docs_rag]
+        top_k_results:
+          type: integer
+          description: Number of top document passages to return.
+          default: 3
+        threshold:
+          type: number
+          description: Minimum relevance score (0.0–1.0).
+          default: 0.7
+
+    ConfigSlackRetriever:
+      description: "Config for type: slack (category: retrievers)"
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [slack]
+        top_k_results:
+          type: integer
+          description: Number of top Slack messages to return.
+          default: 3
+        threshold:
+          type: number
+          description: Minimum relevance score (0.0–1.0).
+          default: 0.3
+
+    Resource:
+      type: object
+      properties:
+        rid:
+          type: string
+          description: Resource ID.
+        category:
+          type: string
+        type:
+          type: string
+        name:
+          type: string
+        cfg_dict:
+          type: object
+          description: The resource configuration.
+        created_at:
           type: string
           format: date-time

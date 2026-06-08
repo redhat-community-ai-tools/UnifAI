@@ -93,10 +93,13 @@ http {
            proxy_set_header Content-Type ${DOLLAR}http_content_type;
         }
 
-        # Public API — authenticated endpoints (token validated via auth_request)
+        # Public API — authenticated endpoints
+        # On 401, nginx forwards the validate endpoint's JSON response (with login_url)
         location /api/ {
            auth_request /_auth_validate;
            auth_request_set ${DOLLAR}authenticated_user ${DOLLAR}upstream_http_x_authenticated_user;
+
+           error_page 401 = @api_unauthorized;
 
            proxy_pass http://${MULTIAGENT_IP}:${MULTIAGENT_PORT}/api/;
            proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
@@ -110,6 +113,12 @@ http {
            proxy_read_timeout 600s;
            send_timeout 600s;
            proxy_buffering off;
+        }
+
+        # Named location: return 401 with login URL when auth fails
+        location @api_unauthorized {
+           default_type application/json;
+           return 401 '{"error":"Authentication required","login_url":"${IDENTITY_HOST}/api/auth/login"}';
         }
 
         location /api1/ {

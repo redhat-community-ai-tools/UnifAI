@@ -31,6 +31,44 @@ def save_resource(identity, category=None, type=None, name=None, config=None):
         return jsonify({"error": str(e)}), 500
 
 
+@resources_bp.route("/resource.create", methods=["POST"])
+@with_require_identity_authorization
+@from_body({
+    "category": fields.Str(required=True),
+    "type": fields.Str(required=True),
+    "name": fields.Str(required=True),
+    "config": fields.Dict(required=True),
+})
+def create_resource(identity, category=None, type=None, name=None, config=None):
+    """Validate and create a resource. Returns 422 if validation fails."""
+    svc = current_app.container.resources_service
+    try:
+        validation = svc.validate_config(
+            category=category,
+            element_type=type,
+            config=config,
+            name=name,
+        )
+        if not validation.is_valid:
+            return jsonify({
+                "error": "Validation failed",
+                "validation": validation.model_dump(),
+            }), 422
+
+        doc = svc.create(identity=identity,
+                         category=category,
+                         type=type,
+                         name=name,
+                         config=config)
+        return jsonify(doc.model_dump(mode="json")), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @resources_bp.route("/resource.get", methods=["GET"])
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
