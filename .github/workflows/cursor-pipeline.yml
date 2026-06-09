@@ -59,7 +59,7 @@ jobs:
             echo "::error::Failed to list models. Output: $MODEL_OUTPUT"
             exit 1
           }
-          if ! echo "$MODEL_OUTPUT" | grep -q "$PIPELINE_MODEL"; then
+          if ! echo "$MODEL_OUTPUT" | grep -qF "$PIPELINE_MODEL"; then
             echo "::error::Model '$PIPELINE_MODEL' is not available. Available models:"
             echo "$MODEL_OUTPUT"
             exit 1
@@ -69,11 +69,11 @@ jobs:
       # --force skips interactive confirmation. The agent runs in a read-only
       # checkout (contents: read permission) so it cannot push changes. The
       # CURSOR_API_KEY is scoped to this organization's Cursor account only.
-      - name: Run Design Review
+      - name: Run Architecture Review
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          agent --trust --force -p "/pipeline review-only -- Do NOT push or commit any changes to the repository" \
+          agent --trust --force -p "/pipeline arch-review" \
             --model "$PIPELINE_MODEL" 2>&1 | tee design_review_output.txt
 
       - name: Run Code Review
@@ -81,13 +81,13 @@ jobs:
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          agent --trust --force -p "/pipeline code-review-only -- Do NOT push or commit any changes to the repository" \
+          agent --trust --force -p "/pipeline code-review-only" \
             --model "$PIPELINE_MODEL" 2>&1 | tee code_review_output.txt
 
       - name: Publish results to Job Summary
         if: always()
         run: |
-          echo "## Design Review" >> $GITHUB_STEP_SUMMARY
+          echo "## Architecture Review" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f design_review_output.txt ]; then
             cat design_review_output.txt >> $GITHUB_STEP_SUMMARY

@@ -99,3 +99,9 @@ Thumbs.db
 # ---------------------
 # Global Python Utils
 *.egg-info/
+
+# ---------------------
+# Local Caches / User-local State
+# ---------------------
+.cache/
+.local/
