@@ -14,6 +14,10 @@ on:
         required: false
         default: "main"
 
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+  cancel-in-progress: true
+
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
@@ -22,6 +26,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      checks: write
 
     steps:
       - name: Resolve branch
@@ -74,10 +79,9 @@ jobs:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
           agent --trust --force -p "/pipeline arch-review" \
-            --model "$PIPELINE_MODEL" 2>&1 | tee design_review_output.txt
+            --model "$PIPELINE_MODEL" 2>&1 | tee arch_review_output.txt
 
       - name: Run Code Review
-        if: success()
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
@@ -89,8 +93,8 @@ jobs:
         run: |
           echo "## Architecture Review" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f design_review_output.txt ]; then
-            cat design_review_output.txt >> $GITHUB_STEP_SUMMARY
+          if [ -f arch_review_output.txt ]; then
+            cat arch_review_output.txt >> $GITHUB_STEP_SUMMARY
           else
             echo "_No output produced._" >> $GITHUB_STEP_SUMMARY
           fi
@@ -106,5 +110,66 @@ jobs:
           fi
 
       - name: Evaluate Review Scores
+        id: gate
         if: always()
         run: .github/scripts/evaluate-review-gate.sh
+
+      - name: Publish Check Run
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          ARCH_VERDICT=$(sed 's/\x1b\[[0-9;]*m//g' arch_review_output.txt 2>/dev/null | grep -oP '\*\*(?:APPROVE|NEEDS REVISION|REJECT)\*\*' | head -1 | tr -d '*' || echo "UNKNOWN")
+          CODE_SCORE=$(sed 's/\x1b\[[0-9;]*m//g' code_review_output.txt 2>/dev/null | grep -oP 'Code Health Score:\s*\K[0-9]{1,2}(?=/10)' | tail -1 || echo "?")
+
+          TITLE="Architecture: ${ARCH_VERDICT} | Code: ${CODE_SCORE}/10"
+
+          if [ "$GATE_OUTCOME" = "success" ]; then
+            CONCLUSION="success"
+          else
+            CONCLUSION="failure"
+          fi
+
+          {
+            echo "## Architecture Review"
+            echo ""
+            if [ -f arch_review_output.txt ]; then
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' arch_review_output.txt | head -c 30000
+              echo ""
+              echo '```'
+            else
+              echo "_No output produced._"
+            fi
+            echo ""
+            echo "## Code Review"
+            echo ""
+            if [ -f code_review_output.txt ]; then
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' code_review_output.txt | head -c 30000
+              echo ""
+              echo '```'
+            else
+              echo "_No output produced._"
+            fi
+          } > check_run_summary.md
+
+          SUMMARY=$(cat check_run_summary.md)
+
+          jq -n \
+            --arg name "Pipeline Review" \
+            --arg sha "$PR_HEAD_SHA" \
+            --arg conclusion "$CONCLUSION" \
+            --arg title "$TITLE" \
+            --arg summary "$SUMMARY" \
+            '{
+              name: $name,
+              head_sha: $sha,
+              status: "completed",
+              conclusion: $conclusion,
+              output: { title: $title, summary: $summary }
+            }' | gh api "repos/${GH_REPOSITORY}/check-runs" \
+              -X POST --input -
