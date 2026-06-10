@@ -306,31 +306,31 @@
     <div class="metrics-grid">
         <div class="metric-card">
             <div class="label">Open PRs Awaiting Review</div>
-            <div class="value">{{ metrics.open_prs }}</div>
+            <div class="value" id="metric-open-prs">{{ metrics.open_prs }}</div>
         </div>
         <div class="metric-card">
             <div class="label">Avg Time to First Review</div>
-            <div class="value">{{ metrics.avg_time_to_first_review_hours }}<span class="unit">hrs</span></div>
+            <div class="value" id="metric-ttfr">{{ metrics.avg_time_to_first_review_hours }}<span class="unit">hrs</span></div>
         </div>
         <div class="metric-card">
             <div class="label">Avg Review to Merge</div>
-            <div class="value">{{ metrics.avg_time_review_to_merge_hours }}<span class="unit">hrs</span></div>
+            <div class="value" id="metric-rtm">{{ metrics.avg_time_review_to_merge_hours }}<span class="unit">hrs</span></div>
         </div>
         <div class="metric-card">
             <div class="label">Avg Time to Merge</div>
-            <div class="value">{{ metrics.avg_time_to_merge_hours }}<span class="unit">hrs</span></div>
+            <div class="value" id="metric-ttm">{{ metrics.avg_time_to_merge_hours }}<span class="unit">hrs</span></div>
         </div>
         <div class="metric-card">
             <div class="label">Avg Review Cycles</div>
-            <div class="value">{{ metrics.avg_review_cycles }}</div>
+            <div class="value" id="metric-cycles">{{ metrics.avg_review_cycles }}</div>
         </div>
         <div class="metric-card">
             <div class="label">Total PRs</div>
-            <div class="value">{{ metrics.total_prs }}</div>
+            <div class="value" id="metric-total-prs">{{ metrics.total_prs }}</div>
         </div>
         <div class="metric-card">
             <div class="label">Comments per PR</div>
-            <div class="value">{{ metrics.comments_per_pr }}</div>
+            <div class="value" id="metric-comments-pr">{{ metrics.comments_per_pr }}</div>
         </div>
     </div>
 
@@ -593,7 +593,7 @@
 
         // AI vs Human Weekly
         const aiHumanCtx = document.getElementById('aiHumanWeeklyChart').getContext('2d');
-        new Chart(aiHumanCtx, {
+        const aiHumanChart = new Chart(aiHumanCtx, {
             type: 'bar',
             data: {
                 labels: metrics.weekly_trend.map(w => w.week),
@@ -682,7 +682,7 @@
 
         // Weekly trend line
         const trendCtx = document.getElementById('trendChart').getContext('2d');
-        new Chart(trendCtx, {
+        const trendChart = new Chart(trendCtx, {
             type: 'line',
             data: {
                 labels: metrics.weekly_trend.map(w => w.week),
@@ -732,16 +732,56 @@
             });
         });
 
-        // Time range filter
+        // Time range filter — recalculates metrics and updates charts
+        const weeklyBreakdown = metrics.weekly_breakdown || [];
+
         function filterWeeks(numWeeks) {
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelector(`.filter-btn[data-weeks="${numWeeks}"]`).classList.add('active');
 
+            // Filter table rows
             const allRows = document.querySelectorAll('.weekly-row');
             const total = allRows.length;
             allRows.forEach((row, i) => {
                 row.style.display = (i >= total - numWeeks) ? '' : 'none';
             });
+
+            // Get filtered weeks data
+            const filtered = weeklyBreakdown.slice(-numWeeks);
+
+            // Recalculate metrics from filtered data
+            const totalPRs = filtered.reduce((s, w) => s + w.prs_opened, 0);
+            const totalComments = filtered.reduce((s, w) => s + w.comments, 0);
+
+            const ttfrValues = filtered.filter(w => w.avg_time_to_first_review !== null).map(w => w.avg_time_to_first_review);
+            const ttmValues = filtered.filter(w => w.avg_time_to_merge !== null).map(w => w.avg_time_to_merge);
+            const cycleValues = filtered.filter(w => w.avg_cycles !== null).map(w => w.avg_cycles);
+
+            const avgTTFR = ttfrValues.length ? (ttfrValues.reduce((a, b) => a + b, 0) / ttfrValues.length).toFixed(1) : '—';
+            const avgTTM = ttmValues.length ? (ttmValues.reduce((a, b) => a + b, 0) / ttmValues.length).toFixed(1) : '—';
+            const avgCycles = cycleValues.length ? (cycleValues.reduce((a, b) => a + b, 0) / cycleValues.length).toFixed(1) : '—';
+            const commentsPerPR = totalPRs ? (totalComments / totalPRs).toFixed(1) : '0';
+
+            // Update metric cards
+            document.getElementById('metric-ttfr').innerHTML = avgTTFR + '<span class="unit">hrs</span>';
+            document.getElementById('metric-ttm').innerHTML = avgTTM + '<span class="unit">hrs</span>';
+            document.getElementById('metric-cycles').textContent = avgCycles;
+            document.getElementById('metric-total-prs').textContent = totalPRs;
+            document.getElementById('metric-comments-pr').textContent = commentsPerPR;
+
+            // Update weekly trend chart
+            const trendLabels = filtered.map(w => w.week);
+            trendChart.data.labels = trendLabels;
+            trendChart.data.datasets[0].data = filtered.map(w => w.prs_opened);
+            trendChart.data.datasets[1].data = filtered.map(w => w.prs_merged);
+            trendChart.data.datasets[2].data = filtered.map(w => w.comments);
+            trendChart.update();
+
+            // Update AI vs Human weekly chart
+            aiHumanChart.data.labels = trendLabels;
+            aiHumanChart.data.datasets[0].data = filtered.map(w => w.ai_comments || 0);
+            aiHumanChart.data.datasets[1].data = filtered.map(w => w.human_comments || 0);
+            aiHumanChart.update();
         }
     </script>
 </body>
