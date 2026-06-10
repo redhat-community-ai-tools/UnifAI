@@ -155,6 +155,39 @@
         .legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #8b949e; }
         .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 
+        .filter-bar {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            align-items: center;
+        }
+        .filter-bar .filter-label {
+            font-size: 0.7rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-right: 0.5rem;
+        }
+        .filter-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .filter-btn:hover { border-color: #58a6ff; color: #e6edf3; }
+        .filter-btn.active { background: #58a6ff20; border-color: #58a6ff; color: #58a6ff; }
+
+        .data-note {
+            font-size: 0.7rem;
+            color: #8b949e;
+            margin-bottom: 1rem;
+            font-style: italic;
+        }
+
         .footer {
             text-align: center;
             padding-top: 2rem;
@@ -257,6 +290,16 @@
         <div class="meta">
             Last {{ metrics.lookback_days }} days &middot; Generated {{ metrics.generated_at[:10] }}
         </div>
+    </div>
+
+    <div class="data-note">All statistics exclude draft PRs and bot-authored PRs. PR author replies are not counted as review comments.</div>
+
+    <div class="filter-bar">
+        <span class="filter-label">Time Range:</span>
+        <button class="filter-btn" data-weeks="1" onclick="filterWeeks(1)">Last Week</button>
+        <button class="filter-btn" data-weeks="2" onclick="filterWeeks(2)">Last 2 Weeks</button>
+        <button class="filter-btn" data-weeks="4" onclick="filterWeeks(4)">Last Month</button>
+        <button class="filter-btn active" data-weeks="8" onclick="filterWeeks(8)">All (8 Weeks)</button>
     </div>
 
     <!-- Overview Metrics -->
@@ -398,7 +441,7 @@
             </thead>
             <tbody>
                 {% for week in metrics.weekly_breakdown %}
-                <tr>
+                <tr class="weekly-row">
                     <td>{{ week.week }}</td>
                     <td>{{ week.prs_opened }}</td>
                     <td>{{ week.prs_merged }}</td>
@@ -688,6 +731,18 @@
                 setTimeout(() => { box.style.background = ''; box.style.borderColor = ''; }, 1500);
             });
         });
+
+        // Time range filter
+        function filterWeeks(numWeeks) {
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.filter-btn[data-weeks="${numWeeks}"]`).classList.add('active');
+
+            const allRows = document.querySelectorAll('.weekly-row');
+            const total = allRows.length;
+            allRows.forEach((row, i) => {
+                row.style.display = (i >= total - numWeeks) ? '' : 'none';
+            });
+        }
     </script>
 </body>
 </html>

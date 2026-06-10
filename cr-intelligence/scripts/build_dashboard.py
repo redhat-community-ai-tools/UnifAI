@@ -302,7 +302,18 @@ def compute_metrics(prs_data, review_comments, reviewers_summary):
             weekly_data[week]["human_comments"] += 1
 
     sorted_weeks = sorted(weekly_data.keys())[-8:]
-    weekly_trend = [{"week": w, **weekly_data[w]} for w in sorted_weeks]
+
+    def week_to_date_range(week_str):
+        """Convert '2026-W21' to 'May 19 - May 25' format."""
+        year, week_num = int(week_str[:4]), int(week_str.split("W")[1])
+        from datetime import date
+        monday = date.fromisocalendar(year, week_num, 1)
+        sunday = date.fromisocalendar(year, week_num, 7)
+        if monday.month == sunday.month:
+            return f"{monday.strftime('%b %d')} - {sunday.strftime('%d')}"
+        return f"{monday.strftime('%b %d')} - {sunday.strftime('%b %d')}"
+
+    weekly_trend = [{"week": week_to_date_range(w), "week_key": w, **weekly_data[w]} for w in sorted_weeks]
 
     # Detailed weekly breakdown table
     weekly_breakdown = []
@@ -314,7 +325,8 @@ def compute_metrics(prs_data, review_comments, reviewers_summary):
         w_cycles = [p["review_cycles"] for p in w_prs if p["review_cycles"] > 0]
 
         weekly_breakdown.append({
-            "week": w,
+            "week": week_to_date_range(w),
+            "week_key": w,
             "prs_opened": weekly_data[w]["prs_opened"],
             "prs_merged": weekly_data[w]["prs_merged"],
             "avg_time_to_merge": round(sum(w_ttm) / len(w_ttm), 1) if w_ttm else None,
