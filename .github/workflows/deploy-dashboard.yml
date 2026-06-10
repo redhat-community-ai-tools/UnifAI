@@ -38,11 +38,11 @@ jobs:
 
       - name: Deploy to docs folder
         run: |
-          mkdir -p docs
-          cp cr-intelligence/output/index.html docs/index.html
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin cr-intelligence-dashboard
+          mkdir -p docs
+          cp cr-intelligence/output/index.html docs/index.html
           git add docs/
           git diff --staged --quiet || git commit -m "Update CR Intelligence dashboard [skip ci]"
           git push
