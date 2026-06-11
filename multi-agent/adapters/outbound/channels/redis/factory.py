@@ -28,7 +28,7 @@ class RedisChannelFactory(ChannelFactory):
         block_ms: int = 5000,
         batch_size: int = 50,
     ) -> None:
-        self._pool = ConnectionPool.from_url(redis_url)
+        self._pool = ConnectionPool.from_url(redis_url, socket_timeout=30)
         self._stream_ttl = stream_ttl
         self._block_ms = block_ms
         self._batch_size = batch_size

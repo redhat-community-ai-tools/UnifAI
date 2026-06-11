@@ -9,6 +9,8 @@ on:
     #     branches:
     #         - GENIE-1354-dependency_scanning
     pull_request:
+      branches:
+        - main
     workflow_dispatch:
       inputs:
         branch:
@@ -18,38 +20,36 @@ on:
 
 jobs:
 
-    # scan_backend:
-    #     runs-on: ubuntu-latest
-    #     steps:
+    scan_backend:
+        runs-on: ubuntu-latest
+        steps:
 
-    #     - name: Checkout code
-    #       uses: actions/checkout@v4
-    #       with:
-    #         ref: ${{ inputs.branch }}
+        - name: Checkout code
+          uses: actions/checkout@v4
+          with:
+            ref: ${{ inputs.branch }}
           
-    #     - name: Set up Python
-    #       uses: actions/setup-python@v5
-    #       with:
-    #         python-version: '3.11'
-    #         cache: 'pip'
+        - name: Set up Python
+          uses: actions/setup-python@v5
+          with:
+            python-version: '3.11'
+            cache: 'pip'
 
-    #     - name: setup virtual environment (backend)
-    #       run: python3 -m venv venv
+        - name: setup virtual environment (backend)
+          run: python3 -m venv venv
     
-    #     - name: Install python requirements (backend)
-    #       run: | 
-    #         ./venv/bin/pip install --upgrade pip "setuptools>=70.0.0"
-    #         ./venv/bin/pip install -r rag/requirements.txt
+        - name: Install python requirements (backend)
+          run: | 
+            ./venv/bin/pip install --upgrade pip "setuptools>=70.0.0"
+            ./venv/bin/pip install -e backend/
+            ./venv/bin/pip install -e './global_utils/[backend]'
 
-    #     - name: Install python requirements (backend)
-    #       run: pip install -r backend/requirements.txt
-
-    #     - name: Scan dependencies (backend)
-    #       uses: pypa/gh-action-pip-audit@v1.1.0
-    #       with:
-    #         local: true
-    #         virtual-environment: venv/
-    #         summary: true
+        - name: Scan dependencies (backend)
+          uses: pypa/gh-action-pip-audit@v1.1.0
+          with:
+            local: true
+            virtual-environment: venv/
+            summary: true
 
     scan_rag:
       runs-on: ubuntu-latest
@@ -74,8 +74,8 @@ jobs:
       - name: Install python requirements (rag)
         run: | 
           ./venv/bin/pip install --upgrade pip "setuptools>=70.0.0"
-          ./venv/bin/pip install -r rag/requirements.txt
-          ./venv/bin/pip install -e ./global_utils/ 
+          ./venv/bin/pip install -e ./rag/
+          ./venv/bin/pip install -e './global_utils/[rag]'
 
       - name: Scan dependencies (rag)
         uses: pypa/gh-action-pip-audit@v1.1.0
@@ -107,8 +107,8 @@ jobs:
       - name: Install python requirements (multi-agent)
         run: | 
           ./venv/bin/pip install --upgrade pip "setuptools>=70.0.0"
-          ./venv/bin/pip install -r multi-agent/requirements.txt
-          ./venv/bin/pip install -e ./global_utils/ 
+          ./venv/bin/pip install -e './multi-agent/[all]'
+          ./venv/bin/pip install -e './global_utils/[multi-agent]'
 
       - name: Scan dependencies (multi-agent)
         uses: pypa/gh-action-pip-audit@v1.1.0
@@ -141,6 +141,7 @@ jobs:
         run: | 
           ./venv/bin/pip install --upgrade pip "setuptools>=70.0.0"
           ./venv/bin/pip install -e shared-resources/identity/
+          ./venv/bin/pip install -e './global_utils/[identity]'
 
       - name: Scan dependencies (identity)
         uses: pypa/gh-action-pip-audit@v1.1.0
@@ -150,9 +151,7 @@ jobs:
           summary: true
 
     analyze:
-        needs: [scan_rag, scan_multi-agent, scan_identity]
-        #change to the line below after new BE is pushed
-        #needs: [scan_backend, scan_rag, scan_multiagent, scan_identity]
+        needs: [scan_backend, scan_rag, scan_multi-agent, scan_identity]
         if: always() && contains(needs.*.result, 'failure')
         runs-on: ubuntu-latest
         permissions:

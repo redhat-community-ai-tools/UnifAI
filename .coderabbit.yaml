@@ -1,10 +1,20 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+
 reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: false
+  collapse_walkthrough: true
+  sequence_diagrams: true
+  changed_files_summary: true
+  commit_status: true
+  poem: false
+
   auto_review:
     enabled: true
     auto_incremental_review: true
-
-  commit_status: true
-  high_level_summary: true
+    drafts: false
 
   path_filters:
     - "multi-agent/**"
@@ -12,38 +22,212 @@ reviews:
     - "ui/**"
     - "ci/**"
     - "helm/**"
+    - "local-development/**"
+    - "cli/**"
+    - "rag/**"
+    - "shared-resources/**"
     - ".github/**"
     - ".cursor/**"
 
   instructions: |
-    This repository represents an agentic AI system with a modular, layered architecture.
+    This repository represents an agentic AI system with a modular, layered architecture
+    following Hexagonal Architecture (Ports & Adapters).
 
     Each of the main directories (multi-agent/, backend/, ui/) contains README.md and ARCHITECTURE.md files
     that define architectural intent, responsibilities, and boundaries.
-
     These documents should be treated as the source of truth.
 
     During reviews, always cross-check code changes against the architectural guidance in those files.
 
-    FOCUS AREAS:
-    - architecture
-    - maintainability
-    - modularity
-    - separation of concerns
-    - dependency boundaries
-    - layering
-    - testability
+    ARCHITECTURAL RULES (STRICT):
+    - Dependencies flow: Adapters -> Application -> Domain. Never reversed.
+    - Domain layer must have ZERO imports from frameworks, infrastructure, HTTP, ORM, or external APIs.
+    - Application layer depends only on Domain and Ports (interfaces). No direct infrastructure access.
+    - Ports must be interfaces defined in the application or domain layer.
+    - Adapters implement Ports and depend inward. Controllers only map request/response.
+    - Business logic in an adapter is a violation.
 
-    Please pay special attention to:
+    CODE QUALITY RULES:
+    - All functions require type hints.
+    - No bare `except` — use specific exceptions only.
+    - No TODO placeholders, no mock returns, no temporary stubs in production code.
+    - No commented-out legacy code.
+    - Remove dead code: unused imports, variables, functions, unreachable branches.
+    - Ensure all new error-handling paths contain appropriate logging statements.
+    - Catch blocks that swallow exceptions without logging or rethrowing are violations.
+    - Errors must be handled in the correct architectural layer.
 
-    - Whether new components are placed in the correct layer and folder
-    - Whether responsibilities align with the architecture defined in the directory-level README.md and ARCHITECTURE.md files
-    - Whether any architectural boundaries are violated
-    - Whether new dependencies increase coupling in undesirable ways
-    - Whether changes weaken modularity or future extensibility
-    - Whether agent, backend, and UI concerns are leaking across layers
+    DUPLICATION & REUSABILITY:
+    - Flag repeated validation, mapping, error handling, or logging logic.
+    - Before accepting any new component, consider whether similar logic already exists.
+    - Existing reusable logic not being used is a concern.
 
-    Prefer architectural and system-level feedback over stylistic feedback.
-    When relevant, explicitly reference architectural mismatches (for example: "this component seems to belong under X based on ARCHITECTURE.md").
+    SECURITY:
+    - Flag hardcoded secrets, API keys, or credentials as critical.
+    - Flag user-controlled input passed to SQL, shell commands, or file paths without sanitization.
+    - Flag missing authorization checks on controller/adapter entry points.
+    - Flag sensitive data (passwords, tokens, PII) in logs or error responses.
 
-    Act as a senior software engineer deeply familiar with this project's architecture.
+    GENERAL:
+    - Prefer architectural and system-level feedback over stylistic feedback.
+    - Do not comment on import ordering or formatting (handled by linters).
+    - When relevant, explicitly reference architectural mismatches against ARCHITECTURE.md.
+    - Act as a senior software engineer deeply familiar with this project's architecture.
+
+  path_instructions:
+    - path: "multi-agent/lib/**"
+      instructions: |
+        This is the domain and application logic layer of the multi-agent system.
+        CRITICAL: No framework imports, no infrastructure dependencies, no HTTP, no ORM.
+        Business logic lives ONLY here. Verify actual import statements in changed files.
+        Check that new modules fit the existing structure under lib/mas/ (actions, blueprints,
+        catalog, elements, engine, graph, resources, session, templates, validation, etc.).
+    - path: "multi-agent/adapters/inbound/**"
+      instructions: |
+        Inbound adapters (Flask, Temporal). Controllers must only map request/response.
+        No business logic here — it belongs in lib/mas/.
+        Verify authorization checks exist on all entry points.
+    - path: "multi-agent/adapters/outbound/**"
+      instructions: |
+        Outbound adapters (MongoDB, Redis, LangGraph, Temporal, auth, channels).
+        These implement Ports and depend inward. No business logic allowed.
+        Check for proper error handling on external calls (what happens on 401, 503, timeout).
+    - path: "multi-agent/tests/**"
+      instructions: |
+        Python tests using pytest. Check for:
+        - Mocking at port boundaries, not inside domain logic.
+        - Independent and reproducible tests — no shared mutable state, no execution order dependency.
+        - Clear assertions that validate behavior, not implementation details.
+        - Use of pytest fixtures and conftest.py for shared setup.
+        - Edge case coverage including empty input, concurrent access, partial failure.
+    - path: "backend/api/**"
+      instructions: |
+        Backend API layer (Flask). Check for:
+        - Input validation on all request parameters.
+        - Authentication and authorization checks on every route.
+        - Proper HTTP status codes in error responses.
+        - No business logic — delegate to core services.
+    - path: "backend/core/**"
+      instructions: |
+        Backend core logic and dependency injection (app_container).
+        Verify dependency wiring is correct and follows inward dependency direction.
+    - path: "ui/client/**"
+      instructions: |
+        Frontend client code. Check for:
+        - No business logic leaking into UI components that belongs in the backend.
+        - Proper error handling for API calls.
+        - No hardcoded API URLs or credentials.
+    - path: "helm/**"
+      instructions: |
+        Helm charts and values files. Check for:
+        - No hardcoded secrets or credentials in values files.
+        - Sensitive values must reference Kubernetes secrets.
+        - Resource limits and requests should be set.
+        - Check for deprecated Kubernetes API versions.
+    - path: "ci/**"
+      instructions: |
+        CI/CD pipeline definitions (Jenkins, GitHub Actions). Check for:
+        - No hardcoded credentials or tokens.
+        - Proper error handling and stage dependencies.
+        - Secrets accessed via credential stores, not environment variables in plain text.
+    - path: ".github/workflows/**"
+      instructions: |
+        GitHub Actions workflow files. Check for:
+        - Pinned action versions (no @main or @master).
+        - No hardcoded secrets — use GitHub Secrets.
+        - Proper job dependencies and failure handling.
+
+  tools:
+    ruff:
+      enabled: true
+    shellcheck:
+      enabled: true
+    yamllint:
+      enabled: true
+    hadolint:
+      enabled: true
+    checkov:
+      enabled: true
+    actionlint:
+      enabled: true
+    gitleaks:
+      enabled: true
+    trufflehog:
+      enabled: true
+    markdownlint:
+      enabled: true
+    # Disabled — not relevant to this stack
+    biome:
+      enabled: false
+    eslint:
+      enabled: false
+    swiftlint:
+      enabled: false
+    phpstan:
+      enabled: false
+    phpmd:
+      enabled: false
+    phpcs:
+      enabled: false
+    golangci-lint:
+      enabled: false
+    detekt:
+      enabled: false
+    clippy:
+      enabled: false
+    rubocop:
+      enabled: false
+    buf:
+      enabled: false
+    regal:
+      enabled: false
+    pmd:
+      enabled: false
+    clang:
+      enabled: false
+    cppcheck:
+      enabled: false
+    flake8:
+      enabled: false
+    fortitude-lint:
+      enabled: false
+    sqlfluff:
+      enabled: false
+    prisma-lint:
+      enabled: false
+    pylint:
+      enabled: false
+    oxc:
+      enabled: false
+    shopify-theme-check:
+      enabled: false
+    luacheck:
+      enabled: false
+    brakeman:
+      enabled: false
+    blinter:
+      enabled: false
+    smarty-lint:
+      enabled: false
+    ember-template-lint:
+      enabled: false
+    psscriptanalyzer:
+      enabled: false
+    circleci:
+      enabled: false
+    checkmake:
+      enabled: false
+    stylelint:
+      enabled: false
+    htmlhint:
+      enabled: false
+    dotenv-lint:
+      enabled: false
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: auto

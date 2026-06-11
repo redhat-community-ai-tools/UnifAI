@@ -4,6 +4,7 @@ env:
 debug: false
 
 globalConfigMapName: shared-config
+globalSecretName: shared-secret
 
 replicaCount: 1
 

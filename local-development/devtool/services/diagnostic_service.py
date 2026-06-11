@@ -14,6 +14,7 @@ from devtool.domain.models import (
 )
 from devtool.domain.registry import Registry
 from devtool.ports.container_runtime import ContainerRuntime
+from devtool.ports.node_resolver import NodeResolver
 from devtool.ports.process_manager import ProcessManager
 from devtool.ports.session_manager import SessionManager
 from devtool.services.constants import SESSION_NAME
@@ -37,6 +38,7 @@ class DiagnosticService:
         infra_service: InfraService,
         venv_service: VenvService,
         env_service: EnvService,
+        node_resolver: NodeResolver,
     ) -> None:
         self._registry = registry
         self._root = root
@@ -47,6 +49,7 @@ class DiagnosticService:
         self._infra_svc = infra_service
         self._venv_svc = venv_service
         self._env_svc = env_service
+        self._node_resolver = node_resolver
 
     def status(self) -> None:
         infra, services = self._health.check_all(self._registry, self._runtime)
@@ -80,6 +83,15 @@ class DiagnosticService:
             print(f"  ✔ Python: {python} ({python_minor})")
         except RuntimeError as exc:
             print(f"  ✖ Python: {exc}")
+
+        if self._registry.has_node_services() and self._registry.node_min is not None:
+            try:
+                node_path, node_ver = self._node_resolver.check_node_js(
+                    self._registry.node_min,
+                )
+                print(f"  ✔ Node.js: {node_ver} ({node_path})")
+            except RuntimeError as exc:
+                print(f"  ✖ Node.js: {exc}")
 
         print(f"  ✔ Container runtime: {self._runtime.runtime_name}")
 

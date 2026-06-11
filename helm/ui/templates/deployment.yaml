@@ -59,6 +59,8 @@ spec:
               name: {{ $value }}
               optional: true
           {{- end }}
+          - secretRef:
+              name: {{ .Values.globalSecretName }}
           {{- if not .Values.debug  }}
           {{- with .Values.livenessProbe }}
           livenessProbe:

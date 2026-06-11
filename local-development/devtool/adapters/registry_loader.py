@@ -49,6 +49,8 @@ class YamlRegistryLoader:
             raw, min_override=min_override, max_override=max_override,
         )
 
+        node_min = YamlRegistryLoader._parse_node_js_min(raw)
+
         return Registry(
             services=YamlRegistryLoader._parse_services(raw.get("services", {})),
             infra=YamlRegistryLoader._parse_infra(raw.get("infrastructure", {})),
@@ -56,6 +58,7 @@ class YamlRegistryLoader:
             local_auth=local_auth,
             python_min=python_min,
             python_max=python_max,
+            node_min=node_min,
             log_dir=Path(
                 raw.get("logging", {}).get("directory", "/tmp/unifai-dev/logs")
             ),
@@ -85,6 +88,8 @@ class YamlRegistryLoader:
             venv = VenvConfig(
                 strategy=VenvStrategy(venv_raw.get("strategy", "none")),
                 commands=venv_raw.get("commands", []),
+                global_utils_extra=venv_raw.get("global_utils_extra"),
+                pip_extras=venv_raw.get("pip_extras"),
             )
             result[name] = ServiceInfo(
                 name=name,
@@ -96,7 +101,10 @@ class YamlRegistryLoader:
                 infrastructure=data.get("infrastructure", []),
                 is_primary=data.get("is_primary", True),
                 env_file=data.get("env_file"),
-                env_entries=data.get("env_entries", {}),
+                env_entries={
+                    k: ",".join(str(i) for i in v) if isinstance(v, list) else str(v)
+                    for k, v in data.get("env_entries", {}).items()
+                },
                 venv=venv,
                 launch=data["launch"],
             )
@@ -108,6 +116,23 @@ class YamlRegistryLoader:
             name: ServiceGroup(name=name, services=svc_list)
             for name, svc_list in raw.items()
         }
+
+    @staticmethod
+    def _parse_node_js_min(raw: dict) -> int | None:
+        node_cfg = raw.get("node")
+        if not node_cfg:
+            return None
+        min_str = str(node_cfg.get("min", "")).strip()
+        if not min_str:
+            return None
+        major = min_str.split(".")[0].lstrip("vV").rstrip("+")
+        try:
+            return int(major)
+        except ValueError:
+            raise ValueError(
+                f"Invalid node.min version in services.yaml: {min_str!r} "
+                f"(major part {major!r} is not an integer)"
+            )
 
     @staticmethod
     def _parse_python_bounds(

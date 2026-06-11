@@ -27,6 +27,8 @@ def _make_init_service(
     svcs = services or [_make_service()]
     registry.all_services.return_value = svcs
     registry.primary_services.return_value = svcs
+    registry.has_node_services.return_value = False
+    registry.node_min = None
 
     runtime = MagicMock()
     runtime.runtime_name = "podman"
@@ -36,9 +38,12 @@ def _make_init_service(
     venv.existing_venvs.return_value = []
     env = MagicMock()
 
+    node_resolver = MagicMock()
+
     return InitService(
         registry=registry, root=root, runtime=runtime,
         infra_service=infra, venv_service=venv, env_service=env,
+        node_resolver=node_resolver,
     )
 
 

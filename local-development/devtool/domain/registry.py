@@ -8,6 +8,7 @@ from .models import (
     InfraComponent,
     ServiceInfo,
     ServiceGroup,
+    ServiceType,
 )
 
 
@@ -27,6 +28,7 @@ class Registry:
         local_auth: bool,
         python_min: tuple[int, int],
         python_max: tuple[int, int],
+        node_min: int | None = None,
         log_dir: Path,
     ) -> None:
         self._services = services
@@ -35,6 +37,7 @@ class Registry:
         self._local_auth = local_auth
         self._python_min = python_min
         self._python_max = python_max
+        self._node_min = node_min
         self._log_dir = log_dir
 
     # -- public API ----------------------------------------------------------
@@ -127,6 +130,15 @@ class Registry:
 
     def python_bounds(self) -> tuple[tuple[int, int], tuple[int, int]]:
         return self._python_min, self._python_max
+
+    @property
+    def node_min(self) -> int | None:
+        return self._node_min
+
+    def has_node_services(self) -> bool:
+        return any(
+            s.type is ServiceType.NODE for s in self._services.values()
+        )
 
     @property
     def local_auth(self) -> bool:

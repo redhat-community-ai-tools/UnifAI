@@ -6,7 +6,7 @@ from backend/services/documents/duplicate_checker.py.
 """
 from typing import Any, Dict, List, Optional
 
-from global_utils.utils import compute_file_md5
+from global_utils.utils.file_utils import compute_file_md5
 
 
 # Statuses that should NOT block duplicate uploads (allow retry of failed uploads)

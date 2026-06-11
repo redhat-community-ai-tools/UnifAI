@@ -46,6 +46,8 @@ from mas.actions.providers.mcp.validate_connection.validate_connection import Va
 from mas.actions.providers.mcp.get_tools_names.get_tools_names import GetToolsNamesAction
 
 from config.app_config import AppConfig
+from mas.core.platform_config import PlatformConfig
+from outbound.storage import LocalSessionStorageCleaner
 
 from outbound.mongo import (
     MongoBlueprintRepository,
@@ -150,7 +152,7 @@ class AppContainer(metaclass=SingletonMeta):
         pending_store = None
         if redis_url:
             import redis as redis_lib
-            redis_client = redis_lib.Redis.from_url(redis_url)
+            redis_client = redis_lib.Redis.from_url(redis_url, socket_timeout=30)
             pending_store = RedisFlowStateStore(
                 redis_client=redis_client,
                 encryption_key=cfg.credential_encryption_key,
@@ -222,6 +224,10 @@ class AppContainer(metaclass=SingletonMeta):
                 model_name=cfg.gemini_model_name,
                 file_attachments=attachments or [],
             )
+        # ── Platform config (domain-layer projection of AppConfig) ────
+        self.platform_config = PlatformConfig(
+            shared_storage=cfg.shared_storage,
+        )
 
         # ── Session factory ───────────────────────────────────────────
         self.session_factory = WorkflowSessionFactory(
@@ -229,6 +235,7 @@ class AppContainer(metaclass=SingletonMeta):
             engine_name=cfg.engine_name,
             auth_service=self.auth_service,
             file_retrieve_tool_factory=file_retrieve_tool_factory,
+            platform_config=self.platform_config,
         )
         self.session_repo = MongoSessionRepository(
             mongodb_port=cfg.mongodb_port,
@@ -236,10 +243,15 @@ class AppContainer(metaclass=SingletonMeta):
             db_name=cfg.mongo_db,
             collection_name=cfg.session_coll
         )
+        self.session_storage_cleaner = LocalSessionStorageCleaner(
+            base_path=cfg.shared_storage,
+        )
         self.session_manager = UserSessionManager(
             repository=self.session_repo,
             session_factory=self.session_factory,
-            blueprint_service=self.blueprint_service
+            blueprint_service=self.blueprint_service,
+            platform_config=self.platform_config,
+            storage_cleaner=self.session_storage_cleaner,
         )
 
         self.session_lifecycle = SessionLifecycle(repository=self.session_repo)

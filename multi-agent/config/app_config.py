@@ -14,6 +14,8 @@ class AppConfig(SharedConfig):
     version: str = "1.0.0"
     admin_allowed_users: list = []  # Populate with user_ids (usernames) to grant admin access
     secret_key: str = ""
+    # Storage
+    shared_storage: str = "/app/shared"
     # Engine
     engine_name: str = "temporal"
     temporal_task_queue: str = "graph-engine"

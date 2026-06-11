@@ -32,8 +32,10 @@ env:
   RI_APP_HOST: "0.0.0.0"
   #REDISINSIGHT_DB_0_NAME: "workflows"
   RI_REDIS_HOST: "redis"
+  RI_AUTHENTICATION_ENABLED: "true"
 
 redisConfigMapName: redis-config
+RedisSecretName: redis-secret
 # This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
 serviceAccount:
   # Specifies whether a service account should be created

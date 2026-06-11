@@ -9,6 +9,7 @@ from mas.elements.nodes.user_question.config import UserQuestionNodeConfig
 from mas.elements.nodes.branch_chooser.config import BranchChooserNodeConfig
 from mas.elements.nodes.orchestrator.config import OrchestratorNodeConfig
 from mas.elements.nodes.a2a_agent.config import A2AAgentNodeConfig
+from mas.elements.nodes.claude_agent.config import ClaudeAgentNodeConfig
 
 # Union type for backward compatibility with blueprints
 NodeSpec = Annotated[
@@ -20,7 +21,8 @@ NodeSpec = Annotated[
         UserQuestionNodeConfig,
         BranchChooserNodeConfig,
         OrchestratorNodeConfig,
-        A2AAgentNodeConfig
+        A2AAgentNodeConfig,
+        ClaudeAgentNodeConfig,
     ],
     Field(discriminator="type")
 ]
