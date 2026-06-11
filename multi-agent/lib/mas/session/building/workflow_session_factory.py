@@ -17,6 +17,7 @@ from mas.blueprints.models.blueprint import BlueprintSpec
 
 if TYPE_CHECKING:
     from mas.core.auth.service import AuthService
+    from mas.core.platform_config import PlatformConfig
 
 
 class WorkflowSessionFactory:
@@ -34,10 +35,12 @@ class WorkflowSessionFactory:
             element_registry: ElementRegistry,
             engine_name: str,
             auth_service: Optional[AuthService] = None,
+            platform_config: Optional[PlatformConfig] = None,
     ):
         self._elements = element_registry
         self._engine_name = engine_name
         self._auth_service = auth_service
+        self._platform_config = platform_config
         self._session_builder = SessionElementBuilder(element_registry)
 
     @property
@@ -59,6 +62,7 @@ class WorkflowSessionFactory:
         deps = ElementDeps(
             execution_ctx=holder,
             auth_service=self._auth_service,
+            platform_config=self._platform_config,
         )
         logical_plan = PlanBuilder(self._elements).build(blueprint_spec)
         registry = self._session_builder.build(blueprint_spec, deps=deps)
