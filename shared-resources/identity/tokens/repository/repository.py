@@ -9,7 +9,7 @@ class TokenRepository(ABC):
 
     @abstractmethod
     def create(self, user_id: str, name: str, user_data: TokenUserData,
-               ttl_seconds: int = 36000) -> TokenCreateResult:
+               ttl_seconds: int = 7776000) -> TokenCreateResult:
         """Create a new API token. Returns the plaintext token once."""
 
     @abstractmethod

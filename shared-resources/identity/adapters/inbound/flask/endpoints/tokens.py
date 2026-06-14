@@ -18,7 +18,21 @@ token_bp = Blueprint("tokens", __name__)
 
 
 def _get_authenticated_user() -> str | None:
-    return request.headers.get("X-Authenticated-User", "").strip() or None
+    """Get the authenticated username from header (nginx) or session (direct)."""
+    header_user = request.headers.get("X-Authenticated-User", "").strip()
+    if header_user:
+        return header_user
+
+    from flask import current_app, session
+    from global_utils.redis import get_identity_session
+    auth_manager = current_app.extensions.get("auth_manager")
+    if auth_manager:
+        sid = session.get("session_id")
+        if sid:
+            data = get_identity_session(auth_manager.redis_store, sid)
+            if data and data.has_auth_credentials():
+                return data.username
+    return None
 
 
 def get_token_service() -> TokenService:

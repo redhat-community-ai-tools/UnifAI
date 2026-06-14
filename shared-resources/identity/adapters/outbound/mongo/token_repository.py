@@ -41,7 +41,7 @@ class MongoTokenRepository(TokenRepository):
         self._coll.create_index("expires_at", expireAfterSeconds=0, name="ttl_expires")
 
     def create(self, user_id: str, name: str, user_data: TokenUserData,
-               ttl_seconds: int = 36000) -> TokenCreateResult:
+               ttl_seconds: int = 7776000) -> TokenCreateResult:
         token = _generate_token()
         now = datetime.now(timezone.utc)
         expires_at = datetime.fromtimestamp(now.timestamp() + ttl_seconds, tz=timezone.utc)
@@ -75,8 +75,12 @@ class MongoTokenRepository(TokenRepository):
         if not doc:
             return None
 
-        if doc.get("expires_at") and doc["expires_at"] < datetime.now(timezone.utc):
-            return None
+        expires_at = doc.get("expires_at")
+        if expires_at:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at < datetime.now(timezone.utc):
+                return None
 
         self._coll.update_one(
             {"token_hash": token_hash},

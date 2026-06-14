@@ -28,7 +28,7 @@ class TokenService:
         self._repo = repository
 
     def create(self, user_id: str, name: str, user_data: TokenUserData,
-               ttl_seconds: int = 36000) -> TokenCreateResult:
+               ttl_seconds: int = 7776000) -> TokenCreateResult:
         existing = self._repo.list_by_user(user_id)
         if any(t.name == name for t in existing):
             raise TokenAlreadyExistsError(name)
