@@ -42,7 +42,7 @@ jobs:
           elif [ "$EVENT_NAME" = "pull_request" ]; then
            printf 'ref=%s\n' "$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
           else
-            printf 'ref=%s\n' "$REF_NAME" >> "$GITHUB_OUTPUT"
+            printf 'ref=%s\n' "$GIT_REF_NAME" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout repository
@@ -52,9 +52,19 @@ jobs:
           fetch-depth: 0
 
       - name: Install Cursor CLI
+        env:
+          CURSOR_CLI_VERSION: "2026.06.12-19-59-36-f6aba9a"
+          CURSOR_CLI_SHA256: "6e7f202dd8875b569d674564be6376f0f6fb5f7e45fdd973b59b84f33cc9a1e4"
         run: |
-          curl https://cursor.com/install -fsS | bash
-          echo "$HOME/.cursor/bin" >> $GITHUB_PATH
+          curl -fsSL "https://downloads.cursor.com/lab/${CURSOR_CLI_VERSION}/linux/x64/agent-cli-package.tar.gz" \
+            -o /tmp/agent-cli-package.tar.gz
+          echo "${CURSOR_CLI_SHA256}  /tmp/agent-cli-package.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin" "$HOME/.local/share/cursor-agent/versions/${CURSOR_CLI_VERSION}"
+          tar --strip-components=1 -xzf /tmp/agent-cli-package.tar.gz \
+            -C "$HOME/.local/share/cursor-agent/versions/${CURSOR_CLI_VERSION}"
+          ln -sf "$HOME/.local/share/cursor-agent/versions/${CURSOR_CLI_VERSION}/cursor-agent" \
+            "$HOME/.local/bin/agent"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Validate model availability
         env:
@@ -82,6 +92,7 @@ jobs:
             --model "$PIPELINE_MODEL" 2>&1 | tee arch_review_output.txt
 
       - name: Run Code Review
+        if: "!cancelled()"
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
