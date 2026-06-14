@@ -126,7 +126,7 @@ jobs:
       - name: Evaluate Review Scores
         id: gate
         if: always()
-        run: .github/scripts/evaluate-review-gate.sh
+        run: python3 .github/scripts/evaluate_review_gate.py
 
       - name: Publish Check Run
         if: always() && github.event_name == 'pull_request'
