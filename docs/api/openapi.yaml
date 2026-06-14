@@ -11,24 +11,20 @@ info:
 
     ## Authentication
 
-    All endpoints require a valid Bearer token. To obtain a token:
+    All endpoints require a valid Bearer token.
 
-    1. **Authenticate via SSO** — Use the UnifAI CLI or browser-based login
-       on a machine with browser access. This completes a standard Red Hat
-       SSO (Keycloak) login and establishes a session.
+    1. **Generate a token** — In the UnifAI UI, go to
+       **User Management → API Tokens → Create Token**. This requires
+       SSO login (browser).
 
-    2. **Generate an API token** — Call `POST /api/tokens/create` with
-       your active session. The returned token can be used from any machine
-       (CI/CD pipelines, remote servers, scripts) without further browser
-       interaction.
-
-    3. **Include the token** in every request:
+    2. **Include the token** in every request:
        ```
        Authorization: Bearer <your_token>
        ```
 
-    Tokens are valid for 90 days. Unauthenticated requests receive a
-    `401` response with a login URL.
+    Tokens are valid for 90 days and can be used from any machine
+    (CI/CD pipelines, remote servers, scripts). Unauthenticated requests
+    receive a `401` response.
 
     ## Quick Start
 
@@ -85,15 +81,6 @@ security:
 tags:
   - name: Health
     description: Service health and version information.
-  - name: Authentication
-    description: |
-      Authenticate via SSO and manage API tokens.
-
-      1. Sign in via SSO (requires a browser on the same machine).
-      2. Create an API token using your authenticated session.
-      3. Use the token for all subsequent requests from any machine.
-  - name: Tokens
-    description: Create, list, and revoke API tokens for programmatic access.
   - name: Sessions
     description: Create and execute multi-agent workflow sessions.
   - name: Blueprints
@@ -144,150 +131,6 @@ paths:
                   version:
                     type: string
                     example: "1.0.0"
-
-  /api/auth/login:
-    get:
-      tags: [Authentication]
-      summary: SSO Login
-      operationId: ssoLogin
-      description: >-
-        Redirects to the Red Hat SSO (Keycloak) login page. After
-        successful authentication, a session is created. This endpoint
-        must be opened in a browser on the same machine. Use the
-        UnifAI CLI (`unifai auth login`) for an automated flow.
-      security: []
-      parameters:
-        - name: state
-          in: query
-          required: true
-          schema:
-            type: string
-          description: >-
-            Encoded state parameter (base64 JSON containing callback info).
-            The CLI generates this automatically.
-      responses:
-        '302':
-          description: Redirects to Keycloak SSO login page.
-
-  /api/tokens/create:
-    post:
-      tags: [Tokens]
-      summary: Create an API token
-      operationId: createToken
-      description: >-
-        Generates a new API token for programmatic access. Requires an active
-        SSO session (authenticated via browser). The returned token can be
-        used from any machine as `Authorization: Bearer <token>`. Tokens
-        expire after 90 days.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name:
-                  type: string
-                  description: A label to identify this token (e.g., "ci-pipeline", "dev-laptop").
-                  example: "my-automation"
-      responses:
-        '201':
-          description: Token created. The plaintext token is shown only once.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                    description: >-
-                      The API token. Save this — it cannot be retrieved again.
-                    example: "unifai_t_7f3a9b2c1d4e5f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f"
-                  name:
-                    type: string
-                    example: "my-automation"
-                  expires_at:
-                    type: string
-                    format: date-time
-                  expires_in:
-                    type: integer
-                    description: Token lifetime in seconds.
-                    example: 7776000
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '409':
-          description: A token with this name already exists.
-
-  /api/tokens/list:
-    get:
-      tags: [Tokens]
-      summary: List active tokens
-      operationId: listTokens
-      description: Returns all active (non-revoked) tokens for the authenticated user. No secrets are returned.
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  tokens:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          type: string
-                        created_at:
-                          type: string
-                          format: date-time
-                        expires_at:
-                          type: string
-                          format: date-time
-                        last_used_at:
-                          type: string
-                          format: date-time
-                          nullable: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
-  /api/tokens/revoke:
-    post:
-      tags: [Tokens]
-      summary: Revoke a token
-      operationId: revokeToken
-      description: Permanently revokes a token by name. The token can no longer be used for authentication.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name:
-                  type: string
-                  description: Name of the token to revoke.
-                  example: "my-automation"
-      responses:
-        '200':
-          description: Token revoked.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  revoked:
-                    type: boolean
-                    example: true
-                  name:
-                    type: string
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Token not found or already revoked.
 
   /api/sessions/user.session.create:
     post:
