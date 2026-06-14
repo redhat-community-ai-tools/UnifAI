@@ -22,10 +22,13 @@ jobs:
   run-pipeline:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
 
     permissions:
       contents: read
-      pull-requests: write
+      pull-requests: read
       checks: write
 
     steps:
@@ -40,7 +43,7 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_BRANCH" ]; then
             printf 'ref=%s\n' "$INPUT_BRANCH" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT_NAME" = "pull_request" ]; then
-           printf 'ref=%s\n' "$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
+            printf 'ref=%s\n' "$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
           else
             printf 'ref=%s\n' "$GIT_REF_NAME" >> "$GITHUB_OUTPUT"
           fi

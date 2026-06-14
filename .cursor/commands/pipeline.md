@@ -92,7 +92,7 @@ After resolving the input, pass the full task context (title, description, accep
 7. For **debug** mode: check if the argument is a path to an existing file. If yes, read the file as the error log input. If not, treat the entire argument as an error description or symptom.
 8. Announce the detected mode at the start: "Pipeline mode: **<mode>** — starting at Phase <N>."
 
-CRITICAL RULE: When a review phase produces a verdict that is NOT approval, you MUST execute the revision loop described below. You are FORBIDDEN from proceeding to the next phase until the reviewer approves. This is non-negotiable.
+CRITICAL RULE: When a review phase produces a verdict that is NOT approval, you MUST execute the revision loop described below. You are FORBIDDEN from proceeding to the next phase until the reviewer approves. This is non-negotiable. Exception: `arch-review` is a standalone single-phase mode and does not run revision loops.
 
 ### Scope Resolution for Review Modes
 

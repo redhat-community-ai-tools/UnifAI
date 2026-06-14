@@ -5,6 +5,11 @@ CODE_REVIEW_THRESHOLD="${CODE_REVIEW_THRESHOLD:-8}"
 CODE_REVIEW_FILE="${CODE_REVIEW_FILE:-code_review_output.txt}"
 ARCH_REVIEW_FILE="${ARCH_REVIEW_FILE:-arch_review_output.txt}"
 
+if ! [[ "$CODE_REVIEW_THRESHOLD" =~ ^[0-9]+$ ]]; then
+  echo "::error::CODE_REVIEW_THRESHOLD must be an integer, got '$CODE_REVIEW_THRESHOLD'"
+  exit 1
+fi
+
 strip_ansi() { sed 's/\x1b\[[0-9;]*m//g' "$1"; }
 
 # --- Parse code review score with explicit failure tracking ---
