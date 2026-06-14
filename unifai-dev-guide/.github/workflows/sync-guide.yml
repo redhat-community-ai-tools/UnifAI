@@ -1,0 +1,65 @@
+name: Sync Dev Guide
+
+on:
+  repository_dispatch:
+    types: [unifai-push]
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'UnifAI commit SHA to sync from'
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev guide
+        uses: actions/checkout@v4
+
+      - name: Checkout UnifAI source
+        uses: actions/checkout@v4
+        with:
+          repository: redhat-community-ai-tools/UnifAI
+          path: unifai-src
+          token: ${{ secrets.UNIFAI_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run validation (pre-sync)
+        run: node validate.js
+
+      - name: Run build
+        run: bash build.sh
+
+      - name: Check for changes
+        id: changes
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create PR
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="sync/$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "sync: update from UnifAI $(date +%Y-%m-%d)"
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --title "Sync dev guide from UnifAI ($(date +%Y-%m-%d))" \
+            --body "Automated sync from UnifAI main branch. Review structured data updates and verify rendering." \
+            --base main

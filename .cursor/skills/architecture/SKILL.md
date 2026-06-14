@@ -1,24 +1,25 @@
 ---
 name: architecture-standards
 description: >-
-  Universal engineering standards enforced across all services in this repository.
-  SOLID principles, hexagonal architecture, Pydantic models, enums, type hints,
-  import conventions, error handling, and naming. These rules are non-negotiable
-  and apply to every file regardless of which service it belongs to.
+  Universal engineering standards and hexagonal architecture mechanics for this repository.
+  Standards cover SOLID, Pydantic, enums, type hints, imports, error handling, and naming.
+  Hex-mechanics covers layer placement, import rules, investigation techniques, and Python safety.
+  These rules are non-negotiable and apply to every file regardless of which service it belongs to.
 ---
 
 # Architecture Standards
 
 ## How to Use
 
-Load `standards.md` whenever writing or reviewing code in this repository.
-These rules apply universally — they are not service-specific.
+- Load `standards.md` whenever writing or reviewing code — universal coding rules.
+- Load `hex-mechanics.md` during pipeline reviews, refactoring, or when detailed hexagonal enforcement is needed.
 
 ## Structure
 
 ```
 architecture/
-└── standards.md     Universal coding rules (SOLID, hex, Pydantic, enums, types, imports)
+├── standards.md       Universal coding rules (SOLID, Pydantic, enums, types, imports, naming)
+└── hex-mechanics.md   Detailed hex mechanics (layers, import matrix, error contract, investigation techniques, safety patterns)
 ```
 
 ## Quick Reference

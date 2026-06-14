@@ -1,3 +1,9 @@
+> **DEPRECATED**: This command is superseded by the pipeline's implementation phase
+> (`/pipeline implement <approved-design>`), which includes automatic code review
+> with hexagonal enforcement and revision loops.
+> See `.cursor/skills/pipeline/phases/coder.md` and `code-reviewer.md`.
+> This file will be removed in a future cleanup pass.
+
 Your task is to fix the reported issues in the current branch.
 
 You must strictly:

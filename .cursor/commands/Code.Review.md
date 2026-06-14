@@ -1,3 +1,8 @@
+> **DEPRECATED**: This command is superseded by `/pipeline code-review-only`.
+> The pipeline command provides the same review capabilities with integrated
+> architecture gatekeeping, revision loops, and consistent output format.
+> This file will be removed in a future cleanup pass.
+
 Your task is to perform a deep, non-superficial code review on the target branch.
 
 You must focus on:

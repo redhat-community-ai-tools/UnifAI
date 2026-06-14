@@ -24,6 +24,9 @@ Non-negotiable rules for ALL code in this repository. Violations must be fixed b
 
 ## 2. Hexagonal Architecture
 
+> For detailed mechanics (layer placement decision tree, full import matrix, per-layer error contract,
+> investigation techniques, Python safety patterns) see `hex-mechanics.md` in this skill.
+
 | Ring | Can Import | Cannot Import |
 |------|-----------|---------------|
 | Domain (`lib/mas/`) | Own domain code only | Adapters, Bootstrap |
@@ -47,6 +50,8 @@ Import direction is STRICTLY inward. No exceptions.
 ---
 
 ## 4. Enums — No Magic Strings
+
+> For specific violation patterns and enforcement examples, see `hex-mechanics.md` §6.
 
 | Rule | Example |
 |------|---------|
@@ -96,6 +101,8 @@ Import direction is STRICTLY inward. No exceptions.
 ---
 
 ## 8. Error Handling
+
+> For the per-layer error contract (what each layer may raise/catch), see `hex-mechanics.md` §4.
 
 | Rule | Detail |
 |------|--------|
