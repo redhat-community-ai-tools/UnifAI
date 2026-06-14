@@ -38,11 +38,11 @@ jobs:
           GIT_REF_NAME: ${{ github.ref_name }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_BRANCH" ]; then
-            echo "ref=$INPUT_BRANCH" >> $GITHUB_OUTPUT
+            printf 'ref=%s\n' "$INPUT_BRANCH" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT_NAME" = "pull_request" ]; then
-            echo "ref=$PR_HEAD_REF" >> $GITHUB_OUTPUT
+           printf 'ref=%s\n' "$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=$GIT_REF_NAME" >> $GITHUB_OUTPUT
+            printf 'ref=%s\n' "$REF_NAME" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout repository
