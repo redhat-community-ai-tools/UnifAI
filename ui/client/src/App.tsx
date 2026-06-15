@@ -10,6 +10,7 @@ import AgenticChats from "@/pages/AgenticChats";
 
 import AgenticTemplates from "@/pages/AgenticTemplates";
 import GetToKnow from "@/pages/GetToKnow";
+import InnovationDay from "@/pages/InnovationDay";
 import Analytics from "@/pages/Analytics";
 import InnovationDay from "@/pages/InnovationDay";
 import NotFound from "@/pages/not-found";
