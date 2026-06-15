@@ -94,15 +94,25 @@ class BaseLLMChatModelAdapter(BaseChatModel):
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
         domain_msgs = LangChainConverter.from_lc(messages)
+        yielded = False
         for token_or_msg in self.llm.stream(domain_msgs):
             if isinstance(token_or_msg, str):
                 yield ChatGenerationChunk(
                     message=AIMessageChunk(content=token_or_msg),
                 )
+                yielded = True
             elif isinstance(token_or_msg, ChatMessage):
                 yield ChatGenerationChunk(
                     message=LangChainConverter.to_lc_message_chunk(token_or_msg),
                 )
+                yielded = True
+        if not yielded:
+            # LangChain raises "No generations found in stream" when _stream()
+            # yields zero chunks.  Emit a minimal empty chunk so the downstream
+            # generate_from_stream() always receives at least one generation.
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(content=""),
+            )
 
     # ------------------------------------------------------------------
     # Optional: tool binding

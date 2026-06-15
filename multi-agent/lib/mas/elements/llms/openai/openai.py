@@ -8,6 +8,7 @@ the ``base_url`` parameter.
 from __future__ import annotations
 
 import copy
+import logging
 from typing import Any, Dict, Iterator, List, Optional, Union
 
 from openai import OpenAI
@@ -19,6 +20,8 @@ from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import OpenAIMessageConverter
 from .tools_converter import OpenAIToolsConverter
 from .stream_aggregator import StreamToolCallAggregator
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAILLM(BaseLLM):
@@ -64,6 +67,7 @@ class OpenAILLM(BaseLLM):
         request = self._build_request(messages, stream=True, **call_params)
         aggregator = StreamToolCallAggregator()
         accumulated_content = ""
+        yielded = False
 
         for chunk in self._client.chat.completions.create(**request):
             if not chunk.choices:
@@ -74,6 +78,7 @@ class OpenAILLM(BaseLLM):
             if delta.content:
                 accumulated_content += delta.content
                 yield delta.content
+                yielded = True
 
             if delta.tool_calls:
                 aggregator.absorb(delta.tool_calls)
@@ -84,6 +89,11 @@ class OpenAILLM(BaseLLM):
                 content=accumulated_content,
                 tool_calls=aggregator.build(),
             )
+            yielded = True
+
+        if not yielded:
+            logger.warning("OpenAI stream returned no content and no tool calls (model=%s)", self._model)
+            yield ""
 
     def bind_tools(self, tools: List[ToolDefinition]) -> OpenAILLM:
         clone = copy.copy(self)
