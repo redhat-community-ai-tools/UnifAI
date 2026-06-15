@@ -5,7 +5,6 @@ Delegates work to a Claude Agent SDK session configured with
 model, tools, skills, and authentication credentials.
 """
 
-from multi-agent.lib.mas.elements.tools.common.base_tool import BaseTool
 from typing import Optional, Any, List, ClassVar, Dict
 from copy import deepcopy
 import os
