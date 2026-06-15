@@ -21,7 +21,7 @@ import pytest
 
 from mas.elements.llms.common.base_llm import BaseLLM
 from mas.elements.llms.common.chat.message import ChatMessage, Role, ToolCall
-from mas.elements.tools.common.base_tool import BaseTool
+from mas.elements.tools.common.tool_definition import ToolDefinition
 from mas.elements.nodes.common.workload import Task, WorkPlan, WorkItem
 from mas.core.iem.packets import TaskPacket
 from mas.core.iem.models import ElementAddress
@@ -125,12 +125,11 @@ class PredictableLLM(BaseLLM):
         )
         self.responses.append(response)
     
-    def chat(self, messages: List[ChatMessage], stream: bool = False, **kwargs) -> ChatMessage:
+    def chat(self, messages: List[ChatMessage], **kwargs) -> ChatMessage:
         """Return the next pre-configured response and track the call."""
         self.call_count += 1
         self.call_history.append({
             'messages': messages,
-            'stream': stream,
             'kwargs': kwargs
         })
         
@@ -145,13 +144,12 @@ class PredictableLLM(BaseLLM):
     
     def stream(self, messages: List[ChatMessage], **call_params: Any) -> Iterator[Union[str, ChatMessage]]:
         """Stream implementation - just yields the final response."""
-        response = self.chat(messages, stream=True, **call_params)
+        response = self.chat(messages)
         yield response.content
         yield response
     
-    def bind_tools(self, tools: List[BaseTool]) -> "PredictableLLM":
+    def bind_tools(self, tools: List[ToolDefinition]) -> "PredictableLLM":
         """Return a copy of the LLM with tools bound that shares call tracking."""
-        # Create new instance that shares the same state for call tracking
         return PredictableLLM(shared_state=self._shared_state)
     
     @property 

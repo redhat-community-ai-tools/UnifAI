@@ -52,6 +52,11 @@ The user's input determines which mode to run. Parse the input as follows:
 /pipeline debug <path-to-error-log>
 ```
 
+**Mode 9 — arch-review**: Run an architecture review on code changes without a design document. Evaluate changed/added files against hexagonal architecture, SOLID principles, port-adapter wiring, layer boundaries, and codebase conventions. Stop after the verdict.
+```
+/pipeline arch-review [files/folders]
+```
+
 ### ADR File Flag
 
 Modes that include Phase 1 (`full`, `design-only`, `design-and-review`) accept an optional `--adr` flag. When present, the Designer writes the design to a file at `docs/designs/<slug>-adr.md` following the ADR template at `.cursor/files/ADR - Architecture Review Template.md`. The flag can appear anywhere in the command:
@@ -78,16 +83,34 @@ After resolving the input, pass the full task context (title, description, accep
 
 ### Mode Parsing Rules
 
-1. Strip the `--adr` flag from the input if present (set an internal `adr_requested = true` flag). Then check the first word after `/pipeline` against the mode keywords: `full`, `design-only`, `design-and-review`, `implement`, `review-only`, `code-review-only`, `qa-only`, `debug`.
+1. Strip the `--adr` flag from the input if present (set an internal `adr_requested = true` flag). Then check the first word after `/pipeline` against the mode keywords: `full`, `design-only`, `design-and-review`, `implement`, `review-only`, `code-review-only`, `qa-only`, `debug`, `arch-review`.
 2. If none of the keywords match, treat the entire input as a task description and use **full** mode.
 3. For modes that accept a file path, read that file and use its contents as the input artifact for the starting phase.
 4. For **full** mode: after resolving design input (see above), if the argument is an existing file path on disk, read it as the design and start at Phase 2. Otherwise resolve it as a Jira ticket or free-text and start at Phase 1.
-5. For `design-only` and `review-only` and `code-review-only` and `qa-only` — these are single-phase runs. Execute ONLY that one phase. Do NOT continue to subsequent phases.
+5. For `design-only` and `review-only` and `code-review-only` and `qa-only` and `arch-review` — these are single-phase runs. Execute ONLY that one phase. Do NOT continue to subsequent phases.
 6. For `design-and-review` — execute Phase 1 and Phase 2 (with revision loops) only. Stop before Phase 3.
 7. For **debug** mode: check if the argument is a path to an existing file. If yes, read the file as the error log input. If not, treat the entire argument as an error description or symptom.
 8. Announce the detected mode at the start: "Pipeline mode: **<mode>** — starting at Phase <N>."
 
-CRITICAL RULE: When a review phase produces a verdict that is NOT approval, you MUST execute the revision loop described below. You are FORBIDDEN from proceeding to the next phase until the reviewer approves. This is non-negotiable.
+CRITICAL RULE: When a review phase produces a verdict that is NOT approval, you MUST execute the revision loop described below. You are FORBIDDEN from proceeding to the next phase until the reviewer approves. This is non-negotiable. Exception: `arch-review` is a standalone single-phase mode and does not run revision loops.
+
+### Scope Resolution for Review Modes
+
+Applies to modes: `arch-review`, `code-review-only`, `qa-only`.
+
+When determining which files to review:
+
+1. **Explicit scope provided** — if the user passed file paths or folder paths in the command (e.g., `/pipeline code-review-only src/services/`), use those as the review scope. No auto-detection needed.
+
+2. **No explicit scope provided** — auto-detect the PR diff:
+   - Determine the base branch: use the environment variable `GITHUB_BASE_REF` if available, otherwise default to `main`.
+   - Run: `git diff --name-only origin/<base>...HEAD`
+   - If the command produces a non-empty file list, use those files as the review scope. Announce: "Auto-detected PR scope: **N files** changed vs `origin/<base>`."
+   - If the command fails or produces an empty list (e.g., detached HEAD, no remote, no diff), fall back to reviewing the full workspace. Announce: "No PR diff detected — reviewing full workspace."
+
+3. **Passing scope to the review skill** — at the start of the review phase, present the scoped file list as context:
+   - "The following files are in scope for this review:" followed by the file list.
+   - The reviewer MUST focus on these files but MAY reference other files for context (e.g., checking imports, verifying interfaces exist).
 
 ## State Tracking
 
@@ -171,6 +194,19 @@ IF verdict is NEEDS REVISION or REJECT:
         Step F: Update and display the pipeline state tracker.
         Step G: Go back to PHASE 2 (re-read the Design Reviewer skill and review the revised design).
 ```
+
+---
+
+### PHASE 2b: ARCHITECTURE REVIEW
+
+Used by `arch-review` mode only. This is a standalone phase — it does NOT run as part of the normal Phase 1 → 2 → 3 → 4 → 5 pipeline.
+
+1. Read the skill file at `.cursor/skills/pipeline-arch-reviewer/SKILL.md`.
+2. Switch persona to the Architecture Reviewer.
+3. Resolve the review scope using the Scope Resolution rules above (git diff or explicit paths).
+4. Present the scoped file list, then critically review the changed files against hexagonal architecture, SOLID, port-adapter wiring, and codebase conventions following the skill's review dimensions.
+5. Present the review under a `## PHASE 2: ARCHITECTURE REVIEW` header.
+6. Extract the verdict (APPROVE / NEEDS REVISION / REJECT). This is a single-phase mode — there is no revision loop. Display the final state and stop.
 
 ---
 
@@ -327,7 +363,7 @@ For **multi-phase modes** (full, design-and-review, implement):
 <important architectural or implementation decisions made during the pipeline>
 ```
 
-For **single-phase modes** (design-only, review-only, code-review-only, qa-only):
+For **single-phase modes** (design-only, review-only, arch-review, code-review-only, qa-only):
 
 ```
 ## <PHASE NAME> COMPLETE
