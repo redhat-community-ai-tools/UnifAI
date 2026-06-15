@@ -288,7 +288,7 @@
     <div class="header">
         <h1>CR Intelligence Dashboard</h1>
         <div class="meta">
-            Last 60 days &middot; Generated 2026-06-11
+            Last 60 days &middot; Generated 2026-06-15
         </div>
     </div>
 
@@ -310,27 +310,27 @@
         </div>
         <div class="metric-card">
             <div class="label">Avg Time to First Review</div>
-            <div class="value" id="metric-ttfr">38.2<span class="unit">hrs</span></div>
+            <div class="value" id="metric-ttfr">36.6<span class="unit">hrs</span></div>
         </div>
         <div class="metric-card">
             <div class="label">Avg Review to Merge</div>
-            <div class="value" id="metric-rtm">172.9<span class="unit">hrs</span></div>
+            <div class="value" id="metric-rtm">184.9<span class="unit">hrs</span></div>
         </div>
         <div class="metric-card">
             <div class="label">Avg Time to Merge</div>
-            <div class="value" id="metric-ttm">194.7<span class="unit">hrs</span></div>
+            <div class="value" id="metric-ttm">207.4<span class="unit">hrs</span></div>
         </div>
         <div class="metric-card">
             <div class="label">Avg Review Cycles</div>
-            <div class="value" id="metric-cycles">2.7</div>
+            <div class="value" id="metric-cycles">2.9</div>
         </div>
         <div class="metric-card">
             <div class="label">Total PRs</div>
-            <div class="value" id="metric-total-prs">57</div>
+            <div class="value" id="metric-total-prs">59</div>
         </div>
         <div class="metric-card">
             <div class="label">Comments per PR</div>
-            <div class="value" id="metric-comments-pr">13.5</div>
+            <div class="value" id="metric-comments-pr">14.3</div>
         </div>
     </div>
 
@@ -340,27 +340,27 @@
     <div class="metrics-grid">
         <div class="metric-card ai">
             <div class="label">AI Comments</div>
-            <div class="value">346</div>
+            <div class="value" id="metric-ai-comments">412</div>
         </div>
         <div class="metric-card human">
             <div class="label">Human Comments</div>
-            <div class="value">422</div>
+            <div class="value" id="metric-human-comments">433</div>
         </div>
         <div class="metric-card coverage">
             <div class="label">AI File Coverage</div>
-            <div class="value">37.2<span class="unit">%</span></div>
+            <div class="value" id="metric-ai-coverage">38.7<span class="unit">%</span></div>
         </div>
         <div class="metric-card">
             <div class="label">PRs with Both AI + Human</div>
-            <div class="value">24</div>
+            <div class="value">25</div>
         </div>
         <div class="metric-card">
             <div class="label">Files Only Humans Flagged</div>
-            <div class="value">115</div>
+            <div class="value" id="metric-human-only-files">117</div>
         </div>
         <div class="metric-card">
             <div class="label">Files Only AI Flagged</div>
-            <div class="value">89</div>
+            <div class="value" id="metric-ai-only-files">106</div>
         </div>
     </div>
 
@@ -371,8 +371,8 @@
             Of the files humans left comments on, how many did AI also review?
         </p>
         <div class="coverage-bar-container">
-            <div class="coverage-bar-fill" style="width: 37.2%; background: linear-gradient(90deg, #d29922, #f78166);">
-                37.2%
+            <div class="coverage-bar-fill" id="coverage-bar" style="width: 38.7%; background: linear-gradient(90deg, #d29922, #f78166);">
+                38.7%
             </div>
         </div>
         <div class="legend">
@@ -385,8 +385,8 @@
     <div class="insight-card">
         <div class="insight-title">Key Insight</div>
         <div class="insight-text">
-            AI reviews cover <strong>37.2%</strong> of the files that humans comment on.
-            The remaining <strong>115 files</strong> represent the gap where
+            AI reviews cover <strong>38.7%</strong> of the files that humans comment on.
+            The remaining <strong>117 files</strong> represent the gap where
             team-specific knowledge could improve AI coverage — reducing human reviewer workload.
         </div>
     </div>
@@ -442,17 +442,6 @@
             <tbody>
                 
                 <tr class="weekly-row">
-                    <td>Apr 13 - 19</td>
-                    <td>3</td>
-                    <td>3</td>
-                    <td>0.0 hrs</td>
-                    <td>64.0 hrs</td>
-                    <td>2.3</td>
-                    <td><span class="bar bar-ai" style="width: 69px;"></span> 23</td>
-                    <td><span class="bar bar-human" style="width: 207px;"></span> 69</td>
-                </tr>
-                
-                <tr class="weekly-row">
                     <td>Apr 20 - 26</td>
                     <td>5</td>
                     <td>6</td>
@@ -469,7 +458,7 @@
                     <td>3</td>
                     <td>0.5 hrs</td>
                     <td>187.9 hrs</td>
-                    <td>3.4</td>
+                    <td>3.2</td>
                     <td><span class="bar bar-ai" style="width: 195px;"></span> 65</td>
                     <td><span class="bar bar-human" style="width: 9px;"></span> 3</td>
                 </tr>
@@ -479,8 +468,8 @@
                     <td>8</td>
                     <td>5</td>
                     <td>13.9 hrs</td>
-                    <td>114.4 hrs</td>
-                    <td>2.2</td>
+                    <td>230.1 hrs</td>
+                    <td>2.3</td>
                     <td><span class="bar bar-ai" style="width: 93px;"></span> 31</td>
                     <td><span class="bar bar-human" style="width: 159px;"></span> 53</td>
                 </tr>
@@ -501,32 +490,43 @@
                     <td>4</td>
                     <td>9</td>
                     <td>0.6 hrs</td>
-                    <td>55.2 hrs</td>
-                    <td>2.5</td>
+                    <td>166.6 hrs</td>
+                    <td>2.8</td>
                     <td><span class="bar bar-ai" style="width: 96px;"></span> 32</td>
                     <td><span class="bar bar-human" style="width: 114px;"></span> 38</td>
                 </tr>
                 
                 <tr class="weekly-row">
                     <td>May 25 - 31</td>
-                    <td>5</td>
+                    <td>6</td>
                     <td>4</td>
-                    <td>30.9 hrs</td>
-                    <td>32.4 hrs</td>
-                    <td>3.0</td>
-                    <td><span class="bar bar-ai" style="width: 54px;"></span> 18</td>
-                    <td><span class="bar bar-human" style="width: 39px;"></span> 13</td>
+                    <td>24.7 hrs</td>
+                    <td>115.4 hrs</td>
+                    <td>4.4</td>
+                    <td><span class="bar bar-ai" style="width: 78px;"></span> 26</td>
+                    <td><span class="bar bar-human" style="width: 45px;"></span> 15</td>
                 </tr>
                 
                 <tr class="weekly-row">
                     <td>Jun 01 - 07</td>
-                    <td>3</td>
-                    <td>3</td>
-                    <td>0.1 hrs</td>
-                    <td>0.8 hrs</td>
+                    <td>5</td>
+                    <td>4</td>
+                    <td>6.0 hrs</td>
+                    <td>6.7 hrs</td>
                     <td>4.5</td>
-                    <td><span class="bar bar-ai" style="width: 189px;"></span> 63</td>
-                    <td><span class="bar bar-human" style="width: 51px;"></span> 17</td>
+                    <td><span class="bar bar-ai" style="width: 303px;"></span> 101</td>
+                    <td><span class="bar bar-human" style="width: 87px;"></span> 29</td>
+                </tr>
+                
+                <tr class="weekly-row">
+                    <td>Jun 08 - 14</td>
+                    <td>3</td>
+                    <td>5</td>
+                    <td>0.1 hrs</td>
+                    <td>0.1 hrs</td>
+                    <td>2.0</td>
+                    <td><span class="bar bar-ai" style="width: 96px;"></span> 32</td>
+                    <td><span class="bar bar-human" style="width: 6px;"></span> 2</td>
                 </tr>
                 
             </tbody>
@@ -549,8 +549,8 @@
                 
                 <tr>
                     <td>sfiresht</td>
-                    <td>106</td>
-                    <td>13</td>
+                    <td>111</td>
+                    <td>14</td>
                     <td>
                         
                         
@@ -560,12 +560,12 @@
                 
                 <tr>
                     <td>Nirsisr</td>
-                    <td>102</td>
-                    <td>9</td>
+                    <td>106</td>
+                    <td>10</td>
                     <td>
                         
                         
-                        <span class="bar bar-human" style="width: 96px;"></span>
+                        <span class="bar bar-human" style="width: 95px;"></span>
                     </td>
                 </tr>
                 
@@ -576,18 +576,18 @@
                     <td>
                         
                         
-                        <span class="bar bar-human" style="width: 64px;"></span>
+                        <span class="bar bar-human" style="width: 61px;"></span>
                     </td>
                 </tr>
                 
                 <tr>
                     <td>Lina-AbuYousef</td>
-                    <td>66</td>
-                    <td>7</td>
+                    <td>64</td>
+                    <td>6</td>
                     <td>
                         
                         
-                        <span class="bar bar-human" style="width: 62px;"></span>
+                        <span class="bar bar-human" style="width: 57px;"></span>
                     </td>
                 </tr>
                 
@@ -598,18 +598,18 @@
                     <td>
                         
                         
-                        <span class="bar bar-human" style="width: 49px;"></span>
+                        <span class="bar bar-human" style="width: 46px;"></span>
                     </td>
                 </tr>
                 
                 <tr>
                     <td>yhabushi79</td>
-                    <td>28</td>
-                    <td>8</td>
+                    <td>32</td>
+                    <td>10</td>
                     <td>
                         
                         
-                        <span class="bar bar-human" style="width: 26px;"></span>
+                        <span class="bar bar-human" style="width: 28px;"></span>
                     </td>
                 </tr>
                 
@@ -623,8 +623,8 @@
     <div class="insight-card" style="border-left-color: #3fb950; margin-bottom: 1.5rem;">
         <div class="insight-title" style="color: #3fb950;">How This Works</div>
         <div class="insight-text">
-            These suggestions are generated from <strong>394</strong> human review comments
-            (93.4% of all human comments) that were resolved with actual code changes —
+            These suggestions are generated from <strong>398</strong> human review comments
+            (91.9% of all human comments) that were resolved with actual code changes —
             meaning the team agreed AND the author fixed it. These are high-value patterns to teach CodeRabbit.
         </div>
     </div>
@@ -633,18 +633,18 @@
     <div class="suggestion-card">
         <div class="suggestion-header">
             <span class="suggestion-category">ARCHITECTURE</span>
-            <span class="suggestion-count">156 actionable comments</span>
+            <span class="suggestion-count">153 actionable comments</span>
         </div>
 
         <div class="suggestion-rules">
             <div class="suggestion-label">Team Rules Identified:</div>
             <ul>
                 
-                <li>Maintain consistent code structure and component organization, adhering to established patterns.</li>
+                <li>Promote Code Reusability: Consolidate common logic into shared base classes or utility modules to avoid duplication.</li>
                 
-                <li>Separate concerns by centralizing common utilities and clearly externalizing dependencies from core libraries.</li>
+                <li>Enforce Consistent Module Structure and External Dependency Handling: Organize code logically, group related components, and abstract external integrations following established patterns.</li>
                 
-                <li>Manage configuration consistently, preferring external sources like environment variables over hardcoded or generated values.</li>
+                <li>Standardize on Preferred Technologies and Deployment Approaches: Prefer established tools and deployment methods unless there's a clear architectural advantage for an alternative.</li>
                 
             </ul>
         </div>
@@ -652,14 +652,14 @@
         
         <div class="suggestion-example">
             <div class="suggestion-label">Best Example:</div>
-            <blockquote>{'file': 'multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py', 'comment': '@Nirsisr maybe we can find a common place for this function. maybe create utils file in nodes/common/utils.py and add it there? int he future this will be an adapter, what im planning in the future is to move all these elements and put them as outside from mas lib, since they depend on the outside word'}</blockquote>
+            <blockquote>{'file_path': 'multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py', 'comment_text': '@Nirsisr maybe we can find a common place for this function. maybe create utils file in nodes/common/utils.py and add it there? int he future this will be an adapter, what im planning in the future is to move all these elements and put them as outside from mas lib, since they depend on the outside word'}</blockquote>
         </div>
         
 
         
         <div class="suggestion-prompt">
             <div class="suggestion-label">Copy to teach CodeRabbit:</div>
-            <div class="prompt-box">@coderabbitai Pay special attention to architectural consistency and separation of concerns. Verify that new components, utilities, and configurations are placed according to established patterns, with a preference for centralizing common functionalities and clearly separating external dependencies.</div>
+            <div class="prompt-box">@coderabbitai When reviewing new or changed architectural components, verify that common logic is consolidated into shared base classes or utility modules. Also, ensure external dependencies are abstracted and organized according to our established patterns for modularity and future-proofing.</div>
         </div>
         
     </div>
@@ -667,18 +667,16 @@
     <div class="suggestion-card">
         <div class="suggestion-header">
             <span class="suggestion-category">ERROR_HANDLING</span>
-            <span class="suggestion-count">5 actionable comments</span>
+            <span class="suggestion-count">2 actionable comments</span>
         </div>
 
         <div class="suggestion-rules">
             <div class="suggestion-label">Team Rules Identified:</div>
             <ul>
                 
-                <li>Anticipate Failure Modes: Proactively identify and address all potential failure points, including external service unavailability or partial success scenarios.</li>
+                <li>1. Always inform the user about operational failures.</li>
                 
-                <li>Differentiate Error Types: Handle different failure outcomes explicitly, rather than treating all errors generically, to allow for specific responses and understanding of root causes.</li>
-                
-                <li>Ensure Data Consistency & User Feedback: For multi-step operations, maintain data consistency even on partial failure (e.g., with rollbacks), and provide clear user feedback about any failures.</li>
+                <li>2. Differentiate between types of failures to enable specific handling and improved diagnostics.</li>
                 
             </ul>
         </div>
@@ -686,17 +684,14 @@
         
         <div class="suggestion-example">
             <div class="suggestion-label">Best Example:</div>
-            <blockquote>{'file_path': 'ui/client/src/api/teams.ts', 'comment_text': "maya this is a warning cursor gave me idk how much this is a real issue but worth looking at it:\n\n`Two-step delete without rollback — if workspace.cleanup succeeds but team.delete fails, you've deleted all the team's resources/blueprints/sessions but the team still exists. The user sees the team but all its data is gone.`"}</blockquote>
+            <blockquote>{'file_path': 'shared-resources/sso-backend/utils/auth_manager.py', 'comment_text': 'i think you should check what is the response ( what if the server will reaponse with other code ) you treat faliures all the same so if the server will have real issue to revoke you dont know the reason.'}</blockquote>
         </div>
         
 
         
         <div class="suggestion-prompt">
             <div class="suggestion-label">Copy to teach CodeRabbit:</div>
-            <div class="prompt-box">@coderabbitai In this ERROR_HANDLING review, ensure:
-1.  **Anticipate Failures:** Have all potential failure points been considered, including external service unavailability or partial success scenarios?
-2.  **Differentiate & Respond:** Are different types of errors handled explicitly, rather than generically, to allow for specific responses (e.g., user feedback, logging, retries)?
-3.  **Maintain Consistency:** For multi-step operations, is data consistency maintained even on partial failure (e.g., rollbacks, specific cleanup)? Is the user clearly informed of the outcome?</div>
+            <div class="prompt-box">@coderabbitai Check error handling. Does the code differentiate between various failure types (e.g., different API responses, specific exceptions) instead of catching all errors generically? Ensure unique error types receive specific handling and provide relevant user feedback or logging.</div>
         </div>
         
     </div>
@@ -704,18 +699,18 @@
     <div class="suggestion-card">
         <div class="suggestion-header">
             <span class="suggestion-category">NAMING</span>
-            <span class="suggestion-count">20 actionable comments</span>
+            <span class="suggestion-count">18 actionable comments</span>
         </div>
 
         <div class="suggestion-rules">
             <div class="suggestion-label">Team Rules Identified:</div>
             <ul>
                 
-                <li>Be specific and unambiguous: Names should clearly and uniquely describe the entity's purpose, avoiding generic terms or words that have different meanings within the project's domain.</li>
+                <li>Be specific and unambiguous: Choose names that clearly describe the entity and avoid confusion with other concepts, especially within the project's domain.</li>
                 
-                <li>Reflect actual functionality/purpose: Names should accurately represent what the code *does* or *is*, rather than a related system, a calling component, or an indirect association.</li>
+                <li>Accurately reflect purpose/functionality: Names should precisely convey what a variable, method, class, or module *is* or *does*, avoiding generic or misleading terms.</li>
                 
-                <li>Maintain consistency: Use consistent naming conventions for similar concepts and avoid identical names for distinct entities or distinct names for identical entities.</li>
+                <li>Ensure consistency and differentiation: Use consistent naming for identical concepts, and clearly differentiate between similar but distinct entities (e.g., via suffixes or more descriptive terms).</li>
                 
             </ul>
         </div>
@@ -730,7 +725,10 @@
         
         <div class="suggestion-prompt">
             <div class="suggestion-label">Copy to teach CodeRabbit:</div>
-            <div class="prompt-box">@coderabbitai When reviewing naming (classes, methods, variables): Suggest renames when the current name is too generic, ambiguous (especially with domain terms), misleading about its actual functionality/purpose, or inconsistent with similar concepts across the codebase (e.g., identical names for distinct entities, or different names for identical ones). Prioritize clarity and specificity.</div>
+            <div class="prompt-box">@coderabbitai Focus on naming conventions:
+1.  **Clarity & Specificity**: Are names clear, specific, and unambiguous within the project context?
+2.  **Accuracy**: Do names accurately reflect the entity's purpose/functionality, avoiding generic or misleading terms?
+3.  **Differentiation**: Are similar but distinct entities clearly differentiated by their names?</div>
         </div>
         
     </div>
@@ -745,11 +743,11 @@
             <div class="suggestion-label">Team Rules Identified:</div>
             <ul>
                 
-                <li>Clearly distinguish configuration values that are specific to testing environments (e.g., resource sizes) from production values.</li>
+                <li>Clearly differentiate configuration values intended solely for testing environments (e.g., resource sizes in Helm values).</li>
                 
-                <li>Design tests to account for real-world system constraints and edge cases (e.g., size limitations, external service behaviors).</li>
+                <li>Avoid unnecessary duplication in test code; prefer reusable test factories and utilities.</li>
                 
-                <li>Ensure each test or test suite has a clear, defined scope and purpose, using appropriate testing methods (unit vs. integration, direct calls vs. endpoint calls).</li>
+                <li>Explicitly define the scope, purpose, and specific target of tests (e.g., which instance, component, or endpoint is being tested), especially in complex setups or test fixtures.</li>
                 
             </ul>
         </div>
@@ -757,14 +755,17 @@
         
         <div class="suggestion-example">
             <div class="suggestion-label">Best Example:</div>
-            <blockquote>{'file_path': 'helm/shared-resources/mongodb/values.yaml', 'comment_text': "same as above - the size matters, so I guess it's only for testing phase?"}</blockquote>
+            <blockquote>{'file_path': 'rag/tests/unit/conftest.py', 'comment_text': "I'm confused, like these tests are supposed to test the endpoints we have in the rag right? if I got that correctly, then calling the /upload endpoint will take care of generating the doc_path right? or you maybe use this for the unitest of the /embed endpoint only ?"}</blockquote>
         </div>
         
 
         
         <div class="suggestion-prompt">
             <div class="suggestion-label">Copy to teach CodeRabbit:</div>
-            <div class="prompt-box">@coderabbitai Review configuration files for values that are specific to testing environments (e.g., resource sizes, temporary settings). Ensure these values are explicitly labeled as 'test-only' or segregated to prevent confusion with production configurations.</div>
+            <div class="prompt-box">@coderabbitai Learn to identify and suggest improvements in test code for clarity. Specifically, look for:
+1.  Ambiguity regarding whether configuration values (especially in `helm/values.yaml`) are intended *only* for testing; suggest making this explicit.
+2.  Potential duplication in test factories or helpers; suggest consolidation or justification.
+3.  Unclear test scope, purpose, or target (e.g., which instance/service is being tested, unit vs. integration); suggest clarifying comments or restructuring.</div>
         </div>
         
     </div>
@@ -779,9 +780,11 @@
             <div class="suggestion-label">Team Rules Identified:</div>
             <ul>
                 
-                <li>Minimize redundant operations: Debounce frequent events/API calls, reduce database round-trips, and prevent excessive re-renders or computations.</li>
+                <li>Minimize unnecessary I/O operations and redundant function calls (e.g., database round-trips, excessive async wrappers, UI re-renders).</li>
                 
-                <li>Optimize resource and data handling: Implement lazy loading, reduce data payload sizes, and use efficient caching strategies (e.g., appropriate TTLs).</li>
+                <li>Implement debouncing or throttling for frequent events that trigger costly operations (e.g., UI input, network requests).</li>
+                
+                <li>Optimize resource loading and caching strategies (e.g., lazy imports, appropriate cache TTLs, direct streaming).</li>
                 
             </ul>
         </div>
@@ -789,16 +792,14 @@
         
         <div class="suggestion-example">
             <div class="suggestion-label">Best Example:</div>
-            <blockquote>{'file': 'ui/client/src/components/agentic-ai/chat/ChatInterface.tsx', 'comment': 'pls add a debounce here , sendTypingSignal (line 163) fires a POST /collaboration/session.typing on every call. The 4000ms timeout at line 171 only schedules the "stop typing" signal. There\'s no leading debounce'}</blockquote>
+            <blockquote>{'file_path': 'ui/client/src/components/agentic-ai/chat/ChatInterface.tsx', 'comment_text': 'pls add a debounce here , sendTypingSignal (line 163) fires a POST /collaboration/session.typing on every call. The 4000ms timeout at line 171 only schedules the "stop typing" signal. There\'s no leading debounce'}</blockquote>
         </div>
         
 
         
         <div class="suggestion-prompt">
             <div class="suggestion-label">Copy to teach CodeRabbit:</div>
-            <div class="prompt-box">@coderabbitai Review for performance optimizations, focusing on:
-- Minimizing unnecessary I/O: Look for opportunities to debounce frequent actions, reduce database queries/writes, and optimize network requests (e.g., data payloads).
-- Optimizing resource utilization: Identify areas for lazy loading, preventing excessive re-renders, or improving caching strategies (like cache TTLs).</div>
+            <div class="prompt-box">@coderabbitai Learn to identify and flag code sections where frequent user interactions or internal events could lead to excessive resource consumption (e.g., redundant API calls, database round-trips, UI re-renders). Suggest optimizations like debouncing/throttling events, using lazy loading for resources, or minimizing I/O operations and ensuring efficient caching strategies.</div>
         </div>
         
     </div>
@@ -806,16 +807,18 @@
     <div class="suggestion-card">
         <div class="suggestion-header">
             <span class="suggestion-category">SECURITY</span>
-            <span class="suggestion-count">14 actionable comments</span>
+            <span class="suggestion-count">17 actionable comments</span>
         </div>
 
         <div class="suggestion-rules">
             <div class="suggestion-label">Team Rules Identified:</div>
             <ul>
                 
-                <li>Backend Authorization: Always enforce server-side authorization checks for sensitive operations, independent of client-side UI checks.</li>
+                <li>Securely Store Credentials: Never hardcode API keys, tokens, or other sensitive credentials. Utilize dedicated secrets management systems (e.g., GitHub Secrets, Vault).</li>
                 
-                <li>Secure Credential Handling: Never hardcode, commit, or expose sensitive credentials or tokens. Utilize secure storage and manage their lifecycle (e.g., hashing, encryption, external secrets management).</li>
+                <li>Enforce Server-Side Authorization: Implement robust authorization checks for all sensitive operations, ensuring they are enforced on the backend (e.g., API decorators) and not solely on the client-side.</li>
+                
+                <li>Prevent Sensitive Data Exposure: Ensure authentication tokens and other sensitive information are never exposed in client-side code, temporary files, logs, or API responses.</li>
                 
             </ul>
         </div>
@@ -823,14 +826,17 @@
         
         <div class="suggestion-example">
             <div class="suggestion-label">Best Example:</div>
-            <blockquote>{'file': 'ui/client/src/components/agentic-ai/templates/TemplateCard.tsx', 'comment': "if i underdstand correctly you check here if the user's an admin and then the rest of the funcionality isn't limited, i think we should still cover our bases with the require_admin decorator we have on the apis"}</blockquote>
+            <blockquote>{'file': '.github/workflows/cursor-pipeline.yml', 'comment': 'is this an API key? if so please move it to the githuv vars /secrets section.'}</blockquote>
         </div>
         
 
         
         <div class="suggestion-prompt">
             <div class="suggestion-label">Copy to teach CodeRabbit:</div>
-            <div class="prompt-box">@coderabbitai Review for security: Verify that all sensitive operations use backend authorization checks (e.g., admin decorators) and that no credentials or tokens are hardcoded, committed, or insecurely stored/exposed.</div>
+            <div class="prompt-box">@coderabbitai Review this code for security vulnerabilities. Pay close attention to:
+1.  **Secure Credentials**: Identify any hardcoded API keys, tokens, or sensitive credentials and suggest moving them to secure environment variables or a secrets management system (e.g., Vault, GitHub Secrets).
+2.  **Server-Side Authorization**: Verify that all sensitive actions and API endpoints implement robust server-side authorization checks (e.g., admin role verification, decorators), rather than relying on client-side controls.
+3.  **Prevent Sensitive Data Exposure**: Flag any instances where sensitive information (e.g., authentication tokens, user credentials) might be exposed in temporary files, client-side code, or API responses.</div>
         </div>
         
     </div>
@@ -838,18 +844,18 @@
     <div class="suggestion-card">
         <div class="suggestion-header">
             <span class="suggestion-category">STYLE</span>
-            <span class="suggestion-count">114 actionable comments</span>
+            <span class="suggestion-count">128 actionable comments</span>
         </div>
 
         <div class="suggestion-rules">
             <div class="suggestion-label">Team Rules Identified:</div>
             <ul>
                 
-                <li>Imports and top-level declarations must be consistently placed at the beginning of their respective files.</li>
+                <li>Always place all import statements at the very top of the file.</li>
                 
-                <li>Prioritize code conciseness and reusability; combine similar functionalities into a single, shared component or function.</li>
+                <li>Prioritize code readability and conciseness; refactor for cleaner syntax and combine redundant functionality.</li>
                 
-                <li>Adhere to established logging conventions, typically starting general informational messages at the `.info` level.</li>
+                <li>Standardize logging messages to primarily use the `.info` level for general output.</li>
                 
             </ul>
         </div>
@@ -857,17 +863,14 @@
         
         <div class="suggestion-example">
             <div class="suggestion-label">Best Example:</div>
-            <blockquote>{'file_path': 'bootstrap/container.py', 'comment_text': 'is it better to import it here or should it be moved to the top of the file? like why only do it in this function?'}</blockquote>
+            <blockquote>{'file': 'multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py', 'comment': 'import should be at start of file'}</blockquote>
         </div>
         
 
         
         <div class="suggestion-prompt">
             <div class="suggestion-label">Copy to teach CodeRabbit:</div>
-            <div class="prompt-box">@coderabbitai Review this PR for adherence to our team's style guidelines. Specifically, check for:
--   **Import and Declaration Placement:** Ensure all imports and top-level declarations are consistently placed at the beginning of their respective files.
--   **Code Conciseness and Reusability:** Identify opportunities to combine identical or highly similar functionalities into a single, reusable component or function, and suggest 'nicer ways' to express code.
--   **Logging Level Conventions:** Verify that logging messages follow our established conventions, particularly ensuring general informational messages start at the `.info` level.</div>
+            <div class="prompt-box">@coderabbitai Please ensure all import statements are placed at the top of the file. Additionally, review code for opportunities to enhance readability and conciseness, such as combining redundant functions or simplifying expressions. Check that logging messages primarily use the `.info` level for general output.</div>
         </div>
         
     </div>
@@ -875,18 +878,18 @@
     <div class="suggestion-card">
         <div class="suggestion-header">
             <span class="suggestion-category">LOGIC</span>
-            <span class="suggestion-count">73 actionable comments</span>
+            <span class="suggestion-count">68 actionable comments</span>
         </div>
 
         <div class="suggestion-rules">
             <div class="suggestion-label">Team Rules Identified:</div>
             <ul>
                 
-                <li>Adhere strictly to external API/SDK specifications for data structures, message types, and native features.</li>
+                <li>Ensure correct and complete integration with external APIs/SDKs, including proper data mapping and utilization.</li>
                 
-                <li>Optimize logic by avoiding redundant operations and leveraging existing, direct functionalities.</li>
+                <li>Anticipate and address potential side effects, race conditions, and impacts on other system components.</li>
                 
-                <li>Evaluate the impact of changes on edge cases, related features, and resource lifecycles (e.g., creation, existence, deletion).</li>
+                <li>Optimize for efficiency by avoiding redundant operations and unnecessary computations.</li>
                 
             </ul>
         </div>
@@ -894,14 +897,14 @@
         
         <div class="suggestion-example">
             <div class="suggestion-label">Best Example:</div>
-            <blockquote>{'file_path': 'multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py', 'comment_text': "@Nirsisr doesn't Claude sdk takes list of messages? so we give it the conversation as it wants. ofc we need to convert the ChatMessage we have in MAS to claude type of messages."}</blockquote>
+            <blockquote>{'file': 'multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py', 'comment': "@Nirsisr doesn't Claude sdk takes list of messages? so we give it the conversation as it wants. ofc we need to convert the ChatMessage we have in MAS to claude type of messages."}</blockquote>
         </div>
         
 
         
         <div class="suggestion-prompt">
             <div class="suggestion-label">Copy to teach CodeRabbit:</div>
-            <div class="prompt-box">@coderabbitai Evaluate this code for logical correctness, focusing on adherence to external API/SDK specifications (including data types and native features), efficient use of existing system capabilities, and identification of potential side effects or redundancies.</div>
+            <div class="prompt-box">@coderabbitai Review logic, especially in integration points and core system flows. Flag areas where: 1. External API/SDK requirements for data formats or message structures are not fully met. 2. Available data from external systems (e.g., metadata, errors) isn't adequately utilized or handled. 3. Operations might be redundant, inefficient, or introduce unintended side effects/race conditions.</div>
         </div>
         
     </div>
@@ -914,7 +917,7 @@
     </div>
 
     <script>
-        const metrics = {"total_prs": 57, "open_prs": 10, "merged_prs": 43, "total_comments": 768, "avg_time_to_first_review_hours": 38.2, "avg_time_to_merge_hours": 194.7, "avg_time_review_to_merge_hours": 172.9, "avg_review_cycles": 2.7, "comments_per_pr": 13.5, "file_extensions": {".yaml": 51, ".sh": 30, ".py": 442, ".gotmpl": 2, ".ts": 24, ".tsx": 128, ".yml": 14, ".groovy": 29, ".md": 28, "other": 11, ".txt": 5, ".toml": 1, ".docx": 1, ".png": 2}, "weekly_trend": [{"week": "Apr 13 - 19", "week_key": "2026-W16", "prs_opened": 3, "prs_merged": 3, "comments": 92, "ai_comments": 23, "human_comments": 69}, {"week": "Apr 20 - 26", "week_key": "2026-W17", "prs_opened": 5, "prs_merged": 6, "comments": 91, "ai_comments": 15, "human_comments": 76}, {"week": "Apr 27 - May 03", "week_key": "2026-W18", "prs_opened": 7, "prs_merged": 3, "comments": 68, "ai_comments": 65, "human_comments": 3}, {"week": "May 04 - 10", "week_key": "2026-W19", "prs_opened": 8, "prs_merged": 5, "comments": 84, "ai_comments": 31, "human_comments": 53}, {"week": "May 11 - 17", "week_key": "2026-W20", "prs_opened": 4, "prs_merged": 3, "comments": 107, "ai_comments": 15, "human_comments": 92}, {"week": "May 18 - 24", "week_key": "2026-W21", "prs_opened": 4, "prs_merged": 9, "comments": 70, "ai_comments": 32, "human_comments": 38}, {"week": "May 25 - 31", "week_key": "2026-W22", "prs_opened": 5, "prs_merged": 4, "comments": 31, "ai_comments": 18, "human_comments": 13}, {"week": "Jun 01 - 07", "week_key": "2026-W23", "prs_opened": 3, "prs_merged": 3, "comments": 80, "ai_comments": 63, "human_comments": 17}], "weekly_breakdown": [{"week": "Apr 13 - 19", "week_key": "2026-W16", "prs_opened": 3, "prs_merged": 3, "avg_time_to_merge": 64.0, "avg_time_to_first_review": 0.0, "avg_cycles": 2.3, "comments": 92, "ai_comments": 23, "human_comments": 69}, {"week": "Apr 20 - 26", "week_key": "2026-W17", "prs_opened": 5, "prs_merged": 6, "avg_time_to_merge": 172.8, "avg_time_to_first_review": 134.2, "avg_cycles": 1.8, "comments": 91, "ai_comments": 15, "human_comments": 76}, {"week": "Apr 27 - May 03", "week_key": "2026-W18", "prs_opened": 7, "prs_merged": 3, "avg_time_to_merge": 187.9, "avg_time_to_first_review": 0.5, "avg_cycles": 3.4, "comments": 68, "ai_comments": 65, "human_comments": 3}, {"week": "May 04 - 10", "week_key": "2026-W19", "prs_opened": 8, "prs_merged": 5, "avg_time_to_merge": 114.4, "avg_time_to_first_review": 13.9, "avg_cycles": 2.2, "comments": 84, "ai_comments": 31, "human_comments": 53}, {"week": "May 11 - 17", "week_key": "2026-W20", "prs_opened": 4, "prs_merged": 3, "avg_time_to_merge": 80.8, "avg_time_to_first_review": 29.9, "avg_cycles": 2.0, "comments": 107, "ai_comments": 15, "human_comments": 92}, {"week": "May 18 - 24", "week_key": "2026-W21", "prs_opened": 4, "prs_merged": 9, "avg_time_to_merge": 55.2, "avg_time_to_first_review": 0.6, "avg_cycles": 2.5, "comments": 70, "ai_comments": 32, "human_comments": 38}, {"week": "May 25 - 31", "week_key": "2026-W22", "prs_opened": 5, "prs_merged": 4, "avg_time_to_merge": 32.4, "avg_time_to_first_review": 30.9, "avg_cycles": 3.0, "comments": 31, "ai_comments": 18, "human_comments": 13}, {"week": "Jun 01 - 07", "week_key": "2026-W23", "prs_opened": 3, "prs_merged": 3, "avg_time_to_merge": 0.8, "avg_time_to_first_review": 0.1, "avg_cycles": 4.5, "comments": 80, "ai_comments": 63, "human_comments": 17}], "top_reviewers": [{"name": "sfiresht", "comments": 106, "prs_reviewed": 13}, {"name": "Nirsisr", "comments": 102, "prs_reviewed": 9}, {"name": "MayaCrmi", "comments": 68, "prs_reviewed": 10}, {"name": "Lina-AbuYousef", "comments": 66, "prs_reviewed": 7}, {"name": "odaiodeh", "comments": 52, "prs_reviewed": 11}, {"name": "yhabushi79", "comments": 28, "prs_reviewed": 8}], "lookback_days": 60, "generated_at": "2026-06-11T07:36:27.109366+00:00", "ai_total_comments": 346, "human_total_comments": 422, "ai_coverage_pct": 37.2, "overlap_files_count": 68, "ai_only_files_count": 89, "human_only_files_count": 115, "prs_with_both_count": 24, "category_comparison": [{"category": "ARCHITECTURE", "ai_count": 28, "human_count": 168}, {"category": "ERROR_HANDLING", "ai_count": 43, "human_count": 6}, {"category": "NAMING", "ai_count": 6, "human_count": 20}, {"category": "TESTING", "ai_count": 5, "human_count": 6}, {"category": "PERFORMANCE", "ai_count": 3, "human_count": 6}, {"category": "SECURITY", "ai_count": 45, "human_count": 16}, {"category": "STYLE", "ai_count": 83, "human_count": 119}, {"category": "LOGIC", "ai_count": 133, "human_count": 81}], "ai_categories": {"ARCHITECTURE": 28, "SECURITY": 45, "ERROR_HANDLING": 43, "STYLE": 83, "LOGIC": 133, "NAMING": 6, "TESTING": 5, "PERFORMANCE": 3}, "human_categories": {"LOGIC": 81, "STYLE": 119, "ARCHITECTURE": 168, "SECURITY": 16, "NAMING": 20, "PERFORMANCE": 6, "TESTING": 6, "ERROR_HANDLING": 6}, "learning_suggestions": [{"category": "ARCHITECTURE", "comment_count": 156, "rules": ["Maintain consistent code structure and component organization, adhering to established patterns.", "Separate concerns by centralizing common utilities and clearly externalizing dependencies from core libraries.", "Manage configuration consistently, preferring external sources like environment variables over hardcoded or generated values."], "best_example": {"file": "multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py", "comment": "@Nirsisr maybe we can find a common place for this function. maybe create utils file in nodes/common/utils.py and add it there? int he future this will be an adapter, what im planning in the future is to move all these elements and put them as outside from mas lib, since they depend on the outside word"}, "coderabbit_prompt": "@coderabbitai Pay special attention to architectural consistency and separation of concerns. Verify that new components, utilities, and configurations are placed according to established patterns, with a preference for centralizing common functionalities and clearly separating external dependencies."}, {"category": "ERROR_HANDLING", "comment_count": 5, "rules": ["Anticipate Failure Modes: Proactively identify and address all potential failure points, including external service unavailability or partial success scenarios.", "Differentiate Error Types: Handle different failure outcomes explicitly, rather than treating all errors generically, to allow for specific responses and understanding of root causes.", "Ensure Data Consistency & User Feedback: For multi-step operations, maintain data consistency even on partial failure (e.g., with rollbacks), and provide clear user feedback about any failures."], "best_example": {"file_path": "ui/client/src/api/teams.ts", "comment_text": "maya this is a warning cursor gave me idk how much this is a real issue but worth looking at it:\n\n`Two-step delete without rollback \u2014 if workspace.cleanup succeeds but team.delete fails, you've deleted all the team's resources/blueprints/sessions but the team still exists. The user sees the team but all its data is gone.`"}, "coderabbit_prompt": "@coderabbitai In this ERROR_HANDLING review, ensure:\n1.  **Anticipate Failures:** Have all potential failure points been considered, including external service unavailability or partial success scenarios?\n2.  **Differentiate & Respond:** Are different types of errors handled explicitly, rather than generically, to allow for specific responses (e.g., user feedback, logging, retries)?\n3.  **Maintain Consistency:** For multi-step operations, is data consistency maintained even on partial failure (e.g., rollbacks, specific cleanup)? Is the user clearly informed of the outcome?"}, {"category": "NAMING", "comment_count": 20, "rules": ["Be specific and unambiguous: Names should clearly and uniquely describe the entity's purpose, avoiding generic terms or words that have different meanings within the project's domain.", "Reflect actual functionality/purpose: Names should accurately represent what the code *does* or *is*, rather than a related system, a calling component, or an indirect association.", "Maintain consistency: Use consistent naming conventions for similar concepts and avoid identical names for distinct entities or distinct names for identical entities."], "best_example": {"file_path": "local-development/devtool/services/dotenv/display.py", "comment_text": "ok i see now this Service is something that represent the details of some service, i think you should change the name, like ServiceInfo or other name, since its a little bit confusing"}, "coderabbit_prompt": "@coderabbitai When reviewing naming (classes, methods, variables): Suggest renames when the current name is too generic, ambiguous (especially with domain terms), misleading about its actual functionality/purpose, or inconsistent with similar concepts across the codebase (e.g., identical names for distinct entities, or different names for identical ones). Prioritize clarity and specificity."}, {"category": "TESTING", "comment_count": 6, "rules": ["Clearly distinguish configuration values that are specific to testing environments (e.g., resource sizes) from production values.", "Design tests to account for real-world system constraints and edge cases (e.g., size limitations, external service behaviors).", "Ensure each test or test suite has a clear, defined scope and purpose, using appropriate testing methods (unit vs. integration, direct calls vs. endpoint calls)."], "best_example": {"file_path": "helm/shared-resources/mongodb/values.yaml", "comment_text": "same as above - the size matters, so I guess it's only for testing phase?"}, "coderabbit_prompt": "@coderabbitai Review configuration files for values that are specific to testing environments (e.g., resource sizes, temporary settings). Ensure these values are explicitly labeled as 'test-only' or segregated to prevent confusion with production configurations."}, {"category": "PERFORMANCE", "comment_count": 6, "rules": ["Minimize redundant operations: Debounce frequent events/API calls, reduce database round-trips, and prevent excessive re-renders or computations.", "Optimize resource and data handling: Implement lazy loading, reduce data payload sizes, and use efficient caching strategies (e.g., appropriate TTLs)."], "best_example": {"file": "ui/client/src/components/agentic-ai/chat/ChatInterface.tsx", "comment": "pls add a debounce here , sendTypingSignal (line 163) fires a POST /collaboration/session.typing on every call. The 4000ms timeout at line 171 only schedules the \"stop typing\" signal. There's no leading debounce"}, "coderabbit_prompt": "@coderabbitai Review for performance optimizations, focusing on:\n- Minimizing unnecessary I/O: Look for opportunities to debounce frequent actions, reduce database queries/writes, and optimize network requests (e.g., data payloads).\n- Optimizing resource utilization: Identify areas for lazy loading, preventing excessive re-renders, or improving caching strategies (like cache TTLs)."}, {"category": "SECURITY", "comment_count": 14, "rules": ["Backend Authorization: Always enforce server-side authorization checks for sensitive operations, independent of client-side UI checks.", "Secure Credential Handling: Never hardcode, commit, or expose sensitive credentials or tokens. Utilize secure storage and manage their lifecycle (e.g., hashing, encryption, external secrets management)."], "best_example": {"file": "ui/client/src/components/agentic-ai/templates/TemplateCard.tsx", "comment": "if i underdstand correctly you check here if the user's an admin and then the rest of the funcionality isn't limited, i think we should still cover our bases with the require_admin decorator we have on the apis"}, "coderabbit_prompt": "@coderabbitai Review for security: Verify that all sensitive operations use backend authorization checks (e.g., admin decorators) and that no credentials or tokens are hardcoded, committed, or insecurely stored/exposed."}, {"category": "STYLE", "comment_count": 114, "rules": ["Imports and top-level declarations must be consistently placed at the beginning of their respective files.", "Prioritize code conciseness and reusability; combine similar functionalities into a single, shared component or function.", "Adhere to established logging conventions, typically starting general informational messages at the `.info` level."], "best_example": {"file_path": "bootstrap/container.py", "comment_text": "is it better to import it here or should it be moved to the top of the file? like why only do it in this function?"}, "coderabbit_prompt": "@coderabbitai Review this PR for adherence to our team's style guidelines. Specifically, check for:\n-   **Import and Declaration Placement:** Ensure all imports and top-level declarations are consistently placed at the beginning of their respective files.\n-   **Code Conciseness and Reusability:** Identify opportunities to combine identical or highly similar functionalities into a single, reusable component or function, and suggest 'nicer ways' to express code.\n-   **Logging Level Conventions:** Verify that logging messages follow our established conventions, particularly ensuring general informational messages start at the `.info` level."}, {"category": "LOGIC", "comment_count": 73, "rules": ["Adhere strictly to external API/SDK specifications for data structures, message types, and native features.", "Optimize logic by avoiding redundant operations and leveraging existing, direct functionalities.", "Evaluate the impact of changes on edge cases, related features, and resource lifecycles (e.g., creation, existence, deletion)."], "best_example": {"file_path": "multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py", "comment_text": "@Nirsisr doesn't Claude sdk takes list of messages? so we give it the conversation as it wants. ofc we need to convert the ChatMessage we have in MAS to claude type of messages."}, "coderabbit_prompt": "@coderabbitai Evaluate this code for logical correctness, focusing on adherence to external API/SDK specifications (including data types and native features), efficient use of existing system capabilities, and identification of potential side effects or redundancies."}], "actionable_comments": 394, "actionable_pct": 93.4};
+        const metrics = {"total_prs": 59, "open_prs": 10, "merged_prs": 46, "total_comments": 845, "avg_time_to_first_review_hours": 36.6, "avg_time_to_merge_hours": 207.4, "avg_time_review_to_merge_hours": 184.9, "avg_review_cycles": 2.9, "comments_per_pr": 14.3, "file_extensions": {".py": 506, ".sh": 30, ".ts": 23, ".tsx": 128, ".gotmpl": 5, ".yml": 27, ".md": 31, "other": 10, ".yaml": 51, ".groovy": 25, ".txt": 5, ".toml": 1, ".docx": 1, ".png": 2}, "weekly_trend": [{"week": "Apr 20 - 26", "week_key": "2026-W17", "prs_opened": 5, "prs_merged": 6, "comments": 91, "ai_comments": 15, "human_comments": 76}, {"week": "Apr 27 - May 03", "week_key": "2026-W18", "prs_opened": 7, "prs_merged": 3, "comments": 68, "ai_comments": 65, "human_comments": 3}, {"week": "May 04 - 10", "week_key": "2026-W19", "prs_opened": 8, "prs_merged": 5, "comments": 84, "ai_comments": 31, "human_comments": 53}, {"week": "May 11 - 17", "week_key": "2026-W20", "prs_opened": 4, "prs_merged": 3, "comments": 107, "ai_comments": 15, "human_comments": 92}, {"week": "May 18 - 24", "week_key": "2026-W21", "prs_opened": 4, "prs_merged": 9, "comments": 70, "ai_comments": 32, "human_comments": 38}, {"week": "May 25 - 31", "week_key": "2026-W22", "prs_opened": 6, "prs_merged": 4, "comments": 41, "ai_comments": 26, "human_comments": 15}, {"week": "Jun 01 - 07", "week_key": "2026-W23", "prs_opened": 5, "prs_merged": 4, "comments": 130, "ai_comments": 101, "human_comments": 29}, {"week": "Jun 08 - 14", "week_key": "2026-W24", "prs_opened": 3, "prs_merged": 5, "comments": 34, "ai_comments": 32, "human_comments": 2}], "weekly_breakdown": [{"week": "Apr 20 - 26", "week_key": "2026-W17", "prs_opened": 5, "prs_merged": 6, "avg_time_to_merge": 172.8, "avg_time_to_first_review": 134.2, "avg_cycles": 1.8, "comments": 91, "ai_comments": 15, "human_comments": 76}, {"week": "Apr 27 - May 03", "week_key": "2026-W18", "prs_opened": 7, "prs_merged": 3, "avg_time_to_merge": 187.9, "avg_time_to_first_review": 0.5, "avg_cycles": 3.2, "comments": 68, "ai_comments": 65, "human_comments": 3}, {"week": "May 04 - 10", "week_key": "2026-W19", "prs_opened": 8, "prs_merged": 5, "avg_time_to_merge": 230.1, "avg_time_to_first_review": 13.9, "avg_cycles": 2.3, "comments": 84, "ai_comments": 31, "human_comments": 53}, {"week": "May 11 - 17", "week_key": "2026-W20", "prs_opened": 4, "prs_merged": 3, "avg_time_to_merge": 80.8, "avg_time_to_first_review": 29.9, "avg_cycles": 2.0, "comments": 107, "ai_comments": 15, "human_comments": 92}, {"week": "May 18 - 24", "week_key": "2026-W21", "prs_opened": 4, "prs_merged": 9, "avg_time_to_merge": 166.6, "avg_time_to_first_review": 0.6, "avg_cycles": 2.8, "comments": 70, "ai_comments": 32, "human_comments": 38}, {"week": "May 25 - 31", "week_key": "2026-W22", "prs_opened": 6, "prs_merged": 4, "avg_time_to_merge": 115.4, "avg_time_to_first_review": 24.7, "avg_cycles": 4.4, "comments": 41, "ai_comments": 26, "human_comments": 15}, {"week": "Jun 01 - 07", "week_key": "2026-W23", "prs_opened": 5, "prs_merged": 4, "avg_time_to_merge": 6.7, "avg_time_to_first_review": 6.0, "avg_cycles": 4.5, "comments": 130, "ai_comments": 101, "human_comments": 29}, {"week": "Jun 08 - 14", "week_key": "2026-W24", "prs_opened": 3, "prs_merged": 5, "avg_time_to_merge": 0.1, "avg_time_to_first_review": 0.1, "avg_cycles": 2.0, "comments": 34, "ai_comments": 32, "human_comments": 2}], "top_reviewers": [{"name": "sfiresht", "comments": 111, "prs_reviewed": 14}, {"name": "Nirsisr", "comments": 106, "prs_reviewed": 10}, {"name": "MayaCrmi", "comments": 68, "prs_reviewed": 10}, {"name": "Lina-AbuYousef", "comments": 64, "prs_reviewed": 6}, {"name": "odaiodeh", "comments": 52, "prs_reviewed": 11}, {"name": "yhabushi79", "comments": 32, "prs_reviewed": 10}], "lookback_days": 60, "generated_at": "2026-06-15T12:52:29.778886+00:00", "ai_total_comments": 412, "human_total_comments": 433, "ai_coverage_pct": 38.7, "overlap_files_count": 74, "ai_only_files_count": 106, "human_only_files_count": 117, "prs_with_both_count": 25, "category_comparison": [{"category": "ARCHITECTURE", "ai_count": 40, "human_count": 165}, {"category": "ERROR_HANDLING", "ai_count": 51, "human_count": 3}, {"category": "NAMING", "ai_count": 6, "human_count": 18}, {"category": "TESTING", "ai_count": 9, "human_count": 6}, {"category": "PERFORMANCE", "ai_count": 3, "human_count": 6}, {"category": "SECURITY", "ai_count": 63, "human_count": 19}, {"category": "STYLE", "ai_count": 94, "human_count": 137}, {"category": "LOGIC", "ai_count": 146, "human_count": 79}], "weekly_categories": {"2026-W17": {"categories": [{"category": "ARCHITECTURE", "ai_count": 1, "human_count": 30}, {"category": "ERROR_HANDLING", "ai_count": 2, "human_count": 1}, {"category": "NAMING", "ai_count": 0, "human_count": 0}, {"category": "TESTING", "ai_count": 0, "human_count": 0}, {"category": "PERFORMANCE", "ai_count": 0, "human_count": 1}, {"category": "SECURITY", "ai_count": 0, "human_count": 3}, {"category": "STYLE", "ai_count": 4, "human_count": 26}, {"category": "LOGIC", "ai_count": 8, "human_count": 15}], "ai_files": 8, "human_files": 40, "overlap_files": 5}, "2026-W18": {"categories": [{"category": "ARCHITECTURE", "ai_count": 1, "human_count": 2}, {"category": "ERROR_HANDLING", "ai_count": 4, "human_count": 0}, {"category": "NAMING", "ai_count": 1, "human_count": 0}, {"category": "TESTING", "ai_count": 2, "human_count": 0}, {"category": "PERFORMANCE", "ai_count": 1, "human_count": 1}, {"category": "SECURITY", "ai_count": 13, "human_count": 0}, {"category": "STYLE", "ai_count": 20, "human_count": 0}, {"category": "LOGIC", "ai_count": 23, "human_count": 0}], "ai_files": 38, "human_files": 2, "overlap_files": 0}, "2026-W19": {"categories": [{"category": "ARCHITECTURE", "ai_count": 2, "human_count": 21}, {"category": "ERROR_HANDLING", "ai_count": 6, "human_count": 0}, {"category": "NAMING", "ai_count": 2, "human_count": 5}, {"category": "TESTING", "ai_count": 1, "human_count": 3}, {"category": "PERFORMANCE", "ai_count": 0, "human_count": 1}, {"category": "SECURITY", "ai_count": 1, "human_count": 2}, {"category": "STYLE", "ai_count": 0, "human_count": 15}, {"category": "LOGIC", "ai_count": 19, "human_count": 6}], "ai_files": 23, "human_files": 43, "overlap_files": 1}, "2026-W20": {"categories": [{"category": "ARCHITECTURE", "ai_count": 2, "human_count": 40}, {"category": "ERROR_HANDLING", "ai_count": 1, "human_count": 1}, {"category": "NAMING", "ai_count": 0, "human_count": 3}, {"category": "TESTING", "ai_count": 1, "human_count": 0}, {"category": "PERFORMANCE", "ai_count": 0, "human_count": 1}, {"category": "SECURITY", "ai_count": 4, "human_count": 1}, {"category": "STYLE", "ai_count": 4, "human_count": 34}, {"category": "LOGIC", "ai_count": 3, "human_count": 12}], "ai_files": 10, "human_files": 47, "overlap_files": 4}, "2026-W21": {"categories": [{"category": "ARCHITECTURE", "ai_count": 4, "human_count": 13}, {"category": "ERROR_HANDLING", "ai_count": 1, "human_count": 0}, {"category": "NAMING", "ai_count": 1, "human_count": 2}, {"category": "TESTING", "ai_count": 1, "human_count": 0}, {"category": "PERFORMANCE", "ai_count": 0, "human_count": 0}, {"category": "SECURITY", "ai_count": 4, "human_count": 4}, {"category": "STYLE", "ai_count": 6, "human_count": 10}, {"category": "LOGIC", "ai_count": 15, "human_count": 9}], "ai_files": 23, "human_files": 25, "overlap_files": 4}, "2026-W22": {"categories": [{"category": "ARCHITECTURE", "ai_count": 3, "human_count": 8}, {"category": "ERROR_HANDLING", "ai_count": 2, "human_count": 0}, {"category": "NAMING", "ai_count": 0, "human_count": 2}, {"category": "TESTING", "ai_count": 1, "human_count": 0}, {"category": "PERFORMANCE", "ai_count": 0, "human_count": 0}, {"category": "SECURITY", "ai_count": 5, "human_count": 2}, {"category": "STYLE", "ai_count": 9, "human_count": 2}, {"category": "LOGIC", "ai_count": 6, "human_count": 1}], "ai_files": 15, "human_files": 12, "overlap_files": 5}, "2026-W23": {"categories": [{"category": "ARCHITECTURE", "ai_count": 17, "human_count": 12}, {"category": "ERROR_HANDLING", "ai_count": 18, "human_count": 0}, {"category": "NAMING", "ai_count": 1, "human_count": 0}, {"category": "TESTING", "ai_count": 1, "human_count": 0}, {"category": "PERFORMANCE", "ai_count": 2, "human_count": 1}, {"category": "SECURITY", "ai_count": 17, "human_count": 2}, {"category": "STYLE", "ai_count": 19, "human_count": 5}, {"category": "LOGIC", "ai_count": 26, "human_count": 9}], "ai_files": 46, "human_files": 14, "overlap_files": 5}, "2026-W24": {"categories": [{"category": "ARCHITECTURE", "ai_count": 1, "human_count": 0}, {"category": "ERROR_HANDLING", "ai_count": 4, "human_count": 0}, {"category": "NAMING", "ai_count": 0, "human_count": 0}, {"category": "TESTING", "ai_count": 1, "human_count": 0}, {"category": "PERFORMANCE", "ai_count": 0, "human_count": 0}, {"category": "SECURITY", "ai_count": 5, "human_count": 0}, {"category": "STYLE", "ai_count": 10, "human_count": 2}, {"category": "LOGIC", "ai_count": 11, "human_count": 0}], "ai_files": 24, "human_files": 2, "overlap_files": 0}}, "ai_categories": {"ERROR_HANDLING": 51, "SECURITY": 63, "LOGIC": 146, "STYLE": 94, "TESTING": 9, "ARCHITECTURE": 40, "NAMING": 6, "PERFORMANCE": 3}, "human_categories": {"ARCHITECTURE": 165, "SECURITY": 19, "STYLE": 137, "LOGIC": 79, "PERFORMANCE": 6, "NAMING": 18, "TESTING": 6, "ERROR_HANDLING": 3}, "learning_suggestions": [{"category": "ARCHITECTURE", "comment_count": 153, "rules": ["Promote Code Reusability: Consolidate common logic into shared base classes or utility modules to avoid duplication.", "Enforce Consistent Module Structure and External Dependency Handling: Organize code logically, group related components, and abstract external integrations following established patterns.", "Standardize on Preferred Technologies and Deployment Approaches: Prefer established tools and deployment methods unless there's a clear architectural advantage for an alternative."], "best_example": {"file_path": "multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py", "comment_text": "@Nirsisr maybe we can find a common place for this function. maybe create utils file in nodes/common/utils.py and add it there? int he future this will be an adapter, what im planning in the future is to move all these elements and put them as outside from mas lib, since they depend on the outside word"}, "coderabbit_prompt": "@coderabbitai When reviewing new or changed architectural components, verify that common logic is consolidated into shared base classes or utility modules. Also, ensure external dependencies are abstracted and organized according to our established patterns for modularity and future-proofing."}, {"category": "ERROR_HANDLING", "comment_count": 2, "rules": ["1. Always inform the user about operational failures.", "2. Differentiate between types of failures to enable specific handling and improved diagnostics."], "best_example": {"file_path": "shared-resources/sso-backend/utils/auth_manager.py", "comment_text": "i think you should check what is the response ( what if the server will reaponse with other code ) you treat faliures all the same so if the server will have real issue to revoke you dont know the reason."}, "coderabbit_prompt": "@coderabbitai Check error handling. Does the code differentiate between various failure types (e.g., different API responses, specific exceptions) instead of catching all errors generically? Ensure unique error types receive specific handling and provide relevant user feedback or logging."}, {"category": "NAMING", "comment_count": 18, "rules": ["Be specific and unambiguous: Choose names that clearly describe the entity and avoid confusion with other concepts, especially within the project's domain.", "Accurately reflect purpose/functionality: Names should precisely convey what a variable, method, class, or module *is* or *does*, avoiding generic or misleading terms.", "Ensure consistency and differentiation: Use consistent naming for identical concepts, and clearly differentiate between similar but distinct entities (e.g., via suffixes or more descriptive terms)."], "best_example": {"file_path": "local-development/devtool/services/dotenv/display.py", "comment_text": "ok i see now this Service is something that represent the details of some service, i think you should change the name, like ServiceInfo or other name, since its a little bit confusing"}, "coderabbit_prompt": "@coderabbitai Focus on naming conventions:\n1.  **Clarity & Specificity**: Are names clear, specific, and unambiguous within the project context?\n2.  **Accuracy**: Do names accurately reflect the entity's purpose/functionality, avoiding generic or misleading terms?\n3.  **Differentiation**: Are similar but distinct entities clearly differentiated by their names?"}, {"category": "TESTING", "comment_count": 6, "rules": ["Clearly differentiate configuration values intended solely for testing environments (e.g., resource sizes in Helm values).", "Avoid unnecessary duplication in test code; prefer reusable test factories and utilities.", "Explicitly define the scope, purpose, and specific target of tests (e.g., which instance, component, or endpoint is being tested), especially in complex setups or test fixtures."], "best_example": {"file_path": "rag/tests/unit/conftest.py", "comment_text": "I'm confused, like these tests are supposed to test the endpoints we have in the rag right? if I got that correctly, then calling the /upload endpoint will take care of generating the doc_path right? or you maybe use this for the unitest of the /embed endpoint only ?"}, "coderabbit_prompt": "@coderabbitai Learn to identify and suggest improvements in test code for clarity. Specifically, look for:\n1.  Ambiguity regarding whether configuration values (especially in `helm/values.yaml`) are intended *only* for testing; suggest making this explicit.\n2.  Potential duplication in test factories or helpers; suggest consolidation or justification.\n3.  Unclear test scope, purpose, or target (e.g., which instance/service is being tested, unit vs. integration); suggest clarifying comments or restructuring."}, {"category": "PERFORMANCE", "comment_count": 6, "rules": ["Minimize unnecessary I/O operations and redundant function calls (e.g., database round-trips, excessive async wrappers, UI re-renders).", "Implement debouncing or throttling for frequent events that trigger costly operations (e.g., UI input, network requests).", "Optimize resource loading and caching strategies (e.g., lazy imports, appropriate cache TTLs, direct streaming)."], "best_example": {"file_path": "ui/client/src/components/agentic-ai/chat/ChatInterface.tsx", "comment_text": "pls add a debounce here , sendTypingSignal (line 163) fires a POST /collaboration/session.typing on every call. The 4000ms timeout at line 171 only schedules the \"stop typing\" signal. There's no leading debounce"}, "coderabbit_prompt": "@coderabbitai Learn to identify and flag code sections where frequent user interactions or internal events could lead to excessive resource consumption (e.g., redundant API calls, database round-trips, UI re-renders). Suggest optimizations like debouncing/throttling events, using lazy loading for resources, or minimizing I/O operations and ensuring efficient caching strategies."}, {"category": "SECURITY", "comment_count": 17, "rules": ["Securely Store Credentials: Never hardcode API keys, tokens, or other sensitive credentials. Utilize dedicated secrets management systems (e.g., GitHub Secrets, Vault).", "Enforce Server-Side Authorization: Implement robust authorization checks for all sensitive operations, ensuring they are enforced on the backend (e.g., API decorators) and not solely on the client-side.", "Prevent Sensitive Data Exposure: Ensure authentication tokens and other sensitive information are never exposed in client-side code, temporary files, logs, or API responses."], "best_example": {"file": ".github/workflows/cursor-pipeline.yml", "comment": "is this an API key? if so please move it to the githuv vars /secrets section."}, "coderabbit_prompt": "@coderabbitai Review this code for security vulnerabilities. Pay close attention to:\n1.  **Secure Credentials**: Identify any hardcoded API keys, tokens, or sensitive credentials and suggest moving them to secure environment variables or a secrets management system (e.g., Vault, GitHub Secrets).\n2.  **Server-Side Authorization**: Verify that all sensitive actions and API endpoints implement robust server-side authorization checks (e.g., admin role verification, decorators), rather than relying on client-side controls.\n3.  **Prevent Sensitive Data Exposure**: Flag any instances where sensitive information (e.g., authentication tokens, user credentials) might be exposed in temporary files, client-side code, or API responses."}, {"category": "STYLE", "comment_count": 128, "rules": ["Always place all import statements at the very top of the file.", "Prioritize code readability and conciseness; refactor for cleaner syntax and combine redundant functionality.", "Standardize logging messages to primarily use the `.info` level for general output."], "best_example": {"file": "multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py", "comment": "import should be at start of file"}, "coderabbit_prompt": "@coderabbitai Please ensure all import statements are placed at the top of the file. Additionally, review code for opportunities to enhance readability and conciseness, such as combining redundant functions or simplifying expressions. Check that logging messages primarily use the `.info` level for general output."}, {"category": "LOGIC", "comment_count": 68, "rules": ["Ensure correct and complete integration with external APIs/SDKs, including proper data mapping and utilization.", "Anticipate and address potential side effects, race conditions, and impacts on other system components.", "Optimize for efficiency by avoiding redundant operations and unnecessary computations."], "best_example": {"file": "multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py", "comment": "@Nirsisr doesn't Claude sdk takes list of messages? so we give it the conversation as it wants. ofc we need to convert the ChatMessage we have in MAS to claude type of messages."}, "coderabbit_prompt": "@coderabbitai Review logic, especially in integration points and core system flows. Flag areas where: 1. External API/SDK requirements for data formats or message structures are not fully met. 2. Available data from external systems (e.g., metadata, errors) isn't adequately utilized or handled. 3. Operations might be redundant, inefficient, or introduce unintended side effects/race conditions."}], "actionable_comments": 398, "actionable_pct": 91.9};
 
         const colors = {
             ai: '#f78166',
@@ -932,7 +935,7 @@
         // Category Comparison (horizontal bar)
         const catCtx = document.getElementById('categoryChart').getContext('2d');
         const catData = metrics.category_comparison || [];
-        new Chart(catCtx, {
+        const categoryChart = new Chart(catCtx, {
             type: 'bar',
             data: {
                 labels: catData.map(c => c.category),
@@ -1105,6 +1108,8 @@
 
         // Time range filter — recalculates metrics and updates charts
         const weeklyBreakdown = metrics.weekly_breakdown || [];
+        const weeklyCategories = metrics.weekly_categories || {};
+        const CATEGORIES = ['ARCHITECTURE', 'ERROR_HANDLING', 'NAMING', 'TESTING', 'PERFORMANCE', 'SECURITY', 'STYLE', 'LOGIC'];
 
         function filterWeeks(numWeeks) {
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
@@ -1119,10 +1124,13 @@
 
             // Get filtered weeks data
             const filtered = weeklyBreakdown.slice(-numWeeks);
+            const filteredKeys = filtered.map(w => w.week_key);
 
-            // Recalculate metrics from filtered data
+            // Recalculate overview metrics
             const totalPRs = filtered.reduce((s, w) => s + w.prs_opened, 0);
             const totalComments = filtered.reduce((s, w) => s + w.comments, 0);
+            const totalAI = filtered.reduce((s, w) => s + (w.ai_comments || 0), 0);
+            const totalHuman = filtered.reduce((s, w) => s + (w.human_comments || 0), 0);
 
             const ttfrValues = filtered.filter(w => w.avg_time_to_first_review !== null).map(w => w.avg_time_to_first_review);
             const ttmValues = filtered.filter(w => w.avg_time_to_merge !== null).map(w => w.avg_time_to_merge);
@@ -1133,12 +1141,56 @@
             const avgCycles = cycleValues.length ? (cycleValues.reduce((a, b) => a + b, 0) / cycleValues.length).toFixed(1) : '—';
             const commentsPerPR = totalPRs ? (totalComments / totalPRs).toFixed(1) : '0';
 
-            // Update metric cards
+            // Update overview metric cards
             document.getElementById('metric-ttfr').innerHTML = avgTTFR + '<span class="unit">hrs</span>';
             document.getElementById('metric-ttm').innerHTML = avgTTM + '<span class="unit">hrs</span>';
             document.getElementById('metric-cycles').textContent = avgCycles;
             document.getElementById('metric-total-prs').textContent = totalPRs;
             document.getElementById('metric-comments-pr').textContent = commentsPerPR;
+
+            // Update AI vs Human comment counts
+            document.getElementById('metric-ai-comments').textContent = totalAI;
+            document.getElementById('metric-human-comments').textContent = totalHuman;
+
+            // Recalculate categories for filtered weeks
+            const filteredCats = CATEGORIES.map(cat => {
+                let aiCount = 0, humanCount = 0;
+                filteredKeys.forEach(wk => {
+                    const wd = weeklyCategories[wk];
+                    if (wd && wd.categories) {
+                        const entry = wd.categories.find(c => c.category === cat);
+                        if (entry) { aiCount += entry.ai_count; humanCount += entry.human_count; }
+                    }
+                });
+                return { category: cat, ai_count: aiCount, human_count: humanCount };
+            });
+
+            // Update category chart
+            categoryChart.data.datasets[0].data = filteredCats.map(c => c.ai_count);
+            categoryChart.data.datasets[1].data = filteredCats.map(c => c.human_count);
+            categoryChart.update();
+
+            // Recalculate coverage for filtered weeks
+            let totalAIFiles = 0, totalHumanFiles = 0, totalOverlap = 0;
+            filteredKeys.forEach(wk => {
+                const wd = weeklyCategories[wk];
+                if (wd) {
+                    totalAIFiles += wd.ai_files || 0;
+                    totalHumanFiles += wd.human_files || 0;
+                    totalOverlap += wd.overlap_files || 0;
+                }
+            });
+            const coveragePct = totalHumanFiles ? Math.round(totalOverlap / totalHumanFiles * 100 * 10) / 10 : 0;
+            const humanOnlyFiles = totalHumanFiles - totalOverlap;
+            const aiOnlyFiles = totalAIFiles - totalOverlap;
+
+            // Update coverage UI
+            document.getElementById('metric-ai-coverage').innerHTML = coveragePct + '<span class="unit">%</span>';
+            document.getElementById('metric-human-only-files').textContent = humanOnlyFiles > 0 ? humanOnlyFiles : 0;
+            document.getElementById('metric-ai-only-files').textContent = aiOnlyFiles > 0 ? aiOnlyFiles : 0;
+            const coverageBar = document.getElementById('coverage-bar');
+            coverageBar.style.width = coveragePct + '%';
+            coverageBar.textContent = coveragePct + '%';
 
             // Update weekly trend chart
             const trendLabels = filtered.map(w => w.week);
