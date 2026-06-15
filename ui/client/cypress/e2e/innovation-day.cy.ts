@@ -24,7 +24,7 @@ describe('Innovation Day Page E2E', () => {
     cy.contains('09:30 – 13:15').should('be.visible');
     cy.contains('IL (Israel) Site').should('be.visible');
 
-    // Agenda Section
+    // Agenda Section (Default Tab)
     cy.contains('h2', 'Agenda').should('be.visible');
     cy.get('table').within(() => {
       cy.contains('Coffee and Ma\'affee').should('be.visible');
@@ -33,7 +33,8 @@ describe('Innovation Day Page E2E', () => {
     });
 
     // Session Highlights Section
-    cy.contains('h2', 'Session Highlights').should('be.visible');
+    cy.contains('button[role="tab"]', 'Sessions').click();
+    cy.contains('h2', 'Session Details').should('be.visible');
 
     // Test accordion/collapsible behavior for a session card
     cy.contains('Is Orchestration the Future?').parents('button').as('sessionBtn');
@@ -41,13 +42,24 @@ describe('Innovation Day Page E2E', () => {
 
     // Verify the content is revealed
     cy.contains('A2A (Agent-to-Agent) Communications for multi-agent systems').should('be.visible');
-    cy.contains('Peer-to-peer collaboration between agents').should('be.visible');
+    cy.contains('Peer-to-peer collaboration patterns between autonomous agents').should('be.visible');
 
     // Key Topics & Projects Section
-    cy.contains('h2', 'Key Topics & Projects').should('be.visible');
+    cy.contains('button[role="tab"]', 'Projects').click();
+    cy.contains('h2', 'Key Projects & Technologies').should('be.visible');
     cy.contains('Code Agent Harness Evaluation').should('be.visible');
     cy.contains('agent-eval-harness').should('be.visible');
     cy.contains('eval-hub').should('be.visible');
     cy.contains('sdg_hub').should('be.visible');
+    
+    // Speakers Section
+    cy.contains('button[role="tab"]', 'Speakers').click();
+    cy.contains('h2', 'Speakers').should('be.visible');
+    cy.contains('Hofni Gartner').should('be.visible');
+    
+    // Community Section
+    cy.contains('button[role="tab"]', 'Community').click();
+    cy.contains('h2', 'Community & Strategic Notes').should('be.visible');
+    cy.contains('Format Shift').should('be.visible');
   });
 });
