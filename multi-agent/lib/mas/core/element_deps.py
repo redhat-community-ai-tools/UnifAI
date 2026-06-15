@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from mas.core.execution_context import ExecutionContextHolder
 from mas.core.auth.service import AuthService
-from mas.elements.tools.common.base_tool import BaseTool
 from mas.core.platform_config import PlatformConfig
+
+if TYPE_CHECKING:
+    from mas.elements.tools.common.base_tool import BaseTool
 
 
 @dataclass

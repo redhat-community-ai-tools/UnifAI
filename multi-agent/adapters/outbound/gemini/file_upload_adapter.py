@@ -41,18 +41,16 @@ class GeminiFileUploadAdapter(IFileUploadService):
         self._max_workers = max_workers
 
     def upload_batch(self, files: List[FileUploadRequest]) -> List[FileUploadResult]:
-        uploaded = []
+        results_by_index = {}
         try:
             with ThreadPoolExecutor(max_workers=self._max_workers) as pool:
                 futures = {
-                    pool.submit(self._upload_single_with_retry, request): i
-                    for i, request in enumerate(files)
+                    pool.submit(self._upload_single_with_retry, req): i
+                    for i, req in enumerate(files)
                 }
-                results_by_index = {}
                 for future in as_completed(futures):
                     idx = futures[future]
                     resp = future.result()
-                    uploaded.append(resp)
                     results_by_index[idx] = resp
 
             return [
@@ -65,7 +63,13 @@ class GeminiFileUploadAdapter(IFileUploadService):
                 for i in range(len(files))
             ]
         except Exception as e:
-            for resp in uploaded:
+            for future, idx in futures.items():
+                if future.done() and not future.exception():
+                    try:
+                        results_by_index.setdefault(idx, future.result())
+                    except Exception:
+                        pass
+            for resp in results_by_index.values():
                 try:
                     self._client.files.delete(name=resp.name)
                 except Exception:

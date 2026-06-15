@@ -81,8 +81,8 @@ class SessionService:
         )
 
     def submit(self, session_id: str, inputs: Dict[str, Any],
-               scope: str = "public", logged_in_user: str = "", 
-               files: Optional[List[FileUploadRequest]] = None,) -> str:
+               scope: str = "public", logged_in_user: str = "",
+               files: Optional[List[FileUploadRequest]] = None) -> str:
         """
         Non-blocking submit: stage inputs, then start a background workflow
         and return its handle/ID immediately (HTTP 202 pattern).
@@ -170,7 +170,7 @@ class SessionService:
                 f"Session {session_id} is already {record.status.name} — "
                 f"wait for it to finish before submitting again."
             )
-        self._projector.apply(record, inputs or {}, files=files,logged_in_user=logged_in_user)
+        self._projector.apply(record, inputs or {}, files=files, logged_in_user=logged_in_user)
 
     def list_for_user(self, identity: Identity) -> list:
         """
