@@ -1,11 +1,12 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
-import { 
-  FaTachometerAlt, FaCogs, FaFileAlt, 
+import {
+  FaTachometerAlt, FaCogs, FaFileAlt,
   FaChartLine, FaUserShield, FaCog, FaSignOutAlt,
   FaRobot, FaFile, FaChevronLeft, FaChevronRight,
   FaInfoCircle, FaBook, FaComment, FaPuzzlePiece,
+  FaCalendarAlt,
 } from "react-icons/fa";
 import { FaSlack, FaBars } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
@@ -355,17 +356,25 @@ export default function Sidebar() {
             status={null}
             isCollapsed={isCollapsed}
           />
-          <NavItem 
-            icon={<FaBook className="sidebar-icon" />} 
-            label="How-To Guides" 
+          <NavItem
+            icon={<FaBook className="sidebar-icon" />}
+            label="How-To Guides"
             to="/guides"
             isActive={location === '/guides'}
             status={null}
             isCollapsed={isCollapsed}
           />
-          <NavItem 
-            icon={<FaCogs className="sidebar-icon" />} 
-            label="Configuration" 
+          <NavItem
+            icon={<FaCalendarAlt className="sidebar-icon" />}
+            label="Innovation Day Q2 2026"
+            to="/innovation-day"
+            isActive={location === '/innovation-day'}
+            status={null}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem
+            icon={<FaCogs className="sidebar-icon" />}
+            label="Configuration"
             to="/configuration"
             isActive={location === '/configuration'}
             status={null}

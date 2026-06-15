@@ -30,6 +30,7 @@ import GuidesPage from "./components/guides/GuidesPage";
 import PublicChat from "./components/agentic-ai/chat/PublicChat";
 import AgenticLayout from "./components/layout/AgenticLayout";
 import { Toaster } from "./components/ui/toaster";
+import InnovationDay from "@/pages/InnovationDay";
 
 function AppRoutes() {
   const { viewMode } = useView();
@@ -86,6 +87,7 @@ function AppRoutes() {
       <Route path="/configuration" component={Configuration} />
       <Route path="/guides" component={GuidesPage} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/innovation-day" component={InnovationDay} />
       <Route component={NotFound} />
     </Switch>
   );
