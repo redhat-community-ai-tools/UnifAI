@@ -340,15 +340,15 @@
     <div class="metrics-grid">
         <div class="metric-card ai">
             <div class="label">AI Comments</div>
-            <div class="value">{{ metrics.ai_total_comments }}</div>
+            <div class="value" id="metric-ai-comments">{{ metrics.ai_total_comments }}</div>
         </div>
         <div class="metric-card human">
             <div class="label">Human Comments</div>
-            <div class="value">{{ metrics.human_total_comments }}</div>
+            <div class="value" id="metric-human-comments">{{ metrics.human_total_comments }}</div>
         </div>
         <div class="metric-card coverage">
             <div class="label">AI File Coverage</div>
-            <div class="value">{{ metrics.ai_coverage_pct }}<span class="unit">%</span></div>
+            <div class="value" id="metric-ai-coverage">{{ metrics.ai_coverage_pct }}<span class="unit">%</span></div>
         </div>
         <div class="metric-card">
             <div class="label">PRs with Both AI + Human</div>
@@ -356,11 +356,11 @@
         </div>
         <div class="metric-card">
             <div class="label">Files Only Humans Flagged</div>
-            <div class="value">{{ metrics.human_only_files_count }}</div>
+            <div class="value" id="metric-human-only-files">{{ metrics.human_only_files_count }}</div>
         </div>
         <div class="metric-card">
             <div class="label">Files Only AI Flagged</div>
-            <div class="value">{{ metrics.ai_only_files_count }}</div>
+            <div class="value" id="metric-ai-only-files">{{ metrics.ai_only_files_count }}</div>
         </div>
     </div>
 
@@ -371,7 +371,7 @@
             Of the files humans left comments on, how many did AI also review?
         </p>
         <div class="coverage-bar-container">
-            <div class="coverage-bar-fill" style="width: {{ metrics.ai_coverage_pct }}%; background: linear-gradient(90deg, #d29922, #f78166);">
+            <div class="coverage-bar-fill" id="coverage-bar" style="width: {{ metrics.ai_coverage_pct }}%; background: linear-gradient(90deg, #d29922, #f78166);">
                 {{ metrics.ai_coverage_pct }}%
             </div>
         </div>
@@ -561,7 +561,7 @@
         // Category Comparison (horizontal bar)
         const catCtx = document.getElementById('categoryChart').getContext('2d');
         const catData = metrics.category_comparison || [];
-        new Chart(catCtx, {
+        const categoryChart = new Chart(catCtx, {
             type: 'bar',
             data: {
                 labels: catData.map(c => c.category),
@@ -734,6 +734,8 @@
 
         // Time range filter — recalculates metrics and updates charts
         const weeklyBreakdown = metrics.weekly_breakdown || [];
+        const weeklyCategories = metrics.weekly_categories || {};
+        const CATEGORIES = ['ARCHITECTURE', 'ERROR_HANDLING', 'NAMING', 'TESTING', 'PERFORMANCE', 'SECURITY', 'STYLE', 'LOGIC'];
 
         function filterWeeks(numWeeks) {
             document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
@@ -748,10 +750,13 @@
 
             // Get filtered weeks data
             const filtered = weeklyBreakdown.slice(-numWeeks);
+            const filteredKeys = filtered.map(w => w.week_key);
 
-            // Recalculate metrics from filtered data
+            // Recalculate overview metrics
             const totalPRs = filtered.reduce((s, w) => s + w.prs_opened, 0);
             const totalComments = filtered.reduce((s, w) => s + w.comments, 0);
+            const totalAI = filtered.reduce((s, w) => s + (w.ai_comments || 0), 0);
+            const totalHuman = filtered.reduce((s, w) => s + (w.human_comments || 0), 0);
 
             const ttfrValues = filtered.filter(w => w.avg_time_to_first_review !== null).map(w => w.avg_time_to_first_review);
             const ttmValues = filtered.filter(w => w.avg_time_to_merge !== null).map(w => w.avg_time_to_merge);
@@ -762,12 +767,56 @@
             const avgCycles = cycleValues.length ? (cycleValues.reduce((a, b) => a + b, 0) / cycleValues.length).toFixed(1) : '—';
             const commentsPerPR = totalPRs ? (totalComments / totalPRs).toFixed(1) : '0';
 
-            // Update metric cards
+            // Update overview metric cards
             document.getElementById('metric-ttfr').innerHTML = avgTTFR + '<span class="unit">hrs</span>';
             document.getElementById('metric-ttm').innerHTML = avgTTM + '<span class="unit">hrs</span>';
             document.getElementById('metric-cycles').textContent = avgCycles;
             document.getElementById('metric-total-prs').textContent = totalPRs;
             document.getElementById('metric-comments-pr').textContent = commentsPerPR;
+
+            // Update AI vs Human comment counts
+            document.getElementById('metric-ai-comments').textContent = totalAI;
+            document.getElementById('metric-human-comments').textContent = totalHuman;
+
+            // Recalculate categories for filtered weeks
+            const filteredCats = CATEGORIES.map(cat => {
+                let aiCount = 0, humanCount = 0;
+                filteredKeys.forEach(wk => {
+                    const wd = weeklyCategories[wk];
+                    if (wd && wd.categories) {
+                        const entry = wd.categories.find(c => c.category === cat);
+                        if (entry) { aiCount += entry.ai_count; humanCount += entry.human_count; }
+                    }
+                });
+                return { category: cat, ai_count: aiCount, human_count: humanCount };
+            });
+
+            // Update category chart
+            categoryChart.data.datasets[0].data = filteredCats.map(c => c.ai_count);
+            categoryChart.data.datasets[1].data = filteredCats.map(c => c.human_count);
+            categoryChart.update();
+
+            // Recalculate coverage for filtered weeks
+            let totalAIFiles = 0, totalHumanFiles = 0, totalOverlap = 0;
+            filteredKeys.forEach(wk => {
+                const wd = weeklyCategories[wk];
+                if (wd) {
+                    totalAIFiles += wd.ai_files || 0;
+                    totalHumanFiles += wd.human_files || 0;
+                    totalOverlap += wd.overlap_files || 0;
+                }
+            });
+            const coveragePct = totalHumanFiles ? Math.round(totalOverlap / totalHumanFiles * 100 * 10) / 10 : 0;
+            const humanOnlyFiles = totalHumanFiles - totalOverlap;
+            const aiOnlyFiles = totalAIFiles - totalOverlap;
+
+            // Update coverage UI
+            document.getElementById('metric-ai-coverage').innerHTML = coveragePct + '<span class="unit">%</span>';
+            document.getElementById('metric-human-only-files').textContent = humanOnlyFiles > 0 ? humanOnlyFiles : 0;
+            document.getElementById('metric-ai-only-files').textContent = aiOnlyFiles > 0 ? aiOnlyFiles : 0;
+            const coverageBar = document.getElementById('coverage-bar');
+            coverageBar.style.width = coveragePct + '%';
+            coverageBar.textContent = coveragePct + '%';
 
             // Update weekly trend chart
             const trendLabels = filtered.map(w => w.week);

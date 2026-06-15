@@ -375,6 +375,30 @@ def compute_metrics(prs_data, review_comments, reviewers_summary):
             "human_count": human_categories.get(cat, 0),
         })
 
+    # Per-week category and coverage data for client-side filtering
+    weekly_detail = {}
+    for comment in review_comments:
+        week = datetime.fromisoformat(comment["created_at"]).strftime("%Y-W%W")
+        if week not in weekly_detail:
+            weekly_detail[week] = {"ai_cats": defaultdict(int), "human_cats": defaultdict(int), "ai_files": set(), "human_files": set()}
+        cat = comment.get("category", "STYLE")
+        if comment.get("is_ai"):
+            weekly_detail[week]["ai_cats"][cat] += 1
+            weekly_detail[week]["ai_files"].add(comment["path"])
+        else:
+            weekly_detail[week]["human_cats"][cat] += 1
+            weekly_detail[week]["human_files"].add(comment["path"])
+
+    weekly_categories = {}
+    for w in sorted_weeks:
+        wd = weekly_detail.get(w, {"ai_cats": {}, "human_cats": {}, "ai_files": set(), "human_files": set()})
+        weekly_categories[w] = {
+            "categories": [{"category": cat, "ai_count": wd["ai_cats"].get(cat, 0), "human_count": wd["human_cats"].get(cat, 0)} for cat in CATEGORIES],
+            "ai_files": len(wd["ai_files"]),
+            "human_files": len(wd["human_files"]),
+            "overlap_files": len(wd["ai_files"] & wd["human_files"]),
+        }
+
     return {
         "total_prs": len(prs_data),
         "open_prs": len(open_prs),
@@ -400,6 +424,7 @@ def compute_metrics(prs_data, review_comments, reviewers_summary):
         "human_only_files_count": len(human_only_files),
         "prs_with_both_count": len(prs_with_both),
         "category_comparison": category_comparison,
+        "weekly_categories": weekly_categories,
         "ai_categories": dict(ai_categories),
         "human_categories": dict(human_categories),
     }
