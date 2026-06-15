@@ -11,6 +11,13 @@ helmDefaults:
 
 releases:
 
+  - name: unifai-multiagent-shared-storage
+    chart: ./multiagent/unifai-multiagent-shared-storage
+    wait: true
+    values:
+      - {{- toYaml .Values.storage | nindent 8 }}
+      - ./values/global-config.yaml
+
   - name: unifai-multiagent-be
     chart: ./multiagent/be
     wait: true
@@ -28,7 +35,8 @@ releases:
   - name: unifai-multiagent-temporal-worker
     chart: ./multiagent/temporal-worker
     wait: true
-    #timeout: 300
+    needs:
+      - unifai-multiagent-shared-storage
     values:
       - ./values/global-config.yaml
       - {{- toYaml .Values.multiagent_temporal_worker | nindent 8 }}

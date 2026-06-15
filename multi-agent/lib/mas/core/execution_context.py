@@ -20,6 +20,7 @@ class ExecutionContext(BaseModel):
     older DB documents that carried fields no longer present.
     """
 
+    session_id: str = ""
     identity: Identity
     scope: str = "public"
     engine_name: str = ""

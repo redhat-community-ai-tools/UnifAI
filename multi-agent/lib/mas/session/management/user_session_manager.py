@@ -1,7 +1,10 @@
+import logging
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional
+from mas.core.platform_config import PlatformConfig
 from mas.session.repository.repository import SessionRepository
+from mas.session.storage.ports import SessionStorageCleaner
 from mas.session.building.workflow_session_factory import WorkflowSessionFactory
 from mas.session.domain.workflow_session import WorkflowSession
 from mas.session.domain.session_record import SessionRecord
@@ -13,6 +16,8 @@ from mas.blueprints.service import BlueprintService
 from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
 from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.core.identity import Identity
+
+logger = logging.getLogger(__name__)
 
 
 class UserSessionManager:
@@ -26,10 +31,14 @@ class UserSessionManager:
             repository: SessionRepository,
             session_factory: WorkflowSessionFactory,
             blueprint_service: BlueprintService,
+            platform_config: Optional[PlatformConfig] = None,
+            storage_cleaner: Optional[SessionStorageCleaner] = None,
     ):
         self._repo = repository
         self._factory = session_factory
         self._bp_service = blueprint_service
+        self._platform_config = platform_config or PlatformConfig()
+        self._storage_cleaner = storage_cleaner
 
     def blueprint_exists(self, blueprint_id: str) -> bool:
         """Check if blueprint exists without loading it."""
@@ -60,6 +69,7 @@ class UserSessionManager:
         session_meta = metadata or SessionMeta()
         run_id = str(uuid.uuid4())
         ctx = ExecutionContext(
+            session_id=run_id,
             identity=identity,
             engine_name=self._factory.engine_name,
         )
@@ -110,7 +120,15 @@ class UserSessionManager:
 
     def delete_session(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""
-        return self._repo.delete(run_id)
+        deleted = self._repo.delete(run_id)
+        if deleted:
+            self._cleanup_session_storage(run_id)
+        return deleted
+
+    def _cleanup_session_storage(self, run_id: str) -> None:
+        """Delegate storage cleanup to the injected adapter."""
+        if self._storage_cleaner:
+            self._storage_cleaner.cleanup(run_id)
 
     # ---------- statistics ----------
 

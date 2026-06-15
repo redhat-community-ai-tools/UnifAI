@@ -97,7 +97,7 @@ def _team_edit_lock_key(team_id: str, entity_kind: str, entity_id: str) -> str:
 class RedisCollaborationStore(CollaborationStore):
 
     def __init__(self, redis_url: str) -> None:
-        self._pool = ConnectionPool.from_url(redis_url)
+        self._pool = ConnectionPool.from_url(redis_url, socket_timeout=30)
 
     def _client(self) -> Redis:
         return Redis(connection_pool=self._pool)

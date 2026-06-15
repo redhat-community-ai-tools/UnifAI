@@ -1,0 +1,189 @@
+name: Cursor Pipeline Review
+
+env:
+  PIPELINE_MODEL: claude-4.6-opus-high-thinking
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to run pipeline on (defaults to current branch)"
+        required: false
+        default: "main"
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: write
+
+    steps:
+      - name: Resolve branch
+        id: branch
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BRANCH: ${{ github.event.inputs.branch }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GIT_REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_BRANCH" ]; then
+            printf 'ref=%s\n' "$INPUT_BRANCH" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            printf 'ref=%s\n' "$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
+          else
+            printf 'ref=%s\n' "$GIT_REF_NAME" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Install Cursor CLI
+        env:
+          CURSOR_CLI_VERSION: "2026.06.12-19-59-36-f6aba9a"
+          CURSOR_CLI_SHA256: "6e7f202dd8875b569d674564be6376f0f6fb5f7e45fdd973b59b84f33cc9a1e4"
+        run: |
+          curl -fsSL "https://downloads.cursor.com/lab/${CURSOR_CLI_VERSION}/linux/x64/agent-cli-package.tar.gz" \
+            -o /tmp/agent-cli-package.tar.gz
+          echo "${CURSOR_CLI_SHA256}  /tmp/agent-cli-package.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin" "$HOME/.local/share/cursor-agent/versions/${CURSOR_CLI_VERSION}"
+          tar --strip-components=1 -xzf /tmp/agent-cli-package.tar.gz \
+            -C "$HOME/.local/share/cursor-agent/versions/${CURSOR_CLI_VERSION}"
+          ln -sf "$HOME/.local/share/cursor-agent/versions/${CURSOR_CLI_VERSION}/cursor-agent" \
+            "$HOME/.local/bin/agent"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Validate model availability
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          MODEL_OUTPUT=$(agent --list-models 2>&1) || {
+            echo "::error::Failed to list models. Output: $MODEL_OUTPUT"
+            exit 1
+          }
+          if ! echo "$MODEL_OUTPUT" | grep -qF "$PIPELINE_MODEL"; then
+            echo "::error::Model '$PIPELINE_MODEL' is not available. Available models:"
+            echo "$MODEL_OUTPUT"
+            exit 1
+          fi
+
+      # Security: --trust grants the agent full tool access (file read/write, shell).
+      # --force skips interactive confirmation. The agent runs in a read-only
+      # checkout (contents: read permission) so it cannot push changes. The
+      # CURSOR_API_KEY is scoped to this organization's Cursor account only.
+      - name: Run Architecture Review
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          agent --trust --force -p "/pipeline arch-review" \
+            --model "$PIPELINE_MODEL" 2>&1 | tee arch_review_output.txt
+
+      - name: Run Code Review
+        if: "!cancelled()"
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          agent --trust --force -p "/pipeline code-review-only" \
+            --model "$PIPELINE_MODEL" 2>&1 | tee code_review_output.txt
+
+      - name: Publish results to Job Summary
+        if: always()
+        run: |
+          echo "## Architecture Review" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f arch_review_output.txt ]; then
+            cat arch_review_output.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_No output produced._" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Code Review" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f code_review_output.txt ]; then
+            cat code_review_output.txt >> $GITHUB_STEP_SUMMARY
+          else
+            echo "_No output produced._" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Evaluate Review Scores
+        id: gate
+        if: always()
+        run: python3 .github/scripts/evaluate_review_gate.py
+
+      - name: Publish Check Run
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          ARCH_VERDICT=$(sed 's/\x1b\[[0-9;]*m//g' arch_review_output.txt 2>/dev/null | grep -oP '\*\*(?:APPROVE|NEEDS REVISION|REJECT)\*\*' | head -1 | tr -d '*' || echo "UNKNOWN")
+          CODE_SCORE=$(sed 's/\x1b\[[0-9;]*m//g' code_review_output.txt 2>/dev/null | grep -oP 'Code Health Score:\s*\K[0-9]{1,2}(?=/10)' | tail -1 || echo "?")
+
+          TITLE="Architecture: ${ARCH_VERDICT} | Code: ${CODE_SCORE}/10"
+
+          if [ "$GATE_OUTCOME" = "success" ]; then
+            CONCLUSION="success"
+          else
+            CONCLUSION="failure"
+          fi
+
+          {
+            echo "## Architecture Review"
+            echo ""
+            if [ -f arch_review_output.txt ]; then
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' arch_review_output.txt | head -c 30000
+              echo ""
+              echo '```'
+            else
+              echo "_No output produced._"
+            fi
+            echo ""
+            echo "## Code Review"
+            echo ""
+            if [ -f code_review_output.txt ]; then
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' code_review_output.txt | head -c 30000
+              echo ""
+              echo '```'
+            else
+              echo "_No output produced._"
+            fi
+          } > check_run_summary.md
+
+          SUMMARY=$(cat check_run_summary.md)
+
+          jq -n \
+            --arg name "Pipeline Review" \
+            --arg sha "$PR_HEAD_SHA" \
+            --arg conclusion "$CONCLUSION" \
+            --arg title "$TITLE" \
+            --arg summary "$SUMMARY" \
+            '{
+              name: $name,
+              head_sha: $sha,
+              status: "completed",
+              conclusion: $conclusion,
+              output: { title: $title, summary: $summary }
+            }' | gh api "repos/${GH_REPOSITORY}/check-runs" \
+              -X POST --input -

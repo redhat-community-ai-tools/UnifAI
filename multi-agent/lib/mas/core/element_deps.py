@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
-if TYPE_CHECKING:
-    from mas.core.execution_context import ExecutionContextHolder
-    from mas.core.auth.service import AuthService
+from mas.core.execution_context import ExecutionContextHolder
+from mas.core.auth.service import AuthService
+from mas.core.platform_config import PlatformConfig
 
 
 @dataclass
@@ -19,3 +19,4 @@ class ElementDeps:
 
     execution_ctx: Optional[ExecutionContextHolder] = field(default=None)
     auth_service: Optional[AuthService] = field(default=None)
+    platform_config: Optional[PlatformConfig] = field(default=None)
