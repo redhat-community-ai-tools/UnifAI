@@ -1,11 +1,11 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
-import { 
-  FaTachometerAlt, FaCogs, FaFileAlt, 
+import {
+  FaTachometerAlt, FaCogs, FaFileAlt,
   FaChartLine, FaUserShield, FaCog, FaSignOutAlt,
   FaRobot, FaFile, FaChevronLeft, FaChevronRight,
-  FaInfoCircle, FaBook, FaComment, FaPuzzlePiece,
+  FaInfoCircle, FaBook, FaComment, FaPuzzlePiece, FaRocket,
 } from "react-icons/fa";
 import { FaSlack, FaBars } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
@@ -347,9 +347,17 @@ export default function Sidebar() {
           </motion.div>
         )}
         <ul>
-          <NavItem 
-            icon={<FaInfoCircle className="sidebar-icon" />} 
-            label="Getting Started" 
+          <NavItem
+            icon={<FaRocket className="sidebar-icon" />}
+            label="Innovation Day Q2 2026"
+            to="/innovation-day"
+            isActive={location === '/innovation-day'}
+            status={null}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem
+            icon={<FaInfoCircle className="sidebar-icon" />}
+            label="Getting Started"
             to="/get-to-know"
             isActive={location === '/get-to-know'}
             status={null}
