@@ -13,6 +13,7 @@ EDGES.push(
   { from: 'identity', to: 'redis',           label: 'sessions' },
   { from: 'identity', to: 'mongodb',        label: 'teams' },
   { from: 'mas',      to: 'identity',       label: 'team auth' },
+  { from: 'mas',      to: 'rag',            label: 'query.match' },
   { from: 'slack',    to: 'rag',             label: 'paused', style: 'dashed' },
   { from: 'rag',      to: 'rabbitmq',        label: 'enqueue' },
   { from: 'rag',      to: 'mongodb',         label: 'metadata' },

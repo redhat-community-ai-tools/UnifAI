@@ -17,15 +17,25 @@ A scoped list of changed/added files, provided by the pipeline orchestrator via 
 
 ## Prerequisites
 
-Before starting the review, load `.cursor/skills/architecture/hex-mechanics.md` for the authoritative reference on:
-- Layer placement decision tree (§1)
-- Import rules and dependency inversion matrix (§2)
-- Port-per-adapter rule (§3)
-- Error handling layer contract (§4)
-- SRP decomposition thresholds (§5)
-- Enum enforcement patterns (§6)
-- Python safety patterns (§7)
-- Deep investigation techniques (§9)
+Before starting the review, load both architecture references:
+
+1. `.cursor/skills/architecture/standards.md` for universal coding standards:
+   - SOLID principles — SRP, OCP, LSP, ISP, DIP (§1)
+   - Pydantic model rules (§3)
+   - Enum enforcement (§4)
+   - Type hint requirements (§5)
+   - Import ordering (§6)
+   - Error handling rules (§8)
+
+2. `.cursor/skills/architecture/hex-mechanics.md` for detailed hexagonal mechanics:
+   - Layer placement decision tree (§1)
+   - Import rules and dependency inversion matrix (§2)
+   - Port-per-adapter rule (§3)
+   - Error handling layer contract (§4)
+   - SRP decomposition thresholds (§5)
+   - Enum enforcement patterns (§6)
+   - Python safety patterns (§7)
+   - Deep investigation techniques (§9)
 
 ## Scope Resolution & Domain Loading (MANDATORY)
 
@@ -37,6 +47,9 @@ Before starting the review:
    - 3b. If the `_index.md` links to a **recipe** for this type of change (e.g. `add-new-node.md`), read the recipe's **Reviewer Checklist** — specifically any **"DO NOT flag"** rows. These are additional suppressions.
 4. If files cross component boundaries, load BOTH components' `relationships.md`
 5. Load the service's `rules.md` for domain-specific enforcement
+6. Load the dev-guide service doc referenced by the domain `_index.md`
+   (`unifai-dev-guide/docs/services/<service>.md`) — use the relevant sections
+   for factual class architecture, port catalogs, and endpoint signatures.
 
 Failure to load domain context before reviewing is a failure of this phase.
 
@@ -93,9 +106,17 @@ With structure and placement confirmed, check the wiring:
 
 For every changed or added Python file, read its `import`/`from` statements and enforce the import matrix from `hex-mechanics.md` §2. If a service contains `from project.adapters.xyz import ConcreteClass`, that is a **CRITICAL** DIP violation.
 
-### 5. Port-per-Adapter, Layer Placement, Error Handling, SRP, Enums, Safety
+### 5. SOLID, Ports, Layer Placement, Error Handling, Enums, Safety
 
-Enforce all rules from `hex-mechanics.md` §3–§7. Flag violations at the severity levels defined there.
+Enforce all rules from `hex-mechanics.md` §3–§7 plus the SOLID checks from `standards.md` §1:
+
+- **SRP**: Classes with 8+ public methods clustering into independent groups → decompose per `hex-mechanics.md` §5.
+- **OCP**: New type variants handled by adding `if/elif` branches instead of new classes or strategy objects → **MAJOR**.
+- **LSP**: Subtype or adapter that breaks its base/port contract (changes return semantics, narrows accepted input, adds preconditions) → **MAJOR**.
+- **ISP**: Port (ABC) forcing implementors to stub methods they don't need → **MAJOR** — split the interface.
+- **DIP**: Covered by §3 (hex compliance) and §4 (import enforcement) above; flag any remaining concretion-dependency here.
+
+Also enforce port-per-adapter, error handling layer contract, enum patterns, and Python safety per `hex-mechanics.md`.
 
 ### 6. Code Duplication & Reusability
 

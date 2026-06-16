@@ -152,6 +152,9 @@ mas:
       glob: "multi-agent/lib/mas/elements/nodes/**"
       baseClass: BaseNode
       docSection: "mas.md → Elements Plugin Layer, Session Management"
+      notableNodes:
+        - { type: claude_agent_node, path: "multi-agent/lib/mas/elements/nodes/claude_agent/", sdk: "claude-agent-sdk>=0.2.0", externalDep: "Anthropic Claude via Vertex AI" }
+        - { type: deep_agent_node, path: "multi-agent/lib/mas/elements/nodes/deep_agent/", sdk: "deepagents (LangChain)", externalDep: "LangChain Deep Agents framework" }
     llms:
       glob: "multi-agent/lib/mas/elements/llms/**"
       baseClass: BaseLLM

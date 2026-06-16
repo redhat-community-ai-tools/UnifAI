@@ -16,6 +16,9 @@ Before starting the review:
    - 3b. If the `_index.md` links to a **recipe** for this type of change (e.g. `add-new-node.md`), read the recipe's **Reviewer Checklist** — specifically any **"DO NOT flag"** rows. These are additional suppressions.
 4. If files cross component boundaries, load BOTH components' `relationships.md`
 5. Load the service's `rules.md` for domain-specific enforcement
+6. Load the dev-guide service doc referenced by the domain `_index.md`
+   (`unifai-dev-guide/docs/services/<service>.md`) — use the relevant sections
+   for factual class architecture, port catalogs, and endpoint signatures.
 
 Failure to load domain context before reviewing is a failure of this phase.
 

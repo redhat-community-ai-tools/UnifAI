@@ -5,13 +5,13 @@ code_root: multi-agent/
 sections:
   quick_reference: 30
   connections: 41
-  features: 53
-  job_description: 61
-  endpoints_90: 134
-  port_abstractions_4: 276
-  file_path_patterns: 285
-  architecture: 306
-  class_architecture: 445
+  features: 54
+  job_description: 62
+  endpoints_90: 137
+  port_abstractions_4: 279
+  file_path_patterns: 288
+  architecture: 309
+  class_architecture: 448
 ---
 
 # Multi Agent System (MAS)
@@ -22,10 +22,10 @@ sections:
 |-------|-------|
 | ID | `mas` |
 | Type | APP |
-| Tech Stack | Flask, LangGraph, Temporal, MongoDB, Redis |
+| Tech Stack | Flask, LangGraph, Temporal, MongoDB, Redis, claude-agent-sdk, deepagents |
 | Code Root | `multi-agent/` |
 | Shares Codebase With | temporal_worker |
-| Subtitle | Flask • Gunicorn • LangGraph / Temporal • Port 8002 |
+| Subtitle | Flask • Gunicorn • LangGraph / Temporal • Claude SDK • Deep Agents • Port 8002 |
 
 ## Quick Reference
 
@@ -45,6 +45,7 @@ sections:
 
 **Outgoing:**
 - `mas` → `identity` *(team auth)*
+- `mas` → `rag` *(query.match)*
 - `mas` → `mongodb` *(sessions)*
 - `mas` → `redis` *(streams)*
 - `mas` → `temporal` *(submit WF)*
@@ -73,7 +74,7 @@ The **Multi-Agent System (MAS)** is the core orchestration engine of UnifAI. It 
 
 #### Element Categories
 
-- **Nodes** — user_question, custom_agent (ReAct/Plan-and-Execute), orchestrator, a2a_agent, merger, final_answer, branch_chooser
+- **Nodes** — user_question, custom_agent (ReAct/Plan-and-Execute), orchestrator, a2a_agent, claude_agent (Claude SDK autonomous sessions), deep_agent (LangChain Deep Agents), merger, final_answer, branch_chooser
 - **LLMs** — openai, google_genai, mock
 - **Tools** — mcp_proxy, ssh_exec, web_fetch, oc_exec + builtins (workplan, topology, delegation, time)
 - **Providers** — mcp_server (auto-discovers tools), rag_client, a2a_agent
@@ -126,6 +127,8 @@ The configured default is **Background (Temporal)** — `engine_name=temporal`.
 
 - **RAG** — document retrieval via `docs_rag` and `slack` retrievers
 - **LLM providers** — OpenAI, Google Gemini via LangChain wrappers
+- **Claude Agent SDK** — autonomous coding agent sessions via Anthropic Claude on Vertex AI (`claude_agent_node`)
+- **LangChain Deep Agents** — planning-capable agent delegation with built-in subagents and shell/filesystem (`deep_agent_node`)
 - **A2A protocol** — remote agent delegation via `a2a_agent` nodes
 - **MCP protocol** — external tool invocation via `mcp_server` providers (SSE/HTTP)
 - **Identity service** — team membership, user directory, OAuth callback relay
@@ -307,7 +310,7 @@ The configured default is **Background (Temporal)** — `engine_name=temporal`.
 
 #### Design Pattern: Hexagonal Architecture
 
-MAS uses **ports and adapters** (hexagonal architecture). Core domain logic lives in `lib/mas/` with zero infrastructure imports. The elements plugin layer (`lib/mas/elements/`) wraps external provider SDKs (OpenAI, Google GenAI, LangChain, deepagents, MCP) behind domain abstractions (`BaseLLM`, `BaseTool`, `BaseNode`). Technology adapters in `adapters/` implement the port interfaces. The composition root `bootstrap/container.py` wires everything at startup.
+MAS uses **ports and adapters** (hexagonal architecture). Domain logic lives in `lib/mas/` with zero infrastructure imports. Technology adapters in `adapters/` implement the port interfaces. The composition root `bootstrap/container.py` wires everything at startup.
 
 #### Directory Layout
 
@@ -444,7 +447,7 @@ Redis, Temporal, and Identity degrade gracefully if unavailable. Without Tempora
 
 ## Class Architecture
 
-MAS follows **hexagonal architecture** with a rich domain layer in `lib/mas/` (~200 Python files, 17 domain cores). The element plugin system uses auto-discovery to register node types. Two execution backends — **Temporal** (distributed, default) and **LangGraph** (in-process, fallback) — share the same BSP graph traversal algorithm. Inbound: Flask + Temporal worker. Outbound: MongoDB (7 collections), Redis (streams, collab, auth), Temporal, LangGraph, Identity HTTP, OAuth2.
+MAS follows **hexagonal architecture** with a rich domain layer in `lib/mas/` (~200 Python files, 17 domain cores). The element plugin system uses auto-discovery to register node types including external SDK integrations: **ClaudeAgentNode** (Anthropic Claude via Vertex AI) and **DeepAgentNode** (LangChain Deep Agents). Two execution backends — **Temporal** (distributed, default) and **LangGraph** (in-process, fallback) — share the same BSP graph traversal algorithm. Inbound: Flask + Temporal worker. Outbound: MongoDB (7 collections), Redis (streams, collab, auth), Temporal, LangGraph, Identity HTTP, OAuth2, Vertex AI, deepagents.
 
 ### Key Extension Points
 
@@ -459,7 +462,7 @@ These are the base classes and ABCs that new code should extend or implement:
 | `CollaborationStore (ABC)` | `lib/mas/collaboration/ports.py` | Identity & Collaboration | `RedisCollaborationStore` |
 | `BaseElementSpec (ABC)` | `lib/mas/elements/common/base_element_spec.py` | Elements Plugin Layer | `element specs (nodes, llms, tools, providers, conditions, retrievers, auths)` |
 | `BaseFactory (ABC)` | `lib/mas/elements/common/base_factory.py` | Elements Plugin Layer | `element factories (nodes, llms, tools, providers, conditions, retrievers, auths)` |
-| `BaseNode` | `lib/mas/elements/nodes/common/base_node.py` | Elements Plugin Layer | `CustomAgentNode`, `OrchestratorNode`, `A2AAgentNode`, `UserQuestionNode`, `FinalAnswerNode`, `MergerNode`, `BranchChooserNode` |
+| `BaseNode` | `lib/mas/elements/nodes/common/base_node.py` | Elements Plugin Layer | `CustomAgentNode`, `OrchestratorNode`, `A2AAgentNode`, `ClaudeAgentNode`, `DeepAgentNode`, `UserQuestionNode`, `FinalAnswerNode`, `MergerNode`, `BranchChooserNode` |
 | `BaseTool (ABC)` | `lib/mas/elements/tools/common/base_tool.py` | Elements Plugin Layer | `McpProxyTool`, `WebFetchTool`, `SshExecTool`, `OcExecTool` |
 | `AgentStrategy (ABC)` | `lib/mas/elements/nodes/common/agent/strategies/` | Elements Plugin Layer | `AgentRunner` |
 
@@ -648,16 +651,24 @@ These are the base classes and ABCs that new code should extend or implement:
 | `BaseLLM` | `lib/mas/elements/llms/common/base_llm.py` | Base for LLM integrations (openai, google_genai, mock) |
 | `BaseRetriever` | `lib/mas/elements/retrievers/common/base_retriever.py` | Base for retriever integrations (docs_rag, slack) |
 | `McpProvider` | `lib/mas/elements/providers/mcp/runtime/mcp_provider.py` | MCP server client: discovers tools, creates McpProxyTool instances. SSE/HTTP transport. Live auth. |
+| `ClaudeAgentNode` | `lib/mas/elements/nodes/claude_agent/claude_agent_node.py` | Autonomous Claude SDK sessions via Vertex AI. Session-scoped working dirs, skills repos, streaming. |
+| `DeepAgentNode` | `lib/mas/elements/nodes/deep_agent/deep_agent_node.py` | LangChain Deep Agents with planning, subagent delegation, and LocalShellBackend. |
+| `BaseLLMChatModelAdapter` | `lib/mas/elements/llms/common/langchain_adapter.py` | Bridges domain BaseLLM to LangChain BaseChatModel for DeepAgentNode |
+| `LangChainToolsConverter` | `lib/mas/elements/tools/common/converter.py` | Converts domain BaseTool + MCP tools to LangChain StructuredTool format |
 | `AgentStrategy (ABC)` | `lib/mas/elements/nodes/common/agent/strategies/` | Base agent execution strategy (ReAct, PlanAndExecute) |
 | `AgentRunner` | `lib/mas/elements/nodes/common/agent/runner.py` | Executes agent loop: iterate actions until finish. Uses ToolExecutorManager. |
 | `BuiltinTools` | `lib/mas/elements/tools/builtin/` | Runtime-only tools (not catalog entries): workplan, topology, delegation, workspace, time, retriever-as-tool |
 
 - `BaseNode` calls: `StateView`
-- `BaseNode` called by: `CustomAgentNode`, `OrchestratorNode`, `A2AAgentNode`, `UserQuestionNode`, `FinalAnswerNode`, `MergerNode`, `BranchChooserNode`
+- `BaseNode` called by: `CustomAgentNode`, `OrchestratorNode`, `A2AAgentNode`, `ClaudeAgentNode`, `DeepAgentNode`, `UserQuestionNode`, `FinalAnswerNode`, `MergerNode`, `BranchChooserNode`
 - `BaseTool (ABC)` called by: `McpProxyTool`, `WebFetchTool`, `SshExecTool`, `OcExecTool`
 - `BaseLLM` called by: `OpenAILLM`, `GoogleGenAILLM`, `MockLLM`
 - `McpProvider` calls: `McpServerClient`, `TransportFactory`, `AuthCredential`
 - `McpProvider` called by: `ProviderBuilder`
+- `ClaudeAgentNode` calls: `claude_agent_sdk`, `IEMCapableMixin`, `WorkloadCapableMixin`, `RetrieverCapableMixin`
+- `ClaudeAgentNode` called by: `BaseNode`, `NodeExecutor`
+- `DeepAgentNode` calls: `deepagents`, `BaseLLMChatModelAdapter`, `LangChainToolsConverter`, `IEMCapableMixin`, `WorkloadCapableMixin`
+- `DeepAgentNode` called by: `BaseNode`, `NodeExecutor`
 - `AgentRunner` calls: `AgentStrategy`, `AgentActionExecutor`, `ToolExecutorManager`
 - `AgentRunner` called by: `CustomAgentNode`, `OrchestratorNode`
 

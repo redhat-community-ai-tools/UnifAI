@@ -7,7 +7,7 @@ SERVICES.mas = {
   x: 600, y: 380,
   w: 190, h: 60,
   detail: {
-    subtitle: 'Flask • Gunicorn • LangGraph / Temporal • Port 8002',
+    subtitle: 'Flask • Gunicorn • LangGraph / Temporal • Claude SDK • Deep Agents • Port 8002',
     modal: {
       job: `
         <p>The <strong>Multi-Agent System (MAS)</strong> is the brain of UnifAI. It lets users design <em>blueprints</em> — visual graphs of AI agent workflows — and then execute them.</p>
@@ -34,6 +34,8 @@ SERVICES.mas = {
         <ul>
           <li>Calls <strong>RAG</strong> for document retrieval</li>
           <li>Calls <strong>LLM providers</strong> (OpenAI, Google Gemini) via LangChain</li>
+          <li>Runs <strong>Claude Agent SDK</strong> sessions (autonomous coding via Vertex AI)</li>
+          <li>Runs <strong>LangChain Deep Agents</strong> (planning + subagent delegation)</li>
           <li>Connects to <strong>remote agents</strong> via A2A protocol</li>
           <li>Invokes <strong>external tools</strong> via MCP protocol</li>
           <li>Calls <strong>Identity service</strong> for team authorization</li>
@@ -103,7 +105,7 @@ SERVICES.mas = {
 
       <h3>Element Categories</h3>
       <ul>
-        <li><strong>Nodes</strong> — user_question, custom_agent (ReAct/Plan-and-Execute), orchestrator, a2a_agent, merger, final_answer, branch_chooser</li>
+        <li><strong>Nodes</strong> — user_question, custom_agent (ReAct/Plan-and-Execute), orchestrator, a2a_agent, claude_agent (Claude SDK autonomous sessions), deep_agent (LangChain Deep Agents), merger, final_answer, branch_chooser</li>
         <li><strong>LLMs</strong> — openai, google_genai, mock</li>
         <li><strong>Tools</strong> — mcp_proxy, ssh_exec, web_fetch, oc_exec + builtins (workplan, topology, delegation, time)</li>
         <li><strong>Providers</strong> — mcp_server (auto-discovers tools), rag_client, a2a_agent</li>
@@ -158,6 +160,8 @@ SERVICES.mas = {
       <ul>
         <li><strong>RAG</strong> — document retrieval via <code>docs_rag</code> and <code>slack</code> retrievers</li>
         <li><strong>LLM providers</strong> — OpenAI, Google Gemini via LangChain wrappers</li>
+        <li><strong>Claude Agent SDK</strong> — autonomous coding agent sessions via Anthropic Claude on Vertex AI (<code>claude_agent_node</code>)</li>
+        <li><strong>LangChain Deep Agents</strong> — planning-capable agent delegation with built-in subagents and shell/filesystem (<code>deep_agent_node</code>)</li>
         <li><strong>A2A protocol</strong> — remote agent delegation via <code>a2a_agent</code> nodes</li>
         <li><strong>MCP protocol</strong> — external tool invocation via <code>mcp_server</code> providers (SSE/HTTP)</li>
         <li><strong>Identity service</strong> — team membership, user directory, OAuth callback relay</li>

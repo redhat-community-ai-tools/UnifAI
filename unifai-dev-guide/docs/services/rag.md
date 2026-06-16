@@ -5,13 +5,13 @@ code_root: rag/
 sections:
   quick_reference: 30
   connections: 40
-  features: 51
-  job_description: 57
-  endpoints_27: 115
-  port_abstractions_21: 179
-  file_path_patterns: 205
-  architecture: 217
-  class_architecture: 333
+  features: 52
+  job_description: 58
+  endpoints_27: 116
+  port_abstractions_21: 180
+  file_path_patterns: 206
+  architecture: 218
+  class_architecture: 334
 ---
 
 # RAG
@@ -41,6 +41,7 @@ sections:
 
 **Incoming:**
 - `ui` → `rag` *(/api1)*
+- `mas` → `rag` *(query.match)*
 - `slack` → `rag` *(paused)*
 
 **Outgoing:**

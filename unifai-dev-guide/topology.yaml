@@ -37,7 +37,7 @@ services:
     name: Multi Agent System (MAS)
     icon: "\U0001F916"  # 🤖
     role: Multi-agent orchestration
-    tech: [Flask, LangGraph, Temporal, MongoDB, Redis]
+    tech: [Flask, LangGraph, Temporal, MongoDB, Redis, claude-agent-sdk, deepagents]
     codeRoot: multi-agent/
     shares_codebase_with: [temporal_worker]
     position: { x: 600, y: 380, w: 190, h: 60 }
@@ -225,6 +225,12 @@ edges:
     label: submit WF
     protocol: gRPC
     detail: "TemporalSessionEngine submits SessionWorkflow to task queue 'graph-engine'"
+
+  - from: mas
+    to: rag
+    label: query.match
+    protocol: HTTP
+    detail: "RagClient calls RAG /api/vector/query.match for retriever context augmentation"
 
   - from: mas
     to: temporal_worker

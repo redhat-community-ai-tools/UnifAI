@@ -13,12 +13,12 @@ Runtime connections between services. Changing a service's API may affect all se
 | `celery` | `rabbitmq`, `mongodb`, `qdrant` | — |
 | `identity` | `keycloak`, `redis`, `mongodb` | `ui`, `mas` |
 | `keycloak` | — | `identity` |
-| `mas` | `identity`, `mongodb`, `redis`, `temporal` | `ui` |
+| `mas` | `identity`, `rag`, `mongodb`, `redis`, `temporal` | `ui` |
 | `mongodb` | — | `identity`, `rag`, `celery`, `mas`, `temporal_worker`, `platform` |
 | `platform` | `mongodb` | `ui` |
 | `qdrant` | — | `rag`, `celery` |
 | `rabbitmq` | — | `rag`, `celery` |
-| `rag` | `rabbitmq`, `mongodb`, `qdrant` | `ui`, `slack` |
+| `rag` | `rabbitmq`, `mongodb`, `qdrant` | `ui`, `mas`, `slack` |
 | `redis` | — | `identity`, `mas`, `temporal_worker` |
 | `slack` | `rag` | — |
 | `temporal` | — | `mas`, `temporal_worker` |
@@ -122,7 +122,7 @@ Base classes and ABCs with the highest downstream impact. Changing these affects
 | **HIGH** | `mas` | `BaseFactory (ABC)` | `lib/mas/elements/common/base_factory.py` | — | element factories (nodes, llms, tools, providers, conditions, retrievers, auths) |
 | **HIGH** | `ui` | `shadcn/ui (51 components)` | `components/ui/` | — | all components |
 | **MEDIUM** | `mas` | `ElementRegistry` | `lib/mas/catalog/element_registry.py` | `AppContainer`, `CatalogService`, `GraphService`, `WorkflowSessionFactory`, `SessionElementBuilder`, `ElementValidationService`, `ActionsService`, `TemplateService`, `ElementCardService` | — |
-| **MEDIUM** | `mas` | `BaseNode` | `lib/mas/elements/nodes/common/base_node.py` | `CustomAgentNode`, `OrchestratorNode`, `A2AAgentNode`, `UserQuestionNode`, `FinalAnswerNode`, `MergerNode`, `BranchChooserNode` | — |
+| **MEDIUM** | `mas` | `BaseNode` | `lib/mas/elements/nodes/common/base_node.py` | `CustomAgentNode`, `OrchestratorNode`, `A2AAgentNode`, `ClaudeAgentNode`, `DeepAgentNode`, `UserQuestionNode`, `FinalAnswerNode`, `MergerNode`, `BranchChooserNode` | — |
 | **MEDIUM** | `global_utils` | `get_mongo_url()` | `utils/util.py` | `rag:AppContainer`, `mas:AppContainer`, `identity:create_app()`, `platform:AppContainer`, `CeleryApp` | — |
 | **MEDIUM** | `mas` | `BlueprintService` | `lib/mas/blueprints/service.py` | `UserSessionManager`, `TemplateService`, `ShareService`, `ShareCloner`, `StatisticsService` | — |
 | **MEDIUM** | `mas` | `ResourcesService` | `lib/mas/resources/service.py` | `ShareService`, `TemplateService`, `ShareCloner`, `ResourceMaterializer`, `StatisticsService` | — |
@@ -149,6 +149,7 @@ Base classes and ABCs with the highest downstream impact. Changing these affects
 | **LOW** | `mas` | `BlueprintRepository (ABC)` | `lib/mas/blueprints/repository/repository.py` | `MongoBlueprintRepository` | — |
 | **LOW** | `mas` | `BaseGraphExecutor (ABC)` | `lib/mas/engine/domain/base_executor.py` | `ForegroundSessionRunner` | — |
 | **LOW** | `mas` | `CollaborationStore (ABC)` | `lib/mas/collaboration/ports.py` | `RedisCollaborationStore` | — |
+| **LOW** | `mas` | `BaseLLMChatModelAdapter` | `lib/mas/elements/llms/common/langchain_adapter.py` | `DeepAgentNode` | — |
 | **LOW** | `mas` | `AgentStrategy (ABC)` | `lib/mas/elements/nodes/common/agent/strategies/` | `AgentRunner` | — |
 | **LOW** | `rag` | `PipelineTaskDispatcher (ABC)` | `core/pipeline/domain/dispatcher.py` | `CeleryPipelineDispatcher` | — |
 
@@ -200,8 +201,8 @@ Classes called by the most other classes within the system (highest in-degree).
 
 ### mas
 
-- **Classes:** 77
-- **Internal edges:** 127 calls, 133 calledBy
+- **Classes:** 81
+- **Internal edges:** 139 calls, 141 calledBy
 - **Cross-service references:** 1
 - **Extension points:** 10 (`BlueprintRepository (ABC)`, `BaseGraphBuilder (ABC)`, `BaseGraphExecutor (ABC)`, `IdentityProvider (ABC)`, `CollaborationStore (ABC)`, `BaseElementSpec (ABC)`, `BaseFactory (ABC)`, `BaseNode`, `BaseTool (ABC)`, `AgentStrategy (ABC)`)
 

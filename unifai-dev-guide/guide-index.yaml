@@ -52,6 +52,20 @@ routing:
     examples:
       - multi-agent/lib/mas/elements/auths/oauth_client/spec/spec.py
 
+  "multi-agent/lib/mas/elements/nodes/claude_agent/**":
+    doc: docs/services/mas.md
+    section: elements_plugin_layer
+    examples:
+      - multi-agent/lib/mas/elements/nodes/claude_agent/spec/spec.py
+      - multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py
+
+  "multi-agent/lib/mas/elements/nodes/deep_agent/**":
+    doc: docs/services/mas.md
+    section: elements_plugin_layer
+    examples:
+      - multi-agent/lib/mas/elements/nodes/deep_agent/spec/spec.py
+      - multi-agent/lib/mas/elements/nodes/deep_agent/deep_agent_node.py
+
   "multi-agent/lib/mas/elements/common/**":
     doc: docs/services/mas.md
     section: elements_plugin_layer
