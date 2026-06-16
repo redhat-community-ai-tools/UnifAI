@@ -206,7 +206,7 @@ IF verdict is NEEDS REVISION or REJECT:
 
 Used by `arch-review` mode only. This is a standalone phase — it does NOT run as part of the normal Phase 1 → 2 → 3 → 4 → 5 pipeline.
 
-1. Read the skill file at `.cursor/skills/pipeline-arch-reviewer/SKILL.md`.
+1. Read the skill file at `.cursor/skills/pipeline/phases/arch-reviewer.md`.
 2. Switch persona to the Architecture Reviewer.
 3. Resolve the review scope using the Scope Resolution rules above (git diff or explicit paths).
 4. Present the scoped file list, then critically review the changed files against hexagonal architecture, SOLID, port-adapter wiring, and codebase conventions following the skill's review dimensions.

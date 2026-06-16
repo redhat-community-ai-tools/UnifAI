@@ -12,10 +12,20 @@ Before starting the review:
 1. Identify which service(s) the changed files belong to using `.cursor/skills/codebase/SKILL.md` routing table
 2. Load the service's `_index.md` for component routing
 3. For each component touched, load `<component>/_index.md` for boundaries and contracts
+   - 3a. If any loaded `_index.md` contains an **Established Patterns** table, bind it as a suppression list — patterns listed there are pre-approved conventions. Do NOT flag them as violations. If noted at all, classify as **INFO — established pattern**.
+   - 3b. If the `_index.md` links to a **recipe** for this type of change (e.g. `add-new-node.md`), read the recipe's **Reviewer Checklist** — specifically any **"DO NOT flag"** rows. These are additional suppressions.
 4. If files cross component boundaries, load BOTH components' `relationships.md`
 5. Load the service's `rules.md` for domain-specific enforcement
 
 Failure to load domain context before reviewing is a failure of this phase.
+
+### Cross-Phase Awareness
+
+If an architecture review (Phase 2 / arch-review) was already performed in this session on the same files:
+- Reference its findings as "noted in arch review" — do NOT re-state them in full
+- Focus this review on dimensions **unique to Phase 4**: dead code, unused imports, codebase alignment, endpoint thinness, coupling, security, design compliance, and component placement
+- Do NOT re-evaluate hexagonal architecture compliance unless you find something the arch review missed
+- Do NOT re-flag the same duplication or import issues unless they were missed or the code changed since
 
 ## Review Areas
 
@@ -73,6 +83,10 @@ Check for:
 For each finding: show location, explain why it is duplication, suggest refactor.
 - Duplicated business logic = **MAJOR**
 - Duplicated structural/helper code = **MINOR**
+
+**Pre-existing vs. introduced duplication:**
+- If the duplicated logic already exists in 2+ other files and the PR mirrors that established pattern, classify as **INFO — inherited tech debt**, not MAJOR. The PR author followed the codebase's existing convention.
+- Only classify as MAJOR if the PR introduces *new* duplication that didn't exist before.
 
 ### 3. Dead Code Detection (STRICT)
 
@@ -239,12 +253,23 @@ For each new file or class added in the diff:
 
 Evidence required: quote the boundary declaration that supports or contradicts the placement.
 
+## Severity Calibration
+
+Before assigning any severity, apply these modifiers:
+
+- **Following an established codebase convention** (per `_index.md` Established Patterns or recipe "DO NOT flag" table) → suppress or classify as **INFO — established pattern**
+- **Pre-existing issue exposed but not introduced by this diff** → **INFO — tech debt**; does not count against the verdict or score
+- **Pragmatic workaround with a clear reason** (e.g. `Any` type to satisfy framework constraints) → **INFO** with the rationale, not a violation
+- **Cosmetic or stylistic inconsistency** → **INFO**, never MAJOR
+
+A finding should only be MAJOR or CRITICAL if **this diff specifically introduces** the problem.
+
 ## Review Rules
 
 - Do NOT give generic advice like "improve readability".
 - Do NOT suggest rewriting everything.
 - Do NOT recommend abstractions unless justified.
-- Do NOT approve if major duplication or architectural violations exist.
+- Do NOT approve if major duplication or architectural violations **introduced by this diff** exist.
 - Every finding MUST include the specific file path AND line number (e.g., `src/order/adapter/OrderController.py:45`). A review comment without a line reference is incomplete.
 - Do NOT assume correctness without verifying against the actual source code.
 
@@ -302,12 +327,13 @@ List the specific source files you read and what claims they verified or contrad
 | Score | Meaning |
 |-------|---------|
 | 9-10 | No issues, or only trivial nits |
-| 7-8 | Minor issues only, no architectural or duplication concerns |
-| 5-6 | At least one MAJOR issue, or several MINORs |
-| 3-4 | Multiple MAJOR issues or one CRITICAL |
-| 1-2 | Fundamental architectural violation or security critical |
+| 7-8 | Minor issues only, no architectural or duplication concerns **introduced by this PR** |
+| 5-6 | At least one MAJOR issue **introduced by this PR**, or several MINORs |
+| 3-4 | Multiple MAJOR issues or one CRITICAL **introduced by this PR** |
+| 1-2 | Fundamental architectural violation or security critical **introduced by this PR** |
 
 The score must be consistent with the verdict: a CLEAN verdict cannot accompany a score below 7.
+Issues classified as **INFO — established pattern** or **INFO — tech debt** do NOT lower the score.
 
 ### Verdict
 
