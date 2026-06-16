@@ -1,9 +1,3 @@
-> **DEPRECATED**: This command is superseded by `/pipeline design-only --adr <task>`.
-> The pipeline design phase provides richer codebase exploration, architecture
-> standards enforcement, and optional ADR file output.
-> See `.cursor/skills/pipeline/phases/designer.md`.
-> This file will be removed in a future cleanup pass.
-
 following this command please follow these steps:
 1. if a jira case is available check if you have some way to connect to jira (either by mcp or any other way) - if not stop and notify the user that he needs to set jira integration.
 2. getting the information from jira you need to understand what is needed in this case and prepare a design to close it

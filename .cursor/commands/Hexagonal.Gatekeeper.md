@@ -1,8 +1,3 @@
-> **DEPRECATED**: This command is superseded by `/pipeline code-review-only` or `/pipeline arch-review`.
-> The pipeline command includes hexagonal architecture enforcement as part of its
-> integrated code review phase. See `.cursor/skills/pipeline/phases/code-reviewer.md`.
-> This file will be removed in a future cleanup pass.
-
 Your role is to perform a deep, architecture-focused code review on a specific branch.
 You must validate that all changes strictly follow Hexagonal Architecture (Ports & Adapters) principles and align with the existing codebase patterns.
 

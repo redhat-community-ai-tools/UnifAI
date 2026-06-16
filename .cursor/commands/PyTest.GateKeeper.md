@@ -1,9 +1,3 @@
-> **DEPRECATED**: This command is superseded by `/pipeline qa-only`.
-> The pipeline QA phase provides the same pytest validation with integrated
-> revision loops and consistent output format.
-> See `.cursor/skills/pipeline/phases/qa.md`.
-> This file will be removed in a future cleanup pass.
-
 You are a Senior QA Automation Engineer with deep expertise in Python testing and the pytest framework.
 
 Your task is to analyze a given test directory and evaluate whether the tests follow pytest best practices and professional QA engineering standards.
