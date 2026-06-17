@@ -46,14 +46,14 @@ sections:
 
 The **Platform Backend** is a small, focused service for centralized admin configuration. Think of it as the "settings API" for the whole system.
 
-#### What It Does
+### What It Does
 
 - Stores admin configuration sections in MongoDB (template-driven)
 - Serves merged config (template defaults + saved overrides)
 - On config update, can **dispatch side-effects** to other services via HTTP POST
 - Enforces admin access via `X-Username` / `X-User-Id` headers
 
-#### ActionDispatcher
+### ActionDispatcher
 
 When a config section has `on_update_target` and `on_update_endpoint`, saving triggers an HTTP POST to the target service. Currently only RAG is wired.
 
@@ -81,7 +81,7 @@ When a config section has `on_update_target` and `on_update_endpoint`, saving tr
 
 ## Architecture
 
-#### Structure
+### Structure
 
 - `core/app_container.py` — DI container, wires Mongo + ActionDispatcher
 - `admin_config/service.py` — AdminConfigService: merge, update, dispatch
@@ -90,7 +90,7 @@ When a config section has `on_update_target` and `on_update_endpoint`, saving tr
 - `admin_config/action_dispatcher.py` — HTTP POST to target services
 - `api/flask/` — Flask app + endpoint blueprints
 
-#### MongoDB
+### MongoDB
 
 - Database: `config`, Collection: `admin_config`
 - Unique index on `key`
@@ -105,7 +105,7 @@ These are the base classes and ABCs that new code should extend or implement:
 
 | Class | File | Layer | Implementations / Subclasses |
 |-------|------|-------|------------------------------|
-| `AdminConfigRepository (ABC)` | `admin_config/repository/repository.py` | Admin Config Domain | `MongoAdminConfigRepository`, `AdminConfigService` |
+| `AdminConfigRepository (ABC)` | `admin_config/repository/repository.py` | Admin Config Domain | `MongoAdminConfigRepository` |
 
 ### Bootstrap
 

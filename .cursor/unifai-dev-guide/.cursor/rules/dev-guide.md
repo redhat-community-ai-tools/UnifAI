@@ -11,7 +11,7 @@ This repo is an interactive visual guide to the UnifAI system architecture. It r
 
 ## File Structure
 
-```
+```text
 js/
   data/
     _registry.js          # NODE_TYPES + empty SERVICES/FEATURES/EDGES containers (load first)

@@ -35,7 +35,7 @@ FEATURES.feat_team_workspace = {
         <div class="endpoint"><span class="method get">GET</span><span class="path">/api/teams/teams.list — list teams for user</span></div>
         <div class="endpoint"><span class="method get">GET</span><span class="path">/api/teams/team.get — get team by id</span></div>
         <div class="endpoint"><span class="method put">PUT</span><span class="path">/api/teams/team.update — update name/members</span></div>
-        <div class="endpoint"><span class="method delete">DEL</span><span class="path">/api/teams/team.delete — delete team (creator only)</span></div>
+        <div class="endpoint"><span class="method delete">DELETE</span><span class="path">/api/teams/team.delete — delete team (creator only)</span></div>
         <div class="endpoint"><span class="method get">GET</span><span class="path">/api/teams/identity.resolve — resolve user or team metadata</span></div>
       </div>
       <h3>MAS — Identity-Scoped Data (/api2)</h3>
@@ -45,7 +45,7 @@ FEATURES.feat_team_workspace = {
         <div class="endpoint"><span class="method get">GET</span><span class="path">/blueprints/available.blueprints.resolved.get?userId=&identityType=team</span></div>
         <div class="endpoint"><span class="method get">GET</span><span class="path">/sessions/session.user.list?userId=&identityType=team</span></div>
         <div class="endpoint"><span class="method post">POST</span><span class="path">/shares/share.to_team — clone resource/blueprint into team</span></div>
-        <div class="endpoint"><span class="method delete">DEL</span><span class="path">/workspace/workspace.cleanup — delete all data for an identity</span></div>
+        <div class="endpoint"><span class="method delete">DELETE</span><span class="path">/workspace/workspace.cleanup — delete all data for an identity</span></div>
       </div>
       <h3>MAS — Collaboration (requires Redis)</h3>
       <div class="endpoint-list">
@@ -118,13 +118,13 @@ FEATURES.feat_team_workspace = {
     { method: 'GET', path: '/api/teams/teams.list', summary: 'list teams for user' },
     { method: 'GET', path: '/api/teams/team.get', summary: 'get team by id' },
     { method: 'PUT', path: '/api/teams/team.update', summary: 'update name/members' },
-    { method: 'DEL', path: '/api/teams/team.delete', summary: 'delete team (creator only)' },
+    { method: 'DELETE', path: '/api/teams/team.delete', summary: 'delete team (creator only)' },
     { method: 'GET', path: '/api/teams/identity.resolve', summary: 'resolve user or team metadata' },
     { method: 'GET', path: '/resources/resources.list?userId=&identityType=team' },
     { method: 'GET', path: '/blueprints/available.blueprints.resolved.get?userId=&identityType=team' },
     { method: 'GET', path: '/sessions/session.user.list?userId=&identityType=team' },
     { method: 'POST', path: '/shares/share.to_team', summary: 'clone resource/blueprint into team' },
-    { method: 'DEL', path: '/workspace/workspace.cleanup', summary: 'delete all data for an identity' },
+    { method: 'DELETE', path: '/workspace/workspace.cleanup', summary: 'delete all data for an identity' },
     { method: 'POST', path: '/collaboration/session.join', summary: 'join session presence' },
     { method: 'POST', path: '/collaboration/session.leave', summary: 'leave session' },
     { method: 'POST', path: '/collaboration/session.heartbeat', summary: 'refresh presence' },

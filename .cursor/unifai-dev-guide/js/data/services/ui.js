@@ -396,7 +396,7 @@ SERVICES.ui = {
     { method: 'POST', path: '/docs/upload', summary: 'multipart file upload', group: 'RAG — /api1' },
     { method: 'POST', path: '/docs/validate', group: 'RAG — /api1' },
     { method: 'PUT', path: '/pipelines/embed', group: 'RAG — /api1' },
-    { method: 'DEL', path: '/data_sources/data.source.delete', group: 'RAG — /api1' },
+    { method: 'DELETE', path: '/data_sources/data.source.delete', group: 'RAG — /api1' },
     { method: 'GET', path: '/docs/supported-extensions', group: 'RAG — /api1' },
     { method: 'GET', path: '/slack/available.slack.channels.get', group: 'RAG — /api1' },
     { method: 'GET', path: '/vector/chunks.counts', group: 'RAG — /api1' },
@@ -404,10 +404,10 @@ SERVICES.ui = {
     { method: 'GET', path: '/admin_config/config.get', group: 'Admin Config — /api4' },
     { method: 'PUT', path: '/admin_config/config.section.update', group: 'Admin Config — /api4' },
     { method: 'GET', path: '/admin_config/access.check', group: 'Admin Config — /api4' },
-    { method: 'PROXY', path: '/api1/ → RAG_IP:RAG_PORT/api/', group: 'Admin Config — /api4' },
-    { method: 'PROXY', path: '/api2/ → MULTIAGENT_IP:MULTIAGENT_PORT/api/', group: 'Admin Config — /api4' },
-    { method: '307', path: '/api3/* → IDENTITY_HOST/api/*', group: 'Admin Config — /api4' },
-    { method: 'PROXY', path: '/api4/ → BACKEND_IP:BACKEND_PORT/api/', group: 'Admin Config — /api4' },
+    { method: 'PROXY', path: '/api1/ → RAG_IP:RAG_PORT/api/', group: 'Nginx Routing' },
+    { method: 'PROXY', path: '/api2/ → MULTIAGENT_IP:MULTIAGENT_PORT/api/', group: 'Nginx Routing' },
+    { method: '307', path: '/api3/* → IDENTITY_HOST/api/*', group: 'Nginx Routing' },
+    { method: 'PROXY', path: '/api4/ → BACKEND_IP:BACKEND_PORT/api/', group: 'Nginx Routing' },
   ],
   scheme: {
       nodes: [

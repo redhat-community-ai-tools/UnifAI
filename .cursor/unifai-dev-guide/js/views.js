@@ -94,8 +94,7 @@ const ViewManager = (() => {
     } else {
       zoomControls.style.display = 'none';
       legendBar.style.display = 'none';
-      const panel = document.getElementById('detail-panel');
-      panel.classList.add('hidden');
+      Interactions.closePanel();
     }
   }
 

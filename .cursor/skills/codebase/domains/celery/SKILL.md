@@ -47,9 +47,10 @@ celery -A infrastructure.celery.app worker -Q $CELERY_QUEUES
 
 ## Task Execution Flow
 
-```
-CeleryPipelineDispatcher.dispatch(source_id, queue)
-    → RabbitMQ → Celery Worker picks up task
+```text
+CeleryPipelineDispatcher.dispatch(source_type, source_data)
+    → derive queue from source_type (e.g. "document" → document_queue)
+    → send_task() → RabbitMQ → Celery Worker picks up task
         → execute_pipeline_task()
             → resolve dependencies from app container
             → select handler (DocumentPipelineHandler / SlackPipelineHandler)

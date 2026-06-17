@@ -19,9 +19,9 @@ FEATURES.feat_chats = {
         <li>The blueprint graph visualization alongside the chat</li>
       </ul>
       <h3>Execution Mode</h3>
-      <p>Sessions run in <strong>Background</strong> mode by default (<code>engine_name=temporal</code>). The UI calls <code>submit</code>, Temporal executes the graph on distributed workers, and results stream back via Redis Streams.</p>
+      <p>Sessions run in <strong>Background</strong> mode by default (<code>engine_name=temporal</code>). The UI calls <code>submit</code>, Temporal executes the graph on distributed workers, and results stream back to the browser as NDJSON over HTTP via <code>session.subscribe</code>.</p>
       <ul>
-        <li><strong>Background (default)</strong> — submitted to Temporal as a durable workflow; UI subscribes via Redis Streams</li>
+        <li><strong>Background (default)</strong> — submitted to Temporal as a durable workflow; workers write events to Redis Streams internally, MAS relays them to the UI as NDJSON over HTTP</li>
         <li><strong>Foreground (fallback)</strong> — in-process LangGraph execution with NDJSON streaming; used when Temporal is unavailable or for dev/simple graphs</li>
       </ul>
     `,
@@ -31,7 +31,7 @@ FEATURES.feat_chats = {
         <div class="endpoint"><span class="method post">POST</span><span class="path">/sessions/user.session.create</span></div>
         <div class="endpoint"><span class="method post">POST</span><span class="path">/sessions/user.session.submit — execute via Temporal (default)</span></div>
         <div class="endpoint"><span class="method post">POST</span><span class="path">/sessions/user.session.execute — foreground fallback (stream: true)</span></div>
-        <div class="endpoint"><span class="method get">GET</span><span class="path">/sessions/session.subscribe — Redis stream subscription</span></div>
+        <div class="endpoint"><span class="method get">GET</span><span class="path">/sessions/session.subscribe — NDJSON event stream (backed by Redis Streams internally)</span></div>
         <div class="endpoint"><span class="method get">GET</span><span class="path">/sessions/session.chat.get?sessionId= — full chat history</span></div>
         <div class="endpoint"><span class="method get">GET</span><span class="path">/sessions/session.user.list?userId=</span></div>
       </div>
@@ -46,7 +46,7 @@ FEATURES.feat_chats = {
         <li>The request returns immediately with a workflow ID (HTTP 202)</li>
         <li>Temporal dispatches <code>SessionWorkflow</code> → <code>GraphTraversalWorkflow</code> to a worker</li>
         <li>Each graph node runs as a separate Temporal activity with built-in retries</li>
-        <li>Events are written to Redis Streams; the UI subscribes via <code>session.subscribe</code> (long-polling/SSE)</li>
+        <li>Events are written to Redis Streams internally; the UI subscribes via <code>GET /sessions/session.subscribe</code> which relays them as NDJSON over HTTP</li>
       </ul>
       <h3>Foreground — fallback (in-process, via LangGraph)</h3>
       <ul>
@@ -80,7 +80,7 @@ FEATURES.feat_chats = {
     { method: 'POST', path: '/sessions/user.session.create' },
     { method: 'POST', path: '/sessions/user.session.submit', summary: 'execute via Temporal (default)' },
     { method: 'POST', path: '/sessions/user.session.execute', summary: 'foreground fallback (stream: true)' },
-    { method: 'GET', path: '/sessions/session.subscribe', summary: 'Redis stream subscription' },
+    { method: 'GET', path: '/sessions/session.subscribe', summary: 'NDJSON event stream' },
     { method: 'GET', path: '/sessions/session.chat.get?sessionId=', summary: 'full chat history' },
     { method: 'GET', path: '/sessions/session.user.list?userId=' },
   ],

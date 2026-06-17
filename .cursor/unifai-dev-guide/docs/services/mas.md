@@ -63,7 +63,7 @@ sections:
 
 The **Multi-Agent System (MAS)** is the core orchestration engine of UnifAI. It lets users design *blueprints* — visual graphs of AI agent workflows — execute them against LLMs, tools, and retrievers, and stream results in real time.
 
-#### Core Domain Concepts
+### Core Domain Concepts
 
 - **Blueprint** — a declarative YAML graph definition with nodes (agents, tools, retrievers), edges, and conditional routing. Blueprints are portable, versionable, and shareable. `BlueprintDraft` uses `$ref:` to point to resources; `BlueprintSpec` is the fully-resolved form.
 - **Resource** — a configured building block in the agent inventory (LLMs, tools, providers, retrievers, conditions, nodes, auths). Each has a `cfg_dict` validated against its element schema.
@@ -72,7 +72,7 @@ The **Multi-Agent System (MAS)** is the core orchestration engine of UnifAI. It 
 - **Template** — a parameterized blueprint factory. Users fill a form, and `materialize()` creates a blueprint + resources in one step.
 - **Actions** — independent operations (auth flows, MCP/RAG connection checks) linked to element types.
 
-#### Element Categories
+### Element Categories
 
 - **Nodes** — user_question, custom_agent (ReAct/Plan-and-Execute), orchestrator, a2a_agent, claude_agent (Claude SDK autonomous sessions), deep_agent (LangChain Deep Agents), merger, final_answer, branch_chooser
 - **LLMs** — openai, google_genai, mock
@@ -82,7 +82,7 @@ The **Multi-Agent System (MAS)** is the core orchestration engine of UnifAI. It 
 - **Retrievers** — docs_rag, slack
 - **Auths** — oauth_client, google_oauth, github_oauth, jira_oauth
 
-#### Session Execution Flow
+### Session Execution Flow
 
 When a user sends a message, this is what happens end-to-end:
 
@@ -97,25 +97,25 @@ When a user sends a message, this is what happens end-to-end:
 - **9.** Events stream through Redis → NDJSON → UI (llm_token, tool_calling, complete)
 - **10.** Final `GraphState` persisted to MongoDB
 
-#### IEM — Inter-Element Messaging
+### IEM — Inter-Element Messaging
 
 Nodes communicate via **typed packets** in `GraphState.inter_packets`, not by writing to shared state. The dominant type is `TaskPacket` — carries a natural-language `Task` with thread_id, correlation, and response tracking. Adjacency is enforced (non-adjacent sends raise `IEMAdjacencyException`). `RouterDirectCondition` follows IEM traffic to decide which nodes run next, enabling message-driven re-entrancy (orchestrator ↔ agents loops).
 
-#### Execution Mode
+### Execution Mode
 
 The configured default is **Background (Temporal)** — `engine_name=temporal`.
 
 - **Background (Temporal) — default** — distributed, durable. `TemporalSessionEngine` submits `SessionWorkflow` → `GraphTraversalWorkflow`. Workers are stateless; each activity rebuilds the node from a serialized mini-blueprint.
 - **Foreground (LangGraph) — fallback** — in-process, callables bound in `RTGraphPlan`. Used when Temporal is unavailable or for dev/simple graphs.
 
-#### Identity, Collaboration & Sharing
+### Identity, Collaboration & Sharing
 
 - All data is scoped by **Identity** (user or team). Team mode uses `IdentityProvider` for membership checks.
 - **Collaboration** — session presence, edit locks, typing indicators via Redis. Team sessions enforce busy-state semantics (LOCKED / IN_USE).
 - **Sharing** — invite-based with `ShareCloner` deep-copy and RID remapping. Direct share-to-team also supported.
 - **Templates** — marketplace of parameterized blueprints for one-click workflow creation.
 
-#### User Journey
+### User Journey
 
 - **1. Define Goal** — what problem, which data sources, how many agents
 - **2. Know Building Blocks** — browse `/inventory` catalog (LLMs, agents, tools, etc.)
@@ -123,7 +123,7 @@ The configured default is **Background (Temporal)** — `engine_name=temporal`.
 - **4. Build Workflow** — visual graph builder at `/agentic-ai` with live YAML validation
 - **5. Chat with Workflow** — real-time execution at `/agentic-chats`
 
-#### Integrations
+### Integrations
 
 - **RAG** — document retrieval via `docs_rag` and `slack` retrievers
 - **LLM providers** — OpenAI, Google Gemini via LangChain wrappers
@@ -308,18 +308,18 @@ The configured default is **Background (Temporal)** — `engine_name=temporal`.
 
 ## Architecture
 
-#### Design Pattern: Hexagonal Architecture
+### Design Pattern: Hexagonal Architecture
 
 MAS uses **ports and adapters** (hexagonal architecture). Domain logic lives in `lib/mas/` with zero infrastructure imports. Technology adapters in `adapters/` implement the port interfaces. The composition root `bootstrap/container.py` wires everything at startup.
 
-#### Directory Layout
+### Directory Layout
 
 - **`lib/mas/`** — The hexagon: 17 domain cores. ~200 Python files across blueprints, sessions, graph engine, elements, catalog, IEM, auth, collaboration, sharing, templates, validation, statistics, actions.
 - **`adapters/inbound/`** — Flask HTTP endpoints + Temporal worker (workflows + activities).
 - **`adapters/outbound/`** — MongoDB repos (7), Redis (streams, collab, auth state), LangGraph compiler, Temporal submitter, Identity HTTP, OAuth2.
 - **`bootstrap/`** — `container.py` (AppContainer singleton) + `cli.py` (Typer CLI).
 
-#### All 17 Hexagonal Domain Cores
+### All 17 Hexagonal Domain Cores
 
 **core/identity — Identity & Team Membership**
 
@@ -389,7 +389,7 @@ Port: `TemplateRepository`. Service: `TemplateService` — create, instantiate (
 
 Port: `BaseAction`. Service: `ActionsService` — auto_discover, execute_action_sync. Registered: AuthenticateAction, ValidateConnectionAction, GetToolsNamesAction (MCP). Linked by (category, type).
 
-#### Port → Adapter Wiring
+### Port → Adapter Wiring
 
 | Port | Adapter | Tech |
 |---|---|---|
@@ -409,7 +409,7 @@ Port: `BaseAction`. Service: `ActionsService` — auto_discover, execute_action_
 | `BaseGraphBuilder` | TemporalBuilder (default) / LangGraph (fallback) | Temporal / LangGraph |
 | `HttpClient` | HttpxAuthClient | httpx |
 
-#### MongoDB Collections (7)
+### MongoDB Collections (7)
 
 | Collection | Key Fields | Notable |
 |---|---|---|
@@ -421,15 +421,15 @@ Port: `BaseAction`. Service: `ActionsService` — auto_discover, execute_action_
 | credentials | user_id, server_identifier, tokens (encrypted) | Fernet-encrypted access/refresh tokens |
 | server_configs | server_identifier, client_id/secret, endpoints | OAuth client configurations |
 
-#### Two Validation Domains
+### Two Validation Domains
 
 **Element validation** (`ElementValidationService`) checks individual resource configs — connectivity, credentials, dependency health. **Graph validation** (`GraphValidationService`) checks topology — cycles, orphans, missing channels, required start/end nodes. They run at different lifecycle stages and are a common source of confusion for new developers.
 
-#### Blueprint Transformation Pipeline
+### Blueprint Transformation Pipeline
 
 `BlueprintDraft` ($ref) → `RefWalker` → `BlueprintSpec` (resolved) → `GraphService.build_plan()` → `GraphPlan` → `SessionElementBuilder` (factories) → `RTGraphPlan` (bound callables) → `GraphBuilderFactory` → LangGraph or Temporal graph.
 
-#### Key Configuration (AppConfig)
+### Key Configuration (AppConfig)
 
 | Setting | Default | Purpose |
 |---|---|---|
@@ -441,7 +441,7 @@ Port: `BaseAction`. Service: `ActionsService` — auto_discover, execute_action_
 | `collaboration_presence_ttl` | 300 | Presence key TTL (seconds) |
 | `collaboration_edit_lock_ttl_sec` | 180 | Edit lock TTL (seconds) |
 
-#### Graceful Degradation
+### Graceful Degradation
 
 Redis, Temporal, and Identity degrade gracefully if unavailable. Without Temporal: falls back to foreground-only execution via LangGraph (no `submit()`). Without Redis: in-process channels only, no collaboration, no stream subscriptions. Without Identity pod: DevIdentityProvider (all team checks pass). The service remains functional in a minimal **Mongo-only** configuration, but the recommended production stack includes Temporal + Redis.
 
@@ -458,7 +458,7 @@ These are the base classes and ABCs that new code should extend or implement:
 | `BlueprintRepository (ABC)` | `lib/mas/blueprints/repository/repository.py` | Blueprints | `MongoBlueprintRepository` |
 | `BaseGraphBuilder (ABC)` | `lib/mas/engine/domain/base_builder.py` | Execution Engine | `LangGraphBuilder`, `TemporalGraphBuilder` |
 | `BaseGraphExecutor (ABC)` | `lib/mas/engine/domain/base_executor.py` | Execution Engine | `ForegroundSessionRunner` |
-| `IdentityProvider (ABC)` | `lib/mas/core/identity/ports.py` | Identity & Collaboration | `IdentityPodProvider`, `DevIdentityProvider`, `CollaborationService`, `ShareService` |
+| `IdentityProvider (ABC)` | `lib/mas/core/identity/ports.py` | Identity & Collaboration | `IdentityPodProvider`, `DevIdentityProvider`, `NoOpIdentityProvider` |
 | `CollaborationStore (ABC)` | `lib/mas/collaboration/ports.py` | Identity & Collaboration | `RedisCollaborationStore` |
 | `BaseElementSpec (ABC)` | `lib/mas/elements/common/base_element_spec.py` | Elements Plugin Layer | `element specs (nodes, llms, tools, providers, conditions, retrievers, auths)` |
 | `BaseFactory (ABC)` | `lib/mas/elements/common/base_factory.py` | Elements Plugin Layer | `element factories (nodes, llms, tools, providers, conditions, retrievers, auths)` |

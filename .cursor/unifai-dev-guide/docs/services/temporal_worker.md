@@ -1,7 +1,7 @@
 ---
 service: temporal_worker
 type: WORKER
-code_root: multi-agent/  # same codebase as MAS
+code_root: multi-agent/
 sections:
   connections: 27
   features: 37
@@ -20,7 +20,7 @@ sections:
 | ID | `temporal_worker` |
 | Type | WORKER |
 | Tech Stack | Temporal SDK, Python |
-| Code Root | `multi-agent/  # same codebase as MAS` |
+| Code Root | `multi-agent/` (same codebase as MAS) |
 | Shares Codebase With | mas |
 | Subtitle | Temporal SDK • Task queue: graph-engine |
 
@@ -42,18 +42,18 @@ sections:
 
 The **Temporal Worker** is a separate process that executes blueprint graphs durably. When the Multi Agent System (MAS) submits a workflow, the Temporal Server dispatches it to this worker.
 
-#### Why Temporal?
+### Why Temporal?
 
 - **Durability** — workflows survive process restarts
 - **Scalability** — multiple workers can process graphs in parallel
 - **Retry logic** — built-in activity retries and timeouts
 
-#### Workflow Structure
+### Workflow Structure
 
 - **SessionWorkflow** — top-level orchestrator: begin → graph → complete/fail
 - **GraphTraversalWorkflow** — child workflow: runs BSP supersteps, calls activities for each node
 
-#### Node Execution
+### Node Execution
 
 Each graph node is executed as a Temporal activity. The `NodeExecutor` materializes a "mini-blueprint" for the node and runs it, streaming events via Redis.
 
@@ -71,7 +71,7 @@ Each graph node is executed as a Temporal activity. The `NodeExecutor` materiali
 
 ## Architecture
 
-#### Key Files
+### Key Files
 
 - `adapters/inbound/temporal/worker.py` — worker registration
 - `adapters/inbound/temporal/workflows/session_workflow.py`
@@ -80,7 +80,7 @@ Each graph node is executed as a Temporal activity. The `NodeExecutor` materiali
 - `lib/mas/engine/distributed/node_executor.py` — materializes + runs nodes
 - `lib/mas/engine/distributed/traversal.py` — BSP graph traversal
 
-#### Execution Model
+### Execution Model
 
 Activities run in a `ThreadPoolExecutor`. Each node execution creates its own element instances from a mini-blueprint, enabling full isolation.
 

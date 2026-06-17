@@ -44,7 +44,7 @@ If a domain class does I/O, split it: pure domain class + adapter/loader.
 
 ### Import Direction (Dependency Inversion)
 
-```
+```text
 domain/       may import: stdlib, other domain modules
               must NOT import: ports/, adapters/, services/, frameworks
 
@@ -201,18 +201,22 @@ A single error boundary at the CLI entry point (`main()`) is preferred over scat
 ## 11. Python Safety Patterns
 
 ### Shell commands
+
 - `subprocess.run/call/Popen` must use **list form**, never a single string
 - User-derived values → `shlex.quote()` each argument
 - Parsing command strings → `shlex.split()`, never `str.split()`
 - `shell=True` → flag as **MAJOR** unless explicitly justified
 
 ### File safety
+
 - Sensitive files (secrets, tokens, `.env`) → create with `os.open(path, flags, 0o600)`
 - `# noqa` comments → investigate root cause, don't suppress
 
 ### Pattern matching
+
 - Substring matching (`if name in content`) for service/process identification → use `re.search(rf"\b{re.escape(name)}\b", content)`
 
 ### Resource management
+
 - Every `open()` must be inside `with` or `contextlib.ExitStack`
 - Large files → stream or chunk, never `.read_text()` into memory

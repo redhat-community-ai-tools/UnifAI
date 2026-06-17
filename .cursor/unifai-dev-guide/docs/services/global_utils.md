@@ -35,7 +35,7 @@ sections:
 
 **global_utils** is a shared Python package that lives in the monorepo at `global_utils/src/global_utils/`. It is *not* a running service — it's a library that every backend service imports as a dependency.
 
-#### What It Provides
+### What It Provides
 
 - **SharedConfig** — Pydantic-based config with connection strings for MongoDB, Redis, RabbitMQ, Temporal. Loads from env vars, .env files, YAML, and JSON.
 - **Connection helpers** — `get_mongo_url()`, `get_redis_url()`, `get_temporal_url()`, `get_rabbitmq_url()`
@@ -45,7 +45,7 @@ sections:
 - **Flask helpers** — common Flask setup used by all backend services
 - **Utilities** — logging config, file utils, async bridge, singleton pattern, JSON Schema validation
 
-#### Who Uses It
+### Who Uses It
 
 Every Python service: RAG, Multi Agent System (MAS), Identity, Platform Backend, Celery Workers, and Temporal Workers. They all depend on `global_utils` in their `pyproject.toml`.
 
@@ -72,7 +72,7 @@ Every Python service: RAG, Multi Agent System (MAS), Identity, Platform Backend,
 
 ## Architecture
 
-#### Package Structure
+### Package Structure
 
 - `config/` — `SharedConfig` (Pydantic BaseSettings), `ConfigManager`, multi-source loading (env, .env, YAML, JSON)
 - `utils/` — `get_mongo_url()`, `get_redis_url()`, logging config, singleton, async bridge, file utils
@@ -84,11 +84,11 @@ Every Python service: RAG, Multi Agent System (MAS), Identity, Platform Backend,
 - `celery_app/` — Shared Celery app factory and configuration
 - `flask/` — Common Flask setup helpers
 
-#### How Services Use It
+### How Services Use It
 
 Each service extends `SharedConfig` with its own settings. For example, RAG's `AppConfig` adds `qdrant_ip`, `slack_bot_token`, etc. The base class provides all the shared infra connection settings.
 
-#### Not a Deployed Service
+### Not a Deployed Service
 
 This package is installed via `pip install -e` in development and bundled into each service's Docker image at build time. It has no CI/CD deployment of its own — it ships *inside* each service.
 
@@ -136,6 +136,7 @@ These are the base classes and ABCs that new code should extend or implement:
 | `get_mongo_url()` | `utils/util.py` | Build MongoDB connection URL from SharedConfig |
 | `get_redis_url()` | `utils/util.py` | Build Redis connection URL |
 | `get_rabbitmq_url()` | `utils/util.py` | Build AMQP broker URL |
+| `get_temporal_url()` | `utils/util.py` | Build Temporal gRPC address from config |
 | `json_schema_model()` | `utils/util.py` | Generate Pydantic model from JSON Schema at runtime |
 
 - `SingletonMeta` called by: `mas:AppContainer`, `mas:ElementRegistry`, `AsyncBridge`

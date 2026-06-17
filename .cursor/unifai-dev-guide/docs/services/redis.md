@@ -36,21 +36,21 @@ sections:
 
 For MAS, Redis is essential in the default Background (Temporal) execution mode — it carries streaming events from distributed workers to the UI via Redis Streams. Without Redis, MAS falls back to in-process queues (foreground single-worker only). For Identity, Redis is required for session persistence. For team collaboration features, Redis is required.
 
-#### MAS Streaming Operations
+### MAS Streaming Operations
 
 - `XADD` — write session events to a per-session stream
 - `XREAD` — blocking read for event consumers
 - `SADD` / `SMEMBERS` — track active sessions
 - `EXPIRE` — TTL on session streams
 
-#### Team Collaboration Operations
+### Team Collaboration Operations
 
 - **Session presence** — join/leave/heartbeat tracking with configurable TTL (default 300s)
 - **Edit locks** — per-resource and per-blueprint locks with TTL (~180s) and heartbeat renewal
 - **Typing indicators** — real-time typing state for team session participants
 - **Team active-session index** — tracks which sessions have active participants
 
-#### Identity Session Operations
+### Identity Session Operations
 
 - `SET` / `GET` — store and retrieve user sessions (`identity:session:*` keys)
 - `DEL` — clear sessions on logout

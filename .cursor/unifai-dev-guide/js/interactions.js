@@ -3,7 +3,7 @@
  */
 
 const Interactions = (() => {
-  const ZOOM_MIN = 0.7;
+  const ZOOM_MIN = 0.3;
   const ZOOM_MAX = 3;
   const ZOOM_STEP = 0.1;
   const LABEL_ZOOM_THRESHOLD = 0.5;
@@ -332,7 +332,7 @@ const Interactions = (() => {
     centerView();
   });
 
-  return { init, centerView };
+  return { init, centerView, closePanel };
 })();
 
 document.addEventListener('DOMContentLoaded', () => Interactions.init());

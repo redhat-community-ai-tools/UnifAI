@@ -53,7 +53,7 @@ sections:
 
 The **Identity** service is the authentication and session bridge between the UI and Keycloak. It implements the OAuth2 Authorization Code flow, manages server-side sessions, and provides **team management** for shared workspaces.
 
-#### Login Flow
+### Login Flow
 
 - UI redirects to `/api3/auth/login?state=...`
 - Nginx does a **307 redirect** to the Identity host
@@ -62,15 +62,15 @@ The **Identity** service is the authentication and session bridge between the UI
 - Keycloak calls back to `/api/auth/callback`
 - Identity stores tokens in Redis, redirects to UI with `?auth=success`
 
-#### Session Storage
+### Session Storage
 
 Tokens and user profile live in **Redis** under `identity:session:<uuid>` keys. Only the session ID is stored in the cookie. This supports multi-pod scale-out natively.
 
-#### Team Management
+### Team Management
 
 Identity owns the **Team** domain: create, update, delete teams and manage membership. Teams can include individual users and LDAP/Rover groups (with cached group members). MAS calls back to Identity to verify team membership for authorization.
 
-#### Credentials Relay
+### Credentials Relay
 
 Handles OAuth popup callbacks for external tool credentials (e.g. Google) and relays them to the Multi Agent System (MAS) via `/api/credentials/callback`.
 
@@ -90,7 +90,7 @@ Handles OAuth popup callbacks for external tool credentials (e.g. Google) and re
 | GET | `/api/teams/teams.list` | list teams for user (userId, groupIds) |
 | GET | `/api/teams/team.get` | get team by id |
 | PUT | `/api/teams/team.update` | update name/members |
-| DEL | `/api/teams/team.delete` | delete team (creator only) |
+| DELETE | `/api/teams/team.delete` | delete team (creator only) |
 | GET | `/api/teams/identity.resolve` | resolve user or team identity metadata |
 | GET | `/api/credentials/callback` | OAuth popup relay to MAS |
 | GET | `/api/health/` |  |
@@ -109,11 +109,11 @@ Handles OAuth popup callbacks for external tool credentials (e.g. Google) and re
 
 ## Architecture
 
-#### Design Pattern: Hexagonal Architecture
+### Design Pattern: Hexagonal Architecture
 
 Identity follows the same **ports and adapters** pattern as the other backend services.
 
-#### How It's Organized
+### How It's Organized
 
 - **`bootstrap/`** — App factory (`flask_app.py`), dependency wiring (`factories.py`): builds Redis client, AuthManager, registers endpoints
 - **`adapters/inbound/flask/endpoints/`** — HTTP blueprints: health, protected routes, credentials callback, team routes, identity routes
@@ -121,7 +121,7 @@ Identity follows the same **ports and adapters** pattern as the other backend se
 - **`teams/`** — Team domain: `models.py` (Team, TeamMember), `service.py` (TeamService), `repository/` (MongoTeamRepository)
 - **`config/app_config.py`** — Keycloak URL, realm, client credentials, session flags, team/directory settings
 
-#### Key Design Decisions
+### Key Design Decisions
 
 - Server-side session store in Redis (no tokens in cookies, keys: `identity:session:*`)
 - Nginx 307 redirect pattern (browser talks to Identity directly)

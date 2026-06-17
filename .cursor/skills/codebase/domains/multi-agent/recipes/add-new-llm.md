@@ -154,6 +154,7 @@ class ToolDefinition(BaseModel):  # frozen
 
 ```python
 # <name>.py
+import copy
 from typing import List, Iterator, Union, Any
 from mas.elements.llms.common.base_llm import BaseLLM
 from mas.elements.llms.common.chat.message import ChatMessage
@@ -172,8 +173,8 @@ class <Name>LLM(BaseLLM):
 
     def bind_tools(self, tools: List[ToolDefinition]) -> "<Name>LLM":
         """Return a NEW instance with tools bound. Original is unchanged."""
-        clone = <Name>LLM(model_name=self._model, api_key=..., base_url=...)
-        clone._tools = tools
+        clone = copy.copy(self)
+        clone._tools = <Name>ToolsConverter.to_<name>(tools)
         return clone
 
     def chat(self, messages: List[ChatMessage]) -> ChatMessage:

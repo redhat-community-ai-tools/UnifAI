@@ -59,7 +59,7 @@ sections:
 
 The **RAG** (Retrieval-Augmented Generation) is the data pipeline hub of UnifAI. It manages the entire document lifecycle — uploading, validating, converting, chunking, embedding, indexing, and searching — across multiple data source types (documents and Slack channels).
 
-#### Key Features
+### Key Features
 
 - **Multi-source Ingestion**: Document uploads (PDF, DOCX, HTML, etc.) and Slack channel messages, each with dedicated pipeline handlers.
 - **Async Pipeline Execution**: Heavy work (conversion, embedding, indexing) dispatched to Celery workers via RabbitMQ, keeping the API responsive.
@@ -68,14 +68,14 @@ The **RAG** (Retrieval-Augmented Generation) is the data pipeline hub of UnifAI.
 - **Local / Remote Adapter Switching**: Docling (document conversion) and embedding generation can run locally (in-process) or remotely (HTTP), controlled by feature flags.
 - **Pipeline Monitoring**: Full metrics, error tracking, and log collection for every pipeline run.
 
-#### Who Calls It
+### Who Calls It
 
 - **UI** — via `/api1` for all RAG dashboard operations (upload, embed, search, data source management)
 - **Multi Agent System (MAS)** — via `RagClient` for search queries (`query.match`) during agent execution
 - **Platform Backend** — via `ActionDispatcher` for config-triggered side-effects (e.g., Slack channel cleanup)
 - **Slack** — via Events API webhook at `POST /api/slack/events` for real-time channel updates
 
-#### Ingestion Pipeline Flow
+### Ingestion Pipeline Flow
 
 When a document is uploaded or a Slack channel is added:
 
@@ -88,7 +88,7 @@ When a document is uploaded or a Slack channel is added:
 - **7. Indexing** — upsert vectors + metadata into Qdrant collection (`document_data` or `slack_data`)
 - **8. Status Update** — persist pipeline status, metrics, and any errors to MongoDB
 
-#### Domain Concepts
+### Domain Concepts
 
 - **Data Source** — a registered content origin (a document file or Slack channel) with metadata and pipeline status.
 - **Pipeline** — a tracked execution of the ingestion flow for one data source, with status (PENDING → PROCESSING → COMPLETED/FAILED) and metrics.
@@ -96,7 +96,7 @@ When a document is uploaded or a Slack channel is added:
 - **Registration** — the validation + metadata creation step before pipeline dispatch. Source-type specific via `RegistrationFactory`.
 - **Terms Approval** — user-level approval tracking for data usage terms.
 
-#### 14 Domain Services
+### 14 Domain Services
 
 - `DataSourceService` — CRUD + delete with vector cleanup
 - `DocumentService` — document-specific operations
@@ -217,18 +217,18 @@ When a document is uploaded or a Slack channel is added:
 
 ## Architecture
 
-#### Design Pattern: Hexagonal Architecture
+### Design Pattern: Hexagonal Architecture
 
 RAG uses **ports and adapters**. Domain logic in `core/` (~104 Python files) defines ports (ABCs). `infrastructure/` (~59 files) provides adapters. `bootstrap/app_container.py` (~640 lines) wires ~40 singletons via `@lru_cache`.
 
-#### Directory Layout
+### Directory Layout
 
 - **`core/`** — 13 bounded contexts: pipeline, data_sources (document + slack), vector/retrieval, monitoring, registration, health, validation, user/terms. ~104 Python files.
 - **`infrastructure/`** — Flask HTTP (8 blueprints), Celery workers, MongoDB repos, Qdrant, Slack API, Docling, Embedding adapters. ~59 files.
 - **`bootstrap/`** — `app_container.py` (composition root), `factories.py` (local vs remote adapter switching), `flask_app.py`.
 - **`config/`** — `AppConfig(SharedConfig)` with ~25 settings.
 
-#### All 21 Port Abstractions
+### All 21 Port Abstractions
 
 **Repository Ports (7)**
 
@@ -278,7 +278,7 @@ RAG uses **ports and adapters**. Domain logic in `core/` (~104 Python files) def
 
 `DuplicateCheckerPort` — document duplicate detection
 
-#### Port → Adapter Wiring
+### Port → Adapter Wiring
 
 | Port | Adapter | Tech |
 |---|---|---|
@@ -295,7 +295,7 @@ RAG uses **ports and adapters**. Domain logic in `core/` (~104 Python files) def
 | `DataConnector` | DocumentConnector / SlackConnector | Filesystem / Slack API |
 | `ContentChunker` | PDFChunkerStrategy / SlackChunkerStrategy | LangChain splitters |
 
-#### MongoDB (3 databases, 7+ collections)
+### MongoDB (3 databases, 7+ collections)
 
 | Database | Collection | Used By |
 |---|---|---|
@@ -307,18 +307,18 @@ RAG uses **ports and adapters**. Domain logic in `core/` (~104 Python files) def
 | data_sources | slack_channels | MongoSlackChannelRepository |
 | users | terms_user_approval | MongoTermsApprovalRepository |
 
-#### Qdrant Collections (vector store)
+### Qdrant Collections (vector store)
 
 | Collection | Source Type |
 |---|---|
 | `document_data` | DOCUMENT |
 | `slack_data` | SLACK |
 
-#### Source-Type Plugin Architecture
+### Source-Type Plugin Architecture
 
 Each source type (document, slack) provides its own: `Connector`, `Processor`, `ChunkerStrategy`, `Validator(s)`, `PipelineHandler`, `Registration`, and `ConfigManager`. The `RegistrationFactory` and `get_pipeline_handler()` select the correct set based on source type.
 
-#### Key Configuration (AppConfig)
+### Key Configuration (AppConfig)
 
 | Setting | Default | Purpose |
 |---|---|---|

@@ -61,8 +61,15 @@ lib/mas/validation/          ElementValidationService
 | `type_key` | `str` | Unique identifier |
 | `config_schema` | `Type[BaseModel]` | Pydantic config model |
 | `factory_cls` | `Type[BaseFactory]` | Instance creator |
+
+### Node-Only ClassVars (optional, default `set()`)
+
+| Field | Type | Purpose |
+|-------|------|---------|
 | `reads` | `Set[Channel]` | GraphState channels consumed |
 | `writes` | `Set[Channel]` | GraphState channels produced |
+
+Only node specs set these (via `<Node>.total_reads()` / `total_writes()`). Tool, LLM, and provider specs inherit the empty-set defaults and should not set them.
 
 ## How to Extend
 

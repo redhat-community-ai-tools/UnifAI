@@ -35,7 +35,7 @@ bash build.sh
 
 ## Repository Structure
 
-```
+```text
 unifai-dev-guide/
 │
 ├── index.html                         # Dev entry point — loads split scripts in dependency order

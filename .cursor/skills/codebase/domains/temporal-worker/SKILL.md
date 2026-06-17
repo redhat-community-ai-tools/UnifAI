@@ -58,7 +58,7 @@ Temporal Server → dispatch → SessionWorkflow (parent)
 
 ## Task Queue
 
-Single task queue: `graph-engine`. MAS submits workflows via `TemporalSessionEngine`.
+Single task queue configured via `AppConfig.temporal_task_queue` (default `"graph-engine"`). MAS submits workflows via `TemporalSessionEngine`.
 
 ## Execution Model
 

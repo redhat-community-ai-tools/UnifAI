@@ -41,7 +41,7 @@ sections:
 
 **MongoDB** is the primary metadata store for the entire system. Every application service uses it for persistence.
 
-#### Databases & Collections
+### Databases & Collections
 
 - **RAG**: `pipeline_monitoring` (pipelines, metrics, errors, logs), `data_sources` (sources, slack_channels), `users` (terms_user_approval)
 - **MAS**: blueprints, sessions, resources, shares, templates (all scoped by `identity` subdocument)

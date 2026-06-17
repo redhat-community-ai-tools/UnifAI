@@ -142,6 +142,12 @@ mas:
     activities: "multi-agent/adapters/inbound/temporal/activities/*.py"
     worker: "multi-agent/adapters/inbound/temporal/worker.py"
 
+  redis:
+    usage: "Session event streaming + collaboration presence/edit locks via global_utils.redis"
+    keyPatterns:
+      - "mas:stream:{session_id}"
+      - "mas:collab:{session_id}:*"
+
   elements:
     specGlob: "multi-agent/lib/mas/elements/**/spec/*.py"
     discoverer: "multi-agent/lib/mas/catalog/spec_discoverer.py"
@@ -169,6 +175,7 @@ mas:
       docSection: "mas.md → Elements Plugin Layer"
     conditions:
       glob: "multi-agent/lib/mas/elements/conditions/**"
+      baseClass: BaseCondition
       docSection: "mas.md → Graph Planning & Validation"
     retrievers:
       glob: "multi-agent/lib/mas/elements/retrievers/**"

@@ -460,6 +460,7 @@ function addFrontmatter(md, id, svc, topology) {
     const m = bodyLines[i].match(/^## (.+)$/);
     if (m) {
       const key = m[1]
+        .replace(/\s*\(\d+\)$/, '')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_|_$/g, '');

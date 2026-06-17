@@ -49,7 +49,7 @@ The **UI** is the single entry point for all browser traffic. It's a React 18 SP
 
 In production, **Nginx** serves static assets and reverse-proxies API requests to 4 backend services based on URL path prefix.
 
-#### Key Features
+### Key Features
 
 - **Visual Graph Builder** — JointJS canvas for building agent workflows with drag-and-drop nodes, edges, and conditions. YAML-backed, with dagre auto-layout on load.
 - **Real-Time Agent Chat** — NDJSON streaming from MAS via Redis Streams. Live graph node status overlays. Multi-session hub.
@@ -60,14 +60,14 @@ In production, **Nginx** serves static assets and reverse-proxies API requests t
 - **Agent Inventory** — CRUD for all resource types (LLMs, tools, providers, retrievers, conditions, nodes, auths) with schema-driven dynamic forms.
 - **Admin Config** — Template-driven admin settings page (admin gated via Platform Backend).
 
-#### Nginx Path Routing
+### Nginx Path Routing
 
 - `/api1/*` → RAG (port 13457)
 - `/api2/*` → Multi Agent System (MAS) (port 8002) — streaming endpoints get 600s timeout + `proxy_buffering off`
 - `/api3/*` → Identity (307 redirect to external host)
 - `/api4/*` → Platform Backend (port 8005)
 
-#### Application Routes (15+)
+### Application Routes (15+)
 
 - **Agentic Routes** (AgenticLayout + team gating):
 
@@ -86,7 +86,7 @@ In production, **Nginx** serves static assets and reverse-proxies API requests t
 - **Other**: `/` (Get to Know), `/login`, `/configuration` (admin), `/analytics` (system stats), `/guides`, `/jira`
 - **Public**: `/chat/:token` — public blueprint chat (no auth required)
 
-#### Session Streaming Architecture
+### Session Streaming Architecture
 
 - **1.** `POST /sessions/user.session.submit` → 202 with workflow ID
 - **2.** `fetch(/api2/sessions/session.subscribe)` → NDJSON stream via `ReadableStream`
@@ -94,11 +94,11 @@ In production, **Nginx** serves static assets and reverse-proxies API requests t
 - **4.** `StreamingDataContext` holds `Map<nodeId, NodeEntry>` for live graph overlays
 - **5.** `ChatInterface` renders LLM tokens, tool calls, node transitions in real-time
 
-#### Workspace Identity Pattern
+### Workspace Identity Pattern
 
 `useWorkspaceIdentity()` is the single source of truth for `userId`, `identityType` (user vs team), and `displayName`. It feeds API params for every identity-scoped call. Backed by `AuthContext` (session) + `ViewContext` (team switching).
 
-#### Graph Builder
+### Graph Builder
 
 Built on **JointJS** (`@joint/core` + `@joint/layout-directed-graph` + dagre). Two modes:
 
@@ -238,7 +238,7 @@ Team mode adds **edit locks** — only one user can edit a blueprint at a time.
 
 ## Architecture
 
-#### Tech Stack
+### Tech Stack
 
 - **Core**: React 18, TypeScript, Vite
 - **Styling**: Tailwind CSS + shadcn/ui (51 Radix-based primitives in `components/ui/`)
@@ -251,7 +251,7 @@ Team mode adds **edit locks** — only one user can edit a blueprint at a time.
 - **Animations**: Framer Motion
 - **Markdown**: react-markdown + remark-gfm (chat rendering)
 
-#### Source Layout (~280 TS/TSX files)
+### Source Layout (~280 TS/TSX files)
 
 - `api/` (19 files) — typed API modules, one per domain
 - `components/` (162 files) — `agentic-ai/` (51), `ui/` (51 shadcn), `shared/` (22), `analytics/` (11), `dashboard/` (10), `layout/` (4), `auth/` (4)
@@ -263,7 +263,7 @@ Team mode adds **edit locks** — only one user can edit a blueprint at a time.
 - `types/` (8 files) — shared TypeScript types (graph, session, workspace, templates, validation)
 - `stores/` (1 file) — Zustand pagination store (currently unused)
 
-#### Context Provider Tree
+### Context Provider Tree
 
 The app wraps routes in a nested provider hierarchy:
 
@@ -281,7 +281,7 @@ The app wraps routes in a nested provider hierarchy:
 | StreamingDataContext | `useStreamingData` | In-memory node stream map for live graph/chat updates |
 | ProjectContext | `useProject` | Legacy mock/sample project data for dashboard |
 
-#### Custom Hooks (23)
+### Custom Hooks (23)
 
 | Hook | Domain | Summary |
 |---|---|---|
@@ -296,14 +296,14 @@ The app wraps routes in a nested provider hierarchy:
 | `useWorkspaceData` | Inventory | Category-based element CRUD |
 | `useTeamEditLockPoll` | Collaboration | Poll edit lock statuses for team resources |
 
-#### State Management
+### State Management
 
 - **React Context** — primary global state (auth, workspace, agentic mappings, notifications, streaming)
 - **TanStack React Query v5** — server state for all API calls (RAG dashboard, MAS resources, admin config, analytics)
 - **Local useState/useRef** — heavy use in graph builder, chat, collaboration hub
 - **localStorage** — theme, primary color
 
-#### Dynamic Field System
+### Dynamic Field System
 
 Agent inventory forms are schema-driven: `FieldRenderer`, `FieldValidation`, `FieldPopulation`, and `AuthFieldRenderer` call backend via registered actions (`/actions/action.execute`) and schema-driven `ApiHint` endpoints.
 

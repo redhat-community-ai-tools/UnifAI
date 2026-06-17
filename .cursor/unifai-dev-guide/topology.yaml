@@ -193,7 +193,7 @@ edges:
     to: redis
     label: sessions
     protocol: TCP
-    detail: "Session hash storage via RedisKVStore. Keys: identity:{session_id}"
+    detail: "Session hash storage via RedisKVStore. Keys: identity:{session_id}, identity:groups:{user_id}"
 
   - from: identity
     to: mongodb

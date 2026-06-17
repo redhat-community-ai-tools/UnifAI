@@ -32,7 +32,7 @@ sections:
 
 **RabbitMQ** serves as the Celery message broker, carrying task messages from the RAG to Celery workers.
 
-#### Queues
+### Queues
 
 - `document_queue` — document ingestion tasks
 - `slack_queue` — Slack channel ingestion tasks

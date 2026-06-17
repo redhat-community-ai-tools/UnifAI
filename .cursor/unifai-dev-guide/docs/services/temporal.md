@@ -32,7 +32,7 @@ sections:
 
 **Temporal** is the default execution engine for MAS (`engine_name=temporal`). It provides durable, distributed workflow execution. Without it, MAS falls back to in-process foreground execution via LangGraph.
 
-#### Benefits
+### Benefits
 
 - Workflows survive process crashes and restarts
 - Built-in retry policies for activities

@@ -70,7 +70,9 @@ Never combined. Staging persists BEFORE execution starts.
 3. Add config to `config/app_config.py` (empty string = disabled)
 4. Wire in `bootstrap/container.py` (conditional on config)
 5. Inject into `SessionInputProjector` or `SessionService` via constructor
-6. Service handles `None` gracefully when feature disabled
+6. Choose the right None-handling strategy:
+   - **Required port** (e.g. `BackgroundSessionEngine`): inject as `Optional` but raise `TypeError` at call site when the port is used without being wired. The system runs without it only when that code path is never reached.
+   - **Optional helper** (e.g. file upload staging): handle `None` as a silent no-op — the feature is simply unavailable.
 
 ## Cross-Component Contracts
 

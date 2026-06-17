@@ -1,7 +1,7 @@
 ---
 service: celery
 type: WORKER
-code_root: rag/  # same codebase as RAG
+code_root: rag/
 sections:
   connections: 27
   features: 34
@@ -20,7 +20,7 @@ sections:
 | ID | `celery` |
 | Type | WORKER |
 | Tech Stack | Celery, RabbitMQ |
-| Code Root | `rag/  # same codebase as RAG` |
+| Code Root | `rag/` (same codebase as RAG) |
 | Shares Codebase With | rag |
 | Subtitle | Celery • RabbitMQ broker • 3 queues |
 
@@ -39,7 +39,7 @@ sections:
 
 **Celery Workers** handle all the heavy, long-running work for RAG: converting documents, generating embeddings, and indexing vectors. They run as separate processes to keep the API responsive.
 
-#### Pipeline Flow
+### Pipeline Flow
 
 - **1. Receive** — task arrives from RabbitMQ queue
 - **2. Convert** — parse document (PDF, DOCX, etc.) into text via Docling
@@ -47,7 +47,7 @@ sections:
 - **4. Embed** — generate vector embeddings (local or remote)
 - **5. Index** — upsert vectors + metadata into Qdrant
 
-#### Three Queues
+### Three Queues
 
 - `document_queue` — document ingestion pipelines
 - `slack_queue` — Slack channel ingestion pipelines
@@ -66,20 +66,20 @@ sections:
 
 ## Architecture
 
-#### Entry Point
+### Entry Point
 
 `rag/entrypoint.sh` with `ROLE=celery` runs:
 
 `celery -A infrastructure.celery.app worker -Q $CELERY_QUEUES`
 
-#### Key Files
+### Key Files
 
 - `infrastructure/celery/app.py` — Celery app configuration
 - `infrastructure/celery/workers/pipeline_tasks.py` — pipeline execution task
 - `infrastructure/celery/workers/slack_event_tasks.py` — Slack event task
 - `infrastructure/celery/pipeline_dispatcher.py` — routes tasks to queues
 
-#### Local vs Remote
+### Local vs Remote
 
 Worker pool type depends on config: `threads` pool when using remote Docling/embedding, `solo` pool for local processing.
 

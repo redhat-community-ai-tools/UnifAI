@@ -28,7 +28,7 @@ FEATURES.feat_workflows = {
         <div class="endpoint"><span class="method get">GET</span><span class="path">/blueprints/blueprint.info.get — full spec for editing</span></div>
         <div class="endpoint"><span class="method post">POST</span><span class="path">/blueprints/blueprint.save</span></div>
         <div class="endpoint"><span class="method put">PUT</span><span class="path">/blueprints/blueprint.update</span></div>
-        <div class="endpoint"><span class="method delete">DEL</span><span class="path">/blueprints/remove.blueprint?blueprintId=</span></div>
+        <div class="endpoint"><span class="method delete">DELETE</span><span class="path">/blueprints/remove.blueprint?blueprintId=</span></div>
       </div>
       <h3>Validation</h3>
       <div class="endpoint-list">
@@ -77,7 +77,7 @@ FEATURES.feat_workflows = {
     { method: 'GET', path: '/blueprints/blueprint.info.get', summary: 'full spec for editing' },
     { method: 'POST', path: '/blueprints/blueprint.save' },
     { method: 'PUT', path: '/blueprints/blueprint.update' },
-    { method: 'DEL', path: '/blueprints/remove.blueprint?blueprintId=' },
+    { method: 'DELETE', path: '/blueprints/remove.blueprint?blueprintId=' },
     { method: 'POST', path: '/graph/validation/all.validate', summary: 'pre-save graph check' },
     { method: 'POST', path: '/blueprints/blueprint.validate', summary: 'full blueprint validation' },
     { method: 'POST', path: '/blueprints/draft.validate' },

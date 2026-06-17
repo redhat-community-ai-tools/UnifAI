@@ -33,7 +33,7 @@ sections:
 
 **Qdrant** stores vector embeddings for semantic search. RAG creates collections per source type (e.g., `document_data`, `slack_data`).
 
-#### Operations
+### Operations
 
 - **Upsert** — batches of 100 points (vector + text + metadata)
 - **Query** — vector similarity search with optional metadata filters
