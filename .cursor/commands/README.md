@@ -25,6 +25,8 @@ The unified development workflow featuring design, review, implementation, code 
 **Options:**
 - `--adr` — Write design to ADR file at `docs/designs/<slug>-adr.md`
 
+> **Note:** When passing a Jira ticket ID, requires Jira MCP server or API credentials (see [Setup Requirements](#setup-requirements)).
+
 **Examples:**
 ```
 /pipeline design-only --adr Add caching layer for vector search
@@ -70,7 +72,7 @@ Creates a review file named `<branch_name>_<review_type>_review.md` containing:
 Uploads design files to specified Jira tickets.
 
 **Prerequisites:**
-- Jira integration configured
+- Jira MCP server configured in Cursor settings (or Jira API credentials in environment)
 - Design file already created
 
 **Usage:**
@@ -118,6 +120,27 @@ These commands are superseded by `/pipeline` modes. They remain functional but w
 | `/Hexagonal.Refactor` | `/pipeline implement <design>` |
 | `/PyTest.GateKeeper` | `/pipeline qa-only` |
 | `/design` | `/pipeline design-only --adr` |
+
+---
+
+## Best Practices
+
+### For Code Reviews
+
+1. **Run basic reviews frequently** during development
+2. **Run deep reviews** before:
+   - Creating pull requests
+   - Merging to main branches
+   - Releasing features
+3. **Target specific areas** when reviewing large changes
+4. **Address all severity levels** in the review output
+
+### For Design Documents
+
+1. **Create designs early** in the feature development lifecycle
+2. **Update designs** when significant changes occur
+3. **Reference architecture.md files** in relevant folders
+4. **Push designs to Jira** for team visibility and collaboration
 
 ---
 
