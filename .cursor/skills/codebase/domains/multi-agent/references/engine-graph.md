@@ -1,15 +1,8 @@
----
-name: mas-engine-graph
-scope: Graph execution engine — state, compilation, plan building, executors
-parent: ../_index.md
-when_to_load: Modifying graph state channels, graph execution, plan building, or engine compilation
----
-
-# Engine & Graph
+# Engine & Graph Component
 
 Owns the computational graph: state representation, plan topology, compilation, and execution dispatch.
 
-## Dependency Graph
+## Architecture
 
 ```
    SESSION
@@ -25,7 +18,7 @@ Owns the computational graph: state representation, plan topology, compilation, 
     CORE (ExecutionContext in StepContext)
 ```
 
-## Structure
+### Structure
 
 ```
 lib/mas/graph/
@@ -43,7 +36,7 @@ lib/mas/graph/
 └── channels/                 Channel merge logic, metadata
 ```
 
-## Key Contracts
+### Key Contracts
 
 | Class | Role | Implemented By |
 |-------|------|----------------|
@@ -54,7 +47,7 @@ lib/mas/graph/
 | `BaseGraphExecutor` | Runs compiled graph (ABC) | `LangGraphExecutor`, `TemporalGraphExecutor` |
 | `WorkspaceState` | Thread-scoped variable storage for delegation | — |
 
-## Plan Layers
+### Plan Layers
 
 ```
 PlanBuilder.build(spec) → GraphPlan (pure topology)
@@ -63,7 +56,7 @@ PlanBuilder.build(spec) → GraphPlan (pure topology)
   → BaseGraphExecutor (engine-specific compiled graph)
 ```
 
-## Channel Schema (GraphState fields)
+### Channel Schema (GraphState fields)
 
 Each channel is an `Annotated` field with a merge operator:
 
@@ -77,7 +70,18 @@ Each channel is an `Annotated` field with a merge operator:
 
 `external=True` → populated by InputProjector only, never by nodes.
 
-## How to Add a New Channel
+### Channels vs Workspace Variables
+
+| | Channels (GraphState) | Workspace Variables |
+|-|----------------------|---------------------|
+| Scope | Global (all nodes) | Thread-scoped (delegation chain) |
+| Set by | InputProjector (external) or nodes | Nodes via workspace service |
+| Persisted | Yes (in SessionRecord) | No |
+| Use for | User input, messages, global state | Data following a task through delegation |
+
+## How to Extend
+
+### Adding a New Channel
 
 1. Add annotated field to `lib/mas/graph/state/graph_state.py`
 2. Choose merge operator: `operator.add` (append) or `lambda old, new: new` (replace)
@@ -86,14 +90,54 @@ Each channel is an `Annotated` field with a merge operator:
 5. If external: populate in `SessionInputProjector.apply()`
 6. If streamable: ensure streaming endpoint handles it
 
-## Channels vs Workspace Variables
+## Cross-Component Contracts
 
-| | Channels (GraphState) | Workspace Variables |
-|-|----------------------|---------------------|
-| Scope | Global (all nodes) | Thread-scoped (delegation chain) |
-| Set by | InputProjector (external) or nodes | Nodes via workspace service |
-| Persisted | Yes (in SessionRecord) | No |
-| Use for | User input, messages, global state | Data following a task through delegation |
+### Graph → Elements (State Interface)
+
+Nodes receive state via `run(state: StateView)`:
+```python
+class StateView:
+    def get(self, channel: str) -> Any
+    def get_messages(self) -> List[ChatMessage]
+```
+
+`ElementValidationService` verifies:
+- All channels in element `reads` exist in `GraphState`
+- All channels in element `writes` exist in `GraphState`
+
+Rules:
+- Nodes MUST NOT write to channels not in their `writes` set
+- External channels ONLY populated by InputProjector (never by nodes)
+
+### Graph ← Session (Compilation)
+
+```
+PlanBuilder.build(blueprint_spec) → GraphPlan
+  → RTGraphPlan(plan, registry, step_contexts)
+  → GraphBuilderFactory.create(engine_name).compile_from_plan(rt_plan)
+  → BaseGraphExecutor
+```
+
+Always recompiled fresh per execution. Initial state = whatever InputProjector staged.
+
+### Graph → Adapters (Engine Implementation)
+
+```
+BaseGraphExecutor (abstract, in lib/mas/graph/)
+  └── LangGraphExecutor (concrete, in adapters/outbound/langgraph/)
+  └── TemporalGraphExecutor (concrete, in adapters/outbound/temporal/)
+```
+
+Domain layer NEVER imports adapter code. Adapter implements BaseGraphExecutor interface only.
+
+## Established Patterns
+
+These patterns are established and reviewers MUST NOT flag them as violations:
+
+| Pattern | Where it exists | Why it's acceptable |
+|---------|-----------------|---------------------|
+| `GraphBuilderFactory` uses `importlib.import_module()` for lazy engine loading | `lib/mas/engine/factory.py` | Intentional late-binding — the only permitted dynamic import crossing domain → adapters |
+| `GraphTraversal` domain class accepts callback functions (not port ABCs) for node execution | `lib/mas/engine/distributed/traversal.py` | BSP algorithm is domain-pure; callbacks injected by Temporal workflow adapter at runtime |
 
 ## Change Impact
 
@@ -104,15 +148,6 @@ Each channel is an `Annotated` field with a merge operator:
 | `BaseGraphExecutor` interface | All engine adapters (LangGraph, Temporal) | Contract |
 | `StepContext` fields | RTGraphPlan construction in factory | Per-node context |
 | Plan builder logic | Blueprint spec format | Input contract |
-
-## Established Patterns — Engine & Graph
-
-These patterns are established and reviewers MUST NOT flag them as violations:
-
-| Pattern | Where it exists | Why it's acceptable |
-|---------|-----------------|---------------------|
-| `GraphBuilderFactory` uses `importlib.import_module()` for lazy engine loading | `lib/mas/engine/factory.py` | Intentional late-binding — the only permitted dynamic import crossing domain → adapters |
-| `GraphTraversal` domain class accepts callback functions (not port ABCs) for node execution | `lib/mas/engine/distributed/traversal.py` | BSP algorithm is domain-pure; callbacks injected by Temporal workflow adapter at runtime |
 
 ## Boundaries
 

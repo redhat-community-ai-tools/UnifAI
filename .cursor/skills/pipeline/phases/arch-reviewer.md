@@ -17,39 +17,23 @@ A scoped list of changed/added files, provided by the pipeline orchestrator via 
 
 ## Prerequisites
 
-Before starting the review, load both architecture references:
-
-1. `.cursor/skills/architecture/standards.md` for universal coding standards:
-   - SOLID principles — SRP, OCP, LSP, ISP, DIP (§1)
-   - Pydantic model rules (§3)
-   - Enum enforcement (§4)
-   - Type hint requirements (§5)
-   - Import ordering (§6)
-   - Error handling rules (§8)
-
-2. `.cursor/skills/architecture/hex-mechanics.md` for detailed hexagonal mechanics:
-   - Layer placement decision tree (§1)
-   - Import rules and dependency inversion matrix (§2)
-   - Port-per-adapter rule (§3)
-   - Error handling layer contract (§4)
-   - SRP decomposition thresholds (§5)
-   - Enum enforcement patterns (§6)
-   - Python safety patterns (§7)
-   - Deep investigation techniques (§9)
+Universal engineering standards and hexagonal guardrails are always active via
+`.cursor/rules/engineering-standards.md` — no manual loading needed.
+For deep investigation techniques (import chain tracing, constructor audits,
+error propagation), load `.cursor/skills/architecture/references/investigation-techniques.md`.
 
 ## Scope Resolution & Domain Loading (MANDATORY)
 
 Before starting the review:
-1. Identify which service(s) the changed files belong to using `.cursor/skills/codebase/SKILL.md` routing table
-2. Load the service's `_index.md` for component routing
-3. For each component touched, load `<component>/_index.md` for boundaries, contracts, and established patterns — follow any recipe or reference implementation pointers found there
-   - 3a. If any loaded `_index.md` contains an **Established Patterns** table, bind it as a suppression list — patterns listed there are pre-approved conventions. Do NOT flag them as violations. If noted at all, classify as **INFO — established pattern**.
-   - 3b. If the `_index.md` links to a **recipe** for this type of change (e.g. `add-new-node.md`), read the recipe's **Reviewer Checklist** — specifically any **"DO NOT flag"** rows. These are additional suppressions.
-4. If files cross component boundaries, load BOTH components' `relationships.md`
-5. Load the service's `rules.md` for domain-specific enforcement
-6. Load the dev-guide service doc referenced by the domain `_index.md`
-   (`unifai-dev-guide/docs/services/<service>.md`) — use the relevant sections
-   for factual class architecture, port catalogs, and endpoint signatures.
+1. Load the domain skill: `.cursor/skills/codebase/domains/<domain>/SKILL.md`
+   (contains: routing, rules, endpoint groups, port wiring, MongoDB collections)
+2. For each component in scope, load `references/<component>.md`
+   (contains: architecture, contracts, established patterns, cross-component relationships)
+   - 2a. If any loaded component reference contains an **Established Patterns** table, bind it as a suppression list — patterns listed there are pre-approved conventions. Do NOT flag them as violations. If noted at all, classify as **INFO — established pattern**.
+   - 2b. If the component reference links to a **recipe** for this type of change (e.g. `add-new-node.md`), read the recipe's **Reviewer Checklist** — specifically any **"DO NOT flag"** rows. These are additional suppressions.
+3. (Optional) If the review requires baseline knowledge about existing endpoints,
+   port wiring, or MongoDB collections beyond what the domain SKILL.md provides,
+   consult `.cursor/unifai-dev-guide/docs/services/<service>.md` at the specific section
 
 Failure to load domain context before reviewing is a failure of this phase.
 
@@ -60,7 +44,7 @@ Before checking any rules, understand what this change is trying to accomplish. 
 1. **Feature/capability**: What user-facing or system capability does this diff add or modify? State it in one sentence.
 2. **Data flow**: Trace the happy path end-to-end — where does the request enter (inbound adapter), what domain logic processes it (service/elements), what external systems does it call (outbound adapters), where does it persist or exit?
 3. **Anchor concept**: What is the central domain model or abstraction this change introduces or extends?
-4. **Expected architectural shape**: Given this feature, which layers SHOULD be touched? What ports, adapters, domain models, and services SHOULD exist? Which patterns from the loaded `_index.md` files or recipes apply?
+4. **Expected architectural shape**: Given this feature, which layers SHOULD be touched? What ports, adapters, domain models, and services SHOULD exist? Which patterns from the loaded `references/<component>.md` files or recipes apply?
 5. **Scope check**: Does the diff match the expected shape, or are pieces missing / unexpected files present?
 
 This context frames ALL subsequent checks. Without it you are checking rules without understanding intent — that produces false positives and misses structural gaps.
@@ -83,7 +67,7 @@ Flag any missing counterpart as **MAJOR — INCOMPLETE CHANGE**.
 
 Now that you know what the change is for, verify each new file or class is in the right place:
 
-1. Read the component's `_index.md` "Boundaries" section: "Owns: X, Does NOT own: Y"
+1. Read the component's `references/<component>.md` "Boundaries" section: "Owns: X, Does NOT own: Y"
 2. Verify the new code falls within what the component CLAIMS to own
 3. Check if ANY OTHER component's boundaries claim this responsibility
 4. If the responsibility is claimed by another component, flag as **MAJOR — MISPLACED**
@@ -104,19 +88,19 @@ With structure and placement confirmed, check the wiring:
 
 ### 4. Import Rule Enforcement (MANDATORY)
 
-For every changed or added Python file, read its `import`/`from` statements and enforce the import matrix from `hex-mechanics.md` §2. If a service contains `from project.adapters.xyz import ConcreteClass`, that is a **CRITICAL** DIP violation.
+For every changed or added Python file, read its `import`/`from` statements and enforce the import matrix from `.cursor/rules/engineering-standards.md`. If a service contains `from project.adapters.xyz import ConcreteClass`, that is a **CRITICAL** DIP violation.
 
 ### 5. SOLID, Ports, Layer Placement, Error Handling, Enums, Safety
 
-Enforce all rules from `hex-mechanics.md` §3–§7 plus the SOLID checks from `standards.md` §1:
+Enforce all rules from `.cursor/rules/engineering-standards.md`:
 
-- **SRP**: Classes with 8+ public methods clustering into independent groups → decompose per `hex-mechanics.md` §5.
+- **SRP**: Classes with 8+ public methods clustering into independent groups → decompose per engineering standards.
 - **OCP**: New type variants handled by adding `if/elif` branches instead of new classes or strategy objects → **MAJOR**.
 - **LSP**: Subtype or adapter that breaks its base/port contract (changes return semantics, narrows accepted input, adds preconditions) → **MAJOR**.
 - **ISP**: Port (ABC) forcing implementors to stub methods they don't need → **MAJOR** — split the interface.
 - **DIP**: Covered by §3 (hex compliance) and §4 (import enforcement) above; flag any remaining concretion-dependency here.
 
-Also enforce port-per-adapter, error handling layer contract, enum patterns, and Python safety per `hex-mechanics.md`.
+Also enforce port-per-adapter, error handling layer contract, enum patterns, and Python safety per `.cursor/rules/engineering-standards.md`.
 
 ### 6. Code Duplication & Reusability
 
@@ -166,7 +150,7 @@ Reviewing without codebase exploration is a failure of this phase.
 
 Before assigning any severity, apply these modifiers:
 
-- **Following an established codebase convention** (per `_index.md` Established Patterns or recipe "DO NOT flag" table) → suppress or classify as **INFO — established pattern**
+- **Following an established codebase convention** (per `references/<component>.md` Established Patterns or recipe "DO NOT flag" table) → suppress or classify as **INFO — established pattern**
 - **Pre-existing issue exposed but not introduced by this diff** → **INFO — tech debt**; does not count against the verdict
 - **Pragmatic workaround with a clear reason** (e.g. `Any` type to satisfy framework constraints) → **INFO** with the rationale, not a violation
 - **Cosmetic or stylistic inconsistency** → **INFO**, never MAJOR
@@ -232,7 +216,7 @@ Layer contract violations in exception handling. Table format:
 |-----------|-------|-------|----------|-----|
 
 #### Python Safety Issues
-Violations of Python safety patterns from `hex-mechanics.md` §7.
+Violations of Python safety patterns from `.cursor/rules/engineering-standards.md`.
 
 #### Duplication & Reusability Issues
 Existing components that should be reused instead of created.

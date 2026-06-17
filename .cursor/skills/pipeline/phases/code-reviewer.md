@@ -9,16 +9,15 @@ The code changes produced by the Coder agent, along with the approved design fro
 ## Scope Resolution & Domain Loading (MANDATORY)
 
 Before starting the review:
-1. Identify which service(s) the changed files belong to using `.cursor/skills/codebase/SKILL.md` routing table
-2. Load the service's `_index.md` for component routing
-3. For each component touched, load `<component>/_index.md` for boundaries and contracts
-   - 3a. If any loaded `_index.md` contains an **Established Patterns** table, bind it as a suppression list — patterns listed there are pre-approved conventions. Do NOT flag them as violations. If noted at all, classify as **INFO — established pattern**.
-   - 3b. If the `_index.md` links to a **recipe** for this type of change (e.g. `add-new-node.md`), read the recipe's **Reviewer Checklist** — specifically any **"DO NOT flag"** rows. These are additional suppressions.
-4. If files cross component boundaries, load BOTH components' `relationships.md`
-5. Load the service's `rules.md` for domain-specific enforcement
-6. Load the dev-guide service doc referenced by the domain `_index.md`
-   (`unifai-dev-guide/docs/services/<service>.md`) — use the relevant sections
-   for factual class architecture, port catalogs, and endpoint signatures.
+1. Load the domain skill: `.cursor/skills/codebase/domains/<domain>/SKILL.md`
+   (contains: routing, rules, endpoint groups, port wiring, MongoDB collections)
+2. For each component in scope, load `references/<component>.md`
+   (contains: architecture, contracts, established patterns, cross-component relationships)
+   - 2a. If any loaded component reference contains an **Established Patterns** table, bind it as a suppression list — patterns listed there are pre-approved conventions. Do NOT flag them as violations. If noted at all, classify as **INFO — established pattern**.
+   - 2b. If the component reference links to a **recipe** for this type of change (e.g. `add-new-node.md`), read the recipe's **Reviewer Checklist** — specifically any **"DO NOT flag"** rows. These are additional suppressions.
+3. (Optional) If the review requires baseline knowledge about existing endpoints,
+   port wiring, or MongoDB collections beyond what the domain SKILL.md provides,
+   consult `.cursor/unifai-dev-guide/docs/services/<service>.md` at the specific section
 
 Failure to load domain context before reviewing is a failure of this phase.
 
@@ -35,7 +34,7 @@ If an architecture review (Phase 2 / arch-review) was already performed in this 
 ### 1. Hexagonal Architecture Enforcement (CRITICAL)
 
 > For the authoritative import matrix, layer decision tree, and per-layer error contract,
-> see `.cursor/skills/architecture/hex-mechanics.md`.
+> see `.cursor/rules/engineering-standards.md`.
 
 You MUST use search/read tools to trace actual imports in every new/modified file and verify dependency direction. Do NOT trust the diff alone.
 
@@ -248,7 +247,7 @@ For each finding: show exact file path and line number, explain the attack surfa
 ### 13. Component Placement Verification (MANDATORY)
 
 For each new file or class added in the diff:
-1. Read the component's `_index.md` "Boundaries" section: "Owns: X, Does NOT own: Y"
+1. Read the component's `references/<component>.md` "Boundaries" section: "Owns: X, Does NOT own: Y"
 2. Verify the new code falls within what the component CLAIMS to own
 3. Check if ANY OTHER component's boundaries claim this responsibility
 4. If the responsibility is claimed by another component, flag as **MAJOR — MISPLACED**
@@ -260,7 +259,7 @@ Evidence required: quote the boundary declaration that supports or contradicts t
 
 Before assigning any severity, apply these modifiers:
 
-- **Following an established codebase convention** (per `_index.md` Established Patterns or recipe "DO NOT flag" table) → suppress or classify as **INFO — established pattern**
+- **Following an established codebase convention** (per `references/<component>.md` Established Patterns or recipe "DO NOT flag" table) → suppress or classify as **INFO — established pattern**
 - **Pre-existing issue exposed but not introduced by this diff** → **INFO — tech debt**; does not count against the verdict or score
 - **Pragmatic workaround with a clear reason** (e.g. `Any` type to satisfy framework constraints) → **INFO** with the rationale, not a violation
 - **Cosmetic or stylistic inconsistency** → **INFO**, never MAJOR

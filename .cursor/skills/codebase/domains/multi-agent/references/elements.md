@@ -1,19 +1,12 @@
----
-name: mas-elements
-scope: Element plugin system — nodes, tools, LLMs, providers, retrievers, conditions, auths
-parent: ../_index.md
-when_to_load: Adding or modifying any element type, catalog discovery, or element validation
----
-
-# Elements & Catalog
+# Elements & Catalog Component
 
 Plugin system providing all agent capabilities. Self-describing packages, auto-discovered at startup.
 
-## Dependency Graph
+## Architecture
 
 ```
     SESSION
-       │ builds via ElementDeps (see core/)
+       │ builds via ElementDeps (see core)
        ▼
   ┌─ELEMENTS─┐
   │  nodes    │──reads/writes──→ ENGINE (GraphState channels)
@@ -26,7 +19,7 @@ Plugin system providing all agent capabilities. Self-describing packages, auto-d
    ADAPTERS (Gemini retrieve, MCP proxy, OAuth)
 ```
 
-## Structure
+### Structure
 
 ```
 lib/mas/elements/
@@ -49,7 +42,7 @@ lib/mas/catalog/             ElementRegistry, SpecDiscoverer, CatalogService
 lib/mas/validation/          ElementValidationService
 ```
 
-## Key Contracts
+### Key Contracts
 
 | Class | Role |
 |-------|------|
@@ -60,7 +53,7 @@ lib/mas/validation/          ElementValidationService
 | `ChatMessage` | Shared message model (role, content, file_attachments, tool_calls) |
 | `FileAttachment` | Frozen Pydantic model (file_name, mime_type, file_uri, size_bytes) |
 
-## Element Spec Required ClassVars
+### Element Spec Required ClassVars
 
 | Field | Type | Purpose |
 |-------|------|---------|
@@ -71,14 +64,13 @@ lib/mas/validation/          ElementValidationService
 | `reads` | `Set[Channel]` | GraphState channels consumed |
 | `writes` | `Set[Channel]` | GraphState channels produced |
 
-## How to Add a New Element
+## How to Extend
 
-See full recipes in `../recipes/` for detailed step-by-step guides with exact
-contracts, reference implementations, and reviewer checklists:
+See full recipes in `../recipes/` for detailed step-by-step guides:
 
 | Element type | Recipe | Reference impl |
 |-------------|--------|----------------|
-| Node | `../recipes/add-new-node.md` | `nodes/custom_agent/` (LLM), `nodes/a2a_agent/` (delegation) |
+| Node | `../recipes/add-new-node.md` | `nodes/custom_agent/`, `nodes/a2a_agent/` |
 | LLM | `../recipes/add-new-llm.md` | `llms/openai/`, `llms/google_genai/` |
 | Tool | `../recipes/add-new-tool.md` | `tools/web_fetch/`, `tools/mcp_proxy/` |
 | Provider | `../recipes/add-new-provider.md` | `providers/mcp_server_client/` |
@@ -93,36 +85,73 @@ Quick checklist (all element types):
 7. Add config to the category's `types.py` union type
 8. Auto-discovered at startup — no manual registration needed
 
-## How to Add a New Builtin Tool
+### Adding a New Builtin Tool
 
 1. Create module in `elements/tools/builtin/<name>/`
 2. Implement tool class extending `BaseTool`
 3. Inject in target node's `_create_builtin_tools()` method
-4. If needs infrastructure: add factory callable to `ElementDeps` (see `core/_index.md`)
+4. If needs infrastructure: add factory callable to `ElementDeps` (see `references/core.md`)
 
-## Change Impact
+## Cross-Component Contracts
 
-| If you change... | Also update... | Why |
-|-----------------|----------------|-----|
-| Element spec ClassVars | `__init_subclass__` enforces at definition time | Compile-time check |
-| `BaseNode.READS/WRITES` | GraphState must have those channels | Validation service checks |
-| `ChatMessage` fields | Serialization in repos + streaming | Crosses persistence boundary |
-| `FileAttachment` model | InputProjector, orchestrator context, delegate_task | Used across delegation chain |
-| Add to `ElementDeps` | `core/element_deps.py` + `container.py` + factory | Injection chain (see `core/_index.md`) |
+### Elements → Graph (Channel Access)
 
-## Data Flow: Files Through Elements
-
-```
-InputProjector → GraphState.file_attachments (channel)
-  → UserQuestionNode → workspace variable
-  → OrchestratorNode → reads workspace → context
-  → DelegateTaskTool → propagates workspace to child
-  → CustomAgentNode → reads workspace → injects retrieve tool + facts
+```python
+class CustomAgentSpec(BaseElementSpec):
+    reads = {Channel.FILE_ATTACHMENTS, Channel.MESSAGES}
+    writes = {Channel.MESSAGES}
 ```
 
-## Established Patterns — Elements Plugin Layer
+`ElementValidationService` checks all declared channels exist in `GraphState`.
 
-The elements layer wraps external SDKs behind domain abstractions.
+### Workspace Variable Propagation (Delegation Chain)
+
+```
+UserQuestionNode → stores data as workspace variable
+  → OrchestratorNode → reads workspace for context
+  → DelegateTaskTool._propagate_*() → copies workspace to child thread
+  → CustomAgentNode → reads workspace → uses data
+```
+
+Rules:
+- Workspace data MUST be serializable (`.model_dump()` for Pydantic)
+- Channel READS/WRITES MUST be accurate (validation relies on them)
+- External channels populated by InputProjector only, never by nodes
+
+### Elements ← Session (Dependency Injection)
+
+```
+container.py creates factories/services
+  → WorkflowSessionFactory receives them via constructor
+  → build_session() creates ElementDeps
+  → SessionElementBuilder passes deps as kwargs to element factories
+  → Element factory extracts what it needs
+```
+
+Elements needing infrastructure: define factory callable in ElementDeps → element calls factory at runtime → element NEVER imports adapter code directly.
+
+### Adding a New Data Type Through the Full Stack
+
+If you need new data to flow from user → delegation → agents:
+
+1. Define model in `elements/llms/common/chat/`
+2. Add channel to `GraphState` (if globally needed) with `external: True`
+3. Populate in `SessionInputProjector.apply()`
+4. Store as workspace variable in `UserQuestionNode`
+5. Propagate in `DelegateTaskTool._propagate_*()` to child threads
+6. Consume in target node (read workspace, inject into context/tools)
+7. Update element specs: add channel to `reads` ClassVar
+
+### Machine-Checkable Invariants
+
+| ID | Rule | Violating Import Pattern | Severity |
+|----|------|--------------------------|----------|
+| INV-E01 | Elements never import adapter code | `from adapters.` in `lib/mas/elements/**` | CRITICAL |
+| INV-E02 | Elements never import session code | `from mas.session` in `lib/mas/elements/**` | CRITICAL |
+| INV-E03 | External channels populated only by InputProjector | Direct `GraphState.` channel write in `lib/mas/elements/nodes/**` for `external: True` channels | MAJOR |
+
+## Established Patterns
+
 These patterns are established and reviewers MUST NOT flag them as violations:
 
 | Pattern | Where it exists | Why it's acceptable |
@@ -137,6 +166,16 @@ These patterns are established and reviewers MUST NOT flag them as violations:
 | `McpProvider` referenced directly in node code | `CustomAgentNode`, `DeepAgentNode` | Internal domain abstraction wrapping raw MCP SDK; nodes depend on provider, not SDK |
 | `a2a.types.AgentCard` in node config | `A2AAgentNode` config + card builder | A2A protocol type needed for blueprint config validation; no pure-domain alternative exists |
 | Parallel phase provider implementations (~1300 LOC each) | `OrchestratorPhaseProvider`, `UnifiedPhaseProvider` | Two context-building strategies for different node archetypes; single interface, two implementations |
+
+## Change Impact
+
+| If you change... | Also update... | Why |
+|-----------------|----------------|-----|
+| Element spec ClassVars | `__init_subclass__` enforces at definition time | Compile-time check |
+| `BaseNode.READS/WRITES` | GraphState must have those channels | Validation service checks |
+| `ChatMessage` fields | Serialization in repos + streaming | Crosses persistence boundary |
+| `FileAttachment` model | InputProjector, orchestrator context, delegate_task | Used across delegation chain |
+| Add to `ElementDeps` | `core/element_deps.py` + `container.py` + factory | Injection chain |
 
 ## Boundaries
 

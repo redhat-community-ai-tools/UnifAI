@@ -6,7 +6,7 @@ Custom Cursor IDE commands for the UnifAI project. Invoke with `/` in the Cursor
 
 ### `/pipeline` — Multi-Phase Development Pipeline
 
-The unified development workflow. Replaces all legacy standalone commands with an integrated multi-agent pipeline featuring design, review, implementation, code review, QA, and debugging phases with automatic revision loops.
+The unified development workflow featuring design, review, implementation, code review, QA, and debugging phases with automatic revision loops.
 
 **Modes:**
 
@@ -38,19 +38,72 @@ The unified development workflow. Replaces all legacy standalone commands with a
 
 ## Utility Commands
 
-### `/push` — Design Document Uploader
-Uploads design files to Jira tickets.
+### `/review` — Quick Branch Review
 
+Performs automated code reviews on your current branch with varying depth levels.
+
+**Usage:**
+```
+/review [basic|deep] [files/folders]
+```
+
+**Parameters:**
+- `basic` (default): Quick review focusing on obvious issues
+- `deep`: Comprehensive review including design validation
+- `files/folders` (optional): Specify particular files or folders to review
+
+**Output:**
+Creates a review file named `<branch_name>_<review_type>_review.md` containing:
+1. Short overview of the feature and its purpose
+2. Issues found, organized by area and severity
+3. Design reference (for deep reviews or when architecture.md exists)
+
+**Example:**
+```
+/review deep src/components/
+```
+
+---
+
+### `/push` — Design Document Uploader
+
+Uploads design files to specified Jira tickets.
+
+**Prerequisites:**
+- Jira integration configured
+- Design file already created
+
+**Usage:**
 ```
 /push <jira-ticket> <file-name>
 ```
 
-### `/review` — Quick Branch Review
-Lightweight code review for current branch changes.
+**Parameters:**
+- `jira-ticket`: The Jira ticket ID to upload to
+- `file-name`: Path to the design file to upload
 
+**Example:**
 ```
-/review [basic|deep] [files/folders]
+/push GENIE-1163 GENIE-1163_design.html
 ```
+
+---
+
+## Setup Requirements
+
+### Jira Integration
+
+The `pipeline` (when given a Jira ticket), `design`, and `push` commands require Jira connectivity. Ensure you have one of the following configured:
+
+1. **MCP Server** — Jira MCP server in your Cursor settings
+2. **API Credentials** — Jira API tokens configured in your environment
+
+If Jira integration is not available, the commands will notify you and stop execution.
+
+### Template Files
+
+The `design` phase requires:
+- `.cursor/files/ADR - Architecture Review Template.md`
 
 ---
 
@@ -68,25 +121,17 @@ These commands are superseded by `/pipeline` modes. They remain functional but w
 
 ---
 
-## Skills System
+## Troubleshooting
 
-Pipeline commands load phase-specific instruction files from `.cursor/skills/pipeline/phases/`:
+**Jira connection errors:**
+- Verify Jira MCP server is running
+- Check API credentials and permissions
+- Confirm network connectivity to Jira instance
 
-| Phase | Skill File |
-|-------|-----------|
-| Design | `phases/designer.md` |
-| Design Review | `phases/design-reviewer.md` |
-| Arch Review | `phases/arch-reviewer.md` |
-| Implementation | `phases/coder.md` |
-| Code Review | `phases/code-reviewer.md` |
-| QA | `phases/qa.md` |
-| Debug | `phases/debugger.md` |
-
-Domain knowledge is loaded from `.cursor/skills/codebase/` (routing table) and service-specific domain skills under `codebase/domains/` and `multi-agent/`.
-
-Architecture standards are enforced via:
-- `.cursor/rules/hexagonal-python.md` — hexagonal architecture mechanics
-- `.cursor/skills/architecture/standards.md` — universal coding rules
+**Review file not generated:**
+- Ensure you're on a git branch (not detached HEAD)
+- Check write permissions in the current directory
+- Verify there are changes to review on the branch
 
 ---
 

@@ -1,15 +1,8 @@
----
-name: mas-core
-scope: Cross-cutting infrastructure — identity, channels, execution context, element deps, enums
-parent: ../_index.md
-when_to_load: Using identity, execution context, streaming channels, enums, or ElementDeps
----
-
-# Core Infrastructure
+# Core Infrastructure Component
 
 Cross-cutting contracts shared by all MAS components. NOT a service — provides foundational models and ports.
 
-## Dependency Graph
+## Architecture
 
 ```
    SESSION ──uses──→ CORE ←──uses── ELEMENTS
@@ -22,7 +15,7 @@ Cross-cutting contracts shared by all MAS components. NOT a service — provides
   ADAPTERS (IdentityProvider, ChannelFactory, AuthService)
 ```
 
-## Structure
+### Structure
 
 ```
 lib/mas/core/
@@ -42,10 +35,9 @@ lib/mas/core/
 └── inter_entity_messenger.py IEM protocol
 ```
 
-## Key Models (Single Source of Truth)
+### Key Models
 
-### Identity
-
+**Identity:**
 ```python
 class Identity(BaseModel):   # frozen
     type: IdentityType   # USER | TEAM
@@ -55,8 +47,7 @@ class Identity(BaseModel):   # frozen
 
 Flow: Flask decorator → service method(`identity=...`) → repository scopes → ExecutionContext carries to runtime.
 
-### ExecutionContext
-
+**ExecutionContext:**
 ```python
 class ExecutionContext(BaseModel):  # frozen
     identity: Identity
@@ -69,8 +60,7 @@ class ExecutionContext(BaseModel):  # frozen
 
 Lifecycle: created at session creation → updated at staging → `holder.context` set at `lifecycle.begin()` → available to elements.
 
-### ElementDeps (THE injection bridge)
-
+**ElementDeps (THE injection bridge):**
 ```python
 @dataclass
 class ElementDeps:
@@ -81,7 +71,7 @@ class ElementDeps:
 
 This is the SOLE mechanism for passing infrastructure into elements. Populated by `WorkflowSessionFactory.build_session()`.
 
-## Key Contracts
+### Key Contracts
 
 | Port | Location | Adapter |
 |------|----------|---------|
@@ -90,7 +80,7 @@ This is the SOLE mechanism for passing infrastructure into elements. Populated b
 | `AuthService` | `auth/service.py` | — (uses strategy pattern internally) |
 | `AuthStrategy` | `auth/ports.py` | `OAuth2Strategy` / `ApiKeyStrategy` |
 
-## Enums
+### Enums
 
 | Enum | Values | Used For |
 |------|--------|----------|
@@ -98,7 +88,9 @@ This is the SOLE mechanism for passing infrastructure into elements. Populated b
 | `IdentityType` | USER, TEAM, SYSTEM, API_KEY | Identity scoping |
 | `EngineType` | LANGGRAPH, TEMPORAL | Graph engine selection |
 
-## How to Add a New Field to ElementDeps
+## How to Extend
+
+### Adding a New Field to ElementDeps
 
 1. Add optional field to `lib/mas/core/element_deps.py` with `field(default=None)`
 2. Populate in `WorkflowSessionFactory.build_session()` (`session/building/workflow_session_factory.py`)
@@ -106,12 +98,68 @@ This is the SOLE mechanism for passing infrastructure into elements. Populated b
 4. Element factory reads from kwargs in `create()` method
 5. Elements NEVER import the adapter — only use the injected callable/interface
 
-## How to Add a New Core Port
+### Adding a New Core Port
 
 1. Define ABC in appropriate sub-module (`identity/ports.py`, `channels/protocols.py`, etc.)
 2. Create adapter in `adapters/outbound/<technology>/`
 3. Wire in `bootstrap/container.py`
 4. Inject into consumers via constructor
+
+## Cross-Component Contracts
+
+### Core → All (Identity Propagation)
+
+```
+Flask decorator → resolves Identity from token/headers
+  → service method(identity=...) → embedded in SessionRecord
+  → embedded in ExecutionContext → available to elements via holder
+```
+
+ALL repository queries MUST include identity scope:
+```python
+def find_by_id(self, session_id: str, identity: Identity) -> Optional[SessionRecord]:
+    query = {"_id": session_id, **identity_q(identity)}
+```
+
+### Core → Session (ExecutionContext Lifecycle)
+
+```
+create_session(): ExecutionContext(identity, session_id, run_id, blueprint_id)
+  → stored in SessionRecord.run_context
+staging: updated with engine_handle (if submit)
+lifecycle.begin(): holder.context = record.run_context  # NOW available
+lifecycle.complete(): mark_finished()
+```
+
+Accessing `holder.context` before `lifecycle.begin()` raises RuntimeError (fail-fast).
+
+### Core → Elements (ElementDeps Chain)
+
+Full chain from config to element:
+```
+config/app_config.py: new_feature_key = ""
+  → container.py: if cfg.new_feature_key: factory = lambda: NewThing(cfg.key)
+  → WorkflowSessionFactory.__init__(new_factory=factory)
+  → build_session(): ElementDeps(new_factory=factory)
+  → SessionElementBuilder: passes deps as kwargs
+  → ElementFactory.create(**kwargs): extracts new_factory from kwargs
+  → Element uses factory at runtime
+```
+
+### Machine-Checkable Invariants
+
+| ID | Rule | Violating Import Pattern | Severity |
+|----|------|--------------------------|----------|
+| INV-C01 | All repository queries include identity scope | Repository `find_*`/`list_*` method missing `identity` param in `adapters/outbound/**` | CRITICAL |
+| INV-C02 | ExecutionContext not accessed before lifecycle.begin() | `holder.context` access outside `run()`/`submit()` flow in `lib/mas/session/**` | CRITICAL |
+
+## Established Patterns
+
+These patterns are established and reviewers MUST NOT flag them as violations:
+
+| Pattern | Where it exists | Why it's acceptable |
+|---------|-----------------|---------------------|
+| `ElementDeps` as `@dataclass` with optional fields (not port ABC) | `lib/mas/core/element_deps.py` | Injection bridge is a data carrier, not a service contract; all fields are `Optional` with `None` default |
 
 ## Change Impact
 
@@ -122,14 +170,6 @@ This is the SOLE mechanism for passing infrastructure into elements. Populated b
 | `ExecutionContext` fields | `lifecycle.begin()` + session record + holder | Lifecycle contract |
 | Channel protocols | All channel adapters (Redis, Local) | Interface contract |
 | `ResourceCategory` enum | Element specs + catalog + validation | Discovery system |
-
-## Established Patterns — Core
-
-These patterns are established and reviewers MUST NOT flag them as violations:
-
-| Pattern | Where it exists | Why it's acceptable |
-|---------|-----------------|---------------------|
-| `ElementDeps` as `@dataclass` with optional fields (not port ABC) | `lib/mas/core/element_deps.py` | Injection bridge is a data carrier, not a service contract; all fields are `Optional` with `None` default |
 
 ## Boundaries
 

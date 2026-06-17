@@ -1,22 +1,11 @@
 ---
-name: codebase-navigation
+name: codebase-overview
 description: >-
-  Project map and domain routing table for the UnifAI monorepo. Identifies which
-  domain skill to load based on the file being edited. Use as the entry point
-  for understanding codebase structure and navigating to the correct domain knowledge.
+  Project overview and domain routing table for the UnifAI monorepo. Each domain
+  has its own skill with `paths` scoping for auto-surfacing when editing relevant files.
 ---
 
-# Codebase Navigation
-
-## How to Use
-
-1. Identify which service/domain your task involves using the routing table below
-2. Load the domain's `SKILL.md` for auto-loading metadata and entry instructions
-3. Follow the domain's `_index.md` for component routing within the service
-4. Load `rules.md` for domain-specific patterns before writing code
-5. Always load `../architecture/standards.md` for universal rules
-
-## Project Overview
+# UnifAI Codebase Overview
 
 UnifAI is a multi-service platform for building and running AI agent workflows.
 The monorepo contains backend services (Python/Flask), a frontend (React/TypeScript),
@@ -24,16 +13,18 @@ shared libraries, and infrastructure tooling.
 
 ## Domain Routing Table
 
-| Path prefix | Domain | Skill location | Tier |
-|-------------|--------|---------------|------|
-| `multi-agent/` | Multi-Agent System (MAS) | `domains/multi-agent/SKILL.md` | Rich |
-| `rag/` | RAG Pipeline | `domains/rag/SKILL.md` | Rich |
-| `shared-resources/identity/` | Identity & Auth | `domains/identity/SKILL.md` | Medium |
-| `ui/client/src/` | Frontend UI | `domains/ui/SKILL.md` | Medium |
-| `global_utils/` | Global Utilities | `domains/global-utils/SKILL.md` | Medium |
-| `backend/` | Platform Backend | `domains/backend/SKILL.md` | Light |
-| `celery` worker tasks | Celery Workers | `domains/celery/SKILL.md` | Light |
-| `temporal` worker tasks | Temporal Workers | `domains/temporal-worker/SKILL.md` | Light |
+| Path prefix | Domain | Skill |
+|-------------|--------|-------|
+| `multi-agent/` | Multi-Agent System (MAS) | `domains/multi-agent/SKILL.md` |
+| `rag/` | RAG Pipeline | `domains/rag/SKILL.md` |
+| `shared-resources/identity/` | Identity & Auth | `domains/identity/SKILL.md` |
+| `ui/client/src/` | Frontend UI | `domains/ui/SKILL.md` |
+| `global_utils/` | Global Utilities | `domains/global-utils/SKILL.md` |
+| `backend/` | Platform Backend | `domains/backend/SKILL.md` |
+| `rag/infrastructure/celery/` | Celery Workers | `domains/celery/SKILL.md` |
+| `temporal-worker/` | Temporal Workers | `domains/temporal-worker/SKILL.md` |
+
+Domain skills are auto-surfaced via `paths` when editing files in their scope.
 
 ## Service Architecture Summary
 
@@ -48,38 +39,6 @@ shared libraries, and infrastructure tooling.
 | **celery** | Async task workers for RAG | Python, Celery, Redis | — |
 | **temporal-worker** | Distributed workflow execution | Python, Temporal | — |
 
-## Companion Skills
-
-| Skill | Purpose | Location |
-|-------|---------|----------|
-| Architecture Standards | Universal coding rules | `../architecture/SKILL.md` |
-| Pipeline | Development workflow phases | `../pipeline/SKILL.md` |
-| MAS Domain | Multi-agent deep knowledge | `domains/multi-agent/SKILL.md` |
-
-## Dev-Guide — Single Source of Truth for Facts
-
-The `unifai-dev-guide/` directory contains auto-generated service documentation with
-class architecture, endpoint catalogs, port abstractions, and MongoDB/Qdrant schemas.
-Skill files provide **navigation and rules**; dev-guide docs provide **facts**.
-
-| Service | Dev-guide doc | Source map |
-|---------|--------------|------------|
-| MAS | `unifai-dev-guide/docs/services/mas.md` | `unifai-dev-guide/source-map.yaml → mas` |
-| RAG | `unifai-dev-guide/docs/services/rag.md` | `unifai-dev-guide/source-map.yaml → rag` |
-| Identity | `unifai-dev-guide/docs/services/identity.md` | `unifai-dev-guide/source-map.yaml → identity` |
-| UI | `unifai-dev-guide/docs/services/ui.md` | `unifai-dev-guide/source-map.yaml → ui` |
-| Platform | `unifai-dev-guide/docs/services/platform.md` | `unifai-dev-guide/source-map.yaml → platform` |
-| global_utils | `unifai-dev-guide/docs/services/global_utils.md` | `unifai-dev-guide/source-map.yaml → global_utils` |
-| Celery | `unifai-dev-guide/docs/services/celery.md` | (shares RAG source map) |
-| Temporal Worker | `unifai-dev-guide/docs/services/temporal_worker.md` | (shares MAS source map) |
-
-**When to load dev-guide docs:** When you need class details, endpoint signatures, port catalogs,
-MongoDB collection schemas, or call graphs that the skill `_index.md` routing tables don't cover.
-
-**Routing index:** `unifai-dev-guide/guide-index.yaml` maps code path globs → doc file + section key.
-**Structural landmarks:** `unifai-dev-guide/source-map.yaml` maps services → composition roots, ports, endpoints, Mongo collections.
-**Service topology:** `unifai-dev-guide/topology.yaml` defines the service graph, tech stacks, and runtime edges.
-
 ## Cross-Cutting Concerns
 
 | Concern | Where it lives |
@@ -90,3 +49,17 @@ MongoDB collection schemas, or call graphs that the skill `_index.md` routing ta
 | Redis caching | `global_utils/redis/` + per-service usage |
 | Message queues | RabbitMQ via Celery (`global_utils/celery_app/`) |
 | Workflow orchestration | Temporal (`multi-agent/adapters/outbound/temporal/`) |
+
+## Dev-Guide (optional factual reference)
+
+The `.cursor/unifai-dev-guide/` directory contains service documentation with class architecture,
+endpoint catalogs, port abstractions, and MongoDB/Qdrant schemas. Domain SKILL.md files
+already contain compact versions of the most useful tables. The full dev-guide is available
+for deeper reference:
+
+| Resource | Description |
+|----------|-------------|
+| `.cursor/unifai-dev-guide/docs/services/<service>.md` | Full endpoint signatures, class graphs, collection schemas |
+| `.cursor/unifai-dev-guide/source-map.yaml` | Maps services → composition roots, ports, endpoints, Mongo collections |
+| `.cursor/unifai-dev-guide/topology.yaml` | Service graph, tech stacks, runtime edges |
+| `.cursor/unifai-dev-guide/guide-index.yaml` | Maps code path globs → doc sections (used by `gen-docs.js`, CI) |

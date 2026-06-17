@@ -54,13 +54,25 @@ The user's input determines which mode to run. Parse the input as follows:
 **Mode 9 — arch-review**: Run an architecture review on code changes without a design document. Evaluate changed/added files against hexagonal architecture, SOLID principles, port-adapter wiring, layer boundaries, and codebase conventions. Stop after the verdict.
 ```
 /pipeline arch-review [files/folders]
-```  
-
-
-**Mode 9 — arch-review**: Run an architecture review on code changes without a design document. Evaluate changed/added files against hexagonal architecture, SOLID principles, port-adapter wiring, layer boundaries, and codebase conventions. Stop after the verdict.
 ```
-/pipeline arch-review [files/folders]
-```
+
+### Mode → Phase Dispatch
+
+Use this table to determine which phase(s) to execute for each mode. This is the authoritative mapping — do NOT infer phase numbers from mode numbers or from semantic similarity between mode names and phase names.
+
+| Mode | Keyword | Phase(s) to Execute | Skill File |
+|------|---------|---------------------|------------|
+| 1 | `full` | 1 → 2 → 3 → 4 → 5 | (per phase) |
+| 2 | `design-only` | 1 | `designer.md` |
+| 3 | `design-and-review` | 1 → 2 | `designer.md` → `design-reviewer.md` |
+| 4 | `implement` | 3 → 4 → 5 | `coder.md` → `code-reviewer.md` → `qa.md` |
+| 5 | `review-only` | 2 | `design-reviewer.md` |
+| 6 | `code-review-only` | 4 | `code-reviewer.md` |
+| 7 | `qa-only` | 5 | `qa.md` |
+| 8 | `debug` | 6 | `debugger.md` |
+| 9 | `arch-review` | 9 | `arch-reviewer.md` |
+
+All skill files are under `.cursor/skills/pipeline/phases/`.
 
 ### ADR File Flag
 
@@ -95,7 +107,7 @@ After resolving the input, pass the full task context (title, description, accep
 5. For `design-only` and `review-only` and `code-review-only` and `qa-only` and `arch-review` — these are single-phase runs. Execute ONLY that one phase. Do NOT continue to subsequent phases.
 6. For `design-and-review` — execute Phase 1 and Phase 2 (with revision loops) only. Stop before Phase 3.
 7. For **debug** mode: check if the argument is a path to an existing file. If yes, read the file as the error log input. If not, treat the entire argument as an error description or symptom.
-8. Announce the detected mode at the start: "Pipeline mode: **<mode>** — starting at Phase <N>."
+8. Announce the detected mode at the start: "Pipeline mode: **<mode>** — starting at Phase <N>." Use the **Mode → Phase Dispatch** table to determine the correct phase number.
 
 CRITICAL RULE: When a review phase produces a verdict that is NOT approval, you MUST execute the revision loop described below. You are FORBIDDEN from proceeding to the next phase until the reviewer approves. This is non-negotiable. Exception: `arch-review` is a standalone single-phase mode and does not run revision loops.
 
@@ -202,15 +214,15 @@ IF verdict is NEEDS REVISION or REJECT:
 
 ---
 
-### PHASE 2b: ARCHITECTURE REVIEW
+### PHASE 9: ARCHITECTURE REVIEW
 
-Used by `arch-review` mode only. This is a standalone phase — it does NOT run as part of the normal Phase 1 → 2 → 3 → 4 → 5 pipeline.
+Used by `arch-review` mode only. This is a standalone phase — it does NOT run as part of the normal Phase 1 → 2 → 3 → 4 → 5 pipeline. It uses a DIFFERENT skill file than Phase 4 (Code Review).
 
-1. Read the skill file at `.cursor/skills/pipeline/phases/arch-reviewer.md`.
+1. Read the skill file at `.cursor/skills/pipeline/phases/arch-reviewer.md` (NOT `code-reviewer.md`).
 2. Switch persona to the Architecture Reviewer.
 3. Resolve the review scope using the Scope Resolution rules above (git diff or explicit paths).
 4. Present the scoped file list, then critically review the changed files against hexagonal architecture, SOLID, port-adapter wiring, and codebase conventions following the skill's review dimensions.
-5. Present the review under a `## PHASE 2: ARCHITECTURE REVIEW` header.
+5. Present the review under a `## ARCHITECTURE REVIEW` header.
 6. Extract the verdict (APPROVE / NEEDS REVISION / REJECT). This is a single-phase mode — there is no revision loop. Display the final state and stop.
 
 ---

@@ -20,7 +20,7 @@ Each phase has a dedicated instruction file loaded on demand by the orchestrator
 |-------|------|------|
 | 1 — Design | `phases/designer.md` | Software architect producing technical designs |
 | 2 — Design Review | `phases/design-reviewer.md` | Skeptical reviewer challenging designs |
-| 2b — Arch Review | `phases/arch-reviewer.md` | Architecture-focused review (CI mode) |
+| 9 — Arch Review | `phases/arch-reviewer.md` | Architecture-focused review (standalone mode) |
 | 3 — Implementation | `phases/coder.md` | Senior engineer writing production code |
 | 4 — Code Review | `phases/code-reviewer.md` | Code reviewer + architecture gatekeeper |
 | 5 — QA | `phases/qa.md` | QA automation engineer writing pytest tests |
