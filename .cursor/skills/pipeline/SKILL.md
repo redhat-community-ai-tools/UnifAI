@@ -28,8 +28,8 @@ Each phase has a dedicated instruction file loaded on demand by the orchestrator
 
 ## Companion Skills
 
-- **Architecture standards**: `.cursor/skills/architecture/standards.md` (universal coding rules)
-- **Hex mechanics**: `.cursor/skills/architecture/hex-mechanics.md` (detailed hex enforcement, investigation techniques)
+- **Architecture standards**: `.cursor/rules/engineering-standards.md` (universal coding rules)
+- **Hex mechanics**: `.cursor/skills/architecture/references/investigation-techniques.md` (detailed hex enforcement, investigation techniques)
 - **Codebase navigation**: `.cursor/skills/codebase/SKILL.md`
 - **MAS domain knowledge**: `.cursor/skills/codebase/domains/multi-agent/SKILL.md`
 

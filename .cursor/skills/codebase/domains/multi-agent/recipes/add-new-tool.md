@@ -1,7 +1,7 @@
 ---
 name: add-new-tool
 scope: Step-by-step recipe for adding a new tool to MAS
-parent: ../_index.md
+parent: ../SKILL.md
 when_to_load: Creating a new tool element under lib/mas/elements/tools/
 ---
 
@@ -228,7 +228,7 @@ Builtin tools are injected by nodes (not configured in blueprints). Different pa
 1. Create module in `elements/tools/builtin/<name>/`
 2. Implement `BaseTool` subclass
 3. Inject in target node's `_create_builtin_tools()` or equivalent
-4. If needs infrastructure: add factory callable to `ElementDeps` (see `core/_index.md`)
+4. If needs infrastructure: add factory callable to `ElementDeps` (see `references/core.md`)
 5. No spec/factory/config needed — builtins are not element-registry items
 
 Reference: `tools/builtin/delegation/delegate_task.py`, `tools/builtin/retriever/`.

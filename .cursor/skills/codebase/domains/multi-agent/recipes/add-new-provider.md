@@ -1,7 +1,7 @@
 ---
 name: add-new-provider
 scope: Step-by-step recipe for adding a new provider to MAS
-parent: ../_index.md
+parent: ../SKILL.md
 when_to_load: Creating a new provider element under lib/mas/elements/providers/
 ---
 

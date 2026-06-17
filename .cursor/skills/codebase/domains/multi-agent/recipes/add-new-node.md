@@ -1,7 +1,7 @@
 ---
 name: add-new-node
 scope: Step-by-step recipe for adding a new agent node to MAS
-parent: ../_index.md
+parent: ../SKILL.md
 when_to_load: Creating a new node element under lib/mas/elements/nodes/
 ---
 
@@ -193,7 +193,7 @@ def _route_response(self, task: Task, agent_result: AgentResult, original_packet
 ```
 
 This pattern is duplicated across four agent nodes — see Established Patterns
-in `elements/_index.md`.
+in `references/elements.md`.
 
 ---
 
@@ -327,7 +327,7 @@ Guard manual emissions: `if self.is_streaming():`.
 
 | DO NOT flag | Why |
 |-------------|-----|
-| SDK imports in delegation-style nodes | Established pattern — see `elements/_index.md` |
+| SDK imports in delegation-style nodes | Established pattern — see `references/elements.md` |
 | Direct I/O (`os.makedirs`, `tempfile`) in external-engine nodes | Session workspace is owned by the element at runtime |
 | Skipping `LlmCapableMixin` for delegation nodes | External engine handles the LLM loop |
 | Duplicate `_route_response` / `_build_conversation_context` | Established pattern — extract to mixin is optional |

@@ -407,7 +407,7 @@ When running arch-review or code-review-only, before passing files to the review
 4. Include the composition root wiring for those ports (`bootstrap/` or `container.py`)
 5. Pass this expanded scope as context to the reviewer
 
-The reviewer's Scope Resolution loads component `_index.md` files (which route to
+The reviewer's Scope Resolution loads component `SKILL.md` files (which route to
 recipes, established patterns, and dev-guide sections) — no separate guide-index lookup needed here.
 
 ## Orchestrator Rules

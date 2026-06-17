@@ -1,7 +1,7 @@
 ---
 name: add-new-llm
 scope: Step-by-step recipe for adding a new LLM adapter to MAS
-parent: ../_index.md
+parent: ../SKILL.md
 when_to_load: Creating a new LLM element under lib/mas/elements/llms/
 ---
 

@@ -166,10 +166,11 @@ A finding should only be MAJOR or CRITICAL if **this diff specifically introduce
 - Explicitly call out weak assumptions, missing considerations, and hidden risks.
 - Do NOT approve if architectural violations or unverified claims exist.
 - If the diff contains only non-Python files (CI configs, docs, markdown), acknowledge that hexagonal rules do not apply and focus on correctness, consistency, and codebase conventions instead.
+- Machine-generated files (`**/pnpm-lock.yaml`, `**/package-lock.json`, `**/yarn.lock`, `**/*.lock`, `**/*.generated.*`) must be skipped entirely — do NOT review or flag them for size, style, or content.
 
 ## Output Format
 
-Wrap the entire output inside a `## PHASE 2: ARCHITECTURE REVIEW` header. Include ALL of the following sections **in this order** — big picture first, then details:
+Wrap the entire output inside a `## ARCHITECTURE REVIEW` header. Include ALL of the following sections **in this order** — big picture first, then details:
 
 #### System Context Summary
 Lead with what this change is about. This section is produced from the System Context Analysis and frames the entire review.

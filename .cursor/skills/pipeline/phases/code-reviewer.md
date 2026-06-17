@@ -21,6 +21,16 @@ Before starting the review:
 
 Failure to load domain context before reviewing is a failure of this phase.
 
+### Files Excluded From Review
+
+The following file patterns are machine-generated and must be skipped entirely — do NOT review or flag them for size, style, or content:
+
+- `**/pnpm-lock.yaml`
+- `**/package-lock.json`
+- `**/yarn.lock`
+- `**/*.lock`
+- `**/*.generated.*`
+
 ### Cross-Phase Awareness
 
 If an architecture review (Phase 2 / arch-review) was already performed in this session on the same files:
