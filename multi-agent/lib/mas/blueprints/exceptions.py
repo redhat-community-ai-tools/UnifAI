@@ -41,3 +41,32 @@ class BlueprintMetadataError(BlueprintError):
         self.message = message or f"Failed to update metadata for blueprint '{blueprint_id}'"
         super().__init__(self.message)
 
+
+# ── Version-history exceptions (GENIE-1336) ──────────────────────────────────
+
+class VersionNotFoundError(BlueprintError):
+    """Raised when a specific version snapshot does not exist for a blueprint."""
+
+    def __init__(self, blueprint_id: str, version: int):
+        self.blueprint_id = blueprint_id
+        self.version = version
+        super().__init__(
+            f"Version {version} not found for blueprint '{blueprint_id}'."
+        )
+
+
+class ConcurrentModificationError(BlueprintError):
+    """Raised when an optimistic-concurrency check fails (version mismatch).
+
+    This means another writer modified the blueprint between our read and
+    our write.  Callers should surface this as HTTP 409 Conflict.
+    """
+
+    def __init__(self, blueprint_id: str, expected_version: int):
+        self.blueprint_id = blueprint_id
+        self.expected_version = expected_version
+        super().__init__(
+            f"Blueprint '{blueprint_id}' was modified concurrently. "
+            f"Expected version {expected_version}. Please refresh and retry."
+        )
+

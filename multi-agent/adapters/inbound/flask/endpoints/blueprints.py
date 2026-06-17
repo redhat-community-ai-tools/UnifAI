@@ -9,6 +9,8 @@ from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
     BlueprintSaveError,
     BlueprintMetadataError,
+    VersionNotFoundError,
+    ConcurrentModificationError,
 )
 from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
 
@@ -390,4 +392,146 @@ def validate_draft(draft=None, timeout_seconds=10.0):
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Version History endpoints (GENIE-1336) ────────────────────────────────────
+
+
+@blueprints_bp.route("/blueprint.versions.list", methods=["GET"])
+@from_query({
+    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
+    "page": fields.Int(data_key="page", load_default=1),
+    "page_size": fields.Int(data_key="pageSize", load_default=20),
+})
+def list_blueprint_versions(blueprint_id, page, page_size):
+    """Return a paginated list of version summaries for a blueprint.
+
+    Query params:
+        blueprintId (str): Required. Target blueprint ID.
+        page (int):        1-based page number. Defaults to 1.
+        pageSize (int):    Items per page (1–100). Defaults to 20.
+
+    Returns 200 with::
+
+        {
+          "items": [{"version": 2, "created_by": "u1", "created_at": "…",
+                     "change_summary": null}, …],
+          "total": 5,
+          "page": 1,
+          "page_size": 20,
+          "total_pages": 1
+        }
+
+    Returns 404 if the blueprint does not exist.
+    """
+    try:
+        svc = current_app.container.blueprint_service
+        result = svc.list_versions(
+            blueprint_id=blueprint_id,
+            page=page,
+            page_size=page_size,
+        )
+        return jsonify(result), 200
+    except BlueprintNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        logger.exception("Unexpected error listing versions for blueprint %s", blueprint_id)
+        return jsonify({"error": str(e)}), 500
+
+
+@blueprints_bp.route("/blueprint.version.get", methods=["GET"])
+@from_query({
+    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
+    "version": fields.Int(data_key="version", required=True),
+})
+def get_blueprint_version(blueprint_id, version):
+    """Load a specific historic version with the full spec snapshot.
+
+    Query params:
+        blueprintId (str): Required. Target blueprint ID.
+        version (int):     Required. The exact version number to retrieve.
+
+    Returns 200 with::
+
+        {
+          "version": 2,
+          "blueprint_id": "…",
+          "created_by": "user-id",
+          "created_at": "2026-06-10T12:00:00+00:00",
+          "change_summary": "Added new node",
+          "spec_dict_snapshot": { … full draft spec … }
+        }
+
+    Returns 404 if the blueprint or the requested version does not exist.
+    """
+    try:
+        svc = current_app.container.blueprint_service
+        detail = svc.load_version(blueprint_id=blueprint_id, version_number=version)
+        return jsonify(detail), 200
+    except BlueprintNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except VersionNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        logger.exception(
+            "Unexpected error fetching version %d for blueprint %s", version, blueprint_id
+        )
+        return jsonify({"error": str(e)}), 500
+
+
+@blueprints_bp.route("/blueprint.version.restore", methods=["POST"])
+@with_authenticated_user
+@from_body({
+    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
+    "version": fields.Int(data_key="version", required=True),
+})
+def restore_blueprint_version(authenticated_user, blueprint_id, version):
+    """Restore a blueprint to a historic version snapshot.
+
+    The current live state is snapshotted before the restore (so it can
+    itself be rolled back later).  The restored content becomes the new
+    live version with an incremented version counter.
+
+    Body (JSON):
+        blueprintId (str): Target blueprint ID.
+        version (int):     Historic version number to restore.
+
+    Returns 200 with::
+
+        {"status": "success", "blueprint_id": "…", "restored_to_version": 2}
+
+    Returns:
+        404 if the blueprint or the requested version does not exist.
+        409 if a concurrent modification was detected (safe to retry).
+        500 on unexpected errors.
+    """
+    try:
+        svc = current_app.container.blueprint_service
+        svc.restore_version(
+            blueprint_id=blueprint_id,
+            target_version=version,
+            user_id=authenticated_user,
+        )
+        return jsonify({
+            "status": "success",
+            "blueprint_id": blueprint_id,
+            "restored_to_version": version,
+        }), 200
+    except BlueprintNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except VersionNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except ConcurrentModificationError as e:
+        return jsonify({"error": str(e)}), 409
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        logger.exception(
+            "Unexpected error restoring blueprint %s to version %d", blueprint_id, version
+        )
         return jsonify({"error": str(e)}), 500

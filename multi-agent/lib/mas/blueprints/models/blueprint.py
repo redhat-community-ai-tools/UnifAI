@@ -151,6 +151,10 @@ class BlueprintDocument(BaseModel):
     """
     Represents a stored blueprint document as returned by the API.
     Wraps the spec_dict together with its database-level metadata.
+
+    ``version`` is a monotonically-incrementing counter that is bumped on
+    every update.  Existing documents without the field default to 1 at
+    the application layer (migration script will backfill the DB).
     """
     blueprint_id: str
     identity: Identity
@@ -159,6 +163,8 @@ class BlueprintDocument(BaseModel):
     spec_dict: Dict[str, Any]
     rid_refs: List[str] = []
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    # ── Versioning (GENIE-1336) ──────────────────────────────────────────
+    version: int = Field(default=1, description="Monotonically incrementing version counter.")
 
     class Config:
         extra = Extra.ignore

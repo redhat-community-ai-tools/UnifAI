@@ -51,6 +51,7 @@ from outbound.storage import LocalSessionStorageCleaner
 
 from outbound.mongo import (
     MongoBlueprintRepository,
+    MongoBlueprintVersionRepository,
     MongoSessionRepository,
     MongoResourceRepository,
     MongoShareRepository,
@@ -106,6 +107,12 @@ class AppContainer(metaclass=SingletonMeta):
             coll_name=cfg.blueprint_coll
         )
 
+        # ── Version history repository (GENIE-1336) ───────────────────────
+        self.blueprint_version_repo = MongoBlueprintVersionRepository(
+            db_name=cfg.mongo_db,
+            coll_name="blueprint_versions",
+        )
+
         self.resource_repo = MongoResourceRepository(
             cfg.mongodb_port,
             mongodb_ip=cfg.mongodb_ip,
@@ -135,6 +142,7 @@ class AppContainer(metaclass=SingletonMeta):
             resolver=self.blueprint_resolver,
             validation_service=self.validation_service,
             card_service=self.card_service,
+            version_repo=self.blueprint_version_repo,
         )
 
         # ── Auth layer ────────────────────────────────────────────────

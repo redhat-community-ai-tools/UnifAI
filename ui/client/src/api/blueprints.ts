@@ -250,3 +250,113 @@ export async function getBlueprintDraftSchema(): Promise<any> {
   const response = await axios.get('/blueprints/blueprint.draft.schema.get');
   return response.data;
 }
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Blueprint Version History — GENIE-1336
+// ────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Lightweight summary of a single blueprint version.
+ * Returned by the list endpoint — does NOT include the full spec snapshot.
+ */
+export interface VersionSummary {
+  /** Monotonically incrementing version counter (1-based). */
+  version: number;
+  /** User ID of the author who created this version. */
+  created_by: string;
+  /** ISO-8601 timestamp when this version snapshot was created. */
+  created_at: string;
+  /** Optional human-readable description of the change. Null when absent. */
+  change_summary: string | null;
+}
+
+/**
+ * Full version detail including the complete spec snapshot.
+ * Returned by the single-version-get endpoint.
+ */
+export interface VersionDetail extends VersionSummary {
+  /** Parent blueprint identifier. */
+  blueprint_id: string;
+  /** Complete spec_dict as it was at this version. */
+  spec_dict_snapshot: Record<string, unknown>;
+}
+
+/**
+ * Paginated list of version summaries returned by `listBlueprintVersions`.
+ */
+export interface VersionListResponse {
+  /** Version summaries for the current page (newest first). */
+  items: VersionSummary[];
+  /** Total number of versions across all pages. */
+  total: number;
+  /** 1-based current page number. */
+  page: number;
+  /** Items per page. */
+  page_size: number;
+  /** Total number of pages. */
+  total_pages: number;
+}
+
+/**
+ * Fetch a paginated list of version summaries for a blueprint.
+ *
+ * Summaries are sorted newest-first and do not include the full spec snapshot.
+ * Call `loadBlueprintVersion` to retrieve the complete snapshot for a
+ * specific version.
+ *
+ * @param blueprintId - Target blueprint ID.
+ * @param page        - 1-based page number (defaults to 1).
+ * @param pageSize    - Items per page, 1–100 (defaults to 20).
+ */
+export async function listBlueprintVersions(
+  blueprintId: string,
+  page: number = 1,
+  pageSize: number = 20,
+): Promise<VersionListResponse> {
+  const { data } = await axios.get<VersionListResponse>(
+    '/blueprints/blueprint.versions.list',
+    { params: { blueprintId, page, pageSize } },
+  );
+  return data;
+}
+
+/**
+ * Fetch a specific historic version with the full `spec_dict_snapshot`.
+ *
+ * @param blueprintId   - Target blueprint ID.
+ * @param versionNumber - The exact version number to retrieve.
+ * @throws AxiosError (404) when the blueprint or version does not exist.
+ */
+export async function loadBlueprintVersion(
+  blueprintId: string,
+  versionNumber: number,
+): Promise<VersionDetail> {
+  const { data } = await axios.get<VersionDetail>(
+    '/blueprints/blueprint.version.get',
+    { params: { blueprintId, version: versionNumber } },
+  );
+  return data;
+}
+
+/**
+ * Restore a blueprint to a historic version snapshot.
+ *
+ * The server snapshots the current live state before applying the restore,
+ * so no history is lost.  The restored content becomes the new live version
+ * with an incremented version counter.
+ *
+ * @param blueprintId   - Target blueprint ID.
+ * @param versionNumber - Historic version number to restore.
+ * @throws AxiosError (404) when the blueprint or version does not exist.
+ * @throws AxiosError (409) on concurrent modification — ask the user to retry.
+ */
+export async function restoreBlueprintVersion(
+  blueprintId: string,
+  versionNumber: number,
+): Promise<{ status: string; blueprint_id: string; restored_to_version: number }> {
+  const { data } = await axios.post('/blueprints/blueprint.version.restore', {
+    blueprintId,
+    version: versionNumber,
+  });
+  return data;
+}

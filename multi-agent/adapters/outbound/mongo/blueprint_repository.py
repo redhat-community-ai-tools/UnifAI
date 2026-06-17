@@ -43,7 +43,13 @@ class MongoBlueprintRepository(BlueprintRepository):
 
     def update(self, *, blueprint_id: str, spec: BlueprintDraft,
                rid_refs: list[str]) -> bool:
-        # Fetch current document to obtain user_id and run existence checks
+        """Replace an existing draft.
+
+        This is the *legacy* path (no OCC).  Kept for compatibility with
+        callers that do not perform version snapshotting.  New code should
+        call :meth:`update_with_version` instead.
+        """
+        # Fetch current document to run existence check.
         existing = self._col.find_one({"blueprint_id": blueprint_id})
         if existing is None:
             raise KeyError(f"No blueprint with id={blueprint_id}")
@@ -56,8 +62,51 @@ class MongoBlueprintRepository(BlueprintRepository):
                 "updated_at": datetime.now(timezone.utc),
             }}
         )
-
         return res.modified_count == 1
+
+    def update_with_version(
+        self,
+        *,
+        blueprint_id: str,
+        spec: BlueprintDraft,
+        rid_refs: list[str],
+        expected_version: int,
+    ) -> Optional[BlueprintDocument]:
+        """Replace an existing draft with optimistic concurrency control (OCC).
+
+        The update is only applied when the stored ``version`` matches
+        ``expected_version``.  On success the stored version is atomically
+        incremented to ``expected_version + 1``.
+
+        Args:
+            blueprint_id: Target blueprint.
+            spec: New draft spec to persist.
+            rid_refs: Resolved external resource IDs.
+            expected_version: The version the caller read before making
+                changes.  Acts as an OCC guard.
+
+        Returns:
+            Updated :class:`BlueprintDocument` (new version), or ``None``
+            when the OCC check fails (another writer already bumped the
+            version).
+        """
+        new_version = expected_version + 1
+        result = self._col.find_one_and_update(
+            # OCC guard: only match if the version is exactly what we expect.
+            {"blueprint_id": blueprint_id, "version": expected_version},
+            {
+                "$set": {
+                    "spec_dict": spec.model_dump(mode="json"),
+                    "rid_refs": rid_refs,
+                    "version": new_version,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+            return_document=pymongo.ReturnDocument.AFTER,
+        )
+        if result is None:
+            return None  # Version mismatch — concurrent write detected.
+        return BlueprintDocument(**result)
     
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
         """Set the metadata dictionary for a blueprint document."""
