@@ -63,7 +63,7 @@ class ClaudeAgentNode(
             model: str = "claude-sonnet-4-6",
             # Agent behavior
             system_prompt: str = "",
-            max_turns: Optional[int] = 30,
+            max_turns: Optional[int] = 200,
             permission_mode: str = "bypassPermissions",
             allowed_tools: Optional[List[str]] = None,
             disallowed_tools: Optional[List[str]] = None,
