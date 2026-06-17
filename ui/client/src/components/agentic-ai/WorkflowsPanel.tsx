@@ -6,6 +6,7 @@ import { useView } from "@/contexts/ViewContext";
 import { useShared } from "@/contexts/SharedContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { Button } from "@/components/ui/button";
+import { useMyNewContext } from "@/contexts/MyNewContext";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,7 @@ import { BlueprintValidationResult } from "@/types/validation";
 import { useBlueprintValidation } from "@/hooks/use-blueprint-validation";
 import { useTeamEditLockPoll } from "@/hooks/use-team-edit-lock-poll";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface WorkflowsPanelProps {
   selectedFlow: FlowObject | null;
@@ -71,13 +73,13 @@ export default function WorkflowsPanel({
   } | null>(null);
   
   const [searchQuery, setSearchQuery] = useState<string>("");
-
+  const { selectedMember } = useMyNewContext();
   const { selectedTeam } = useView();
   const { openShareForItem } = useShared();
   const { isTeam, userId: contextUserId, identityType } = useWorkspaceIdentity();
   const workspaceScopeRef = useRef({ contextUserId, identityType });
   workspaceScopeRef.current = { contextUserId, identityType };
-  
+  const { user } = useAuth();
   // Blueprint validation hook
   const {
     isValidating,
@@ -99,14 +101,35 @@ export default function WorkflowsPanel({
   );
 
   const filteredFlows = useMemo(() => {
+    let flows = graphFlows;
+    if (isTeam && selectedMember?.id) {
+      flows = flows.filter((f) => f.contributedBy === selectedMember.id);
+    }
     const normalizedSearch = (searchQuery ?? "").trim().toLowerCase();
-    if (!normalizedSearch) return graphFlows;
-    return graphFlows.filter(
+    if (!normalizedSearch) return flows;
+    return flows.filter(
       (flow) =>
         flow.name.toLowerCase().includes(normalizedSearch) ||
         flow.description.toLowerCase().includes(normalizedSearch),
     );
-  }, [graphFlows, searchQuery]);
+  }, [graphFlows, searchQuery, selectedMember, isTeam]);
+
+  // When a member filter is active, keep selection in sync with the filtered list.
+  useEffect(() => {
+    if (!isTeam || !selectedMember?.id || graphFlows.length === 0) return;
+
+    const memberFlows = graphFlows.filter((f) => f.contributedBy === selectedMember.id);
+    if (memberFlows.length === 0) {
+      if (selectedFlow) onFlowSelect(null);
+      return;
+    }
+
+    const selectedInFilter =
+      selectedFlow && memberFlows.some((f) => f.id === selectedFlow.id);
+    if (!selectedInFilter) {
+      onFlowSelect(memberFlows[0]);
+    }
+  }, [selectedMember?.id, graphFlows, isTeam, selectedFlow, onFlowSelect]);
 
   // Fetch available blueprints from API (resolved – references replaced with actual data).
   // `forceAutoSelect` bypasses the `selectedFlow` check so the first item is always
@@ -373,19 +396,22 @@ export default function WorkflowsPanel({
                 <div className="text-gray-400 text-sm text-center px-4">
                   {searchQuery.trim()
                     ? `No workflows match "${searchQuery.trim()}"`
-                    : "No flows available"}
+                    : isTeam && selectedMember?.id
+                      ? `No workflows for ${selectedMember.name}`
+                      : "No flows available"}
                 </div>
               </div>
             ) : (
               filteredFlows.map((flow) => {
                 const bpLock = blueprintEditLocks[flow.id];
                 const bpLockUnknown = bpLock === "unknown";
+                const lockHolderId = selectedMember?.id ?? user?.username;
                 const bpLockedByOther =
                   isTeam &&
                   !bpLockUnknown &&
                   !!bpLock &&
-                  !!user?.username &&
-                  bpLock.userId !== user.username;
+                  !!lockHolderId &&
+                  bpLock.userId !== lockHolderId;
                 const bpLockedByLabel = bpLockUnknown
                   ? "unknown"
                   : bpLock?.displayName?.trim() || bpLock?.userId || "another teammate";

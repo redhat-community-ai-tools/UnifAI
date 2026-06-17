@@ -7,6 +7,7 @@ import JiraIntegration from "@/pages/JiraIntegration";
 import AgenticWorkflows from "@/pages/AgenticWorkflows";
 import AgentRepository from "@/pages/AgentRepository";
 import AgenticChats from "@/pages/AgenticChats";
+import TeamWorkflows from "@/pages/TeamWorkflows";
 
 import AgenticTemplates from "@/pages/AgenticTemplates";
 import GetToKnow from "@/pages/GetToKnow";
@@ -18,6 +19,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { SharedProvider } from '@/contexts/SharedContext';
 import { ViewProvider, useView } from '@/contexts/ViewContext';
+import { MyNewProvider } from '@/contexts/MyNewContext';
 import DocumentsPage from "./features/docs/DocumentsPage";
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { AgenticAIProvider } from '@/contexts/AgenticAIContext';
@@ -43,11 +45,12 @@ function AppRoutes() {
   const [isSlack] = useRoute("/slack");
   const [isDocuments] = useRoute("/documents");
   const [isSlackAddSource] = useRoute("/slack/add-source");
-
+  const [isTeamMembers] = useRoute("/team-members");
   const isAgenticRoute = isAgenticOverview || isAgenticAI || isInventory || isAgenticChats || isTemplates;
   const isTeamBlockedRagRoute =
     viewMode === "team" &&
     (isRagOverview || isSlack || isDocuments || isSlackAddSource);
+  const isTeamMembersRoute = viewMode === "team" && isTeamMembers;
 
   if (isChat) {
     return (
@@ -57,7 +60,7 @@ function AppRoutes() {
     );
   }
 
-  if (isAgenticRoute || isTeamBlockedRagRoute) {
+  if (isAgenticRoute || isTeamBlockedRagRoute || isTeamMembersRoute) {
     return (
       <AgenticAIProvider>
         <AgenticLayout>
@@ -67,6 +70,7 @@ function AppRoutes() {
             <Route path="/inventory" component={AgentRepository} />
             <Route path="/agentic-chats" component={AgenticChats} />
             <Route path="/templates" component={AgenticTemplates} />
+            <Route path="/team-members" component={TeamWorkflows} />
           </Switch>
         </AgenticLayout>
       </AgenticAIProvider>
@@ -148,11 +152,13 @@ function App() {
       <AuthProvider>
         <SharedProvider>
           <ViewProvider>
+            <MyNewProvider>
             <ProjectProvider>
               <NotificationProvider>
                 <AppContent />
               </NotificationProvider>
             </ProjectProvider>
+            </MyNewProvider>
           </ViewProvider>
         </SharedProvider>
       </AuthProvider>

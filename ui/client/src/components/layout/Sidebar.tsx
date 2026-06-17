@@ -6,6 +6,7 @@ import {
   FaChartLine, FaUserShield, FaCog, FaSignOutAlt,
   FaRobot, FaFile, FaChevronLeft, FaChevronRight,
   FaInfoCircle, FaBook, FaComment, FaPuzzlePiece,
+  FaEye,
 } from "react-icons/fa";
 import { FaSlack, FaBars } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
@@ -289,6 +290,17 @@ export default function Sidebar() {
             status={null}
             isCollapsed={isCollapsed}
           />
+          {viewMode === 'team' && (
+            <NavItem 
+              icon={<FaEye className="sidebar-icon" />} 
+              label="Team members"
+              to="/team-members"
+              isActive={location === '/team-members'}
+              status={null}
+              isCollapsed={false}
+              disabled={false}
+            />
+          )}
         </ul>
         
         {viewMode !== 'team' && (

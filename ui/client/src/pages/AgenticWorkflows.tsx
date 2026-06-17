@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Plus, LoaderCircle, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useMyNewContext } from "@/contexts/MyNewContext";
 
 import AgentFlowGraph from "@/components/agentic-ai/AgentFlowGraph";
 import NewGraph from "../workspace/NewGraph";
@@ -47,7 +48,8 @@ export default function AgenticWorkflows() {
   const { selectedTeam } = useView();
   const { isTeam: isTeamWorkspace, userId: contextUserId, displayName: userDisplayName, identityType } = useWorkspaceIdentity();
   const [, navigate] = useLocation();
-  
+  const { selectedMember } = useMyNewContext();
+
   // Handle validation changes from the flow graph
   const handleValidationChange = useCallback((isValid: boolean, validationResult: BlueprintValidationResult | null, isValidating: boolean) => {
     setIsFlowValid(isValid);
@@ -85,8 +87,8 @@ export default function AgenticWorkflows() {
 
       const selectedBlueprint = {
         blueprintId: graphId,
-        userId: contextUserId,
-        displayName: userDisplayName,
+        userId: contextUserId || selectedMember?.id,
+        displayName: userDisplayName || selectedMember?.name,
         identityType,
       };
 
