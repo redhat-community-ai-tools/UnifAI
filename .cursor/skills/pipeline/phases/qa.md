@@ -97,9 +97,14 @@ For each new test file:
 
 ### Verdict
 
-One of:
+State your verdict, then emit the machine-parseable line exactly as shown:
+
 - **PASS** — All tests pass, coverage is adequate. Pipeline complete.
+  `PIPELINE_VERDICT: PASS`
 - **FAIL** — Issues found (list them). Loop back to Coder with specific failures.
+  `PIPELINE_VERDICT: FAIL`
+
+The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
 
 If the verdict is FAIL, clearly list every issue the Coder must address, distinguishing between:
 - Test bugs (QA will fix in the next iteration)

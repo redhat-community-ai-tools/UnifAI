@@ -164,10 +164,16 @@ List the specific source files you read and what claims they verified or contrad
 
 #### Verdict
 
-One of:
+State your verdict, then emit the machine-parseable line exactly as shown:
+
 - **APPROVE** — Design is sound, proceed to implementation.
+  `PIPELINE_VERDICT: APPROVE`
 - **NEEDS REVISION** — Specific items must be fixed (list them). Loop back to Designer.
+  `PIPELINE_VERDICT: NEEDS_REVISION`
 - **REJECT** — Fundamental issues require a redesign. Loop back to Designer with rationale.
+  `PIPELINE_VERDICT: REJECT`
+
+The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
 
 If the verdict is not APPROVE, clearly list every item the Designer must address in the next iteration.
 

@@ -24,10 +24,44 @@ error propagation), load `.cursor/skills/architecture/references/investigation-t
 
 ## Scope Resolution & Domain Loading (MANDATORY)
 
-Before starting the review:
-1. Load the domain skill: `.cursor/skills/codebase/domains/<domain>/SKILL.md`
+### Step 1: Determine File Scope
+
+If the orchestrator already provided a scoped file list, use it. Otherwise self-resolve:
+1. If explicit files/folders were passed in the command, use those.
+2. If no explicit scope: run `git diff --name-only origin/<base>...HEAD` (base = `GITHUB_BASE_REF` env var, or `main`). Use the resulting file list.
+3. If git diff fails or is empty, fall back to the full workspace.
+
+### Step 2: Resolve Domains
+
+Match each scoped file against this table (longest prefix first):
+
+| Path prefix | Domain key | Skill path |
+|-------------|------------|------------|
+| `multi-agent/` | `multi-agent` | `.cursor/skills/codebase/domains/multi-agent/SKILL.md` |
+| `rag/infrastructure/celery/` | `celery` | `.cursor/skills/codebase/domains/celery/SKILL.md` |
+| `rag/` | `rag` | `.cursor/skills/codebase/domains/rag/SKILL.md` |
+| `shared-resources/identity/` | `identity` | `.cursor/skills/codebase/domains/identity/SKILL.md` |
+| `ui/client/src/` | `ui` | `.cursor/skills/codebase/domains/ui/SKILL.md` |
+| `global_utils/` | `global-utils` | `.cursor/skills/codebase/domains/global-utils/SKILL.md` |
+| `backend/` | `backend` | `.cursor/skills/codebase/domains/backend/SKILL.md` |
+| `temporal-worker/` | `temporal-worker` | `.cursor/skills/codebase/domains/temporal-worker/SKILL.md` |
+
+Files not matching any prefix (`.github/`, `docs/`, `helm/`) have no domain — skip them.
+
+### Step 3: Scope Expansion (Python files)
+
+For each Python file in scope:
+1. Read its import statements to find PORTS (ABCs it implements or depends on)
+2. Include port definition files in the review scope
+3. Include composition root wiring (`bootstrap/` or `container.py`)
+4. Re-resolve domains for newly added files
+
+### Step 4: Load Domain Context
+
+For each resolved domain, load ONLY that domain's skill and references:
+1. Load its domain skill at the path from the table above
    (contains: routing, rules, endpoint groups, port wiring, MongoDB collections)
-2. For each component in scope, load `references/<component>.md`
+2. For each component in scope within that domain, load `references/<component>.md`
    (contains: architecture, contracts, established patterns, cross-component relationships)
    - 2a. If any loaded component reference contains an **Established Patterns** table, bind it as a suppression list — patterns listed there are pre-approved conventions. Do NOT flag them as violations. If noted at all, classify as **INFO — established pattern**.
    - 2b. If the component reference links to a **recipe** for this type of change (e.g. `add-new-node.md`), read the recipe's **Reviewer Checklist** — specifically any **"DO NOT flag"** rows. These are additional suppressions.
@@ -35,7 +69,7 @@ Before starting the review:
    port wiring, or MongoDB collections beyond what the domain SKILL.md provides,
    consult `.cursor/unifai-dev-guide/docs/services/<service>.md` at the specific section
 
-Failure to load domain context before reviewing is a failure of this phase.
+Do NOT load domains that are not in the resolved list. Failure to load domain context for resolved domains before reviewing is a failure of this phase.
 
 ## System Context Analysis (MANDATORY — do this FIRST)
 
@@ -242,9 +276,15 @@ List the specific source files you read and what claims they verified or contrad
 
 #### Verdict
 
-One of:
+State your verdict, then emit the machine-parseable line exactly as shown:
+
 - **APPROVE** — Architecture is sound, no violations found.
+  `PIPELINE_VERDICT: APPROVE`
 - **NEEDS REVISION** — Specific items must be fixed (list them).
+  `PIPELINE_VERDICT: NEEDS_REVISION`
 - **REJECT** — Fundamental architectural violations require significant rework.
+  `PIPELINE_VERDICT: REJECT`
+
+The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
 
 If the verdict is not APPROVE, clearly list every item that must be addressed.

@@ -128,24 +128,19 @@ jobs:
         if: always()
         run: python3 .github/scripts/evaluate_review_gate.py
 
-      - name: Publish Check Run
+      - name: Annotate Job Check Run
         if: always() && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GATE_OUTCOME: ${{ steps.gate.outcome }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          ARCH_VERDICT=$(sed 's/\x1b\[[0-9;]*m//g; s/\*\{1,2\}//g; s/__//g' arch_review_output.txt 2>/dev/null | grep -oP '(?:APPROVE|NEEDS REVISION|REJECT)' | head -1 || echo "UNKNOWN")
-          CODE_SCORE=$(sed 's/\x1b\[[0-9;]*m//g; s/\*\{1,2\}//g; s/__//g' code_review_output.txt 2>/dev/null | grep -oP 'Code\s+Health\s+Score\b[^\d]*\K[0-9]{1,2}(?=\s*/\s*10)' | tail -1 || echo "?")
+          ARCH_VERDICT="${{ steps.gate.outputs.arch_verdict }}"
+          CODE_SCORE="${{ steps.gate.outputs.code_score }}"
+          ARCH_VERDICT="${ARCH_VERDICT:-UNKNOWN}"
+          CODE_SCORE="${CODE_SCORE:-?}"
 
           TITLE="Architecture: ${ARCH_VERDICT} | Code: ${CODE_SCORE}/10"
-
-          if [ "$GATE_OUTCOME" = "success" ]; then
-            CONCLUSION="success"
-          else
-            CONCLUSION="failure"
-          fi
 
           {
             echo "## Architecture Review"
@@ -173,17 +168,21 @@ jobs:
 
           SUMMARY=$(cat check_run_summary.md)
 
-          jq -n \
-            --arg name "Pipeline Review" \
-            --arg sha "$PR_HEAD_SHA" \
-            --arg conclusion "$CONCLUSION" \
-            --arg title "$TITLE" \
-            --arg summary "$SUMMARY" \
-            '{
-              name: $name,
-              head_sha: $sha,
-              status: "completed",
-              conclusion: $conclusion,
-              output: { title: $title, summary: $summary }
-            }' | gh api "repos/${GH_REPOSITORY}/check-runs" \
-              -X POST --input -
+          CHECK_SUITE_ID=$(gh api "repos/${GH_REPOSITORY}/actions/runs/${RUN_ID}" --jq '.check_suite_id')
+          if [ -z "$CHECK_SUITE_ID" ]; then
+            echo "::warning::Could not resolve check suite ID for run ${RUN_ID}. Skipping annotation."
+            exit 0
+          fi
+          CHECK_RUN_ID=$(gh api "repos/${GH_REPOSITORY}/check-suites/${CHECK_SUITE_ID}/check-runs" \
+            --jq '.check_runs[] | select(.name == "run-pipeline") | .id')
+
+          if [ -n "$CHECK_RUN_ID" ]; then
+            jq -n \
+              --arg title "$TITLE" \
+              --arg summary "$SUMMARY" \
+              '{ output: { title: $title, summary: $summary } }' \
+              | gh api "repos/${GH_REPOSITORY}/check-runs/${CHECK_RUN_ID}" \
+                  -X PATCH --input -
+          else
+            echo "::warning::Could not find check run for job 'run-pipeline' in check suite ${CHECK_SUITE_ID}. Skipping annotation."
+          fi
