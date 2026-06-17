@@ -9,6 +9,7 @@ class HintType(Enum):
     VALIDATE = "validate" 
     HIDDEN = "hidden"
     SECRET = "secret"
+    FILE_UPLOAD = "file_upload"
 
 
 class SelectionType(Enum):
@@ -264,7 +265,52 @@ class ConditionalHint(BaseModel):
         }
 
 
-def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint]) -> Dict[str, Any]:
+class FileUploadHint(BaseModel):
+    """
+    Hint to render a file-picker input instead of a text field.
+
+    The UI reads this hint and renders a ``FileUpload`` component that
+    lets the user select a local file.  The file content is POSTed to
+    ``upload_endpoint`` for server-side validation, and the cleaned
+    string content is stored in the form field.
+
+    Example::
+
+        json_schema_extra=combine_hints(
+            FileUploadHint(accept=".pem,.crt,.key"),
+            SecretHint(),
+        )
+    """
+    hint_type: HintType = Field(default=HintType.FILE_UPLOAD)
+    accept: str = Field(
+        default=".pem,.crt,.key",
+        description="Comma-separated file extensions for the OS file picker",
+    )
+    max_size_bytes: int = Field(
+        default=16384,
+        description="Maximum file size in bytes",
+    )
+    upload_endpoint: str = Field(
+        default="/resources/resource.upload-file",
+        description="Backend endpoint for file upload + validation",
+    )
+    validate_format: str = Field(
+        default="pem",
+        description="Server-side format validation to apply (e.g. 'pem')",
+    )
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        return super().model_dump(**kwargs)
+
+    def to_hints(self) -> Dict[str, Any]:
+        return {
+            "hints": {
+                "file_upload": self.model_dump()
+            }
+        }
+
+
+def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, FileUploadHint]) -> Dict[str, Any]:
     """
     Combine multiple hints into a single json_schema_extra structure.
     

@@ -4,6 +4,7 @@ from mas.elements.tools.ssh_exec.config import SshExecToolConfig
 from mas.elements.tools.mcp_proxy.config import McpProxyToolConfig
 from mas.elements.tools.oc_exec.config import OcExecToolConfig
 from mas.elements.tools.web_fetch.config import WebFetchToolConfig
+from mas.elements.tools.sandbox_exec.config import SandboxExecToolConfig
 
 ToolsSpec = Annotated[
     Union[
@@ -11,6 +12,7 @@ ToolsSpec = Annotated[
         McpProxyToolConfig,
         OcExecToolConfig,
         WebFetchToolConfig,
+        SandboxExecToolConfig,
     ],
     Field(discriminator="type")
 ]

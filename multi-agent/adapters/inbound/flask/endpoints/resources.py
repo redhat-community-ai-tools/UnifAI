@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, jsonify, current_app, request
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
@@ -6,6 +6,13 @@ from mas.resources.errors import ResourceInUseError
 from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
 
 resources_bp = Blueprint("resources", __name__)
+
+_MAX_UPLOAD_BYTES = 16384
+
+
+def _validate_pem(content: str) -> bool:
+    """Check that content contains at least one valid PEM block."""
+    return "-----BEGIN " in content and "-----END " in content
 
 
 @resources_bp.route("/resource.save", methods=["POST"])
@@ -301,3 +308,54 @@ def validate_config(category, type, config, name=None, timeout_seconds=10.0):
         return jsonify({"error": str(e)}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@resources_bp.route("/resource.upload-file", methods=["POST"])
+@with_authenticated_user
+def upload_resource_file(authenticated_user):
+    """Upload a file, validate its format, and return cleaned content as a string.
+
+    Accepts multipart/form-data with:
+    - file: the uploaded file
+    - format: validation format to apply (default: "pem")
+
+    Returns JSON with the cleaned file content so it can be stored
+    inline as a config field value.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided", "format_valid": False}), 400
+
+    uploaded = request.files["file"]
+    fmt = request.form.get("format", "pem")
+
+    raw_bytes = uploaded.read()
+    if len(raw_bytes) > _MAX_UPLOAD_BYTES:
+        return jsonify({
+            "error": f"File too large ({len(raw_bytes)} bytes). Maximum is {_MAX_UPLOAD_BYTES} bytes.",
+            "format_valid": False,
+        }), 400
+
+    try:
+        content = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return jsonify({
+            "error": "File is not valid UTF-8 text. Only text-based files are accepted.",
+            "format_valid": False,
+        }), 400
+
+    content = content.replace("\r\n", "\n").rstrip()
+
+    format_valid = True
+    if fmt == "pem":
+        if not _validate_pem(content):
+            return jsonify({
+                "error": "Invalid PEM format: file must contain -----BEGIN and -----END markers.",
+                "format_valid": False,
+            }), 400
+
+    return jsonify({
+        "content": content,
+        "filename": uploaded.filename or "uploaded_file",
+        "size_bytes": len(raw_bytes),
+        "format_valid": format_valid,
+    }), 200

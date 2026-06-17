@@ -23,13 +23,14 @@ mongo = ["pymongo"]
 temporal = ["temporalio"]
 langgraph = ["langgraph", "langchain", "langchain-core", "deepagents"]
 llms = ["openai", "langchain-openai", "langchain-google-genai"]
-tools = ["paramiko", "openshift-client", "mcp", "httptools", "safehttpx", "html-to-markdown", "yarl", "anyio", "authlib"]
+tools = ["paramiko", "openshift-client", "mcp", "httptools", "safehttpx", "html-to-markdown", "yarl", "anyio", "authlib", "grpcio>=1.60"]
+sandbox = ["openshell>=0.0.59; python_version>='3.12'", "grpcio>=1.60"]
 a2a = ["a2a-sdk[all]<1.0", "typing-inspection"]
 claude = ["claude-agent-sdk>=0.2.0", "anthropic[vertex]>=0.40.0"]
 rag = ["jsonschema"]
 redis = ["redis"]
 all = [
-    "mas[flask,mongo,temporal,langgraph,llms,tools,a2a,claude,rag,redis]",
+    "mas[flask,mongo,temporal,langgraph,llms,tools,sandbox,a2a,claude,rag,redis]",
 ]
 test = ["pytest>=6.0"]
 
