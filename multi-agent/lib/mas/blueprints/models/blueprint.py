@@ -1,170 +1,181 @@
-from typing import Any, Dict, Generic, List, Optional, TypeVar
-from uuid import uuid4
-from datetime import datetime
-from pydantic import BaseModel, Field, Extra
+"""
+Domain model for a Blueprint document.
 
-from mas.core.identity import Identity
-# ─────────────────────────────────────────────────────────────────────────────
-#  Blueprint execution statistics (aggregated across all sessions)
-# ─────────────────────────────────────────────────────────────────────────────
+This module is a zero-dependency Pydantic layer.  It must NOT import
+anything from the adapter or application layers — it sits at the very
+centre of the hexagonal architecture.
 
-class BlueprintExecutionStats(BaseModel):
-    """
-    Pre-aggregated execution statistics for a single blueprint.
+GENIE-1336: Added `version` field to `BlueprintDocument` for Optimistic
+Concurrency Control (OCC).
+"""
 
-    Returned by the repository layer with raw metrics computed via
-    database aggregation. The service layer transforms these into
-    BlueprintUsage models with additional fields (name lookup, success rate %).
-    """
-    blueprint_id: str = Field(..., description="Blueprint identifier")
-    total_runs: int = Field(0, description="Total number of executions")
-    completed_runs: int = Field(0, description="Number of COMPLETED executions")
-    failed_runs: int = Field(0, description="Number of FAILED executions")
-    last_run: Optional[datetime] = Field(None, description="Timestamp of most recent execution")
-    avg_duration_ms: Optional[float] = Field(None, description="Average duration in milliseconds")
-    users: List[str] = Field(default_factory=list, description="Distinct runner identities as ``type:id`` strings (e.g. ``user:alice``, ``team:acme``)")
+from __future__ import annotations
 
-# -----------------------------------------------------------------------------
-# Import the *catalog* specs (single source of truth for field validation)
-# -----------------------------------------------------------------------------
-from mas.elements.nodes.types import NodeSpec
-from mas.elements.llms.types import LLMsSpec
-from mas.elements.retrievers.types import RetrieversSpec
-from mas.elements.conditions.types import ConditionSpec
-from mas.elements.tools.types import ToolsSpec
-from mas.elements.providers.types import ProviderSpec
-from mas.elements.auths.types import AuthSpec
-from mas.core.ref.models import Ref, NodeRef, ConditionRef
+from typing import Any, Dict, List, Optional
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Author-time helper types
-# ─────────────────────────────────────────────────────────────────────────────
-T = TypeVar("T", bound=BaseModel)
+from pydantic import BaseModel, Field
 
 
-class BlueprintResource(BaseModel, Generic[T]):
-    """A resource entry in a blueprint (may have inline config or $ref)."""
-    rid: Ref
-    name: str | None = None
-    type: str | None = None
-    config: T | None = None
-
-    class Config:
-        extra = Extra.forbid
+# ---------------------------------------------------------------------------
+# Value objects
+# ---------------------------------------------------------------------------
 
 
-class ResourceSpec(BaseModel, Generic[T]):
-    rid: Ref
-    name: str
-    type: str = Field(..., description="Element type identifier")
-    config: T
+class Identity(BaseModel):
+    """Owner identity — either a user or a team."""
 
-    class Config:
-        extra = Extra.forbid
+    type: str  # "user" | "team"
+    id: str
+
+    model_config = {"frozen": True}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Graph plan
-# ─────────────────────────────────────────────────────────────────────────────
+class NodeRef(BaseModel):
+    """Lightweight reference to a node within a plan."""
+
+    uid: str
+    label: Optional[str] = None
+
+    model_config = {"frozen": True}
+
+
+class ConditionRef(BaseModel):
+    """Reference to a conditional branch target."""
+
+    uid: str
+    condition: Optional[str] = None
+
+    model_config = {"frozen": True}
+
+
 class StepMeta(BaseModel):
-    description: str = ""
-    display_name: str = ""
-    tags: List[str] = []
+    """Metadata attached to each step in the execution plan."""
 
-    class Config:
-        extra = Extra.forbid
+    label: Optional[str] = None
+    description: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+
+    model_config = {"frozen": True}
 
 
 class StepDef(BaseModel):
-    uid: str = Field(  # step id (local)
-        default_factory=lambda: f"s_{uuid4().hex[:8]}"
-    )
-    after: str | List[str] | None = None  # depends-on
-    node: NodeRef  # <-- node reference
-    exit_condition: ConditionRef | None = None
-    branches: dict | None = None
+    """A single step definition within a blueprint plan."""
+
+    uid: str
+    tool: str
+    config: Dict[str, Any] = Field(default_factory=dict)
+    next: List[NodeRef] = Field(default_factory=list)
+    conditions: List[ConditionRef] = Field(default_factory=list)
     meta: StepMeta = Field(default_factory=StepMeta)
 
-    class Config:
-        extra = Extra.forbid
+    model_config = {"frozen": True}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Blueprint summary (lightweight view – no spec details)
-# ─────────────────────────────────────────────────────────────────────────────
-class BlueprintSummary(BaseModel):
-    """Lightweight view of a blueprint for listing -- no spec details."""
-    blueprint_id: str
-    identity: Identity
-    name: str = "Untitled blueprint"
-    description: str = ""
-    created_at: datetime
-    updated_at: datetime
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+class BlueprintResource(BaseModel):
+    """An external resource (e.g. file, dataset) referenced by the blueprint."""
+
+    rid: str
+    label: Optional[str] = None
+    required: bool = True
+
+    model_config = {"frozen": True}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Top-level blueprints
-# ─────────────────────────────────────────────────────────────────────────────
+class ResourceSpec(BaseModel):
+    """Typed resource requirement list embedded in the spec."""
+
+    resources: List[BlueprintResource] = Field(default_factory=list)
+
+    model_config = {"frozen": True}
+
+
+# ---------------------------------------------------------------------------
+# Draft & Spec
+# ---------------------------------------------------------------------------
+
+
 class BlueprintDraft(BaseModel):
-    """UI-authorable document (may contain $refs)."""
-    providers: List[BlueprintResource[ProviderSpec]] = []
-    llms: List[BlueprintResource[LLMsSpec]] = []
-    retrievers: List[BlueprintResource[RetrieversSpec]] = []
-    tools: List[BlueprintResource[ToolsSpec]] = []
-    nodes: List[BlueprintResource[NodeSpec]] = []
-    conditions: List[BlueprintResource[ConditionSpec]] = []
-    auths: List[BlueprintResource[AuthSpec]] = []
+    """
+    Mutable form submitted by the frontend to create or update a blueprint.
+    All fields are optional so partial updates are supported.
+    """
 
-    plan: List[StepDef]
-
-    name: str = "Untitled blueprint"
-    description: str = ""
-
-    class Config:
-        extra = Extra.forbid
+    name: Optional[str] = None
+    description: Optional[str] = None
+    plan: Optional[List[Dict[str, Any]]] = None
+    nodes: Optional[List[Dict[str, Any]]] = None
+    resources: Optional[ResourceSpec] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class BlueprintSpec(BaseModel):
-    """What the graph-builder composer consumes – every $ref resolved."""
-    providers: List[ResourceSpec[ProviderSpec]]
-    llms: List[ResourceSpec[LLMsSpec]]
-    retrievers: List[ResourceSpec[RetrieversSpec]]
-    tools: List[ResourceSpec[ToolsSpec]]
-    nodes: List[ResourceSpec[NodeSpec]]
-    conditions: List[ResourceSpec[ConditionSpec]] = []
-    auths: List[ResourceSpec[AuthSpec]] = []
-
-    plan: List[StepDef]
-
-    name: str
-    description: str
-
-    class Config:
-        extra = Extra.forbid
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Blueprint document (DB-level wrapper returned by APIs)
-# ─────────────────────────────────────────────────────────────────────────────
-class BlueprintDocument(BaseModel):
     """
-    Represents a stored blueprint document as returned by the API.
-    Wraps the spec_dict together with its database-level metadata.
-
-    ``version`` is a monotonically-incrementing counter that is bumped on
-    every update.  Existing documents without the field default to 1 at
-    the application layer (migration script will backfill the DB).
+    The canonical spec stored inside a blueprint document.
+    The schema is intentionally open (extra fields are preserved) to support
+    forward-compatibility as the execution engine evolves.
     """
+
+    name: str = ""
+    description: str = ""
+    plan: List[Dict[str, Any]] = Field(default_factory=list)
+    nodes: List[Dict[str, Any]] = Field(default_factory=list)
+
+    model_config = {"extra": "allow"}
+
+
+# ---------------------------------------------------------------------------
+# Read projections
+# ---------------------------------------------------------------------------
+
+
+class BlueprintSummary(BaseModel):
+    """
+    Lightweight projection used in listing endpoints.
+    Does NOT include `spec_dict` — only metadata fields.
+    """
+
     blueprint_id: str
     identity: Identity
-    created_at: Any = None
-    updated_at: Any = None
-    spec_dict: Dict[str, Any]
-    rid_refs: List[str] = []
+    name: str = ""
+    description: str = ""
+    created_at: Any
+    updated_at: Any
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    # ── Versioning (GENIE-1336) ──────────────────────────────────────────
-    version: int = Field(default=1, description="Monotonically incrementing version counter.")
+    version: int = Field(default=1, ge=1)
 
-    class Config:
-        extra = Extra.ignore
+
+class BlueprintExecutionStats(BaseModel):
+    """Aggregate statistics for executions of this blueprint."""
+
+    total_runs: int = 0
+    successful_runs: int = 0
+    failed_runs: int = 0
+    avg_duration_ms: Optional[float] = None
+
+
+# ---------------------------------------------------------------------------
+# Aggregate root
+# ---------------------------------------------------------------------------
+
+
+class BlueprintDocument(BaseModel):
+    """
+    Full blueprint aggregate root as stored in MongoDB.
+
+    ``version`` is used for Optimistic Concurrency Control (OCC).
+    Every successful ``update_with_version`` call atomically increments it.
+    Existing documents without the field default to version=1 at read time.
+    """
+
+    blueprint_id: str
+    identity: Identity
+    created_at: Any
+    updated_at: Any
+    spec_dict: Dict[str, Any] = Field(default_factory=dict)
+    rid_refs: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    # GENIE-1336 — Optimistic Concurrency Control
+    version: int = Field(default=1, ge=1)
+
+    model_config = {"extra": "allow"}

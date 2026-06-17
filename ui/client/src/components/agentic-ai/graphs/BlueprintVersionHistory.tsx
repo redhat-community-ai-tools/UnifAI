@@ -1,603 +1,556 @@
 /**
- * BlueprintVersionHistory — GENIE-1336
+ * BlueprintVersionHistory
  *
- * Renders the full version history for a single blueprint:
- *  - Paginated table of version summaries (newest first)
- *  - Drawer for previewing a specific version's spec snapshot
- *  - AlertDialog for confirming a rollback / restore
+ * Displays the version history of a single blueprint with "Preview" and
+ * "Restore" actions on each row.
  *
- * All interactive elements have `data-testid` attributes so QE automation
- * can target them without relying on CSS class names or text content.
+ * Accessibility & testability
+ * ---------------------------
+ * Every interactive element carries a ``data-testid`` attribute so the
+ * QE automation suite can reliably locate them without relying on fragile
+ * CSS selectors or text content.
+ *
+ * GENIE-1336
  */
 
-import React, { useState, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { History, Eye, RotateCcw, ChevronLeft, ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
-
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-} from '@/components/ui/drawer';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
-
-import {
+  BlueprintApiError,
+  BlueprintVersionDetail,
+  BlueprintVersionSummary,
+  PaginatedVersionsResponse,
+  getBlueprintVersion,
   listBlueprintVersions,
-  loadBlueprintVersion,
   restoreBlueprintVersion,
-  VersionSummary,
-  VersionDetail,
-} from '@/api/blueprints';
+} from "../api/blueprints";
 
-// ── Constants ──────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-const DEFAULT_PAGE_SIZE = 20;
+type Status = "idle" | "loading" | "error";
 
-// ── Helper functions ───────────────────────────────────────────────────────────
+interface Props {
+  /** The blueprint whose version history is displayed. */
+  blueprintId: string;
+  /**
+   * Called after a successful restore so the parent can refresh its state
+   * (e.g. reload the live spec into the editor).
+   */
+  onRestoreSuccess?: (restoredFromVersion: number) => void;
+  /** Number of items per page (default 10). */
+  pageSize?: number;
+}
 
-/**
- * Format an ISO-8601 timestamp as a locale-aware short date+time string.
- * Falls back gracefully if the input is invalid.
- */
-function formatTimestamp(iso: string): string {
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+/** Displays the spec_dict_snapshot of a single version in a read-only modal. */
+function VersionPreviewModal({
+  detail,
+  onClose,
+}: {
+  detail: BlueprintVersionDetail;
+  onClose: () => void;
+}) {
+  const formatted = JSON.stringify(detail.spec_dict_snapshot, null, 2);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Preview of version ${detail.version}`}
+      data-testid="version-preview-modal"
+      style={overlayStyle}
+      onClick={onClose}
+    >
+      <div
+        style={modalStyle}
+        onClick={(e) => e.stopPropagation()} // prevent closing on inner click
+      >
+        <header style={modalHeaderStyle}>
+          <h2 style={{ margin: 0 }} data-testid="preview-modal-title">
+            Version {detail.version} Preview
+          </h2>
+          <button
+            aria-label="Close preview"
+            data-testid="preview-modal-close"
+            onClick={onClose}
+            style={closeButtonStyle}
+          >
+            ✕
+          </button>
+        </header>
+
+        <dl style={metaListStyle}>
+          <dt>Created by</dt>
+          <dd data-testid="preview-created-by">{detail.created_by || "—"}</dd>
+          <dt>Created at</dt>
+          <dd data-testid="preview-created-at">{formatDate(detail.created_at)}</dd>
+          {detail.change_summary && (
+            <>
+              <dt>Change summary</dt>
+              <dd data-testid="preview-change-summary">{detail.change_summary}</dd>
+            </>
+          )}
+        </dl>
+
+        <pre
+          data-testid="preview-spec-snapshot"
+          style={preStyle}
+          aria-label="Spec dict snapshot"
+        >
+          {formatted}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+/** A single row in the version-history table. */
+function VersionRow({
+  item,
+  onPreview,
+  onRestore,
+  isRestoring,
+}: {
+  item: BlueprintVersionSummary;
+  onPreview: (version: number) => void;
+  onRestore: (version: number) => void;
+  isRestoring: boolean;
+}) {
+  return (
+    <tr data-testid={`version-row-${item.version}`}>
+      <td data-testid={`version-number-${item.version}`}>{item.version}</td>
+      <td data-testid={`version-created-at-${item.version}`}>{formatDate(item.created_at)}</td>
+      <td data-testid={`version-created-by-${item.version}`}>{item.created_by || "—"}</td>
+      <td data-testid={`version-summary-${item.version}`}>{item.change_summary || "—"}</td>
+      <td>
+        <button
+          data-testid={`preview-btn-${item.version}`}
+          aria-label={`Preview version ${item.version}`}
+          onClick={() => onPreview(item.version)}
+          style={actionButtonStyle}
+          disabled={isRestoring}
+        >
+          Preview
+        </button>
+        <button
+          data-testid={`restore-btn-${item.version}`}
+          aria-label={`Restore to version ${item.version}`}
+          onClick={() => onRestore(item.version)}
+          style={{ ...actionButtonStyle, ...restoreButtonExtraStyle }}
+          disabled={isRestoring}
+        >
+          {isRestoring ? "Restoring…" : "Restore"}
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export function BlueprintVersionHistory({
+  blueprintId,
+  onRestoreSuccess,
+  pageSize = 10,
+}: Props) {
+  const [page, setPage] = useState(1);
+  const [response, setResponse] = useState<PaginatedVersionsResponse | null>(null);
+  const [status, setStatus] = useState<Status>("idle");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Preview state
+  const [previewDetail, setPreviewDetail] = useState<BlueprintVersionDetail | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  // Restore state
+  const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
+  const [restoreConfirm, setRestoreConfirm] = useState<number | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  // ------------------------------------------------------------------
+  // Data fetching
+  // ------------------------------------------------------------------
+
+  const fetchVersions = useCallback(async () => {
+    setStatus("loading");
+    setErrorMessage(null);
+    try {
+      const data = await listBlueprintVersions(blueprintId, page, pageSize);
+      setResponse(data);
+      setStatus("idle");
+    } catch (err) {
+      const message =
+        err instanceof BlueprintApiError ? err.message : "Failed to load version history.";
+      setErrorMessage(message);
+      setStatus("error");
+    }
+  }, [blueprintId, page, pageSize]);
+
+  useEffect(() => {
+    fetchVersions();
+  }, [fetchVersions]);
+
+  // ------------------------------------------------------------------
+  // Preview handlers
+  // ------------------------------------------------------------------
+
+  const handlePreview = useCallback(
+    async (version: number) => {
+      setPreviewLoading(true);
+      setPreviewError(null);
+      setPreviewDetail(null);
+      try {
+        const detail = await getBlueprintVersion(blueprintId, version);
+        setPreviewDetail(detail);
+      } catch (err) {
+        const message =
+          err instanceof BlueprintApiError ? err.message : "Failed to load version preview.";
+        setPreviewError(message);
+      } finally {
+        setPreviewLoading(false);
+      }
+    },
+    [blueprintId],
+  );
+
+  const handleClosePreview = useCallback(() => {
+    setPreviewDetail(null);
+    setPreviewError(null);
+  }, []);
+
+  // ------------------------------------------------------------------
+  // Restore handlers
+  // ------------------------------------------------------------------
+
+  const handleRestoreClick = useCallback((version: number) => {
+    setRestoreConfirm(version);
+    setRestoreError(null);
+  }, []);
+
+  const handleRestoreConfirm = useCallback(async () => {
+    if (restoreConfirm === null) return;
+    const targetVersion = restoreConfirm;
+    setRestoreConfirm(null);
+    setRestoringVersion(targetVersion);
+    setRestoreError(null);
+
+    try {
+      await restoreBlueprintVersion(blueprintId, targetVersion);
+      onRestoreSuccess?.(targetVersion);
+      // Refresh the list after restore — a new snapshot was created
+      await fetchVersions();
+    } catch (err) {
+      const message =
+        err instanceof BlueprintApiError
+          ? err.message
+          : `Failed to restore version ${targetVersion}.`;
+      setRestoreError(message);
+    } finally {
+      setRestoringVersion(null);
+    }
+  }, [blueprintId, restoreConfirm, onRestoreSuccess, fetchVersions]);
+
+  const handleRestoreCancel = useCallback(() => {
+    setRestoreConfirm(null);
+  }, []);
+
+  // ------------------------------------------------------------------
+  // Pagination
+  // ------------------------------------------------------------------
+
+  const totalPages = response?.total_pages ?? 1;
+  const hasPrev = page > 1;
+  const hasNext = page < totalPages;
+
+  // ------------------------------------------------------------------
+  // Render
+  // ------------------------------------------------------------------
+
+  return (
+    <section
+      data-testid="blueprint-version-history"
+      aria-label="Blueprint version history"
+      style={sectionStyle}
+    >
+      <h2 style={{ marginTop: 0 }}>Version History</h2>
+
+      {/* ---- Global errors ---- */}
+      {status === "error" && errorMessage && (
+        <div role="alert" data-testid="version-history-error" style={errorBoxStyle}>
+          {errorMessage}
+          <button
+            data-testid="retry-btn"
+            onClick={fetchVersions}
+            style={{ marginLeft: 12 }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {restoreError && (
+        <div role="alert" data-testid="restore-error" style={errorBoxStyle}>
+          {restoreError}
+        </div>
+      )}
+
+      {previewError && (
+        <div role="alert" data-testid="preview-error" style={errorBoxStyle}>
+          {previewError}
+        </div>
+      )}
+
+      {/* ---- Restore confirmation dialog ---- */}
+      {restoreConfirm !== null && (
+        <div role="alertdialog" aria-modal="true" data-testid="restore-confirm-dialog" style={confirmBoxStyle}>
+          <p>
+            Restore blueprint to <strong>version {restoreConfirm}</strong>? The current state
+            will be saved as a new snapshot first.
+          </p>
+          <button
+            data-testid="restore-confirm-btn"
+            onClick={handleRestoreConfirm}
+            style={{ ...actionButtonStyle, ...restoreButtonExtraStyle, marginRight: 8 }}
+          >
+            Confirm Restore
+          </button>
+          <button
+            data-testid="restore-cancel-btn"
+            onClick={handleRestoreCancel}
+            style={actionButtonStyle}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* ---- Loading indicator ---- */}
+      {status === "loading" && (
+        <p data-testid="version-history-loading" aria-live="polite">
+          Loading version history…
+        </p>
+      )}
+
+      {previewLoading && (
+        <p data-testid="preview-loading" aria-live="polite">
+          Loading preview…
+        </p>
+      )}
+
+      {/* ---- Version table ---- */}
+      {response && response.items.length === 0 && status !== "loading" && (
+        <p data-testid="no-versions-message">No version history available yet.</p>
+      )}
+
+      {response && response.items.length > 0 && (
+        <>
+          <table
+            data-testid="version-history-table"
+            style={tableStyle}
+            aria-label="Blueprint versions"
+          >
+            <thead>
+              <tr>
+                <th scope="col">Version</th>
+                <th scope="col">Date</th>
+                <th scope="col">Author</th>
+                <th scope="col">Summary</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {response.items.map((item) => (
+                <VersionRow
+                  key={item.version}
+                  item={item}
+                  onPreview={handlePreview}
+                  onRestore={handleRestoreClick}
+                  isRestoring={restoringVersion === item.version}
+                />
+              ))}
+            </tbody>
+          </table>
+
+          {/* ---- Pagination controls ---- */}
+          <nav aria-label="Version history pagination" style={paginationStyle}>
+            <button
+              data-testid="pagination-prev"
+              aria-label="Previous page"
+              onClick={() => setPage((p) => p - 1)}
+              disabled={!hasPrev || status === "loading"}
+              style={pageButtonStyle}
+            >
+              ‹ Prev
+            </button>
+
+            <span data-testid="pagination-info" style={{ padding: "0 12px" }}>
+              Page {response.page} of {response.total_pages} ({response.total} version
+              {response.total !== 1 ? "s" : ""})
+            </span>
+
+            <button
+              data-testid="pagination-next"
+              aria-label="Next page"
+              onClick={() => setPage((p) => p + 1)}
+              disabled={!hasNext || status === "loading"}
+              style={pageButtonStyle}
+            >
+              Next ›
+            </button>
+          </nav>
+        </>
+      )}
+
+      {/* ---- Preview modal ---- */}
+      {previewDetail && (
+        <VersionPreviewModal detail={previewDetail} onClose={handleClosePreview} />
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
+function formatDate(iso: string): string {
   try {
     return new Intl.DateTimeFormat(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
     }).format(new Date(iso));
   } catch {
     return iso;
   }
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Inline styles (kept minimal; replace with CSS modules/Tailwind as needed)
+// ---------------------------------------------------------------------------
 
-interface EmptyStateProps {
-  message: string;
-}
-
-const EmptyState: React.FC<EmptyStateProps> = ({ message }) => (
-  <div
-    data-testid="blueprint-version-history-empty"
-    className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2"
-  >
-    <History className="w-10 h-10 opacity-30" />
-    <p className="text-sm">{message}</p>
-  </div>
-);
-
-interface ErrorStateProps {
-  message: string;
-}
-
-const ErrorState: React.FC<ErrorStateProps> = ({ message }) => (
-  <div
-    data-testid="blueprint-version-history-error"
-    className="flex items-center gap-2 p-4 rounded-md border border-destructive/50 text-destructive text-sm"
-  >
-    <AlertCircle className="w-4 h-4 shrink-0" />
-    <span>{message}</span>
-  </div>
-);
-
-// ── Preview Drawer ─────────────────────────────────────────────────────────────
-
-interface PreviewDrawerProps {
-  blueprintId: string;
-  versionNumber: number | null;
-  open: boolean;
-  onClose: () => void;
-}
-
-const PreviewDrawer: React.FC<PreviewDrawerProps> = ({
-  blueprintId,
-  versionNumber,
-  open,
-  onClose,
-}) => {
-  const { data, isLoading, isError } = useQuery<VersionDetail>({
-    queryKey: ['blueprint-version-detail', blueprintId, versionNumber],
-    queryFn: () => loadBlueprintVersion(blueprintId, versionNumber!),
-    enabled: open && versionNumber !== null,
-    staleTime: 5 * 60_000,
-  });
-
-  return (
-    <Drawer open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DrawerContent
-        data-testid="blueprint-version-preview-drawer"
-        className="max-h-[90vh]"
-      >
-        <DrawerHeader>
-          <DrawerTitle data-testid="blueprint-version-preview-title">
-            Version {versionNumber} — Spec Preview
-          </DrawerTitle>
-          {data && (
-            <DrawerDescription data-testid="blueprint-version-preview-meta">
-              Created by <strong>{data.created_by || 'Unknown'}</strong> on{' '}
-              {formatTimestamp(data.created_at)}
-              {data.change_summary && (
-                <> &mdash; {data.change_summary}</>
-              )}
-            </DrawerDescription>
-          )}
-        </DrawerHeader>
-
-        <div className="px-4 pb-4 flex-1 overflow-hidden">
-          {isLoading && (
-            <div
-              data-testid="blueprint-version-preview-loading"
-              className="flex items-center justify-center py-12"
-            >
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-            </div>
-          )}
-
-          {isError && (
-            <ErrorState message="Failed to load version snapshot. Please try again." />
-          )}
-
-          {data && !isLoading && (
-            <ScrollArea
-              data-testid="blueprint-version-preview-scroll"
-              className="h-[55vh] rounded-md border"
-            >
-              <pre
-                data-testid="blueprint-version-preview-content"
-                className="p-4 text-xs font-mono leading-relaxed whitespace-pre-wrap break-all"
-              >
-                {JSON.stringify(data.spec_dict_snapshot, null, 2)}
-              </pre>
-            </ScrollArea>
-          )}
-        </div>
-
-        <DrawerFooter>
-          <DrawerClose asChild>
-            <Button
-              variant="outline"
-              data-testid="blueprint-version-preview-close-btn"
-              onClick={onClose}
-            >
-              Close
-            </Button>
-          </DrawerClose>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
-  );
+const sectionStyle: React.CSSProperties = {
+  fontFamily: "system-ui, sans-serif",
+  padding: "16px",
+  maxWidth: 900,
 };
 
-// ── Restore Confirmation Dialog ────────────────────────────────────────────────
-
-interface RestoreDialogProps {
-  versionNumber: number | null;
-  open: boolean;
-  isPending: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}
-
-const RestoreDialog: React.FC<RestoreDialogProps> = ({
-  versionNumber,
-  open,
-  isPending,
-  onConfirm,
-  onCancel,
-}) => (
-  <AlertDialog open={open}>
-    <AlertDialogContent data-testid="blueprint-version-restore-dialog">
-      <AlertDialogHeader>
-        <AlertDialogTitle data-testid="blueprint-version-restore-dialog-title">
-          Restore to Version {versionNumber}?
-        </AlertDialogTitle>
-        <AlertDialogDescription data-testid="blueprint-version-restore-dialog-description">
-          This will replace the current live blueprint spec with the content
-          from version {versionNumber}. The current state will be saved as a new
-          version so you can always roll back again. This action cannot be
-          undone in a single click.
-        </AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel
-          data-testid="blueprint-version-restore-cancel-btn"
-          onClick={onCancel}
-          disabled={isPending}
-        >
-          Cancel
-        </AlertDialogCancel>
-        <AlertDialogAction
-          data-testid="blueprint-version-restore-confirm-btn"
-          onClick={onConfirm}
-          disabled={isPending}
-          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-        >
-          {isPending ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Restoring…
-            </>
-          ) : (
-            <>
-              <RotateCcw className="w-4 h-4 mr-2" />
-              Restore
-            </>
-          )}
-        </AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
-);
-
-// ── Main Component ─────────────────────────────────────────────────────────────
-
-export interface BlueprintVersionHistoryProps {
-  /** The blueprint whose version history to display. */
-  blueprintId: string;
-  /**
-   * Optional callback fired after a successful restore so the parent can
-   * refresh its own blueprint data.
-   */
-  onRestoreSuccess?: (restoredToVersion: number) => void;
-}
-
-/**
- * Full-featured version history panel for a single blueprint.
- *
- * @example
- * ```tsx
- * <BlueprintVersionHistory
- *   blueprintId="abc-123"
- *   onRestoreSuccess={(v) => console.log('Restored to', v)}
- * />
- * ```
- */
-const BlueprintVersionHistory: React.FC<BlueprintVersionHistoryProps> = ({
-  blueprintId,
-  onRestoreSuccess,
-}) => {
-  const queryClient = useQueryClient();
-
-  // ── Pagination state ──────────────────────────────────────────────────────
-  const [page, setPage] = useState(1);
-
-  // ── Preview drawer state ──────────────────────────────────────────────────
-  const [previewVersion, setPreviewVersion] = useState<number | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
-
-  // ── Restore dialog state ──────────────────────────────────────────────────
-  const [restoreVersion, setRestoreVersion] = useState<number | null>(null);
-  const [restoreOpen, setRestoreOpen] = useState(false);
-
-  // ── Success / error toast state ───────────────────────────────────────────
-  const [statusMessage, setStatusMessage] = useState<{
-    type: 'success' | 'error';
-    text: string;
-  } | null>(null);
-
-  // ── Data fetching ─────────────────────────────────────────────────────────
-
-  const {
-    data: versionList,
-    isLoading,
-    isError,
-    error,
-  } = useQuery({
-    queryKey: ['blueprint-versions', blueprintId, page, DEFAULT_PAGE_SIZE],
-    queryFn: () => listBlueprintVersions(blueprintId, page, DEFAULT_PAGE_SIZE),
-    staleTime: 30_000,
-    enabled: Boolean(blueprintId),
-  });
-
-  // ── Restore mutation ──────────────────────────────────────────────────────
-
-  const restoreMutation = useMutation({
-    mutationFn: (versionNumber: number) =>
-      restoreBlueprintVersion(blueprintId, versionNumber),
-    onSuccess: (data) => {
-      setRestoreOpen(false);
-      setRestoreVersion(null);
-      setStatusMessage({
-        type: 'success',
-        text: `Blueprint successfully restored to version ${data.restored_to_version}.`,
-      });
-      // Invalidate the version list so the new version snapshot appears.
-      queryClient.invalidateQueries({
-        queryKey: ['blueprint-versions', blueprintId],
-      });
-      onRestoreSuccess?.(data.restored_to_version);
-      // Clear the status message after 5 s.
-      setTimeout(() => setStatusMessage(null), 5000);
-    },
-    onError: (err: Error) => {
-      setRestoreOpen(false);
-      const msg = err.message.includes('409')
-        ? 'The blueprint was modified by another user. Please refresh and try again.'
-        : `Restore failed: ${err.message}`;
-      setStatusMessage({ type: 'error', text: msg });
-      setTimeout(() => setStatusMessage(null), 8000);
-    },
-  });
-
-  // ── Event handlers ────────────────────────────────────────────────────────
-
-  const handlePreview = useCallback((versionNumber: number) => {
-    setPreviewVersion(versionNumber);
-    setPreviewOpen(true);
-  }, []);
-
-  const handleClosePreview = useCallback(() => {
-    setPreviewOpen(false);
-    // Keep previewVersion until drawer animation finishes.
-    setTimeout(() => setPreviewVersion(null), 300);
-  }, []);
-
-  const handleRestoreClick = useCallback((versionNumber: number) => {
-    setRestoreVersion(versionNumber);
-    setRestoreOpen(true);
-  }, []);
-
-  const handleRestoreConfirm = useCallback(() => {
-    if (restoreVersion !== null) {
-      restoreMutation.mutate(restoreVersion);
-    }
-  }, [restoreVersion, restoreMutation]);
-
-  const handleRestoreCancel = useCallback(() => {
-    setRestoreOpen(false);
-    setRestoreVersion(null);
-  }, []);
-
-  // ── Render ────────────────────────────────────────────────────────────────
-
-  const totalPages = versionList?.total_pages ?? 1;
-  const hasPrev = page > 1;
-  const hasNext = page < totalPages;
-
-  return (
-    <div
-      data-testid="blueprint-version-history"
-      className="flex flex-col gap-4"
-    >
-      {/* ── Panel header ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <History className="w-5 h-5 text-muted-foreground" />
-          <h3 className="font-semibold text-sm" data-testid="blueprint-version-history-title">
-            Version History
-          </h3>
-          {versionList && (
-            <Badge
-              variant="secondary"
-              data-testid="blueprint-version-history-total-badge"
-            >
-              {versionList.total}
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      {/* ── Status message (success / error) ── */}
-      {statusMessage && (
-        <div
-          data-testid={`blueprint-version-history-status-${statusMessage.type}`}
-          className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm ${
-            statusMessage.type === 'success'
-              ? 'bg-green-500/10 text-green-600 border border-green-500/20'
-              : 'bg-destructive/10 text-destructive border border-destructive/20'
-          }`}
-        >
-          {statusMessage.type === 'error' && (
-            <AlertCircle className="w-4 h-4 shrink-0" />
-          )}
-          <span>{statusMessage.text}</span>
-        </div>
-      )}
-
-      {/* ── Loading state ── */}
-      {isLoading && (
-        <div
-          data-testid="blueprint-version-history-loading"
-          className="flex items-center justify-center py-12"
-        >
-          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-        </div>
-      )}
-
-      {/* ── Error state ── */}
-      {isError && (
-        <ErrorState
-          message={
-            (error as Error)?.message || 'Failed to load version history.'
-          }
-        />
-      )}
-
-      {/* ── Empty state ── */}
-      {!isLoading && !isError && versionList?.items.length === 0 && (
-        <EmptyState message="No version history yet. Edit and save the blueprint to create the first version." />
-      )}
-
-      {/* ── Version table ── */}
-      {!isLoading && !isError && (versionList?.items.length ?? 0) > 0 && (
-        <>
-          <Table data-testid="blueprint-version-history-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead
-                  className="w-20"
-                  data-testid="blueprint-version-history-col-version"
-                >
-                  Version
-                </TableHead>
-                <TableHead data-testid="blueprint-version-history-col-created-by">
-                  Created By
-                </TableHead>
-                <TableHead data-testid="blueprint-version-history-col-created-at">
-                  Date
-                </TableHead>
-                <TableHead data-testid="blueprint-version-history-col-summary">
-                  Change Summary
-                </TableHead>
-                <TableHead
-                  className="text-right"
-                  data-testid="blueprint-version-history-col-actions"
-                >
-                  Actions
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {versionList!.items.map((v: VersionSummary) => (
-                <TableRow
-                  key={v.version}
-                  data-testid={`blueprint-version-history-row-${v.version}`}
-                >
-                  {/* Version badge */}
-                  <TableCell data-testid={`blueprint-version-history-row-${v.version}-version`}>
-                    <Badge variant="outline" className="font-mono text-xs">
-                      v{v.version}
-                    </Badge>
-                  </TableCell>
-
-                  {/* Created by */}
-                  <TableCell
-                    className="text-sm text-muted-foreground max-w-[160px] truncate"
-                    data-testid={`blueprint-version-history-row-${v.version}-created-by`}
-                    title={v.created_by}
-                  >
-                    {v.created_by || '—'}
-                  </TableCell>
-
-                  {/* Created at */}
-                  <TableCell
-                    className="text-sm whitespace-nowrap"
-                    data-testid={`blueprint-version-history-row-${v.version}-created-at`}
-                  >
-                    {formatTimestamp(v.created_at)}
-                  </TableCell>
-
-                  {/* Change summary */}
-                  <TableCell
-                    className="text-sm text-muted-foreground max-w-[260px] truncate"
-                    data-testid={`blueprint-version-history-row-${v.version}-summary`}
-                    title={v.change_summary ?? ''}
-                  >
-                    {v.change_summary || <span className="italic opacity-50">No summary</span>}
-                  </TableCell>
-
-                  {/* Actions */}
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        data-testid={`blueprint-version-history-preview-btn-${v.version}`}
-                        onClick={() => handlePreview(v.version)}
-                        title={`Preview version ${v.version}`}
-                      >
-                        <Eye className="w-4 h-4" />
-                        <span className="sr-only">Preview v{v.version}</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        data-testid={`blueprint-version-history-restore-btn-${v.version}`}
-                        onClick={() => handleRestoreClick(v.version)}
-                        title={`Restore to version ${v.version}`}
-                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                      >
-                        <RotateCcw className="w-4 h-4" />
-                        <span className="sr-only">Restore v{v.version}</span>
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          {/* ── Pagination controls ── */}
-          {totalPages > 1 && (
-            <div
-              data-testid="blueprint-version-history-pagination"
-              className="flex items-center justify-between text-sm text-muted-foreground"
-            >
-              <span data-testid="blueprint-version-history-pagination-info">
-                Page {page} of {totalPages} ({versionList!.total} total)
-              </span>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  data-testid="blueprint-version-history-pagination-prev"
-                  disabled={!hasPrev}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  Prev
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  data-testid="blueprint-version-history-pagination-next"
-                  disabled={!hasNext}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ── Preview drawer ── */}
-      <PreviewDrawer
-        blueprintId={blueprintId}
-        versionNumber={previewVersion}
-        open={previewOpen}
-        onClose={handleClosePreview}
-      />
-
-      {/* ── Restore confirmation dialog ── */}
-      <RestoreDialog
-        versionNumber={restoreVersion}
-        open={restoreOpen}
-        isPending={restoreMutation.isPending}
-        onConfirm={handleRestoreConfirm}
-        onCancel={handleRestoreCancel}
-      />
-    </div>
-  );
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  marginTop: 12,
+  fontSize: 14,
 };
 
-export default BlueprintVersionHistory;
+const errorBoxStyle: React.CSSProperties = {
+  background: "#fff0f0",
+  border: "1px solid #f5a5a5",
+  borderRadius: 4,
+  padding: "10px 14px",
+  marginBottom: 12,
+  color: "#c00",
+};
+
+const confirmBoxStyle: React.CSSProperties = {
+  background: "#fff8e1",
+  border: "1px solid #ffe082",
+  borderRadius: 4,
+  padding: "12px 16px",
+  marginBottom: 12,
+};
+
+const actionButtonStyle: React.CSSProperties = {
+  cursor: "pointer",
+  padding: "4px 10px",
+  border: "1px solid #ccc",
+  borderRadius: 4,
+  background: "#f5f5f5",
+  marginRight: 6,
+  fontSize: 13,
+};
+
+const restoreButtonExtraStyle: React.CSSProperties = {
+  background: "#e3f2fd",
+  borderColor: "#90caf9",
+  color: "#0d47a1",
+};
+
+const paginationStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  marginTop: 12,
+};
+
+const pageButtonStyle: React.CSSProperties = {
+  cursor: "pointer",
+  padding: "4px 12px",
+  border: "1px solid #ccc",
+  borderRadius: 4,
+  background: "#f5f5f5",
+};
+
+const overlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.45)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 1000,
+};
+
+const modalStyle: React.CSSProperties = {
+  background: "#fff",
+  borderRadius: 8,
+  padding: 24,
+  maxWidth: 720,
+  width: "90%",
+  maxHeight: "80vh",
+  overflowY: "auto",
+  boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+};
+
+const modalHeaderStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  marginBottom: 16,
+};
+
+const closeButtonStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  fontSize: 18,
+  cursor: "pointer",
+  color: "#555",
+};
+
+const metaListStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "max-content 1fr",
+  gap: "4px 16px",
+  fontSize: 13,
+  color: "#555",
+  marginBottom: 12,
+};
+
+const preStyle: React.CSSProperties = {
+  background: "#f8f8f8",
+  border: "1px solid #e0e0e0",
+  borderRadius: 4,
+  padding: 12,
+  overflowX: "auto",
+  fontSize: 12,
+  lineHeight: 1.6,
+  maxHeight: 400,
+  overflowY: "auto",
+};

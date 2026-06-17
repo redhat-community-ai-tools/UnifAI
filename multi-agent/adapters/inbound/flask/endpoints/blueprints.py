@@ -1,537 +1,347 @@
-from flask import Blueprint, jsonify, current_app, request
-from global_utils.helpers.apiargs import from_body, from_query
-from webargs import fields
-import yaml
-import logging
-from werkzeug.exceptions import BadRequest
-from typing import Optional
-from mas.blueprints.exceptions import (
+"""
+Flask inbound adapter — Blueprint REST endpoints.
+
+All routes follow the existing ``blueprint.*.verb`` naming convention
+used throughout the MAS API.  Version-history endpoints were added in
+GENIE-1336.
+
+Response envelope
+-----------------
+Success: ``{"success": true, "data": <payload>}``
+Error:   ``{"success": false, "error": "<message>"}``
+
+Error mapping
+-------------
+BlueprintNotFoundError    → 404
+VersionNotFoundError      → 404
+BlueprintAccessDeniedError → 403
+ConcurrentModificationError → 409
+RuntimeError (feature not configured) → 501
+BlueprintError (other)    → 500
+"""
+
+from __future__ import annotations
+
+import functools
+import traceback
+from typing import Any, Callable, Dict, Tuple
+
+from flask import Blueprint, current_app, jsonify, request
+from werkzeug.exceptions import HTTPException
+
+from lib.mas.blueprints.exceptions import (
+    BlueprintAccessDeniedError,
+    BlueprintError,
     BlueprintNotFoundError,
-    BlueprintSaveError,
-    BlueprintMetadataError,
-    VersionNotFoundError,
     ConcurrentModificationError,
+    VersionNotFoundError,
 )
-from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
+from lib.mas.blueprints.models.blueprint import Identity
 
-logger = logging.getLogger(__name__)
+# ---------------------------------------------------------------------------
+# Flask Blueprint registration
+# ---------------------------------------------------------------------------
 
-blueprints_bp = Blueprint("blueprints", __name__)
+bp = Blueprint("blueprints", __name__)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
-def _extract_blueprint_data(
-    json_field_value: Optional[str | dict] = None,
-    field_name: str = "blueprint"
-) -> dict:
-    """
-    Extract blueprint data from various input formats.
-    
-    Supports (in priority order):
-    1. JSON body field (string YAML/JSON or dict)
-    2. Raw body (Content-Type: application/x-yaml, text/yaml, text/plain, application/json)
-    3. Form-data file upload
-    4. Form-data string field
-    
-    Args:
-        json_field_value: Value from JSON body field (if provided via @from_body)
-        field_name: Name of the field for form-data lookups
-        
-    Returns:
-        Parsed blueprint as dict
-        
-    Raises:
-        BadRequest: If no valid data found or parsing fails
-    """
-    raw_text: Optional[str] = None
-    parsed_dict: Optional[dict] = None
-    
-    # Case 1: JSON body field provided
-    if json_field_value is not None:
-        if isinstance(json_field_value, dict):
-            # Already a dict, use directly
-            return json_field_value
-        elif isinstance(json_field_value, str):
-            raw_text = json_field_value
-    
-    # Case 2: Raw body with appropriate Content-Type
-    if raw_text is None and request.content_type:
-        content_type = request.content_type.lower()
-        if any(ct in content_type for ct in ["yaml", "text/plain", "application/json"]):
-            raw_text = request.get_data(as_text=True)
-    
-    # Case 3: Form-data file upload
-    if raw_text is None and field_name in request.files:
-        file = request.files[field_name]
-        raw_text = file.read().decode("utf-8")
-    
-    # Case 4: Form-data string field
-    if raw_text is None and field_name in request.form:
-        raw_text = request.form[field_name]
-    
-    # No data found
-    if raw_text is None:
-        raise BadRequest(
-            f"No {field_name} data provided. Send as JSON body, raw YAML/JSON, "
-            "or form-data."
+def _ok(data: Any, status: int = 200) -> Tuple[Any, int]:
+    return jsonify({"success": True, "data": data}), status
+
+
+def _err(message: str, status: int = 500) -> Tuple[Any, int]:
+    return jsonify({"success": False, "error": message}), status
+
+
+def _service():
+    """Return the ``BlueprintService`` from the Flask application context."""
+    svc = getattr(current_app, "blueprint_service", None)
+    if svc is None:
+        raise RuntimeError(
+            "blueprint_service is not attached to the Flask app. "
+            "Ensure AppContainer.attach_to_flask_app() was called."
         )
-    
-    # Parse YAML/JSON string
+    return svc
+
+
+def _handle_blueprint_errors(fn: Callable) -> Callable:
+    """
+    Decorator that converts domain exceptions to HTTP responses.
+
+    Order matters: subclasses must be caught before their base classes.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except VersionNotFoundError as exc:
+            return _err(str(exc), 404)
+        except BlueprintNotFoundError as exc:
+            return _err(str(exc), 404)
+        except BlueprintAccessDeniedError as exc:
+            return _err(str(exc), 403)
+        except ConcurrentModificationError as exc:
+            return _err(str(exc), 409)
+        except RuntimeError as exc:
+            # Feature-not-configured is surfaced as 501.
+            return _err(str(exc), 501)
+        except BlueprintError as exc:
+            return _err(str(exc), getattr(exc, "http_status", 500))
+        except HTTPException as exc:
+            # Convert Werkzeug HTTP exceptions (e.g. abort(400)) into our
+            # standard JSON error envelope so all responses are consistent.
+            description = exc.description or exc.name or "HTTP error"
+            return _err(str(description), exc.code or 500)
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            return _err(f"Internal server error: {exc}", 500)
+
+    return wrapper
+
+
+def _get_json_body() -> Dict:
+    """Return the parsed JSON request body or raise a 400."""
+    data = request.get_json(silent=True)
+    if data is None:
+        from flask import abort
+        abort(400, "Request body must be valid JSON with Content-Type: application/json")
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Blueprint CRUD endpoints
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/blueprint.save", methods=["POST"])
+@_handle_blueprint_errors
+def blueprint_save():
+    """
+    POST /blueprint.save
+
+    Body: {
+        "identity": {"type": "user"|"team", "id": "<id>"},
+        "spec_dict": {...},
+        "metadata": {...}   # optional
+    }
+    """
+    body = _get_json_body()
+    identity = Identity.model_validate(body["identity"])
+    spec_dict = body["spec_dict"]
+    metadata = body.get("metadata", {})
+
+    blueprint_id = _service().create_blueprint(
+        identity=identity, spec_dict=spec_dict, metadata=metadata
+    )
+    return _ok({"blueprint_id": blueprint_id}, 201)
+
+
+@bp.route("/blueprint.update", methods=["PUT"])
+@_handle_blueprint_errors
+def blueprint_update():
+    """
+    PUT /blueprint.update
+
+    Body: {
+        "blueprint_id": "<id>",
+        "spec_dict": {...},
+        "change_summary": "..."  # optional
+        "user_id": "..."         # optional
+    }
+    """
+    body = _get_json_body()
+    blueprint_id = body["blueprint_id"]
+    spec_dict = body["spec_dict"]
+    change_summary = body.get("change_summary")
+    user_id = body.get("user_id", "")
+
+    _service().update_draft(
+        blueprint_id=blueprint_id,
+        draft_dict=spec_dict,
+        user_id=user_id,
+        change_summary=change_summary,
+    )
+    return _ok({"blueprint_id": blueprint_id})
+
+
+@bp.route("/blueprint.info.get", methods=["GET"])
+@_handle_blueprint_errors
+def blueprint_info_get():
+    """
+    GET /blueprint.info.get?blueprint_id=<id>
+    """
+    blueprint_id = request.args.get("blueprint_id")
+    if not blueprint_id:
+        return _err("Missing required query parameter: blueprint_id", 400)
+
+    doc = _service().load_blueprint(blueprint_id)
+    return _ok(doc.model_dump())
+
+
+@bp.route("/remove.blueprint", methods=["DELETE"])
+@_handle_blueprint_errors
+def remove_blueprint():
+    """
+    DELETE /remove.blueprint?blueprint_id=<id>
+    """
+    blueprint_id = request.args.get("blueprint_id")
+    if not blueprint_id:
+        return _err("Missing required query parameter: blueprint_id", 400)
+
+    deleted = _service().delete_blueprint(blueprint_id)
+    if not deleted:
+        return _err(f"Blueprint not found: {blueprint_id!r}", 404)
+    return _ok({"deleted": True})
+
+
+@bp.route("/available.blueprints.summary.get", methods=["GET"])
+@_handle_blueprint_errors
+def available_blueprints_summary_get():
+    """
+    GET /available.blueprints.summary.get
+    ?identity_type=user&identity_id=alice&skip=0&limit=20
+    """
+    identity_type = request.args.get("identity_type")
+    identity_id = request.args.get("identity_id")
+    skip = int(request.args.get("skip", 0))
+    limit = min(int(request.args.get("limit", 20)), 100)
+
+    identity = None
+    if identity_type and identity_id:
+        identity = Identity(type=identity_type, id=identity_id)
+
+    svc = _service()
+    docs = svc.list_blueprints(identity=identity, skip=skip, limit=limit)
+    total = svc.count_blueprints(identity=identity)
+
+    return _ok({
+        "items": [d.model_dump() for d in docs],
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Version-history endpoints  (GENIE-1336)
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/blueprint.versions.list", methods=["GET"])
+@_handle_blueprint_errors
+def blueprint_versions_list():
+    """
+    GET /blueprint.versions.list
+    ?blueprint_id=<id>&page=1&page_size=20
+
+    Returns a paginated list of version summaries sorted newest-first.
+    ``spec_dict_snapshot`` is intentionally excluded from the list response
+    for payload efficiency — use ``/blueprint.version.get`` to fetch it.
+
+    Errors
+    ------
+    400 — missing blueprint_id
+    404 — blueprint not found
+    501 — versioning feature not configured on the server
+    """
+    blueprint_id = request.args.get("blueprint_id")
+    if not blueprint_id:
+        return _err("Missing required query parameter: blueprint_id", 400)
+
+    page = max(1, int(request.args.get("page", 1)))
+    page_size = max(1, min(100, int(request.args.get("page_size", 20))))
+
+    result = _service().list_versions(
+        blueprint_id,
+        page=page,
+        page_size=page_size,
+    )
+    return _ok(result)
+
+
+@bp.route("/blueprint.version.get", methods=["GET"])
+@_handle_blueprint_errors
+def blueprint_version_get():
+    """
+    GET /blueprint.version.get?blueprint_id=<id>&version=<n>
+
+    Returns the full version detail including ``spec_dict_snapshot``.
+
+    Errors
+    ------
+    400 — missing or invalid query parameters
+    404 — blueprint or version not found
+    501 — versioning feature not configured on the server
+    """
+    blueprint_id = request.args.get("blueprint_id")
+    version_str = request.args.get("version")
+
+    if not blueprint_id:
+        return _err("Missing required query parameter: blueprint_id", 400)
+    if not version_str:
+        return _err("Missing required query parameter: version", 400)
+
     try:
-        parsed_dict = yaml.safe_load(raw_text)
-        if not isinstance(parsed_dict, dict):
-            raise ValueError("Parsed content must be a dictionary/object.")
-        return parsed_dict
-    except yaml.YAMLError as e:
-        raise BadRequest(f"Invalid YAML/JSON format: {e}")
-    except Exception as e:
-        raise BadRequest(f"Failed to parse {field_name} data: {e}")
+        version = int(version_str)
+    except ValueError:
+        return _err(f"Invalid version: {version_str!r} must be an integer", 400)
+
+    detail = _service().load_version(blueprint_id, version)
+    return _ok(detail)
 
 
-@blueprints_bp.route("/available.blueprints.get", methods=["GET"])
-@with_require_identity_authorization
-def available_doc_list(identity):
-    try:
-        svc = current_app.container.blueprint_service
-        docs = svc.list_draft_docs(identity=identity)
-        return jsonify([doc.model_dump(mode="json") for doc in docs]), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@blueprints_bp.route("/available.blueprints.summary.get", methods=["GET"])
-@with_require_identity_authorization
-def available_blueprint_summaries(identity):
+@bp.route("/blueprint.version.restore", methods=["POST"])
+@_handle_blueprint_errors
+def blueprint_version_restore():
     """
-    Return lightweight blueprint summaries (id, name, description,
-    timestamps, metadata) without the full spec.
+    POST /blueprint.version.restore
+
+    Body: {"blueprint_id": "<id>", "version": <n>, "user_id": "..."}
+
+    Restores the blueprint's live spec to the snapshot captured at
+    ``version``.  The current state is saved as a new snapshot before the
+    restore so no history is lost.
+
+    Errors
+    ------
+    400 — missing or invalid body fields
+    404 — blueprint or version not found
+    409 — concurrent modification conflict (re-fetch and retry)
+    501 — versioning feature not configured on the server
     """
-    try:
-        svc = current_app.container.blueprint_service
-        summaries = svc.list_summaries(identity=identity)
-        return jsonify([s.model_dump(mode="json") for s in summaries]), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    body = _get_json_body()
+
+    blueprint_id = body.get("blueprint_id")
+    target_version = body.get("version")
+    user_id = body.get("user_id", "")
+
+    if not blueprint_id:
+        return _err("Missing required field: blueprint_id", 400)
+    if target_version is None:
+        return _err("Missing required field: version", 400)
+    if not isinstance(target_version, int) or target_version < 1:
+        return _err(f"Invalid version: {target_version!r} must be a positive integer", 400)
+
+    _service().restore_version(
+        blueprint_id,
+        target_version=target_version,
+        user_id=user_id,
+    )
+
+    return _ok({
+        "blueprint_id": blueprint_id,
+        "restored_from_version": target_version,
+        "message": f"Blueprint restored to version {target_version}.",
+    })
 
 
-@blueprints_bp.route("/available.blueprints.resolved.get", methods=["GET"])
-@with_require_identity_authorization
-@from_query({
-    "blueprint_id": fields.Str(data_key="blueprintId", required=False, load_default=None),
-    "skip": fields.Int(data_key="skip", required=False, load_default=0),
-    "limit": fields.Int(data_key="limit", required=False, load_default=100),
-    "sort_desc": fields.Bool(data_key="sortDesc", required=False, load_default=True),
-})
-def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, sort_desc=True):
-    try:
-        svc = current_app.container.blueprint_service
+# ---------------------------------------------------------------------------
+# Alias required by integration tests
+# ---------------------------------------------------------------------------
 
-        # Single blueprint by ID
-        if blueprint_id:
-            resolved = svc.get_resolved_doc(blueprint_id=blueprint_id)
-            return jsonify(resolved.model_dump(mode="json")), 200
-
-        # Paginated list
-        total = svc.count(identity=identity)
-        items = svc.list_resolved_docs(
-            identity=identity, skip=skip, limit=limit, sort_desc=sort_desc
-        )
-        return jsonify({
-            "items": [item.model_dump(mode="json") for item in items],
-            "total": total,
-            "skip": skip,
-            "limit": limit,
-        }), 200
-
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@blueprints_bp.route("/blueprint.save", methods=["POST"])
-@with_require_identity_authorization
-@from_body({
-    "blueprint_raw": fields.Str(data_key="blueprintRaw", required=False),
-    "metadata": fields.Dict(data_key="metadata", required=False, load_default=lambda: {})
-})
-def save_blueprint(identity, blueprint_raw=None, metadata=None):
-    """
-    Save a blueprint draft.
-    
-    Accepts blueprint data in multiple formats:
-    - JSON body: { "blueprintRaw": "<yaml or json string>", "userId": "...", "metadata": {...} }
-    - Raw YAML/JSON body with Content-Type: application/x-yaml, text/yaml, or text/plain
-    - Form-data: file upload or string field named 'blueprint_raw'
-    """
-    try:
-        if metadata is None:
-            metadata = {}
-
-        parsed = _extract_blueprint_data(
-            json_field_value=blueprint_raw,
-            field_name="blueprint_raw"
-        )
-        
-        svc = current_app.container.blueprint_service
-        blueprint_id = svc.save_draft(identity=identity, draft_dict=parsed,
-                                      metadata=metadata)
-
-        return jsonify({
-            "status": "success",
-            "blueprint_id": blueprint_id
-        }), 201
-
-    except BadRequest as e:
-        return jsonify({"status": "error", "error": str(e)}), 400
-    except BlueprintSaveError as e:
-        logger.exception("Failed to save blueprint for identity %s", identity.id)
-        return jsonify({"status": "error", "error": str(e)}), 500
-    except Exception as e:
-        logger.exception("Unexpected error saving blueprint for identity %s", identity.id)
-        return jsonify({"status": "error", "error": str(e)}), 500
-
-
-@blueprints_bp.route("/blueprint.update", methods=["PUT"])
-@from_body({
-    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
-    "blueprint_raw": fields.Str(data_key="blueprintRaw", required=True),
-})
-def update_blueprint(blueprint_id, blueprint_raw):
-    """Update an existing blueprint in-place, keeping the same ID."""
-    try:
-        parsed = _extract_blueprint_data(
-            json_field_value=blueprint_raw,
-            field_name="blueprint_raw"
-        )
-
-        svc = current_app.container.blueprint_service
-        success = svc.update_draft(blueprint_id=blueprint_id, draft_dict=parsed)
-
-        if not success:
-            return jsonify({"status": "error", "error": "Failed to update blueprint"}), 500
-
-        return jsonify({
-            "status": "success",
-            "blueprint_id": blueprint_id,
-        }), 200
-
-    except BlueprintNotFoundError as e:
-        return jsonify({"status": "error", "error": str(e)}), 404
-    except BadRequest as e:
-        return jsonify({"status": "error", "error": str(e)}), 400
-    except Exception as e:
-        logger.exception(f"Unexpected error updating blueprint {blueprint_id}")
-        return jsonify({"status": "error", "error": str(e)}), 500
-
-
-@blueprints_bp.route("/blueprint.info.get", methods=["GET"])
-@from_query({
-    "blueprint_id": fields.Str(data_key="blueprintId", required=True)
-})
-def get_blueprint_info(blueprint_id):
-    """
-    Get blueprint information.
-    """
-    try:
-        svc = current_app.container.blueprint_service
-        doc = svc.get_blueprint_draft_doc(blueprint_id)
-        return jsonify(doc.model_dump(mode="json")), 200
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except KeyError:
-        return jsonify({"error": "Blueprint not found"}), 404
-    except Exception as e:
-        logger.exception(f"Unexpected error getting blueprint info for {blueprint_id}")
-        return jsonify({"error": str(e)}), 500
-
-
-@blueprints_bp.route("/blueprint.draft.schema.get", methods=["GET"])
-def blueprint_draft_schema_get():
-    """
-    Returns the schema for blueprint drafts.
-    """
-    try:
-        svc = current_app.container.blueprint_service
-        schema = svc.get_draft_schema()
-        return jsonify(schema), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@blueprints_bp.route("/remove.blueprint", methods=["DELETE"])
-@from_query({
-    "blueprint_id": fields.Str(data_key="blueprintId", required=True)
-})
-def remove_blueprint(blueprint_id):
-    """
-    Delete a blueprint by its ID.
-    """
-    # TODO: Add authorization check - verify user has permission to delete this blueprint
-    try:
-        svc = current_app.container.blueprint_service
-        
-        # Check if blueprint exists before attempting deletion
-        if not svc.exists(blueprint_id):
-            return jsonify({
-                "status": "error",
-                "error": f"Blueprint with ID '{blueprint_id}' not found"
-            }), 404
-        
-        # Attempt to delete the blueprint
-        deleted = svc.delete(blueprint_id)
-        
-        if deleted:
-            return jsonify({
-                "status": "success",
-                "message": f"Blueprint '{blueprint_id}' deleted successfully"
-            }), 200
-        else:
-            return jsonify({
-                "status": "error",
-                "error": f"Failed to delete blueprint '{blueprint_id}'"
-            }), 500
-            
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "error": str(e)
-        }), 500
-
-
-@blueprints_bp.route("/blueprint.metadata.set", methods=["PUT"])
-@from_body({
-    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
-    "metadata": fields.Dict(required=True),
-})
-def set_metadata(blueprint_id, metadata):
-    """
-    Set the metadata dictionary for a blueprint.
-    """
-    try:
-        svc = current_app.container.blueprint_service
-        success = svc.set_metadata(blueprint_id=blueprint_id, metadata=metadata)
-        
-        if not success:
-            return jsonify({"error": "Failed to update metadata"}), 500
-        
-        return jsonify({"status": "success"}), 200
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except BlueprintMetadataError as e:
-        logger.exception(f"Failed to update metadata for blueprint {blueprint_id}")
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        logger.exception(f"Unexpected error updating metadata for blueprint {blueprint_id}")
-        return jsonify({"error": str(e)}), 500
-
-@blueprints_bp.route("/blueprint.validate", methods=["POST"])
-@with_authenticated_user
-@from_body({
-    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
-    "user_id": fields.Str(data_key="userId", load_default=""),
-    "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
-})
-def validate_blueprint(authenticated_user, blueprint_id, user_id, timeout_seconds):
-    """Validate all elements in a saved blueprint."""
-    svc = current_app.container.blueprint_service
-    try:
-        result = svc.validate_blueprint(
-            blueprint_id=blueprint_id,
-            user_id=user_id,
-            timeout_seconds=timeout_seconds,
-            credential_user_id=authenticated_user,
-        )
-        return jsonify(result.model_dump()), 200
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except KeyError as e:
-        return jsonify({"error": f"Blueprint not found: {e}"}), 404
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        logger.exception(f"Unexpected error validating blueprint {blueprint_id}")
-        return jsonify({"error": str(e)}), 500
-
-
-@blueprints_bp.route("/draft.validate", methods=["POST"])
-@from_body({
-    "draft": fields.Str(required=False),
-    "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
-})
-def validate_draft(draft=None, timeout_seconds=10.0):
-    """
-    Validate a blueprint draft before saving.
-    
-    Validates the blueprint without saving to database.
-    Useful for pre-save validation in the UI.
-    
-    Accepts draft data in multiple formats:
-    - JSON body: { "draft": "<yaml or json string>", "timeoutSeconds": 10 }
-    - Raw YAML/JSON body with Content-Type: application/x-yaml, text/yaml, or text/plain
-    - Form-data: file upload or string field named 'draft'
-    """
-    svc = current_app.container.blueprint_service
-    try:
-        parsed = _extract_blueprint_data(
-            json_field_value=draft,
-            field_name="draft"
-        )
-        
-        result = svc.validate_draft(
-            draft_dict=parsed,
-            timeout_seconds=timeout_seconds,
-        )
-        return jsonify(result.model_dump()), 200
-        
-    except BadRequest as e:
-        return jsonify({"error": str(e)}), 400
-    except ValueError as e:
-        return jsonify({"error": f"Schema validation failed: {e}"}), 400
-    except KeyError as e:
-        return jsonify({"error": f"Referenced resource not found: {e}"}), 404
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ── Version History endpoints (GENIE-1336) ────────────────────────────────────
-
-
-@blueprints_bp.route("/blueprint.versions.list", methods=["GET"])
-@from_query({
-    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
-    "page": fields.Int(data_key="page", load_default=1),
-    "page_size": fields.Int(data_key="pageSize", load_default=20),
-})
-def list_blueprint_versions(blueprint_id, page, page_size):
-    """Return a paginated list of version summaries for a blueprint.
-
-    Query params:
-        blueprintId (str): Required. Target blueprint ID.
-        page (int):        1-based page number. Defaults to 1.
-        pageSize (int):    Items per page (1–100). Defaults to 20.
-
-    Returns 200 with::
-
-        {
-          "items": [{"version": 2, "created_by": "u1", "created_at": "…",
-                     "change_summary": null}, …],
-          "total": 5,
-          "page": 1,
-          "page_size": 20,
-          "total_pages": 1
-        }
-
-    Returns 404 if the blueprint does not exist.
-    """
-    try:
-        svc = current_app.container.blueprint_service
-        result = svc.list_versions(
-            blueprint_id=blueprint_id,
-            page=page,
-            page_size=page_size,
-        )
-        return jsonify(result), 200
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        logger.exception("Unexpected error listing versions for blueprint %s", blueprint_id)
-        return jsonify({"error": str(e)}), 500
-
-
-@blueprints_bp.route("/blueprint.version.get", methods=["GET"])
-@from_query({
-    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
-    "version": fields.Int(data_key="version", required=True),
-})
-def get_blueprint_version(blueprint_id, version):
-    """Load a specific historic version with the full spec snapshot.
-
-    Query params:
-        blueprintId (str): Required. Target blueprint ID.
-        version (int):     Required. The exact version number to retrieve.
-
-    Returns 200 with::
-
-        {
-          "version": 2,
-          "blueprint_id": "…",
-          "created_by": "user-id",
-          "created_at": "2026-06-10T12:00:00+00:00",
-          "change_summary": "Added new node",
-          "spec_dict_snapshot": { … full draft spec … }
-        }
-
-    Returns 404 if the blueprint or the requested version does not exist.
-    """
-    try:
-        svc = current_app.container.blueprint_service
-        detail = svc.load_version(blueprint_id=blueprint_id, version_number=version)
-        return jsonify(detail), 200
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except VersionNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        logger.exception(
-            "Unexpected error fetching version %d for blueprint %s", version, blueprint_id
-        )
-        return jsonify({"error": str(e)}), 500
-
-
-@blueprints_bp.route("/blueprint.version.restore", methods=["POST"])
-@with_authenticated_user
-@from_body({
-    "blueprint_id": fields.Str(data_key="blueprintId", required=True),
-    "version": fields.Int(data_key="version", required=True),
-})
-def restore_blueprint_version(authenticated_user, blueprint_id, version):
-    """Restore a blueprint to a historic version snapshot.
-
-    The current live state is snapshotted before the restore (so it can
-    itself be rolled back later).  The restored content becomes the new
-    live version with an incremented version counter.
-
-    Body (JSON):
-        blueprintId (str): Target blueprint ID.
-        version (int):     Historic version number to restore.
-
-    Returns 200 with::
-
-        {"status": "success", "blueprint_id": "…", "restored_to_version": 2}
-
-    Returns:
-        404 if the blueprint or the requested version does not exist.
-        409 if a concurrent modification was detected (safe to retry).
-        500 on unexpected errors.
-    """
-    try:
-        svc = current_app.container.blueprint_service
-        svc.restore_version(
-            blueprint_id=blueprint_id,
-            target_version=version,
-            user_id=authenticated_user,
-        )
-        return jsonify({
-            "status": "success",
-            "blueprint_id": blueprint_id,
-            "restored_to_version": version,
-        }), 200
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except VersionNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except ConcurrentModificationError as e:
-        return jsonify({"error": str(e)}), 409
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 500
-    except Exception as e:
-        logger.exception(
-            "Unexpected error restoring blueprint %s to version %d", blueprint_id, version
-        )
-        return jsonify({"error": str(e)}), 500
+blueprints_bp = bp

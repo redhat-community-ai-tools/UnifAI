@@ -1,42 +1,60 @@
 """
-Port (abstract interface) for the blueprint version snapshot repository — GENIE-1336.
+Abstract port (interface) for the Blueprint Version repository.
 
-Follows the Ports & Adapters architecture enforced throughout this project:
-  Domain / Application layers depend only on this interface.
-  Infrastructure adapters (MongoDB, in-memory for tests, …) implement it.
+The ``blueprint_versions`` collection is append-only — no updates or
+deletes are permitted at the domain level.  This makes the version history
+an immutable audit trail.
+
+GENIE-1336
 """
 
-from abc import ABC, abstractmethod
-from typing import Optional, Tuple, List
+from __future__ import annotations
 
-from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
+from abc import ABC, abstractmethod
+from typing import List, Optional, Tuple
+
+from lib.mas.blueprints.models.blueprint_version import BlueprintVersionDocument
 
 
 class BlueprintVersionRepository(ABC):
-    """Abstract repository for the ``blueprint_versions`` collection.
+    """
+    Abstract port for the append-only version-snapshot store.
 
-    All methods are synchronous to match the project's existing pymongo
-    (sync) adapter pattern.  Any async adapter must run calls in a thread pool.
+    Concrete implementations are adapter-layer concerns
+    (e.g. ``MongoBlueprintVersionRepository``).
     """
 
-    # ── Writes ────────────────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Write operations
+    # ------------------------------------------------------------------
 
     @abstractmethod
     def insert_snapshot(self, version_doc: BlueprintVersionDocument) -> str:
-        """Persist an immutable version snapshot.
+        """
+        Persist an immutable version snapshot.
 
-        Args:
-            version_doc: Fully constructed snapshot document.
+        Assigns ``version_doc._id`` on the domain object after insert so the
+        caller gets the generated primary key without a separate round-trip.
 
-        Returns:
-            The inserted document's ``_id`` (MongoDB ObjectId as string).
-
-        Raises:
-            pymongo.errors.DuplicateKeyError: If ``(blueprint_id, version)``
-                already exists (unique index violation).
+        Raises
+        ------
+        pymongo.errors.DuplicateKeyError (or equivalent)
+            If a snapshot for ``(blueprint_id, version)`` already exists.
+            The service layer silently swallows this for idempotency.
         """
 
-    # ── Reads ─────────────────────────────────────────────────────────────
+    @abstractmethod
+    def ensure_indexes(self) -> None:
+        """
+        Idempotently create all necessary indexes on the backing store.
+
+        Should be called once at application start-up (e.g. from the DI
+        container) and is safe to call on an already-indexed collection.
+        """
+
+    # ------------------------------------------------------------------
+    # Read operations
+    # ------------------------------------------------------------------
 
     @abstractmethod
     def find_by_blueprint_id(
@@ -45,19 +63,28 @@ class BlueprintVersionRepository(ABC):
         page: int = 1,
         page_size: int = 20,
     ) -> Tuple[List[BlueprintVersionDocument], int]:
-        """Return paginated version summaries sorted by version DESC.
+        """
+        Return a paginated list of version summaries (newest first).
 
-        ``spec_dict_snapshot`` is intentionally **not** loaded here to keep
-        list payloads lightweight.  Use :meth:`find_one` for the full snapshot.
+        ``spec_dict_snapshot`` is **excluded** from the returned objects to
+        keep list responses lightweight.  Use ``find_one`` to fetch the full
+        snapshot for a single version.
 
-        Args:
-            blueprint_id: Parent blueprint identifier.
-            page: 1-based page number.
-            page_size: Items per page (clamped by service layer).
+        Parameters
+        ----------
+        blueprint_id:
+            Parent blueprint.
+        page:
+            1-based page number.
+        page_size:
+            Items per page (the caller is responsible for clamping to a
+            sensible maximum).
 
-        Returns:
-            A ``(versions, total_count)`` tuple where *versions* is the
-            current page and *total_count* is the total across all pages.
+        Returns
+        -------
+        Tuple[List[BlueprintVersionDocument], int]
+            ``(items, total_count)`` — total_count is the total number of
+            versions for this blueprint (unaffected by pagination).
         """
 
     @abstractmethod
@@ -66,14 +93,8 @@ class BlueprintVersionRepository(ABC):
         blueprint_id: str,
         version: int,
     ) -> Optional[BlueprintVersionDocument]:
-        """Load a specific version with the full ``spec_dict_snapshot``.
-
-        Returns:
-            :class:`BlueprintVersionDocument` or ``None`` if not found.
         """
-
-    # ── Infrastructure ────────────────────────────────────────────────────
-
-    @abstractmethod
-    def ensure_indexes(self) -> None:
-        """Create required indexes idempotently.  Safe to call on startup."""
+        Return the full version document (including ``spec_dict_snapshot``)
+        for a specific ``(blueprint_id, version)`` pair, or ``None`` if it
+        does not exist.
+        """

@@ -1,78 +1,53 @@
+#!/usr/bin/env python3
 """
-One-time migration script — GENIE-1336: Blueprint Version History & Rollback
-============================================================================
+Migration script: Backfill GENIE-1336 blueprint versioning fields.
 
-What this script does
----------------------
-1. Iterates every document in the ``blueprints`` collection.
-2. For documents that don't yet have the ``version`` field (or have it set to
-   a value other than 1), it sets ``version = 1``.
-3. For each blueprint that does NOT already have an entry in
-   ``blueprint_versions`` for version 1, it inserts an initial snapshot so
-   the version history timeline is complete from day one.
+This script is **idempotent** — running it multiple times produces the
+same final state without creating duplicate data or raising errors.
 
-Idempotency
------------
-The script is safe to run multiple times:
-* The ``blueprints`` update uses ``$set`` with ``{version: 1}`` only when
-  the field is absent (``$exists: false``), leaving already-versioned docs
-  alone.
-* The version snapshot insert is guarded by ``update_one(..., upsert=True)``
-  with the unique ``{blueprint_id, version}`` compound key — duplicate
-  attempts silently no-op.
+Steps
+-----
+1. ``step1_backfill_version_field``
+   For every document in ``blueprints`` that does NOT have a ``version``
+   field, set ``version = 1`` via a bulk_write with ``$set`` and a filter
+   of ``{"version": {"$exists": false}}``.
 
-Running
--------
-From the project root with the ``multi-agent`` venv activated::
+2. ``step2_insert_initial_snapshots``
+   For every blueprint in ``blueprints``, upsert a version-1 snapshot in
+   ``blueprint_versions`` using ``$setOnInsert`` so that already-existing
+   snapshots are left untouched.
 
-    python run/scripts/migrate_blueprint_versions.py [--dry-run] [--batch-size N]
+Usage
+-----
+    python scripts/migrate_blueprint_versions.py \\
+        --mongo-uri mongodb://localhost:27017 \\
+        --db-name mas \\
+        --batch-size 100
 
-Options
-~~~~~~~
---dry-run       Print what would be changed without touching the database.
---batch-size N  Number of blueprints to process per batch (default 100).
---mongo-uri U   Override the MongoDB URI (defaults to MONGO_URI env var or
-                the global_utils helper).
---db-name D     Override the database name (default: UnifAI).
-
-Exit codes
-----------
-0  Migration completed successfully (or nothing to do).
-1  One or more documents failed — check stderr for details.
+    # Dry-run (reads only, no writes):
+    python scripts/migrate_blueprint_versions.py --dry-run
 """
 
 from __future__ import annotations
 
 import argparse
-import logging
+import copy
 import sys
 from datetime import datetime, timezone
-from typing import Iterator, List
+from typing import Any, Dict, Iterator, List
 
 import pymongo
-from pymongo import UpdateOne, InsertOne
 from pymongo.collection import Collection
-from pymongo.errors import BulkWriteError
-
-from global_utils.utils.util import get_mongo_url
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-    datefmt="%Y-%m-%dT%H:%M:%S",
-)
-logger = logging.getLogger("migrate_blueprint_versions")
-
-_MIGRATION_USER = "migration-script"
-_CHANGE_SUMMARY = "Initial version snapshot created by GENIE-1336 migration."
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
 
 
-def _batch(iterable, size: int) -> Iterator[List]:
-    """Yield successive fixed-size chunks from *iterable*."""
-    batch: List = []
+def _batch(iterable: Iterator[Any], size: int) -> Iterator[List[Any]]:
+    """Yield successive chunks of ``size`` items from ``iterable``."""
+    batch: List[Any] = []
     for item in iterable:
         batch.append(item)
         if len(batch) >= size:
@@ -82,211 +57,228 @@ def _batch(iterable, size: int) -> Iterator[List]:
         yield batch
 
 
-def _migrate(
-    *,
-    blueprints_col: Collection,
-    versions_col: Collection,
-    batch_size: int,
-    dry_run: bool,
+# ---------------------------------------------------------------------------
+# Step 1: backfill ``version`` field on blueprints
+# ---------------------------------------------------------------------------
+
+
+def step1_backfill_version_field(
+    bp_col: Collection,
+    batch_size: int = 100,
+    dry_run: bool = False,
 ) -> int:
-    """Core migration logic.
-
-    Returns:
-        Number of blueprints processed (0 when nothing was needed).
     """
-    total_blueprints = blueprints_col.count_documents({})
-    logger.info("Found %d blueprints in total.", total_blueprints)
+    Set ``version = 1`` on all blueprints that do not yet have the field.
 
-    processed = 0
-    errors = 0
+    Returns the number of documents modified.
+    """
+    filter_missing = {"version": {"$exists": False}}
+    total_modified = 0
 
-    cursor = blueprints_col.find(
-        {},
-        {
-            "blueprint_id": 1,
-            "spec_dict": 1,
-            "identity": 1,
-            "version": 1,
-            "created_at": 1,
-        },
-    ).batch_size(batch_size)
+    if dry_run:
+        count = bp_col.count_documents(filter_missing)
+        print(f"[DRY-RUN] Step 1: would backfill version=1 on {count} blueprints.")
+        return count
 
-    for docs in _batch(cursor, batch_size):
-        # ── Step 1: Set version=1 on blueprints that lack the field ─────────
-        needs_version_set = [
-            d["blueprint_id"] for d in docs if not d.get("version")
-        ]
-        if needs_version_set and not dry_run:
-            blueprints_col.bulk_write(
-                [
-                    UpdateOne(
-                        {"blueprint_id": bid, "version": {"$exists": False}},
-                        {"$set": {"version": 1}},
-                    )
-                    for bid in needs_version_set
-                ],
-                ordered=False,
+    # Use a single bulk-write with UpdateMany for efficiency.
+    result = bp_col.update_many(
+        filter_missing,
+        {"$set": {"version": 1}},
+    )
+    total_modified = result.modified_count
+    print(f"Step 1 complete: set version=1 on {total_modified} blueprints.")
+    return total_modified
+
+
+# ---------------------------------------------------------------------------
+# Step 2: upsert initial snapshots into blueprint_versions
+# ---------------------------------------------------------------------------
+
+
+def step2_insert_initial_snapshots(
+    bp_col: Collection,
+    bpv_col: Collection,
+    batch_size: int = 100,
+    dry_run: bool = False,
+) -> int:
+    """
+    For each blueprint, upsert a v1 snapshot in ``blueprint_versions``
+    using ``$setOnInsert`` so that existing snapshots are never overwritten.
+
+    Processes blueprints in batches to support very large collections without
+    holding all documents in memory.
+
+    Returns the number of upserts performed (new snapshots created).
+    """
+    total_upserted = 0
+
+    # Project only the fields we need for the snapshot.
+    projection = {
+        "blueprint_id": 1,
+        "spec_dict": 1,
+        "created_at": 1,
+    }
+    cursor = bp_col.find({}, projection)
+
+    for batch_docs in _batch(iter(cursor), batch_size):
+        if dry_run:
+            total_upserted += len(batch_docs)
+            continue
+
+        for doc in batch_docs:
+            blueprint_id = doc["blueprint_id"]
+            # Deep-copy so mutations to the source doc can never affect the snapshot.
+            spec_dict = copy.deepcopy(doc.get("spec_dict", {}))
+            created_at = doc.get("created_at")
+            if created_at is None:
+                created_at = datetime.now(timezone.utc)
+
+            filter_query = {"blueprint_id": blueprint_id, "version": 1}
+
+            # Count before/after to reliably detect new insertions
+            # (mongomock's bulk_write result.upserted_count is unreliable).
+            count_before = bpv_col.count_documents(filter_query)
+            bpv_col.update_one(
+                filter_query,
+                {
+                    "$setOnInsert": {
+                        "blueprint_id": blueprint_id,
+                        "version": 1,
+                        "spec_dict_snapshot": spec_dict,
+                        "created_by": "migration/GENIE-1336",
+                        "created_at": created_at,
+                        "change_summary": "Initial snapshot created by GENIE-1336 migration",
+                    }
+                },
+                upsert=True,
             )
-        if needs_version_set:
-            logger.info(
-                "%s Set version=1 on %d blueprints: %s …",
-                "[DRY-RUN]" if dry_run else "",
-                len(needs_version_set),
-                needs_version_set[:3],
-            )
+            count_after = bpv_col.count_documents(filter_query)
+            if count_after > count_before:
+                total_upserted += 1
 
-        # ── Step 2: Create initial version snapshots ─────────────────────────
-        # Build the set of blueprint_ids that already have a v1 snapshot.
-        blueprint_ids = [d["blueprint_id"] for d in docs]
-        existing_v1 = {
-            doc["blueprint_id"]
-            for doc in versions_col.find(
-                {"blueprint_id": {"$in": blueprint_ids}, "version": 1},
-                {"blueprint_id": 1},
-            )
-        }
-
-        snapshot_ops = []
-        for doc in docs:
-            bid = doc["blueprint_id"]
-            if bid in existing_v1:
-                continue  # Already snapshotted — skip.
-
-            spec_dict = doc.get("spec_dict") or {}
-            created_at = doc.get("created_at") or datetime.now(timezone.utc)
-
-            snapshot_ops.append(
-                UpdateOne(
-                    # Upsert guard — unique compound index prevents doubles.
-                    {"blueprint_id": bid, "version": 1},
-                    {
-                        "$setOnInsert": {
-                            "blueprint_id": bid,
-                            "version": 1,
-                            "spec_dict_snapshot": spec_dict,
-                            "created_by": _MIGRATION_USER,
-                            "created_at": created_at,
-                            "change_summary": _CHANGE_SUMMARY,
-                        }
-                    },
-                    upsert=True,
-                )
-            )
-
-        if snapshot_ops:
-            if dry_run:
-                logger.info(
-                    "[DRY-RUN] Would insert %d initial version snapshots.",
-                    len(snapshot_ops),
-                )
-            else:
-                try:
-                    result = versions_col.bulk_write(snapshot_ops, ordered=False)
-                    logger.info(
-                        "Inserted %d initial version snapshots (upserted: %d).",
-                        len(snapshot_ops),
-                        result.upserted_count,
-                    )
-                except BulkWriteError as bwe:
-                    # Partial failure — log details but continue.
-                    write_errors = bwe.details.get("writeErrors", [])
-                    logger.error(
-                        "BulkWriteError: %d errors in batch. Details: %s",
-                        len(write_errors),
-                        write_errors[:5],
-                    )
-                    errors += len(write_errors)
-
-        processed += len(docs)
-        logger.info("Progress: %d / %d blueprints processed.", processed, total_blueprints)
-
-    if errors:
-        logger.error("Migration finished with %d error(s).", errors)
+    if dry_run:
+        print(f"[DRY-RUN] Step 2: would upsert initial snapshots for {total_upserted} blueprints.")
     else:
-        logger.info(
-            "Migration completed successfully. %d blueprints processed.",
-            processed,
-        )
+        print(f"Step 2 complete: inserted {total_upserted} new initial snapshots.")
 
-    return errors
+    return total_upserted
 
 
-# ── CLI entry-point ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Index management
+# ---------------------------------------------------------------------------
+
+
+def ensure_version_indexes(bpv_col: Collection, dry_run: bool = False) -> None:
+    """Create indexes on ``blueprint_versions`` if they don't already exist."""
+    if dry_run:
+        print("[DRY-RUN] Would ensure indexes on blueprint_versions.")
+        return
+
+    from pymongo import ASCENDING, DESCENDING
+
+    bpv_col.create_index(
+        [("blueprint_id", ASCENDING), ("version", ASCENDING)],
+        unique=True,
+        name="bp_version_unique",
+    )
+    bpv_col.create_index(
+        [("blueprint_id", ASCENDING), ("version", DESCENDING)],
+        name="bp_version_desc",
+    )
+    bpv_col.create_index(
+        [("blueprint_id", ASCENDING), ("created_at", DESCENDING)],
+        name="bp_created_at_desc",
+    )
+    print("Indexes ensured on blueprint_versions.")
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Back-fill version=1 and initial version snapshots for all existing blueprints."
+        description="Backfill GENIE-1336 versioning fields into blueprints and blueprint_versions."
     )
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        default=False,
-        help="Print what would happen without modifying the database.",
+        "--mongo-uri",
+        default="mongodb://localhost:27017",
+        help="PyMongo connection string (default: mongodb://localhost:27017)",
+    )
+    parser.add_argument(
+        "--db-name",
+        default="mas",
+        help="Database name (default: mas)",
+    )
+    parser.add_argument(
+        "--blueprint-coll",
+        default="blueprints",
+        help="Blueprints collection name (default: blueprints)",
+    )
+    parser.add_argument(
+        "--versions-coll",
+        default="blueprint_versions",
+        help="Blueprint versions collection name (default: blueprint_versions)",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
         default=100,
-        dest="batch_size",
-        help="Blueprints to process per batch (default: 100).",
+        help="Number of blueprints to process per batch (default: 100)",
     )
     parser.add_argument(
-        "--mongo-uri",
-        type=str,
-        default=None,
-        dest="mongo_uri",
-        help="MongoDB connection URI (overrides MONGO_URI env var).",
-    )
-    parser.add_argument(
-        "--db-name",
-        type=str,
-        default="UnifAI",
-        dest="db_name",
-        help="MongoDB database name (default: UnifAI).",
+        "--dry-run",
+        action="store_true",
+        help="Print what would be done without making any changes.",
     )
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> int:
     args = _parse_args()
 
-    mongo_uri = args.mongo_uri or get_mongo_url()
-    logger.info(
-        "Connecting to MongoDB%s (db=%s).",
-        " [DRY-RUN — no writes]" if args.dry_run else "",
-        args.db_name,
-    )
-
-    client = pymongo.MongoClient(mongo_uri)
+    client = pymongo.MongoClient(args.mongo_uri)
     db = client[args.db_name]
+    bp_col = db[args.blueprint_coll]
+    bpv_col = db[args.versions_coll]
 
-    blueprints_col: Collection = db["blueprints"]
-    versions_col: Collection = db["blueprint_versions"]
-
-    # Ensure the unique index exists before we attempt upserts.
-    logger.info("Ensuring indexes on blueprint_versions …")
-    versions_col.create_index(
-        [("blueprint_id", pymongo.ASCENDING), ("version", pymongo.ASCENDING)],
-        unique=True,
-        name="idx_blueprint_version_unique",
-        background=True,
-    )
-    versions_col.create_index(
-        [("blueprint_id", pymongo.ASCENDING), ("created_at", pymongo.DESCENDING)],
-        name="idx_blueprint_version_list",
-        background=True,
+    print(
+        f"Migration starting — db={args.db_name!r}, "
+        f"blueprints={args.blueprint_coll!r}, "
+        f"versions={args.versions_coll!r}, "
+        f"batch_size={args.batch_size}, "
+        f"dry_run={args.dry_run}"
     )
 
-    error_count = _migrate(
-        blueprints_col=blueprints_col,
-        versions_col=versions_col,
-        batch_size=args.batch_size,
-        dry_run=args.dry_run,
-    )
+    try:
+        # Ensure indexes first (idempotent).
+        ensure_version_indexes(bpv_col, dry_run=args.dry_run)
 
-    sys.exit(1 if error_count else 0)
+        # Step 1: backfill version field on blueprints collection.
+        step1_backfill_version_field(
+            bp_col=bp_col,
+            batch_size=args.batch_size,
+            dry_run=args.dry_run,
+        )
+
+        # Step 2: upsert initial v1 snapshots.
+        step2_insert_initial_snapshots(
+            bp_col=bp_col,
+            bpv_col=bpv_col,
+            batch_size=args.batch_size,
+            dry_run=args.dry_run,
+        )
+
+        print("Migration complete.")
+        return 0
+    except Exception as exc:
+        print(f"Migration FAILED: {exc}", file=sys.stderr)
+        raise
+    finally:
+        client.close()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
