@@ -58,4 +58,5 @@ create_or_update_resource "secret generic" shared-secret \
   --from-literal=VAULT_SECRET_ID="$vault_secret_id" \
   --from-literal=LANGFUSE_BASE_URL="$langfuse_base_url" \
   --from-literal=LANGFUSE_PUBLIC_KEY="$langfuse_public_key" \
-  --from-literal=LANGFUSE_SECRET_KEY="$langfuse_secret_key"
+  --from-literal=LANGFUSE_SECRET_KEY="$langfuse_secret_key" \
+  --from-literal=slack_signing_secret="$slack_signing_secret"

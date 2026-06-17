@@ -1,0 +1,58 @@
+worker_processes auto;
+error_log /tmp/nginx_error.log;
+pid /tmp/nginx.pid;
+
+include /usr/share/nginx/modules/*.conf;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    keepalive_timeout   65;
+    types_hash_max_size 4096;
+
+    include             /etc/nginx/mime.types;
+    default_type        application/octet-stream;
+
+    include /opt/app-root/etc/nginx.d/*.conf;
+
+    server {
+        listen 8080;
+        server_name _;
+
+        set $backend_servers $APP_SERVICE_NAME:$APP_SERVICE_PORT;
+
+        location ${API_ENDPOINT} {
+            proxy_pass http://${APP_SERVICE_NAME}:${APP_SERVICE_PORT}${API_ENDPOINT};
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+        }
+
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+
+        location / {
+            return 403 '{"error": "Forbidden"}\n';
+            add_header Content-Type application/json;
+        }
+    }
+}
