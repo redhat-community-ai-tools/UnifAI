@@ -55,7 +55,7 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
     )
 
     max_turns: Optional[int] = Field(
-        default=30,
+        default=200,
         description="Maximum agentic turns (tool-use round trips). Prevents runaway execution."
     )
 
