@@ -29,6 +29,7 @@ from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapa
 from mas.elements.nodes.common.workload import Task, AgentResult
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.claude_sdk_converter import ClaudeSDKConverter
+from mas.elements.tools.common.context_binder import bind_tool_context
 
 
 class ClaudeAgentNode(
@@ -389,6 +390,11 @@ class ClaudeAgentNode(
 
     def _build_options(self) -> "ClaudeAgentOptions":
         """Build ClaudeAgentOptions from node configuration."""
+        bind_tool_context(
+            self._domain_tools,
+            session_id=self.session_id,
+            agent_id=self.uid,
+        )
         env = self._build_env()
         work_dir = self._prepare_working_directory()
 

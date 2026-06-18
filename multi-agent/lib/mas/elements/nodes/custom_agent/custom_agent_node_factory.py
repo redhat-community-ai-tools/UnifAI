@@ -15,6 +15,9 @@ class CustomAgentNodeFactory(BaseFactory[CustomAgentNodeConfig, CustomAgentNode]
 
     def create(self, cfg, **deps):
         try:
+            element_deps = deps.pop("deps", None)
+            execution_holder = element_deps.execution_ctx if element_deps else None
+
             return CustomAgentNode(
                 llm=deps.pop("llm"),
                 retriever=deps.pop("retriever"),
@@ -23,6 +26,7 @@ class CustomAgentNodeFactory(BaseFactory[CustomAgentNodeConfig, CustomAgentNode]
                 system_message=cfg.system_message,
                 strategy_type=cfg.strategy_type,
                 max_rounds=cfg.max_rounds,
+                execution_holder=execution_holder,
                 retries=cfg.retries,
             )
         except Exception as e:

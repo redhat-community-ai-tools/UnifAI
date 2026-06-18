@@ -38,6 +38,7 @@ from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapa
 from mas.elements.nodes.common.workload import AgentResult, Task
 from mas.elements.providers.mcp_server_client.mcp_provider import McpProvider
 from mas.elements.tools.common.base_tool import BaseTool
+from mas.elements.tools.common.context_binder import bind_tool_context
 from mas.elements.tools.common.converter import LangChainToolsConverter
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,11 @@ class DeepAgentNode(
         if self._compiled_agent is not None:
             return
 
+        bind_tool_context(
+            self._domain_tools,
+            session_id=self.session_id,
+            agent_id=self.uid,
+        )
         langchain_tools = self._collect_langchain_tools()
         self._compiled_agent = self._build_deep_agent(langchain_tools)
         logger.info("DeepAgent %s: compiled graph with %d tools", self.uid, len(langchain_tools))

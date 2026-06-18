@@ -3,6 +3,7 @@ from copy import deepcopy
 from mas.graph.state.state_view import StateView
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.elements.tools.common.base_tool import BaseTool
+from mas.elements.tools.common.context_binder import bind_tool_context
 from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.llm_capable import LlmCapableMixin
@@ -53,6 +54,7 @@ class CustomAgentNode(
             max_rounds: Optional[int] = 15,
             strategy_type: str = StrategyType.REACT.value,
             include_builtin_tools: bool = True,
+            execution_holder: Any = None,
             **kwargs: Any
     ):
         super().__init__(
@@ -64,19 +66,30 @@ class CustomAgentNode(
         self.mcp_providers = mcp_providers or []
         self.max_rounds = max_rounds
         self.strategy_type = strategy_type
+        self._execution_holder = execution_holder
 
-        # SOLID: Separate domain tools from builtin tools
-        self._domain_tools = tools or []  # Tools from configuration
+        self._domain_tools = tools or []
         self._include_builtin_tools = include_builtin_tools
-        self.tools = []  # Will be populated in run()
+        self.tools = []
+
+    @property
+    def session_id(self) -> str:
+        """Get session_id from execution context (filled at runtime by the runner)."""
+        if self._execution_holder is None:
+            return ""
+        try:
+            return self._execution_holder.context.session_id
+        except (RuntimeError, AttributeError):
+            return ""
 
     def run(self, state: StateView) -> StateView:
         """Main entry point - process all incoming TaskPackets."""
-
-        # Build complete tools list (domain + builtin + mcp)
+        bind_tool_context(
+            self._domain_tools,
+            session_id=self.session_id,
+            agent_id=self.uid,
+        )
         self.tools = self._get_all_tools()
-
-        # Process all incoming packets
         self.process_packets(state)
         return state
 
