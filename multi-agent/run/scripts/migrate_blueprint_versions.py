@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Migration script: Backfill GENIE-1336 blueprint versioning fields.
+"""Migration script: Backfill GENIE-1336 blueprint versioning fields.
 
 This script is **idempotent** — running it multiple times produces the
 same final state without creating duplicate data or raising errors.
@@ -34,7 +33,8 @@ import argparse
 import copy
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List
+from collections.abc import Iterator
+from typing import Any
 
 import pymongo
 from pymongo.collection import Collection
@@ -55,9 +55,9 @@ _CHANGE_SUMMARY: str = "Initial snapshot created by GENIE-1336 migration"
 # ---------------------------------------------------------------------------
 
 
-def _batch(iterable: Iterator[Any], size: int) -> Iterator[List[Any]]:
+def _batch(iterable: Iterator[Any], size: int) -> Iterator[list[Any]]:
     """Yield successive chunks of ``size`` items from ``iterable``."""
-    batch: List[Any] = []
+    batch: list[Any] = []
     for item in iterable:
         batch.append(item)
         if len(batch) >= size:
@@ -108,7 +108,7 @@ def _migrate(
     total_errors = 0
 
     # Read all blueprints.
-    all_docs: List[Dict[str, Any]] = list(
+    all_docs: list[dict[str, Any]] = list(
         blueprints_col.find({}).batch_size(batch_size)
     )
 
@@ -116,7 +116,7 @@ def _migrate(
         return 0
 
     # ── Step 1: backfill version=1 on docs without a ``version`` key ──
-    step1_ops: List[UpdateOne] = []
+    step1_ops: list[UpdateOne] = []
     for doc in all_docs:
         if "version" not in doc:
             step1_ops.append(
@@ -135,7 +135,7 @@ def _migrate(
         for d in versions_col.find({"version": 1}, {"blueprint_id": 1})
     }
 
-    step2_ops: List[UpdateOne] = []
+    step2_ops: list[UpdateOne] = []
     for doc in all_docs:
         bp_id = doc["blueprint_id"]
         if bp_id in existing_v1:

@@ -1,5 +1,4 @@
-"""
-Flask inbound adapter — Blueprint REST endpoints.
+"""Flask inbound adapter — Blueprint REST endpoints.
 
 All routes follow the existing ``blueprint.*.verb`` naming convention
 used throughout the MAS API.  Version-history endpoints were added in
@@ -28,7 +27,8 @@ from __future__ import annotations
 
 import functools
 import logging
-from typing import Any, Callable, Dict, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from flask import Blueprint, abort, current_app, jsonify, request
 from mas.blueprints.exceptions import (
@@ -55,12 +55,55 @@ bp = Blueprint("blueprints", __name__)
 # ---------------------------------------------------------------------------
 
 
-def _ok(data: Any, status: int = 200) -> Tuple[Any, int]:
+def _ok(data: Any, status: int = 200) -> tuple[Any, int]:
+    """Return a standardised success JSON envelope."""
     return jsonify({"success": True, "data": data}), status
 
 
-def _err(message: str, status: int = 500) -> Tuple[Any, int]:
+def _err(message: str, status: int = 500) -> tuple[Any, int]:
+    """Return a standardised error JSON envelope."""
     return jsonify({"success": False, "error": message}), status
+
+
+def _parse_int_param(
+    value: str | None,
+    default: int,
+    param_name: str,
+    *,
+    min_val: int | None = None,
+    max_val: int | None = None,
+) -> int:
+    """
+    Safely parse a string to an integer with clamping and error handling.
+
+    Parameters
+    ----------
+    value:
+        Raw string from the request (may be ``None``).
+    default:
+        Returned when *value* is ``None``.
+    param_name:
+        Used in the 400 error message when parsing fails.
+    min_val / max_val:
+        If provided, the parsed value is clamped to this range.
+
+    Raises
+    ------
+    werkzeug.exceptions.HTTPException (400)
+        If *value* is not a valid integer.
+    """
+    if value is None:
+        result = default
+    else:
+        try:
+            result = int(value)
+        except (ValueError, TypeError):
+            abort(400, f"Invalid value for {param_name!r}: must be an integer")
+    if min_val is not None:
+        result = max(min_val, result)
+    if max_val is not None:
+        result = min(max_val, result)
+    return result
 
 
 def _service():
@@ -138,8 +181,8 @@ def _handle_blueprint_errors(fn: Callable) -> Callable:
     return wrapper
 
 
-def _get_json_body() -> Dict:
-    """Return the parsed JSON request body or raise a 400."""
+def _get_json_body() -> dict:
+    """Return the parsed JSON request body or abort with 400."""
     data = request.get_json(silent=True)
     if data is None:
         abort(
@@ -147,6 +190,17 @@ def _get_json_body() -> Dict:
             "Request body must be valid JSON with Content-Type: application/json",
         )
     return data
+
+
+def _require_body_keys(body: dict, *keys: str) -> None:
+    """
+    Validate that all *keys* are present in *body*.
+
+    Aborts with 400 and a descriptive message if any required key is missing.
+    """
+    missing = [k for k in keys if k not in body]
+    if missing:
+        abort(400, f"Missing required field(s): {', '.join(missing)}")
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +222,7 @@ def blueprint_save():
     """
     _require_auth()
     body = _get_json_body()
+    _require_body_keys(body, "identity", "spec_dict")
     identity = Identity.model_validate(body["identity"])
     spec_dict = body["spec_dict"]
     metadata = body.get("metadata", {})
@@ -193,6 +248,7 @@ def blueprint_update():
     """
     _require_auth()
     body = _get_json_body()
+    _require_body_keys(body, "blueprint_id", "spec_dict")
     blueprint_id = body["blueprint_id"]
     spec_dict = body["spec_dict"]
     change_summary = body.get("change_summary")
@@ -249,8 +305,8 @@ def available_blueprints_summary_get():
     _require_auth()
     identity_type = request.args.get("identity_type")
     identity_id = request.args.get("identity_id")
-    skip = int(request.args.get("skip", 0))
-    limit = min(int(request.args.get("limit", 20)), 100)
+    skip = _parse_int_param(request.args.get("skip"), 0, "skip", min_val=0)
+    limit = _parse_int_param(request.args.get("limit"), 20, "limit", min_val=1, max_val=100)
 
     identity = None
     if identity_type and identity_id:
@@ -297,8 +353,10 @@ def blueprint_versions_list():
     if not blueprint_id:
         return _err("Missing required query parameter: blueprint_id", 400)
 
-    page = max(1, int(request.args.get("page", 1)))
-    page_size = max(1, min(100, int(request.args.get("page_size", 20))))
+    page = _parse_int_param(request.args.get("page"), 1, "page", min_val=1)
+    page_size = _parse_int_param(
+        request.args.get("page_size"), 20, "page_size", min_val=1, max_val=100
+    )
 
     result = _service().list_versions(
         blueprint_id=blueprint_id,

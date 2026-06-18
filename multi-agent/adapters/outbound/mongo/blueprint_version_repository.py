@@ -1,5 +1,4 @@
-"""
-MongoDB adapter for the Blueprint Version repository port.
+"""MongoDB adapter for the Blueprint Version repository port.
 
 Implements ``BlueprintVersionRepository`` against the ``blueprint_versions``
 collection.  The collection is append-only — no update or delete operations
@@ -13,7 +12,6 @@ GENIE-1336
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
 
 from mas.blueprints.exceptions import DuplicateSnapshotError
 from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
@@ -76,7 +74,7 @@ class MongoBlueprintVersionRepository(BlueprintVersionRepository):
         PyMongo (or mongomock) collection for ``blueprint_versions``.
     """
 
-    def __init__(self, col: Optional[Collection] = None) -> None:
+    def __init__(self, col: Collection | None = None) -> None:
         if col is None:
             raise RuntimeError(
                 "MongoBlueprintVersionRepository requires a non-None 'col' argument."
@@ -154,7 +152,7 @@ class MongoBlueprintVersionRepository(BlueprintVersionRepository):
         blueprint_id: str,
         page: int = 1,
         page_size: int = 20,
-    ) -> Tuple[List[BlueprintVersionDocument], int]:
+    ) -> tuple[list[BlueprintVersionDocument], int]:
         """
         Return paginated version documents sorted newest-first.
 
@@ -188,7 +186,7 @@ class MongoBlueprintVersionRepository(BlueprintVersionRepository):
         self,
         blueprint_id: str,
         version: int,
-    ) -> Optional[BlueprintVersionDocument]:
+    ) -> BlueprintVersionDocument | None:
         """
         Return the full version document including ``spec_dict_snapshot``,
         or ``None`` if not found.
@@ -234,7 +232,7 @@ def _raw_to_doc(raw: dict) -> BlueprintVersionDocument:
     return doc
 
 
-def _ensure_utc(dt):
+def _ensure_utc(dt: datetime | None) -> datetime | None:
     """Attach UTC timezone info if the datetime is naïve."""
     if dt is not None and dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)

@@ -1,5 +1,4 @@
-"""
-Abstract port (interface) for the Blueprint Version repository.
+"""Abstract port (interface) for the Blueprint Version repository.
 
 The ``blueprint_versions`` collection is append-only — no updates or
 deletes are permitted at the domain level.  This makes the version history
@@ -11,7 +10,6 @@ GENIE-1336
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
 
 from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
 
@@ -62,7 +60,7 @@ class BlueprintVersionRepository(ABC):
         blueprint_id: str,
         page: int = 1,
         page_size: int = 20,
-    ) -> Tuple[List[BlueprintVersionDocument], int]:
+    ) -> tuple[list[BlueprintVersionDocument], int]:
         """
         Return a paginated list of version summaries (newest first).
 
@@ -82,7 +80,7 @@ class BlueprintVersionRepository(ABC):
 
         Returns
         -------
-        Tuple[List[BlueprintVersionDocument], int]
+        tuple[list[BlueprintVersionDocument], int]
             ``(items, total_count)`` — total_count is the total number of
             versions for this blueprint (unaffected by pagination).
         """
@@ -92,7 +90,7 @@ class BlueprintVersionRepository(ABC):
         self,
         blueprint_id: str,
         version: int,
-    ) -> Optional[BlueprintVersionDocument]:
+    ) -> BlueprintVersionDocument | None:
         """
         Return the full version document (including ``spec_dict_snapshot``)
         for a specific ``(blueprint_id, version)`` pair, or ``None`` if it

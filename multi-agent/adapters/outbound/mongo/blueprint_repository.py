@@ -1,5 +1,4 @@
-"""
-MongoDB adapter for the Blueprint repository port.
+"""MongoDB adapter for the Blueprint repository port.
 
 Implements ``BlueprintRepository`` using PyMongo.  Pass an explicit
 ``col`` (``pymongo.collection.Collection``) to the constructor so that
@@ -19,7 +18,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mas.blueprints.models.blueprint import (
     BlueprintDocument,
@@ -43,7 +42,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         pass a real collection at boot time via the DI container.
     """
 
-    def __init__(self, col: Optional[Collection] = None) -> None:
+    def __init__(self, col: Collection | None = None) -> None:
         if col is None:
             raise RuntimeError(
                 "MongoBlueprintRepository requires a non-None 'col' argument."
@@ -58,13 +57,13 @@ class MongoBlueprintRepository(BlueprintRepository):
         self,
         identity: Identity,
         spec: dict,
-        rid_refs: List[str],
-        metadata: Optional[dict] = None,
+        rid_refs: list[str],
+        metadata: dict | None = None,
     ) -> str:
         """Insert a new blueprint document.  Always initialises ``version = 1``."""
         blueprint_id = uuid.uuid4().hex
         now = datetime.now(timezone.utc)
-        doc: Dict[str, Any] = {
+        doc: dict[str, Any] = {
             "blueprint_id": blueprint_id,
             "identity": identity.model_dump(),
             "created_at": now,
@@ -77,7 +76,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         self._col.insert_one(doc)
         return blueprint_id
 
-    def update(self, blueprint_id: str, spec: dict, rid_refs: List[str]) -> bool:
+    def update(self, blueprint_id: str, spec: dict, rid_refs: list[str]) -> bool:
         """
         Unconditional spec update — no OCC guard, no version increment.
 
@@ -101,9 +100,9 @@ class MongoBlueprintRepository(BlueprintRepository):
         self,
         blueprint_id: str,
         spec: dict,
-        rid_refs: List[str],
+        rid_refs: list[str],
         expected_version: int,
-    ) -> Optional[int]:
+    ) -> int | None:
         """
         Atomic OCC-guarded spec update.
 
@@ -130,7 +129,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         """
         now = datetime.now(timezone.utc)
 
-        common_set: Dict[str, Any] = {
+        common_set: dict[str, Any] = {
             "spec_dict": spec,
             "rid_refs": rid_refs,
             "updated_at": now,
@@ -180,6 +179,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         return int(updated_doc["version"])
 
     def set_metadata(self, blueprint_id: str, metadata: dict) -> bool:
+        """Replace the metadata sub-document for the given blueprint."""
         now = datetime.now(timezone.utc)
         result = self._col.update_one(
             {"blueprint_id": blueprint_id},
@@ -188,10 +188,12 @@ class MongoBlueprintRepository(BlueprintRepository):
         return result.matched_count > 0
 
     def delete(self, blueprint_id: str) -> bool:
+        """Hard-delete a single blueprint by its ID."""
         result = self._col.delete_one({"blueprint_id": blueprint_id})
         return result.deleted_count > 0
 
     def delete_by_identity(self, identity: Identity) -> int:
+        """Delete all blueprints owned by *identity* and return the count."""
         result = self._col.delete_many(
             {"identity.type": identity.type, "identity.id": identity.id}
         )
@@ -202,25 +204,29 @@ class MongoBlueprintRepository(BlueprintRepository):
     # ------------------------------------------------------------------
 
     def load(self, blueprint_id: str) -> BlueprintDocument:
+        """Load a full blueprint document by ID or raise ``KeyError``."""
         raw = self._col.find_one({"blueprint_id": blueprint_id})
         if raw is None:
             raise KeyError(f"Blueprint not found: {blueprint_id!r}")
         return self._doc_to_model(raw)
 
-    def load_many(self, blueprint_ids: List[str]) -> List[BlueprintDocument]:
+    def load_many(self, blueprint_ids: list[str]) -> list[BlueprintDocument]:
+        """Load multiple blueprints by ID in a single query."""
         cursor = self._col.find({"blueprint_id": {"$in": blueprint_ids}})
         return [self._doc_to_model(raw) for raw in cursor]
 
     def exists(self, blueprint_id: str) -> bool:
+        """Return ``True`` if a blueprint with this ID exists."""
         return self._col.count_documents({"blueprint_id": blueprint_id}, limit=1) > 0
 
     def list_ids(
         self,
-        identity: Optional[Identity] = None,
+        identity: Identity | None = None,
         skip: int = 0,
         limit: int = 20,
         sort_desc: bool = True,
-    ) -> List[str]:
+    ) -> list[str]:
+        """Return paginated blueprint IDs, optionally scoped to *identity*."""
         flt = self._identity_filter(identity)
         direction = DESCENDING if sort_desc else 1
         cursor = (
@@ -233,11 +239,12 @@ class MongoBlueprintRepository(BlueprintRepository):
 
     def list_docs(
         self,
-        identity: Optional[Identity] = None,
+        identity: Identity | None = None,
         skip: int = 0,
         limit: int = 20,
         sort_desc: bool = True,
-    ) -> List[BlueprintDocument]:
+    ) -> list[BlueprintDocument]:
+        """Return paginated full blueprint documents, optionally scoped to *identity*."""
         flt = self._identity_filter(identity)
         direction = DESCENDING if sort_desc else 1
         cursor = (
@@ -247,11 +254,12 @@ class MongoBlueprintRepository(BlueprintRepository):
 
     def list_summaries(
         self,
-        identity: Optional[Identity] = None,
+        identity: Identity | None = None,
         skip: int = 0,
         limit: int = 20,
         sort_desc: bool = True,
-    ) -> List[BlueprintSummary]:
+    ) -> list[BlueprintSummary]:
+        """Return lightweight summaries (spec_dict projected to name/description only)."""
         flt = self._identity_filter(identity)
         direction = DESCENDING if sort_desc else 1
         projection = {
@@ -289,14 +297,17 @@ class MongoBlueprintRepository(BlueprintRepository):
             )
         return summaries
 
-    def count(self, identity: Optional[Identity] = None) -> int:
+    def count(self, identity: Identity | None = None) -> int:
+        """Total blueprint count, optionally scoped to *identity*."""
         return self._col.count_documents(self._identity_filter(identity))
 
-    def list_direct_usage(self, rid: str) -> List[str]:
+    def list_direct_usage(self, rid: str) -> list[str]:
+        """Return blueprint IDs whose ``rid_refs`` array contains *rid*."""
         cursor = self._col.find({"rid_refs": rid}, {"blueprint_id": 1})
         return [doc["blueprint_id"] for doc in cursor]
 
     def count_usage(self, rid: str) -> int:
+        """Count blueprints that reference resource ID *rid*."""
         return self._col.count_documents({"rid_refs": rid})
 
     # ------------------------------------------------------------------
@@ -304,13 +315,14 @@ class MongoBlueprintRepository(BlueprintRepository):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _identity_filter(identity: Optional[Identity]) -> Dict[str, Any]:
+    def _identity_filter(identity: Identity | None) -> dict[str, Any]:
+        """Build a MongoDB filter dict scoping to *identity* (or empty for all)."""
         if identity is None:
             return {}
         return {"identity.type": identity.type, "identity.id": identity.id}
 
     @staticmethod
-    def _doc_to_model(raw: Dict[str, Any]) -> BlueprintDocument:
+    def _doc_to_model(raw: dict[str, Any]) -> BlueprintDocument:
         """
         Convert a raw MongoDB document to a ``BlueprintDocument``.
 

@@ -1,5 +1,4 @@
-"""
-BlueprintService — application-layer orchestrator for the Blueprint bounded context.
+"""BlueprintService — application-layer orchestrator for the Blueprint bounded context.
 
 Sits between the inbound adapters (Flask routes) and the outbound adapters
 (MongoDB repositories).  All external dependencies are injected so the
@@ -16,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 _logger = logging.getLogger(__name__)
 
@@ -65,7 +64,7 @@ class BlueprintService:
         validation_service: Any = None,
         card_service: Any = None,
         auth_service: Any = None,
-        version_repo: Optional[BlueprintVersionRepository] = None,
+        version_repo: BlueprintVersionRepository | None = None,
     ) -> None:
         self._repo = repo
         self._resolver = resolver
@@ -81,8 +80,8 @@ class BlueprintService:
     def create_blueprint(
         self,
         identity: Identity,
-        spec_dict: Dict[str, Any],
-        metadata: Optional[Dict[str, Any]] = None,
+        spec_dict: dict[str, Any],
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Persist a new blueprint and return its generated ``blueprint_id``.
@@ -100,9 +99,9 @@ class BlueprintService:
     def create_draft(
         self,
         identity: Identity,
-        draft_dict: Dict[str, Any],
+        draft_dict: dict[str, Any],
         user_id: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Create a new blueprint draft and return its generated ``blueprint_id``.
@@ -132,9 +131,9 @@ class BlueprintService:
     def update_draft(
         self,
         blueprint_id: str,
-        draft_dict: Dict[str, Any],
+        draft_dict: dict[str, Any],
         user_id: str = "",
-        change_summary: Optional[str] = None,
+        change_summary: str | None = None,
     ) -> bool:
         """
         Update the live spec of an existing blueprint using OCC +
@@ -204,20 +203,20 @@ class BlueprintService:
         """Hard-delete a blueprint by ID."""
         return self._repo.delete(blueprint_id)
 
-    def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
+    def set_metadata(self, blueprint_id: str, metadata: dict[str, Any]) -> bool:
         """Replace the metadata sub-document."""
         return self._repo.set_metadata(blueprint_id, metadata)
 
     def list_blueprints(
         self,
-        identity: Optional[Identity] = None,
+        identity: Identity | None = None,
         skip: int = 0,
         limit: int = 20,
-    ) -> List[BlueprintDocument]:
+    ) -> list[BlueprintDocument]:
         """Return a paginated list of full blueprint documents."""
         return self._repo.list_docs(identity=identity, skip=skip, limit=limit)
 
-    def count_blueprints(self, identity: Optional[Identity] = None) -> int:
+    def count_blueprints(self, identity: Identity | None = None) -> int:
         """Return total blueprint count, optionally filtered by identity."""
         return self._repo.count(identity=identity)
 
@@ -230,7 +229,7 @@ class BlueprintService:
         blueprint_id: str,
         page: int = 1,
         page_size: int = 20,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Return a paginated list of version summaries for a blueprint.
 
@@ -282,7 +281,7 @@ class BlueprintService:
         self,
         blueprint_id: str,
         version_number: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Return the full detail of a specific blueprint version.
 
@@ -365,24 +364,24 @@ class BlueprintService:
     # Utility helpers
     # ------------------------------------------------------------------
 
-    def _extract_rid_refs(self, spec_dict: Dict[str, Any]) -> List[str]:
+    def _extract_rid_refs(self, spec_dict: dict[str, Any]) -> list[str]:
         """
         Recursively extract all ``$ref`` values from a spec dict.
 
         Deduplicates the result so each rid appears at most once.
         """
-        refs: List[str] = []
+        refs: list[str] = []
         self._walk_refs(spec_dict, refs)
         # Preserve order but deduplicate.
         seen = set()
-        unique: List[str] = []
+        unique: list[str] = []
         for ref in refs:
             if ref not in seen:
                 seen.add(ref)
                 unique.append(ref)
         return unique
 
-    def _walk_refs(self, node: Any, acc: List[str]) -> None:
+    def _walk_refs(self, node: Any, acc: list[str]) -> None:
         """DFS traversal collecting ``$ref`` string values."""
         if isinstance(node, dict):
             if "$ref" in node and isinstance(node["$ref"], str):
@@ -413,7 +412,7 @@ class BlueprintService:
         self,
         doc: BlueprintDocument,
         user_id: str = "",
-        change_summary: Optional[str] = None,
+        change_summary: str | None = None,
     ) -> None:
         """
         Insert an immutable snapshot of ``doc``'s current spec.
