@@ -24,6 +24,7 @@ from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
     ConcurrentModificationError,
     DuplicateSnapshotError,
+    FeatureNotConfiguredError,
     VersionNotFoundError,
 )
 from mas.blueprints.models.blueprint import BlueprintDocument, Identity
@@ -54,7 +55,7 @@ class BlueprintService:
     version_repo:
         Append-only version snapshot repository (GENIE-1336).  Required
         for ``update_draft`` and all version-history methods.  When
-        ``None``, those methods raise ``RuntimeError``.
+        ``None``, those methods raise ``FeatureNotConfiguredError``.
     """
 
     def __init__(
@@ -157,7 +158,7 @@ class BlueprintService:
 
         Raises
         ------
-        RuntimeError
+        FeatureNotConfiguredError
             If ``version_repo`` is not configured.
         BlueprintNotFoundError
             If the blueprint does not exist.
@@ -251,7 +252,7 @@ class BlueprintService:
         ------
         BlueprintNotFoundError
             If the blueprint does not exist.
-        RuntimeError
+        FeatureNotConfiguredError
             If ``version_repo`` was not injected (feature not configured).
         """
         self._require_version_repo()
@@ -293,7 +294,7 @@ class BlueprintService:
             If the parent blueprint does not exist.
         VersionNotFoundError
             If no snapshot exists for ``version_number``.
-        RuntimeError
+        FeatureNotConfiguredError
             If the version repo is not configured.
         """
         self._require_version_repo()
@@ -338,7 +339,7 @@ class BlueprintService:
         ConcurrentModificationError
             If another writer modified the blueprint between the read and
             the restore write.
-        RuntimeError
+        FeatureNotConfiguredError
             If the version repo is not configured.
         """
         self._require_version_repo()
@@ -401,10 +402,8 @@ class BlueprintService:
         """Load a ``BlueprintDocument`` or raise ``BlueprintNotFoundError``."""
         try:
             doc = self._repo.load(blueprint_id)
-        except (KeyError, Exception) as exc:
+        except KeyError as exc:
             # Repository raises KeyError for missing docs; re-raise as domain error.
-            if isinstance(exc, BlueprintNotFoundError):
-                raise
             raise BlueprintNotFoundError(blueprint_id) from exc
         if doc is None:
             raise BlueprintNotFoundError(blueprint_id)
@@ -438,10 +437,6 @@ class BlueprintService:
             _logger.debug("Snapshot insert skipped (duplicate)", exc_info=True)
 
     def _require_version_repo(self) -> None:
-        """Raise ``RuntimeError`` if ``BlueprintVersionRepository`` is not configured."""
+        """Raise ``FeatureNotConfiguredError`` if ``BlueprintVersionRepository`` is not configured."""
         if self._version_repo is None:
-            raise RuntimeError(
-                "BlueprintVersionRepository is not configured. "
-                "Inject version_repo into BlueprintService to enable "
-                "version-history features."
-            )
+            raise FeatureNotConfiguredError("BlueprintVersionRepository")

@@ -107,6 +107,14 @@ class DuplicateSnapshotError(BlueprintError):
 # ---------------------------------------------------------------------------
 
 
+class FeatureNotConfiguredError(BlueprintError):
+    """Raised when a required feature (e.g. version history) is not configured."""
+
+    def __init__(self, feature: str) -> None:
+        self.feature = feature
+        super().__init__(f"Feature not configured: {feature}")
+
+
 class BlueprintSaveError(BlueprintError):
     """Raised when the repository fails to persist a blueprint."""
 

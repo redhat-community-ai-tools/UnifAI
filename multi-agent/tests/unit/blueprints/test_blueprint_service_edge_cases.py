@@ -22,6 +22,7 @@ from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
     ConcurrentModificationError,
     DuplicateSnapshotError,
+    FeatureNotConfiguredError,
     VersionNotFoundError,
 )
 from mas.blueprints.models.blueprint import BlueprintDocument, Identity
@@ -196,16 +197,16 @@ def svc_no_ver(bp_repo):
 
 
 class TestRequireVersionRepo:
-    def test_list_versions_without_repo_raises_runtime(self, svc_no_ver):
-        with pytest.raises(RuntimeError, match="BlueprintVersionRepository"):
+    def test_list_versions_without_repo_raises_feature_not_configured(self, svc_no_ver):
+        with pytest.raises(FeatureNotConfiguredError):
             svc_no_ver.list_versions("bp-1")
 
-    def test_load_version_without_repo_raises_runtime(self, svc_no_ver):
-        with pytest.raises(RuntimeError, match="BlueprintVersionRepository"):
+    def test_load_version_without_repo_raises_feature_not_configured(self, svc_no_ver):
+        with pytest.raises(FeatureNotConfiguredError):
             svc_no_ver.load_version("bp-1", 1)
 
-    def test_restore_version_without_repo_raises_runtime(self, svc_no_ver):
-        with pytest.raises(RuntimeError, match="BlueprintVersionRepository"):
+    def test_restore_version_without_repo_raises_feature_not_configured(self, svc_no_ver):
+        with pytest.raises(FeatureNotConfiguredError):
             svc_no_ver.restore_version("bp-1", target_version=1)
 
 
@@ -369,16 +370,16 @@ class TestExtractRidRefsEdgeCases:
 
 
 class TestUpdateDraftRequiresVersionRepo:
-    """update_draft raises RuntimeError when version_repo is not configured."""
+    """update_draft raises FeatureNotConfiguredError when version_repo is not configured."""
 
-    def test_raises_runtime_error_when_version_repo_is_none(self, svc_no_ver):
-        with pytest.raises(RuntimeError, match="BlueprintVersionRepository is not configured"):
+    def test_raises_feature_not_configured_when_version_repo_is_none(self, svc_no_ver):
+        with pytest.raises(FeatureNotConfiguredError):
             svc_no_ver.update_draft("bp-1", {"new": "spec"})
 
     def test_does_not_touch_repo_when_version_repo_is_none(self, svc_no_ver, bp_repo):
         """Neither update() nor update_with_version() should be called."""
         doc_before = bp_repo.load("bp-1")
-        with pytest.raises(RuntimeError):
+        with pytest.raises(FeatureNotConfiguredError):
             svc_no_ver.update_draft("bp-1", {"name": "Updated spec"})
         doc_after = bp_repo.load("bp-1")
         # Spec must be unchanged

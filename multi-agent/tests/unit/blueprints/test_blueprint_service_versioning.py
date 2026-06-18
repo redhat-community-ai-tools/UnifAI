@@ -22,6 +22,7 @@ from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
     ConcurrentModificationError,
     DuplicateSnapshotError,
+    FeatureNotConfiguredError,
     VersionNotFoundError,
 )
 
@@ -81,13 +82,13 @@ def _make_service(
 
 @pytest.mark.unit
 class TestUpdateDraftRequiresVersionRepo:
-    """update_draft raises RuntimeError when version_repo is not configured."""
+    """update_draft raises FeatureNotConfiguredError when version_repo is not configured."""
 
-    def test_raises_runtime_error_when_version_repo_is_none(self):
+    def test_raises_feature_not_configured_when_version_repo_is_none(self):
         repo = MagicMock()
         svc = _make_service(repo=repo, version_repo=None)
 
-        with pytest.raises(RuntimeError, match="BlueprintVersionRepository is not configured"):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.update_draft(
                 blueprint_id="bp-1",
                 draft_dict={"name": "Updated", "nodes": []},
@@ -112,7 +113,7 @@ class TestUpdateDraftVersionedPath:
         current_doc = _make_blueprint_doc(version=current_version, spec_dict={"name": "Old", "nodes": []})
         repo.load.return_value = current_doc
 
-# update_with_version succeeds by default (returns a new doc)
+        # update_with_version succeeds by default (returns a new doc)
         new_doc = _make_blueprint_doc(version=current_version + 1)
         repo.update_with_version.return_value = new_doc
 
@@ -259,9 +260,9 @@ class TestListVersions:
 
         assert exc_info.value.blueprint_id == "bp-nope"
 
-    def test_raises_runtime_error_when_version_repo_not_configured(self):
+    def test_raises_feature_not_configured_when_version_repo_not_configured(self):
         svc = _make_service(repo=MagicMock(), version_repo=None)
-        with pytest.raises(RuntimeError, match="BlueprintVersionRepository is not configured"):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.list_versions("bp-1")
 
 
@@ -304,9 +305,9 @@ class TestLoadVersion:
         assert exc_info.value.blueprint_id == "bp-1"
         assert exc_info.value.version == 99
 
-    def test_raises_runtime_error_when_version_repo_not_configured(self):
+    def test_raises_feature_not_configured_when_version_repo_not_configured(self):
         svc = _make_service(repo=MagicMock(), version_repo=None)
-        with pytest.raises(RuntimeError, match="BlueprintVersionRepository is not configured"):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.load_version("bp-1", 1)
 
     def test_passes_correct_args_to_find_one(self):
@@ -384,9 +385,9 @@ class TestRestoreVersion:
 
         assert exc_info.value.version == 99
 
-    def test_raises_runtime_error_when_version_repo_not_configured(self):
+    def test_raises_feature_not_configured_when_version_repo_not_configured(self):
         svc = _make_service(repo=MagicMock(), version_repo=None)
-        with pytest.raises(RuntimeError, match="BlueprintVersionRepository is not configured"):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.restore_version("bp-1", target_version=1)
 
     def test_propagates_concurrent_modification_error(self):

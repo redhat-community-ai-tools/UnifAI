@@ -12,7 +12,7 @@ GENIE-1336
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 from mas.blueprints.exceptions import DuplicateSnapshotError
@@ -214,7 +214,17 @@ def _raw_to_doc(raw: dict) -> BlueprintVersionDocument:
     both unit and integration tests remain valid.  The sentinel compares
     equal to any dict value without materialising the actual bytes.
     """
-    doc = BlueprintVersionDocument.from_mongo_doc(raw)
+    raw_id = raw.get("_id")
+    str_id = str(raw_id) if raw_id is not None else None
+    doc = BlueprintVersionDocument(
+        blueprint_id=raw["blueprint_id"],
+        version=raw["version"],
+        spec_dict_snapshot=raw.get("spec_dict_snapshot", {}),
+        created_by=raw.get("created_by", ""),
+        created_at=raw.get("created_at", datetime.now(timezone.utc)),
+        change_summary=raw.get("change_summary"),
+        _id=str_id,
+    )
     if "spec_dict_snapshot" not in raw:
         # Projection excluded the field — substitute the sentinel so that
         # downstream equality checks (`== {}` and `== actual_spec`) both

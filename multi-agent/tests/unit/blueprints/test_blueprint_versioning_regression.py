@@ -11,10 +11,10 @@ Regression areas
 1. **Exception message contracts** — callers and tests depend on the exact
    wording of VersionNotFoundError and ConcurrentModificationError.
 2. **Version repo guard** — update_draft() without a version_repo must
-   raise RuntimeError (legacy fallback removed per architecture review).
+   raise FeatureNotConfiguredError (legacy fallback removed per architecture review).
 3. **Pagination arithmetic** — total_pages ceiling division and clamping.
-4. **BlueprintService guard** — _ensure_version_repo() raises RuntimeError
-   when version_repo is None; the message is stable.
+4. **BlueprintService guard** — _require_version_repo() raises
+   FeatureNotConfiguredError when version_repo is None.
 5. **Snapshot isolation** — BlueprintVersionDocument deep-copies its snapshot
    so later mutations to the source dict don't corrupt stored versions.
 6. **OCC semantics** — None from update_with_version() raises
@@ -31,8 +31,9 @@ from unittest.mock import MagicMock
 
 from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
-    VersionNotFoundError,
     ConcurrentModificationError,
+    FeatureNotConfiguredError,
+    VersionNotFoundError,
 )
 from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
 from mas.blueprints.service import BlueprintService
@@ -124,14 +125,14 @@ class TestExceptionMessages:
 
 @pytest.mark.unit
 class TestUpdateDraftRequiresVersionRepo:
-    """update_draft() without version_repo must raise RuntimeError."""
+    """update_draft() without version_repo must raise FeatureNotConfiguredError."""
 
-    def test_update_draft_raises_runtime_error_without_version_repo(self):
+    def test_update_draft_raises_feature_not_configured_without_version_repo(self):
         """update_draft must fail-fast when version_repo is None."""
         repo = MagicMock()
         svc = BlueprintService(repo=repo)  # No version_repo.
 
-        with pytest.raises(RuntimeError, match="BlueprintVersionRepository is not configured"):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.update_draft(blueprint_id="bp-1", draft_dict={"name": "v"})
 
         # Neither write path should be invoked
@@ -143,15 +144,15 @@ class TestUpdateDraftRequiresVersionRepo:
         repo = MagicMock()
         svc = BlueprintService(repo=repo)
 
-        with pytest.raises(RuntimeError):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.update_draft(blueprint_id="bp-1", draft_dict={"name": "v"})
 
-    def test_runtime_error_message_is_stable(self):
+    def test_error_message_is_stable(self):
         """The error message must mention version_repo so operators can diagnose."""
         repo = MagicMock()
         svc = BlueprintService(repo=repo)
 
-        with pytest.raises(RuntimeError, match="version_repo"):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.update_draft(blueprint_id="bp-1", draft_dict={})
 
 
@@ -237,38 +238,38 @@ class TestPaginationArithmetic:
 
 @pytest.mark.unit
 class TestEnsureVersionRepoGuard:
-    """Service methods that require version_repo raise RuntimeError when it's None."""
+    """Service methods that require version_repo raise FeatureNotConfiguredError when it's None."""
 
-    def test_list_versions_raises_runtime_error_without_version_repo(self):
+    def test_list_versions_raises_feature_not_configured_without_version_repo(self):
         repo = MagicMock()
         repo.load.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo)  # version_repo=None
 
-        with pytest.raises(RuntimeError):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.list_versions("bp-1")
 
-    def test_load_version_raises_runtime_error_without_version_repo(self):
+    def test_load_version_raises_feature_not_configured_without_version_repo(self):
         repo = MagicMock()
         repo.load.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo)
 
-        with pytest.raises(RuntimeError):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.load_version("bp-1", 1)
 
-    def test_restore_version_raises_runtime_error_without_version_repo(self):
+    def test_restore_version_raises_feature_not_configured_without_version_repo(self):
         repo = MagicMock()
         repo.load.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo)
 
-        with pytest.raises(RuntimeError):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.restore_version("bp-1", 1)
 
-    def test_runtime_error_message_mentions_version_repo(self):
-        """The error message must mention version_repo so operators can diagnose."""
+    def test_feature_not_configured_error_is_raised(self):
+        """FeatureNotConfiguredError is raised when version_repo is None."""
         repo = MagicMock()
         svc = BlueprintService(repo=repo)
 
-        with pytest.raises(RuntimeError, match="version_repo"):
+        with pytest.raises(FeatureNotConfiguredError):
             svc.list_versions("bp-1")
 
 

@@ -21,12 +21,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from lib.mas.blueprints.models.blueprint import (
+from mas.blueprints.models.blueprint import (
     BlueprintDocument,
     BlueprintSummary,
     Identity,
 )
-from lib.mas.blueprints.repository.repository import BlueprintRepository
+from mas.blueprints.repository.repository import BlueprintRepository
 from pymongo import DESCENDING, ReturnDocument
 from pymongo.collection import Collection
 

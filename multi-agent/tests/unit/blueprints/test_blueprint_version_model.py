@@ -154,7 +154,7 @@ class TestToSummary:
         )
         summary = doc.to_summary()
 
-        assert set(summary.keys()) == {"version", "created_by", "created_at", "change_summary"}
+        assert set(summary.keys()) == {"blueprint_id", "version", "created_by", "created_at", "change_summary"}
         assert summary["version"] == 5
         assert summary["created_by"] == "carol"
         assert summary["created_at"] == ts.isoformat()
@@ -169,7 +169,16 @@ class TestToSummary:
         )
         summary = doc.to_summary()
         assert "spec_dict_snapshot" not in summary
-        assert "blueprint_id" not in summary
+
+    def test_to_summary_includes_blueprint_id(self):
+        doc = BlueprintVersionDocument(
+            blueprint_id="bp-y",
+            version=2,
+            spec_dict_snapshot={"secret": "data"},
+            created_by="u",
+        )
+        summary = doc.to_summary()
+        assert summary["blueprint_id"] == "bp-y"
 
 
 @pytest.mark.unit

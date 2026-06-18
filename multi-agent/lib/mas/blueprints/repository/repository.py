@@ -15,7 +15,24 @@ class BlueprintRepository(ABC):
     def update(self, *, blueprint_id: str, spec: BlueprintDraft,
                rid_refs: list[str]) -> bool:
         """Replace an existing draft.  Return True if a document was modified."""
-        
+
+    @abstractmethod
+    def update_with_version(
+        self,
+        blueprint_id: str,
+        spec: BlueprintDraft,
+        rid_refs: list[str],
+        expected_version: int,
+    ) -> Optional[int]:
+        """
+        Atomic OCC-guarded spec update.
+
+        Applies ``spec`` only if the document's current ``version`` equals
+        ``expected_version``.  On success, increments the version and returns
+        the new version number.  Returns ``None`` when the document was not
+        found or the version guard failed (concurrent modification).
+        """
+
     @abstractmethod
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
         """Set the metadata dictionary for a blueprint document."""

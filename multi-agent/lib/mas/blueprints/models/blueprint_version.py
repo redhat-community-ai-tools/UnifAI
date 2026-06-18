@@ -18,7 +18,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -54,9 +54,6 @@ class BlueprintVersionDocument:
     change_summary: Optional[str] = None
     _id: Optional[str] = field(default=None, repr=False)
 
-    # Class-level sentinel used in __post_init__ to detect direct construction
-    _SENTINEL: ClassVar[object] = object()
-
     def __post_init__(self) -> None:
         # Deep-copy to ensure stored snapshot is isolated from caller's dict.
         object.__setattr__(
@@ -84,6 +81,7 @@ class BlueprintVersionDocument:
         Deliberately excludes ``spec_dict_snapshot`` to keep payloads small.
         """
         return {
+            "blueprint_id": self.blueprint_id,
             "version": self.version,
             "created_by": self.created_by,
             "created_at": _iso(self.created_at),
@@ -102,29 +100,6 @@ class BlueprintVersionDocument:
             "spec_dict_snapshot": copy.deepcopy(self.spec_dict_snapshot),
         }
 
-    # ------------------------------------------------------------------
-    # Factory
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def from_mongo_doc(cls, doc: Dict[str, Any]) -> "BlueprintVersionDocument":
-        """
-        Construct a ``BlueprintVersionDocument`` from a raw MongoDB document.
-
-        Handles ObjectId → str conversion for ``_id``.
-        """
-        raw_id = doc.get("_id")
-        str_id: Optional[str] = str(raw_id) if raw_id is not None else None
-
-        return cls(
-            blueprint_id=doc["blueprint_id"],
-            version=doc["version"],
-            spec_dict_snapshot=doc.get("spec_dict_snapshot", {}),
-            created_by=doc.get("created_by", ""),
-            created_at=doc.get("created_at", datetime.now(timezone.utc)),
-            change_summary=doc.get("change_summary"),
-            _id=str_id,
-        )
 
 
 # ---------------------------------------------------------------------------

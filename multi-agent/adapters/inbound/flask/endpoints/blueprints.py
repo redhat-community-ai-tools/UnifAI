@@ -20,7 +20,7 @@ is transport-agnostic and contains no HTTP references.
   VersionNotFoundError        → 404
   BlueprintAccessDeniedError  → 403
   ConcurrentModificationError → 409
-  RuntimeError (not configured) → 501
+  FeatureNotConfiguredError → 501
   BlueprintError (other)      → 500
 """
 
@@ -30,12 +30,13 @@ import functools
 import logging
 from typing import Any, Callable, Dict, Tuple
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, abort, current_app, jsonify, request
 from mas.blueprints.exceptions import (
     BlueprintAccessDeniedError,
     BlueprintError,
     BlueprintNotFoundError,
     ConcurrentModificationError,
+    FeatureNotConfiguredError,
     VersionNotFoundError,
 )
 from mas.core.identity.models import Identity, IdentityType  # noqa: F401
@@ -80,8 +81,6 @@ def _require_auth() -> Identity:
     Looks for an ``X-Identity-Type`` / ``X-Identity-Id`` header pair.
     Returns the validated ``Identity`` on success, or aborts with 401.
     """
-    from flask import abort
-
     identity_type = request.headers.get("X-Identity-Type")
     identity_id = request.headers.get("X-Identity-Id")
 
@@ -118,7 +117,7 @@ def _handle_blueprint_errors(fn: Callable) -> Callable:
             return _err(str(exc), 403)
         except ConcurrentModificationError as exc:
             return _err(str(exc), 409)
-        except RuntimeError as exc:
+        except FeatureNotConfiguredError as exc:
             # Feature-not-configured is surfaced as 501.
             return _err(str(exc), 501)
         except BlueprintError as exc:
@@ -143,8 +142,6 @@ def _get_json_body() -> Dict:
     """Return the parsed JSON request body or raise a 400."""
     data = request.get_json(silent=True)
     if data is None:
-        from flask import abort
-
         abort(
             400,
             "Request body must be valid JSON with Content-Type: application/json",
@@ -304,7 +301,7 @@ def blueprint_versions_list():
     page_size = max(1, min(100, int(request.args.get("page_size", 20))))
 
     result = _service().list_versions(
-        blueprint_id,
+        blueprint_id=blueprint_id,
         page=page,
         page_size=page_size,
     )
@@ -339,7 +336,7 @@ def blueprint_version_get():
     except ValueError:
         return _err(f"Invalid version: {version_str!r} must be an integer", 400)
 
-    detail = _service().load_version(blueprint_id, version)
+    detail = _service().load_version(blueprint_id=blueprint_id, version_number=version)
     return _ok(detail)
 
 
@@ -362,12 +359,12 @@ def blueprint_version_restore():
     409 — concurrent modification conflict (re-fetch and retry)
     501 — versioning feature not configured on the server
     """
-    _require_auth()
+    identity = _require_auth()
     body = _get_json_body()
 
     blueprint_id = body.get("blueprint_id")
     target_version = body.get("version")
-    user_id = body.get("user_id", "")
+    user_id = body.get("user_id", identity.id)
 
     if not blueprint_id:
         return _err("Missing required field: blueprint_id", 400)
@@ -379,7 +376,7 @@ def blueprint_version_restore():
         )
 
     _service().restore_version(
-        blueprint_id,
+        blueprint_id=blueprint_id,
         target_version=target_version,
         user_id=user_id,
     )
