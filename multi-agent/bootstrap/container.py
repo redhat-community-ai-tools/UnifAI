@@ -22,11 +22,11 @@ from typing import Optional
 import pymongo
 from pymongo import MongoClient
 
-from adapters.outbound.mongo.blueprint_repository import MongoBlueprintRepository
-from adapters.outbound.mongo.blueprint_version_repository import (
+from outbound.mongo.blueprint_repository import MongoBlueprintRepository
+from outbound.mongo.blueprint_version_repository import (
     MongoBlueprintVersionRepository,
 )
-from lib.mas.blueprints.service import BlueprintService
+from mas.blueprints.service import BlueprintService
 
 
 # ---------------------------------------------------------------------------
