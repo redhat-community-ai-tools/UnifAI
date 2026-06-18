@@ -21,11 +21,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from lib.mas.blueprints.models.blueprint import (
+    BlueprintDocument,
+    BlueprintSummary,
+    Identity,
+)
+from lib.mas.blueprints.repository.repository import BlueprintRepository
 from pymongo import DESCENDING, ReturnDocument
 from pymongo.collection import Collection
-
-from lib.mas.blueprints.models.blueprint import BlueprintDocument, BlueprintSummary, Identity
-from lib.mas.blueprints.repository.repository import BlueprintRepository
 
 
 class MongoBlueprintRepository(BlueprintRepository):
@@ -238,10 +241,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         flt = self._identity_filter(identity)
         direction = DESCENDING if sort_desc else 1
         cursor = (
-            self._col.find(flt)
-            .sort("created_at", direction)
-            .skip(skip)
-            .limit(limit)
+            self._col.find(flt).sort("created_at", direction).skip(skip).limit(limit)
         )
         return [self._doc_to_model(raw) for raw in cursor]
 
@@ -293,9 +293,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         return self._col.count_documents(self._identity_filter(identity))
 
     def list_direct_usage(self, rid: str) -> List[str]:
-        cursor = self._col.find(
-            {"rid_refs": rid}, {"blueprint_id": 1}
-        )
+        cursor = self._col.find({"rid_refs": rid}, {"blueprint_id": 1})
         return [doc["blueprint_id"] for doc in cursor]
 
     def count_usage(self, rid: str) -> int:

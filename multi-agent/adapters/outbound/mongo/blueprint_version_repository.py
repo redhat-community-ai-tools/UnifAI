@@ -17,8 +17,9 @@ from typing import List, Optional, Tuple
 
 from mas.blueprints.exceptions import DuplicateSnapshotError
 from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
-from mas.blueprints.repository.version_repository import \
-    BlueprintVersionRepository
+from mas.blueprints.repository.version_repository import (
+    BlueprintVersionRepository,
+)
 from pymongo import ASCENDING, DESCENDING
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError

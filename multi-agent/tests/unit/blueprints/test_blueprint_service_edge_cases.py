@@ -21,6 +21,7 @@ import pytest
 from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
     ConcurrentModificationError,
+    DuplicateSnapshotError,
     VersionNotFoundError,
 )
 from mas.blueprints.models.blueprint import BlueprintDocument, Identity
@@ -129,7 +130,10 @@ class _FakeVersionRepo(BlueprintVersionRepository):
                 and existing.version == version_doc.version
             ):
                 if self._fail_on_duplicate:
-                    raise Exception("DuplicateKeyError")
+                    raise DuplicateSnapshotError(
+                        blueprint_id=version_doc.blueprint_id,
+                        version=version_doc.version,
+                    )
                 return f"dup-{version_doc.version}"
         self._store.append(version_doc)
         return f"id-{len(self._store)}"
@@ -360,18 +364,22 @@ class TestExtractRidRefsEdgeCases:
 
 
 # ===========================================================================
-# update_draft — legacy path (no version_repo) boundary cases
+# update_draft — requires version_repo (legacy fallback removed)
 # ===========================================================================
 
 
-class TestUpdateDraftLegacyPath:
-    def test_raises_not_found_for_missing_blueprint(self, svc_no_ver):
-        with pytest.raises(BlueprintNotFoundError):
-            svc_no_ver.update_draft("missing-bp", {"new": "spec"})
+class TestUpdateDraftRequiresVersionRepo:
+    """update_draft raises RuntimeError when version_repo is not configured."""
 
-    def test_spec_updated_without_version_increment(self, svc_no_ver, bp_repo):
-        new_spec = {"name": "Updated spec"}
-        svc_no_ver.update_draft("bp-1", new_spec)
-        doc = bp_repo.load("bp-1")
-        assert doc.spec_dict == new_spec
-        assert doc.version == 1  # version must NOT increment on legacy path
+    def test_raises_runtime_error_when_version_repo_is_none(self, svc_no_ver):
+        with pytest.raises(RuntimeError, match="BlueprintVersionRepository is not configured"):
+            svc_no_ver.update_draft("bp-1", {"new": "spec"})
+
+    def test_does_not_touch_repo_when_version_repo_is_none(self, svc_no_ver, bp_repo):
+        """Neither update() nor update_with_version() should be called."""
+        doc_before = bp_repo.load("bp-1")
+        with pytest.raises(RuntimeError):
+            svc_no_ver.update_draft("bp-1", {"name": "Updated spec"})
+        doc_after = bp_repo.load("bp-1")
+        # Spec must be unchanged
+        assert doc_after.spec_dict == doc_before.spec_dict

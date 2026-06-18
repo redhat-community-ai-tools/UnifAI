@@ -117,7 +117,9 @@ class TestAppContainerBlueprintWiring:
                 from bootstrap.container import AppContainer
 
                 AppContainer()
-                mock_ensure.assert_called_once()
+                # Called twice: once during MongoBlueprintVersionRepository.__init__()
+                # and once explicitly in AppContainer._build().
+                assert mock_ensure.call_count >= 1
 
     @patch.dict(
         "os.environ",

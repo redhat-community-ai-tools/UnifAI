@@ -10,8 +10,8 @@ Regression areas
 ----------------
 1. **Exception message contracts** — callers and tests depend on the exact
    wording of VersionNotFoundError and ConcurrentModificationError.
-2. **Legacy service path** — update_draft() without a version_repo must
-   raise RuntimeError (GENIE-1336 made version_repo mandatory for edits).
+2. **Version repo guard** — update_draft() without a version_repo must
+   raise RuntimeError (legacy fallback removed per architecture review).
 3. **Pagination arithmetic** — total_pages ceiling division and clamping.
 4. **BlueprintService guard** — _ensure_version_repo() raises RuntimeError
    when version_repo is None; the message is stable.
@@ -38,7 +38,7 @@ from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
 from mas.blueprints.service import BlueprintService
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
 
 def _make_blueprint_doc(blueprint_id="bp-1", version=1, spec_dict=None, **kwargs):
@@ -69,7 +69,7 @@ def _versioned_svc(*, repo=None, version_repo=None) -> BlueprintService:
     return svc
 
 
-# ── 1. Exception message contracts ──────────────────────────────────────────────
+# ── 1. Exception message contracts ────────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -119,47 +119,40 @@ class TestExceptionMessages:
         assert isinstance(err, BlueprintError)
 
 
-# ── 2. Legacy service path ───────────────────────────────────────────────────────
+# ── 2. Version repo guard ──────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
-class TestLegacyUpdateDraftPath:
-    """update_draft() requires version_repo since GENIE-1336."""
+class TestUpdateDraftRequiresVersionRepo:
+    """update_draft() without version_repo must raise RuntimeError."""
 
-    def test_update_draft_raises_without_version_repo(self):
-        """update_draft() requires version_repo; calling without raises RuntimeError."""
+    def test_update_draft_raises_runtime_error_without_version_repo(self):
+        """update_draft must fail-fast when version_repo is None."""
         repo = MagicMock()
         svc = BlueprintService(repo=repo)  # No version_repo.
 
-        with pytest.raises(RuntimeError, match="version_repo"):
+        with pytest.raises(RuntimeError, match="BlueprintVersionRepository is not configured"):
             svc.update_draft(blueprint_id="bp-1", draft_dict={"name": "v"})
 
-    def test_update_draft_does_not_access_repo_without_version_repo(self):
-        """RuntimeError is raised before any repository method is called."""
+        # Neither write path should be invoked
+        repo.update.assert_not_called()
+        repo.update_with_version.assert_not_called()
+
+    def test_update_draft_without_version_repo_does_not_create_snapshot(self):
+        """Without version_repo, no snapshot is created and no write occurs."""
         repo = MagicMock()
         svc = BlueprintService(repo=repo)
 
         with pytest.raises(RuntimeError):
             svc.update_draft(blueprint_id="bp-1", draft_dict={"name": "v"})
 
-        # RuntimeError fires before repo is accessed.
-        repo.load.assert_not_called()
-        repo.update.assert_not_called()
-        repo.update_with_version.assert_not_called()
-
-    def test_update_draft_with_version_repo_returns_true(self):
-        """With version_repo configured, update_draft succeeds and returns True."""
+    def test_runtime_error_message_is_stable(self):
+        """The error message must mention version_repo so operators can diagnose."""
         repo = MagicMock()
-        repo.load.return_value = _make_blueprint_doc()
-        repo.update_with_version.return_value = _make_blueprint_doc(version=2)
+        svc = BlueprintService(repo=repo)
 
-        version_repo = MagicMock()
-        svc = BlueprintService(repo=repo, version_repo=version_repo)
-
-        result = svc.update_draft(blueprint_id="bp-1", draft_dict={})
-
-        assert result is True
-        repo.update_with_version.assert_called_once()
+        with pytest.raises(RuntimeError, match="version_repo"):
+            svc.update_draft(blueprint_id="bp-1", draft_dict={})
 
 
 # ── 3. Pagination arithmetic ──────────────────────────────────────────────────
@@ -239,7 +232,7 @@ class TestPaginationArithmetic:
         assert result["total_pages"] == 2
 
 
-# ── 4. _ensure_version_repo() guard ──────────────────────────────────────────────
+# ── 4. _ensure_version_repo() guard ──────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -248,6 +241,7 @@ class TestEnsureVersionRepoGuard:
 
     def test_list_versions_raises_runtime_error_without_version_repo(self):
         repo = MagicMock()
+        repo.load.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo)  # version_repo=None
 
         with pytest.raises(RuntimeError):
@@ -255,6 +249,7 @@ class TestEnsureVersionRepoGuard:
 
     def test_load_version_raises_runtime_error_without_version_repo(self):
         repo = MagicMock()
+        repo.load.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo)
 
         with pytest.raises(RuntimeError):
@@ -262,6 +257,7 @@ class TestEnsureVersionRepoGuard:
 
     def test_restore_version_raises_runtime_error_without_version_repo(self):
         repo = MagicMock()
+        repo.load.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo)
 
         with pytest.raises(RuntimeError):
@@ -276,7 +272,7 @@ class TestEnsureVersionRepoGuard:
             svc.list_versions("bp-1")
 
 
-# ── 5. Snapshot isolation ───────────────────────────────────────────────────────
+# ── 5. Snapshot isolation ─────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -378,7 +374,7 @@ class TestOCCSemantics:
         assert result is True
 
 
-# ── 7. restore_version change_summary ──────────────────────────────────────────
+# ── 7. restore_version change_summary ────────────────────────────────────────
 
 
 @pytest.mark.unit

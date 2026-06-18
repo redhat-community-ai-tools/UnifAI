@@ -31,10 +31,13 @@ import logging
 from typing import Any, Callable, Dict, Tuple
 
 from flask import Blueprint, current_app, jsonify, request
-from mas.blueprints.exceptions import (BlueprintAccessDeniedError,
-                                       BlueprintError, BlueprintNotFoundError,
-                                       ConcurrentModificationError,
-                                       VersionNotFoundError)
+from mas.blueprints.exceptions import (
+    BlueprintAccessDeniedError,
+    BlueprintError,
+    BlueprintNotFoundError,
+    ConcurrentModificationError,
+    VersionNotFoundError,
+)
 from mas.core.identity.models import Identity, IdentityType  # noqa: F401
 from werkzeug.exceptions import HTTPException
 

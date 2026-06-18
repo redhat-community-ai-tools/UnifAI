@@ -1,4 +1,5 @@
-"""Regression test for ModuleNotFoundError: No module named 'adapters' (GENIE-1336).
+"""
+Regression test for ModuleNotFoundError: No module named 'adapters' (GENIE-1336).
 
 This test verifies that bootstrap.container can be imported in a clean
 production-like environment where 'adapters' is not on sys.path, but individual
@@ -51,12 +52,11 @@ def test_bootstrap_container_import_without_adapters_on_path():
         env["PYTHONPATH"] = tmpdir
         
         # Act: Run a subprocess to import bootstrap.container
-        # We run from a platform-safe temporary directory to ensure the
-        # current directory (which contains 'adapters') is not implicitly
-        # added to sys.path.
+        # We run from a neutral directory (/tmp) to ensure the current directory
+        # (which contains 'adapters') is not implicitly added to sys.path.
         result = subprocess.run(
             [sys.executable, "-c", "import bootstrap.container"],
-            cwd=tempfile.gettempdir(),
+            cwd="/tmp",
             env=env,
             capture_output=True,
             text=True

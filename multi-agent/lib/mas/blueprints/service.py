@@ -20,14 +20,18 @@ from typing import Any, Dict, List, Optional
 
 _logger = logging.getLogger(__name__)
 
-from mas.blueprints.exceptions import (BlueprintNotFoundError,
-                                       ConcurrentModificationError,
-                                       VersionNotFoundError)
+from mas.blueprints.exceptions import (
+    BlueprintNotFoundError,
+    ConcurrentModificationError,
+    DuplicateSnapshotError,
+    VersionNotFoundError,
+)
 from mas.blueprints.models.blueprint import BlueprintDocument, Identity
 from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
 from mas.blueprints.repository.repository import BlueprintRepository
-from mas.blueprints.repository.version_repository import \
-    BlueprintVersionRepository
+from mas.blueprints.repository.version_repository import (
+    BlueprintVersionRepository,
+)
 
 
 class BlueprintService:
@@ -132,11 +136,8 @@ class BlueprintService:
         change_summary: Optional[str] = None,
     ) -> bool:
         """
-        Update the live spec of an existing blueprint.
-
-        When ``version_repo`` is configured, uses OCC + pre-update snapshot.
-        When ``version_repo`` is ``None``, falls back to a simple update
-        without versioning (legacy path).
+        Update the live spec of an existing blueprint using OCC +
+        pre-update snapshot.
 
         Parameters
         ----------
@@ -153,18 +154,20 @@ class BlueprintService:
         -------
         bool
             Always ``True`` on success; exceptions are raised on failure.
-        """
-        rid_refs = self._extract_rid_refs(draft_dict)
 
-        if self._version_repo is None:
-            # Legacy path — simple update, no OCC, no snapshot.
-            self._load_document_or_raise(blueprint_id)
-            self._repo.update(
-                blueprint_id=blueprint_id,
-                spec=draft_dict,
-                rid_refs=rid_refs,
-            )
-            return True
+        Raises
+        ------
+        RuntimeError
+            If ``version_repo`` is not configured.
+        BlueprintNotFoundError
+            If the blueprint does not exist.
+        ConcurrentModificationError
+            If another writer modified the blueprint between the read and
+            the write.
+        """
+        self._require_version_repo()
+
+        rid_refs = self._extract_rid_refs(draft_dict)
 
         # OCC + snapshot path.
         current_doc = self._load_document_or_raise(blueprint_id)
@@ -416,9 +419,10 @@ class BlueprintService:
         """
         Insert an immutable snapshot of ``doc``'s current spec.
 
-        Silently ignores **all** exceptions — this makes the operation
-        idempotent and non-fatal.  The OCC guard (``update_with_version``
-        returning ``None``) is the authoritative safety net.
+        Silently ignores ``DuplicateSnapshotError`` — this makes the
+        operation idempotent (the snapshot already exists) and non-fatal.
+        The OCC guard (``update_with_version`` returning ``None``) is the
+        authoritative safety net.  All other exceptions are propagated.
         """
         try:
             version_doc = BlueprintVersionDocument(
@@ -429,9 +433,9 @@ class BlueprintService:
                 change_summary=change_summary,
             )
             self._version_repo.insert_snapshot(version_doc)  # type: ignore[union-attr]
-        except Exception:  # noqa: BLE001
-            # Snapshot failures are non-fatal — idempotent by design.
-            _logger.debug("Snapshot insert failed (non-fatal)", exc_info=True)
+        except DuplicateSnapshotError:
+            # Snapshot already exists — idempotent by design, non-fatal.
+            _logger.debug("Snapshot insert skipped (duplicate)", exc_info=True)
 
     def _require_version_repo(self) -> None:
         """Raise ``RuntimeError`` if ``BlueprintVersionRepository`` is not configured."""

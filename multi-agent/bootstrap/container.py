@@ -20,13 +20,14 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import pymongo
+from adapters.outbound.mongo.blueprint_repository import (
+    MongoBlueprintRepository,
+)
+from adapters.outbound.mongo.blueprint_version_repository import (
+    MongoBlueprintVersionRepository,
+)
 from mas.blueprints.service import BlueprintService
 from pymongo import MongoClient
-
-from adapters.outbound.mongo.blueprint_repository import \
-    MongoBlueprintRepository
-from adapters.outbound.mongo.blueprint_version_repository import \
-    MongoBlueprintVersionRepository
 
 # ---------------------------------------------------------------------------
 # Singleton metaclass
@@ -164,7 +165,9 @@ class AppContainer(metaclass=SingletonMeta):
             col=db[cfg.blueprint_versions_coll]
         )
 
-        # 3. Indexes are created in MongoBlueprintVersionRepository.__init__()
+        # 3. Indexes — MongoBlueprintVersionRepository.__init__() calls
+        #    ensure_indexes() automatically; call it again here to be explicit.
+        self.blueprint_version_repo.ensure_indexes()
 
         # 4. Application service  (GENIE-1336: version_repo is now wired)
         self.blueprint_service = BlueprintService(
