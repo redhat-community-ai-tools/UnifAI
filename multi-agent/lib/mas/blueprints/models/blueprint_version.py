@@ -1,1 +1,141 @@
-"""\nDomain model for an immutable Blueprint version snapshot.\n\nDesign notes\n------------\n* ``BlueprintVersionDocument`` is a **frozen** Python dataclass so that\n  instances are truly immutable after construction — no field reassignment\n  is permitted by the runtime.\n* ``__post_init__`` deep-copies the incoming ``spec_dict_snapshot`` so the\n  stored value is independent of the caller's dict reference.\n* ``to_summary()`` deliberately omits the snapshot to keep list responses\n  lightweight; ``to_detail()`` includes it for single-version fetches.\n\nGENIE-1336\n\nArch-fix: Made the dataclass ``frozen=True`` so that post-construction\nmutation is prevented at runtime (raises ``FrozenInstanceError``).\n"""\n\nfrom __future__ import annotations\n\nimport copy\nfrom dataclasses import dataclass, field\nfrom datetime import datetime, timezone\nfrom typing import Any, Dict, Optional\n\n\n@dataclass(frozen=True)\nclass BlueprintVersionDocument:\n    """\n    Immutable point-in-time snapshot of a blueprint's ``spec_dict``.\n\n    The ``frozen=True`` flag enforces true immutability: any attempt to\n    reassign a field after construction raises ``FrozenInstanceError``.\n\n    Fields\n    ------\n    blueprint_id\n        Parent blueprint identifier.\n    version\n        Monotonically increasing version number (>= 1).  Matches the\n        ``version`` on the parent ``BlueprintDocument`` at the time the\n        snapshot was taken.\n    spec_dict_snapshot\n        Deep copy of the blueprint's ``spec_dict`` at this version.\n    created_by\n        User identifier who triggered the write that created this snapshot.\n    created_at\n        UTC timestamp of when the snapshot was recorded.\n    change_summary\n        Optional human-readable description of what changed (<= 500 chars).\n    _id\n        MongoDB ObjectId as string, assigned after persistence.\n    """\n\n    blueprint_id: str\n    version: int\n    spec_dict_snapshot: Dict[str, Any]\n    created_by: str = ""\n    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))\n    change_summary: Optional[str] = None\n    _id: Optional[str] = field(default=None, repr=False)\n\n    def __post_init__(self) -> None:\n        # Deep-copy to ensure stored snapshot is isolated from caller's dict.\n        # Must use object.__setattr__ because the dataclass is frozen.\n        object.__setattr__(\n            self,\n            "spec_dict_snapshot",\n            copy.deepcopy(self.spec_dict_snapshot),\n        )\n\n        # --- Validation -------------------------------------------------------\n        if self.version < 1:\n            raise ValueError(\n                f"version must be >= 1; got {self.version!r}"\n            )\n        if not self.blueprint_id:\n            raise ValueError("blueprint_id must be a non-empty string")\n        if self.change_summary is not None and len(self.change_summary) > 500:\n            raise ValueError(\n                f"change_summary must be <= 500 characters; "\n                f"got {len(self.change_summary)}"\n            )\n\n    # ------------------------------------------------------------------\n    # Projections\n    # ------------------------------------------------------------------\n\n    def to_summary(self) -> Dict[str, Any]:\n        """\n        Lightweight projection suitable for list responses.\n\n        Deliberately excludes ``spec_dict_snapshot`` to keep payloads small.\n        """\n        return {\n            "blueprint_id": self.blueprint_id,\n            "version": self.version,\n            "created_by": self.created_by,\n            "created_at": _iso(self.created_at),\n            "change_summary": self.change_summary,\n        }\n\n    def to_detail(self) -> Dict[str, Any]:\n        """\n        Full projection for single-version fetch endpoints.\n\n        Extends ``to_summary()`` with the ``spec_dict_snapshot`` payload.\n        """\n        return {\n            **self.to_summary(),\n            "spec_dict_snapshot": copy.deepcopy(self.spec_dict_snapshot),\n        }\n\n    # ------------------------------------------------------------------\n    # Factory\n    # ------------------------------------------------------------------\n\n    @classmethod\n    def from_mongo_doc(cls, doc: Dict[str, Any]) -> "BlueprintVersionDocument":\n        """\n        Construct a ``BlueprintVersionDocument`` from a raw MongoDB document.\n\n        Handles ObjectId -> str conversion for ``_id``.\n        """\n        raw_id = doc.get("_id")\n        str_id: Optional[str] = str(raw_id) if raw_id is not None else None\n\n        return cls(\n            blueprint_id=doc["blueprint_id"],\n            version=doc["version"],\n            spec_dict_snapshot=doc.get("spec_dict_snapshot", {}),\n            created_by=doc.get("created_by", ""),\n            created_at=doc.get("created_at", datetime.now(timezone.utc)),\n            change_summary=doc.get("change_summary"),\n            _id=str_id,\n        )\n\n\n# ---------------------------------------------------------------------------\n# Helpers\n# ---------------------------------------------------------------------------\n\n\ndef _iso(dt: datetime) -> str:\n    """Return an ISO-8601 string with UTC timezone suffix."""\n    if dt.tzinfo is None:\n        dt = dt.replace(tzinfo=timezone.utc)\n    return dt.isoformat()\n
+"""
+Domain model for an immutable Blueprint version snapshot.
+
+Design notes
+------------
+* ``BlueprintVersionDocument`` is a plain Python dataclass (not Pydantic)
+  because snapshots are write-once / never mutated after creation.
+* ``__post_init__`` deep-copies the incoming ``spec_dict_snapshot`` so the
+  stored value is independent of the caller's dict reference.
+* ``to_summary()`` deliberately omits the snapshot to keep list responses
+  lightweight; ``to_detail()`` includes it for single-version fetches.
+
+GENIE-1336
+"""
+
+from __future__ import annotations
+
+import copy
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, ClassVar, Dict, Optional
+
+
+@dataclass(frozen=True)
+class BlueprintVersionDocument:
+    """
+    Immutable point-in-time snapshot of a blueprint's ``spec_dict``.
+
+    Fields
+    ------
+    blueprint_id
+        Parent blueprint identifier.
+    version
+        Monotonically increasing version number (≥ 1).  Matches the
+        ``version`` on the parent ``BlueprintDocument`` at the time the
+        snapshot was taken.
+    spec_dict_snapshot
+        Deep copy of the blueprint's ``spec_dict`` at this version.
+    created_by
+        User identifier who triggered the write that created this snapshot.
+    created_at
+        UTC timestamp of when the snapshot was recorded.
+    change_summary
+        Optional human-readable description of what changed (≤ 500 chars).
+    _id
+        MongoDB ObjectId as string, assigned after persistence.
+    """
+
+    blueprint_id: str
+    version: int
+    spec_dict_snapshot: Dict[str, Any]
+    created_by: str = ""
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    change_summary: Optional[str] = None
+    _id: Optional[str] = field(default=None, repr=False)
+
+    # Class-level sentinel used in __post_init__ to detect direct construction
+    _SENTINEL: ClassVar[object] = object()
+
+    def __post_init__(self) -> None:
+        # Deep-copy to ensure stored snapshot is isolated from caller's dict.
+        object.__setattr__(
+            self,
+            "spec_dict_snapshot",
+            copy.deepcopy(self.spec_dict_snapshot),
+        )
+
+        # --- Validation -------------------------------------------------------
+        if self.version < 1:
+            raise ValueError(f"version must be ≥ 1; got {self.version!r}")
+        if not self.blueprint_id:
+            raise ValueError("blueprint_id must be a non-empty string")
+        if self.change_summary is not None and len(self.change_summary) > 500:
+            raise ValueError(
+                f"change_summary must be ≤ 500 characters; " f"got {len(self.change_summary)}"
+            )
+
+    # ------------------------------------------------------------------
+    # Projections
+    # ------------------------------------------------------------------
+
+    def to_summary(self) -> Dict[str, Any]:
+        """
+        Lightweight projection suitable for list responses.
+
+        Deliberately excludes ``spec_dict_snapshot`` to keep payloads small.
+        """
+        return {
+            "blueprint_id": self.blueprint_id,
+            "version": self.version,
+            "created_by": self.created_by,
+            "created_at": _iso(self.created_at),
+            "change_summary": self.change_summary,
+        }
+
+    def to_detail(self) -> Dict[str, Any]:
+        """
+        Full projection for single-version fetch endpoints.
+
+        Extends ``to_summary()`` with the ``spec_dict_snapshot`` payload.
+        """
+        return {
+            **self.to_summary(),
+            "spec_dict_snapshot": copy.deepcopy(self.spec_dict_snapshot),
+        }
+
+    # ------------------------------------------------------------------
+    # Factory
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_mongo_doc(cls, doc: Dict[str, Any]) -> "BlueprintVersionDocument":
+        """
+        Construct a ``BlueprintVersionDocument`` from a raw MongoDB document.
+
+        Handles ObjectId → str conversion for ``_id``.
+        """
+        raw_id = doc.get("_id")
+        str_id: Optional[str] = str(raw_id) if raw_id is not None else None
+
+        return cls(
+            blueprint_id=doc["blueprint_id"],
+            version=doc["version"],
+            spec_dict_snapshot=doc.get("spec_dict_snapshot", {}),
+            created_by=doc.get("created_by", ""),
+            created_at=doc.get("created_at", datetime.now(timezone.utc)),
+            change_summary=doc.get("change_summary"),
+            _id=str_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _iso(dt: datetime) -> str:
+    """Return an ISO-8601 string with UTC timezone suffix."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()

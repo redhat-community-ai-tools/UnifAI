@@ -1,1 +1,462 @@
-"""\nBlueprintService — application-layer orchestrator for the Blueprint bounded context.\n\nSits between the inbound adapters (Flask routes) and the outbound adapters\n(MongoDB repositories).  All external dependencies are injected so the\nservice can be exercised in unit tests with in-memory fakes.\n\nGENIE-1336\n----------\n* ``update_draft`` now has a dual path:\n  - With ``version_repo`` → OCC write + pre-update snapshot.\n  - Without ``version_repo`` → legacy unconditional write (backwards-compat).\n* New public methods: ``list_versions``, ``load_version``, ``restore_version``.\n\nArch-fix: ``_load_document_or_raise`` now only catches ``KeyError`` instead of\nthe catch-all ``(KeyError, Exception)`` that masked genuine failures.\nArch-fix: ``_snapshot_version`` catches ``DuplicateSnapshotError`` (typed domain\nexception) instead of relying on fragile string-matching against exception text.\n"""\n\nfrom __future__ import annotations\n\nimport logging\nimport math\nfrom typing import Any, Dict, List, Optional\n\n_logger = logging.getLogger(__name__)\n\nfrom lib.mas.blueprints.exceptions import (\n    BlueprintNotFoundError,\n    ConcurrentModificationError,\n    DuplicateSnapshotError,\n    VersionNotFoundError,\n)\nfrom lib.mas.blueprints.models.blueprint import BlueprintDocument, Identity\nfrom lib.mas.blueprints.models.blueprint_version import BlueprintVersionDocument\nfrom lib.mas.blueprints.repository.repository import BlueprintRepository\nfrom lib.mas.blueprints.repository.version_repository import BlueprintVersionRepository\n\n\nclass BlueprintService:\n    """\n    Application service orchestrating all blueprint use-cases.\n\n    Parameters\n    ----------\n    repo:\n        Primary blueprint repository (required).\n    resolver:\n        Dependency resolver for external ``$ref`` values (optional, may be\n        ``None`` in minimal deployments).\n    validation_service:\n        Validates a draft spec before persistence (optional).\n    card_service:\n        Manages linked card data (optional).\n    auth_service:\n        Checks access permissions (optional).\n    version_repo:\n        Append-only version snapshot repository (GENIE-1336).  When\n        ``None``, the legacy unconditional-update path is used and all\n        version-history methods raise ``RuntimeError``.\n    """\n\n    def __init__(\n        self,\n        repo: BlueprintRepository,\n        resolver: Any = None,\n        validation_service: Any = None,\n        card_service: Any = None,\n        auth_service: Any = None,\n        version_repo: Optional[BlueprintVersionRepository] = None,\n    ) -> None:\n        self._repo = repo\n        self._resolver = resolver\n        self._validation_service = validation_service\n        self._card_service = card_service\n        self._auth_service = auth_service\n        self._version_repo = version_repo\n\n    # ------------------------------------------------------------------\n    # CRUD\n    # ------------------------------------------------------------------\n\n    def create_blueprint(\n        self,\n        identity: Identity,\n        spec_dict: Dict[str, Any],\n        metadata: Optional[Dict[str, Any]] = None,\n    ) -> str:\n        """\n        Persist a new blueprint and return its generated ``blueprint_id``.\n\n        ``rid_refs`` are extracted from ``spec_dict`` automatically.\n        """\n        rid_refs = self._extract_rid_refs(spec_dict)\n        return self._repo.save(\n            identity=identity,\n            spec=spec_dict,\n            rid_refs=rid_refs,\n            metadata=metadata or {},\n        )\n\n    def create_draft(\n        self,\n        identity: Identity,\n        draft_dict: Dict[str, Any],\n        user_id: str = "",\n        metadata: Optional[Dict[str, Any]] = None,\n    ) -> str:\n        """\n        Create a new blueprint draft and return its generated ``blueprint_id``.\n\n        This is a convenience alias for ``create_blueprint()`` that accepts\n        the ``draft_dict`` / ``user_id`` parameter names used by the\n        versioning regression tests and future API callers.\n\n        Parameters\n        ----------\n        identity:\n            Owner identity (user or team).\n        draft_dict:\n            Full spec dict for the new blueprint.\n        user_id:\n            Identifier of the caller (accepted for API symmetry, not\n            persisted directly — the blueprint stores ``identity`` instead).\n        metadata:\n            Optional metadata sub-document.\n        """\n        return self.create_blueprint(\n            identity=identity,\n            spec_dict=draft_dict,\n            metadata=metadata or {},\n        )\n\n    def update_draft(\n        self,\n        blueprint_id: str,\n        draft_dict: Dict[str, Any],\n        user_id: str = "",\n        change_summary: Optional[str] = None,\n    ) -> bool:\n        """\n        Update the live spec of an existing blueprint.\n\n        **OCC path** (when ``version_repo`` is injected):\n        1. Load the current document (raises ``BlueprintNotFoundError`` if absent).\n        2. Take a pre-update snapshot via ``_snapshot_version`` (idempotent).\n        3. Atomically update using ``update_with_version`` with an OCC guard.\n        4. If the guard fails another writer raced ahead →\n           raise ``ConcurrentModificationError``.\n\n        **Legacy path** (when ``version_repo`` is ``None``):\n        Calls the unconditional ``repo.update()``.  Provided for\n        backwards-compatibility with deployments that have not yet\n        enabled versioning.\n\n        Parameters\n        ----------\n        blueprint_id:\n            Target blueprint.\n        draft_dict:\n            Full replacement spec dict.\n        user_id:\n            Identifier of the caller, recorded in the snapshot.\n        change_summary:\n            Optional human-readable description of the change (≤ 500 chars).\n\n        Returns\n        -------\n        bool\n            Always ``True`` on success; exceptions are raised on failure.\n        """\n        rid_refs = self._extract_rid_refs(draft_dict)\n\n        if self._version_repo is None:\n            # Legacy unconditional path — no OCC, no snapshots.\n            updated = self._repo.update(\n                blueprint_id=blueprint_id,\n                spec=draft_dict,\n                rid_refs=rid_refs,\n            )\n            if not updated:\n                raise BlueprintNotFoundError(blueprint_id)\n            return True\n\n        # OCC + snapshot path.\n        current_doc = self._load_document_or_raise(blueprint_id)\n\n        # History-gap diagnostic: if the blueprint is already at version > 1\n        # but the snapshot at (version - 1) is absent, log a warning so that\n        # operators can investigate, but DO NOT block the edit.\n        #\n        # Blocking the edit here (the original \"consistency guard\" from\n        # GENIE-1336) proved too strict: any gap in snapshot history — caused\n        # by an incomplete migration, a transient write failure, or a\n        # collection-level issue — permanently prevented users from editing\n        # their blueprints.  The OCC guard below (update_with_version returning\n        # None) is the authoritative concurrent-modification detector.\n        if current_doc.version > 1:\n            prev_snapshot = self._version_repo.find_one(  # type: ignore[union-attr]\n                blueprint_id, current_doc.version - 1\n            )\n            if prev_snapshot is None:\n                _logger.warning(\n                    "blueprint %r is at version %d but no snapshot exists at "\n                    "version %d — history gap detected.  Edit will proceed; "\n                    "run the GENIE-1336 migration script to backfill missing "\n                    "snapshots.",\n                    blueprint_id,\n                    current_doc.version,\n                    current_doc.version - 1,\n                )\n\n        # Snapshot the current state BEFORE writing the new one so that\n        # even if the write fails the pre-edit state is preserved.\n        self._snapshot_version(\n            doc=current_doc,\n            user_id=user_id,\n            change_summary=change_summary,\n        )\n\n        new_version = self._repo.update_with_version(\n            blueprint_id=blueprint_id,\n            spec=draft_dict,\n            rid_refs=rid_refs,\n            expected_version=current_doc.version,\n        )\n\n        if new_version is None:\n            raise ConcurrentModificationError(\n                blueprint_id=blueprint_id,\n                expected_version=current_doc.version,\n            )\n\n        return True\n\n    def load_blueprint(self, blueprint_id: str) -> BlueprintDocument:\n        """Load the full blueprint document or raise ``BlueprintNotFoundError``."""\n        return self._load_document_or_raise(blueprint_id)\n\n    def delete_blueprint(self, blueprint_id: str) -> bool:\n        """Hard-delete a blueprint by ID."""\n        return self._repo.delete(blueprint_id)\n\n    def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:\n        """Replace the metadata sub-document."""\n        return self._repo.set_metadata(blueprint_id, metadata)\n\n    def list_blueprints(\n        self,\n        identity: Optional[Identity] = None,\n        skip: int = 0,\n        limit: int = 20,\n    ) -> List[BlueprintDocument]:\n        """Return a paginated list of full blueprint documents."""\n        return self._repo.list_docs(identity=identity, skip=skip, limit=limit)\n\n    def count_blueprints(self, identity: Optional[Identity] = None) -> int:\n        """Return total blueprint count, optionally filtered by identity."""\n        return self._repo.count(identity=identity)\n\n    # ------------------------------------------------------------------\n    # Version-history operations  (GENIE-1336)\n    # ------------------------------------------------------------------\n\n    def list_versions(\n        self,\n        blueprint_id: str,\n        page: int = 1,\n        page_size: int = 20,\n    ) -> Dict[str, Any]:\n        """\n        Return a paginated list of version summaries for a blueprint.\n\n        Parameters\n        ----------\n        blueprint_id:\n            Target blueprint (must exist).\n        page:\n            1-based page number; clamped to ≥ 1.\n        page_size:\n            Items per page; clamped to [1, 100].\n\n        Returns\n        -------\n        dict with keys:\n            ``items``, ``total``, ``page``, ``page_size``, ``total_pages``.\n\n        Raises\n        ------\n        BlueprintNotFoundError\n            If the blueprint does not exist.\n        RuntimeError\n            If ``version_repo`` was not injected (feature not configured).\n        """\n        self._require_version_repo()\n        self._load_document_or_raise(blueprint_id)  # existence check\n\n        # Clamp pagination parameters.\n        page = max(1, page)\n        page_size = max(1, min(100, page_size))\n\n        items, total = self._version_repo.find_by_blueprint_id(  # type: ignore[union-attr]\n            blueprint_id=blueprint_id,\n            page=page,\n            page_size=page_size,\n        )\n\n        total_pages = math.ceil(total / page_size) if total > 0 else 0\n\n        return {\n            "items": [item.to_summary() for item in items],\n            "total": total,\n            "page": page,\n            "page_size": page_size,\n            "total_pages": total_pages,\n        }\n\n    def load_version(\n        self,\n        blueprint_id: str,\n        version_number: int,\n    ) -> Dict[str, Any]:\n        """\n        Return the full detail of a specific blueprint version.\n\n        The response includes ``spec_dict_snapshot``.\n\n        Raises\n        ------\n        BlueprintNotFoundError\n            If the parent blueprint does not exist.\n        VersionNotFoundError\n            If no snapshot exists for ``version_number``.\n        RuntimeError\n            If the version repo is not configured.\n        """\n        self._require_version_repo()\n        self._load_document_or_raise(blueprint_id)  # existence check\n\n        version_doc = self._version_repo.find_one(blueprint_id, version_number)  # type: ignore[union-attr]\n        if version_doc is None:\n            raise VersionNotFoundError(blueprint_id, version_number)\n\n        return version_doc.to_detail()\n\n    def restore_version(\n        self,\n        blueprint_id: str,\n        target_version: int,\n        user_id: str = "",\n    ) -> bool:\n        """\n        Restore the live blueprint spec to the snapshot captured at\n        ``target_version``.\n\n        Steps\n        -----\n        1. Load the target snapshot → raises ``VersionNotFoundError`` if absent.\n        2. Delegate to ``update_draft`` with the snapshot's ``spec_dict_snapshot``\n           and an auto-generated ``change_summary`` of\n           ``\"Restored to version <N>\"``.\n\n        The ``update_draft`` call will:\n        * Snapshot the current (pre-restore) state first.\n        * Apply the OCC-guarded write.\n\n        This means no history is ever lost — every restore is itself\n        reversible via another restore call.\n\n        Raises\n        ------\n        BlueprintNotFoundError\n            If the parent blueprint does not exist.\n        VersionNotFoundError\n            If the target version snapshot does not exist.\n        ConcurrentModificationError\n            If another writer modified the blueprint between the read and\n            the restore write.\n        RuntimeError\n            If the version repo is not configured.\n        """\n        self._require_version_repo()\n\n        # Raises BlueprintNotFoundError if blueprint absent.\n        self._load_document_or_raise(blueprint_id)\n\n        # Raises VersionNotFoundError if snapshot absent.\n        snapshot = self._version_repo.find_one(blueprint_id, target_version)  # type: ignore[union-attr]\n        if snapshot is None:\n            raise VersionNotFoundError(blueprint_id, target_version)\n\n        change_summary = f"Restored to version {target_version}"\n\n        return self.update_draft(\n            blueprint_id=blueprint_id,\n            draft_dict=snapshot.spec_dict_snapshot,\n            user_id=user_id,\n            change_summary=change_summary,\n        )\n\n    # ------------------------------------------------------------------\n    # Utility helpers\n    # ------------------------------------------------------------------\n\n    def _extract_rid_refs(self, spec_dict: Dict[str, Any]) -> List[str]:\n        """\n        Recursively extract all ``$ref`` values from a spec dict.\n\n        Deduplicates the result so each rid appears at most once.\n        """\n        refs: List[str] = []\n        self._walk_refs(spec_dict, refs)\n        # Preserve order but deduplicate.\n        seen = set()\n        unique: List[str] = []\n        for ref in refs:\n            if ref not in seen:\n                seen.add(ref)\n                unique.append(ref)\n        return unique\n\n    def _walk_refs(self, node: Any, acc: List[str]) -> None:\n        """DFS traversal collecting ``$ref`` string values."""\n        if isinstance(node, dict):\n            if "$ref" in node and isinstance(node["$ref"], str):\n                acc.append(node["$ref"])\n            for value in node.values():\n                self._walk_refs(value, acc)\n        elif isinstance(node, list):\n            for item in node:\n                self._walk_refs(item, acc)\n\n    def _load_document_or_raise(self, blueprint_id: str) -> BlueprintDocument:\n        """\n        Load a ``BlueprintDocument`` or raise ``BlueprintNotFoundError``.\n\n        Arch-fix: Only catches ``KeyError`` (the contract of the repo port\n        for missing documents) instead of the previous ``(KeyError, Exception)``\n        catch-all that swallowed genuine failures (e.g. MongoDB connectivity\n        errors, serialization bugs) and misleadingly converted them into\n        \"not found\" responses.\n        """\n        try:\n            return self._repo.load(blueprint_id)\n        except KeyError:\n            raise BlueprintNotFoundError(blueprint_id)\n        except BlueprintNotFoundError:\n            raise\n\n    def _snapshot_version(\n        self,\n        doc: BlueprintDocument,\n        user_id: str = "",\n        change_summary: Optional[str] = None,\n    ) -> None:\n        """\n        Insert an immutable snapshot of ``doc``'s current spec.\n\n        Silently ignores ``DuplicateSnapshotError`` — this makes the\n        operation idempotent so retried requests cannot create duplicate\n        snapshots.\n\n        Arch-fix: Catches the typed ``DuplicateSnapshotError`` domain\n        exception instead of relying on fragile string-matching against\n        exception text (``\"duplicate\" in exc_str or \"11000\" in exc_str``).\n        The ``DuplicateSnapshotError`` is raised by\n        ``MongoBlueprintVersionRepository.insert_snapshot`` when it\n        catches ``pymongo.errors.DuplicateKeyError``.\n        """\n        try:\n            version_doc = BlueprintVersionDocument(\n                blueprint_id=doc.blueprint_id,\n                version=doc.version,\n                spec_dict_snapshot=doc.spec_dict,\n                created_by=user_id,\n                change_summary=change_summary,\n            )\n            self._version_repo.insert_snapshot(version_doc)  # type: ignore[union-attr]\n        except DuplicateSnapshotError:\n            # Snapshot already exists for this (blueprint_id, version).\n            # This is expected during retries — silently ignore.\n            return\n\n    def _require_version_repo(self) -> None:\n        """Raise ``RuntimeError`` if ``BlueprintVersionRepository`` is not configured."""\n        if self._version_repo is None:\n            raise RuntimeError(\n                "BlueprintVersionRepository is not configured. "\n                "Inject version_repo into BlueprintService to enable "\n                "version-history features."\n            )\n
+"""
+BlueprintService — application-layer orchestrator for the Blueprint bounded context.
+
+Sits between the inbound adapters (Flask routes) and the outbound adapters
+(MongoDB repositories).  All external dependencies are injected so the
+service can be exercised in unit tests with in-memory fakes.
+
+GENIE-1336
+----------
+* ``update_draft`` uses OCC write + pre-update snapshot (requires
+  ``version_repo``).
+* New public methods: ``list_versions``, ``load_version``, ``restore_version``.
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from typing import Any, Dict, List, Optional
+
+_logger = logging.getLogger(__name__)
+
+from mas.blueprints.exceptions import (
+    BlueprintNotFoundError,
+    ConcurrentModificationError,
+    DuplicateSnapshotError,
+    VersionNotFoundError,
+)
+from mas.blueprints.models.blueprint import BlueprintDocument, Identity
+from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
+from mas.blueprints.repository.repository import BlueprintRepository
+from mas.blueprints.repository.version_repository import BlueprintVersionRepository
+
+
+class BlueprintService:
+    """
+    Application service orchestrating all blueprint use-cases.
+
+    Parameters
+    ----------
+    repo:
+        Primary blueprint repository (required).
+    resolver:
+        Dependency resolver for external ``$ref`` values (optional, may be
+        ``None`` in minimal deployments).
+    validation_service:
+        Validates a draft spec before persistence (optional).
+    card_service:
+        Manages linked card data (optional).
+    auth_service:
+        Checks access permissions (optional).
+    version_repo:
+        Append-only version snapshot repository (GENIE-1336).  When
+        ``None``, the legacy unconditional-update path is used and all
+        version-history methods raise ``RuntimeError``.
+    """
+
+    def __init__(
+        self,
+        repo: BlueprintRepository,
+        resolver: Any = None,
+        validation_service: Any = None,
+        card_service: Any = None,
+        auth_service: Any = None,
+        version_repo: Optional[BlueprintVersionRepository] = None,
+    ) -> None:
+        self._repo = repo
+        self._resolver = resolver
+        self._validation_service = validation_service
+        self._card_service = card_service
+        self._auth_service = auth_service
+        self._version_repo = version_repo
+
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
+
+    def create_blueprint(
+        self,
+        identity: Identity,
+        spec_dict: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Persist a new blueprint and return its generated ``blueprint_id``.
+
+        ``rid_refs`` are extracted from ``spec_dict`` automatically.
+        """
+        rid_refs = self._extract_rid_refs(spec_dict)
+        return self._repo.save(
+            identity=identity,
+            spec=spec_dict,
+            rid_refs=rid_refs,
+            metadata=metadata or {},
+        )
+
+    def create_draft(
+        self,
+        identity: Identity,
+        draft_dict: Dict[str, Any],
+        user_id: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Create a new blueprint draft and return its generated ``blueprint_id``.
+
+        This is a convenience alias for ``create_blueprint()`` that accepts
+        the ``draft_dict`` / ``user_id`` parameter names used by the
+        versioning regression tests and future API callers.
+
+        Parameters
+        ----------
+        identity:
+            Owner identity (user or team).
+        draft_dict:
+            Full spec dict for the new blueprint.
+        user_id:
+            Identifier of the caller (accepted for API symmetry, not
+            persisted directly — the blueprint stores ``identity`` instead).
+        metadata:
+            Optional metadata sub-document.
+        """
+        return self.create_blueprint(
+            identity=identity,
+            spec_dict=draft_dict,
+            metadata=metadata or {},
+        )
+
+    def update_draft(
+        self,
+        blueprint_id: str,
+        draft_dict: Dict[str, Any],
+        user_id: str = "",
+        change_summary: Optional[str] = None,
+    ) -> bool:
+        """
+        Update the live spec of an existing blueprint using OCC.
+
+        Steps:
+        1. Guard: ``version_repo`` must be configured.
+        2. Load the current document (raises ``BlueprintNotFoundError``).
+        3. Take a pre-update snapshot via ``_snapshot_version`` (idempotent).
+        4. Atomically update using ``update_with_version`` with an OCC guard.
+        5. If the guard fails another writer raced ahead →
+           raise ``ConcurrentModificationError``.
+
+        Parameters
+        ----------
+        blueprint_id:
+            Target blueprint.
+        draft_dict:
+            Full replacement spec dict.
+        user_id:
+            Identifier of the caller, recorded in the snapshot.
+        change_summary:
+            Optional human-readable description of the change (≤ 500 chars).
+
+        Returns
+        -------
+        bool
+            Always ``True`` on success; exceptions are raised on failure.
+
+        Raises
+        ------
+        RuntimeError
+            If ``version_repo`` is not configured.
+        """
+        self._require_version_repo()
+        rid_refs = self._extract_rid_refs(draft_dict)
+
+        # OCC + snapshot path.
+        current_doc = self._load_document_or_raise(blueprint_id)
+
+        # History-gap diagnostic: if the blueprint is already at version > 1
+        # but the snapshot at (version - 1) is absent, log a warning so that
+        # operators can investigate, but DO NOT block the edit.
+        #
+        # Blocking the edit here (the original "consistency guard" from
+        # GENIE-1336) proved too strict: any gap in snapshot history — caused
+        # by an incomplete migration, a transient write failure, or a
+        # collection-level issue — permanently prevented users from editing
+        # their blueprints.  The OCC guard below (update_with_version returning
+        # None) is the authoritative concurrent-modification detector.
+        if current_doc.version > 1:
+            prev_snapshot = self._version_repo.find_one(  # type: ignore[union-attr]
+                blueprint_id, current_doc.version - 1
+            )
+            if prev_snapshot is None:
+                _logger.warning(
+                    "blueprint %r is at version %d but no snapshot exists at "
+                    "version %d — history gap detected.  Edit will proceed; "
+                    "run the GENIE-1336 migration script to backfill missing "
+                    "snapshots.",
+                    blueprint_id,
+                    current_doc.version,
+                    current_doc.version - 1,
+                )
+
+        # Snapshot the current state BEFORE writing the new one so that
+        # even if the write fails the pre-edit state is preserved.
+        self._snapshot_version(
+            doc=current_doc,
+            user_id=user_id,
+            change_summary=change_summary,
+        )
+
+        new_version = self._repo.update_with_version(
+            blueprint_id=blueprint_id,
+            spec=draft_dict,
+            rid_refs=rid_refs,
+            expected_version=current_doc.version,
+        )
+
+        if new_version is None:
+            raise ConcurrentModificationError(
+                blueprint_id=blueprint_id,
+                expected_version=current_doc.version,
+            )
+
+        return True
+
+    def load_blueprint(self, blueprint_id: str) -> BlueprintDocument:
+        """Load the full blueprint document or raise ``BlueprintNotFoundError``."""
+        return self._load_document_or_raise(blueprint_id)
+
+    def delete_blueprint(self, blueprint_id: str) -> bool:
+        """Hard-delete a blueprint by ID."""
+        return self._repo.delete(blueprint_id)
+
+    def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
+        """Replace the metadata sub-document."""
+        return self._repo.set_metadata(blueprint_id, metadata)
+
+    def list_blueprints(
+        self,
+        identity: Optional[Identity] = None,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> List[BlueprintDocument]:
+        """Return a paginated list of full blueprint documents."""
+        return self._repo.list_docs(identity=identity, skip=skip, limit=limit)
+
+    def count_blueprints(self, identity: Optional[Identity] = None) -> int:
+        """Return total blueprint count, optionally filtered by identity."""
+        return self._repo.count(identity=identity)
+
+    # ------------------------------------------------------------------
+    # Version-history operations  (GENIE-1336)
+    # ------------------------------------------------------------------
+
+    def list_versions(
+        self,
+        blueprint_id: str,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """
+        Return a paginated list of version summaries for a blueprint.
+
+        Parameters
+        ----------
+        blueprint_id:
+            Target blueprint (must exist).
+        page:
+            1-based page number; clamped to ≥ 1.
+        page_size:
+            Items per page; clamped to [1, 100].
+
+        Returns
+        -------
+        dict with keys:
+            ``items``, ``total``, ``page``, ``page_size``, ``total_pages``.
+
+        Raises
+        ------
+        BlueprintNotFoundError
+            If the blueprint does not exist.
+        RuntimeError
+            If ``version_repo`` was not injected (feature not configured).
+        """
+        self._require_version_repo()
+        self._load_document_or_raise(blueprint_id)  # existence check
+
+        # Clamp pagination parameters.
+        page = max(1, page)
+        page_size = max(1, min(100, page_size))
+
+        items, total = self._version_repo.find_by_blueprint_id(  # type: ignore[union-attr]
+            blueprint_id=blueprint_id,
+            page=page,
+            page_size=page_size,
+        )
+
+        total_pages = math.ceil(total / page_size) if total > 0 else 0
+
+        return {
+            "items": [item.to_summary() for item in items],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+        }
+
+    def load_version(
+        self,
+        blueprint_id: str,
+        version_number: int,
+    ) -> Dict[str, Any]:
+        """
+        Return the full detail of a specific blueprint version.
+
+        The response includes ``spec_dict_snapshot``.
+
+        Raises
+        ------
+        BlueprintNotFoundError
+            If the parent blueprint does not exist.
+        VersionNotFoundError
+            If no snapshot exists for ``version_number``.
+        RuntimeError
+            If the version repo is not configured.
+        """
+        self._require_version_repo()
+        self._load_document_or_raise(blueprint_id)  # existence check
+
+        version_doc = self._version_repo.find_one(blueprint_id, version_number)  # type: ignore[union-attr]
+        if version_doc is None:
+            raise VersionNotFoundError(blueprint_id, version_number)
+
+        return version_doc.to_detail()
+
+    def restore_version(
+        self,
+        blueprint_id: str,
+        target_version: int,
+        user_id: str = "",
+    ) -> bool:
+        """
+        Restore the live blueprint spec to the snapshot captured at
+        ``target_version``.
+
+        Steps
+        -----
+        1. Load the target snapshot → raises ``VersionNotFoundError`` if absent.
+        2. Delegate to ``update_draft`` with the snapshot's ``spec_dict_snapshot``
+           and an auto-generated ``change_summary`` of
+           ``"Restored to version <N>"``.
+
+        The ``update_draft`` call will:
+        * Snapshot the current (pre-restore) state first.
+        * Apply the OCC-guarded write.
+
+        This means no history is ever lost — every restore is itself
+        reversible via another restore call.
+
+        Raises
+        ------
+        BlueprintNotFoundError
+            If the parent blueprint does not exist.
+        VersionNotFoundError
+            If the target version snapshot does not exist.
+        ConcurrentModificationError
+            If another writer modified the blueprint between the read and
+            the restore write.
+        RuntimeError
+            If the version repo is not configured.
+        """
+        self._require_version_repo()
+
+        # Raises BlueprintNotFoundError if blueprint absent.
+        self._load_document_or_raise(blueprint_id)
+
+        # Raises VersionNotFoundError if snapshot absent.
+        snapshot = self._version_repo.find_one(blueprint_id, target_version)  # type: ignore[union-attr]
+        if snapshot is None:
+            raise VersionNotFoundError(blueprint_id, target_version)
+
+        change_summary = f"Restored to version {target_version}"
+
+        return self.update_draft(
+            blueprint_id=blueprint_id,
+            draft_dict=snapshot.spec_dict_snapshot,
+            user_id=user_id,
+            change_summary=change_summary,
+        )
+
+    # ------------------------------------------------------------------
+    # Utility helpers
+    # ------------------------------------------------------------------
+
+    def _extract_rid_refs(self, spec_dict: Dict[str, Any]) -> List[str]:
+        """
+        Recursively extract all ``$ref`` values from a spec dict.
+
+        Deduplicates the result so each rid appears at most once.
+        """
+        refs: List[str] = []
+        self._walk_refs(spec_dict, refs)
+        # Preserve order but deduplicate.
+        seen = set()
+        unique: List[str] = []
+        for ref in refs:
+            if ref not in seen:
+                seen.add(ref)
+                unique.append(ref)
+        return unique
+
+    def _walk_refs(self, node: Any, acc: List[str]) -> None:
+        """DFS traversal collecting ``$ref`` string values."""
+        if isinstance(node, dict):
+            if "$ref" in node and isinstance(node["$ref"], str):
+                acc.append(node["$ref"])
+            for value in node.values():
+                self._walk_refs(value, acc)
+        elif isinstance(node, list):
+            for item in node:
+                self._walk_refs(item, acc)
+
+    def _load_document_or_raise(self, blueprint_id: str) -> BlueprintDocument:
+        """Load a ``BlueprintDocument`` or raise ``BlueprintNotFoundError``."""
+        try:
+            return self._repo.load(blueprint_id)
+        except (KeyError, Exception) as exc:
+            # Repository raises KeyError for missing docs; re-raise as domain error.
+            if isinstance(exc, BlueprintNotFoundError):
+                raise
+            raise BlueprintNotFoundError(blueprint_id) from exc
+
+    def _snapshot_version(
+        self,
+        doc: BlueprintDocument,
+        user_id: str = "",
+        change_summary: Optional[str] = None,
+    ) -> None:
+        """
+        Insert an immutable snapshot of ``doc``'s current spec.
+
+        Silently ignores ``DuplicateSnapshotError`` — this makes the
+        operation idempotent so retried requests cannot create duplicate
+        snapshots.
+        """
+        try:
+            version_doc = BlueprintVersionDocument(
+                blueprint_id=doc.blueprint_id,
+                version=doc.version,
+                spec_dict_snapshot=doc.spec_dict,
+                created_by=user_id,
+                change_summary=change_summary,
+            )
+            self._version_repo.insert_snapshot(version_doc)  # type: ignore[union-attr]
+        except DuplicateSnapshotError:
+            # Idempotent — snapshot already exists; nothing to do.
+            return
+
+    def _require_version_repo(self) -> None:
+        """Raise ``RuntimeError`` if ``BlueprintVersionRepository`` is not configured."""
+        if self._version_repo is None:
+            raise RuntimeError(
+                "BlueprintVersionRepository is not configured. "
+                "Inject version_repo into BlueprintService to enable "
+                "version-history features."
+            )

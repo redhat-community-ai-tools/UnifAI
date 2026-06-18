@@ -1,1 +1,175 @@
-"""\nDomain model for a Blueprint document.\n\nThis module is a zero-dependency Pydantic layer.  It must NOT import\nanything from the adapter or application layers — it sits at the very\ncentre of the hexagonal architecture.\n\nGENIE-1336: Added `version` field to `BlueprintDocument` for Optimistic\nConcurrency Control (OCC).\n\nArch-fix: Introduced ``IdentityType`` enum to replace free-form string\nin ``Identity.type``.\n"""\n\nfrom __future__ import annotations\n\nfrom enum import Enum\nfrom typing import Any, Dict, List, Optional\n\nfrom pydantic import BaseModel, Field\n\n\n# ---------------------------------------------------------------------------\n# Enumerations\n# ---------------------------------------------------------------------------\n\n\nclass IdentityType(str, Enum):\n    """\n    Allowed owner identity types.\n\n    Using a ``str`` enum ensures JSON serialisation works transparently\n    with Pydantic (``identity.type`` serialises to ``\"user\"`` or\n    ``\"team\"``), and prevents callers from passing arbitrary strings\n    such as ``\"admin\"`` or ``\"root\"`` that the system does not recognise.\n    """\n\n    USER = "user"\n    TEAM = "team"\n\n\n# ---------------------------------------------------------------------------\n# Value objects\n# ---------------------------------------------------------------------------\n\n\nclass Identity(BaseModel):\n    """Owner identity — either a user or a team."""\n\n    type: IdentityType\n    id: str\n\n    model_config = {"frozen": True}\n\n\nclass NodeRef(BaseModel):\n    """Lightweight reference to a node within a plan."""\n\n    uid: str\n    label: Optional[str] = None\n\n    model_config = {"frozen": True}\n\n\nclass ConditionRef(BaseModel):\n    """Reference to a conditional branch target."""\n\n    uid: str\n    condition: Optional[str] = None\n\n    model_config = {"frozen": True}\n\n\nclass StepMeta(BaseModel):\n    """Metadata attached to each step in the execution plan."""\n\n    label: Optional[str] = None\n    description: Optional[str] = None\n    tags: List[str] = Field(default_factory=list)\n\n    model_config = {"frozen": True}\n\n\nclass StepDef(BaseModel):\n    """A single step definition within a blueprint plan."""\n\n    uid: str\n    tool: str\n    config: Dict[str, Any] = Field(default_factory=dict)\n    next: List[NodeRef] = Field(default_factory=list)\n    conditions: List[ConditionRef] = Field(default_factory=list)\n    meta: StepMeta = Field(default_factory=StepMeta)\n\n    model_config = {"frozen": True}\n\n\nclass BlueprintResource(BaseModel):\n    """An external resource (e.g. file, dataset) referenced by the blueprint."""\n\n    rid: str\n    label: Optional[str] = None\n    required: bool = True\n\n    model_config = {"frozen": True}\n\n\nclass ResourceSpec(BaseModel):\n    """Typed resource requirement list embedded in the spec."""\n\n    resources: List[BlueprintResource] = Field(default_factory=list)\n\n    model_config = {"frozen": True}\n\n\n# ---------------------------------------------------------------------------\n# Draft & Spec\n# ---------------------------------------------------------------------------\n\n\nclass BlueprintDraft(BaseModel):\n    """\n    Mutable form submitted by the frontend to create or update a blueprint.\n    All fields are optional so partial updates are supported.\n    """\n\n    name: Optional[str] = None\n    description: Optional[str] = None\n    plan: Optional[List[Dict[str, Any]]] = None\n    nodes: Optional[List[Dict[str, Any]]] = None\n    resources: Optional[ResourceSpec] = None\n    metadata: Optional[Dict[str, Any]] = None\n\n\nclass BlueprintSpec(BaseModel):\n    """\n    The canonical spec stored inside a blueprint document.\n    The schema is intentionally open (extra fields are preserved) to support\n    forward-compatibility as the execution engine evolves.\n    """\n\n    name: str = ""\n    description: str = ""\n    plan: List[Dict[str, Any]] = Field(default_factory=list)\n    nodes: List[Dict[str, Any]] = Field(default_factory=list)\n\n    model_config = {"extra": "allow"}\n\n\n# ---------------------------------------------------------------------------\n# Read projections\n# ---------------------------------------------------------------------------\n\n\nclass BlueprintSummary(BaseModel):\n    """\n    Lightweight projection used in listing endpoints.\n    Does NOT include `spec_dict` — only metadata fields.\n    """\n\n    blueprint_id: str\n    identity: Identity\n    name: str = ""\n    description: str = ""\n    created_at: Any\n    updated_at: Any\n    metadata: Dict[str, Any] = Field(default_factory=dict)\n    version: int = Field(default=1, ge=1)\n\n\nclass BlueprintExecutionStats(BaseModel):\n    """Aggregate statistics for executions of this blueprint."""\n\n    total_runs: int = 0\n    successful_runs: int = 0\n    failed_runs: int = 0\n    avg_duration_ms: Optional[float] = None\n\n\n# ---------------------------------------------------------------------------\n# Aggregate root\n# ---------------------------------------------------------------------------\n\n\nclass BlueprintDocument(BaseModel):\n    """\n    Full blueprint aggregate root as stored in MongoDB.\n\n    ``version`` is used for Optimistic Concurrency Control (OCC).\n    Every successful ``update_with_version`` call atomically increments it.\n    Existing documents without the field default to version=1 at read time.\n    """\n\n    blueprint_id: str\n    identity: Identity\n    created_at: Any\n    updated_at: Any\n    spec_dict: Dict[str, Any] = Field(default_factory=dict)\n    rid_refs: List[str] = Field(default_factory=list)\n    metadata: Dict[str, Any] = Field(default_factory=dict)\n\n    # GENIE-1336 — Optimistic Concurrency Control\n    version: int = Field(default=1, ge=1)\n\n    model_config = {"extra": "allow"}\n
+"""
+Domain model for a Blueprint document.
+
+This module is a zero-dependency Pydantic layer.  It must NOT import
+anything from the adapter or application layers — it sits at the very
+centre of the hexagonal architecture.
+
+GENIE-1336: Added `version` field to `BlueprintDocument` for Optimistic
+Concurrency Control (OCC).
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+# Identity lives in the shared kernel; re-exported here for backwards
+# compatibility so that ``from mas.blueprints.models.blueprint import Identity``
+# continues to work across the codebase.
+from mas.core.identity.models import Identity, IdentityType  # noqa: F401
+from pydantic import BaseModel, Field
+
+# ---------------------------------------------------------------------------
+# Value objects
+# ---------------------------------------------------------------------------
+
+
+class NodeRef(BaseModel):
+    """Lightweight reference to a node within a plan."""
+
+    uid: str
+    label: Optional[str] = None
+
+    model_config = {"frozen": True}
+
+
+class ConditionRef(BaseModel):
+    """Reference to a conditional branch target."""
+
+    uid: str
+    condition: Optional[str] = None
+
+    model_config = {"frozen": True}
+
+
+class StepMeta(BaseModel):
+    """Metadata attached to each step in the execution plan."""
+
+    label: Optional[str] = None
+    description: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+
+    model_config = {"frozen": True}
+
+
+class StepDef(BaseModel):
+    """A single step definition within a blueprint plan."""
+
+    uid: str
+    tool: str
+    config: Dict[str, Any] = Field(default_factory=dict)
+    next: List[NodeRef] = Field(default_factory=list)
+    conditions: List[ConditionRef] = Field(default_factory=list)
+    meta: StepMeta = Field(default_factory=StepMeta)
+
+    model_config = {"frozen": True}
+
+
+class BlueprintResource(BaseModel):
+    """An external resource (e.g. file, dataset) referenced by the blueprint."""
+
+    rid: str
+    label: Optional[str] = None
+    required: bool = True
+
+    model_config = {"frozen": True}
+
+
+class ResourceSpec(BaseModel):
+    """Typed resource requirement list embedded in the spec."""
+
+    resources: List[BlueprintResource] = Field(default_factory=list)
+
+    model_config = {"frozen": True}
+
+
+# ---------------------------------------------------------------------------
+# Draft & Spec
+# ---------------------------------------------------------------------------
+
+
+class BlueprintDraft(BaseModel):
+    """
+    Mutable form submitted by the frontend to create or update a blueprint.
+    All fields are optional so partial updates are supported.
+    """
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    plan: Optional[List[Dict[str, Any]]] = None
+    nodes: Optional[List[Dict[str, Any]]] = None
+    resources: Optional[ResourceSpec] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class BlueprintSpec(BaseModel):
+    """
+    The canonical spec stored inside a blueprint document.
+    The schema is intentionally open (extra fields are preserved) to support
+    forward-compatibility as the execution engine evolves.
+    """
+
+    name: str = ""
+    description: str = ""
+    plan: List[Dict[str, Any]] = Field(default_factory=list)
+    nodes: List[Dict[str, Any]] = Field(default_factory=list)
+
+    model_config = {"extra": "allow"}
+
+
+# ---------------------------------------------------------------------------
+# Read projections
+# ---------------------------------------------------------------------------
+
+
+class BlueprintSummary(BaseModel):
+    """
+    Lightweight projection used in listing endpoints.
+    Does NOT include `spec_dict` — only metadata fields.
+    """
+
+    blueprint_id: str
+    identity: Identity
+    name: str = ""
+    description: str = ""
+    created_at: Any
+    updated_at: Any
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    version: int = Field(default=1, ge=1)
+
+
+class BlueprintExecutionStats(BaseModel):
+    """Aggregate statistics for executions of this blueprint."""
+
+    total_runs: int = 0
+    successful_runs: int = 0
+    failed_runs: int = 0
+    avg_duration_ms: Optional[float] = None
+
+
+# ---------------------------------------------------------------------------
+# Aggregate root
+# ---------------------------------------------------------------------------
+
+
+class BlueprintDocument(BaseModel):
+    """
+    Full blueprint aggregate root as stored in MongoDB.
+
+    ``version`` is used for Optimistic Concurrency Control (OCC).
+    Every successful ``update_with_version`` call atomically increments it.
+    Existing documents without the field default to version=1 at read time.
+    """
+
+    blueprint_id: str
+    identity: Identity
+    created_at: Any
+    updated_at: Any
+    spec_dict: Dict[str, Any] = Field(default_factory=dict)
+    rid_refs: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    # GENIE-1336 — Optimistic Concurrency Control
+    version: int = Field(default=1, ge=1)
+
+    model_config = {"extra": "allow"}

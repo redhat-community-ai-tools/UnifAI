@@ -13,6 +13,18 @@ running database.
 
 from __future__ import annotations
 
+import os
+import sys
+
+# Ensure workspace root and lib/ are in sys.path for robust import resolution
+_file_dir = os.path.dirname(os.path.abspath(__file__))
+_root_dir = os.path.abspath(os.path.join(_file_dir, "../../../.."))
+if _root_dir not in sys.path:
+    sys.path.insert(0, _root_dir)
+_lib_dir = os.path.join(_root_dir, "lib")
+if _lib_dir not in sys.path:
+    sys.path.insert(0, _lib_dir)
+
 from types import SimpleNamespace
 from typing import Optional
 from unittest.mock import MagicMock, call, patch
@@ -36,10 +48,12 @@ def _make_mock_collection(name: str = "col") -> MagicMock:
 
 def _make_mock_db(bp_col: MagicMock, ver_col: MagicMock) -> MagicMock:
     db = MagicMock()
-    db.__getitem__ = MagicMock(side_effect=lambda key: {
-        "blueprints": bp_col,
-        "blueprint_versions": ver_col,
-    }.get(key, MagicMock()))
+    db.__getitem__ = MagicMock(
+        side_effect=lambda key: {
+            "blueprints": bp_col,
+            "blueprint_versions": ver_col,
+        }.get(key, MagicMock())
+    )
     return db
 
 
@@ -56,6 +70,15 @@ def _make_mock_mongo_client(db: MagicMock) -> MagicMock:
 
 class TestAppContainerBlueprintWiring:
     """AppContainer must wire BlueprintService with a BlueprintVersionRepository."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_singleton(self):
+        """Clear the AppContainer singleton cache before each test."""
+        from bootstrap.container import AppContainer
+
+        AppContainer.reset()
+        yield
+        AppContainer.reset()
 
     @patch.dict(
         "os.environ",
@@ -127,7 +150,7 @@ class TestAppContainerBlueprintWiring:
         mock_client = _make_mock_mongo_client(db)
 
         with patch("bootstrap.container.MongoClient", return_value=mock_client):
-            from bootstrap.container import AppContainer, AppConfig
+            from bootstrap.container import AppConfig, AppContainer
 
             config = AppConfig()
             assert config.blueprint_versions_coll == "custom_versions"
