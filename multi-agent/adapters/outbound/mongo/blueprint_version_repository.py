@@ -12,12 +12,13 @@ GENIE-1336
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import timezone
 from typing import List, Optional, Tuple
 
 from mas.blueprints.exceptions import DuplicateSnapshotError
 from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
-from mas.blueprints.repository.version_repository import BlueprintVersionRepository
+from mas.blueprints.repository.version_repository import \
+    BlueprintVersionRepository
 from pymongo import ASCENDING, DESCENDING
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
@@ -80,6 +81,7 @@ class MongoBlueprintVersionRepository(BlueprintVersionRepository):
                 "MongoBlueprintVersionRepository requires a non-None 'col' argument."
             )
         self._col: Collection = col
+        self.ensure_indexes()
 
     # ------------------------------------------------------------------
     # Index management
@@ -94,8 +96,6 @@ class MongoBlueprintVersionRepository(BlueprintVersionRepository):
           uniqueness invariant and powers ``find_one``.
         * ``(blueprint_id ASC, version DESC)`` — powers list queries sorted
           newest-first.
-        * ``(blueprint_id ASC, created_at DESC)`` — alternative sort for
-          time-based ordering.
         """
         self._col.create_index(
             [("blueprint_id", ASCENDING), ("version", ASCENDING)],
@@ -105,10 +105,6 @@ class MongoBlueprintVersionRepository(BlueprintVersionRepository):
         self._col.create_index(
             [("blueprint_id", ASCENDING), ("version", DESCENDING)],
             name="bp_version_desc",
-        )
-        self._col.create_index(
-            [("blueprint_id", ASCENDING), ("created_at", DESCENDING)],
-            name="bp_created_at_desc",
         )
 
     # ------------------------------------------------------------------
@@ -178,7 +174,10 @@ class MongoBlueprintVersionRepository(BlueprintVersionRepository):
         projection = {"spec_dict_snapshot": 0}
 
         cursor = (
-            self._col.find(flt, projection).sort("version", DESCENDING).skip(skip).limit(page_size)
+            self._col.find(flt, projection)
+            .sort("version", DESCENDING)
+            .skip(skip)
+            .limit(page_size)
         )
 
         items = [_raw_to_doc(raw) for raw in cursor]
@@ -224,7 +223,7 @@ def _raw_to_doc(raw: dict) -> BlueprintVersionDocument:
     return doc
 
 
-def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_utc(dt):
     """Attach UTC timezone info if the datetime is naïve."""
     if dt is not None and dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)

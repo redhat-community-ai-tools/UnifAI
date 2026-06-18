@@ -162,7 +162,7 @@ class BlueprintDocument(BaseModel):
     """
 
     blueprint_id: str
-    identity: Identity
+    identity: Optional[Identity] = None
     created_at: Any
     updated_at: Any
     spec_dict: Dict[str, Any] = Field(default_factory=dict)

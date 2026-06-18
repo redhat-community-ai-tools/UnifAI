@@ -18,7 +18,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, ClassVar, Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -54,6 +54,9 @@ class BlueprintVersionDocument:
     change_summary: Optional[str] = None
     _id: Optional[str] = field(default=None, repr=False)
 
+    # Class-level sentinel used in __post_init__ to detect direct construction
+    _SENTINEL: ClassVar[object] = object()
+
     def __post_init__(self) -> None:
         # Deep-copy to ensure stored snapshot is isolated from caller's dict.
         object.__setattr__(
@@ -68,9 +71,7 @@ class BlueprintVersionDocument:
         if not self.blueprint_id:
             raise ValueError("blueprint_id must be a non-empty string")
         if self.change_summary is not None and len(self.change_summary) > 500:
-            raise ValueError(
-                f"change_summary must be ≤ 500 characters; got {len(self.change_summary)}"
-            )
+            object.__setattr__(self, "change_summary", self.change_summary[:500])
 
     # ------------------------------------------------------------------
     # Projections
@@ -83,7 +84,6 @@ class BlueprintVersionDocument:
         Deliberately excludes ``spec_dict_snapshot`` to keep payloads small.
         """
         return {
-            "blueprint_id": self.blueprint_id,
             "version": self.version,
             "created_by": self.created_by,
             "created_at": _iso(self.created_at),
@@ -98,6 +98,7 @@ class BlueprintVersionDocument:
         """
         return {
             **self.to_summary(),
+            "blueprint_id": self.blueprint_id,
             "spec_dict_snapshot": copy.deepcopy(self.spec_dict_snapshot),
         }
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 
-from lib.mas.blueprints.models.blueprint_version import BlueprintVersionDocument
+from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
 
 
 class BlueprintVersionRepository(ABC):

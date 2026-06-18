@@ -23,10 +23,10 @@ import pymongo
 from mas.blueprints.service import BlueprintService
 from pymongo import MongoClient
 
-from adapters.outbound.mongo.blueprint_repository import MongoBlueprintRepository
-from adapters.outbound.mongo.blueprint_version_repository import (
-    MongoBlueprintVersionRepository,
-)
+from adapters.outbound.mongo.blueprint_repository import \
+    MongoBlueprintRepository
+from adapters.outbound.mongo.blueprint_version_repository import \
+    MongoBlueprintVersionRepository
 
 # ---------------------------------------------------------------------------
 # Singleton metaclass
@@ -83,7 +83,9 @@ class AppConfig:
         default_factory=lambda: os.environ.get("BLUEPRINT_COLL", "blueprints")
     )
     blueprint_versions_coll: str = field(
-        default_factory=lambda: os.environ.get("BLUEPRINT_VERSIONS_COLL", "blueprint_versions")
+        default_factory=lambda: os.environ.get(
+            "BLUEPRINT_VERSIONS_COLL", "blueprint_versions"
+        )
     )
 
 
@@ -162,8 +164,7 @@ class AppContainer(metaclass=SingletonMeta):
             col=db[cfg.blueprint_versions_coll]
         )
 
-        # 3. Ensure indexes (idempotent — safe on every restart)
-        self.blueprint_version_repo.ensure_indexes()
+        # 3. Indexes are created in MongoBlueprintVersionRepository.__init__()
 
         # 4. Application service  (GENIE-1336: version_repo is now wired)
         self.blueprint_service = BlueprintService(

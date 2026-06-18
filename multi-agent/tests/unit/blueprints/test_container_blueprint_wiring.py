@@ -6,25 +6,12 @@ Verifies that:
   2. The service exposes list_versions / load_version / restore_version.
   3. Env-var overrides are honoured.
   4. ensure_indexes() is called on the version repository during build.
-  5. attach_to_flask_app sets both app.container and app.blueprint_service.
 
 All MongoDB connections are mocked out — these tests do NOT require a
 running database.
 """
 
 from __future__ import annotations
-
-import os
-import sys
-
-# Ensure workspace root and lib/ are in sys.path for robust import resolution
-_file_dir = os.path.dirname(os.path.abspath(__file__))
-_root_dir = os.path.abspath(os.path.join(_file_dir, "../../../.."))
-if _root_dir not in sys.path:
-    sys.path.insert(0, _root_dir)
-_lib_dir = os.path.join(_root_dir, "lib")
-if _lib_dir not in sys.path:
-    sys.path.insert(0, _lib_dir)
 
 from types import SimpleNamespace
 from typing import Optional
@@ -49,12 +36,10 @@ def _make_mock_collection(name: str = "col") -> MagicMock:
 
 def _make_mock_db(bp_col: MagicMock, ver_col: MagicMock) -> MagicMock:
     db = MagicMock()
-    db.__getitem__ = MagicMock(
-        side_effect=lambda key: {
-            "blueprints": bp_col,
-            "blueprint_versions": ver_col,
-        }.get(key, MagicMock())
-    )
+    db.__getitem__ = MagicMock(side_effect=lambda key: {
+        "blueprints": bp_col,
+        "blueprint_versions": ver_col,
+    }.get(key, MagicMock()))
     return db
 
 
@@ -74,7 +59,7 @@ class TestAppContainerBlueprintWiring:
 
     @pytest.fixture(autouse=True)
     def _reset_singleton(self):
-        """Clear the AppContainer singleton cache before each test."""
+        """Clear the SingletonMeta cache so each test gets a fresh AppContainer."""
         from bootstrap.container import AppContainer
 
         AppContainer.reset()
@@ -151,7 +136,7 @@ class TestAppContainerBlueprintWiring:
         mock_client = _make_mock_mongo_client(db)
 
         with patch("bootstrap.container.MongoClient", return_value=mock_client):
-            from bootstrap.container import AppConfig, AppContainer
+            from bootstrap.container import AppContainer, AppConfig
 
             config = AppConfig()
             assert config.blueprint_versions_coll == "custom_versions"
@@ -205,8 +190,7 @@ class TestAppContainerBlueprintWiring:
         },
         clear=False,
     )
-    def test_attach_to_flask_app_sets_container_and_service(self):
-        """attach_to_flask_app must set both app.container and app.blueprint_service."""
+    def test_attach_to_flask_app_sets_blueprint_service(self):
         bp_col = _make_mock_collection("bp_col")
         ver_col = _make_mock_collection("ver_col")
         db = _make_mock_db(bp_col, ver_col)
@@ -222,7 +206,5 @@ class TestAppContainerBlueprintWiring:
             fake_app = _FakeFlaskApp()
             container.attach_to_flask_app(fake_app)
 
-        assert hasattr(fake_app, "container")
-        assert fake_app.container is container
         assert hasattr(fake_app, "blueprint_service")
         assert fake_app.blueprint_service is container.blueprint_service

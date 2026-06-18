@@ -1,4 +1,5 @@
-"""Flask inbound adapter — Blueprint REST endpoints.
+"""
+Flask inbound adapter — Blueprint REST endpoints.
 
 All routes follow the existing ``blueprint.*.verb`` naming convention
 used throughout the MAS API.  Version-history endpoints were added in
@@ -26,21 +27,18 @@ is transport-agnostic and contains no HTTP references.
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
-from typing import Any, Optional
+import logging
+from typing import Any, Callable, Dict, Tuple
 
-from flask import Blueprint, abort, current_app, jsonify, request
-from mas.blueprints.exceptions import (
-    BlueprintAccessDeniedError,
-    BlueprintError,
-    BlueprintNotFoundError,
-    ConcurrentModificationError,
-    VersionNotFoundError,
-)
-from mas.core.identity.models import Identity, IdentityType
+from flask import Blueprint, current_app, jsonify, request
+from mas.blueprints.exceptions import (BlueprintAccessDeniedError,
+                                       BlueprintError, BlueprintNotFoundError,
+                                       ConcurrentModificationError,
+                                       VersionNotFoundError)
+from mas.core.identity.models import Identity, IdentityType  # noqa: F401
 from werkzeug.exceptions import HTTPException
 
-_logger = __import__("logging").getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Flask Blueprint registration
@@ -53,13 +51,11 @@ bp = Blueprint("blueprints", __name__)
 # ---------------------------------------------------------------------------
 
 
-def _ok(data: Any, status: int = 200) -> tuple[Any, int]:
-    """Wrap *data* in the standard success envelope."""
+def _ok(data: Any, status: int = 200) -> Tuple[Any, int]:
     return jsonify({"success": True, "data": data}), status
 
 
-def _err(message: str, status: int = 500) -> tuple[Any, int]:
-    """Return a standard error envelope."""
+def _err(message: str, status: int = 500) -> Tuple[Any, int]:
     return jsonify({"success": False, "error": message}), status
 
 
@@ -79,36 +75,21 @@ def _require_auth() -> Identity:
     Extract and validate caller identity from the request.
 
     Looks for an ``X-Identity-Type`` / ``X-Identity-Id`` header pair.
-    Returns the validated ``Identity`` on success, or aborts with
-    401 (missing headers) or 400 (invalid identity type).
+    Returns the validated ``Identity`` on success, or aborts with 401.
     """
+    from flask import abort
+
     identity_type = request.headers.get("X-Identity-Type")
     identity_id = request.headers.get("X-Identity-Id")
 
     if not identity_type or not identity_id:
-        abort(401, "Missing authentication headers: X-Identity-Type and X-Identity-Id are required")
+        abort(
+            401,
+            "Missing authentication headers: "
+            "X-Identity-Type and X-Identity-Id are required",
+        )
 
-    try:
-        id_type = IdentityType(identity_type)
-    except ValueError:
-        abort(400, f"Invalid identity type: {identity_type!r}. Must be 'user' or 'team'")
-
-    return Identity(type=id_type, id=identity_id)
-
-
-def _parse_int_param(name: str, raw: Optional[str], default: int, min_val: int = 0) -> int:
-    """Parse an integer query parameter, returning *default* on ``None``.
-
-    Aborts with 400 when the caller provides a non-integer string;
-    missing parameters (``None``) silently fall back to *default*.
-    """
-    if raw is None:
-        return default
-    try:
-        value = int(raw)
-    except (ValueError, TypeError):
-        abort(400, f"Invalid value for '{name}': {raw!r} — must be an integer")
-    return max(min_val, value)
+    return Identity(type=identity_type, id=identity_id)
 
 
 def _handle_blueprint_errors(fn: Callable) -> Callable:
@@ -155,10 +136,12 @@ def _handle_blueprint_errors(fn: Callable) -> Callable:
     return wrapper
 
 
-def _get_json_body() -> dict:
-    """Return the parsed JSON request body or abort with 400."""
+def _get_json_body() -> Dict:
+    """Return the parsed JSON request body or raise a 400."""
     data = request.get_json(silent=True)
     if data is None:
+        from flask import abort
+
         abort(
             400,
             "Request body must be valid JSON with Content-Type: application/json",
@@ -185,12 +168,6 @@ def blueprint_save():
     """
     _require_auth()
     body = _get_json_body()
-
-    if "identity" not in body:
-        return _err("Missing required field: identity", 400)
-    if "spec_dict" not in body:
-        return _err("Missing required field: spec_dict", 400)
-
     identity = Identity.model_validate(body["identity"])
     spec_dict = body["spec_dict"]
     metadata = body.get("metadata", {})
@@ -216,12 +193,6 @@ def blueprint_update():
     """
     _require_auth()
     body = _get_json_body()
-
-    if "blueprint_id" not in body:
-        return _err("Missing required field: blueprint_id", 400)
-    if "spec_dict" not in body:
-        return _err("Missing required field: spec_dict", 400)
-
     blueprint_id = body["blueprint_id"]
     spec_dict = body["spec_dict"]
     change_summary = body.get("change_summary")
@@ -278,18 +249,12 @@ def available_blueprints_summary_get():
     _require_auth()
     identity_type = request.args.get("identity_type")
     identity_id = request.args.get("identity_id")
-    skip = _parse_int_param("skip", request.args.get("skip"), default=0, min_val=0)
-    limit = min(_parse_int_param("limit", request.args.get("limit"), default=20, min_val=1), 100)
+    skip = int(request.args.get("skip", 0))
+    limit = min(int(request.args.get("limit", 20)), 100)
 
     identity = None
     if identity_type and identity_id:
-        try:
-            id_type = IdentityType(identity_type)
-        except ValueError:
-            return _err(
-                f"Invalid identity_type: {identity_type!r}. Must be 'user' or 'team'", 400
-            )
-        identity = Identity(type=id_type, id=identity_id)
+        identity = Identity(type=identity_type, id=identity_id)
 
     svc = _service()
     docs = svc.list_blueprints(identity=identity, skip=skip, limit=limit)
@@ -315,7 +280,7 @@ def available_blueprints_summary_get():
 def blueprint_versions_list():
     """
     GET /blueprint.versions.list
-    ?blueprintId=<id>&page=1&pageSize=20
+    ?blueprint_id=<id>&page=1&page_size=20
 
     Returns a paginated list of version summaries sorted newest-first.
     ``spec_dict_snapshot`` is intentionally excluded from the list response
@@ -323,39 +288,31 @@ def blueprint_versions_list():
 
     Errors
     ------
-    400 — missing blueprintId
+    400 — missing blueprint_id
     404 — blueprint not found
     501 — versioning feature not configured on the server
     """
     _require_auth()
-    blueprint_id = request.args.get("blueprintId") or request.args.get("blueprint_id")
+    blueprint_id = request.args.get("blueprint_id")
     if not blueprint_id:
-        return _err("Missing required query parameter: blueprintId", 400)
+        return _err("Missing required query parameter: blueprint_id", 400)
 
-    page = _parse_int_param("page", request.args.get("page"), default=1, min_val=1)
-    page_size = min(
-        _parse_int_param(
-            "pageSize",
-            request.args.get("pageSize") or request.args.get("page_size"),
-            default=20,
-            min_val=1,
-        ),
-        100,
-    )
+    page = max(1, int(request.args.get("page", 1)))
+    page_size = max(1, min(100, int(request.args.get("page_size", 20))))
 
     result = _service().list_versions(
         blueprint_id,
         page=page,
         page_size=page_size,
     )
-    return jsonify(result), 200
+    return _ok(result)
 
 
 @bp.route("/blueprint.version.get", methods=["GET"])
 @_handle_blueprint_errors
 def blueprint_version_get():
     """
-    GET /blueprint.version.get?blueprintId=<id>&version=<n>
+    GET /blueprint.version.get?blueprint_id=<id>&version=<n>
 
     Returns the full version detail including ``spec_dict_snapshot``.
 
@@ -366,11 +323,11 @@ def blueprint_version_get():
     501 — versioning feature not configured on the server
     """
     _require_auth()
-    blueprint_id = request.args.get("blueprintId") or request.args.get("blueprint_id")
+    blueprint_id = request.args.get("blueprint_id")
     version_str = request.args.get("version")
 
     if not blueprint_id:
-        return _err("Missing required query parameter: blueprintId", 400)
+        return _err("Missing required query parameter: blueprint_id", 400)
     if not version_str:
         return _err("Missing required query parameter: version", 400)
 
@@ -380,7 +337,7 @@ def blueprint_version_get():
         return _err(f"Invalid version: {version_str!r} must be an integer", 400)
 
     detail = _service().load_version(blueprint_id, version)
-    return jsonify(detail), 200
+    return _ok(detail)
 
 
 @bp.route("/blueprint.version.restore", methods=["POST"])
@@ -389,14 +346,11 @@ def blueprint_version_restore():
     """
     POST /blueprint.version.restore
 
-    Body: {"blueprintId": "<id>", "version": <n>}
+    Body: {"blueprint_id": "<id>", "version": <n>, "user_id": "..."}
 
     Restores the blueprint's live spec to the snapshot captured at
     ``version``.  The current state is saved as a new snapshot before the
     restore so no history is lost.
-
-    The ``user_id`` for audit attribution is derived from the authenticated
-    principal (``X-Identity-Id`` header), not from the request body.
 
     Errors
     ------
@@ -405,34 +359,35 @@ def blueprint_version_restore():
     409 — concurrent modification conflict (re-fetch and retry)
     501 — versioning feature not configured on the server
     """
-    caller = _require_auth()
+    _require_auth()
     body = _get_json_body()
 
-    blueprint_id = body.get("blueprintId") or body.get("blueprint_id")
+    blueprint_id = body.get("blueprint_id")
     target_version = body.get("version")
+    user_id = body.get("user_id", "")
 
     if not blueprint_id:
-        return _err("Missing required field: blueprintId", 400)
+        return _err("Missing required field: blueprint_id", 400)
     if target_version is None:
         return _err("Missing required field: version", 400)
-    # Reject booleans: bool is a subclass of int in Python, so
-    # isinstance(True, int) is True.  Use exact type check instead.
-    if type(target_version) is not int or target_version < 1:
-        return _err(f"Invalid version: {target_version!r} must be a positive integer", 400)
+    if not isinstance(target_version, int) or target_version < 1:
+        return _err(
+            f"Invalid version: {target_version!r} must be a positive integer", 400
+        )
 
     _service().restore_version(
         blueprint_id,
         target_version=target_version,
-        user_id=caller.id,
+        user_id=user_id,
     )
 
-    return jsonify(
+    return _ok(
         {
-            "status": "success",
             "blueprint_id": blueprint_id,
-            "restored_to_version": target_version,
+            "restored_from_version": target_version,
+            "message": f"Blueprint restored to version {target_version}.",
         }
-    ), 200
+    )
 
 
 # ---------------------------------------------------------------------------
