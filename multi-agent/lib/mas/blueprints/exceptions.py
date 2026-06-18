@@ -97,7 +97,7 @@ class DuplicateSnapshotError(BlueprintError):
         self.blueprint_id = blueprint_id
         self.version = version
         super().__init__(
-            f"Snapshot already exists for blueprint {blueprint_id!r} " f"at version {version}"
+            f"Snapshot already exists for blueprint {blueprint_id!r} at version {version}"
         )
 
 

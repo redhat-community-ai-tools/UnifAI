@@ -97,6 +97,23 @@ def _require_auth() -> Identity:
     return Identity(type=id_type, id=identity_id)
 
 
+def _parse_int_param(name: str, raw: str, default: int, min_val: int = 0) -> int:
+    """Parse an integer query parameter, returning *default* on failure.
+
+    Raises a 400 via ``_err`` only when the caller provides a non-integer
+    string; missing parameters are handled via ``default``.
+    """
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (ValueError, TypeError):
+        from flask import abort
+
+        abort(400, f"Invalid value for '{name}': {raw!r} — must be an integer")
+    return max(min_val, value)
+
+
 def _handle_blueprint_errors(fn: Callable) -> Callable:
     """
     Decorator that converts domain exceptions to HTTP responses.
@@ -173,6 +190,12 @@ def blueprint_save():
     """
     _require_auth()
     body = _get_json_body()
+
+    if "identity" not in body:
+        return _err("Missing required field: identity", 400)
+    if "spec_dict" not in body:
+        return _err("Missing required field: spec_dict", 400)
+
     identity = Identity.model_validate(body["identity"])
     spec_dict = body["spec_dict"]
     metadata = body.get("metadata", {})
@@ -198,6 +221,12 @@ def blueprint_update():
     """
     _require_auth()
     body = _get_json_body()
+
+    if "blueprint_id" not in body:
+        return _err("Missing required field: blueprint_id", 400)
+    if "spec_dict" not in body:
+        return _err("Missing required field: spec_dict", 400)
+
     blueprint_id = body["blueprint_id"]
     spec_dict = body["spec_dict"]
     change_summary = body.get("change_summary")
@@ -254,8 +283,8 @@ def available_blueprints_summary_get():
     _require_auth()
     identity_type = request.args.get("identity_type")
     identity_id = request.args.get("identity_id")
-    skip = int(request.args.get("skip", 0))
-    limit = min(int(request.args.get("limit", 20)), 100)
+    skip = _parse_int_param("skip", request.args.get("skip"), default=0, min_val=0)
+    limit = min(_parse_int_param("limit", request.args.get("limit"), default=20, min_val=1), 100)
 
     identity = None
     if identity_type and identity_id:
@@ -308,8 +337,11 @@ def blueprint_versions_list():
     if not blueprint_id:
         return _err("Missing required query parameter: blueprint_id", 400)
 
-    page = max(1, int(request.args.get("page", 1)))
-    page_size = max(1, min(100, int(request.args.get("page_size", 20))))
+    page = _parse_int_param("page", request.args.get("page"), default=1, min_val=1)
+    page_size = min(
+        _parse_int_param("page_size", request.args.get("page_size"), default=20, min_val=1),
+        100,
+    )
 
     result = _service().list_versions(
         blueprint_id,
@@ -403,4 +435,4 @@ def blueprint_version_restore():
 # Alias required by integration tests
 # ---------------------------------------------------------------------------
 
-blueprints_bp = bp
+blueprintsbp = bp

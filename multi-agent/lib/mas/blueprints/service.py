@@ -50,9 +50,10 @@ class BlueprintService:
     auth_service:
         Checks access permissions (optional).
     version_repo:
-        Append-only version snapshot repository (GENIE-1336).  When
-        ``None``, the legacy unconditional-update path is used and all
-        version-history methods raise ``RuntimeError``.
+        Append-only version snapshot repository (GENIE-1336).  Required
+        for ``update_draft``, ``list_versions``, ``load_version``, and
+        ``restore_version``.  When ``None``, these methods raise
+        ``RuntimeError``.
     """
 
     def __init__(

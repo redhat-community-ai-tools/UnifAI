@@ -18,7 +18,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -54,9 +54,6 @@ class BlueprintVersionDocument:
     change_summary: Optional[str] = None
     _id: Optional[str] = field(default=None, repr=False)
 
-    # Class-level sentinel used in __post_init__ to detect direct construction
-    _SENTINEL: ClassVar[object] = object()
-
     def __post_init__(self) -> None:
         # Deep-copy to ensure stored snapshot is isolated from caller's dict.
         object.__setattr__(
@@ -72,7 +69,7 @@ class BlueprintVersionDocument:
             raise ValueError("blueprint_id must be a non-empty string")
         if self.change_summary is not None and len(self.change_summary) > 500:
             raise ValueError(
-                f"change_summary must be ≤ 500 characters; " f"got {len(self.change_summary)}"
+                f"change_summary must be ≤ 500 characters; got {len(self.change_summary)}"
             )
 
     # ------------------------------------------------------------------
