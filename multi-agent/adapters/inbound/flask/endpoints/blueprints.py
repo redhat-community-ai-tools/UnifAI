@@ -389,11 +389,14 @@ def blueprint_version_restore():
     """
     POST /blueprint.version.restore
 
-    Body: {"blueprintId": "<id>", "version": <n>, "user_id": "..."}
+    Body: {"blueprintId": "<id>", "version": <n>}
 
     Restores the blueprint's live spec to the snapshot captured at
     ``version``.  The current state is saved as a new snapshot before the
     restore so no history is lost.
+
+    The ``user_id`` for audit attribution is derived from the authenticated
+    principal (``X-Identity-Id`` header), not from the request body.
 
     Errors
     ------
@@ -402,24 +405,25 @@ def blueprint_version_restore():
     409 — concurrent modification conflict (re-fetch and retry)
     501 — versioning feature not configured on the server
     """
-    _require_auth()
+    caller = _require_auth()
     body = _get_json_body()
 
     blueprint_id = body.get("blueprintId") or body.get("blueprint_id")
     target_version = body.get("version")
-    user_id = body.get("user_id", "")
 
     if not blueprint_id:
         return _err("Missing required field: blueprintId", 400)
     if target_version is None:
         return _err("Missing required field: version", 400)
-    if not isinstance(target_version, int) or target_version < 1:
+    # Reject booleans: bool is a subclass of int in Python, so
+    # isinstance(True, int) is True.  Use exact type check instead.
+    if type(target_version) is not int or target_version < 1:
         return _err(f"Invalid version: {target_version!r} must be a positive integer", 400)
 
     _service().restore_version(
         blueprint_id,
         target_version=target_version,
-        user_id=user_id,
+        user_id=caller.id,
     )
 
     return jsonify(
