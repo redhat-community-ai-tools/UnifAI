@@ -27,10 +27,9 @@ is transport-agnostic and contains no HTTP references.
 from __future__ import annotations
 
 import functools
-import traceback
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, abort, current_app, jsonify, request
 from mas.blueprints.exceptions import (
     BlueprintAccessDeniedError,
     BlueprintError,
@@ -55,10 +54,12 @@ bp = Blueprint("blueprints", __name__)
 
 
 def _ok(data: Any, status: int = 200) -> Tuple[Any, int]:
+    """Wrap *data* in the standard success envelope."""
     return jsonify({"success": True, "data": data}), status
 
 
 def _err(message: str, status: int = 500) -> Tuple[Any, int]:
+    """Return a standard error envelope."""
     return jsonify({"success": False, "error": message}), status
 
 
@@ -81,8 +82,6 @@ def _require_auth() -> Identity:
     Returns the validated ``Identity`` on success, or aborts with
     401 (missing headers) or 400 (invalid identity type).
     """
-    from flask import abort
-
     identity_type = request.headers.get("X-Identity-Type")
     identity_id = request.headers.get("X-Identity-Id")
 
@@ -97,19 +96,17 @@ def _require_auth() -> Identity:
     return Identity(type=id_type, id=identity_id)
 
 
-def _parse_int_param(name: str, raw: str, default: int, min_val: int = 0) -> int:
-    """Parse an integer query parameter, returning *default* on failure.
+def _parse_int_param(name: str, raw: Optional[str], default: int, min_val: int = 0) -> int:
+    """Parse an integer query parameter, returning *default* on ``None``.
 
-    Raises a 400 via ``_err`` only when the caller provides a non-integer
-    string; missing parameters are handled via ``default``.
+    Aborts with 400 when the caller provides a non-integer string;
+    missing parameters (``None``) silently fall back to *default*.
     """
     if raw is None:
         return default
     try:
         value = int(raw)
     except (ValueError, TypeError):
-        from flask import abort
-
         abort(400, f"Invalid value for '{name}': {raw!r} — must be an integer")
     return max(min_val, value)
 
@@ -159,11 +156,9 @@ def _handle_blueprint_errors(fn: Callable) -> Callable:
 
 
 def _get_json_body() -> Dict:
-    """Return the parsed JSON request body or raise a 400."""
+    """Return the parsed JSON request body or abort with 400."""
     data = request.get_json(silent=True)
     if data is None:
-        from flask import abort
-
         abort(
             400,
             "Request body must be valid JSON with Content-Type: application/json",
