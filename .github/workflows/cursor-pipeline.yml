@@ -136,8 +136,8 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_REPOSITORY: ${{ github.repository }}
         run: |
-          ARCH_VERDICT=$(sed 's/\x1b\[[0-9;]*m//g' arch_review_output.txt 2>/dev/null | grep -oP '\*\*(?:APPROVE|NEEDS REVISION|REJECT)\*\*' | head -1 | tr -d '*' || echo "UNKNOWN")
-          CODE_SCORE=$(sed 's/\x1b\[[0-9;]*m//g' code_review_output.txt 2>/dev/null | grep -oP 'Code Health Score:\s*\K[0-9]{1,2}(?=/10)' | tail -1 || echo "?")
+          ARCH_VERDICT=$(sed 's/\x1b\[[0-9;]*m//g; s/\*\{1,2\}//g; s/__//g' arch_review_output.txt 2>/dev/null | grep -oP '(?:APPROVE|NEEDS REVISION|REJECT)' | head -1 || echo "UNKNOWN")
+          CODE_SCORE=$(sed 's/\x1b\[[0-9;]*m//g; s/\*\{1,2\}//g; s/__//g' code_review_output.txt 2>/dev/null | grep -oP 'Code\s+Health\s+Score\b[^\d]*\K[0-9]{1,2}(?=\s*/\s*10)' | tail -1 || echo "?")
 
           TITLE="Architecture: ${ARCH_VERDICT} | Code: ${CODE_SCORE}/10"
 

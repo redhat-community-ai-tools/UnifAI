@@ -7,12 +7,17 @@ import sys
 from pathlib import Path
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-CODE_SCORE_RE = re.compile(r"Code Health Score:\s*(\d{1,2})/10")
-ARCH_VERDICT_RE = re.compile(r"\*\*(APPROVE|NEEDS REVISION|REJECT)\*\*")
+MARKDOWN_BOLD_RE = re.compile(r"\*{1,2}|_{1,2}")
+CODE_SCORE_RE = re.compile(r"Code\s+Health\s+Score\b[^\d]*(\d{1,2})\s*/\s*10")
+ARCH_VERDICT_RE = re.compile(r"(APPROVE|NEEDS REVISION|REJECT)")
 
 
 def strip_ansi(text: str) -> str:
     return ANSI_RE.sub("", text)
+
+
+def strip_markdown(text: str) -> str:
+    return MARKDOWN_BOLD_RE.sub("", text)
 
 
 def parse_code_score(path: Path) -> tuple[int, str]:
@@ -22,7 +27,7 @@ def parse_code_score(path: Path) -> tuple[int, str]:
     if not content.strip():
         return 0, "file_empty"
 
-    clean = strip_ansi(content)
+    clean = strip_markdown(strip_ansi(content))
     matches = CODE_SCORE_RE.findall(clean)
     if not matches:
         return 0, "pattern_not_found"
@@ -38,7 +43,7 @@ def parse_arch_verdict(path: Path) -> tuple[str, str]:
     if not content.strip():
         return "UNKNOWN", "file_empty"
 
-    clean = strip_ansi(content)
+    clean = strip_markdown(strip_ansi(content))
     match = ARCH_VERDICT_RE.search(clean)
     if not match:
         return "UNKNOWN", "pattern_not_found"
