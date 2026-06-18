@@ -320,7 +320,7 @@ def available_blueprints_summary_get():
 def blueprint_versions_list():
     """
     GET /blueprint.versions.list
-    ?blueprint_id=<id>&page=1&page_size=20
+    ?blueprintId=<id>&page=1&pageSize=20
 
     Returns a paginated list of version summaries sorted newest-first.
     ``spec_dict_snapshot`` is intentionally excluded from the list response
@@ -328,18 +328,23 @@ def blueprint_versions_list():
 
     Errors
     ------
-    400 — missing blueprint_id
+    400 — missing blueprintId
     404 — blueprint not found
     501 — versioning feature not configured on the server
     """
     _require_auth()
-    blueprint_id = request.args.get("blueprint_id")
+    blueprint_id = request.args.get("blueprintId") or request.args.get("blueprint_id")
     if not blueprint_id:
-        return _err("Missing required query parameter: blueprint_id", 400)
+        return _err("Missing required query parameter: blueprintId", 400)
 
     page = _parse_int_param("page", request.args.get("page"), default=1, min_val=1)
     page_size = min(
-        _parse_int_param("page_size", request.args.get("page_size"), default=20, min_val=1),
+        _parse_int_param(
+            "pageSize",
+            request.args.get("pageSize") or request.args.get("page_size"),
+            default=20,
+            min_val=1,
+        ),
         100,
     )
 
@@ -348,14 +353,14 @@ def blueprint_versions_list():
         page=page,
         page_size=page_size,
     )
-    return _ok(result)
+    return jsonify(result), 200
 
 
 @bp.route("/blueprint.version.get", methods=["GET"])
 @_handle_blueprint_errors
 def blueprint_version_get():
     """
-    GET /blueprint.version.get?blueprint_id=<id>&version=<n>
+    GET /blueprint.version.get?blueprintId=<id>&version=<n>
 
     Returns the full version detail including ``spec_dict_snapshot``.
 
@@ -366,11 +371,11 @@ def blueprint_version_get():
     501 — versioning feature not configured on the server
     """
     _require_auth()
-    blueprint_id = request.args.get("blueprint_id")
+    blueprint_id = request.args.get("blueprintId") or request.args.get("blueprint_id")
     version_str = request.args.get("version")
 
     if not blueprint_id:
-        return _err("Missing required query parameter: blueprint_id", 400)
+        return _err("Missing required query parameter: blueprintId", 400)
     if not version_str:
         return _err("Missing required query parameter: version", 400)
 
@@ -380,7 +385,7 @@ def blueprint_version_get():
         return _err(f"Invalid version: {version_str!r} must be an integer", 400)
 
     detail = _service().load_version(blueprint_id, version)
-    return _ok(detail)
+    return jsonify(detail), 200
 
 
 @bp.route("/blueprint.version.restore", methods=["POST"])
@@ -389,7 +394,7 @@ def blueprint_version_restore():
     """
     POST /blueprint.version.restore
 
-    Body: {"blueprint_id": "<id>", "version": <n>, "user_id": "..."}
+    Body: {"blueprintId": "<id>", "version": <n>, "user_id": "..."}
 
     Restores the blueprint's live spec to the snapshot captured at
     ``version``.  The current state is saved as a new snapshot before the
@@ -405,12 +410,12 @@ def blueprint_version_restore():
     _require_auth()
     body = _get_json_body()
 
-    blueprint_id = body.get("blueprint_id")
+    blueprint_id = body.get("blueprintId") or body.get("blueprint_id")
     target_version = body.get("version")
     user_id = body.get("user_id", "")
 
     if not blueprint_id:
-        return _err("Missing required field: blueprint_id", 400)
+        return _err("Missing required field: blueprintId", 400)
     if target_version is None:
         return _err("Missing required field: version", 400)
     if not isinstance(target_version, int) or target_version < 1:
@@ -422,17 +427,17 @@ def blueprint_version_restore():
         user_id=user_id,
     )
 
-    return _ok(
+    return jsonify(
         {
+            "status": "success",
             "blueprint_id": blueprint_id,
-            "restored_from_version": target_version,
-            "message": f"Blueprint restored to version {target_version}.",
+            "restored_to_version": target_version,
         }
-    )
+    ), 200
 
 
 # ---------------------------------------------------------------------------
 # Alias required by integration tests
 # ---------------------------------------------------------------------------
 
-blueprintsbp = bp
+blueprints_bp = bp
