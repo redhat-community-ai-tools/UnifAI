@@ -14,10 +14,12 @@ from __future__ import annotations
 import pytest
 from datetime import datetime, timezone
 
+from pydantic import ValidationError
+
 from mas.blueprints.models.blueprint import BlueprintDocument
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────────────────
 
 
 def _minimal_doc_dict(**overrides) -> dict:
@@ -33,7 +35,7 @@ def _minimal_doc_dict(**overrides) -> dict:
     return base
 
 
-# ── version field defaults ─────────────────────────────────────────────────────
+# ── version field defaults ─────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -79,7 +81,7 @@ class TestBlueprintDocumentVersionField:
         assert dumped["version"] == 3
 
 
-# ── Backward compatibility ─────────────────────────────────────────────────────
+# ── Backward compatibility ─────────────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -97,18 +99,10 @@ class TestBlueprintDocumentBackwardCompatibility:
         doc = BlueprintDocument.model_validate(raw)
         assert doc.version == 1  # Default applied.
 
-    def test_none_version_replaced_by_default(self):
-        """If a legacy document stored version=None, the default applies."""
-        # Pydantic v2 with default=1 will raise or coerce depending on strictness;
-        # this test documents what actually happens rather than prescribing it.
-        try:
-            doc = BlueprintDocument.model_validate(_minimal_doc_dict(version=None))
-            # If parsing succeeded, version must be valid (≥1)
-            assert doc.version >= 1
-        except Exception:
-            # If Pydantic rejects None, that's acceptable — None is not a
-            # legitimate version in the domain.
-            pass
+    def test_none_version_is_rejected(self):
+        """Pydantic rejects version=None — None is not a valid version."""
+        with pytest.raises(ValidationError):
+            BlueprintDocument.model_validate(_minimal_doc_dict(version=None))
 
     def test_existing_blueprints_retain_their_version_after_round_trip(self):
         """An already-versioned document survives a model_dump → model_validate cycle."""

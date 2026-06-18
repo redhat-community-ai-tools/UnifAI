@@ -11,7 +11,7 @@ Regression areas
 1. **Exception message contracts** — callers and tests depend on the exact
    wording of VersionNotFoundError and ConcurrentModificationError.
 2. **Legacy service path** — update_draft() without a version_repo must
-   behave exactly as it did before GENIE-1336 (no OCC, no snapshot).
+   raise RuntimeError (GENIE-1336 made version_repo mandatory for edits).
 3. **Pagination arithmetic** — total_pages ceiling division and clamping.
 4. **BlueprintService guard** — _ensure_version_repo() raises RuntimeError
    when version_repo is None; the message is stable.
@@ -38,7 +38,7 @@ from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
 from mas.blueprints.service import BlueprintService
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────────────────
 
 
 def _make_blueprint_doc(blueprint_id="bp-1", version=1, spec_dict=None, **kwargs):
@@ -69,7 +69,7 @@ def _versioned_svc(*, repo=None, version_repo=None) -> BlueprintService:
     return svc
 
 
-# ── 1. Exception message contracts ────────────────────────────────────────────
+# ── 1. Exception message contracts ──────────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -119,47 +119,47 @@ class TestExceptionMessages:
         assert isinstance(err, BlueprintError)
 
 
-# ── 2. Legacy service path ─────────────────────────────────────────────────────
+# ── 2. Legacy service path ───────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
 class TestLegacyUpdateDraftPath:
-    """update_draft() without version_repo must behave pre-GENIE-1336."""
+    """update_draft() requires version_repo since GENIE-1336."""
 
-    def test_update_draft_calls_repo_update_not_update_with_version(self):
-        """Legacy path must call repo.update(), never repo.update_with_version()."""
+    def test_update_draft_raises_without_version_repo(self):
+        """update_draft() requires version_repo; calling without raises RuntimeError."""
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
-        repo.update.return_value = True
         svc = BlueprintService(repo=repo)  # No version_repo.
 
-        svc.update_draft(blueprint_id="bp-1", draft_dict={"name": "v"})
+        with pytest.raises(RuntimeError, match="version_repo"):
+            svc.update_draft(blueprint_id="bp-1", draft_dict={"name": "v"})
 
-        repo.update.assert_called_once()
+    def test_update_draft_does_not_access_repo_without_version_repo(self):
+        """RuntimeError is raised before any repository method is called."""
+        repo = MagicMock()
+        svc = BlueprintService(repo=repo)
+
+        with pytest.raises(RuntimeError):
+            svc.update_draft(blueprint_id="bp-1", draft_dict={"name": "v"})
+
+        # RuntimeError fires before repo is accessed.
+        repo.load.assert_not_called()
+        repo.update.assert_not_called()
         repo.update_with_version.assert_not_called()
 
-    def test_update_draft_does_not_create_snapshot_when_no_version_repo(self):
-        """Without version_repo, no snapshot is created."""
+    def test_update_draft_with_version_repo_returns_true(self):
+        """With version_repo configured, update_draft succeeds and returns True."""
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
-        repo.update.return_value = True
-        svc = BlueprintService(repo=repo)
+        repo.load.return_value = _make_blueprint_doc()
+        repo.update_with_version.return_value = _make_blueprint_doc(version=2)
 
-        svc.update_draft(blueprint_id="bp-1", draft_dict={"name": "v"})
-
-        # version_repo is None — no insert should happen anywhere.
-        # (verify by checking the returned True still works)
-        assert True  # No AttributeError means version_repo was never accessed.
-
-    def test_legacy_path_returns_true_on_success(self):
-        repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
-        repo.update.return_value = True
-        svc = BlueprintService(repo=repo)
+        version_repo = MagicMock()
+        svc = BlueprintService(repo=repo, version_repo=version_repo)
 
         result = svc.update_draft(blueprint_id="bp-1", draft_dict={})
 
         assert result is True
+        repo.update_with_version.assert_called_once()
 
 
 # ── 3. Pagination arithmetic ──────────────────────────────────────────────────
@@ -173,7 +173,7 @@ class TestPaginationArithmetic:
         version_repo = MagicMock()
         version_repo.find_by_blueprint_id.return_value = (items, total)
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
+        repo.load.return_value = _make_blueprint_doc()
         return BlueprintService(repo=repo, version_repo=version_repo)
 
     def test_total_pages_is_ceiling_of_total_divided_by_page_size(self):
@@ -198,7 +198,7 @@ class TestPaginationArithmetic:
         version_repo = MagicMock()
         version_repo.find_by_blueprint_id.return_value = ([], 0)
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
+        repo.load.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo, version_repo=version_repo)
 
         svc.list_versions("bp-1", page=0, page_size=10)
@@ -211,7 +211,7 @@ class TestPaginationArithmetic:
         version_repo = MagicMock()
         version_repo.find_by_blueprint_id.return_value = ([], 0)
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
+        repo.load.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo, version_repo=version_repo)
 
         svc.list_versions("bp-1", page=1, page_size=500)
@@ -224,7 +224,7 @@ class TestPaginationArithmetic:
         version_repo = MagicMock()
         version_repo.find_by_blueprint_id.return_value = ([], 0)
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
+        repo.load.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo, version_repo=version_repo)
 
         svc.list_versions("bp-1", page=1, page_size=0)
@@ -239,7 +239,7 @@ class TestPaginationArithmetic:
         assert result["total_pages"] == 2
 
 
-# ── 4. _ensure_version_repo() guard ──────────────────────────────────────────
+# ── 4. _ensure_version_repo() guard ──────────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -248,7 +248,6 @@ class TestEnsureVersionRepoGuard:
 
     def test_list_versions_raises_runtime_error_without_version_repo(self):
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo)  # version_repo=None
 
         with pytest.raises(RuntimeError):
@@ -256,7 +255,6 @@ class TestEnsureVersionRepoGuard:
 
     def test_load_version_raises_runtime_error_without_version_repo(self):
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo)
 
         with pytest.raises(RuntimeError):
@@ -264,7 +262,6 @@ class TestEnsureVersionRepoGuard:
 
     def test_restore_version_raises_runtime_error_without_version_repo(self):
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
         svc = BlueprintService(repo=repo)
 
         with pytest.raises(RuntimeError):
@@ -279,7 +276,7 @@ class TestEnsureVersionRepoGuard:
             svc.list_versions("bp-1")
 
 
-# ── 5. Snapshot isolation ─────────────────────────────────────────────────────
+# ── 5. Snapshot isolation ───────────────────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -339,7 +336,7 @@ class TestOCCSemantics:
 
     def test_concurrent_modification_error_raised_on_occ_failure(self):
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc(version=2)
+        repo.load.return_value = _make_blueprint_doc(version=2)
         repo.update_with_version.return_value = None  # OCC mismatch.
 
         version_repo = MagicMock()
@@ -352,7 +349,7 @@ class TestOCCSemantics:
 
     def test_concurrent_modification_error_carries_blueprint_id(self):
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc(blueprint_id="bp-occ", version=1)
+        repo.load.return_value = _make_blueprint_doc(blueprint_id="bp-occ", version=1)
         repo.update_with_version.return_value = None
 
         version_repo = MagicMock()
@@ -368,7 +365,7 @@ class TestOCCSemantics:
     def test_successful_occ_write_returns_true(self):
         """When update_with_version() succeeds (not None), update_draft returns True."""
         repo = MagicMock()
-        repo.get_draft_doc.return_value = _make_blueprint_doc(version=1)
+        repo.load.return_value = _make_blueprint_doc(version=1)
         repo.update_with_version.return_value = _make_blueprint_doc(version=2)
 
         version_repo = MagicMock()
@@ -381,7 +378,7 @@ class TestOCCSemantics:
         assert result is True
 
 
-# ── 7. restore_version change_summary ────────────────────────────────────────
+# ── 7. restore_version change_summary ──────────────────────────────────────────
 
 
 @pytest.mark.unit
@@ -397,7 +394,7 @@ class TestRestoreVersionChangeSummary:
             spec_dict_snapshot={"name": "old"},
             created_by="u",
         )
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
+        repo.load.return_value = _make_blueprint_doc()
         repo.update_with_version.return_value = _make_blueprint_doc(version=target_version + 1)
 
         version_repo = MagicMock()
@@ -439,7 +436,7 @@ class TestRestoreVersionChangeSummary:
             spec_dict_snapshot={},
             created_by="migration",
         )
-        repo.get_draft_doc.return_value = _make_blueprint_doc()
+        repo.load.return_value = _make_blueprint_doc()
         repo.update_with_version.return_value = _make_blueprint_doc(version=2)
 
         version_repo = MagicMock()

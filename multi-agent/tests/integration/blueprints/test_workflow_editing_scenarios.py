@@ -405,7 +405,7 @@ class TestWorkflowEditOCC:
         monkeypatch.setattr(
             service._repo,
             "update_with_version",
-            lambda blueprint_id, spec, rid_refs, expected_version: None,
+            lambda *args, **kwargs: None,
         )
 
         with pytest.raises(ConcurrentModificationError):

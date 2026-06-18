@@ -1,5 +1,4 @@
-"""
-Flask inbound adapter — Blueprint REST endpoints.
+"""Flask inbound adapter — Blueprint REST endpoints.
 
 All routes follow the existing ``blueprint.*.verb`` naming convention
 used throughout the MAS API.  Version-history endpoints were added in
@@ -27,7 +26,8 @@ is transport-agnostic and contains no HTTP references.
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable, Dict, Optional, Tuple
+from collections.abc import Callable
+from typing import Any, Optional
 
 from flask import Blueprint, abort, current_app, jsonify, request
 from mas.blueprints.exceptions import (
@@ -53,12 +53,12 @@ bp = Blueprint("blueprints", __name__)
 # ---------------------------------------------------------------------------
 
 
-def _ok(data: Any, status: int = 200) -> Tuple[Any, int]:
+def _ok(data: Any, status: int = 200) -> tuple[Any, int]:
     """Wrap *data* in the standard success envelope."""
     return jsonify({"success": True, "data": data}), status
 
 
-def _err(message: str, status: int = 500) -> Tuple[Any, int]:
+def _err(message: str, status: int = 500) -> tuple[Any, int]:
     """Return a standard error envelope."""
     return jsonify({"success": False, "error": message}), status
 
@@ -155,7 +155,7 @@ def _handle_blueprint_errors(fn: Callable) -> Callable:
     return wrapper
 
 
-def _get_json_body() -> Dict:
+def _get_json_body() -> dict:
     """Return the parsed JSON request body or abort with 400."""
     data = request.get_json(silent=True)
     if data is None:
