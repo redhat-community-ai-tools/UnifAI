@@ -86,7 +86,7 @@ class TestWorkflowEditingE2EFlow:
             "description": "Initial draft",
             "plan": []
         }
-        
+
         save_resp = client.post(
             "/blueprint.save",
             json={
@@ -219,20 +219,19 @@ class TestWorkflowEditingE2EFlow:
         history_body = history_resp.get_json()
         assert history_body["success"] is True
         history_data = history_body["data"]
-        
+
         # There should be 4 snapshots (for versions 4, 3, 2, 1)
         assert history_data["total"] == 4
         versions = [item["version"] for item in history_data["items"]]
         assert versions == [4, 3, 2, 1]
-        
+
         # Verify summaries match
-        assert history_data["items"][0]["change_summary"] == "Renamed workflow" # v4 snapshot has summary of the edit that moved it to v5
+        assert history_data["items"][0]["change_summary"] == "Renamed workflow"  # v4 snapshot
         assert history_data["items"][1]["change_summary"] == "Added notification step"
         assert history_data["items"][2]["change_summary"] == "Added action step"
         assert history_data["items"][3]["change_summary"] == "Added trigger step"
 
         # 7. Verify we can load any specific version detail (Preview)
-        # Let's preview version 2
         v2_resp = client.get(f"/blueprint.version.get?blueprint_id={blueprint_id}&version=2")
         assert v2_resp.status_code == 200
         v2_body = v2_resp.get_json()
@@ -272,14 +271,21 @@ class TestWorkflowEditingE2EFlow:
 
     def test_concurrent_modification_prevention(self, client, service):
         """
-        Test that concurrent modifications (OCC) prevent overwriting.
-        If Request B loads version 1 but the database has already been updated to version 2,
-        Request B's update should fail with a 409 Conflict.
+        Test that OCC prevents stale-version overwrites.
+
+        Simulates User B holding a stale view of version 1 while User A
+        has already advanced the document to version 2.  User B's update
+        must be rejected with a 409 Conflict.
         """
+        from datetime import datetime, timezone
+        from unittest.mock import patch
+
+        from lib.mas.blueprints.models.blueprint import BlueprintDocument
+
         # 1. Create a new workflow (blueprint) - Version 1
         identity_data = {"type": "user", "id": "u-bob"}
         spec_v1 = {"name": "OCC Workflow", "description": "Initial draft", "plan": []}
-        
+
         save_resp = client.post(
             "/blueprint.save",
             json={"identity": identity_data, "spec_dict": spec_v1}
@@ -300,12 +306,7 @@ class TestWorkflowEditingE2EFlow:
         )
         assert update_resp_a.status_code == 200
 
-        # 3. Now, simulate User B who has a stale view of the document (still thinks it is version 1).
-        # We can do this by patching the service's load method to return version 1.
-        from unittest.mock import patch
-        from lib.mas.blueprints.models.blueprint import BlueprintDocument
-        from datetime import datetime, timezone
-
+        # 3. Simulate User B with a stale view (still at version 1)
         stale_doc = BlueprintDocument(
             blueprint_id=blueprint_id,
             identity=identity_data,
@@ -314,7 +315,7 @@ class TestWorkflowEditingE2EFlow:
             spec_dict=spec_v1,
             rid_refs=[],
             metadata={},
-            version=1, # Stale version!
+            version=1,
         )
 
         with patch.object(service, "_load_document_or_raise", return_value=stale_doc):
@@ -328,23 +329,8 @@ class TestWorkflowEditingE2EFlow:
                     "user_id": "u-charlie",
                 }
             )
-            # Should fail with 409 Conflict because the database is actually at version 2,
-            # but User B's request tried to update expecting version 1.
+            # OCC guard rejects the write: database is at version 2 but
+            # the request expected version 1.
             assert update_resp_b.status_code == 409
             assert update_resp_b.get_json()["success"] is False
             assert "Concurrent modification conflict" in update_resp_b.get_json()["error"]
-        update_resp_a = client.put(
-            "/blueprint.update",
-            json={
-                "blueprint_id": blueprint_id,
-                "spec_dict": spec_a,
-                "change_summary": "User A edit",
-                "user_id": "u-alice",
-            }
-        )
-        assert update_resp_a.status_code == 200
-
-        # 4. User B tries to update the workflow based on stale version 1
-        # Wait, how does the update endpoint detect concurrent modification?
-        # Let's check if the update endpoint accepts a version or if it checks the database's current version.
-        # Let's read the updateBlueprint and update_draft implementation to see how OCC is implemented.
