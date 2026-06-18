@@ -36,7 +36,7 @@ class BlueprintVersionRepository(ABC):
 
         Raises
         ------
-        pymongo.errors.DuplicateKeyError (or equivalent)
+        DuplicateSnapshotError
             If a snapshot for ``(blueprint_id, version)`` already exists.
             The service layer silently swallows this for idempotency.
         """

@@ -12,7 +12,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintSummary
+from mas.blueprints.models.blueprint import BlueprintDocument, BlueprintSummary
 from mas.core.identity import Identity
 
 
@@ -27,12 +27,12 @@ class BlueprintRepository(ABC):
 
     # ────────────────────────────── Writes ──────────────────────────────
     @abstractmethod
-    def save(self, identity: Identity, spec: BlueprintDraft,
+    def save(self, identity: Identity, spec: dict[str, Any],
              rid_refs: list[str], metadata: dict[str, Any]) -> str:
         """Persist *spec* owned by *identity* and return the generated blueprint_id."""
 
     @abstractmethod
-    def update(self, *, blueprint_id: str, spec: BlueprintDraft,
+    def update(self, *, blueprint_id: str, spec: dict[str, Any],
                rid_refs: list[str]) -> bool:
         """Replace an existing draft.  Return True if a document was modified."""
 
@@ -40,7 +40,7 @@ class BlueprintRepository(ABC):
     def update_with_version(
         self,
         blueprint_id: str,
-        spec: BlueprintDraft,
+        spec: dict[str, Any],
         rid_refs: list[str],
         expected_version: int,
     ) -> int | None:

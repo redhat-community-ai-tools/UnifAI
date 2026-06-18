@@ -39,7 +39,7 @@ from mas.blueprints.exceptions import (
     FeatureNotConfiguredError,
     VersionNotFoundError,
 )
-from mas.core.identity.models import Identity, IdentityType  # noqa: F401
+from mas.core.identity.models import Identity
 from werkzeug.exceptions import HTTPException
 
 _logger = logging.getLogger(__name__)
@@ -104,17 +104,6 @@ def _parse_int_param(
     if max_val is not None:
         result = min(max_val, result)
     return result
-
-
-def _service():
-    """Return the ``BlueprintService`` from the Flask application context."""
-    svc = getattr(current_app, "blueprint_service", None)
-    if svc is None:
-        raise RuntimeError(
-            "blueprint_service is not attached to the Flask app. "
-            "Ensure AppContainer.attach_to_flask_app() was called."
-        )
-    return svc
 
 
 def _require_auth() -> Identity:
@@ -227,7 +216,8 @@ def blueprint_save():
     spec_dict = body["spec_dict"]
     metadata = body.get("metadata", {})
 
-    blueprint_id = _service().create_blueprint(
+    svc = current_app.container.blueprint_service
+    blueprint_id = svc.create_blueprint(
         identity=identity, spec_dict=spec_dict, metadata=metadata
     )
     return _ok({"blueprint_id": blueprint_id}, 201)
@@ -254,7 +244,8 @@ def blueprint_update():
     change_summary = body.get("change_summary")
     user_id = body.get("user_id", "")
 
-    _service().update_draft(
+    svc = current_app.container.blueprint_service
+    svc.update_draft(
         blueprint_id=blueprint_id,
         draft_dict=spec_dict,
         user_id=user_id,
@@ -274,7 +265,8 @@ def blueprint_info_get():
     if not blueprint_id:
         return _err("Missing required query parameter: blueprint_id", 400)
 
-    doc = _service().load_blueprint(blueprint_id)
+    svc = current_app.container.blueprint_service
+    doc = svc.load_blueprint(blueprint_id)
     return _ok(doc.model_dump())
 
 
@@ -289,7 +281,8 @@ def remove_blueprint():
     if not blueprint_id:
         return _err("Missing required query parameter: blueprint_id", 400)
 
-    deleted = _service().delete_blueprint(blueprint_id)
+    svc = current_app.container.blueprint_service
+    deleted = svc.delete_blueprint(blueprint_id)
     if not deleted:
         return _err(f"Blueprint not found: {blueprint_id!r}", 404)
     return _ok({"deleted": True})
@@ -312,7 +305,7 @@ def available_blueprints_summary_get():
     if identity_type and identity_id:
         identity = Identity(type=identity_type, id=identity_id)
 
-    svc = _service()
+    svc = current_app.container.blueprint_service
     docs = svc.list_blueprints(identity=identity, skip=skip, limit=limit)
     total = svc.count_blueprints(identity=identity)
 
@@ -358,7 +351,8 @@ def blueprint_versions_list():
         request.args.get("page_size"), 20, "page_size", min_val=1, max_val=100
     )
 
-    result = _service().list_versions(
+    svc = current_app.container.blueprint_service
+    result = svc.list_versions(
         blueprint_id=blueprint_id,
         page=page,
         page_size=page_size,
@@ -394,7 +388,8 @@ def blueprint_version_get():
     except ValueError:
         return _err(f"Invalid version: {version_str!r} must be an integer", 400)
 
-    detail = _service().load_version(blueprint_id=blueprint_id, version_number=version)
+    svc = current_app.container.blueprint_service
+    detail = svc.load_version(blueprint_id=blueprint_id, version_number=version)
     return _ok(detail)
 
 
@@ -428,12 +423,13 @@ def blueprint_version_restore():
         return _err("Missing required field: blueprint_id", 400)
     if target_version is None:
         return _err("Missing required field: version", 400)
-    if not isinstance(target_version, int) or target_version < 1:
+    if isinstance(target_version, bool) or not isinstance(target_version, int) or target_version < 1:
         return _err(
             f"Invalid version: {target_version!r} must be a positive integer", 400
         )
 
-    _service().restore_version(
+    svc = current_app.container.blueprint_service
+    svc.restore_version(
         blueprint_id=blueprint_id,
         target_version=target_version,
         user_id=user_id,

@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Optional
 
 import pymongo
 from adapters.outbound.mongo.blueprint_repository import (
@@ -110,12 +109,12 @@ class AppContainer(metaclass=SingletonMeta):
     Call ``AppContainer.reset()`` in tests to clear the singleton cache.
     """
 
-    def __init__(self, config: Optional[AppConfig] = None) -> None:
+    def __init__(self, config: AppConfig | None = None) -> None:
         self._config = config or AppConfig()
-        self._mongo_client: Optional[pymongo.MongoClient] = None
-        self.blueprint_service: Optional[BlueprintService] = None
-        self.blueprint_repo: Optional[MongoBlueprintRepository] = None
-        self.blueprint_version_repo: Optional[MongoBlueprintVersionRepository] = None
+        self._mongo_client: pymongo.MongoClient | None = None
+        self.blueprint_service: BlueprintService | None = None
+        self.blueprint_repo: MongoBlueprintRepository | None = None
+        self.blueprint_version_repo: MongoBlueprintVersionRepository | None = None
         self._build()
 
     # ------------------------------------------------------------------
@@ -124,14 +123,13 @@ class AppContainer(metaclass=SingletonMeta):
 
     def attach_to_flask_app(self, app) -> None:
         """
-        Make the container and ``BlueprintService`` available inside Flask
-        request handlers as ``current_app.container`` and
-        ``current_app.blueprint_service``.
+        Make the container available inside Flask request handlers as
+        ``current_app.container``.
 
         Call this once during Flask app setup, after ``_build`` has run.
+        Access services via ``current_app.container.<service>``.
         """
         app.container = self
-        app.blueprint_service = self.blueprint_service
 
     def teardown(self) -> None:
         """Close MongoDB connection pool (useful in tests and graceful shutdown)."""
@@ -150,8 +148,10 @@ class AppContainer(metaclass=SingletonMeta):
         Order:
         1. Connect to MongoDB.
         2. Build outbound adapters (repositories).
-        3. Ensure indexes on both collections.
-        4. Build the application service with all dependencies.
+        3. Build the application service with all dependencies.
+
+        Note: ``MongoBlueprintVersionRepository.__init__()`` calls
+        ``ensure_indexes()`` automatically, so no separate call is needed.
         """
         cfg = self._config
 
@@ -165,11 +165,7 @@ class AppContainer(metaclass=SingletonMeta):
             col=db[cfg.blueprint_versions_coll]
         )
 
-        # 3. Indexes — MongoBlueprintVersionRepository.__init__() calls
-        #    ensure_indexes() automatically; call it again here to be explicit.
-        self.blueprint_version_repo.ensure_indexes()
-
-        # 4. Application service  (GENIE-1336: version_repo is now wired)
+        # 3. Application service  (GENIE-1336: version_repo is now wired)
         self.blueprint_service = BlueprintService(
             repo=self.blueprint_repo,
             # resolver, validation_service, card_service, auth_service

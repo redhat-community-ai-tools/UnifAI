@@ -18,7 +18,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -48,11 +48,11 @@ class BlueprintVersionDocument:
 
     blueprint_id: str
     version: int
-    spec_dict_snapshot: Dict[str, Any]
+    spec_dict_snapshot: dict[str, Any]
     created_by: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    change_summary: Optional[str] = None
-    _id: Optional[str] = field(default=None, repr=False)
+    change_summary: str | None = None
+    _id: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         # Deep-copy to ensure stored snapshot is isolated from caller's dict.
@@ -74,7 +74,7 @@ class BlueprintVersionDocument:
     # Projections
     # ------------------------------------------------------------------
 
-    def to_summary(self) -> Dict[str, Any]:
+    def to_summary(self) -> dict[str, Any]:
         """
         Lightweight projection suitable for list responses.
 
@@ -88,7 +88,7 @@ class BlueprintVersionDocument:
             "change_summary": self.change_summary,
         }
 
-    def to_detail(self) -> Dict[str, Any]:
+    def to_detail(self) -> dict[str, Any]:
         """
         Full projection for single-version fetch endpoints.
 
@@ -96,7 +96,6 @@ class BlueprintVersionDocument:
         """
         return {
             **self.to_summary(),
-            "blueprint_id": self.blueprint_id,
             "spec_dict_snapshot": copy.deepcopy(self.spec_dict_snapshot),
         }
 
