@@ -1,5 +1,4 @@
-"""
-Regression tests for Blueprint Versioning (GENIE-1336).
+"""Regression tests for Blueprint Versioning (GENIE-1336).
 
 These tests verify the end-to-end vertical slice: Service → Repository →
 MongoDB, using mongomock.  They guard against regressions in the most
@@ -10,6 +9,7 @@ Each test class isolates one user journey.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 
 import pytest
@@ -24,8 +24,8 @@ pytestmark = pytest.mark.skipif(
     not MONGOMOCK_AVAILABLE, reason="mongomock not installed"
 )
 
-from adapters.outbound.mongo.blueprint_repository import MongoBlueprintRepository
-from adapters.outbound.mongo.blueprint_version_repository import (
+from outbound.mongo.blueprint_repository import MongoBlueprintRepository
+from outbound.mongo.blueprint_version_repository import (
     MongoBlueprintVersionRepository,
 )
 from mas.blueprints.exceptions import (
@@ -33,8 +33,8 @@ from mas.blueprints.exceptions import (
     ConcurrentModificationError,
     VersionNotFoundError,
 )
-from lib.mas.blueprints.models.blueprint import Identity
-from lib.mas.blueprints.service import BlueprintService
+from mas.blueprints.models.blueprint import Identity
+from mas.blueprints.service import BlueprintService
 
 
 # ---------------------------------------------------------------------------
@@ -269,3 +269,116 @@ class TestListVersionsPaginationRegression:
         assert len(version_numbers) == result["total"]
         assert len(version_numbers) == len(set(version_numbers))  # no duplicates
         assert sorted(version_numbers, reverse=True) == version_numbers  # desc order
+
+
+# ===========================================================================
+# R07: Editing a blueprint with a version-history gap must succeed
+# (regression for the GENIE-1336 consistency-guard bug)
+# ===========================================================================
+
+
+class TestVersionHistoryGapRegression:
+    """
+    Guard against a regression where the now-removed consistency guard
+    permanently blocked edits on blueprints whose snapshot history had gaps.
+    """
+
+    def test_edit_succeeds_when_prior_snapshot_is_missing(
+        self, service, identity, bp_col, ver_repo
+    ):
+        """
+        A blueprint at version > 1 with NO snapshot at (version - 1) must
+        still be editable.  The history gap is logged as a warning but must
+        not raise ConcurrentModificationError.
+        """
+        bid = service.create_draft(identity=identity, draft_dict={"name": "V1"})
+        service.update_draft(bid, {"name": "V2"})
+        # blueprint is now at version 2, ver_repo has one snapshot (v1).
+
+        # Simulate a gap by deleting all snapshots for this blueprint.
+        ver_repo._col.delete_many({"blueprint_id": bid})
+
+        # Edit must succeed despite the missing snapshot at v1.
+        result = service.update_draft(bid, {"name": "V3 after gap"})
+        assert result is True
+
+        # The OCC write incremented the version.
+        raw = bp_col.find_one({"blueprint_id": bid})
+        assert raw["version"] == 3
+
+        # A new snapshot was created for the pre-gap state (v2).
+        snap = ver_repo.find_one(bid, 2)
+        assert snap is not None
+        assert snap.spec_dict_snapshot["name"] == "V2"
+
+    def test_edit_succeeds_for_blueprint_without_version_field(
+        self, service, bp_col, ver_repo
+    ):
+        """
+        Blueprints created before the GENIE-1336 migration (no ``version``
+        field in MongoDB) must be editable without running Step 1 of the
+        migration script first.
+
+        Before the fix, ``update_with_version`` filtered on
+        ``{"version": 1}`` which could not match a document lacking the
+        field, so every edit on a pre-migration blueprint returned HTTP 409.
+        """
+        bid = uuid.uuid4().hex
+        now = datetime.now(timezone.utc)
+        bp_col.insert_one(
+            {
+                "blueprint_id": bid,
+                "identity": {"type": "user", "id": "legacy-alice"},
+                "spec_dict": {"name": "Legacy Blueprint"},
+                "rid_refs": [],
+                "metadata": {},
+                "created_at": now,
+                "updated_at": now,
+                # Deliberately NO 'version' field — simulates pre-migration doc.
+            }
+        )
+
+        result = service.update_draft(bid, {"name": "First Edit"})
+        assert result is True
+
+        # The OCC $inc must have written version=2 onto the document.
+        raw = bp_col.find_one({"blueprint_id": bid})
+        assert raw["version"] == 2
+
+        # A snapshot at version=1 (the legacy state) must have been created.
+        snap = ver_repo.find_one(bid, 1)
+        assert snap is not None
+        assert snap.spec_dict_snapshot["name"] == "Legacy Blueprint"
+
+    def test_multiple_edits_succeed_after_pre_migration_first_edit(
+        self, service, identity, bp_col, ver_repo
+    ):
+        """
+        After a pre-migration blueprint receives its first successful edit
+        (which writes version=2 to MongoDB), subsequent edits must continue
+        to work correctly — the standard OCC path takes over seamlessly.
+        """
+        bid = uuid.uuid4().hex
+        now = datetime.now(timezone.utc)
+        bp_col.insert_one(
+            {
+                "blueprint_id": bid,
+                "identity": {"type": "user", "id": "legacy-bob"},
+                "spec_dict": {"name": "Legacy V1"},
+                "rid_refs": [],
+                "metadata": {},
+                "created_at": now,
+                "updated_at": now,
+                # No 'version' field.
+            }
+        )
+
+        service.update_draft(bid, {"name": "Edit 1"})
+        service.update_draft(bid, {"name": "Edit 2"})
+        service.update_draft(bid, {"name": "Edit 3"})
+
+        raw = bp_col.find_one({"blueprint_id": bid})
+        assert raw["version"] == 4  # 1 (implicit) → 2 → 3 → 4
+
+        _, total = ver_repo.find_by_blueprint_id(bid)
+        assert total == 3  # snapshots at v1, v2, v3
