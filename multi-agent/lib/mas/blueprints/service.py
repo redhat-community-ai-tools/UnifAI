@@ -420,11 +420,8 @@ class BlueprintService:
         """Load a ``BlueprintDocument`` or raise ``BlueprintNotFoundError``."""
         try:
             return self._repo.load(blueprint_id)
-        except (KeyError, Exception) as exc:
-            # Repository raises KeyError for missing docs; re-raise as domain error.
-            if isinstance(exc, BlueprintNotFoundError):
-                raise
-            raise BlueprintNotFoundError(blueprint_id) from exc
+        except KeyError:
+            raise BlueprintNotFoundError(blueprint_id)
 
     def _snapshot_version(
         self,

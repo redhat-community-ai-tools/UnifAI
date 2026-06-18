@@ -12,7 +12,7 @@ GENIE-1336
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 from mas.blueprints.exceptions import DuplicateSnapshotError
@@ -224,7 +224,7 @@ def _raw_to_doc(raw: dict) -> BlueprintVersionDocument:
     return doc
 
 
-def _ensure_utc(dt):
+def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
     """Attach UTC timezone info if the datetime is naïve."""
     if dt is not None and dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)

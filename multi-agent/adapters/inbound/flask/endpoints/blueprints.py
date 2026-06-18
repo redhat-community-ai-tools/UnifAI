@@ -38,7 +38,7 @@ from mas.blueprints.exceptions import (
     ConcurrentModificationError,
     VersionNotFoundError,
 )
-from mas.core.identity.models import Identity
+from mas.core.identity.models import Identity, IdentityType
 from werkzeug.exceptions import HTTPException
 
 _logger = __import__("logging").getLogger(__name__)
@@ -78,7 +78,8 @@ def _require_auth() -> Identity:
     Extract and validate caller identity from the request.
 
     Looks for an ``X-Identity-Type`` / ``X-Identity-Id`` header pair.
-    Returns the validated ``Identity`` on success, or aborts with 401.
+    Returns the validated ``Identity`` on success, or aborts with
+    401 (missing headers) or 400 (invalid identity type).
     """
     from flask import abort
 
@@ -88,7 +89,12 @@ def _require_auth() -> Identity:
     if not identity_type or not identity_id:
         abort(401, "Missing authentication headers: X-Identity-Type and X-Identity-Id are required")
 
-    return Identity(type=identity_type, id=identity_id)
+    try:
+        id_type = IdentityType(identity_type)
+    except ValueError:
+        abort(400, f"Invalid identity type: {identity_type!r}. Must be 'user' or 'team'")
+
+    return Identity(type=id_type, id=identity_id)
 
 
 def _handle_blueprint_errors(fn: Callable) -> Callable:
@@ -253,7 +259,13 @@ def available_blueprints_summary_get():
 
     identity = None
     if identity_type and identity_id:
-        identity = Identity(type=identity_type, id=identity_id)
+        try:
+            id_type = IdentityType(identity_type)
+        except ValueError:
+            return _err(
+                f"Invalid identity_type: {identity_type!r}. Must be 'user' or 'team'", 400
+            )
+        identity = Identity(type=id_type, id=identity_id)
 
     svc = _service()
     docs = svc.list_blueprints(identity=identity, skip=skip, limit=limit)

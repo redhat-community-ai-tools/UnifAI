@@ -6,6 +6,7 @@ Verifies that:
   2. The service exposes list_versions / load_version / restore_version.
   3. Env-var overrides are honoured.
   4. ensure_indexes() is called on the version repository during build.
+  5. attach_to_flask_app sets both app.container and app.blueprint_service.
 
 All MongoDB connections are mocked out — these tests do NOT require a
 running database.
@@ -204,7 +205,8 @@ class TestAppContainerBlueprintWiring:
         },
         clear=False,
     )
-    def test_attach_to_flask_app_sets_blueprint_service(self):
+    def test_attach_to_flask_app_sets_container_and_service(self):
+        """attach_to_flask_app must set both app.container and app.blueprint_service."""
         bp_col = _make_mock_collection("bp_col")
         ver_col = _make_mock_collection("ver_col")
         db = _make_mock_db(bp_col, ver_col)
@@ -220,5 +222,7 @@ class TestAppContainerBlueprintWiring:
             fake_app = _FakeFlaskApp()
             container.attach_to_flask_app(fake_app)
 
+        assert hasattr(fake_app, "container")
+        assert fake_app.container is container
         assert hasattr(fake_app, "blueprint_service")
         assert fake_app.blueprint_service is container.blueprint_service
