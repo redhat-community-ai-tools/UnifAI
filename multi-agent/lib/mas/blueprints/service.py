@@ -100,15 +100,14 @@ class BlueprintService:
         self,
         identity: Identity,
         draft_dict: dict[str, Any],
-        user_id: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Create a new blueprint draft and return its generated ``blueprint_id``.
 
         This is a convenience alias for ``create_blueprint()`` that accepts
-        the ``draft_dict`` / ``user_id`` parameter names used by the
-        versioning regression tests and future API callers.
+        the ``draft_dict`` parameter name used by the versioning regression
+        tests and future API callers.
 
         Parameters
         ----------
@@ -116,9 +115,6 @@ class BlueprintService:
             Owner identity (user or team).
         draft_dict:
             Full spec dict for the new blueprint.
-        user_id:
-            Identifier of the caller (accepted for API symmetry, not
-            persisted directly — the blueprint stores ``identity`` instead).
         metadata:
             Optional metadata sub-document.
         """

@@ -106,24 +106,31 @@ def _parse_int_param(
     return result
 
 
-def _require_auth() -> Identity:
+def _require_auth() -> str:
+    """Extract and validate the authenticated user from the request.
+
+    Reads the ``X-Authenticated-User`` header — the same header checked by
+    the standard ``@with_require_identity_authorization`` decorator defined
+    in ``decorators.py``.
+
+    .. note::
+        Blueprint endpoints use this lightweight guard instead of the
+        full ``@with_require_identity_authorization`` decorator because
+        the blueprint API contract passes ownership identity as a nested
+        ``{"identity": {"type": "user", "id": "alice"}}`` object in the
+        request body, not the flat ``userId`` / ``identityType`` fields
+        that the standard decorator expects.  Changing the body contract
+        would break the existing UI integration (see ``api/blueprints.ts``).
+
+    Returns
+    -------
+    str
+        The authenticated user identifier extracted from the header.
     """
-    Extract and validate caller identity from the request.
-
-    Looks for an ``X-Identity-Type`` / ``X-Identity-Id`` header pair.
-    Returns the validated ``Identity`` on success, or aborts with 401.
-    """
-    identity_type = request.headers.get("X-Identity-Type")
-    identity_id = request.headers.get("X-Identity-Id")
-
-    if not identity_type or not identity_id:
-        abort(
-            401,
-            "Missing authentication headers: "
-            "X-Identity-Type and X-Identity-Id are required",
-        )
-
-    return Identity(type=identity_type, id=identity_id)
+    authenticated_user = request.headers.get("X-Authenticated-User", "").strip()
+    if not authenticated_user:
+        abort(401, "Missing X-Authenticated-User header")
+    return authenticated_user
 
 
 def _handle_blueprint_errors(fn: Callable) -> Callable:
@@ -412,12 +419,12 @@ def blueprint_version_restore():
     409 — concurrent modification conflict (re-fetch and retry)
     501 — versioning feature not configured on the server
     """
-    identity = _require_auth()
+    authenticated_user = _require_auth()
     body = _get_json_body()
 
     blueprint_id = body.get("blueprint_id")
     target_version = body.get("version")
-    user_id = body.get("user_id", identity.id)
+    user_id = body.get("user_id", authenticated_user)
 
     if not blueprint_id:
         return _err("Missing required field: blueprint_id", 400)

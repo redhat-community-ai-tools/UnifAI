@@ -22,7 +22,7 @@ import {
   getBlueprintVersion,
   listBlueprintVersions,
   restoreBlueprintVersion,
-} from "../api/blueprints";
+} from "@/api/blueprints";
 
 // ---------------------------------------------------------------------------
 // Types
