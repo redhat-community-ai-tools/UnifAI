@@ -9,6 +9,13 @@ GENIE-1336
 * ``update_draft`` uses OCC write + pre-update snapshot (requires
   ``version_repo``).
 * New public methods: ``list_versions``, ``load_version``, ``restore_version``.
+
+Backward compatibility
+----------------------
+Methods consumed by downstream services (``UserSessionManager``,
+``ShareCloner``, ``TemplateService``, ``StatisticsService``) are preserved
+as thin wrappers around the new API or direct repository delegates so that
+the existing call-sites continue to work without modification.
 """
 
 from __future__ import annotations
@@ -26,12 +33,25 @@ from mas.blueprints.exceptions import (
     FeatureNotConfiguredError,
     VersionNotFoundError,
 )
-from mas.blueprints.models.blueprint import BlueprintDocument, Identity
+from mas.blueprints.models.blueprint import (
+    BlueprintDocument,
+    BlueprintDraft,
+    BlueprintSpec,
+    BlueprintSummary,
+    Identity,
+)
 from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.blueprints.repository.version_repository import (
     BlueprintVersionRepository,
 )
+
+# Backward-compat imports — used by restored methods that downstream
+# consumers (UserSessionManager, ShareCloner, TemplateService,
+# StatisticsService) depend on.
+from mas.blueprints.collector import BlueprintConfigCollector
+from mas.elements.common.validator import ValidationContext
+from mas.validation.models import BlueprintValidationResult
 
 
 class BlueprintService:
@@ -50,7 +70,9 @@ class BlueprintService:
     card_service:
         Manages linked card data (optional).
     auth_service:
-        Checks access permissions (optional).
+        Checks access permissions (optional).  May also be injected
+        after construction via ``set_auth_service`` for late-binding
+        in the composition root.
     version_repo:
         Append-only version snapshot repository (GENIE-1336).  Required
         for ``update_draft`` and all version-history methods.  When
@@ -72,6 +94,20 @@ class BlueprintService:
         self._card_service = card_service
         self._auth_service = auth_service
         self._version_repo = version_repo
+        self._config_collector = BlueprintConfigCollector()
+
+    # ------------------------------------------------------------------
+    # Late-binding setters (used by the composition root)
+    # ------------------------------------------------------------------
+
+    def set_auth_service(self, auth_service: Any) -> None:
+        """Late-bind the auth service (created after BlueprintService in the container).
+
+        The container constructs ``AuthService`` after ``BlueprintService``
+        so the auth dependency cannot be passed via the constructor.  This
+        setter is called once from ``AppContainer.__init__``.
+        """
+        self._auth_service = auth_service
 
     # ------------------------------------------------------------------
     # CRUD
@@ -357,7 +393,150 @@ class BlueprintService:
         )
 
     # ------------------------------------------------------------------
-    # Utility helpers
+    # Backward-compatible API surface
+    #
+    # The methods below are consumed by downstream services that were
+    # NOT rewritten in GENIE-1336:
+    #
+    #   - UserSessionManager  → get_blueprint_draft_doc, load_resolved
+    #   - ShareCloner          → get_blueprint_draft_doc, save_draft
+    #   - TemplateService      → save_draft, validate_draft
+    #   - StatisticsService    → list_ids, load_many
+    #
+    # They delegate to the new API or directly to the repository port so
+    # that the full hexagonal dependency direction is preserved.
+    # ------------------------------------------------------------------
+
+    def get_blueprint_draft_doc(self, blueprint_id: str) -> BlueprintDocument:
+        """Load blueprint document with metadata (for sharing operations).
+
+        Used by ``UserSessionManager`` and ``ShareCloner``.
+        """
+        return self._repo.load(blueprint_id)
+
+    def save_draft(
+        self,
+        *,
+        identity: Identity,
+        draft_dict: dict[str, Any],
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Persist a new blueprint draft and return its ``blueprint_id``.
+
+        Thin wrapper around ``create_blueprint`` that preserves the
+        keyword-only call-site convention used by ``ShareCloner`` and
+        ``TemplateService``.
+        """
+        return self.create_blueprint(
+            identity=identity,
+            spec_dict=draft_dict,
+            metadata=metadata,
+        )
+
+    def load_draft(self, blueprint_id: str) -> BlueprintDraft:
+        """Load a blueprint as a ``BlueprintDraft`` Pydantic model."""
+        doc = self._repo.load(blueprint_id)
+        return BlueprintDraft(**doc.spec_dict)
+
+    def load_resolved(self, blueprint_id: str) -> BlueprintSpec:
+        """Load and resolve a blueprint through the dependency resolver.
+
+        Used by ``UserSessionManager`` to hydrate sessions.
+        """
+        return self._resolver.resolve(self.load_draft(blueprint_id))
+
+    def resolve_draft_dict(self, draft_dict: dict[str, Any]) -> BlueprintSpec:
+        """Resolve a raw draft dictionary to a ``BlueprintSpec``."""
+        draft = BlueprintDraft(**draft_dict)
+        return self._resolver.resolve(draft)
+
+    def validate_draft(
+        self,
+        draft_dict: dict[str, Any],
+        user_id: str = "",
+        timeout_seconds: float = 10.0,
+        credential_user_id: str = "",
+    ) -> BlueprintValidationResult:
+        """Validate a blueprint draft before saving.
+
+        Used by ``TemplateService`` to validate templates during
+        instantiation.
+        """
+        self._ensure_validation_service()
+        spec = self.resolve_draft_dict(draft_dict)
+        return self._validate_spec(
+            spec, "draft", timeout_seconds,
+            user_id=user_id,
+            credential_user_id=credential_user_id,
+        )
+
+    def validate_blueprint(
+        self,
+        blueprint_id: str,
+        user_id: str = "",
+        timeout_seconds: float = 10.0,
+        credential_user_id: str = "",
+    ) -> BlueprintValidationResult:
+        """Validate all elements in a saved blueprint."""
+        self._ensure_validation_service()
+        spec = self.load_resolved(blueprint_id)
+        return self._validate_spec(
+            spec, blueprint_id, timeout_seconds,
+            user_id=user_id,
+            credential_user_id=credential_user_id,
+        )
+
+    def list_ids(
+        self,
+        *,
+        identity: Identity | None = None,
+        **pg: Any,
+    ) -> list[str]:
+        """Return blueprint IDs, optionally scoped to *identity*.
+
+        Used by ``StatisticsService`` to enumerate user-owned blueprints.
+        """
+        return self._repo.list_ids(identity=identity, **pg)
+
+    def load_many(self, blueprint_ids: list[str]) -> list[BlueprintDocument]:
+        """Load multiple blueprint documents by their IDs in a single operation.
+
+        Used by ``StatisticsService`` for batch-loading blueprint names.
+        """
+        return self._repo.load_many(blueprint_ids)
+
+    def exists(self, blueprint_id: str) -> bool:
+        """Check whether a blueprint exists in the store."""
+        return self._repo.exists(blueprint_id)
+
+    def delete(self, blueprint_id: str) -> bool:
+        """Delete a blueprint by ID (alias for ``delete_blueprint``)."""
+        return self._repo.delete(blueprint_id)
+
+    def count(self, *, identity: Identity | None = None) -> int:
+        """Total blueprint count (alias for ``count_blueprints``)."""
+        return self._repo.count(identity=identity)
+
+    def list_summaries(
+        self,
+        *,
+        identity: Identity | None = None,
+        **pg: Any,
+    ) -> list[BlueprintSummary]:
+        """Return lightweight blueprint summaries (no full spec)."""
+        return self._repo.list_summaries(identity=identity, **pg)
+
+    def list_draft_docs(
+        self,
+        *,
+        identity: Identity | None = None,
+        **pg: Any,
+    ) -> list[BlueprintDocument]:
+        """Return blueprint documents (alias for ``list_blueprints``)."""
+        return self._repo.list_docs(identity=identity, **pg)
+
+    # ------------------------------------------------------------------
+    # Private helpers — new (GENIE-1336)
     # ------------------------------------------------------------------
 
     def _extract_rid_refs(self, spec_dict: dict[str, Any]) -> list[str]:
@@ -369,7 +548,7 @@ class BlueprintService:
         refs: list[str] = []
         self._walk_refs(spec_dict, refs)
         # Preserve order but deduplicate.
-        seen = set()
+        seen: set[str] = set()
         unique: list[str] = []
         for ref in refs:
             if ref not in seen:
@@ -435,3 +614,35 @@ class BlueprintService:
         """Raise ``FeatureNotConfiguredError`` if ``BlueprintVersionRepository`` is not configured."""
         if self._version_repo is None:
             raise FeatureNotConfiguredError("BlueprintVersionRepository")
+
+    # ------------------------------------------------------------------
+    # Private helpers — backward-compat (validation pipeline)
+    # ------------------------------------------------------------------
+
+    def _ensure_validation_service(self) -> None:
+        """Raise if validation service not configured."""
+        if self._validation_service is None:
+            raise RuntimeError("ValidationService not configured")
+
+    def _validate_spec(
+        self,
+        spec: BlueprintSpec,
+        blueprint_id: str,
+        timeout_seconds: float,
+        user_id: str = "",
+        credential_user_id: str = "",
+    ) -> BlueprintValidationResult:
+        """Collect configs from *spec*, validate, and build result."""
+        configs = self._config_collector.collect(spec)
+        context = ValidationContext(
+            timeout_seconds=timeout_seconds,
+            user_id=user_id,
+            credential_user_id=credential_user_id,
+            auth_service=self._auth_service,
+        )
+        results = self._validation_service.validate_ordered(configs, context)
+        return BlueprintValidationResult(
+            blueprint_id=blueprint_id,
+            is_valid=all(r.is_valid for r in results.values()),
+            element_results=results,
+        )
