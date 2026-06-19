@@ -1,622 +1,462 @@
 /**
- * BlueprintVersionHistory.test.tsx — GENIE-1336
+ * BlueprintVersionHistory — unit tests
  *
- * Test runner: Vitest + @testing-library/react + @testing-library/user-event
+ * Tests are aligned to the actual component data-testid attributes,
+ * public API shape (named export, correct type names), and behavioral
+ * contract (useState/useEffect, NOT React Query).
  *
- * Install (once, from ui/ root):
- *   pnpm add -D vitest @vitest/coverage-v8 jsdom \
- *              @testing-library/react @testing-library/user-event \
- *              @testing-library/jest-dom msw
- *
- * Add to vite.config.ts (or a dedicated vitest.config.ts):
- *   import { defineConfig } from 'vitest/config';
- *   export default defineConfig({
- *     test: {
- *       environment: 'jsdom',
- *       globals: true,
- *       setupFiles: ['src/setupTests.ts'],
- *     },
- *     resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
- *   });
- *
- * Add src/setupTests.ts:
- *   import '@testing-library/jest-dom';
- *
- * Run:
- *   pnpm vitest run src/components/agentic-ai/graphs/__tests__/BlueprintVersionHistory.test.tsx
+ * GENIE-1336
  */
 
-import React from 'react';
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  beforeEach,
-  afterEach,
-  type Mock,
-} from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from "react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
-import BlueprintVersionHistory from '../BlueprintVersionHistory';
-import type {
-  VersionListResponse,
-  VersionDetail,
-} from '@/api/blueprints';
+// Mock the API module — keep all types intact, replace functions with mocks.
+vi.mock("@/api/blueprints", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@/api/blueprints")>();
+  return {
+    ...mod,
+    listBlueprintVersions: vi.fn(),
+    getBlueprintVersion: vi.fn(),
+    restoreBlueprintVersion: vi.fn(),
+  };
+});
 
-// ── Mock the API module ────────────────────────────────────────────────────────
-vi.mock('@/api/blueprints', () => ({
-  listBlueprintVersions: vi.fn(),
-  loadBlueprintVersion: vi.fn(),
-  restoreBlueprintVersion: vi.fn(),
-}));
-
-// Import the mock functions with correct types after mocking.
+import { BlueprintVersionHistory } from "../BlueprintVersionHistory";
 import {
   listBlueprintVersions,
-  loadBlueprintVersion,
+  getBlueprintVersion,
   restoreBlueprintVersion,
-} from '@/api/blueprints';
+  BlueprintApiError,
+} from "@/api/blueprints";
+import type {
+  PaginatedVersionsResponse,
+  BlueprintVersionDetail,
+  BlueprintVersionSummary,
+} from "@/api/blueprints";
+
+// ---------------------------------------------------------------------------
+// Typed mock references
+// ---------------------------------------------------------------------------
 
 const mockListVersions = listBlueprintVersions as Mock;
-const mockLoadVersion = loadBlueprintVersion as Mock;
-const mockRestoreVersion = restoreBlueprintVersion as Mock;
+const mockGetVersion = getBlueprintVersion as Mock;
+const mockRestore = restoreBlueprintVersion as Mock;
 
-// ── Test data factories ────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Factory helpers
+// ---------------------------------------------------------------------------
 
-function makeVersionList(
-  overrides: Partial<VersionListResponse> = {},
-): VersionListResponse {
+function makeVersionSummary(overrides: Partial<BlueprintVersionSummary> = {}): BlueprintVersionSummary {
   return {
-    items: [
-      {
-        version: 3,
-        created_by: 'alice',
-        created_at: '2025-06-10T09:00:00.000Z',
-        change_summary: 'Third version',
-      },
-      {
-        version: 2,
-        created_by: 'bob',
-        created_at: '2025-06-09T08:00:00.000Z',
-        change_summary: 'Second version',
-      },
-      {
-        version: 1,
-        created_by: 'carol',
-        created_at: '2025-06-08T07:00:00.000Z',
-        change_summary: null,
-      },
-    ],
-    total: 3,
+    version: 1,
+    blueprint_id: "bp-test",
+    created_by: "alice",
+    created_at: "2025-06-01T12:00:00Z",
+    change_summary: "Initial version",
+    ...overrides,
+  };
+}
+
+function makePageResponse(
+  items: BlueprintVersionSummary[],
+  overrides: Partial<PaginatedVersionsResponse> = {},
+): PaginatedVersionsResponse {
+  return {
+    items,
+    total: items.length,
     page: 1,
-    page_size: 20,
+    page_size: 10,
     total_pages: 1,
     ...overrides,
   };
 }
 
-function makeVersionDetail(version: number = 2): VersionDetail {
+function makeVersionDetail(
+  overrides: Partial<BlueprintVersionDetail> = {},
+): BlueprintVersionDetail {
   return {
-    blueprint_id: 'bp-test',
-    version,
-    created_by: 'bob',
-    created_at: '2025-06-09T08:00:00.000Z',
-    change_summary: 'Second version',
-    spec_dict_snapshot: { name: 'My Blueprint', nodes: [] },
+    version: 1,
+    blueprint_id: "bp-test",
+    created_by: "alice",
+    created_at: "2025-06-01T12:00:00Z",
+    change_summary: "Initial version",
+    spec_dict_snapshot: { name: "test-spec", nodes: [] },
+    ...overrides,
   };
 }
 
-// ── Render helper ──────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Render helper
+// ---------------------------------------------------------------------------
 
 function renderComponent(
-  blueprintId = 'bp-test',
-  onRestoreSuccess?: Mock,
+  props: Partial<React.ComponentProps<typeof BlueprintVersionHistory>> = {},
 ) {
-  const client = new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,           // Don't retry in tests
-        staleTime: 0,
-      },
-    },
-  });
-  return render(
-    <QueryClientProvider client={client}>
-      <BlueprintVersionHistory
-        blueprintId={blueprintId}
-        onRestoreSuccess={onRestoreSuccess}
-      />
-    </QueryClientProvider>,
-  );
+  const defaultProps = {
+    blueprintId: "bp-test",
+    ...props,
+  };
+  return render(<BlueprintVersionHistory {...defaultProps} />);
 }
 
-// ── Test suites ────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
-describe('BlueprintVersionHistory', () => {
+describe("BlueprintVersionHistory", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  // ── Loading state ───────────────────────────────────────────────────
+
+  it("shows loading indicator while fetching versions", () => {
+    mockListVersions.mockReturnValue(new Promise(() => {})); // never resolves
+    renderComponent();
+    expect(screen.getByTestId("version-history-loading")).toBeInTheDocument();
   });
 
-  // ── Loading state ──────────────────────────────────────────────────────────
+  // ── Error state ─────────────────────────────────────────────────────
 
-  describe('Loading state', () => {
-    it('shows a loading indicator while fetching', async () => {
-      // Never resolve so the loading state persists for the assertion
-      mockListVersions.mockReturnValue(new Promise(() => {}));
+  it("shows error message when fetching fails", async () => {
+    mockListVersions.mockRejectedValueOnce(new Error("Network error"));
+    renderComponent();
 
-      renderComponent();
-
-      expect(
-        screen.getByTestId('blueprint-version-history-loading'),
-      ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("version-history-error")).toBeInTheDocument();
     });
+    expect(screen.getByTestId("version-history-error")).toHaveTextContent(
+      "Failed to load version history.",
+    );
   });
 
-  // ── Error state ────────────────────────────────────────────────────────────
+  it("shows retry button on error and retries on click", async () => {
+    const user = userEvent.setup();
+    mockListVersions
+      .mockRejectedValueOnce(new Error("fail"))
+      .mockResolvedValueOnce(makePageResponse([makeVersionSummary()]));
 
-  describe('Error state', () => {
-    it('shows an error message when the API call fails', async () => {
-      mockListVersions.mockRejectedValue(new Error('Network error'));
+    renderComponent();
 
-      renderComponent();
-
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-error'),
-        ).toBeInTheDocument();
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("retry-btn")).toBeInTheDocument();
     });
+
+    await user.click(screen.getByTestId("retry-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("version-history-table")).toBeInTheDocument();
+    });
+    expect(mockListVersions).toHaveBeenCalledTimes(2);
   });
 
-  // ── Empty state ────────────────────────────────────────────────────────────
+  // ── Empty state ─────────────────────────────────────────────────────
 
-  describe('Empty state', () => {
-    it('shows an empty state when there are no versions', async () => {
-      mockListVersions.mockResolvedValue(
-        makeVersionList({ items: [], total: 0, total_pages: 1 }),
-      );
+  it("shows empty message when no versions exist", async () => {
+    mockListVersions.mockResolvedValueOnce(makePageResponse([]));
+    renderComponent();
 
-      renderComponent();
-
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-empty'),
-        ).toBeInTheDocument();
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("no-versions-message")).toBeInTheDocument();
     });
+    expect(screen.getByTestId("no-versions-message")).toHaveTextContent(
+      "No version history available yet.",
+    );
   });
 
-  // ── Version table ──────────────────────────────────────────────────────────
+  // ── Table rendering ─────────────────────────────────────────────────
 
-  describe('Version table', () => {
-    beforeEach(() => {
-      mockListVersions.mockResolvedValue(makeVersionList());
+  it("renders version table with correct rows", async () => {
+    const items = [
+      makeVersionSummary({ version: 2, created_by: "bob", change_summary: "Updated nodes" }),
+      makeVersionSummary({ version: 1, created_by: "alice", change_summary: "Initial version" }),
+    ];
+    mockListVersions.mockResolvedValueOnce(makePageResponse(items));
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("version-history-table")).toBeInTheDocument();
     });
 
-    it('renders the version history root element', async () => {
-      renderComponent();
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history'),
-        ).toBeInTheDocument();
-      });
-    });
+    // Root section
+    expect(screen.getByTestId("blueprint-version-history")).toBeInTheDocument();
 
-    it('renders the table element', async () => {
-      renderComponent();
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-table'),
-        ).toBeInTheDocument();
-      });
-    });
+    // Row for each version
+    expect(screen.getByTestId("version-row-2")).toBeInTheDocument();
+    expect(screen.getByTestId("version-row-1")).toBeInTheDocument();
 
-    it('renders a row for each version', async () => {
-      renderComponent();
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-row-3'),
-        ).toBeInTheDocument();
-        expect(
-          screen.getByTestId('blueprint-version-history-row-2'),
-        ).toBeInTheDocument();
-        expect(
-          screen.getByTestId('blueprint-version-history-row-1'),
-        ).toBeInTheDocument();
-      });
-    });
+    // Author cells
+    expect(screen.getByTestId("version-created-by-2")).toHaveTextContent("bob");
+    expect(screen.getByTestId("version-created-by-1")).toHaveTextContent("alice");
 
-    it('displays the total version count badge', async () => {
-      renderComponent();
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-total-badge'),
-        ).toHaveTextContent('3');
-      });
-    });
-
-    it('renders created_by for each row', async () => {
-      renderComponent();
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-row-3-created-by'),
-        ).toHaveTextContent('alice');
-        expect(
-          screen.getByTestId('blueprint-version-history-row-2-created-by'),
-        ).toHaveTextContent('bob');
-      });
-    });
-
-    it('renders change_summary or "No summary" placeholder', async () => {
-      renderComponent();
-      await waitFor(() => {
-        // Version 3 has a summary
-        expect(
-          screen.getByTestId('blueprint-version-history-row-3-summary'),
-        ).toHaveTextContent('Third version');
-        // Version 1 has null summary → shows placeholder text
-        expect(
-          screen.getByTestId('blueprint-version-history-row-1-summary'),
-        ).toHaveTextContent('No summary');
-      });
-    });
-
-    it('renders preview button for each row', async () => {
-      renderComponent();
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-preview-btn-2'),
-        ).toBeInTheDocument();
-      });
-    });
-
-    it('renders restore button for each row', async () => {
-      renderComponent();
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-restore-btn-2'),
-        ).toBeInTheDocument();
-      });
-    });
+    // Summary cells
+    expect(screen.getByTestId("version-summary-2")).toHaveTextContent("Updated nodes");
+    expect(screen.getByTestId("version-summary-1")).toHaveTextContent("Initial version");
   });
 
-  // ── Preview drawer ─────────────────────────────────────────────────────────
+  it("renders em dash for null change_summary", async () => {
+    const items = [makeVersionSummary({ version: 1, change_summary: null })];
+    mockListVersions.mockResolvedValueOnce(makePageResponse(items));
+    renderComponent();
 
-  describe('Preview drawer', () => {
-    beforeEach(() => {
-      mockListVersions.mockResolvedValue(makeVersionList());
-      mockLoadVersion.mockResolvedValue(makeVersionDetail(2));
+    await waitFor(() => {
+      expect(screen.getByTestId("version-summary-1")).toBeInTheDocument();
     });
-
-    it('opens the preview drawer when a preview button is clicked', async () => {
-      const user = userEvent.setup();
-      renderComponent();
-
-      // Wait for table to load
-      const previewBtn = await screen.findByTestId(
-        'blueprint-version-history-preview-btn-2',
-      );
-      await user.click(previewBtn);
-
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-preview-drawer'),
-        ).toBeInTheDocument();
-      });
-    });
-
-    it('displays the spec snapshot JSON in the preview content', async () => {
-      const user = userEvent.setup();
-      renderComponent();
-
-      const previewBtn = await screen.findByTestId(
-        'blueprint-version-history-preview-btn-2',
-      );
-      await user.click(previewBtn);
-
-      await waitFor(() => {
-        const content = screen.getByTestId(
-          'blueprint-version-preview-content',
-        );
-        expect(content.textContent).toContain('"My Blueprint"');
-      });
-    });
-
-    it('calls loadBlueprintVersion with the correct arguments', async () => {
-      const user = userEvent.setup();
-      renderComponent();
-
-      const previewBtn = await screen.findByTestId(
-        'blueprint-version-history-preview-btn-2',
-      );
-      await user.click(previewBtn);
-
-      await waitFor(() => {
-        expect(mockLoadVersion).toHaveBeenCalledWith('bp-test', 2);
-      });
-    });
+    expect(screen.getByTestId("version-summary-1")).toHaveTextContent("—");
   });
 
-  // ── Restore dialog ─────────────────────────────────────────────────────────
+  // ── Preview ─────────────────────────────────────────────────────────
 
-  describe('Restore dialog', () => {
-    beforeEach(() => {
-      mockListVersions.mockResolvedValue(makeVersionList());
+  it("opens preview modal when Preview button is clicked", async () => {
+    const user = userEvent.setup();
+    const items = [makeVersionSummary({ version: 2 })];
+    mockListVersions.mockResolvedValueOnce(makePageResponse(items));
+    mockGetVersion.mockResolvedValueOnce(
+      makeVersionDetail({ version: 2, spec_dict_snapshot: { graph: "data" } }),
+    );
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-btn-2")).toBeInTheDocument();
     });
 
-    it('opens the restore dialog when a restore button is clicked', async () => {
-      const user = userEvent.setup();
-      renderComponent();
+    await user.click(screen.getByTestId("preview-btn-2"));
 
-      const restoreBtn = await screen.findByTestId(
-        'blueprint-version-history-restore-btn-2',
-      );
-      await user.click(restoreBtn);
-
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-restore-dialog'),
-        ).toBeInTheDocument();
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("version-preview-modal")).toBeInTheDocument();
     });
 
-    it('closes the dialog when Cancel is clicked', async () => {
-      const user = userEvent.setup();
-      renderComponent();
+    expect(screen.getByTestId("preview-spec-snapshot")).toHaveTextContent(
+      JSON.stringify({ graph: "data" }, null, 2),
+    );
+    expect(mockGetVersion).toHaveBeenCalledWith("bp-test", 2);
+  });
 
-      const restoreBtn = await screen.findByTestId(
-        'blueprint-version-history-restore-btn-2',
-      );
-      await user.click(restoreBtn);
+  it("shows preview error when getBlueprintVersion fails", async () => {
+    const user = userEvent.setup();
+    const items = [makeVersionSummary({ version: 3 })];
+    mockListVersions.mockResolvedValueOnce(makePageResponse(items));
+    mockGetVersion.mockRejectedValueOnce(new Error("Preview failed"));
 
-      // Dialog should now be visible
-      const cancelBtn = await screen.findByTestId(
-        'blueprint-version-restore-cancel-btn',
-      );
-      await user.click(cancelBtn);
+    renderComponent();
 
-      // Dialog should be closed — element is gone or not visible
-      await waitFor(() => {
-        expect(
-          screen.queryByTestId('blueprint-version-restore-dialog'),
-        ).not.toBeVisible();
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-btn-3")).toBeInTheDocument();
     });
 
-    it('calls restoreBlueprintVersion with the correct args on confirm', async () => {
-      mockRestoreVersion.mockResolvedValue({
-        status: 'restored',
-        blueprint_id: 'bp-test',
-        restored_to_version: 4,
-      });
-      // Re-fetch after restore
-      mockListVersions.mockResolvedValue(makeVersionList());
+    await user.click(screen.getByTestId("preview-btn-3"));
 
-      const user = userEvent.setup();
-      renderComponent();
+    await waitFor(() => {
+      expect(screen.getByTestId("preview-error")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("preview-error")).toHaveTextContent(
+      "Failed to load version preview.",
+    );
+  });
 
-      const restoreBtn = await screen.findByTestId(
-        'blueprint-version-history-restore-btn-2',
-      );
-      await user.click(restoreBtn);
+  // ── Restore flow ────────────────────────────────────────────────────
 
-      const confirmBtn = await screen.findByTestId(
-        'blueprint-version-restore-confirm-btn',
-      );
-      await user.click(confirmBtn);
+  it("shows confirmation dialog when Restore button is clicked", async () => {
+    const user = userEvent.setup();
+    const items = [makeVersionSummary({ version: 2 })];
+    mockListVersions.mockResolvedValueOnce(makePageResponse(items));
+    renderComponent();
 
-      await waitFor(() => {
-        expect(mockRestoreVersion).toHaveBeenCalledWith('bp-test', 2);
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("restore-btn-2")).toBeInTheDocument();
     });
 
-    it('shows a success status message after a successful restore', async () => {
-      mockRestoreVersion.mockResolvedValue({
-        status: 'restored',
-        blueprint_id: 'bp-test',
-        restored_to_version: 4,
-      });
-      mockListVersions.mockResolvedValue(makeVersionList());
+    await user.click(screen.getByTestId("restore-btn-2"));
 
-      const user = userEvent.setup();
-      renderComponent();
+    expect(screen.getByTestId("restore-confirm-dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("restore-confirm-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("restore-cancel-btn")).toBeInTheDocument();
+  });
 
-      const restoreBtn = await screen.findByTestId(
-        'blueprint-version-history-restore-btn-2',
-      );
-      await user.click(restoreBtn);
+  it("dismisses confirmation dialog on cancel", async () => {
+    const user = userEvent.setup();
+    const items = [makeVersionSummary({ version: 2 })];
+    mockListVersions.mockResolvedValueOnce(makePageResponse(items));
+    renderComponent();
 
-      const confirmBtn = await screen.findByTestId(
-        'blueprint-version-restore-confirm-btn',
-      );
-      await user.click(confirmBtn);
-
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-status-success'),
-        ).toBeInTheDocument();
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("restore-btn-2")).toBeInTheDocument();
     });
 
-    it('fires onRestoreSuccess callback with the new version number', async () => {
-      mockRestoreVersion.mockResolvedValue({
-        status: 'restored',
-        blueprint_id: 'bp-test',
-        restored_to_version: 4,
-      });
-      mockListVersions.mockResolvedValue(makeVersionList());
+    await user.click(screen.getByTestId("restore-btn-2"));
+    expect(screen.getByTestId("restore-confirm-dialog")).toBeInTheDocument();
 
-      const onSuccess = vi.fn();
-      const user = userEvent.setup();
-      renderComponent('bp-test', onSuccess);
+    await user.click(screen.getByTestId("restore-cancel-btn"));
+    expect(screen.queryByTestId("restore-confirm-dialog")).not.toBeInTheDocument();
+  });
 
-      const restoreBtn = await screen.findByTestId(
-        'blueprint-version-history-restore-btn-2',
-      );
-      await user.click(restoreBtn);
+  it("calls restoreBlueprintVersion and refreshes list on confirm", async () => {
+    const user = userEvent.setup();
+    const items = [
+      makeVersionSummary({ version: 2, change_summary: "Pre-restore" }),
+      makeVersionSummary({ version: 1 }),
+    ];
+    mockListVersions.mockResolvedValue(makePageResponse(items));
+    mockRestore.mockResolvedValueOnce({ success: true });
 
-      const confirmBtn = await screen.findByTestId(
-        'blueprint-version-restore-confirm-btn',
-      );
-      await user.click(confirmBtn);
+    renderComponent();
 
-      await waitFor(() => {
-        expect(onSuccess).toHaveBeenCalledWith(4);
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("restore-btn-2")).toBeInTheDocument();
     });
 
-    it('shows an error status message when restore fails', async () => {
-      mockRestoreVersion.mockRejectedValue(new Error('Internal Server Error'));
-      mockListVersions.mockResolvedValue(makeVersionList());
+    // Click restore → confirm
+    await user.click(screen.getByTestId("restore-btn-2"));
+    await user.click(screen.getByTestId("restore-confirm-btn"));
 
-      const user = userEvent.setup();
-      renderComponent();
-
-      const restoreBtn = await screen.findByTestId(
-        'blueprint-version-history-restore-btn-3',
-      );
-      await user.click(restoreBtn);
-
-      const confirmBtn = await screen.findByTestId(
-        'blueprint-version-restore-confirm-btn',
-      );
-      await user.click(confirmBtn);
-
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-status-error'),
-        ).toBeInTheDocument();
-      });
+    await waitFor(() => {
+      expect(mockRestore).toHaveBeenCalledWith("bp-test", 2);
     });
 
-    it('shows a user-friendly 409 conflict message when restore conflicts', async () => {
-      mockRestoreVersion.mockRejectedValue(
-        new Error('Request failed with status code 409'),
-      );
-      mockListVersions.mockResolvedValue(makeVersionList());
-
-      const user = userEvent.setup();
-      renderComponent();
-
-      const restoreBtn = await screen.findByTestId(
-        'blueprint-version-history-restore-btn-3',
-      );
-      await user.click(restoreBtn);
-
-      const confirmBtn = await screen.findByTestId(
-        'blueprint-version-restore-confirm-btn',
-      );
-      await user.click(confirmBtn);
-
-      await waitFor(() => {
-        const errorEl = screen.getByTestId(
-          'blueprint-version-history-status-error',
-        );
-        expect(errorEl).toHaveTextContent(/modified by another user/i);
-      });
+    // After successful restore, fetchVersions is called again.
+    // Initial call + refresh = at least 2 calls.
+    await waitFor(() => {
+      expect(mockListVersions.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
   });
 
-  // ── Pagination ─────────────────────────────────────────────────────────────
+  it("calls onRestoreSuccess with the target version number", async () => {
+    const user = userEvent.setup();
+    const onSuccess = vi.fn();
+    const items = [makeVersionSummary({ version: 2 })];
+    mockListVersions.mockResolvedValue(makePageResponse(items));
+    mockRestore.mockResolvedValueOnce({ success: true });
 
-  describe('Pagination', () => {
-    it('does not render pagination controls when there is only one page', async () => {
-      mockListVersions.mockResolvedValue(makeVersionList({ total_pages: 1 }));
+    renderComponent({ onRestoreSuccess: onSuccess });
 
-      renderComponent();
-
-      await waitFor(() => {
-        expect(
-          screen.queryByTestId('blueprint-version-history-pagination'),
-        ).not.toBeInTheDocument();
-      });
+    await waitFor(() => {
+      expect(screen.getByTestId("restore-btn-2")).toBeInTheDocument();
     });
 
-    it('renders pagination controls when there are multiple pages', async () => {
-      mockListVersions.mockResolvedValue(
-        makeVersionList({ total: 50, total_pages: 3 }),
-      );
+    await user.click(screen.getByTestId("restore-btn-2"));
+    await user.click(screen.getByTestId("restore-confirm-btn"));
 
-      renderComponent();
-
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-pagination'),
-        ).toBeInTheDocument();
-      });
-    });
-
-    it('disables the Prev button on the first page', async () => {
-      mockListVersions.mockResolvedValue(
-        makeVersionList({ total: 50, total_pages: 3, page: 1 }),
-      );
-
-      renderComponent();
-
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-pagination-prev'),
-        ).toBeDisabled();
-      });
-    });
-
-    it('enables the Next button when there are more pages', async () => {
-      mockListVersions.mockResolvedValue(
-        makeVersionList({ total: 50, total_pages: 3, page: 1 }),
-      );
-
-      renderComponent();
-
-      await waitFor(() => {
-        expect(
-          screen.getByTestId('blueprint-version-history-pagination-next'),
-        ).not.toBeDisabled();
-      });
-    });
-
-    it('advances to page 2 when Next is clicked', async () => {
-      const user = userEvent.setup();
-      // Page 1 response
-      mockListVersions.mockResolvedValueOnce(
-        makeVersionList({ total: 50, total_pages: 3, page: 1 }),
-      );
-      // Page 2 response
-      mockListVersions.mockResolvedValueOnce(
-        makeVersionList({ total: 50, total_pages: 3, page: 2 }),
-      );
-
-      renderComponent();
-
-      const nextBtn = await screen.findByTestId(
-        'blueprint-version-history-pagination-next',
-      );
-      await user.click(nextBtn);
-
-      await waitFor(() => {
-        // listBlueprintVersions should have been called with page=2
-        expect(mockListVersions).toHaveBeenCalledWith('bp-test', 2, 20);
-      });
+    await waitFor(() => {
+      // Component calls onRestoreSuccess(targetVersion) where targetVersion = 2
+      expect(onSuccess).toHaveBeenCalledWith(2);
     });
   });
 
-  // ── API integration ────────────────────────────────────────────────────────
+  it("shows restore error when restoreBlueprintVersion fails", async () => {
+    const user = userEvent.setup();
+    const items = [makeVersionSummary({ version: 2 })];
+    mockListVersions.mockResolvedValueOnce(makePageResponse(items));
+    mockRestore.mockRejectedValueOnce(new Error("Restore failed"));
 
-  describe('API integration', () => {
-    it('calls listBlueprintVersions with the blueprintId prop', async () => {
-      mockListVersions.mockResolvedValue(makeVersionList());
+    renderComponent();
 
-      renderComponent('my-specific-bp');
+    await waitFor(() => {
+      expect(screen.getByTestId("restore-btn-2")).toBeInTheDocument();
+    });
 
-      await waitFor(() => {
-        expect(mockListVersions).toHaveBeenCalledWith('my-specific-bp', 1, 20);
-      });
+    await user.click(screen.getByTestId("restore-btn-2"));
+    await user.click(screen.getByTestId("restore-confirm-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("restore-error")).toBeInTheDocument();
+    });
+    // Generic Error (not BlueprintApiError) → fallback message
+    expect(screen.getByTestId("restore-error")).toHaveTextContent(
+      "Failed to restore version 2.",
+    );
+  });
+
+  it("shows API error message for BlueprintApiError on restore", async () => {
+    const user = userEvent.setup();
+    const items = [makeVersionSummary({ version: 2 })];
+    mockListVersions.mockResolvedValueOnce(makePageResponse(items));
+    mockRestore.mockRejectedValueOnce(
+      new BlueprintApiError(409, "Blueprint was modified by another user", "/blueprint.version.restore"),
+    );
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("restore-btn-2")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("restore-btn-2"));
+    await user.click(screen.getByTestId("restore-confirm-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("restore-error")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("restore-error")).toHaveTextContent(
+      "Blueprint was modified by another user",
+    );
+  });
+
+  // ── Pagination ──────────────────────────────────────────────────────
+
+  it("disables prev button on first page", async () => {
+    const items = [makeVersionSummary({ version: 1 })];
+    mockListVersions.mockResolvedValueOnce(
+      makePageResponse(items, { page: 1, total_pages: 3, total: 25 }),
+    );
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pagination-prev")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("pagination-prev")).toBeDisabled();
+    expect(screen.getByTestId("pagination-next")).toBeEnabled();
+  });
+
+  it("advances to page 2 when next is clicked", async () => {
+    const user = userEvent.setup();
+    const items = [makeVersionSummary({ version: 1 })];
+    mockListVersions
+      .mockResolvedValueOnce(makePageResponse(items, { page: 1, total_pages: 3, total: 25 }))
+      .mockResolvedValueOnce(
+        makePageResponse(
+          [makeVersionSummary({ version: 11 })],
+          { page: 2, total_pages: 3, total: 25 },
+        ),
+      );
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pagination-next")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("pagination-next"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("pagination-info")).toHaveTextContent("Page 2 of 3");
+    });
+
+    // Second call should be page 2 with default pageSize 10
+    expect(mockListVersions).toHaveBeenCalledWith("bp-test", 2, 10);
+  });
+
+  // ── API integration ─────────────────────────────────────────────────
+
+  it("calls listBlueprintVersions with correct args on mount", async () => {
+    mockListVersions.mockResolvedValueOnce(makePageResponse([]));
+    renderComponent();
+
+    await waitFor(() => {
+      expect(mockListVersions).toHaveBeenCalledWith("bp-test", 1, 10);
+    });
+  });
+
+  it("passes custom pageSize to API", async () => {
+    mockListVersions.mockResolvedValueOnce(makePageResponse([]));
+    renderComponent({ pageSize: 5 });
+
+    await waitFor(() => {
+      expect(mockListVersions).toHaveBeenCalledWith("bp-test", 1, 5);
     });
   });
 });

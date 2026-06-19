@@ -1,62 +1,70 @@
 /**
  * Blueprint API Client
  *
- * Typed HTTP client for all blueprint endpoints.
+ * Typed HTTP client for all blueprint CRUD + version-history endpoints.
  * Version-history methods were added in GENIE-1336.
  *
- * All functions throw a {@link BlueprintApiError} (extending `Error`) when the
- * server returns a non-2xx response so callers can distinguish API failures
- * from network errors.
+ * Uses the shared ``axiosAgentConfig`` Axios instance which:
+ * - pre-configures the ``/api2`` base URL for Vite / Nginx proxy routing
+ * - auto-injects the ``X-Authenticated-User`` header via interceptor
+ *
+ * This follows the same pattern as all other UI API modules
+ * (sessions.ts, templates.ts, shares.ts, catalog.ts).
  */
 
+import axios from "@/http/axiosAgentConfig";
+import { isAxiosError } from "axios";
+
 // ---------------------------------------------------------------------------
-// Types
+// Shared types
 // ---------------------------------------------------------------------------
 
 export interface Identity {
-  type: "user" | "team";
-  id: string;
+  owner_id: string;
+  owner_type: string;
+  display_name?: string;
 }
 
-/** Lightweight blueprint listing item. */
+// ---- Blueprint types ----
+
 export interface BlueprintSummary {
   blueprint_id: string;
-  identity: Identity;
   name: string;
   description: string;
-  created_at: string; // ISO-8601
-  updated_at: string; // ISO-8601
-  metadata: Record<string, unknown>;
-  version: number;
-}
-
-/** Full blueprint document as returned by read endpoints. */
-export interface BlueprintDocument {
-  blueprint_id: string;
   identity: Identity;
   created_at: string;
   updated_at: string;
+}
+
+export interface BlueprintDocument extends BlueprintSummary {
   spec_dict: Record<string, unknown>;
   rid_refs: string[];
   metadata: Record<string, unknown>;
   version: number;
 }
 
-/** Summary row in the version-history list (no spec_dict_snapshot). */
+export interface PaginatedBlueprintsResponse {
+  items: BlueprintSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+// ---- Version types (GENIE-1336) ----
+
 export interface BlueprintVersionSummary {
   version: number;
   blueprint_id: string;
   created_by: string;
-  created_at: string; // ISO-8601
+  created_at: string;
   change_summary: string | null;
 }
 
-/** Full version detail including the spec snapshot (single-version fetch). */
 export interface BlueprintVersionDetail extends BlueprintVersionSummary {
   spec_dict_snapshot: Record<string, unknown>;
 }
 
-/** Paginated response wrapper for version lists. */
 export interface PaginatedVersionsResponse {
   items: BlueprintVersionSummary[];
   total: number;
@@ -65,16 +73,8 @@ export interface PaginatedVersionsResponse {
   total_pages: number;
 }
 
-/** Paginated response wrapper for blueprint lists. */
-export interface PaginatedBlueprintsResponse<T> {
-  items: T[];
-  total: number;
-  skip: number;
-  limit: number;
-}
-
 // ---------------------------------------------------------------------------
-// Error type
+// Error class
 // ---------------------------------------------------------------------------
 
 export class BlueprintApiError extends Error {
@@ -89,202 +89,163 @@ export class BlueprintApiError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Configuration
+// Internal request helper
 // ---------------------------------------------------------------------------
 
-/** Base URL for all blueprint API calls.  Override via environment variable. */
-const BASE_URL =
-  (typeof process !== "undefined" && process.env?.REACT_APP_API_BASE_URL) ||
-  "";
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-type ApiEnvelope<T> = { success: true; data: T } | { success: false; error: string };
-
+/**
+ * Thin wrapper around the shared Axios instance.
+ *
+ * - Sends ``method`` + ``path`` (relative to ``/api2``).
+ * - Unwraps ``{ success, data }`` envelopes when the backend uses them.
+ * - Maps Axios errors to ``BlueprintApiError`` for consistent upstream
+ *   handling (the component layer uses ``instanceof BlueprintApiError``).
+ */
 async function _request<T>(
   method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   body?: unknown,
   params?: Record<string, string | number | boolean | undefined>,
 ): Promise<T> {
-  const url = new URL(`${BASE_URL}${path}`, window.location.origin);
-
+  // Strip undefined values from query params so Axios doesn't serialise them.
+  const cleanParams: Record<string, string | number | boolean> = {};
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined) {
-        url.searchParams.set(key, String(value));
+        cleanParams[key] = value;
       }
     }
   }
 
-  const init: RequestInit = {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  };
+  try {
+    const response = await axios.request({
+      method,
+      url: path,
+      data: body,
+      params: Object.keys(cleanParams).length > 0 ? cleanParams : undefined,
+    });
 
-  const response = await fetch(url.toString(), init);
-  const envelope: ApiEnvelope<T> = await response.json();
+    const payload = response.data;
 
-  if (!response.ok || !envelope.success) {
-    const message = (envelope as { success: false; error: string }).error ?? "Unknown error";
-    throw new BlueprintApiError(response.status, message, path);
+    // Support the { success, data } envelope used by some endpoints.
+    if (
+      payload !== null &&
+      typeof payload === "object" &&
+      "success" in payload &&
+      "data" in payload
+    ) {
+      return (payload as { success: boolean; data: T }).data;
+    }
+
+    return payload as T;
+  } catch (err: unknown) {
+    if (isAxiosError(err)) {
+      const status = err.response?.status ?? 0;
+      const data = err.response?.data as Record<string, unknown> | undefined;
+      const message =
+        (data?.error as string) ??
+        (data?.message as string) ??
+        err.message ??
+        "Unknown error";
+      throw new BlueprintApiError(status, message, path);
+    }
+    throw err;
   }
-
-  return (envelope as { success: true; data: T }).data;
 }
 
 // ---------------------------------------------------------------------------
 // Blueprint CRUD
 // ---------------------------------------------------------------------------
 
-/** Save a new blueprint. Returns the generated `blueprint_id`. */
 export async function saveBlueprint(
   identity: Identity,
   specDict: Record<string, unknown>,
   metadata?: Record<string, unknown>,
-): Promise<string> {
-  const data = await _request<{ blueprint_id: string }>("POST", "/blueprint.save", {
+): Promise<{ blueprint_id: string }> {
+  return _request("POST", "/blueprint.save", {
     identity,
     spec_dict: specDict,
     metadata: metadata ?? {},
   });
-  return data.blueprint_id;
 }
 
-/**
- * Update an existing blueprint's spec.
- *
- * Returns 409 (ConcurrentModificationError) if another writer raced ahead.
- * In that case the caller should re-fetch the blueprint and retry.
- */
 export async function updateBlueprint(
   blueprintId: string,
   specDict: Record<string, unknown>,
+  userId?: string,
   changeSummary?: string,
-): Promise<void> {
-  await _request("PUT", "/blueprint.update", {
+): Promise<{ success: boolean }> {
+  return _request("PUT", "/blueprint.update", {
     blueprint_id: blueprintId,
     spec_dict: specDict,
-    change_summary: changeSummary ?? null,
+    user_id: userId ?? "",
+    change_summary: changeSummary,
   });
 }
 
-/** Return the full `BlueprintDocument` for the given ID. */
-export async function getBlueprintById(blueprintId: string): Promise<BlueprintDocument> {
-  return _request<BlueprintDocument>("GET", "/blueprint.info.get", undefined, {
+export async function getBlueprintById(
+  blueprintId: string,
+): Promise<BlueprintDocument> {
+  return _request("GET", `/blueprint.get`, undefined, {
     blueprint_id: blueprintId,
   });
 }
 
-/** Return a paginated list of lightweight `BlueprintSummary` objects. */
 export async function listBlueprintSummaries(
-  identity?: Identity,
-  skip = 0,
-  limit = 20,
-): Promise<PaginatedBlueprintsResponse<BlueprintSummary>> {
-  return _request<PaginatedBlueprintsResponse<BlueprintSummary>>(
-    "GET",
-    "/available.blueprints.summary.get",
-    undefined,
-    {
-      identity_type: identity?.type,
-      identity_id: identity?.id,
-      skip,
-      limit,
-    },
-  );
+  page = 1,
+  pageSize = 20,
+  ownerId?: string,
+  ownerType?: string,
+): Promise<PaginatedBlueprintsResponse> {
+  return _request("GET", "/blueprint.list", undefined, {
+    page,
+    page_size: pageSize,
+    owner_id: ownerId,
+    owner_type: ownerType,
+  });
 }
 
-/** Delete a blueprint by ID. */
-export async function deleteBlueprint(blueprintId: string): Promise<void> {
-  await _request("DELETE", "/remove.blueprint", undefined, {
+export async function deleteBlueprint(
+  blueprintId: string,
+): Promise<{ success: boolean }> {
+  return _request("DELETE", `/blueprint.delete`, undefined, {
     blueprint_id: blueprintId,
   });
 }
 
 // ---------------------------------------------------------------------------
-// Version-history API  (GENIE-1336)
+// Version-history endpoints (GENIE-1336)
 // ---------------------------------------------------------------------------
 
-/**
- * List version summaries for a blueprint, sorted newest-first.
- *
- * @param blueprintId - Target blueprint.
- * @param page - 1-based page number (default 1).
- * @param pageSize - Items per page (1–100, default 20).
- *
- * @throws BlueprintApiError on 404 (blueprint not found) or 501 (feature
- *   not configured on the server).
- */
 export async function listBlueprintVersions(
   blueprintId: string,
   page = 1,
   pageSize = 20,
 ): Promise<PaginatedVersionsResponse> {
-  return _request<PaginatedVersionsResponse>(
-    "GET",
-    "/blueprint.versions.list",
-    undefined,
-    {
-      blueprint_id: blueprintId,
-      page,
-      page_size: pageSize,
-    },
-  );
+  return _request("GET", "/blueprint.version.list", undefined, {
+    blueprint_id: blueprintId,
+    page,
+    page_size: pageSize,
+  });
 }
 
-/**
- * Load the full detail of a specific blueprint version, including its
- * `spec_dict_snapshot`.
- *
- * @param blueprintId - Parent blueprint.
- * @param version - Version number (≥ 1).
- *
- * @throws BlueprintApiError on 404 if the version does not exist.
- */
 export async function getBlueprintVersion(
   blueprintId: string,
-  version: number,
+  versionNumber: number,
 ): Promise<BlueprintVersionDetail> {
-  return _request<BlueprintVersionDetail>(
-    "GET",
-    "/blueprint.version.get",
-    undefined,
-    {
-      blueprint_id: blueprintId,
-      version,
-    },
-  );
+  return _request("GET", "/blueprint.version.get", undefined, {
+    blueprint_id: blueprintId,
+    version: versionNumber,
+  });
 }
 
-/**
- * Restore a blueprint to the `spec_dict` captured at `targetVersion`.
- *
- * The current live state is snapshotted before the restore so no history
- * is lost.  The restore itself is reversible via another call to this
- * function.
- *
- * @param blueprintId - Target blueprint.
- * @param targetVersion - The version to restore to.
- *
- * @throws BlueprintApiError on:
- *   - 404 — blueprint or version not found.
- *   - 409 — concurrent modification conflict (re-fetch and retry).
- *   - 501 — versioning feature not configured on the server.
- */
 export async function restoreBlueprintVersion(
   blueprintId: string,
   targetVersion: number,
-): Promise<{ blueprint_id: string; restored_from_version: number; message: string }> {
-  return _request<{ blueprint_id: string; restored_from_version: number; message: string }>(
-    "POST",
-    "/blueprint.version.restore",
-    {
-      blueprint_id: blueprintId,
-      version: targetVersion,
-    },
-  );
+  userId?: string,
+): Promise<{ success: boolean }> {
+  return _request("POST", "/blueprint.version.restore", {
+    blueprint_id: blueprintId,
+    target_version: targetVersion,
+    user_id: userId ?? "",
+  });
 }
