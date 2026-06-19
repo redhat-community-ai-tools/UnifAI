@@ -104,7 +104,7 @@ class AppContainer(metaclass=SingletonMeta):
             element_registry=self.element_registry
         )
 
-        # ── Blueprint repositories ───────────────────────────────────
+        # ── Blueprint repositories ───────────────────────────────────────
         # GENIE-1336: both blueprint repos share a single MongoDB
         # connection to avoid redundant client instances.
         _bp_client = pymongo.MongoClient(get_mongo_url())
@@ -115,7 +115,7 @@ class AppContainer(metaclass=SingletonMeta):
         )
 
         self.blueprint_version_repo = MongoBlueprintVersionRepository(
-            col=_bp_db["blueprint_versions"]
+            col=_bp_db[cfg.blueprint_versions_coll]
         )
 
         self.resource_repo = MongoResourceRepository(
