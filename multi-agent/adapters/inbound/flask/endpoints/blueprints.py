@@ -185,6 +185,8 @@ def _get_json_body() -> dict:
             400,
             "Request body must be valid JSON with Content-Type: application/json",
         )
+    if not isinstance(data, dict):
+        abort(400, "Request body must be a JSON object")
     return data
 
 
@@ -240,16 +242,16 @@ def blueprint_update():
         "blueprint_id": "<id>",
         "spec_dict": {...},
         "change_summary": "..."  # optional
-        "user_id": "..."         # optional
+        "user_id": "..."         # optional — defaults to X-Authenticated-User
     }
     """
-    _require_auth()
+    authenticated_user = _require_auth()
     body = _get_json_body()
     _require_body_keys(body, "blueprint_id", "spec_dict")
     blueprint_id = body["blueprint_id"]
     spec_dict = body["spec_dict"]
     change_summary = body.get("change_summary")
-    user_id = body.get("user_id", "")
+    user_id = body.get("user_id", "") or authenticated_user
 
     svc = current_app.container.blueprint_service
     svc.update_draft(

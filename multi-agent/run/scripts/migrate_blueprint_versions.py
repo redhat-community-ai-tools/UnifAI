@@ -68,29 +68,130 @@ def _batch(iterable: Iterator[Any], size: int) -> Iterator[list[Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Core migration function
+# ---------------------------------------------------------------------------
+
+
+def _migrate(
+    blueprints_col: Collection,
+    versions_col: Collection,
+    batch_size: int = 100,
+    dry_run: bool = False,
+) -> int:
+    """
+    Run both migration steps and return the total error count (0 = clean).
+
+    Steps
+    -----
+    1. Set ``version = 1`` on every blueprint document that lacks a
+       ``version`` field.
+    2. For each blueprint that does NOT already have a v1 snapshot in
+       ``blueprint_versions``, insert one via upsert.
+
+    Parameters
+    ----------
+    blueprints_col:
+        PyMongo collection for ``blueprints``.
+    versions_col:
+        PyMongo collection for ``blueprint_versions``.
+    batch_size:
+        Controls both the cursor ``batch_size`` and the bulk-write batch
+        chunking.
+    dry_run:
+        When ``True``, no writes are performed.
+
+    Returns
+    -------
+    int
+        Total number of write errors encountered (0 = success).
+    """
+    total_errors = 0
+
+    # Read all blueprints.
+    all_docs: list[dict[str, Any]] = list(
+        blueprints_col.find({}).batch_size(batch_size)
+    )
+
+    if dry_run:
+        return 0
+
+    # ── Step 1: backfill version=1 on docs without a ``version`` key ──
+    step1_ops: list[UpdateOne] = []
+    for doc in all_docs:
+        if "version" not in doc:
+            step1_ops.append(
+                UpdateOne(
+                    {"blueprint_id": doc["blueprint_id"]},
+                    {"$set": {"version": 1}},
+                )
+            )
+
+    if step1_ops:
+        blueprints_col.bulk_write(step1_ops)
+
+    # ── Step 2: insert initial v1 snapshots ──
+    existing_v1 = {
+        d["blueprint_id"]
+        for d in versions_col.find({"version": 1}, {"blueprint_id": 1})
+    }
+
+    step2_ops: list[UpdateOne] = []
+    for doc in all_docs:
+        bp_id = doc["blueprint_id"]
+        if bp_id in existing_v1:
+            continue
+        step2_ops.append(
+            UpdateOne(
+                {"blueprint_id": bp_id, "version": 1},
+                {
+                    "$setOnInsert": {
+                        "blueprint_id": bp_id,
+                        "version": 1,
+                        "spec_dict_snapshot": doc.get("spec_dict", {}),
+                        "created_by": _MIGRATION_USER,
+                        "created_at": doc.get(
+                            "created_at", datetime.now(timezone.utc)
+                        ),
+                        "change_summary": _CHANGE_SUMMARY,
+                    }
+                },
+                upsert=True,
+            )
+        )
+
+    for batch_ops in _batch(iter(step2_ops), batch_size):
+        try:
+            versions_col.bulk_write(batch_ops)
+        except BulkWriteError as exc:
+            total_errors += len(exc.details.get("writeErrors", []))
+
+    return total_errors
+
+
+# ---------------------------------------------------------------------------
 # Step 1: backfill ``version`` field on blueprints
 # ---------------------------------------------------------------------------
 
 
 def step1_backfill_version_field(
     bp_col: Collection,
-    batch_size: int = 100,
     dry_run: bool = False,
 ) -> int:
     """
     Set ``version = 1`` on all blueprints that do not yet have the field.
 
+    Uses a single ``update_many`` call — no batching required because the
+    operation executes server-side in a single pass.
+
     Returns the number of documents modified.
     """
     filter_missing = {"version": {"$exists": False}}
-    total_modified = 0
 
     if dry_run:
         count = bp_col.count_documents(filter_missing)
         print(f"[DRY-RUN] Step 1: would backfill version=1 on {count} blueprints.")
         return count
 
-    # Use a single bulk-write with UpdateMany for efficiency.
     result = bp_col.update_many(
         filter_missing,
         {"$set": {"version": 1}},
@@ -155,9 +256,9 @@ def step2_insert_initial_snapshots(
                         "blueprint_id": blueprint_id,
                         "version": 1,
                         "spec_dict_snapshot": spec_dict,
-                        "created_by": "migration/GENIE-1336",
+                        "created_by": _MIGRATION_USER,
                         "created_at": created_at,
-                        "change_summary": "Initial snapshot created by GENIE-1336 migration",
+                        "change_summary": _CHANGE_SUMMARY,
                     }
                 },
                 upsert=True,
@@ -269,7 +370,6 @@ def main() -> int:
         # Step 1: backfill version field on blueprints collection.
         step1_backfill_version_field(
             bp_col=bp_col,
-            batch_size=args.batch_size,
             dry_run=args.dry_run,
         )
 
