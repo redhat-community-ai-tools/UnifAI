@@ -3,7 +3,7 @@ from copy import deepcopy
 from mas.graph.state.state_view import StateView
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.elements.tools.common.base_tool import BaseTool
-from mas.elements.tools.common.context_binder import bind_tool_context
+from mas.elements.tools.common.context_binder import bind_tool_context, close_tools
 from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.llm_capable import LlmCapableMixin
@@ -90,7 +90,10 @@ class CustomAgentNode(
             agent_id=self.uid,
         )
         self.tools = self._get_all_tools()
-        self.process_packets(state)
+        try:
+            self.process_packets(state)
+        finally:
+            close_tools(self._domain_tools)
         return state
 
     # ========== BUILTIN TOOLS (SOLID) ==========

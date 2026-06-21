@@ -29,7 +29,7 @@ from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapa
 from mas.elements.nodes.common.workload import Task, AgentResult
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.claude_sdk_converter import ClaudeSDKConverter
-from mas.elements.tools.common.context_binder import bind_tool_context
+from mas.elements.tools.common.context_binder import bind_tool_context, close_tools
 
 
 class ClaudeAgentNode(
@@ -117,7 +117,10 @@ class ClaudeAgentNode(
 
     def run(self, state: StateView) -> StateView:
         """Main entry point - process all incoming TaskPackets."""
-        self.process_packets(state)
+        try:
+            self.process_packets(state)
+        finally:
+            close_tools(self._domain_tools)
         return state
 
     # ========== TASK PROCESSING ==========

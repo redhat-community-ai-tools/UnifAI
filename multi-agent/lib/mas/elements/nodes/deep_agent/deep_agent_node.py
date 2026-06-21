@@ -38,7 +38,7 @@ from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapa
 from mas.elements.nodes.common.workload import AgentResult, Task
 from mas.elements.providers.mcp_server_client.mcp_provider import McpProvider
 from mas.elements.tools.common.base_tool import BaseTool
-from mas.elements.tools.common.context_binder import bind_tool_context
+from mas.elements.tools.common.context_binder import bind_tool_context, close_tools
 from mas.elements.tools.common.converter import LangChainToolsConverter
 
 logger = logging.getLogger(__name__)
@@ -132,7 +132,10 @@ class DeepAgentNode(
     def run(self, state: Any) -> Any:
         """Main entry point — build the Deep Agent (if needed), then process packets."""
         self._ensure_compiled()
-        self.process_packets(state)
+        try:
+            self.process_packets(state)
+        finally:
+            close_tools(self._domain_tools)
         return state
 
     def _ensure_compiled(self) -> None:

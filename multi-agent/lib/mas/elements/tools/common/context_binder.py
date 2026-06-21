@@ -4,6 +4,9 @@ Agent nodes call ``bind_tool_context`` at execution time to inject
 ``session_id`` and ``agent_id`` into tools that need deterministic
 naming — e.g. ``SandboxExecTool`` for sandbox lifecycle on a shared
 gateway.
+
+Agent nodes call ``close_tools`` at the end of execution to release
+resources (gRPC channels, sandbox containers when keep_sandbox=False).
 """
 
 import logging
@@ -32,6 +35,28 @@ def bind_tool_context(
             except Exception:
                 logger.warning(
                     "Failed to bind context to tool %s",
+                    getattr(tool, "name", "unknown"),
+                    exc_info=True,
+                )
+
+
+def close_tools(tools: List[BaseTool]) -> None:
+    """Release resources held by tools that expose ``close()``.
+
+    Called at the end of node execution. For tools like
+    ``SandboxExecTool``, this deletes the sandbox container
+    (when keep_sandbox=False) and closes gRPC channels.
+
+    Failures are logged but never propagated — cleanup errors
+    must not mask the agent's actual execution result.
+    """
+    for tool in tools:
+        if hasattr(tool, "close") and callable(getattr(tool, "close")):
+            try:
+                tool.close()
+            except Exception:
+                logger.warning(
+                    "Failed to close tool %s",
                     getattr(tool, "name", "unknown"),
                     exc_info=True,
                 )
