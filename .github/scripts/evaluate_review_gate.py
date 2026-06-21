@@ -68,7 +68,9 @@ def parse_arch_verdict(path: Path) -> tuple[str, str]:
     if pv_matches:
         token = pv_matches[-1]
         verdict_map = {"APPROVE": "APPROVE", "NEEDS_REVISION": "NEEDS REVISION", "REJECT": "REJECT"}
-        return verdict_map.get(token, token), "ok"
+        if token not in verdict_map:
+            return "UNKNOWN", f"unexpected_arch_verdict_{token.lower()}"
+        return verdict_map[token], "ok"
 
     matches = ARCH_VERDICT_RE.findall(clean)
     if not matches:
