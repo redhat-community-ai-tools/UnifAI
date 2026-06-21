@@ -1,7 +1,7 @@
 local_auth: true   # Set false to use real Keycloak SSO
 
 python:
-  min: "3.13"
+  min: "3.11"
   max: "3.13"
 
 node:
