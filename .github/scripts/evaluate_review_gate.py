@@ -40,9 +40,9 @@ def parse_code_score(path: Path) -> tuple[int, str]:
             source = "ok" if i == 0 else f"ok_fallback_{i}"
             return int(matches[-1]), source
 
-    pv_match = PIPELINE_VERDICT_RE.search(clean)
-    if pv_match:
-        token = pv_match.group(1)
+    pv_matches = PIPELINE_VERDICT_RE.findall(clean)
+    if pv_matches:
+        token = pv_matches[-1]
         if token == "CLEAN":
             return 8, "ok_pipeline_verdict"
         elif token == "NEEDS_REFACTORING":
@@ -64,17 +64,17 @@ def parse_arch_verdict(path: Path) -> tuple[str, str]:
 
     clean = strip_markdown(strip_ansi(content))
 
-    pv_match = PIPELINE_VERDICT_RE.search(clean)
-    if pv_match:
-        token = pv_match.group(1)
+    pv_matches = PIPELINE_VERDICT_RE.findall(clean)
+    if pv_matches:
+        token = pv_matches[-1]
         verdict_map = {"APPROVE": "APPROVE", "NEEDS_REVISION": "NEEDS REVISION", "REJECT": "REJECT"}
         return verdict_map.get(token, token), "ok"
 
-    match = ARCH_VERDICT_RE.search(clean)
-    if not match:
+    matches = ARCH_VERDICT_RE.findall(clean)
+    if not matches:
         return "UNKNOWN", "pattern_not_found"
 
-    return match.group(1), "ok"
+    return matches[-1], "ok"
 
 
 def parse_exit_status(path: Path) -> tuple[str, str]:
