@@ -161,7 +161,7 @@ After all phases complete (or the single phase finishes), you MUST produce a sum
 <Jira ticket, free-text prompt, or file provided>
 
 ### Code Health Score: X/10
-(code-review-only and arch-review modes only — copy from the phase output)
+(code-review-only mode only — copy from the phase output)
 
 ### Verdict
 <final verdict or "Design produced" for design-only>
@@ -173,7 +173,7 @@ After all phases complete (or the single phase finishes), you MUST produce a sum
 <list, or "None — single pass">
 ```
 
-The summary MUST appear as the FINAL output after the state tracker. Do NOT consider the pipeline done until this summary is emitted. After emitting the summary, set `EXIT_STATUS: SUCCESS` in the final state tracker.
+To close the pipeline: first update the state tracker with `EXIT_STATUS: SUCCESS`, then emit the summary block as the absolute FINAL output. Do NOT consider the pipeline done until both are emitted in this order.
 
 ## Orchestrator Rules
 

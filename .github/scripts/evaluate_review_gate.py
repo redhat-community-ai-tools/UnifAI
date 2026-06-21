@@ -86,11 +86,11 @@ def parse_exit_status(path: Path) -> tuple[str, str]:
         return "UNKNOWN", "file_empty"
 
     clean = strip_markdown(strip_ansi(content))
-    match = EXIT_STATUS_RE.search(clean)
-    if not match:
+    matches = EXIT_STATUS_RE.findall(clean)
+    if not matches:
         return "UNKNOWN", "pattern_not_found"
 
-    return match.group(1), "ok"
+    return matches[-1], "ok"
 
 
 def main() -> int:

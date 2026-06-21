@@ -44,9 +44,8 @@ Match each scoped file against this table (longest prefix first):
 | `ui/client/src/` | `ui` | `.cursor/skills/codebase/domains/ui/SKILL.md` |
 | `global_utils/` | `global-utils` | `.cursor/skills/codebase/domains/global-utils/SKILL.md` |
 | `backend/` | `backend` | `.cursor/skills/codebase/domains/backend/SKILL.md` |
-| `temporal-worker/` | `temporal-worker` | `.cursor/skills/codebase/domains/temporal-worker/SKILL.md` |
 
-Files not matching any prefix (`.github/`, `docs/`, `helm/`) have no domain — skip them.
+Files not matching any prefix (e.g. `.github/`, `docs/`, `helm/`, `local-development/`, `ci/`, `cli/`, `mcp_servers/`, `scripts/`, `tests/`) have no domain — skip domain resolution for them but still include them in the review scope (they are reviewed without domain-specific context).
 
 ### Step 3: Scope Expansion (Python files)
 
