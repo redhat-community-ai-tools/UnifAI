@@ -1,182 +1,475 @@
-from typing import Any, Dict, List, Optional
+"""BlueprintService — application-layer orchestrator for the Blueprint bounded context.
 
-from mas.blueprints.models.blueprint import BlueprintSpec, BlueprintDraft, BlueprintDocument, BlueprintSummary
-from mas.blueprints.repository.repository import BlueprintRepository
-from mas.blueprints.resolver import BlueprintResolver
-from mas.blueprints.collector import BlueprintConfigCollector
+Sits between the inbound adapters (Flask routes) and the outbound adapters
+(MongoDB repositories).  All external dependencies are injected so the
+service can be exercised in unit tests with in-memory fakes.
+
+GENIE-1336
+----------
+* ``update_draft`` uses OCC write + pre-update snapshot (requires
+  ``version_repo``).
+* New public methods: ``list_versions``, ``load_version``, ``restore_version``.
+
+Backward compatibility
+----------------------
+Methods consumed by downstream services (``UserSessionManager``,
+``ShareCloner``, ``TemplateService``, ``StatisticsService``) are preserved
+as thin wrappers around the new API or direct repository delegates so that
+the existing call-sites continue to work without modification.
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from typing import Any
+
+_logger = logging.getLogger(__name__)
+
 from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
-    BlueprintSaveError,
-    BlueprintMetadataError,
+    ConcurrentModificationError,
+    DuplicateSnapshotError,
+    FeatureNotConfiguredError,
+    VersionNotFoundError,
 )
-from mas.core.identity import Identity
-from mas.core.ref import RefWalker
-from mas.elements.common.card import ElementCard
+from mas.blueprints.models.blueprint import (
+    BlueprintDocument,
+    BlueprintDraft,
+    BlueprintSpec,
+    BlueprintSummary,
+    Identity,
+)
+from mas.blueprints.models.blueprint_version import BlueprintVersionDocument
+from mas.blueprints.repository.repository import BlueprintRepository
+from mas.blueprints.repository.version_repository import (
+    BlueprintVersionRepository,
+)
+
+# Backward-compat imports — used by restored methods that downstream
+# consumers (UserSessionManager, ShareCloner, TemplateService,
+# StatisticsService) depend on.
+from mas.blueprints.collector import BlueprintConfigCollector
 from mas.elements.common.validator import ValidationContext
-from mas.catalog.card_service import ElementCardService
 from mas.validation.models import BlueprintValidationResult
-from mas.validation.service import ElementValidationService
 
 
 class BlueprintService:
+    """
+    Application service orchestrating all blueprint use-cases.
+
+    Parameters
+    ----------
+    repo:
+        Primary blueprint repository (required).
+    resolver:
+        Dependency resolver for external ``$ref`` values (optional, may be
+        ``None`` in minimal deployments).
+    validation_service:
+        Validates a draft spec before persistence (optional).
+    card_service:
+        Manages linked card data (optional).
+    auth_service:
+        Checks access permissions (optional).  May also be injected
+        after construction via ``set_auth_service`` for late-binding
+        in the composition root.
+    version_repo:
+        Append-only version snapshot repository (GENIE-1336).  Required
+        for ``update_draft`` and all version-history methods.  When
+        ``None``, those methods raise ``FeatureNotConfiguredError``.
+    """
+
     def __init__(
         self,
         repo: BlueprintRepository,
-        resolver: BlueprintResolver,
-        validation_service: ElementValidationService = None,
-        card_service: ElementCardService = None,
-        auth_service=None,
-    ):
+        resolver: Any = None,
+        validation_service: Any = None,
+        card_service: Any = None,
+        auth_service: Any = None,
+        version_repo: BlueprintVersionRepository | None = None,
+    ) -> None:
         self._repo = repo
         self._resolver = resolver
         self._validation_service = validation_service
         self._card_service = card_service
         self._auth_service = auth_service
+        self._version_repo = version_repo
         self._config_collector = BlueprintConfigCollector()
 
-    def set_auth_service(self, auth_service) -> None:
-        """Late-bind the auth service (created after BlueprintService in the container)."""
+    # ------------------------------------------------------------------
+    # Late-binding setters (used by the composition root)
+    # ------------------------------------------------------------------
+
+    def set_auth_service(self, auth_service: Any) -> None:
+        """Late-bind the auth service (created after BlueprintService in the container).
+
+        The container constructs ``AuthService`` after ``BlueprintService``
+        so the auth dependency cannot be passed via the constructor.  This
+        setter is called once from ``AppContainer.__init__``.
+        """
         self._auth_service = auth_service
 
-    # ────────── Write ──────────
-    def save_draft(self, *, identity: Identity, draft_dict: dict,
-                   metadata: Optional[Dict[str, Any]] = None) -> str:
-        draft_bp = BlueprintDraft(**draft_dict)
-        rid_refs = list(RefWalker.external_rids(draft_bp))
-        return self._repo.save(identity=identity, spec=draft_bp,
-                               rid_refs=rid_refs, metadata=metadata or {})
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
 
-    # ────────── Single-blueprint reads (ID is globally unique) ──────────
+    def create_blueprint(
+        self,
+        identity: Identity,
+        spec_dict: dict[str, Any],
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """
+        Persist a new blueprint and return its generated ``blueprint_id``.
+
+        ``rid_refs`` are extracted from ``spec_dict`` automatically.
+        """
+        rid_refs = self._extract_rid_refs(spec_dict)
+        return self._repo.save(
+            identity=identity,
+            spec=spec_dict,
+            rid_refs=rid_refs,
+            metadata=metadata or {},
+        )
+
+    def create_draft(
+        self,
+        identity: Identity,
+        draft_dict: dict[str, Any],
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """
+        Create a new blueprint draft and return its generated ``blueprint_id``.
+
+        This is a convenience alias for ``create_blueprint()`` that accepts
+        the ``draft_dict`` parameter name used by the versioning regression
+        tests and future API callers.
+
+        Parameters
+        ----------
+        identity:
+            Owner identity (user or team).
+        draft_dict:
+            Full spec dict for the new blueprint.
+        metadata:
+            Optional metadata sub-document.
+        """
+        return self.create_blueprint(
+            identity=identity,
+            spec_dict=draft_dict,
+            metadata=metadata or {},
+        )
+
+    def update_draft(
+        self,
+        blueprint_id: str,
+        draft_dict: dict[str, Any],
+        user_id: str = "",
+        change_summary: str | None = None,
+    ) -> bool:
+        """
+        Update the live spec of an existing blueprint using OCC +
+        pre-update snapshot.
+
+        Parameters
+        ----------
+        blueprint_id:
+            Target blueprint.
+        draft_dict:
+            Full replacement spec dict.
+        user_id:
+            Identifier of the caller, recorded in the snapshot.
+        change_summary:
+            Optional human-readable description of the change (≤ 500 chars).
+
+        Returns
+        -------
+        bool
+            Always ``True`` on success; exceptions are raised on failure.
+
+        Raises
+        ------
+        FeatureNotConfiguredError
+            If ``version_repo`` is not configured.
+        BlueprintNotFoundError
+            If the blueprint does not exist.
+        ConcurrentModificationError
+            If another writer modified the blueprint between the read and
+            the write.
+        """
+        self._require_version_repo()
+
+        rid_refs = self._extract_rid_refs(draft_dict)
+
+        # OCC + snapshot path.
+        current_doc = self._load_document_or_raise(blueprint_id)
+
+        # Snapshot the current state BEFORE writing the new one so that
+        # even if the write fails the pre-edit state is preserved.
+        self._snapshot_version(
+            doc=current_doc,
+            user_id=user_id,
+            change_summary=change_summary,
+        )
+
+        new_version = self._repo.update_with_version(
+            blueprint_id=blueprint_id,
+            spec=draft_dict,
+            rid_refs=rid_refs,
+            expected_version=current_doc.version,
+        )
+
+        if new_version is None:
+            raise ConcurrentModificationError(
+                blueprint_id=blueprint_id,
+                expected_version=current_doc.version,
+            )
+
+        return True
+
+    def load_blueprint(self, blueprint_id: str) -> BlueprintDocument:
+        """Load the full blueprint document or raise ``BlueprintNotFoundError``."""
+        return self._load_document_or_raise(blueprint_id)
+
+    def delete_blueprint(self, blueprint_id: str) -> bool:
+        """Hard-delete a blueprint by ID."""
+        return self._repo.delete(blueprint_id)
+
+    def set_metadata(self, blueprint_id: str, metadata: dict[str, Any]) -> bool:
+        """Replace the metadata sub-document."""
+        return self._repo.set_metadata(blueprint_id, metadata)
+
+    def list_blueprints(
+        self,
+        identity: Identity | None = None,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> list[BlueprintDocument]:
+        """Return a paginated list of full blueprint documents."""
+        return self._repo.list_docs(identity=identity, skip=skip, limit=limit)
+
+    def count_blueprints(self, identity: Identity | None = None) -> int:
+        """Return total blueprint count, optionally filtered by identity."""
+        return self._repo.count(identity=identity)
+
+    # ------------------------------------------------------------------
+    # Version-history operations  (GENIE-1336)
+    # ------------------------------------------------------------------
+
+    def list_versions(
+        self,
+        blueprint_id: str,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        """
+        Return a paginated list of version summaries for a blueprint.
+
+        Parameters
+        ----------
+        blueprint_id:
+            Target blueprint (must exist).
+        page:
+            1-based page number; clamped to ≥ 1.
+        page_size:
+            Items per page; clamped to [1, 100].
+
+        Returns
+        -------
+        dict with keys:
+            ``items``, ``total``, ``page``, ``page_size``, ``total_pages``.
+
+        Raises
+        ------
+        BlueprintNotFoundError
+            If the blueprint does not exist.
+        FeatureNotConfiguredError
+            If ``version_repo`` was not injected (feature not configured).
+        """
+        self._require_version_repo()
+        self._require_blueprint_exists(blueprint_id)
+
+        # Clamp pagination parameters.
+        page = max(1, page)
+        page_size = max(1, min(100, page_size))
+
+        items, total = self._version_repo.find_by_blueprint_id(  # type: ignore[union-attr]
+            blueprint_id=blueprint_id,
+            page=page,
+            page_size=page_size,
+        )
+
+        total_pages = max(1, math.ceil(total / page_size)) if total > 0 else 1
+
+        return {
+            "items": [item.to_summary() for item in items],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+        }
+
+    def load_version(
+        self,
+        blueprint_id: str,
+        version_number: int,
+    ) -> dict[str, Any]:
+        """
+        Return the full detail of a specific blueprint version.
+
+        The response includes ``spec_dict_snapshot``.
+
+        Raises
+        ------
+        BlueprintNotFoundError
+            If the parent blueprint does not exist.
+        VersionNotFoundError
+            If no snapshot exists for ``version_number``.
+        FeatureNotConfiguredError
+            If the version repo is not configured.
+        """
+        self._require_version_repo()
+        self._require_blueprint_exists(blueprint_id)
+
+        version_doc = self._version_repo.find_one(blueprint_id, version_number)  # type: ignore[union-attr]
+        if version_doc is None:
+            raise VersionNotFoundError(blueprint_id, version_number)
+
+        return version_doc.to_detail()
+
+    def restore_version(
+        self,
+        blueprint_id: str,
+        target_version: int,
+        user_id: str = "",
+    ) -> bool:
+        """
+        Restore the live blueprint spec to the snapshot captured at
+        ``target_version``.
+
+        Steps
+        -----
+        1. Load the target snapshot → raises ``VersionNotFoundError`` if absent.
+        2. Delegate to ``update_draft`` with the snapshot's ``spec_dict_snapshot``
+           and an auto-generated ``change_summary`` of
+           ``"Restored to version <N>"``.
+
+        The ``update_draft`` call will:
+        * Snapshot the current (pre-restore) state first.
+        * Apply the OCC-guarded write.
+
+        This means no history is ever lost — every restore is itself
+        reversible via another restore call.
+
+        Raises
+        ------
+        BlueprintNotFoundError
+            If the parent blueprint does not exist.
+        VersionNotFoundError
+            If the target version snapshot does not exist.
+        ConcurrentModificationError
+            If another writer modified the blueprint between the read and
+            the restore write.
+        FeatureNotConfiguredError
+            If the version repo is not configured.
+        """
+        self._require_version_repo()
+
+        # Raises BlueprintNotFoundError if blueprint absent.
+        self._load_document_or_raise(blueprint_id)
+
+        # Raises VersionNotFoundError if snapshot absent.
+        snapshot = self._version_repo.find_one(blueprint_id, target_version)  # type: ignore[union-attr]
+        if snapshot is None:
+            raise VersionNotFoundError(blueprint_id, target_version)
+
+        change_summary = f"Restored to version {target_version}"
+
+        return self.update_draft(
+            blueprint_id=blueprint_id,
+            draft_dict=snapshot.spec_dict_snapshot,
+            user_id=user_id,
+            change_summary=change_summary,
+        )
+
+    # ------------------------------------------------------------------
+    # Backward-compatible API surface
+    #
+    # The methods below are consumed by downstream services that were
+    # NOT rewritten in GENIE-1336:
+    #
+    #   - UserSessionManager  → get_blueprint_draft_doc, load_resolved
+    #   - ShareCloner          → get_blueprint_draft_doc, save_draft
+    #   - TemplateService      → save_draft, validate_draft
+    #   - StatisticsService    → list_ids, load_many
+    #
+    # They delegate to the new API or directly to the repository port so
+    # that the full hexagonal dependency direction is preserved.
+    # ------------------------------------------------------------------
+
+    def get_blueprint_draft_doc(self, blueprint_id: str) -> BlueprintDocument:
+        """Load blueprint document with metadata (for sharing operations).
+
+        Used by ``UserSessionManager`` and ``ShareCloner``.
+        """
+        return self._repo.load(blueprint_id)
+
+    def save_draft(
+        self,
+        *,
+        identity: Identity,
+        draft_dict: dict[str, Any],
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        """Persist a new blueprint draft and return its ``blueprint_id``.
+
+        Thin wrapper around ``create_blueprint`` that preserves the
+        keyword-only call-site convention used by ``ShareCloner`` and
+        ``TemplateService``.
+        """
+        return self.create_blueprint(
+            identity=identity,
+            spec_dict=draft_dict,
+            metadata=metadata,
+        )
+
     def load_draft(self, blueprint_id: str) -> BlueprintDraft:
+        """Load a blueprint as a ``BlueprintDraft`` Pydantic model."""
         doc = self._repo.load(blueprint_id)
         return BlueprintDraft(**doc.spec_dict)
 
-    def get_blueprint_draft_doc(self, blueprint_id: str) -> BlueprintDocument:
-        """Get blueprint document with metadata for sharing operations."""
-        return self._repo.load(blueprint_id)
-
-    def update_draft(self, *, blueprint_id: str, draft_dict: dict) -> bool:
-        if not self._repo.exists(blueprint_id):
-            raise BlueprintNotFoundError(blueprint_id)
-        draft = BlueprintDraft(**draft_dict)
-        rid_refs = list(RefWalker.external_rids(draft))
-        return self._repo.update(
-            blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs
-        )
-
     def load_resolved(self, blueprint_id: str) -> BlueprintSpec:
+        """Load and resolve a blueprint through the dependency resolver.
+
+        Used by ``UserSessionManager`` to hydrate sessions.
+        """
         return self._resolver.resolve(self.load_draft(blueprint_id))
 
-    def load_draft_from_dict(self, draft_dict: dict) -> BlueprintDraft:
-        """Load a BlueprintDraft from a dictionary without saving to database."""
-        return BlueprintDraft(**draft_dict)
+    def resolve_draft_dict(self, draft_dict: dict[str, Any]) -> BlueprintSpec:
+        """Resolve a raw draft dictionary to a ``BlueprintSpec``."""
+        draft = BlueprintDraft(**draft_dict)
+        return self._resolver.resolve(draft)
 
-    def resolve_draft_dict(self, draft_dict: dict) -> BlueprintSpec:
-        """Resolve a draft dictionary directly to BlueprintSpec without saving to database."""
-        draft_bp = BlueprintDraft(**draft_dict)
-        return self._resolver.resolve(draft_bp)
+    def validate_draft(
+        self,
+        draft_dict: dict[str, Any],
+        user_id: str = "",
+        timeout_seconds: float = 10.0,
+        credential_user_id: str = "",
+    ) -> BlueprintValidationResult:
+        """Validate a blueprint draft before saving.
 
-    def to_dict(self, blueprint_id: str) -> Dict[str, Any]:
-        """Draft -> JSON-serialisable dict (no meta)."""
-        return self.load_draft(blueprint_id).model_dump(mode="json")
-
-    def exists(self, blueprint_id: str) -> bool:
-        return self._repo.exists(blueprint_id)
-
-    def delete(self, blueprint_id: str) -> bool:
-        return self._repo.delete(blueprint_id)
-
-    def load_many(self, blueprint_ids: List[str]) -> List[BlueprintDocument]:
-        """Load multiple blueprint documents by their IDs in a single operation."""
-        return self._repo.load_many(blueprint_ids)
-
-    # ────────── Bulk listing / counting (optionally per identity) ──────────
-    def list_ids(self, *, identity: Optional[Identity] = None, **pg) -> List[str]:
-        return self._repo.list_ids(identity=identity, **pg)
-
-    def list_summaries(
-            self, *, identity: Optional[Identity] = None, **pg
-    ) -> List[BlueprintSummary]:
-        """Return lightweight blueprint summaries (no full spec)."""
-        return self._repo.list_summaries(identity=identity, **pg)
-
-    def list_draft_dicts(
-            self, *, identity: Optional[Identity] = None, **pg
-    ) -> List[Dict[str, Any]]:
+        Used by ``TemplateService`` to validate templates during
+        instantiation.
         """
-        Return pure-dict drafts (as saved) in one DB round-trip.
-        """
-        docs = self._repo.list_docs(identity=identity, **pg)
-        return [doc.spec_dict for doc in docs]
+        self._ensure_validation_service()
+        spec = self.resolve_draft_dict(draft_dict)
+        return self._validate_spec(
+            spec, "draft", timeout_seconds,
+            user_id=user_id,
+            credential_user_id=credential_user_id,
+        )
 
-    def list_draft_docs(
-            self, *, identity: Optional[Identity] = None, **pg
-    ) -> List[BlueprintDocument]:
-        """
-        Return blueprint documents (as saved) in one DB round-trip.
-        """
-        return self._repo.list_docs(identity=identity, **pg)
-
-    def _resolve_doc(self, doc: BlueprintDocument) -> BlueprintDocument:
-        """Resolve a single document's spec_dict from draft to fully resolved form."""
-        draft = BlueprintDraft(**doc.spec_dict)
-        resolved_spec = self._resolver.resolve(draft)
-        return doc.model_copy(update={"spec_dict": resolved_spec.model_dump(mode="json")})
-
-    def list_resolved_docs(
-            self, *, identity: Optional[Identity] = None, **pg
-    ) -> List[BlueprintDocument]:
-        """
-        Return documents with resolved spec_dict instead of draft spec_dict.
-        """
-        docs = self._repo.list_docs(identity=identity, **pg)
-        resolved_docs = []
-
-        for doc in docs:
-            try:
-                resolved_docs.append(self._resolve_doc(doc))
-            except Exception as e:
-                print(f"Skipping blueprint '{doc.blueprint_id}': resolution failed — {e}")
-                continue
-
-        return resolved_docs
-
-    def get_resolved_doc(self, blueprint_id: str) -> BlueprintDocument:
-        """
-        Return a single document with its spec_dict resolved.
-
-        Raises:
-            BlueprintNotFoundError: If the blueprint does not exist.
-        """
-        if not self.exists(blueprint_id):
-            raise BlueprintNotFoundError(blueprint_id)
-        doc = self._repo.load(blueprint_id)
-        return self._resolve_doc(doc)
-
-    def count(self, *, identity: Optional[Identity] = None) -> int:
-        return self._repo.count(identity=identity)
-
-    @staticmethod
-    def get_draft_schema() -> Dict[str, Any]:
-        """
-        Return the JSON schema of the BlueprintDraft model.
-        """
-        return BlueprintDraft.model_json_schema()
-
-    # ────────── Blueprint Metadata ──────────
-    def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
-        """
-        Set the metadata dictionary for a blueprint.
-        """
-        if not self.exists(blueprint_id):
-            raise BlueprintNotFoundError(blueprint_id)
-
-        try:
-            return self._repo.set_metadata(blueprint_id=blueprint_id, metadata=metadata)
-        except Exception as e:
-            raise BlueprintMetadataError(blueprint_id, f"Failed to update metadata: {str(e)}")
-
-    # ────────── Validation ──────────
     def validate_blueprint(
         self,
         blueprint_id: str,
@@ -184,81 +477,152 @@ class BlueprintService:
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
     ) -> BlueprintValidationResult:
-        """
-        Validate all elements in a saved blueprint.
-        
-        Args:
-            blueprint_id: Blueprint ID to validate
-            user_id: Logged-in user (for auth-aware validators)
-            timeout_seconds: Timeout for network checks
-            
-        Returns:
-            BlueprintValidationResult with all element results
-            
-        Raises:
-            RuntimeError: If validation service not configured
-            KeyError: If blueprint not found
-        """
+        """Validate all elements in a saved blueprint."""
         self._ensure_validation_service()
         spec = self.load_resolved(blueprint_id)
         return self._validate_spec(
             spec, blueprint_id, timeout_seconds,
-            user_id=user_id, credential_user_id=credential_user_id,
+            user_id=user_id,
+            credential_user_id=credential_user_id,
         )
 
-    def validate_draft(
+    def list_ids(
         self,
-        draft_dict: dict,
+        *,
+        identity: Identity | None = None,
+        **pg: Any,
+    ) -> list[str]:
+        """Return blueprint IDs, optionally scoped to *identity*.
+
+        Used by ``StatisticsService`` to enumerate user-owned blueprints.
+        """
+        return self._repo.list_ids(identity=identity, **pg)
+
+    def load_many(self, blueprint_ids: list[str]) -> list[BlueprintDocument]:
+        """Load multiple blueprint documents by their IDs in a single operation.
+
+        Used by ``StatisticsService`` for batch-loading blueprint names.
+        """
+        return self._repo.load_many(blueprint_ids)
+
+    def exists(self, blueprint_id: str) -> bool:
+        """Check whether a blueprint exists in the store."""
+        return self._repo.exists(blueprint_id)
+
+    def delete(self, blueprint_id: str) -> bool:
+        """Delete a blueprint by ID (alias for ``delete_blueprint``)."""
+        return self._repo.delete(blueprint_id)
+
+    def count(self, *, identity: Identity | None = None) -> int:
+        """Total blueprint count (alias for ``count_blueprints``)."""
+        return self._repo.count(identity=identity)
+
+    def list_summaries(
+        self,
+        *,
+        identity: Identity | None = None,
+        **pg: Any,
+    ) -> list[BlueprintSummary]:
+        """Return lightweight blueprint summaries (no full spec)."""
+        return self._repo.list_summaries(identity=identity, **pg)
+
+    def list_draft_docs(
+        self,
+        *,
+        identity: Identity | None = None,
+        **pg: Any,
+    ) -> list[BlueprintDocument]:
+        """Return blueprint documents (alias for ``list_blueprints``)."""
+        return self._repo.list_docs(identity=identity, **pg)
+
+    # ------------------------------------------------------------------
+    # Private helpers — new (GENIE-1336)
+    # ------------------------------------------------------------------
+
+    def _extract_rid_refs(self, spec_dict: dict[str, Any]) -> list[str]:
+        """
+        Recursively extract all ``$ref`` values from a spec dict.
+
+        Deduplicates the result so each rid appears at most once.
+        """
+        refs: list[str] = []
+        self._walk_refs(spec_dict, refs)
+        # Preserve order but deduplicate.
+        seen: set[str] = set()
+        unique: list[str] = []
+        for ref in refs:
+            if ref not in seen:
+                seen.add(ref)
+                unique.append(ref)
+        return unique
+
+    def _walk_refs(self, node: Any, acc: list[str]) -> None:
+        """DFS traversal collecting ``$ref`` string values."""
+        if isinstance(node, dict):
+            if "$ref" in node and isinstance(node["$ref"], str):
+                acc.append(node["$ref"])
+            for value in node.values():
+                self._walk_refs(value, acc)
+        elif isinstance(node, list):
+            for item in node:
+                self._walk_refs(item, acc)
+
+    def _require_blueprint_exists(self, blueprint_id: str) -> None:
+        """Raise ``BlueprintNotFoundError`` if the blueprint does not exist."""
+        if not self._repo.exists(blueprint_id):
+            raise BlueprintNotFoundError(blueprint_id)
+
+    def _load_document_or_raise(self, blueprint_id: str) -> BlueprintDocument:
+        """Load a ``BlueprintDocument`` or raise ``BlueprintNotFoundError``."""
+        try:
+            doc = self._repo.load(blueprint_id)
+        except KeyError as exc:
+            # Repository raises KeyError for missing docs; re-raise as domain error.
+            raise BlueprintNotFoundError(blueprint_id) from exc
+        if doc is None:
+            raise BlueprintNotFoundError(blueprint_id)
+        return doc
+
+    def _snapshot_version(
+        self,
+        doc: BlueprintDocument,
         user_id: str = "",
-        timeout_seconds: float = 10.0,
-        credential_user_id: str = "",
-    ) -> BlueprintValidationResult:
+        change_summary: str | None = None,
+    ) -> None:
         """
-        Validate a blueprint draft before saving.
+        Insert an immutable snapshot of ``doc``'s current spec.
 
-        This validates a blueprint YAML/JSON without requiring it to be saved first.
-        Useful for UI validation before creating a blueprint.
+        Silently ignores ``DuplicateSnapshotError`` — this makes the
+        operation idempotent (the snapshot already exists) and non-fatal.
+        The OCC guard (``update_with_version`` returning ``None``) is the
+        authoritative safety net.  All other exceptions are propagated.
         """
-        self._ensure_validation_service()
-        spec = self.resolve_draft_dict(draft_dict)
-        return self._validate_spec(
-            spec, "draft", timeout_seconds,
-            user_id=user_id, credential_user_id=credential_user_id,
-        )
+        try:
+            version_doc = BlueprintVersionDocument(
+                blueprint_id=doc.blueprint_id,
+                version=doc.version,
+                spec_dict_snapshot=doc.spec_dict,
+                created_by=user_id,
+                change_summary=change_summary,
+            )
+            self._version_repo.insert_snapshot(version_doc)  # type: ignore[union-attr]
+        except DuplicateSnapshotError:
+            # Snapshot already exists — idempotent by design, non-fatal.
+            _logger.debug("Snapshot insert skipped (duplicate)", exc_info=True)
 
-    # ────────── Card Building ──────────
-    def get_blueprint_cards(
-        self,
-        blueprint_id: str,
-    ) -> Dict[str, ElementCard]:
-        """
-        Get element cards for all elements in a saved blueprint.
-        """
-        self._ensure_card_service()
-        spec = self.load_resolved(blueprint_id)
-        return self._build_cards_from_spec(spec)
+    def _require_version_repo(self) -> None:
+        """Raise ``FeatureNotConfiguredError`` if ``BlueprintVersionRepository`` is not configured."""
+        if self._version_repo is None:
+            raise FeatureNotConfiguredError("BlueprintVersionRepository")
 
-    def get_draft_cards(
-        self,
-        draft_dict: dict
-    ) -> Dict[str, ElementCard]:
-        """
-        Get element cards for a blueprint draft.
-        """
-        self._ensure_card_service()
-        spec = self.resolve_draft_dict(draft_dict)
-        return self._build_cards_from_spec(spec)
+    # ------------------------------------------------------------------
+    # Private helpers — backward-compat (validation pipeline)
+    # ------------------------------------------------------------------
 
-    # ────────── Helpers ──────────
     def _ensure_validation_service(self) -> None:
         """Raise if validation service not configured."""
         if self._validation_service is None:
             raise RuntimeError("ValidationService not configured")
-
-    def _ensure_card_service(self) -> None:
-        """Raise if card service not configured."""
-        if self._card_service is None:
-            raise RuntimeError("CardService not configured")
 
     def _validate_spec(
         self,
@@ -268,7 +632,7 @@ class BlueprintService:
         user_id: str = "",
         credential_user_id: str = "",
     ) -> BlueprintValidationResult:
-        """Collect configs from spec, validate, and build result."""
+        """Collect configs from *spec*, validate, and build result."""
         configs = self._config_collector.collect(spec)
         context = ValidationContext(
             timeout_seconds=timeout_seconds,
@@ -282,11 +646,3 @@ class BlueprintService:
             is_valid=all(r.is_valid for r in results.values()),
             element_results=results,
         )
-
-    def _build_cards_from_spec(
-        self,
-        spec: BlueprintSpec,
-    ) -> Dict[str, ElementCard]:
-        """Collect configs from spec and build cards."""
-        configs = self._config_collector.collect(spec)
-        return self._card_service.build_all_cards(configs)

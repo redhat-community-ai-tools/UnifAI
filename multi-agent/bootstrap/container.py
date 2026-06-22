@@ -1,4 +1,4 @@
-"""
+""" 
 Composition root — the outermost ring of the architecture.
 
 This is the single place that knows about BOTH the domain hexagon (mas.*)
@@ -11,6 +11,8 @@ create an AppContainer and pass it — or individual services from it —
 into the layers that need them.
 """
 import logging
+
+import pymongo
 
 from mas.catalog.element_registry import ElementRegistry
 from mas.catalog.service import CatalogService
@@ -51,6 +53,7 @@ from outbound.storage import LocalSessionStorageCleaner
 
 from outbound.mongo import (
     MongoBlueprintRepository,
+    MongoBlueprintVersionRepository,
     MongoSessionRepository,
     MongoResourceRepository,
     MongoShareRepository,
@@ -64,7 +67,7 @@ from outbound.auth.http_oauth_client import HttpxAuthClient
 from mas.core.identity.ports import IdentityProvider
 from global_utils.identity_client import IdentityClient
 from global_utils.utils.singleton import SingletonMeta
-from global_utils.utils.util import get_redis_url
+from global_utils.utils.util import get_mongo_url, get_redis_url
 
 
 logger = logging.getLogger(__name__)
@@ -101,9 +104,18 @@ class AppContainer(metaclass=SingletonMeta):
             element_registry=self.element_registry
         )
 
+        # ── Blueprint repositories ───────────────────────────────────────
+        # GENIE-1336: both blueprint repos share a single MongoDB
+        # connection to avoid redundant client instances.
+        _bp_client = pymongo.MongoClient(get_mongo_url())
+        _bp_db = _bp_client[cfg.mongo_db]
+
         self.blueprint_repo = MongoBlueprintRepository(
-            db_name=cfg.mongo_db,
-            coll_name=cfg.blueprint_coll
+            col=_bp_db[cfg.blueprint_coll]
+        )
+
+        self.blueprint_version_repo = MongoBlueprintVersionRepository(
+            col=_bp_db[cfg.blueprint_versions_coll]
         )
 
         self.resource_repo = MongoResourceRepository(
@@ -135,6 +147,7 @@ class AppContainer(metaclass=SingletonMeta):
             resolver=self.blueprint_resolver,
             validation_service=self.validation_service,
             card_service=self.card_service,
+            version_repo=self.blueprint_version_repo,
         )
 
         # ── Auth layer ────────────────────────────────────────────────

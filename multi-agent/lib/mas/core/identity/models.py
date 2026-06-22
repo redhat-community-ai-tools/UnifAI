@@ -5,6 +5,7 @@ This is the canonical definition of Identity within the MAS domain hexagon.
 It has ZERO external imports — only stdlib + pydantic — ensuring the domain
 never depends on shared infrastructure packages.
 """
+
 from enum import Enum
 
 from pydantic import BaseModel
@@ -22,6 +23,7 @@ class IdentityFieldKey(str, Enum):
     service layer must agree on these keys.  Defining them once here
     prevents silent drift between producers and consumers.
     """
+
     IDENTITY_TYPE = "identity_type"
     IDENTITY_ID = "identity_id"
 
@@ -32,6 +34,9 @@ class Identity(BaseModel):
     Carries enough metadata so that consuming services can display
     the owner without a round-trip to the directory.
     """
+
+    model_config = {"frozen": True}
+
     type: IdentityType
     id: str
     display_name: str = ""
@@ -46,13 +51,15 @@ class Identity(BaseModel):
 
     @classmethod
     def user(cls, user_id: str, display_name: str = "") -> "Identity":
-        return cls(type=IdentityType.USER, id=user_id,
-                   display_name=display_name or user_id)
+        return cls(
+            type=IdentityType.USER, id=user_id, display_name=display_name or user_id
+        )
 
     @classmethod
     def team(cls, team_id: str, display_name: str = "") -> "Identity":
-        return cls(type=IdentityType.TEAM, id=team_id,
-                   display_name=display_name or team_id)
+        return cls(
+            type=IdentityType.TEAM, id=team_id, display_name=display_name or team_id
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -1,43 +1,137 @@
 """
-Custom exceptions for Blueprint operations.
-Provides specific error types for better debugging and error handling.
+Domain exception hierarchy for the Blueprint bounded context.
+
+All exceptions inherit from ``BlueprintError`` so callers can catch either
+a specific subclass or the entire domain-error surface in one clause.
+
+The domain layer is transport-agnostic — it does **not** reference HTTP
+status codes.  Exception-to-HTTP mapping is the responsibility of the
+inbound adapter (see ``adapters.inbound.flask.endpoints.blueprints``).
+
+GENIE-1336: Added ``VersionNotFoundError`` and ``ConcurrentModificationError``.
 """
+
+from __future__ import annotations
 
 
 class BlueprintError(Exception):
-    """Base exception for all blueprint-related errors."""
-    pass
+    """Base class for all blueprint domain exceptions."""
+
+
+# ---------------------------------------------------------------------------
+# Not Found
+# ---------------------------------------------------------------------------
 
 
 class BlueprintNotFoundError(BlueprintError):
-    """Raised when a blueprint cannot be found by ID."""
-    def __init__(self, blueprint_id: str, message: str = None):
+    """Raised when a blueprint cannot be located by its ID."""
+
+    def __init__(self, blueprint_id: str) -> None:
         self.blueprint_id = blueprint_id
-        self.message = message or f"Blueprint '{blueprint_id}' not found"
-        super().__init__(self.message)
-        
+        super().__init__(f"Blueprint not found: {blueprint_id!r}")
+
+
+class VersionNotFoundError(BlueprintError):
+    """Raised when a specific version snapshot does not exist."""
+
+    def __init__(self, blueprint_id: str, version: int) -> None:
+        self.blueprint_id = blueprint_id
+        self.version = version
+        super().__init__(f"Version {version} not found for blueprint {blueprint_id!r}.")
+
+
+# ---------------------------------------------------------------------------
+# Access Denied
+# ---------------------------------------------------------------------------
+
 
 class BlueprintAccessDeniedError(BlueprintError):
-    """Raised when a user doesn't have access to a blueprint."""
-    def __init__(self, blueprint_id: str, user_id: str, message: str = None):
+    """Raised when the caller lacks permission to operate on a blueprint."""
+
+    def __init__(self, blueprint_id: str, reason: str = "") -> None:
         self.blueprint_id = blueprint_id
-        self.user_id = user_id
-        self.message = message or f"User '{user_id}' does not have access to blueprint '{blueprint_id}'"
-        super().__init__(self.message)
+        msg = f"Access denied for blueprint {blueprint_id!r}"
+        if reason:
+            msg += f": {reason}"
+        super().__init__(msg)
+
+
+# ---------------------------------------------------------------------------
+# Conflict
+# ---------------------------------------------------------------------------
+
+
+class ConcurrentModificationError(BlueprintError):
+    """
+    Raised when an OCC write is rejected because the document was modified
+    by another writer between the read and the write.
+
+    The client should re-fetch the latest version and retry.
+    """
+
+    def __init__(self, blueprint_id: str, expected_version: int) -> None:
+        self.blueprint_id = blueprint_id
+        self.expected_version = expected_version
+        super().__init__(
+            f"Concurrent modification conflict for blueprint {blueprint_id!r}: "
+            f"expected version {expected_version} but the document was already "
+            f"updated by another writer. Re-fetch and retry."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Duplicate Snapshot
+# ---------------------------------------------------------------------------
+
+
+class DuplicateSnapshotError(BlueprintError):
+    """
+    Raised when attempting to insert a version snapshot that already exists.
+
+    The ``(blueprint_id, version)`` compound key is unique; this exception
+    is the domain-layer translation of the infrastructure-level
+    ``DuplicateKeyError`` from MongoDB.
+    """
+
+    def __init__(self, blueprint_id: str, version: int) -> None:
+        self.blueprint_id = blueprint_id
+        self.version = version
+        super().__init__(
+            f"Snapshot already exists for blueprint {blueprint_id!r} "
+            f"at version {version}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Internal / Save Errors
+# ---------------------------------------------------------------------------
+
+
+class FeatureNotConfiguredError(BlueprintError):
+    """Raised when a required feature (e.g. version history) is not configured."""
+
+    def __init__(self, feature: str) -> None:
+        self.feature = feature
+        super().__init__(f"Feature not configured: {feature}")
 
 
 class BlueprintSaveError(BlueprintError):
-    """Raised when saving a blueprint fails."""
-    def __init__(self, message: str, cause: Exception = None):
-        self.message = message
-        self.cause = cause
-        super().__init__(self.message)
+    """Raised when the repository fails to persist a blueprint."""
+
+    def __init__(self, blueprint_id: str, cause: str = "") -> None:
+        self.blueprint_id = blueprint_id
+        msg = f"Failed to save blueprint {blueprint_id!r}"
+        if cause:
+            msg += f": {cause}"
+        super().__init__(msg)
 
 
 class BlueprintMetadataError(BlueprintError):
-    """Raised when updating blueprint metadata fails."""
-    def __init__(self, blueprint_id: str, message: str = None):
-        self.blueprint_id = blueprint_id
-        self.message = message or f"Failed to update metadata for blueprint '{blueprint_id}'"
-        super().__init__(self.message)
+    """Raised when blueprint metadata is invalid or cannot be updated."""
 
+    def __init__(self, blueprint_id: str, cause: str = "") -> None:
+        self.blueprint_id = blueprint_id
+        msg = f"Metadata error for blueprint {blueprint_id!r}"
+        if cause:
+            msg += f": {cause}"
+        super().__init__(msg)
