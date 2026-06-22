@@ -7,14 +7,14 @@ import sys
 from pathlib import Path
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-MARKDOWN_BOLD_RE = re.compile(r"\*{1,2}|_{1,2}")
+MARKDOWN_BOLD_RE = re.compile(r"\*{1,2}")
 CODE_SCORE_PATTERNS = [
     re.compile(r"Code\s+Health\s+Score\b[^\d]*(\d{1,2})\s*/\s*10"),
     re.compile(r"score\s+of\s+(\d{1,2})\s*/\s*10", re.IGNORECASE),
     re.compile(r"(?:verdict|review|code)[^\n]{0,40}(\d{1,2})\s*/\s*10", re.IGNORECASE),
 ]
 ARCH_VERDICT_RE = re.compile(r"(APPROVE|NEEDS REVISION|REJECT)")
-PIPELINE_VERDICT_RE = re.compile(r"PIPELINE_VERDICT:\s*(APPROVE|NEEDS_REVISION|REJECT|CLEAN|NEEDS_REFACTORING|MAJOR_CLEANUP)")
+PIPELINE_VERDICT_RE = re.compile(r"PIPELINE_VERDICT:\s*(APPROVE|NEEDS_REVISION|REJECT|CLEAN|NEEDS_REFACTORING|MAJOR_CLEANUP|PASS|FAIL)")
 EXIT_STATUS_RE = re.compile(r"EXIT_STATUS:\s*(SUCCESS|REVISION_LIMIT|USER_INPUT_REQUIRED|ERROR|SKILL_NOT_FOUND)")
 
 
