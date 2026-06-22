@@ -4,6 +4,7 @@ Template Service - Public facade for template operations.
 Single Responsibility: Orchestrate template CRUD, schema generation, and instantiation.
 Dependency Inversion: Depends on abstractions (repository interface, element registry).
 """
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -73,6 +74,19 @@ class TemplateService:
         self._instantiator = TemplateInstantiator()
 
     # ─────────────────────────────────────────────────────────────────────
+    #  Helpers
+    # ─────────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _slug_id(name: str) -> str:
+        """Generate a human-readable template ID from the blueprint name.
+
+        Example: "L1/L2 SRE Auto-Medic" → "l1-l2-sre-auto-medic-a3f7b2c1"
+        """
+        slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+        short = uuid4().hex[:8]
+        return f"{slug}-{short}"
+
+    # ─────────────────────────────────────────────────────────────────────
     #  Template CRUD
     # ─────────────────────────────────────────────────────────────────────
     def create_template(
@@ -92,7 +106,8 @@ class TemplateService:
         Returns:
             Generated template ID
         """
-        template_id = str(uuid4())
+        name = draft.get("name", "")
+        template_id = self._slug_id(name) if name else str(uuid4())
 
         template = Template(
             template_id=template_id,
@@ -136,10 +151,10 @@ class TemplateService:
         Returns True if deleted.
         Raises TemplateNotFoundError if not found.
         """
-        try:
-            return self._repo.delete(template_id)
-        except KeyError:
+        deleted = self._repo.delete(template_id)
+        if not deleted:
             raise TemplateNotFoundError(template_id)
+        return True
 
     def exists(self, template_id: str) -> bool:
         """Check if template exists."""

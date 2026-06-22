@@ -38,7 +38,7 @@ export const getCategoryIcon = (category: string, size: string = "h-6 w-6"): Rea
     workflow: <Zap className={size} />,
   };
 
-  return iconMap[category.toLowerCase()] || <FileText className={size} />;
+  return (category && iconMap[category.toLowerCase()]) || <FileText className={size} />;
 };
 
 /**

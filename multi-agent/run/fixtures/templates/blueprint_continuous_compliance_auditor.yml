@@ -1,0 +1,495 @@
+template_id: continuous-compliance-auditor-template-001
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Blueprint Draft
+# ─────────────────────────────────────────────────────────────────────────────
+draft:
+  description: |
+    The Continuous Compliance Auditor: Never fail a SOC2 audit again.
+    Automatically scans PRs in Git, cross-references them against security
+    policies in Google Docs, and generates a weekly compliance PDF report.
+
+    Agents Used: Git, Google Workspace, Reporter.
+
+    Manual Execution: 8–12 hours per audit cycle (Engineering managers manually
+    sample PRs, check approval histories, and cross-reference them against
+    static policy docs).
+
+    Autonomous Execution: Continuous tracking + 2 minutes for report generation
+    (100% coverage instead of manual sampling, with zero human toil).
+
+  name: "The Continuous Compliance Auditor"
+
+  # ----------------------------
+  # Providers
+  # ----------------------------
+  providers:
+    - rid: git_mcp_rid
+      name: Git MCP
+      type: mcp_server
+      config:
+        type: mcp_server
+        bearer_token: PLACEHOLDER_GIT_PAT
+        mcp_url: https://api.githubcopilot.com/mcp/
+        tool_names:
+          - list_pull_requests
+          - get_pull_request
+          - get_pull_request_reviews
+          - get_pull_request_files
+          - list_commits
+          - get_commit
+          - search_code
+
+    - rid: google_workspace_mcp_rid
+      name: Google Workspace MCP
+      type: mcp_server
+      config:
+        type: mcp_server
+        bearer_token: PLACEHOLDER_GOOGLE_PAT
+        mcp_url: https://workspace-mcp-omri-tag-ai--runtime-int.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com/mcp
+        tool_names:
+          - google_docs_get_document
+          - google_docs_search
+          - google_drive_search
+          - google_drive_get_file
+
+  # ----------------------------
+  # LLM Definitions
+  # ----------------------------
+  llms:
+    - rid: llm_rid
+      name: gemini_llm
+      type: google_genai
+      config:
+        type: google_genai
+        model_name: gemini-2.0-flash
+        api_key: PLACEHOLDER_API_KEY
+
+  # ----------------------------
+  # Conditions
+  # ----------------------------
+  conditions:
+    - rid: router_direct
+      name: target_router
+      type: router_direct
+      config:
+        type: router_direct
+
+  # ----------------------------
+  # Nodes
+  # ----------------------------
+  nodes:
+    - rid: user_question_node_rid
+      name: User Question Node
+      type: user_question_node
+      config:
+        type: user_question_node
+
+    - rid: final_answer_node_rid
+      name: Final Answer
+      type: final_answer_node
+      config:
+        type: final_answer_node
+
+    - rid: orch_rid
+      name: Compliance Audit Orchestrator
+      type: orchestrator_node
+      config:
+        type: orchestrator_node
+        llm: llm_rid
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are the Continuous Compliance Audit Orchestrator — a senior security and compliance engineer who coordinates automated SOC2 audit workflows.
+
+          ## Your Mission
+          When triggered, you coordinate three specialized agents to scan all recent Pull Requests, cross-reference them against the organization's security policies, and produce a comprehensive compliance audit report.
+
+          ## Available Agents & When to Use Them
+          - **git_pr_scanner_agent**: Scans Git repositories for recent Pull Requests and extracts audit-relevant data (authors, reviewers, approval status, files changed, merge method, CI status). Delegate FIRST to gather the raw PR data.
+          - **policy_reader_agent**: Reads security and compliance policy documents from Google Workspace. Delegate in PARALLEL with git_pr_scanner_agent — it retrieves the current policy rules that PRs will be audited against.
+          - **compliance_reporter_agent**: Cross-references PR data against policies and generates the final compliance audit report. Delegate LAST, only AFTER both the Git scanner and Policy reader have reported back.
+
+          ## Execution Strategy
+          1. Dispatch git_pr_scanner_agent and policy_reader_agent in parallel — they gather independent data sources.
+          2. Once both return:
+             - The Git agent provides structured PR audit data (who merged, who approved, what changed, etc.)
+             - The Policy agent provides the compliance rules (required reviewers, forbidden patterns, approval thresholds, etc.)
+          3. Dispatch compliance_reporter_agent with both datasets to perform the cross-reference analysis and generate the report.
+          4. Route to finalize.
+
+          ## SOC2 Controls You Track
+          - **CC6.1 (Logical Access)**: Are PRs reviewed by authorized personnel? No self-approvals?
+          - **CC8.1 (Change Management)**: Do all changes follow the defined change management process? Are PRs approved before merge?
+          - **CC7.1 (System Operations)**: Are CI/CD checks passing before merge? Are there bypassed checks?
+          - **CC6.3 (Access Restrictions)**: Are sensitive files (secrets, infrastructure, IAM) reviewed by security-designated reviewers?
+
+          ## Output
+          Always finalize by routing to compliance_reporter_agent, then to finalize.
+
+    - rid: git_pr_scanner_agent_rid
+      name: Git PR Scanner
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        providers:
+          - git_mcp_rid
+        tools: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are the Git PR Scanner Agent. Your job is to systematically scan Pull Requests in a Git repository and extract all audit-relevant compliance data.
+
+          ## Scanning Playbook
+          When given a repository and time window (e.g., "last 7 days", "since 2025-01-01"):
+
+          1. **List PRs**: Use `list_pull_requests` to retrieve all merged PRs in the specified time window. Include both merged and open PRs for completeness.
+          2. **PR Details**: For each PR, use `get_pull_request` to extract:
+             - Author (who created it)
+             - Merge timestamp
+             - Merge method (squash, merge commit, rebase)
+             - Branch names (source → target)
+             - PR description and title
+          3. **Review History**: For each PR, use `get_pull_request_reviews` to extract:
+             - Who reviewed (approvals, change requests, comments)
+             - Approval timestamps
+             - Whether the author self-approved
+             - Number of approvals vs. required approvals
+          4. **Files Changed**: For each PR, use `get_pull_request_files` to identify:
+             - Which files were modified
+             - Sensitive file categories (infrastructure, secrets, IAM, CI/CD config)
+             - Magnitude of changes (lines added/removed)
+          5. **Commit Inspection**: For PRs touching sensitive areas, use `get_commit` to check:
+             - Commit signing status (GPG/SSH signed?)
+             - Commit author vs. PR author consistency
+
+          ## Output Format
+          For each PR, produce a structured audit record:
+
+          ### PR Audit Record: [PR #number] — [title]
+          - **Author**: [username]
+          - **Created**: [date] | **Merged**: [date]
+          - **Merge Method**: [squash/merge/rebase]
+          - **Reviewers**: [list of reviewers with approval/rejection status]
+          - **Approval Count**: [X of Y required]
+          - **Self-Approved**: Yes / No
+          - **CI Status**: Passed / Failed / Bypassed
+          - **Sensitive Files Changed**: [list any infra, secrets, IAM, CI config files]
+          - **Total Changes**: [+X / -Y lines across Z files]
+          - **Commits Signed**: Yes / No / Partial
+          - **Compliance Flags**: [list any anomalies — self-approval, missing reviews, bypassed CI, unsigned commits]
+
+          ## Summary Statistics
+          At the end, provide aggregate statistics:
+          - Total PRs scanned
+          - PRs with full approval compliance
+          - PRs with compliance flags
+          - Most common flag types
+          - Sensitive file changes breakdown
+
+          ## Rules
+          - Scan ALL PRs in the time window — 100% coverage, not sampling.
+          - Flag any anomaly, even if it might be a false positive. The reporter agent will assess severity.
+          - Report raw data — include exact usernames, timestamps, and file paths.
+          - If a PR has no reviews at all, flag it as "CRITICAL: No review before merge."
+
+    - rid: policy_reader_agent_rid
+      name: Policy Reader
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        providers:
+          - google_workspace_mcp_rid
+        tools: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are the Policy Reader Agent. Your job is to retrieve and parse the organization's security and compliance policy documents from Google Workspace so they can be used as the audit ruleset.
+
+          ## Investigation Playbook
+          1. **Search for Policies**: Use `google_drive_search` or `google_docs_search` to find documents matching terms like:
+             - "Security Policy", "Change Management Policy", "Code Review Policy"
+             - "SOC2", "Compliance", "Access Control Policy"
+             - "PR Approval Policy", "Merge Requirements"
+             - Any specific document titles provided by the user
+          2. **Read Documents**: Use `google_docs_get_document` to retrieve the full content of each relevant policy document.
+          3. **Extract Rules**: Parse each document to extract concrete, auditable rules.
+
+          ## Extraction Format
+          For each policy document found, extract rules in this structure:
+
+          ### Policy: [Document Title]
+          **Source**: [Google Doc link/ID]
+          **Last Updated**: [document modification date]
+          **Version**: [if stated in the document]
+
+          #### Rules Extracted:
+          For each auditable rule:
+          - **Rule ID**: POL-001, POL-002, etc.
+          - **Category**: Access Control / Change Management / Code Review / CI-CD / Secrets Management
+          - **Rule**: [The specific requirement, e.g., "All PRs must have at least 2 approvals before merge"]
+          - **SOC2 Control**: [Mapped SOC2 control if identifiable, e.g., CC8.1]
+          - **Severity if Violated**: Critical / High / Medium / Low
+          - **Exceptions**: [Any documented exceptions or waivers]
+
+          ## Common Rules to Look For
+          - Minimum number of PR approvals required
+          - Prohibited self-approval of PRs
+          - Required reviewers for specific file types (e.g., security team for IAM changes)
+          - CI/CD checks that must pass before merge
+          - Branch protection requirements
+          - Commit signing requirements
+          - Sensitive file handling rules (secrets, credentials, environment configs)
+          - Time-based restrictions (e.g., no production merges on Fridays)
+          - Emergency change procedures and their documentation requirements
+
+          ## Rules
+          - Be thorough: search for ALL policy documents, not just the first one found.
+          - If a policy is ambiguous, quote the exact language and flag it as "ambiguous — needs human clarification."
+          - Preserve exact policy language alongside your parsed interpretation.
+          - Note the document's last-modified date — stale policies should be flagged.
+          - If no policy documents are found, report this as a CRITICAL finding (undocumented policies).
+
+    - rid: compliance_reporter_agent_rid
+      name: Compliance Reporter
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        providers: []
+        tools: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          ### Role & Directive
+          You are the "Compliance Audit Reporting Agent," an elite SOC2 audit analyst. Your sole purpose is to cross-reference PR audit data against security policies and produce a comprehensive, audit-ready compliance report.
+
+          ### Phase 1: Internal Verification
+          Before writing any part of the report, internally verify:
+          1. **Data Mapping**: For each policy rule (POL-XXX), identify which PR audit records are relevant.
+          2. **Violation Detection**: For each PR, check every applicable policy rule. Flag violations with severity.
+          3. **Pattern Analysis**: Look for systemic issues — is the same person always self-approving? Is one repo consistently bypassing CI?
+          4. **Risk Scoring**: Calculate an overall compliance score and per-control scores.
+          5. **False Positive Assessment**: Consider whether flagged items might have documented exceptions.
+          Do not include your internal reasoning in the output.
+
+          ### Phase 2: The Report (Strict Markdown Template)
+          Generate the report using this structure:
+
+          ---
+
+          # SOC2 Compliance Audit Report
+          **Audit Period:** [start date] — [end date]
+          **Generated:** [Current Date/Time] | **Compliance Score:** [X%]
+          ***
+
+          ## Executive Summary
+          > **Overall Status:** [COMPLIANT / AT RISK / NON-COMPLIANT]
+          > [1–2 sentence summary of the audit findings]
+
+          * **PRs Scanned:** [total count]
+          * **Policies Evaluated:** [count of policy documents]
+          * **Rules Checked:** [count of extracted rules]
+          * **Violations Found:** [count] ([critical] critical, [high] high, [medium] medium, [low] low)
+          * **Compliance Rate:** [X%] of PRs fully compliant
+
+          ***
+
+          ## SOC2 Control Compliance
+
+          ### CC6.1 — Logical Access Controls
+          | Status | Finding | Evidence |
+          | :--- | :--- | :--- |
+          | [PASS/FAIL] | [finding description] | [PR numbers and specific data] |
+
+          ### CC8.1 — Change Management
+          | Status | Finding | Evidence |
+          | :--- | :--- | :--- |
+          | [PASS/FAIL] | [finding description] | [PR numbers and specific data] |
+
+          ### CC7.1 — System Operations
+          | Status | Finding | Evidence |
+          | :--- | :--- | :--- |
+          | [PASS/FAIL] | [finding description] | [PR numbers and specific data] |
+
+          ### CC6.3 — Access Restrictions for Sensitive Assets
+          | Status | Finding | Evidence |
+          | :--- | :--- | :--- |
+          | [PASS/FAIL] | [finding description] | [PR numbers and specific data] |
+
+          ***
+
+          ## Violations Detail
+
+          ### Critical Violations
+          | # | PR | Rule Violated | Description | Remediation |
+          | :--- | :--- | :--- | :--- | :--- |
+          | 1 | [PR #X] | [POL-XXX] | [what happened] | [what to fix] |
+
+          ### High Violations
+          | # | PR | Rule Violated | Description | Remediation |
+          | :--- | :--- | :--- | :--- | :--- |
+
+          ### Medium / Low Violations
+          | # | PR | Rule Violated | Description | Remediation |
+          | :--- | :--- | :--- | :--- | :--- |
+
+          ***
+
+          ## Trend Analysis
+          - **Repeat Offenders**: [users or repos with multiple violations]
+          - **Improving Areas**: [controls that improved since last audit]
+          - **Deteriorating Areas**: [controls that worsened]
+
+          ## Policy Gaps Identified
+          - [Any areas where PRs touched sensitive resources but no policy exists]
+          - [Ambiguous policy language that needs clarification]
+          - [Stale policies that haven't been updated recently]
+
+          ## Recommendations
+          1. **Immediate** — [critical items to address now]
+          2. **Short-term** — [process improvements for next sprint]
+          3. **Long-term** — [tooling or policy changes to prevent recurrence]
+
+          ## Appendix: Full PR Audit Trail
+          [Condensed table of all PRs scanned with pass/fail status per policy rule]
+
+          ---
+          *This report was autonomously generated. All findings should be reviewed by the Security/Compliance team before submission to auditors.*
+
+  # ----------------------------
+  # Plan Steps
+  # ----------------------------
+  plan:
+    - uid: user_input
+      node: user_question_node_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: User Question
+        description: |
+          The user specifies the audit scope — repository name(s), time window
+          (e.g., "last 7 days"), and optionally specific policy document names
+          or Google Drive folder references.
+        tags: []
+
+    - uid: orch_agent
+      after:
+        - user_input
+        - git_pr_scanner_agent
+        - policy_reader_agent
+        - compliance_reporter_agent
+      node: orch_rid
+      exit_condition: router_direct
+      branches:
+        git_pr_scanner_agent: git_pr_scanner_agent
+        policy_reader_agent: policy_reader_agent
+        compliance_reporter_agent: compliance_reporter_agent
+        finalize: finalize
+      meta:
+        display_name: Compliance Audit Orchestrator
+        description: |
+          Coordinates the audit pipeline — dispatches PR scanner and policy
+          reader in parallel, then routes to the compliance reporter.
+        tags: []
+
+    - uid: git_pr_scanner_agent
+      node: git_pr_scanner_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Git PR Scanner
+        description: |
+          Scans all PRs in the specified time window and extracts audit data.
+        tags: []
+
+    - uid: policy_reader_agent
+      node: policy_reader_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Policy Reader
+        description: |
+          Retrieves and parses security/compliance policy documents from Google Workspace.
+        tags: []
+
+    - uid: compliance_reporter_agent
+      node: compliance_reporter_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Compliance Reporter
+        description: |
+          Cross-references PR data against policies and generates the audit report.
+        tags: []
+
+    - uid: finalize
+      node: final_answer_node_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Final Answer
+        description: |
+          The final compliance audit report is delivered to the user.
+        tags: []
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Placeholders
+# ─────────────────────────────────────────────────────────────────────────────
+placeholders:
+  categories:
+    - category: llms
+      resources:
+        - rid: llm_rid
+          placeholders:
+            - field_path: api_key
+              required: true
+              label: Gemini (Google) API Key
+              hint: "Your Google GenAI API key for Gemini models"
+    - category: providers
+      resources:
+        - rid: git_mcp_rid
+          placeholders:
+            - field_path: bearer_token
+              required: true
+              label: Git Personal Access Token
+              hint: "Your Git/GitHub PAT with repo and pull request read permissions"
+        - rid: google_workspace_mcp_rid
+          placeholders:
+            - field_path: bearer_token
+              required: true
+              label: Google Workspace Auth Token
+              hint: "OAuth token or service account key for Google Docs/Drive access"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Metadata
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  author: UnifAI
+  version: "1.0.0"
+  is_public: true
+  category: Security & Compliance
+  tags:
+    - compliance
+    - soc2
+    - audit
+    - git
+    - google-workspace
+    - security
+    - change-management
+    - continuous-monitoring
+  output_capabilities:
+    - compliance-report
+    - violation-tracking
+    - policy-analysis
+    - audit-trail
