@@ -79,4 +79,31 @@ RUN pip install --upgrade pip
 RUN pip install -e "./app/[all]"
 RUN pip install -e './global_utils/[multi-agent]'
 
+# Workaround: openshell Linux wheels ship without generated protobuf stubs.
+# Download .proto sources from the OpenShell repo and generate them into the
+# installed package. This mirrors the upstream python:proto build task.
+ARG OPENSHELL_PROTO_REF="main"
+RUN pip install grpcio-tools && \
+    PROTO_DIR=$(mktemp -d) && \
+    SITE_PKG=$(python3 -c "import pathlib,site; p=next(pathlib.Path(site.getsitepackages()[0]).rglob('openshell/_proto')); print(p)") && \
+    for f in datamodel.proto openshell.proto sandbox.proto inference.proto; do \
+      curl -fsSL "https://raw.githubusercontent.com/NVIDIA/OpenShell/${OPENSHELL_PROTO_REF}/proto/$f" \
+        -o "$PROTO_DIR/$f"; \
+    done && \
+    python3 -m grpc_tools.protoc \
+      -I"$PROTO_DIR" \
+      --python_out="$SITE_PKG" \
+      --pyi_out="$SITE_PKG" \
+      --grpc_python_out="$SITE_PKG" \
+      "$PROTO_DIR"/datamodel.proto \
+      "$PROTO_DIR"/openshell.proto \
+      "$PROTO_DIR"/sandbox.proto \
+      "$PROTO_DIR"/inference.proto && \
+    sed -i 's/^import datamodel_pb2/from . import datamodel_pb2/' "$SITE_PKG"/*.py && \
+    sed -i 's/^import openshell_pb2/from . import openshell_pb2/' "$SITE_PKG"/*.py && \
+    sed -i 's/^import sandbox_pb2/from . import sandbox_pb2/' "$SITE_PKG"/*.py && \
+    sed -i 's/^import inference_pb2/from . import inference_pb2/' "$SITE_PKG"/*.py && \
+    rm -rf "$PROTO_DIR" && \
+    python3 -c "import openshell; print('openshell SDK OK')"
+
 ENTRYPOINT ["./app/entrypoint.sh"]
