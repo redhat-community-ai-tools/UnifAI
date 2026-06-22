@@ -14,8 +14,8 @@ CODE_SCORE_PATTERNS = [
     re.compile(r"(?:verdict|review|code)[^\n]{0,40}(\d{1,2})\s*/\s*10", re.IGNORECASE),
 ]
 ARCH_VERDICT_RE = re.compile(r"(APPROVE|NEEDS REVISION|REJECT)")
-PIPELINE_VERDICT_RE = re.compile(r"PIPELINE_VERDICT:\s*(APPROVE|NEEDS_REVISION|REJECT|CLEAN|NEEDS_REFACTORING|MAJOR_CLEANUP|PASS|FAIL)\b")
-EXIT_STATUS_RE = re.compile(r"EXIT_STATUS:\s*(SUCCESS|REVISION_LIMIT|USER_INPUT_REQUIRED|ERROR|SKILL_NOT_FOUND)")
+PIPELINE_VERDICT_RE = re.compile(r"^PIPELINE_VERDICT:\s*(APPROVE|NEEDS_REVISION|REJECT|CLEAN|NEEDS_REFACTORING|MAJOR_CLEANUP|PASS|FAIL)\b", re.MULTILINE)
+EXIT_STATUS_RE = re.compile(r"^EXIT_STATUS:\s*(SUCCESS|REVISION_LIMIT|USER_INPUT_REQUIRED|ERROR|SKILL_NOT_FOUND)", re.MULTILINE)
 
 
 def strip_ansi(text: str) -> str:
@@ -49,6 +49,12 @@ def parse_code_score(path: Path) -> tuple[int, str]:
             return 5, "ok_pipeline_verdict"
         elif token == "MAJOR_CLEANUP":
             return 3, "ok_pipeline_verdict"
+        elif token in ("APPROVE", "PASS"):
+            return 8, "ok_pipeline_verdict_mapped"
+        elif token == "NEEDS_REVISION":
+            return 5, "ok_pipeline_verdict_mapped"
+        elif token in ("REJECT", "FAIL"):
+            return 3, "ok_pipeline_verdict_mapped"
         else:
             return 0, f"verdict_not_code_review_{token.lower()}"
 
@@ -111,6 +117,9 @@ def main() -> int:
     elif code_status == "ok_pipeline_verdict":
         print(f"::notice::Code review score ({code_score}/10) derived from PIPELINE_VERDICT, "
               f"not an explicit score in the output. Check {code_file}.")
+    elif code_status == "ok_pipeline_verdict_mapped":
+        print(f"::warning::Code review score ({code_score}/10) derived from non-code-review "
+              f"PIPELINE_VERDICT token (agent used wrong token set). Check {code_file}.")
     elif code_status.startswith("ok_fallback"):
         print(f"::warning::Code review score extracted via fallback pattern ({code_status}). "
               f"The output may not follow the expected format. Check {code_file}.")
@@ -122,12 +131,13 @@ def main() -> int:
     code_exit, _ = parse_exit_status(code_file)
     arch_exit, _ = parse_exit_status(arch_file)
 
+    pipeline_error = False
     if code_exit in ("SKILL_NOT_FOUND", "ERROR"):
         print(f"::error::Code review pipeline errored (EXIT_STATUS: {code_exit}). Check {code_file}.")
-        return 1
+        pipeline_error = True
     if arch_exit in ("SKILL_NOT_FOUND", "ERROR"):
         print(f"::error::Architecture review pipeline errored (EXIT_STATUS: {arch_exit}). Check {arch_file}.")
-        return 1
+        pipeline_error = True
 
     arch_pass = arch_verdict == "APPROVE"
     code_pass = code_score >= threshold
@@ -148,6 +158,9 @@ def main() -> int:
         with Path(output_path).open("a") as out:
             out.write(f"arch_verdict={arch_verdict}\n")
             out.write(f"code_score={code_score}\n")
+
+    if pipeline_error:
+        return 1
 
     if not (arch_pass and code_pass):
         print(f"::error::Review gate failed. Architecture: {arch_verdict}, Code: {code_score}/10 (threshold: {threshold})")

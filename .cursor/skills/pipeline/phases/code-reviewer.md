@@ -370,6 +370,9 @@ Deviations from the approved design, if any.
 List the specific source files you read and what claims they verified or contradicted.
 
 ### Code Health Score: X/10
+
+**You MUST replace X with an actual numeric score. The CI evaluator parses this heading to gate the pipeline.**
+
 | Score | Meaning |
 |-------|---------|
 | 9-10 | No issues, or only trivial nits |
@@ -393,5 +396,7 @@ State your verdict, then emit the machine-parseable line exactly as shown:
   `PIPELINE_VERDICT: MAJOR_CLEANUP`
 
 The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
+
+**Use ONLY the three tokens above (CLEAN, NEEDS_REFACTORING, MAJOR_CLEANUP). Do NOT use tokens from other reviewer phases such as NEEDS_REVISION, APPROVE, REJECT, PASS, or FAIL.**
 
 If the verdict is not CLEAN, clearly list every item the Coder must address in the next iteration.

@@ -97,16 +97,19 @@ When the verdict is NOT approval, read `.cursor/skills/pipeline/modes/_revision-
 - REVIEWER_SKILL: `design-reviewer.md` | AUTHOR_SKILL: `designer.md`
 - ITERATION_COUNTER: `Design Iterations` | MAX: 2
 - VERDICT_APPROVE: `APPROVE` | VERDICT_BLOCK: `NEEDS_REVISION`, `REJECT`
+- PHASE_HEADER: `## PHASE 1: DESIGN (Revision <N>)` | REVIEW_HEADER: `## PHASE 2: DESIGN REVIEW (Revision <N>)`
 
 **Phase 4 (Code Review):**
 - REVIEWER_SKILL: `code-reviewer.md` | AUTHOR_SKILL: `coder.md`
 - ITERATION_COUNTER: `Code Iterations` | MAX: 2
 - VERDICT_APPROVE: `CLEAN` | VERDICT_BLOCK: `NEEDS_REFACTORING`, `MAJOR_CLEANUP`
+- PHASE_HEADER: `## PHASE 3: IMPLEMENTATION (Revision <N>)` | REVIEW_HEADER: `## PHASE 4: CODE REVIEW (Revision <N>)`
 
 **Phase 5 (QA):**
 - REVIEWER_SKILL: `qa.md` | AUTHOR_SKILL: `coder.md`
 - ITERATION_COUNTER: `QA Iterations` | MAX: 2
 - VERDICT_APPROVE: `PASS` | VERDICT_BLOCK: `FAIL`
+- PHASE_HEADER: `## PHASE 3: IMPLEMENTATION (QA Fix <N>)` | REVIEW_HEADER: `## PHASE 5: QA (Revision <N>)`
 - Also follow the QA-Specific Extension in the revision loop protocol.
 
 ### Scope resolution (Phases 4, 5, 9 in standalone modes)
@@ -179,6 +182,7 @@ To close the pipeline: first update the state tracker with `EXIT_STATUS: SUCCESS
 
 - You MUST read each skill file via Read tool before starting that phase. Do not rely on memory.
 - If reading a skill file fails: STOP. Display "PIPELINE ERROR: File not found at `<path>`." Set `EXIT_STATUS: SKILL_NOT_FOUND`.
+- If a phase encounters an unexpected failure (e.g., repeated tool errors, unrecoverable state, or an unhandled exception in execution): STOP. Display "PIPELINE ERROR: <description>." Set `EXIT_STATUS: ERROR`.
 - NEVER proceed past a review phase without approval. Always execute the revision loop.
 - In revision loops, address EVERY item — not just some.
 - Do not combine phases or run them out of order.
