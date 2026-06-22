@@ -26,7 +26,7 @@ llms = ["openai", "langchain-openai", "langchain-google-genai"]
 tools = ["paramiko", "openshift-client", "mcp", "httptools", "safehttpx", "html-to-markdown", "yarl", "anyio", "authlib"]
 a2a = ["a2a-sdk[all]<1.0", "typing-inspection"]
 claude = ["claude-agent-sdk>=0.2.0", "anthropic[vertex]>=0.40.0"]
-openshell = ["openshell>=0.0.66"]
+openshell = ["openshell==0.0.59", "protobuf>=4.25", "grpcio>=1.60"]
 rag = ["jsonschema"]
 redis = ["redis"]
 all = [
