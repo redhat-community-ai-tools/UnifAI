@@ -204,9 +204,20 @@ A finding should only be MAJOR or CRITICAL if **this diff specifically introduce
 
 ## Output Format
 
-Wrap the entire output inside a `## ARCHITECTURE REVIEW` header. Include ALL of the following sections **in this order** — big picture first, then details:
+Wrap the entire output inside a `## ARCHITECTURE REVIEW` header. Structure the output in this exact section order.
 
-#### System Context Summary
+### Formatting Rules
+
+1. **Never render empty sections.** If a review dimension has zero findings, list it as a single ✅ line under Review Evidence. Do NOT create a heading, table, or "None." declaration for it.
+2. **One finding = one self-contained block.** Each finding must contain the file path(s), the problem description, and the fix — all in one place. Do NOT split recommendations into a separate section.
+3. **Inline the fix.** Use a bold **Fix →** prefix within each finding block. There is no separate "Recommended Improvements" section.
+4. **Use severity badges.** Prefix finding sections with: 🔴 Critical, 🟠 Major, 🟡 Warning, 🔵 Info.
+5. **Tag the review dimension.** Each finding must include a category tag showing which Review Dimension (§1–§10) it came from — e.g. `Hex Compliance`, `Import Rules`, `Duplication`, `Error Handling`, `Efficiency`. Place it on the title line after the severity badge.
+6. **File paths are mandatory.** Every finding at WARNING or above must include at least one `file:line` reference. INFO items should include file references where applicable.
+7. **No conversational filler.** Do not include phrases like "Let me compile the review", "I now have a thorough understanding", or "The change is complete for the scope." State findings directly.
+
+### Section 0: System Context Summary
+
 Lead with what this change is about. This section is produced from the System Context Analysis and frames the entire review.
 
 - **Feature**: [one-sentence description of what this diff adds or modifies]
@@ -216,75 +227,116 @@ Lead with what this change is about. This section is produced from the System Co
 - **Expected shape**: [which layers should be touched and why]
 - **Shape match**: [does the diff match the expected shape? what's missing or unexpected?]
 
-#### Layer Completeness Findings
-Missing counterparts (e.g., adapter without port, service without adapter update).
+### Section 1: Review Evidence (ALWAYS present — collapsed)
 
-#### Component Placement Issues
-| File | Component Placed In | Boundary Declaration | Correct Component | Severity |
-|------|--------------------|--------------------|------------------|----------|
+Wrap in a single `<details>` block. This contains proof-of-work — clean dimensions, codebase verification, and adversarial testing.
 
-#### Critical Findings
-Issues that must be fixed before merging. If none, state "None."
+```html
+### Review Evidence
 
-#### Architectural Violations
-Specific hexagonal architecture violations with file, line, layer, issue, and fix. Table format:
+<details>
+<summary>Expand</summary>
 
-| File:Line | Layer | Violation | Severity | Fix |
-|-----------|-------|-----------|----------|-----|
+#### Dimensions with No Findings
+- ✅ Layer Completeness: {result}
+- ✅ Component Placement: {result}
+- ✅ Import Rules: {result}
+- ✅ Hexagonal Compliance: {result}
+(one line per review dimension that passed with zero findings)
 
-#### Import Rule Violations
-Forbidden cross-layer imports found. Table format:
-
-| File:Line | Import Statement | Source Layer | Target Layer | Severity |
-|-----------|-----------------|--------------|--------------|----------|
-
-#### Layer Placement Issues
-Modules in the wrong directory for what they actually do. Table format:
-
-| File | Classified As | Should Be | Reason | Severity |
-|------|--------------|-----------|--------|----------|
-
-#### Error Handling Issues
-Layer contract violations in exception handling. Table format:
-
-| File:Line | Layer | Issue | Severity | Fix |
-|-----------|-------|-------|----------|-----|
-
-#### Python Safety Issues
-Violations of Python safety patterns from `.cursor/rules/engineering-standards.md`.
-
-#### Duplication & Reusability Issues
-Existing components that should be reused instead of created.
-
-#### Efficiency Concerns
-Performance or scalability problems with alternatives.
-
-#### Risks to Existing System
-Breaking changes, side effects, or migration concerns.
-
-#### Recommended Improvements
-Concrete suggestions to improve the architecture of the changed code.
-
-#### Adversarial Challenges Applied
-List which adversarial techniques (from §9) you applied and what they revealed.
-
-#### Codebase Verification Evidence
-List the specific source files you read and what claims they verified or contradicted. Table format:
-
+#### Codebase Verification
 | Source File Read | Claim Verified |
-|-----------------|---------------|
+|-----------------|----------------|
 
-#### Verdict
+#### Adversarial Techniques Applied
+1. **{Technique name}** — {what it tested and result} ✅/⚠️
+(minimum 3 techniques)
 
-State your verdict, then emit the machine-parseable line exactly as shown:
+</details>
+```
+
+Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–6 instead.
+
+### Section 2: Risks & Follow-ups (only if any exist)
+
+Table format — one row per risk. Include risks to the existing system, migration concerns, and items deferred to follow-up work.
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+
+Omit this section entirely if there are no risks.
+
+### Section 3: Verdict
+
+State your verdict with a severity summary line, then emit the machine-parseable line exactly as shown:
+
+```
+### Verdict: {APPROVE | NEEDS REVISION | REJECT}
+
+**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Warnings | 🔵 [{N}] Info
+
+`PIPELINE_VERDICT: {APPROVE | NEEDS_REVISION | REJECT}`
+```
 
 - **APPROVE** — Architecture is sound, no violations found.
-  `PIPELINE_VERDICT: APPROVE`
-- **NEEDS REVISION** — Specific items must be fixed (list them).
-  `PIPELINE_VERDICT: NEEDS_REVISION`
+- **NEEDS REVISION** — Specific items must be fixed (list them below the verdict).
 - **REJECT** — Fundamental architectural violations require significant rework.
-  `PIPELINE_VERDICT: REJECT`
 
 The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
 
 If the verdict is not APPROVE, clearly list every item that must be addressed.
+
+### Section 4: 🔴 Critical Findings (only if any exist)
+
+Number findings sequentially within this section. Render each as a standalone block:
+
+```
+#### 🔴 1. [{Review Dimension}] {Concise title}
+
+**`{file:line}`** {— additional files if applicable}
+
+{What's wrong — 1-2 sentences max}
+
+**Fix →** {concrete remediation with code example if helpful}
+```
+
+Example: `#### 🔴 1. [Hex Compliance] Domain imports infrastructure adapter`
+
+Omit this section entirely if there are zero critical findings.
+
+### Section 5: 🟡 Warnings (only if any exist)
+
+Number findings sequentially within this section. Same block format as Critical Findings. For multi-file warnings (e.g., duplication across services), include a table of affected files within the block:
+
+```
+#### 🟡 1. [{Review Dimension}] {Concise title}
+
+| File | Lines |
+|------|-------|
+| `{file1}` | {lines} |
+| `{file2}` | {lines} |
+
+{What's wrong — 1-2 sentences}
+
+**Fix →** {remediation}
+```
+
+Example: `#### 🟡 1. [Duplication] Session cookie config duplicated across 4 services`
+
+Omit this section entirely if there are zero warnings.
+
+### Section 6: 🔵 Info Items (only if any exist)
+
+Number findings sequentially within this section. Render each INFO item as a collapsible `<details>` block:
+
+```html
+<details>
+<summary>🔵 1. [{Review Dimension}] <b>{title}</b> — <code>{file:line}</code></summary>
+
+{description — 1-3 sentences}
+
+**Fix →** {remediation}
+</details>
+```
+
+Omit this section entirely if there are zero info items.

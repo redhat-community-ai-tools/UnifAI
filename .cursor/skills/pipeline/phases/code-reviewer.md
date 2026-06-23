@@ -321,55 +321,68 @@ A finding should only be MAJOR or CRITICAL if **this diff specifically introduce
 
 ## Output Format
 
-Wrap the entire output inside a `## PHASE 4: CODE REVIEW` header.
+Wrap the entire output inside a `## CODE REVIEW` header (or `## PHASE 4: CODE REVIEW` when running inside the full pipeline). Structure the output in this exact section order.
 
-### Architecture Violations
-| File:Line | Issue | Layer | Why It Violates Hex Arch | Severity | Fix |
-|-----------|-------|-------|--------------------------|----------|-----|
+### Formatting Rules
 
-### Code Duplication Issues
-| File:Line | Description | Severity | Refactor Recommendation |
-|-----------|-------------|----------|------------------------|
+1. **Never render empty sections.** If a review dimension has zero findings, list it as a single ✅ line under Review Evidence. Do NOT create a heading, table, or "None." declaration for it.
+2. **One finding = one self-contained block.** Each finding must contain the file path and line number, the problem description, and the fix — all in one place.
+3. **Inline the fix.** Use a bold **Fix →** prefix within each finding block. There is no separate recommendations section.
+4. **Use severity badges.** Prefix finding sections with: 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Info.
+5. **Tag the review dimension.** Each finding must include a category tag showing which Review Area (§1–§13) it came from — e.g. `Hex Architecture`, `Duplication`, `Dead Code`, `Endpoint Thinness`, `Coupling`, `Security`, `Alignment`. Place it on the title line after the severity badge.
+6. **File paths and line numbers are mandatory.** Every finding MUST include `file:line`. A finding without a line reference is incomplete.
+7. **No conversational filler.** State findings directly.
 
-### Dead Code Issues
-| File:Line | Why Dead/Unnecessary | Severity | Removal Recommendation |
-|-----------|---------------------|----------|----------------------|
+### Section 1: Review Evidence (ALWAYS present — collapsed)
 
-### Reusability Improvements
-| File:Line | Existing Component | Where It Should Be Used | Why |
-|-----------|--------------------|------------------------|-----|
+Wrap in a single `<details>` block. This contains proof-of-work — clean dimensions and codebase verification.
 
-### Alignment Issues
-| File:Line | Issue | Expected Pattern | Actual | Fix |
-|-----------|-------|-----------------|--------|-----|
+```html
+### Review Evidence
 
-### Endpoint Thinness Violations
-| File:Line | Logic Found in Endpoint | Should Be In | Severity | Fix |
-|-----------|------------------------|--------------|----------|-----|
+<details>
+<summary>Expand</summary>
 
-### Coupling & Misplaced Logic
-| File:Line | Logic Description | Current Location | Correct Location | Severity |
-|-----------|-------------------|------------------|------------------|----------|
+#### Dimensions with No Findings
+- ✅ Hex Architecture: {result}
+- ✅ Dead Code: {result}
+- ✅ Reusability: {result}
+- ✅ Endpoint Thinness: {result}
+- ✅ Coupling: {result}
+- ✅ Security: {result}
+- ✅ Component Placement: {result}
+(one line per review dimension that passed with zero findings)
 
-### Component Placement Issues
-| File:Line | Component Placed In | Boundary Declaration | Correct Component | Severity |
-|-----------|--------------------|--------------------|------------------|----------|
-
-### Design Compliance
-Deviations from the approved design, if any.
-
-### Efficiency & Clean Code Concerns
-| File:Line | Issue | Risk | Suggested Improvement |
-|-----------|-------|------|-----------------------|
-
-### Previous Issues Resolution (only for revision loops)
-| Previous Issue | Status | Evidence |
-|----------------|--------|----------|
-
-### Codebase Verification Evidence
+#### Codebase Verification
 List the specific source files you read and what claims they verified or contradicted.
 
+</details>
+```
+
+Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–6 instead.
+
+### Section 2: Risks & Follow-ups (only if any exist)
+
+Risks to the existing system, breaking changes, migration concerns. Table format:
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+
+Omit this section entirely if there are no risks.
+
+### Section 3: Verdict
+
+State your verdict with severity summary and the code health score, then emit the machine-parseable lines:
+
+```
 ### Code Health Score: X/10
+
+### Verdict: {CLEAN | NEEDS REFACTORING | MAJOR CLEANUP}
+
+**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Minor | 🔵 [{N}] Info
+
+`PIPELINE_VERDICT: {CLEAN | NEEDS_REFACTORING | MAJOR_CLEANUP}`
+```
 
 **You MUST replace X with an actual numeric score. The CI evaluator parses this heading to gate the pipeline.**
 
@@ -384,19 +397,66 @@ List the specific source files you read and what claims they verified or contrad
 The score must be consistent with the verdict: a CLEAN verdict cannot accompany a score below 7.
 Issues classified as **INFO — established pattern** or **INFO — tech debt** do NOT lower the score.
 
-### Verdict
-
-State your verdict, then emit the machine-parseable line exactly as shown:
-
 - **CLEAN** — Code is production-ready. Proceed to QA.
-  `PIPELINE_VERDICT: CLEAN`
-- **NEEDS REFACTORING** — Specific issues must be fixed (list them). Loop back to Coder.
-  `PIPELINE_VERDICT: NEEDS_REFACTORING`
+- **NEEDS REFACTORING** — Specific issues must be fixed (list them below the verdict). Loop back to Coder.
 - **MAJOR CLEANUP REQUIRED** — Significant problems found. Loop back to Coder with full issue list.
-  `PIPELINE_VERDICT: MAJOR_CLEANUP`
 
 The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
 
 **Use ONLY the three tokens above (CLEAN, NEEDS_REFACTORING, MAJOR_CLEANUP). Do NOT use tokens from other reviewer phases such as NEEDS_REVISION, APPROVE, REJECT, PASS, or FAIL.**
 
 If the verdict is not CLEAN, clearly list every item the Coder must address in the next iteration.
+
+### Section 4: 🔴 Critical Findings (only if any exist)
+
+Number findings sequentially within this section. Render each as a standalone block:
+
+```
+#### 🔴 1. [{Review Area}] {Concise title}
+
+**`{file:line}`**
+
+{What's wrong — 1-2 sentences max}
+
+**Fix →** {concrete remediation}
+```
+
+Example: `#### 🔴 1. [Hex Architecture] Service imports concrete repository`
+
+Omit this section entirely if there are zero critical findings.
+
+### Section 5: 🟡 Minor / Alignment Issues (only if any exist)
+
+Number findings sequentially within this section. Same block format. Includes MINOR severity and ALIGNMENT ISSUE findings. For multi-file issues, include a table of affected locations within the block.
+
+Example: `#### 🟡 1. [Alignment] Inconsistent error response format`
+
+Omit if zero.
+
+### Section 6: 🔵 Info Items (only if any exist)
+
+Number findings sequentially within this section. Render each INFO item as a collapsible `<details>` block:
+
+```html
+<details>
+<summary>🔵 1. [{Review Area}] <b>{title}</b> — <code>{file:line}</code></summary>
+
+{description — 1-3 sentences}
+
+**Fix →** {remediation}
+</details>
+```
+
+Omit this section entirely if there are zero info items.
+
+### Previous Issues Resolution (only for revision loops)
+
+When reviewing a revision, add this section after the Verdict:
+
+| Previous Issue | Status | Evidence |
+|----------------|--------|----------|
+| ... | ✅ Fixed / ⚠️ Partial / ❌ Not Fixed / 🔄 Regression | ... |
+
+### Design Compliance (only if deviations exist)
+
+List deviations from the approved design. Omit if implementation matches design.
