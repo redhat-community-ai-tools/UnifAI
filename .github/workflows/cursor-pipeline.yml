@@ -92,7 +92,9 @@ jobs:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
           agent --trust --force -p "/pipeline arch-review" \
-            --model "$PIPELINE_MODEL" 2>&1 | tee arch_review_output.txt
+            --model "$PIPELINE_MODEL" --output-format json \
+            > arch_review.json 2> >(tee arch_review_stderr.log >&2) || true
+          jq -r '.result // empty' arch_review.json > arch_review_output.txt 2>/dev/null || true
 
       - name: Run Code Review
         if: "!cancelled()"
@@ -100,7 +102,9 @@ jobs:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
           agent --trust --force -p "/pipeline code-review-only" \
-            --model "$PIPELINE_MODEL" 2>&1 | tee code_review_output.txt
+            --model "$PIPELINE_MODEL" --output-format json \
+            > code_review.json 2> >(tee code_review_stderr.log >&2) || true
+          jq -r '.result // empty' code_review.json > code_review_output.txt 2>/dev/null || true
 
       - name: Publish results to Job Summary
         if: always()
@@ -122,6 +126,23 @@ jobs:
           else
             echo "_No output produced._" >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Extract Pipeline Telemetry
+        if: always()
+        env:
+          PIPELINE_MODEL: ${{ env.PIPELINE_MODEL }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
+        run: python3 .github/scripts/extract_pipeline_telemetry.py
+
+      - name: Upload Telemetry Data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-telemetry-${{ github.run_id }}
+          path: telemetry.json
+          retention-days: 90
+          if-no-files-found: warn
 
       - name: Evaluate Review Scores
         id: gate

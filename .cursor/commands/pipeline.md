@@ -144,9 +144,9 @@ After all phases complete (or the single phase finishes), you MUST produce a sum
 <mode used>
 
 ### Phases Summary
-| Phase | Agent | Verdict | Iterations |
-|-------|-------|---------|------------|
-(only include phases that were executed)
+| Phase | Agent | Verdict | Iterations | Skills Used |
+|-------|-------|---------|------------|-------------|
+(only include phases that were executed; list every skill file the agent read during the phase)
 
 ### Files Changed
 <list of all files created or modified, or "None" for design-only modes>
@@ -168,6 +168,9 @@ After all phases complete (or the single phase finishes), you MUST produce a sum
 
 ### Verdict
 <final verdict or "Design produced" for design-only>
+
+### Skills Used
+<list of all skill files read during the phase, e.g. "designer.md, codebase/SKILL.md, domain/rag/SKILL.md">
 
 ### Findings Summary
 <key findings, or design document location for design-only>
@@ -192,7 +195,7 @@ To close the pipeline: first update the state tracker with `EXIT_STATUS: SUCCESS
 
 ## Context Management
 
-- After each phase, emit a one-paragraph checkpoint: verdict, key decisions, files changed.
+- After each phase, emit a one-paragraph checkpoint: verdict, key decisions, files changed, and skills used (list every skill file the agent read via the Read tool during the phase, by short name — e.g. "designer.md, codebase/SKILL.md").
 - If >15 tool calls within a single phase, summarize intermediate results before continuing.
 - In code revision loops, produce only changed files + summary of unchanged (not full re-emit).
 - In design revision loops, produce the complete revised design.
