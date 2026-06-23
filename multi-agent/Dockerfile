@@ -6,7 +6,7 @@ USER root
 
 # The minimal image lacks bash, curl, tar, and shadow-utils (useradd).
 # Install these first since the rest of the Dockerfile depends on them.
-RUN microdnf install -y bash curl tar gzip shadow-utils && microdnf clean all
+RUN microdnf install -y bash curl tar gzip shadow-utils procps-ng && microdnf clean all
 
 # Create the 'default' user (UID 1001, group 0) matching the full s2i image convention.
 # The minimal image only sets USER 1001 without a named entry in /etc/passwd.
