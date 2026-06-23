@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 from pydantic import Field
 from mas.elements.tools.common.base_config import BaseToolConfig
 from mas.core.field_hints import SecretHint, FileUploadHint, combine_hints
@@ -37,4 +37,8 @@ class SandboxExecToolConfig(BaseToolConfig):
             FileUploadHint(accept=".pem,.key", validate_format="pem"),
             SecretHint(reason="Private key should be masked", allow_reveal=False),
         ),
+    )
+    keep_sandbox: bool = Field(
+        default=False,
+        description="Keep the sandbox container running after use. When disabled, the sandbox is deleted after the session ends.",
     )
