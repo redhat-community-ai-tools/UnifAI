@@ -56,7 +56,7 @@ WORKDIR $HOME
 COPY ./multi-agent/entrypoint.sh ./app/entrypoint.sh
 RUN chmod +x ./app/entrypoint.sh
 RUN pwd
-RUN mkdir -p -m 777 $HOME/app/venv $HOME/app/logs
+RUN mkdir -p -m 777 $HOME/app/venv $HOME/app/logs $HOME/app/shared
 RUN ls -lia
 RUN chmod -R g+w .
 
