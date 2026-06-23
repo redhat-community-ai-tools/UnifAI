@@ -41,3 +41,10 @@ class BlueprintMetadataError(BlueprintError):
         self.message = message or f"Failed to update metadata for blueprint '{blueprint_id}'"
         super().__init__(self.message)
 
+
+class PromptShortcutsValidationError(BlueprintError):
+    """Raised when prompt shortcuts fail validation (bad text, title too long, >3 items)."""
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+

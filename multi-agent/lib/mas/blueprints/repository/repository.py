@@ -20,6 +20,14 @@ class BlueprintRepository(ABC):
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
         """Set the metadata dictionary for a blueprint document."""
 
+    @abstractmethod
+    def set_prompt_shortcuts(self, *, blueprint_id: str, prompts: Optional[List[dict]]) -> bool:
+        """Set or unset prompt shortcuts in spec_dict. When prompts is None, $unset the key."""
+
+    @abstractmethod
+    def get_prompt_shortcuts(self, *, blueprint_id: str) -> Optional[List[dict]]:
+        """Return raw prompt shortcuts list from spec_dict, or None if unset."""
+
     # ────────────────────────────── Reads by ID ─────────────────────────
     @abstractmethod
     def load(self, blueprint_id: str) -> BlueprintDocument:

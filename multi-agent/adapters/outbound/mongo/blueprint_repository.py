@@ -60,14 +60,31 @@ class MongoBlueprintRepository(BlueprintRepository):
         return res.modified_count == 1
     
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
-        """Set the metadata dictionary for a blueprint document."""
+        """Set individual metadata keys using dot-notation (key-level merge)."""
         if not isinstance(metadata, dict):
             raise ValueError(f"metadata must be a dictionary, got: {type(metadata)}")
+        update_fields = {f"metadata.{k}": v for k, v in metadata.items()}
+        update_fields["updated_at"] = datetime.now(timezone.utc)
         res = self._col.update_one(
             {"blueprint_id": blueprint_id},
-            {"$set": {"metadata": metadata, "updated_at": datetime.now(timezone.utc)}}
+            {"$set": update_fields},
         )
         return res.modified_count == 1
+
+    def set_prompt_shortcuts(self, *, blueprint_id: str, prompts: Optional[List[dict]]) -> bool:
+        now = datetime.now(timezone.utc)
+        if prompts:
+            op = {"$set": {"spec_dict.prompt_shortcuts": prompts, "updated_at": now}}
+        else:
+            op = {"$unset": {"spec_dict.prompt_shortcuts": ""}, "$set": {"updated_at": now}}
+        res = self._col.update_one({"blueprint_id": blueprint_id}, op)
+        return res.modified_count == 1
+
+    def get_prompt_shortcuts(self, *, blueprint_id: str) -> Optional[List[dict]]:
+        doc = self._col.find_one({"blueprint_id": blueprint_id}, {"spec_dict.prompt_shortcuts": 1})
+        if not doc:
+            raise KeyError(f"No blueprint with id={blueprint_id}")
+        return (doc.get("spec_dict") or {}).get("prompt_shortcuts")
 
     def load(self, blueprint_id: str) -> BlueprintDocument:
         doc = self._col.find_one({"blueprint_id": blueprint_id})

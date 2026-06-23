@@ -8,7 +8,9 @@ from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
     BlueprintSaveError,
     BlueprintMetadataError,
+    PromptShortcutsValidationError,
 )
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.core.identity import Identity
 from mas.core.ref import RefWalker
 from mas.elements.common.card import ElementCard
@@ -45,7 +47,8 @@ class BlueprintService:
     # ────────── Single-blueprint reads (ID is globally unique) ──────────
     def load_draft(self, blueprint_id: str) -> BlueprintDraft:
         doc = self._repo.load(blueprint_id)
-        return BlueprintDraft(**doc.spec_dict)
+        spec = {k: v for k, v in doc.spec_dict.items() if k != "prompt_shortcuts"}
+        return BlueprintDraft(**spec)
 
     def get_blueprint_draft_doc(self, blueprint_id: str) -> BlueprintDocument:
         """Get blueprint document with metadata for sharing operations."""
@@ -54,7 +57,8 @@ class BlueprintService:
     def update_draft(self, *, blueprint_id: str, draft_dict: dict) -> bool:
         if not self._repo.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
-        draft = BlueprintDraft(**draft_dict)
+        filtered = {k: v for k, v in draft_dict.items() if k != "prompt_shortcuts"}
+        draft = BlueprintDraft(**filtered)
         rid_refs = list(RefWalker.external_rids(draft))
         return self._repo.update(
             blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs
@@ -65,11 +69,13 @@ class BlueprintService:
 
     def load_draft_from_dict(self, draft_dict: dict) -> BlueprintDraft:
         """Load a BlueprintDraft from a dictionary without saving to database."""
-        return BlueprintDraft(**draft_dict)
+        filtered = {k: v for k, v in draft_dict.items() if k != "prompt_shortcuts"}
+        return BlueprintDraft(**filtered)
 
     def resolve_draft_dict(self, draft_dict: dict) -> BlueprintSpec:
         """Resolve a draft dictionary directly to BlueprintSpec without saving to database."""
-        draft_bp = BlueprintDraft(**draft_dict)
+        filtered = {k: v for k, v in draft_dict.items() if k != "prompt_shortcuts"}
+        draft_bp = BlueprintDraft(**filtered)
         return self._resolver.resolve(draft_bp)
 
     def to_dict(self, blueprint_id: str) -> Dict[str, Any]:
@@ -115,9 +121,14 @@ class BlueprintService:
 
     def _resolve_doc(self, doc: BlueprintDocument) -> BlueprintDocument:
         """Resolve a single document's spec_dict from draft to fully resolved form."""
-        draft = BlueprintDraft(**doc.spec_dict)
+        prompt_shortcuts = doc.spec_dict.get("prompt_shortcuts")
+        filtered = {k: v for k, v in doc.spec_dict.items() if k != "prompt_shortcuts"}
+        draft = BlueprintDraft(**filtered)
         resolved_spec = self._resolver.resolve(draft)
-        return doc.model_copy(update={"spec_dict": resolved_spec.model_dump(mode="json")})
+        resolved_dict = resolved_spec.model_dump(mode="json")
+        if prompt_shortcuts:
+            resolved_dict["prompt_shortcuts"] = prompt_shortcuts
+        return doc.model_copy(update={"spec_dict": resolved_dict})
 
     def list_resolved_docs(
             self, *, identity: Optional[Identity] = None, **pg
@@ -158,6 +169,23 @@ class BlueprintService:
         Return the JSON schema of the BlueprintDraft model.
         """
         return BlueprintDraft.model_json_schema()
+
+    # ────────── Prompt Shortcuts ──────────
+    def set_prompt_shortcuts(self, blueprint_id: str, prompts: list[dict]) -> PromptShortcuts:
+        if not self.exists(blueprint_id):
+            raise BlueprintNotFoundError(blueprint_id)
+        try:
+            shortcuts = PromptShortcuts(prompts=prompts)
+        except (ValueError, TypeError) as exc:
+            raise PromptShortcutsValidationError(str(exc)) from exc
+        self._repo.set_prompt_shortcuts(blueprint_id=blueprint_id, prompts=shortcuts.to_storage())
+        return shortcuts
+
+    def get_prompt_shortcuts(self, blueprint_id: str) -> PromptShortcuts:
+        if not self.exists(blueprint_id):
+            raise BlueprintNotFoundError(blueprint_id)
+        raw = self._repo.get_prompt_shortcuts(blueprint_id=blueprint_id)
+        return PromptShortcuts.from_raw_list(raw)
 
     # ────────── Blueprint Metadata ──────────
     def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
