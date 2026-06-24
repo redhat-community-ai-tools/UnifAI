@@ -126,6 +126,12 @@ local-development/
 
 All service definitions, infrastructure containers, port assignments, and service groups are declared in `services.yaml` — there is no per-service Python class or hardcoded bash logic.
 
+### Related Documentation
+
+| Topic | File |
+|---|---|
+| Authentication & session cookies | [AUTH_AND_SESSIONS.md](./AUTH_AND_SESSIONS.md) |
+
 ---
 
 ## 2. Prerequisites

@@ -127,10 +127,10 @@ class AuthManager:
         OAuth redirect URI for /api/auth/callback.
 
         Local dev: http://hostname_local:port/api/auth/callback
-        Production: {identity_host}/api/auth/callback (IDENTITY_HOST env)
+        Production: {frontend_url}/api3/auth/callback (behind nginx proxy)
         """
         if config.backend_env == "production":
-            return f"{config.identity_host.rstrip('/')}/api/auth/callback"
+            return f"{config.frontend_url.rstrip('/')}/api3/auth/callback"
         return f"http://{config.hostname_local}:{config.port}/api/auth/callback"
     
     def _register_auth_routes(self):
@@ -168,12 +168,15 @@ class AuthManager:
                 pass
 
             if cli_callback_url:
-                # CLI flow: exchange code directly with Keycloak (no Flask session/cookie needed).
-                # The browser cannot maintain the Flask session cookie across the Keycloak redirect
-                # because the login goes to localhost:13456 but Keycloak redirects back to
-                # 127.0.0.1:13456 — different cookie domains in Chrome, so the session is empty.
-                # A direct back-channel exchange bypasses the cookie entirely.
-                # Security: Keycloak still binds the code to redirect_uri, preventing replay attacks.
+                # CLI flow: exchange code directly with Keycloak and create a
+                # server-side Redis session identical to the GUI flow.  The
+                # session_id is returned to the CLI so it can send it as a
+                # cookie on subsequent API requests.
+                #
+                # TODO: The session-creation logic below duplicates the GUI
+                # flow.  Extract a shared ``_create_server_session(token,
+                # userinfo)`` helper once API-token support lands (design §7)
+                # so both paths use a single code path.
                 code = request.args.get('code', '')
                 kc_error = request.args.get('error', '')
                 if kc_error or not code:
@@ -208,11 +211,48 @@ class AuthManager:
                     userinfo_resp.raise_for_status()
                     userinfo = userinfo_resp.json()
 
+                    session_created_at = datetime.now()
+                    session_expires_at = session_created_at + timedelta(
+                        hours=config.permanent_session_lifetime,
+                    )
+                    session_id = str(uuid.uuid4())
+
+                    session_data = {
+                        'username': userinfo.get('preferred_username'),
+                        'email': userinfo.get('email'),
+                        'name': userinfo.get('name'),
+                        'sub': userinfo.get('sub'),
+                        'session_created_at': session_created_at.timestamp(),
+                        'session_expires_at': session_expires_at.timestamp(),
+                        'token_expires_at': token.get('expires_at', 0),
+                        'access_token': token.get('access_token'),
+                        'refresh_token': token.get('refresh_token'),
+                    }
+                    ttl_seconds = self._ttl_seconds_until_session_expires(
+                        session_expires_at.timestamp()
+                    )
+                    self.redis_store.hset(
+                        identity_session_key(session_id),
+                        session_data,
+                        ttl_seconds=ttl_seconds,
+                    )
+
+                    # Build a signed session cookie so the CLI can send it
+                    # as-is without needing the SECRET_KEY.
+                    si = current_app.session_interface
+                    fake_session = si.session_class(
+                        {"_permanent": True, "session_id": session_id}
+                    )
+                    cookie_value = si.get_signing_serializer(current_app).dumps(
+                        dict(fake_session)
+                    )
+
                     user_data = {
                         'username': userinfo.get('preferred_username'),
                         'email': userinfo.get('email'),
                         'name': userinfo.get('name'),
                         'sub': userinfo.get('sub'),
+                        'session_cookie': cookie_value,
                     }
                     logger.info(f"CLI user '{user_data['username']}' authenticated successfully")
                     user_b64 = (
@@ -258,9 +298,6 @@ class AuthManager:
                 )
                 self.redis_store.hset(identity_session_key(session_id), session_data, ttl_seconds=ttl_seconds)
                 
-                logger.info(f"User {userinfo.get('preferred_username')} authenticated successfully")
-
-
                 logger.info(
                     "User %s authenticated successfully",
                     userinfo.get('preferred_username'),

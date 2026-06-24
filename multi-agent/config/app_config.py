@@ -14,6 +14,12 @@ class AppConfig(SharedConfig):
     version: str = "1.0.0"
     admin_allowed_users: list = []  # Populate with user_ids (usernames) to grant admin access
     secret_key: str = ""
+
+    # Session cookie — must match Identity so Flask never re-signs with different attributes
+    session_cookie_secure: bool = False
+    session_cookie_http_only: bool = True
+    session_cookie_samesite: str = "Lax"
+
     # Storage
     shared_storage: str = "/app/shared"
     # Engine

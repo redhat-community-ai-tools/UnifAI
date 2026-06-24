@@ -69,6 +69,34 @@ def umami_client():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# REDIS & IDENTITY
+# ══════════════════════════════════════════════════════════════════════════════
+
+@lru_cache(maxsize=1)
+def redis_kv_store():
+    """Shared RedisKVStore for session validation and caching."""
+    from global_utils.redis import RedisKVStore, build_redis_client
+    return RedisKVStore(build_redis_client())
+
+
+@lru_cache(maxsize=1)
+def team_membership_cache():
+    """Redis-backed team membership cache."""
+    from global_utils.redis import TeamMembershipCache
+    return TeamMembershipCache(redis_kv_store())
+
+
+@lru_cache(maxsize=1)
+def identity_client():
+    """Shared IdentityClient for team-membership checks."""
+    from global_utils.identity_client import IdentityClient
+    from config.app_config import AppConfig
+    config = AppConfig.get_instance()
+    base = (config.identity_host or "").rstrip("/")
+    return IdentityClient(base_url=base, team_cache=team_membership_cache())
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # REPOSITORIES (Infrastructure adapters implementing domain ports)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -591,6 +619,9 @@ def clear_all_caches():
     users_db.cache_clear()
     file_storage.cache_clear()
     umami_client.cache_clear()
+    redis_kv_store.cache_clear()
+    team_membership_cache.cache_clear()
+    identity_client.cache_clear()
     # Repositories
     pipeline_repository.cache_clear()
     data_source_repository.cache_clear()

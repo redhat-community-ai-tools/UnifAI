@@ -38,7 +38,7 @@ export default function AdminConfigSection({
 
   const mutation = useMutation({
     mutationFn: (vals: Record<string, unknown>) =>
-      updateAdminConfigSection(section.key, vals, user?.username),
+      updateAdminConfigSection(section.key, vals),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin_config"] });
       queryClient.invalidateQueries({ queryKey: ["admin-access"] });

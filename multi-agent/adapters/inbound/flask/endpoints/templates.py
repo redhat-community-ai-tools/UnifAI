@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, current_app
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import logging
-from inbound.flask.decorators import with_require_identity_authorization
+from inbound.flask.decorators import with_require_identity_authorization, require_admin_access
 
 from mas.templates.errors import (
     TemplateNotFoundError,
@@ -150,6 +150,7 @@ def get_template_summary(template_id):
 
 
 @templates_bp.route("/template.create", methods=["POST"])
+@require_admin_access
 @from_body({
     "draft": fields.Dict(required=True),
     "placeholders": fields.Dict(required=True),
@@ -183,14 +184,14 @@ def create_template(draft, placeholders, metadata):
 
 
 @templates_bp.route("/template.delete", methods=["DELETE"])
+@require_admin_access
 @from_query({
     "template_id": fields.Str(data_key="templateId", required=True),
 })
 def delete_template(template_id):
     """
-    Delete a template by ID.
+    Delete a template by ID (admin only).
     """
-    # TODO: Add authorization check - verify user has permission to delete this template
     try:
         svc = current_app.container.template_service
         deleted = svc.delete_template(template_id)

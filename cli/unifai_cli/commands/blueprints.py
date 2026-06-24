@@ -18,19 +18,18 @@ blueprints_app = typer.Typer(
 
 @blueprints_app.command("list")
 def list_cmd(
-    user: Optional[str] = typer.Option(None, "--user", "-u", help="User ID", envvar="UNIFAI_USER"),
     mas_url: Optional[str] = typer.Option(None, "--mas-url", help="MAS server URL", envvar="MAS_URL"),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Select a blueprint to inspect"),
 ):
-    """List all blueprints available to a user."""
-    from unifai_cli.bootstrap import build_client, resolve_user_id
+    """List all blueprints available to the authenticated user."""
+    from unifai_cli.bootstrap import build_client, resolve_session
     from unifai_cli.display.formatting import console, render_blueprint_table
 
-    user_id = resolve_user_id(user)
-    client = build_client(mas_url, user_id=user_id)
+    session_cookie = resolve_session()
+    client = build_client(mas_url, session_cookie=session_cookie)
 
     try:
-        summaries = client.list_blueprint_summaries(user_id)
+        summaries = client.list_blueprint_summaries()
     except Exception as e:
         console.print(f"[red]Failed to list blueprints:[/red] {e}")
         return
@@ -63,13 +62,13 @@ def inspect_cmd(
 # ── Helpers used by both CLI commands and the interactive menu ──
 
 
-def list_blueprints_interactive(client: MASClient, user_id: str) -> Optional[dict]:
+def list_blueprints_interactive(client: MASClient) -> Optional[dict]:
     """List blueprints and let the user select one. Returns the selected summary or None."""
     from unifai_cli.display.formatting import console, render_blueprint_table
     from unifai_cli.interaction.menus import select_blueprint
 
     try:
-        summaries = client.list_blueprint_summaries(user_id)
+        summaries = client.list_blueprint_summaries()
     except Exception as e:
         console.print(f"[red]Failed to list blueprints:[/red] {e}")
         return None

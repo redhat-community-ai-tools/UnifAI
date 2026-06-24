@@ -40,9 +40,11 @@ class TemplateRepository(ABC):
     @abstractmethod
     def delete(self, template_id: str) -> bool:
         """
-        Delete a template by ID.
+        Soft-delete a template by ID (marks deleted=True).
         
-        Returns True if a document was removed.
+        Returns True if a document was marked deleted.
+        The document stays in the database so the seeder
+        knows not to re-insert fixture templates.
         """
 
     # ────────────────────────────── Reads ───────────────────────────────
@@ -55,8 +57,15 @@ class TemplateRepository(ABC):
         """
 
     @abstractmethod
-    def exists(self, template_id: str) -> bool:
-        """Check if a template exists."""
+    def exists(self, template_id: str, *, include_deleted: bool = False) -> bool:
+        """Check if a template exists.
+
+        Args:
+            template_id: The template identifier.
+            include_deleted: If ``True``, soft-deleted templates are
+                counted as existing (used by the fixture seeder to
+                avoid re-inserting admin-deleted templates).
+        """
 
     # ────────────────────────────── Listings ────────────────────────────
     @abstractmethod

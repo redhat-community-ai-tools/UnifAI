@@ -35,7 +35,7 @@ export default function AITransparencyModal({
     try {
       if (dontShowAgain) {
         // Only call the API if user checked "don't show again"
-        const result = await approveUser(username);
+        const result = await approveUser();
         if (!result.approved) {
           throw new Error("Failed to approve user");
         }

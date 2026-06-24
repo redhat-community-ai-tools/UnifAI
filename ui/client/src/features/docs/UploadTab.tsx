@@ -18,7 +18,6 @@ import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { ProcessingOptions } from "./ProcessingOptions";
 import { embedDocs, uploadDocs, getSupportedFileExtensions, validateFiles as validateFilesApi } from "@/api/docs";
-import { useAuth } from '@/contexts/AuthContext';
 import { formatPipelineError } from "@/utils/errorFormatting";
 import { useQuery } from "@tanstack/react-query";
 
@@ -37,8 +36,6 @@ interface FileWithTags {
 export const UploadTab: React.FC<UploadTabProps> = ({
     setShowUploadModal, fetchDocuments: refetchDocuments
 }) => {
-    const { user } = useAuth();
-    
     const [isDragging, setIsDragging] = useState(false);
     const [selectedFiles, setSelectedFiles] = useState<FileWithTags[]>([]);
     const [isUploading, setIsUploading] = useState(false);
@@ -93,7 +90,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
      * Files already in the selection list are silently ignored.
      */
     const handleFiles = async (files: FileList) => {
-        const currentUsername = user?.username || 'default';
         const filesArray = Array.from(files);
         
         // Get names of files already in the selection list
@@ -134,7 +130,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
         try {
             // Validate all files via backend API
-            const result = await validateFilesApi(allFilesMetadata, currentUsername, true);
+            const result = await validateFilesApi(allFilesMetadata);
             
             // Get errors for new files only
             const newFileErrors = result.errors.filter(err => 
@@ -310,7 +306,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
             setUploadProgress(60);
             
             // Pass skip_validation=true since files were pre-validated
-            const res = await embedDocs(docs, user?.username || 'default', true);
+            const res = await embedDocs(docs, true);
             
             const issues = res?.registration?.issues || [];
             if (issues.length > 0) {

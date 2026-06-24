@@ -63,6 +63,7 @@ from outbound.auth.http_oauth_client import HttpxAuthClient
 
 from mas.core.identity.ports import IdentityProvider
 from global_utils.identity_client import IdentityClient
+from global_utils.redis import RedisKVStore, TeamMembershipCache, build_redis_client
 from global_utils.utils.singleton import SingletonMeta
 from global_utils.utils.util import get_redis_url
 
@@ -263,11 +264,14 @@ class AppContainer(metaclass=SingletonMeta):
             background_engine=background_engine,
         )
 
-        # Single shared IdentityClient — the only object that makes HTTP calls
-        # to the Identity pod.  The identity_provider port adapter and the
-        # directory provider both delegate to it.
+        self.redis_kv_store = RedisKVStore(build_redis_client())
+        self.team_membership_cache = TeamMembershipCache(self.redis_kv_store)
+
         identity_base = (cfg.directory_sso_url or cfg.identity_host or "").rstrip("/")
-        self.identity_client = IdentityClient(base_url=identity_base)
+        self.identity_client = IdentityClient(
+            base_url=identity_base,
+            team_cache=self.team_membership_cache,
+        )
 
         self.identity_provider: IdentityProvider = self._build_identity_auth_provider(
             cfg, self.identity_client
