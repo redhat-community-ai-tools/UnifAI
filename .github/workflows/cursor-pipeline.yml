@@ -86,7 +86,7 @@ jobs:
           fi
           for MODEL in "$ARCH_JUDGE_MODEL" "$CODE_JUDGE_MODEL"; do
             if ! echo "$MODEL_OUTPUT" | grep -qF "$MODEL"; then
-              echo "::warning::Model '$MODEL' is not available. Pipeline will use fallback."
+              echo "::warning::Judge model '$MODEL' is not available — pipeline will fall back to 'claude-4.6-sonnet-medium-thinking'. To override, set ARCH_JUDGE_MODEL / CODE_JUDGE_MODEL env vars."
             fi
           done
 
@@ -108,17 +108,36 @@ jobs:
           agent --trust --force -p "/pipeline review" \
             --model "$ORCHESTRATOR_MODEL" --output-format json \
             > review.json 2> >(tee review_stderr.log >&2) || AGENT_EXIT=$?
-          if [ "$AGENT_EXIT" -ne 0 ]; then
-            echo "::warning::Agent exited with code $AGENT_EXIT. See review_stderr.log for details."
-          fi
           # Extract result directly to file — avoids shell variable mangling
           # (echo of large content can lose newlines / interpret backslashes)
           jq -r '.result // empty' review.json 2>/dev/null > review_output.txt || true
           # Normalize line endings (CRLF → LF) so awk anchors work reliably
           sed -i 's/\r$//' review_output.txt
           # Split combined output into separate files for the gate evaluator
-          awk '/^## ARCHITECTURE REVIEW$/,/^## CODE REVIEW/{if(/^## CODE REVIEW/)next; print}' review_output.txt > arch_review_output.txt
-          awk '/^## CODE REVIEW$/,0{print}' review_output.txt > code_review_output.txt
+          awk '/^## ARCHITECTURE REVIEW[[:space:]]*$/,/^## CODE REVIEW[[:space:]]*$/{if(/^## CODE REVIEW[[:space:]]*$/)next; print}' review_output.txt > arch_review_output.txt
+          awk '/^## CODE REVIEW[[:space:]]*$/,0{print}' review_output.txt > code_review_output.txt
+
+          # Validate split files contain expected review content
+          SPLIT_OK=true
+          for f in arch_review_output.txt code_review_output.txt; do
+            if [ ! -s "$f" ]; then
+              echo "::error::${f} is empty. Agent output must contain exact '## ARCHITECTURE REVIEW' and '## CODE REVIEW' headers."
+              SPLIT_OK=false
+            elif ! grep -q 'PIPELINE_VERDICT' "$f"; then
+              echo "::warning::${f} missing PIPELINE_VERDICT — judge output may be incomplete."
+            fi
+          done
+          if [ "$AGENT_EXIT" -ne 0 ]; then
+            if [ "$SPLIT_OK" = false ]; then
+              echo "::error::Agent exited with code $AGENT_EXIT and produced unusable output. See review_stderr.log."
+              exit 1
+            fi
+            echo "::warning::Agent exited with code $AGENT_EXIT but review output appears valid. Continuing."
+          fi
+          if [ "$SPLIT_OK" = false ]; then
+            echo "::error::Output splitting failed — review sections missing or empty. Ensure pipeline.md output uses exact headers: '## ARCHITECTURE REVIEW' then '## CODE REVIEW'."
+            exit 1
+          fi
 
       - name: Publish results to Job Summary
         if: always()
@@ -151,7 +170,7 @@ jobs:
 
       - name: Upload Telemetry Data
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: pipeline-telemetry-${{ github.run_id }}
           path: telemetry.json

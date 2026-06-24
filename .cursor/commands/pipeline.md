@@ -205,7 +205,7 @@ After all phases complete (or the single phase finishes), you MUST produce a sum
 <important architectural or implementation decisions made during the pipeline>
 ```
 
-**For single-phase modes** (`design-only`, `review-only`, `arch-review`, `code-review-only`, `qa-only`):
+**For single-phase modes** (`design-only`, `review-only`, `arch-review`, `review`, `code-review-only`, `qa-only`):
 
 ```
 ## <PHASE NAME> COMPLETE

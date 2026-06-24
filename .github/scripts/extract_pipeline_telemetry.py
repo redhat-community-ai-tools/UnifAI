@@ -33,8 +33,10 @@ MODEL_PRICING = {
 DEFAULT_PRICING = MODEL_PRICING["claude-4.6-sonnet-medium-thinking"]
 
 PHASE_FILES = [
-    # Combined review mode: orchestrator runs scout inline + spawns judges in parallel
-    ("review", "review.json", "ORCHESTRATOR_MODEL"),
+    # Combined review mode: mixed-model session (scout at orchestrator rate,
+    # judges at their own rates).  model_env_var=None signals blended pricing
+    # computed at runtime in main().
+    ("review", "review.json", None),
     # Legacy standalone modes (kept for backward compatibility)
     ("arch-review", "arch_review.json", "ARCH_JUDGE_MODEL"),
     ("code-review", "code_review.json", "CODE_JUDGE_MODEL"),
@@ -76,6 +78,10 @@ def parse_phase(phase_name: str, json_path: Path, model: str) -> dict | None:
         data = json.loads(json_path.read_text())
     except (json.JSONDecodeError, OSError) as e:
         print(f"::warning::Telemetry: Failed to parse {json_path}: {e}")
+        return None
+
+    if not isinstance(data, dict):
+        print(f"::warning::Telemetry: {json_path} is not a JSON object, skipping phase '{phase_name}'")
         return None
 
     if data.get("is_error") or data.get("type") != "result":
@@ -197,15 +203,34 @@ def write_summary(telemetry: dict, summary_path: Path) -> None:
 
 def main() -> int:
     orchestrator_model = os.environ.get("ORCHESTRATOR_MODEL", "composer-2.5-fast")
+    arch_judge_model = os.environ.get("ARCH_JUDGE_MODEL", orchestrator_model)
+    code_judge_model = os.environ.get("CODE_JUDGE_MODEL", orchestrator_model)
+
     resolved_models = {
         "orchestrator": orchestrator_model,
-        "arch_judge": os.environ.get("ARCH_JUDGE_MODEL", orchestrator_model),
-        "code_judge": os.environ.get("CODE_JUDGE_MODEL", orchestrator_model),
+        "arch_judge": arch_judge_model,
+        "code_judge": code_judge_model,
     }
+
+    # The combined "review" phase mixes orchestrator (scout) and judge models
+    # in a single CLI session.  The CLI reports aggregate token usage without a
+    # per-model breakdown, so we average rates across participating models.
+    _session_models = list(dict.fromkeys(
+        [orchestrator_model, arch_judge_model, code_judge_model]
+    ))
+    blended: dict[str, float] = {}
+    for rate_key in ("input", "output", "cache_read", "cache_write"):
+        rates = [MODEL_PRICING.get(m, DEFAULT_PRICING)[rate_key] for m in _session_models]
+        blended[rate_key] = sum(rates) / len(rates)
+    _REVIEW_BLEND_KEY = "blended"
+    MODEL_PRICING[_REVIEW_BLEND_KEY] = blended
 
     phases = []
     for phase_name, filename, model_env_var in PHASE_FILES:
-        model = os.environ.get(model_env_var, orchestrator_model)
+        if model_env_var is None:
+            model = _REVIEW_BLEND_KEY
+        else:
+            model = os.environ.get(model_env_var, orchestrator_model)
         result = parse_phase(phase_name, Path(filename), model)
         if result:
             phases.append(result)

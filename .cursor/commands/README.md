@@ -21,6 +21,7 @@ The unified development workflow featuring design, review, implementation, code 
 | `qa-only` | `/pipeline qa-only [files]` | QA only |
 | `debug` | `/pipeline debug <error>` | Structured debugging |
 | `arch-review` | `/pipeline arch-review [files]` | Architecture review (CI mode) |
+| `review` | `/pipeline review [files]` | Architecture + Code Review (parallel judges, CI preferred) |
 
 **Options:**
 - `--adr` — Write design to ADR file at `docs/designs/<slug>-adr.md`
