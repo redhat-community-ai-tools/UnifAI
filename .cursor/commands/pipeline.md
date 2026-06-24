@@ -114,60 +114,57 @@ When the verdict is NOT approval, read `.cursor/skills/pipeline/modes/_revision-
 - PHASE_HEADER: `## PHASE 3: IMPLEMENTATION (QA Fix <N>)` | REVIEW_HEADER: `## PHASE 5: QA (Revision <N>)`
 - Also follow the QA-Specific Extension in the revision loop protocol.
 
-### Agent Dispatch Protocol (Scout + Judge)
+### Agent Dispatch Protocol (Inline Scout + Parallel Judges)
 
-Review phases that use `arch-reviewer.md` or `code-reviewer.md` follow a Scout + Judge pattern. The Scout gathers evidence mechanically on a fast model, then Judge(s) perform reasoning-heavy evaluation. When both reviews run together, they share one Scout and judges run in parallel.
+Review phases follow an Inline Scout + Judge pattern. The orchestrator **executes Scout logic directly** (no subagent spawn) to gather evidence, then spawns Judge subagent(s) for reasoning. This minimizes agent spawn overhead — only judges are spawned.
 
-**Model defaults** (override via environment variables `SCOUT_MODEL`, `ARCH_JUDGE_MODEL`, `CODE_JUDGE_MODEL`):
-- Scout: `composer-2.5-fast`
+**Model defaults** (override via environment variables `ARCH_JUDGE_MODEL`, `CODE_JUDGE_MODEL`):
 - Arch Judge: `claude-4.6-opus-high-thinking`
 - Code Judge: `claude-4.6-sonnet-medium-thinking`
 
-**For `review` (dual-review mode — preferred for CI):**
+**Inline Scout execution (applies to all review modes):**
 1. Read `.cursor/skills/pipeline/phases/_scout.md`
-2. Spawn Scout via Task tool: `Task(model=$SCOUT_MODEL, subagent_type="generalPurpose", prompt="<scout skill instructions + scope>")`. Pass the user's file/folder arguments as scope.
-3. Receive the Evidence Pack from Scout output.
-4. Read both `.cursor/skills/pipeline/phases/arch-reviewer.md` and `.cursor/skills/pipeline/phases/code-reviewer.md`
-5. Spawn BOTH judges in parallel (single message, two Task calls with `run_in_background: true`):
+2. Execute the Scout instructions **directly** (you ARE the scout). Use Shell/Grep/Read tools to: run `git diff`, enumerate imports, scan for patterns, build the Evidence Pack.
+3. Format output per `.cursor/skills/pipeline/modes/_evidence-format.md`.
+4. The Evidence Pack is now in your context — no inter-agent transfer needed.
+
+**For `review` (dual-review mode — preferred for CI):**
+1. Run Inline Scout (steps above). Scope = user's file/folder arguments or git diff.
+2. Read both `.cursor/skills/pipeline/phases/arch-reviewer.md` and `.cursor/skills/pipeline/phases/code-reviewer.md`
+3. Spawn BOTH judges in parallel (single message, two Task calls with `run_in_background: true`):
    - Arch Judge: `Task(model=$ARCH_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<arch-reviewer skill + evidence pack>")`
    - Code Judge: `Task(model=$CODE_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<code-reviewer skill + evidence pack>")`
-6. Wait for both to complete. Parse `PIPELINE_VERDICT:` from each judge's output.
-7. Present both reviews under their respective headers (`## ARCHITECTURE REVIEW`, `## CODE REVIEW`).
-8. The overall pipeline passes only if BOTH verdicts pass (arch=APPROVE AND code=CLEAN).
+4. Wait for both to complete. Parse `PIPELINE_VERDICT:` from each judge's output.
+5. Present both reviews in this exact order: `## ARCHITECTURE REVIEW` first, then `## CODE REVIEW`. The CI workflow's output splitting depends on this ordering.
+6. The overall pipeline passes only if BOTH verdicts pass (arch=APPROVE AND code=CLEAN).
 
 **For `arch-review` (Phase 9, standalone):**
-1. Read `.cursor/skills/pipeline/phases/_scout.md`
-2. Spawn Scout. Pass the user's file/folder arguments as scope.
-3. Receive the Evidence Pack.
-4. Read `.cursor/skills/pipeline/phases/arch-reviewer.md`
-5. Spawn Arch Judge with evidence pack.
-6. Parse `PIPELINE_VERDICT:` from Judge output.
+1. Run Inline Scout. Scope = user's file/folder arguments.
+2. Read `.cursor/skills/pipeline/phases/arch-reviewer.md`
+3. Spawn Arch Judge: `Task(model=$ARCH_JUDGE_MODEL, ...)` with evidence pack.
+4. Parse `PIPELINE_VERDICT:` from Judge output.
 
 **For `code-review-only` (Phase 4, standalone):**
-1. Read `.cursor/skills/pipeline/phases/_scout.md`
-2. Spawn Scout. Pass the user's file/folder arguments as scope.
-3. Receive the Evidence Pack.
-4. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
-5. Spawn Code Judge with evidence pack.
-6. Parse `PIPELINE_VERDICT:` from Judge output.
+1. Run Inline Scout. Scope = user's file/folder arguments.
+2. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
+3. Spawn Code Judge: `Task(model=$CODE_JUDGE_MODEL, ...)` with evidence pack.
+4. Parse `PIPELINE_VERDICT:` from Judge output.
 
 **For `full` pipeline Phase 4 (after Phase 3):**
-1. Read `.cursor/skills/pipeline/phases/_scout.md`
-2. Spawn Scout: scope = changed files from Phase 3.
-3. Receive Evidence Pack.
-4. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
-5. Spawn Code Judge: include evidence pack + approved design from Phase 2.
-6. Parse `PIPELINE_VERDICT:`.
+1. Run Inline Scout. Scope = changed files from Phase 3.
+2. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
+3. Spawn Code Judge with evidence pack + approved design from Phase 2.
+4. Parse `PIPELINE_VERDICT:`.
 
 **Model fallback:** If the specified model is unavailable (Task tool returns an error), retry with `claude-4.6-sonnet-medium-thinking` and log: "Model fallback: <original> unavailable, using sonnet-medium-thinking."
 
-**Environment variable resolution:** Check `$SCOUT_MODEL`, `$ARCH_JUDGE_MODEL`, `$CODE_JUDGE_MODEL` env vars first. If not set, use the defaults above.
+**Environment variable resolution:** Check `$ARCH_JUDGE_MODEL`, `$CODE_JUDGE_MODEL` env vars first. If not set, use the defaults above.
 
 ### Scope resolution (Phases 5 in standalone mode)
 
 For `qa-only` mode, the reviewer skill handles scope resolution and domain loading itself — it determines the file scope (from explicit paths or git diff) and resolves domains using its built-in path-prefix mapping. No additional orchestrator action is needed beyond passing the user's file/folder arguments (if any) to the reviewer.
 
-For `code-review-only`, `arch-review`, and `review` modes, scope resolution is handled by the Scout agent per the Agent Dispatch Protocol above.
+For `code-review-only`, `arch-review`, and `review` modes, scope resolution is handled by the inline Scout per the Agent Dispatch Protocol above.
 
 ### Single-phase modes (no revision loop)
 

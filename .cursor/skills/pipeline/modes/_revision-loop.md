@@ -56,12 +56,12 @@ IF verdict matches any VERDICT_BLOCK token:
         Step J: Locate the new PIPELINE_VERDICT: line. Return to the top of this protocol.
 ```
 
-## Scout + Judge Re-Review Extension
+## Inline Scout + Judge Re-Review Extension
 
 When the REVIEWER_SKILL is `arch-reviewer.md` or `code-reviewer.md`, Steps G–I are replaced with the Agent Dispatch Protocol from `pipeline.md`:
 
-1. Re-run the Scout on the updated diff (scope = files changed in the revision).
-2. Receive the fresh Evidence Pack.
+1. Re-run Inline Scout on the updated diff (scope = files changed in the revision). Execute the scout logic directly — do NOT spawn a subagent.
+2. Build the fresh Evidence Pack in your context.
 3. Include the previous review's findings in the Judge prompt so it can perform Revision Loop Verification (§8 in code-reviewer).
 4. Spawn the appropriate Judge with the fresh evidence pack + previous findings + the approved design from Phase 2 (if available). This matches the initial dispatch inputs so the Judge can perform Design Compliance (§6 in code-reviewer).
 5. Present the Judge's output under REVIEW_HEADER.

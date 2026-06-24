@@ -2,7 +2,6 @@ name: Cursor Pipeline Review
 
 env:
   ORCHESTRATOR_MODEL: claude-4.6-sonnet-medium-thinking
-  SCOUT_MODEL: composer-2.5-fast
   ARCH_JUDGE_MODEL: claude-4.6-opus-high-thinking
   CODE_JUDGE_MODEL: claude-4.6-sonnet-medium-thinking
 
@@ -85,7 +84,7 @@ jobs:
             echo "$MODEL_OUTPUT"
             exit 1
           fi
-          for MODEL in "$SCOUT_MODEL" "$ARCH_JUDGE_MODEL" "$CODE_JUDGE_MODEL"; do
+          for MODEL in "$ARCH_JUDGE_MODEL" "$CODE_JUDGE_MODEL"; do
             if ! echo "$MODEL_OUTPUT" | grep -qF "$MODEL"; then
               echo "::warning::Model '$MODEL' is not available. Pipeline will use fallback."
             fi
@@ -96,13 +95,12 @@ jobs:
       # checkout (contents: read permission) so it cannot push changes. The
       # CURSOR_API_KEY is scoped to this organization's Cursor account only.
       #
-      # Uses /pipeline review (dual-review mode): one Scout gathers evidence,
-      # then Arch Judge and Code Judge run in parallel on the same evidence pack.
-      # This is faster than running two separate pipeline commands sequentially.
+      # Uses /pipeline review (dual-review mode): orchestrator runs scout logic
+      # inline, then spawns Arch Judge + Code Judge in parallel. Only 2 subagent
+      # spawns instead of 3.
       - name: Run Pipeline Review
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          SCOUT_MODEL: ${{ env.SCOUT_MODEL }}
           ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
           CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
         run: |
@@ -145,7 +143,6 @@ jobs:
         if: always()
         env:
           ORCHESTRATOR_MODEL: ${{ env.ORCHESTRATOR_MODEL }}
-          SCOUT_MODEL: ${{ env.SCOUT_MODEL }}
           ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
           CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

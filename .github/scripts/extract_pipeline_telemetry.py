@@ -33,7 +33,7 @@ MODEL_PRICING = {
 DEFAULT_PRICING = MODEL_PRICING["claude-4.6-sonnet-medium-thinking"]
 
 PHASE_FILES = [
-    # Combined review mode: single orchestrator spawns scout + both judges
+    # Combined review mode: orchestrator runs scout inline + spawns judges in parallel
     ("review", "review.json", "ORCHESTRATOR_MODEL"),
     # Legacy standalone modes (kept for backward compatibility)
     ("arch-review", "arch_review.json", "ARCH_JUDGE_MODEL"),
@@ -83,6 +83,14 @@ def parse_phase(phase_name: str, json_path: Path, model: str) -> dict | None:
         return None
 
     usage = data.get("usage", {})
+    if not isinstance(usage, dict):
+        usage = {}
+    if model not in MODEL_PRICING:
+        print(
+            f"::warning::Telemetry: Unknown model '{model}' in phase '{phase_name}', "
+            f"falling back to default pricing (claude-4.6-sonnet-medium-thinking). "
+            f"Add this model to MODEL_PRICING to get accurate cost estimates."
+        )
     pricing = MODEL_PRICING.get(model, DEFAULT_PRICING)
 
     return {
@@ -106,9 +114,10 @@ def _parse_pr_number(raw: str | None) -> int | None:
     if not raw:
         return None
     try:
-        return int(raw) or None
+        value = int(raw)
     except ValueError:
         return None
+    return value if value > 0 else None
 
 
 def build_telemetry(phases: list[dict], models: dict[str, str]) -> dict:
@@ -190,7 +199,6 @@ def main() -> int:
     orchestrator_model = os.environ.get("ORCHESTRATOR_MODEL", "claude-4.6-sonnet-medium-thinking")
     resolved_models = {
         "orchestrator": orchestrator_model,
-        "scout": os.environ.get("SCOUT_MODEL", "composer-2.5-fast"),
         "arch_judge": os.environ.get("ARCH_JUDGE_MODEL", orchestrator_model),
         "code_judge": os.environ.get("CODE_JUDGE_MODEL", orchestrator_model),
     }
