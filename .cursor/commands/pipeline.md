@@ -112,9 +112,48 @@ When the verdict is NOT approval, read `.cursor/skills/pipeline/modes/_revision-
 - PHASE_HEADER: `## PHASE 3: IMPLEMENTATION (QA Fix <N>)` | REVIEW_HEADER: `## PHASE 5: QA (Revision <N>)`
 - Also follow the QA-Specific Extension in the revision loop protocol.
 
-### Scope resolution (Phases 4, 5, 9 in standalone modes)
+### Agent Dispatch Protocol (Scout + Judge)
 
-For `code-review-only`, `qa-only`, and `arch-review` modes, the reviewer skill handles scope resolution and domain loading itself — it determines the file scope (from explicit paths or git diff) and resolves domains using its built-in path-prefix mapping. No additional orchestrator action is needed beyond passing the user's file/folder arguments (if any) to the reviewer.
+Review phases that use `arch-reviewer.md` or `code-reviewer.md` follow a Scout + Judge pattern. The Scout gathers evidence mechanically on a fast model, then the Judge performs reasoning-heavy evaluation.
+
+**Model defaults** (override via environment variables `SCOUT_MODEL`, `ARCH_JUDGE_MODEL`, `CODE_JUDGE_MODEL`):
+- Scout: `composer-2.5-fast`
+- Arch Judge: `claude-4.6-opus-high-thinking`
+- Code Judge: `claude-4.6-sonnet-medium-thinking`
+
+**For `arch-review` (Phase 9):**
+1. Read `.cursor/skills/pipeline/phases/_scout.md`
+2. Spawn Scout via Task tool: `Task(model=$SCOUT_MODEL, subagent_type="generalPurpose", prompt="<scout skill instructions + scope>")`. Pass the user's file/folder arguments as scope.
+3. Receive the Evidence Pack from Scout output.
+4. Read `.cursor/skills/pipeline/phases/arch-reviewer.md`
+5. Spawn Arch Judge via Task tool: `Task(model=$ARCH_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<arch-reviewer skill instructions + evidence pack>")`.
+6. Parse `PIPELINE_VERDICT:` from Judge output.
+
+**For `code-review-only` (Phase 4 standalone):**
+1. Read `.cursor/skills/pipeline/phases/_scout.md`
+2. Spawn Scout via Task tool: `Task(model=$SCOUT_MODEL, subagent_type="generalPurpose", prompt="<scout skill instructions + scope>")`. Pass the user's file/folder arguments as scope.
+3. Receive the Evidence Pack from Scout output.
+4. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
+5. Spawn Code Judge via Task tool: `Task(model=$CODE_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<code-reviewer skill instructions + evidence pack>")`.
+6. Parse `PIPELINE_VERDICT:` from Judge output.
+
+**For `full` pipeline Phase 4 (after Phase 3):**
+1. Read `.cursor/skills/pipeline/phases/_scout.md`
+2. Spawn Scout: scope = changed files from Phase 3.
+3. Receive Evidence Pack.
+4. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
+5. Spawn Code Judge: include evidence pack + approved design from Phase 2.
+6. Parse `PIPELINE_VERDICT:`.
+
+**Model fallback:** If the specified model is unavailable (Task tool returns an error), retry with `claude-4.6-sonnet-medium-thinking` and log: "Model fallback: <original> unavailable, using sonnet-medium-thinking."
+
+**Environment variable resolution:** Check `$SCOUT_MODEL`, `$ARCH_JUDGE_MODEL`, `$CODE_JUDGE_MODEL` env vars first. If not set, use the defaults above.
+
+### Scope resolution (Phases 5 in standalone mode)
+
+For `qa-only` mode, the reviewer skill handles scope resolution and domain loading itself — it determines the file scope (from explicit paths or git diff) and resolves domains using its built-in path-prefix mapping. No additional orchestrator action is needed beyond passing the user's file/folder arguments (if any) to the reviewer.
+
+For `code-review-only` and `arch-review` modes, scope resolution is handled by the Scout agent per the Agent Dispatch Protocol above.
 
 ### Single-phase modes (no revision loop)
 

@@ -7,22 +7,34 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# Anthropic pricing per 1M tokens (USD) — claude-4.6-opus-high-thinking
-# Update these when model pricing changes or when model switching is introduced.
+# Pricing per 1M tokens (USD) — multi-model Scout + Judge architecture.
+# Scout uses a fast model, Judges use flagship/balanced models.
 MODEL_PRICING = {
     "claude-4.6-opus-high-thinking": {
         "input": 15.00,
         "output": 75.00,
-        "cache_read": 1.50,   # 90% discount on input
-        "cache_write": 18.75,  # 25% surcharge on input
+        "cache_read": 1.50,
+        "cache_write": 18.75,
+    },
+    "claude-4.6-sonnet-medium-thinking": {
+        "input": 3.00,
+        "output": 15.00,
+        "cache_read": 0.30,
+        "cache_write": 3.75,
+    },
+    "composer-2.5-fast": {
+        "input": 0.25,
+        "output": 1.25,
+        "cache_read": 0.025,
+        "cache_write": 0.30,
     },
 }
 
-DEFAULT_PRICING = MODEL_PRICING["claude-4.6-opus-high-thinking"]
+DEFAULT_PRICING = MODEL_PRICING["claude-4.6-sonnet-medium-thinking"]
 
 PHASE_FILES = [
-    ("arch-review", "arch_review.json"),
-    ("code-review", "code_review.json"),
+    ("arch-review", "arch_review.json", "ARCH_JUDGE_MODEL"),
+    ("code-review", "code_review.json", "CODE_JUDGE_MODEL"),
 ]
 
 
@@ -120,7 +132,12 @@ def build_telemetry(phases: list[dict]) -> dict:
         "run_url": f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', 'unknown')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '0')}",
         "pr_number": _parse_pr_number(os.environ.get("PR_NUMBER")),
         "branch": os.environ.get("BRANCH_REF", "unknown"),
-        "model": os.environ.get("PIPELINE_MODEL", "unknown"),
+        "models": {
+            "orchestrator": os.environ.get("ORCHESTRATOR_MODEL", "unknown"),
+            "scout": os.environ.get("SCOUT_MODEL", "unknown"),
+            "arch_judge": os.environ.get("ARCH_JUDGE_MODEL", "unknown"),
+            "code_judge": os.environ.get("CODE_JUDGE_MODEL", "unknown"),
+        },
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "phases": phases,
         "totals": totals,
@@ -172,10 +189,11 @@ def write_summary(telemetry: dict, summary_path: Path) -> None:
 
 
 def main() -> int:
-    model = os.environ.get("PIPELINE_MODEL", "claude-4.6-opus-high-thinking")
+    orchestrator_model = os.environ.get("ORCHESTRATOR_MODEL", "claude-4.6-sonnet-medium-thinking")
 
     phases = []
-    for phase_name, filename in PHASE_FILES:
+    for phase_name, filename, model_env_var in PHASE_FILES:
+        model = os.environ.get(model_env_var, orchestrator_model)
         result = parse_phase(phase_name, Path(filename), model)
         if result:
             phases.append(result)

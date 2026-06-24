@@ -1,7 +1,10 @@
 name: Cursor Pipeline Review
 
 env:
-  PIPELINE_MODEL: claude-4.6-opus-high-thinking
+  ORCHESTRATOR_MODEL: claude-4.6-sonnet-medium-thinking
+  SCOUT_MODEL: composer-2.5-fast
+  ARCH_JUDGE_MODEL: claude-4.6-opus-high-thinking
+  CODE_JUDGE_MODEL: claude-4.6-sonnet-medium-thinking
 
 on:
   pull_request:
@@ -77,8 +80,15 @@ jobs:
             echo "::error::Failed to list models. Output: $MODEL_OUTPUT"
             exit 1
           }
-          if ! echo "$MODEL_OUTPUT" | grep -qF "$PIPELINE_MODEL"; then
-            echo "::error::Model '$PIPELINE_MODEL' is not available. Available models:"
+          FAILED=0
+          for MODEL in "$ORCHESTRATOR_MODEL" "$SCOUT_MODEL" "$ARCH_JUDGE_MODEL" "$CODE_JUDGE_MODEL"; do
+            if ! echo "$MODEL_OUTPUT" | grep -qF "$MODEL"; then
+              echo "::warning::Model '$MODEL' is not available. Will rely on fallback."
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          if [ "$FAILED" -ge 4 ]; then
+            echo "::error::No configured models are available. Available models:"
             echo "$MODEL_OUTPUT"
             exit 1
           fi
@@ -87,12 +97,18 @@ jobs:
       # --force skips interactive confirmation. The agent runs in a read-only
       # checkout (contents: read permission) so it cannot push changes. The
       # CURSOR_API_KEY is scoped to this organization's Cursor account only.
+      #
+      # The orchestrator runs on ORCHESTRATOR_MODEL and internally spawns Scout
+      # and Judge subagents on their respective models via the Agent Dispatch
+      # Protocol defined in pipeline.md.
       - name: Run Architecture Review
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          SCOUT_MODEL: ${{ env.SCOUT_MODEL }}
+          ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
         run: |
           agent --trust --force -p "/pipeline arch-review" \
-            --model "$PIPELINE_MODEL" --output-format json \
+            --model "$ORCHESTRATOR_MODEL" --output-format json \
             > arch_review.json 2> >(tee arch_review_stderr.log >&2) || true
           jq -r '.result // empty' arch_review.json > arch_review_output.txt 2>/dev/null || true
 
@@ -100,9 +116,11 @@ jobs:
         if: "!cancelled()"
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          SCOUT_MODEL: ${{ env.SCOUT_MODEL }}
+          CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
         run: |
           agent --trust --force -p "/pipeline code-review-only" \
-            --model "$PIPELINE_MODEL" --output-format json \
+            --model "$ORCHESTRATOR_MODEL" --output-format json \
             > code_review.json 2> >(tee code_review_stderr.log >&2) || true
           jq -r '.result // empty' code_review.json > code_review_output.txt 2>/dev/null || true
 
@@ -130,7 +148,10 @@ jobs:
       - name: Extract Pipeline Telemetry
         if: always()
         env:
-          PIPELINE_MODEL: ${{ env.PIPELINE_MODEL }}
+          ORCHESTRATOR_MODEL: ${{ env.ORCHESTRATOR_MODEL }}
+          SCOUT_MODEL: ${{ env.SCOUT_MODEL }}
+          ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
+          CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BRANCH_REF: ${{ steps.branch.outputs.ref }}
         run: python3 .github/scripts/extract_pipeline_telemetry.py

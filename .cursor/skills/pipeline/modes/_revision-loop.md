@@ -48,11 +48,26 @@ IF verdict matches any VERDICT_BLOCK token:
                 - For code artifacts: apply fixes to files, then present a summary of changed files.
         Step E: Verify every feedback item is addressed by checking them off.
         Step F: Update and display the pipeline state tracker.
-        Step G: Read the REVIEWER_SKILL file using the Read tool.
+        Step G: If REVIEWER_SKILL uses Scout + Judge dispatch (arch-reviewer.md or code-reviewer.md),
+                follow the Scout + Judge Re-Review Extension below. Otherwise continue to Step G-alt.
+        Step G-alt: Read the REVIEWER_SKILL file using the Read tool.
         Step H: Apply the instructions from that skill file. Orchestrator rules remain in effect.
         Step I: Re-review the revised artifact. Present under REVIEW_HEADER.
         Step J: Locate the new PIPELINE_VERDICT: line. Return to the top of this protocol.
 ```
+
+## Scout + Judge Re-Review Extension
+
+When the REVIEWER_SKILL is `arch-reviewer.md` or `code-reviewer.md`, Steps G–I are replaced with the Agent Dispatch Protocol from `pipeline.md`:
+
+1. Re-run the Scout on the updated diff (scope = files changed in the revision).
+2. Receive the fresh Evidence Pack.
+3. Include the previous review's findings in the Judge prompt so it can perform Revision Loop Verification (§8 in code-reviewer).
+4. Spawn the appropriate Judge with the fresh evidence pack + previous findings.
+5. Present the Judge's output under REVIEW_HEADER.
+6. Locate the new `PIPELINE_VERDICT:` line and return to the top of this protocol.
+
+The Scout must re-run because the code has changed — the previous evidence pack is stale.
 
 ## QA-Specific Extension
 
