@@ -196,7 +196,7 @@ def write_summary(telemetry: dict, summary_path: Path) -> None:
 
 
 def main() -> int:
-    orchestrator_model = os.environ.get("ORCHESTRATOR_MODEL", "claude-4.6-sonnet-medium-thinking")
+    orchestrator_model = os.environ.get("ORCHESTRATOR_MODEL", "composer-2.5-fast")
     resolved_models = {
         "orchestrator": orchestrator_model,
         "arch_judge": os.environ.get("ARCH_JUDGE_MODEL", orchestrator_model),
