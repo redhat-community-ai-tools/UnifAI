@@ -232,7 +232,7 @@ Wrap in a single `<details>` block. This contains proof-of-work — clean dimens
 </details>
 ```
 
-Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–6 instead.
+Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–7 instead.
 
 ### Section 2: Risks & Follow-ups (only if any exist)
 
@@ -281,7 +281,15 @@ Example: `#### 🔴 1. [Hex Compliance] Domain imports infrastructure adapter`
 
 Omit this section entirely if there are zero critical findings.
 
-### Section 5: 🟡 Warnings (only if any exist)
+### Section 5: 🟠 Major Findings (only if any exist)
+
+Number findings sequentially within this section. Same block format as Critical Findings.
+
+Example: `#### 🟠 1. [SOLID] Service violates SRP with 12 public methods in two unrelated clusters`
+
+Omit this section entirely if there are zero major findings.
+
+### Section 6: 🟡 Warnings (only if any exist)
 
 Number findings sequentially within this section. Same block format as Critical Findings. For multi-file warnings (e.g., duplication across services), include a table of affected files within the block:
 
@@ -302,7 +310,7 @@ Example: `#### 🟡 1. [Duplication] Session cookie config duplicated across 4 s
 
 Omit this section entirely if there are zero warnings.
 
-### Section 6: 🔵 Info Items (only if any exist)
+### Section 7: 🔵 Info Items (only if any exist)
 
 Number findings sequentially within this section. Render each INFO item as a collapsible `<details>` block:
 

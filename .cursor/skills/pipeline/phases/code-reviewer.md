@@ -331,7 +331,7 @@ List the specific source files you read and what claims they verified or contrad
 </details>
 ```
 
-Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–6 instead.
+Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–7 instead.
 
 ### Section 2: Risks & Follow-ups (only if any exist)
 
@@ -397,7 +397,15 @@ Example: `#### 🔴 1. [Hex Architecture] Service imports concrete repository`
 
 Omit this section entirely if there are zero critical findings.
 
-### Section 5: 🟡 Minor / Alignment Issues (only if any exist)
+### Section 5: 🟠 Major Findings (only if any exist)
+
+Number findings sequentially within this section. Same block format as Critical Findings.
+
+Example: `#### 🟠 1. [Coupling] Business logic in wrong service — belongs in OrderService`
+
+Omit this section entirely if there are zero major findings.
+
+### Section 6: 🟡 Minor / Alignment Issues (only if any exist)
 
 Number findings sequentially within this section. Same block format. Includes MINOR severity and ALIGNMENT ISSUE findings. For multi-file issues, include a table of affected locations within the block.
 
@@ -405,7 +413,7 @@ Example: `#### 🟡 1. [Alignment] Inconsistent error response format`
 
 Omit if zero.
 
-### Section 6: 🔵 Info Items (only if any exist)
+### Section 7: 🔵 Info Items (only if any exist)
 
 Number findings sequentially within this section. Render each INFO item as a collapsible `<details>` block:
 

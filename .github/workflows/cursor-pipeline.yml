@@ -80,69 +80,65 @@ jobs:
             echo "::error::Failed to list models. Output: $MODEL_OUTPUT"
             exit 1
           }
-          FAILED=0
-          for MODEL in "$ORCHESTRATOR_MODEL" "$SCOUT_MODEL" "$ARCH_JUDGE_MODEL" "$CODE_JUDGE_MODEL"; do
-            if ! echo "$MODEL_OUTPUT" | grep -qF "$MODEL"; then
-              echo "::warning::Model '$MODEL' is not available. Will rely on fallback."
-              FAILED=$((FAILED + 1))
-            fi
-          done
-          if [ "$FAILED" -ge 4 ]; then
-            echo "::error::No configured models are available. Available models:"
+          if ! echo "$MODEL_OUTPUT" | grep -qF "$ORCHESTRATOR_MODEL"; then
+            echo "::error::Orchestrator model '$ORCHESTRATOR_MODEL' is not available. Available models:"
             echo "$MODEL_OUTPUT"
             exit 1
           fi
+          for MODEL in "$SCOUT_MODEL" "$ARCH_JUDGE_MODEL" "$CODE_JUDGE_MODEL"; do
+            if ! echo "$MODEL_OUTPUT" | grep -qF "$MODEL"; then
+              echo "::warning::Model '$MODEL' is not available. Pipeline will use fallback."
+            fi
+          done
 
       # Security: --trust grants the agent full tool access (file read/write, shell).
       # --force skips interactive confirmation. The agent runs in a read-only
       # checkout (contents: read permission) so it cannot push changes. The
       # CURSOR_API_KEY is scoped to this organization's Cursor account only.
       #
-      # The orchestrator runs on ORCHESTRATOR_MODEL and internally spawns Scout
-      # and Judge subagents on their respective models via the Agent Dispatch
-      # Protocol defined in pipeline.md.
-      - name: Run Architecture Review
+      # Uses /pipeline review (dual-review mode): one Scout gathers evidence,
+      # then Arch Judge and Code Judge run in parallel on the same evidence pack.
+      # This is faster than running two separate pipeline commands sequentially.
+      - name: Run Pipeline Review
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           SCOUT_MODEL: ${{ env.SCOUT_MODEL }}
           ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
-        run: |
-          agent --trust --force -p "/pipeline arch-review" \
-            --model "$ORCHESTRATOR_MODEL" --output-format json \
-            > arch_review.json 2> >(tee arch_review_stderr.log >&2) || true
-          jq -r '.result // empty' arch_review.json > arch_review_output.txt 2>/dev/null || true
-
-      - name: Run Code Review
-        if: "!cancelled()"
-        env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          SCOUT_MODEL: ${{ env.SCOUT_MODEL }}
           CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
         run: |
-          agent --trust --force -p "/pipeline code-review-only" \
+          AGENT_EXIT=0
+          agent --trust --force -p "/pipeline review" \
             --model "$ORCHESTRATOR_MODEL" --output-format json \
-            > code_review.json 2> >(tee code_review_stderr.log >&2) || true
-          jq -r '.result // empty' code_review.json > code_review_output.txt 2>/dev/null || true
+            > review.json 2> >(tee review_stderr.log >&2) || AGENT_EXIT=$?
+          if [ "$AGENT_EXIT" -ne 0 ]; then
+            echo "::warning::Agent exited with code $AGENT_EXIT. See review_stderr.log for details."
+          fi
+          # Extract result directly to file — avoids shell variable mangling
+          # (echo of large content can lose newlines / interpret backslashes)
+          jq -r '.result // empty' review.json 2>/dev/null > review_output.txt || true
+          # Normalize line endings (CRLF → LF) so awk anchors work reliably
+          sed -i 's/\r$//' review_output.txt
+          # Split combined output into separate files for the gate evaluator
+          awk '/^## ARCHITECTURE REVIEW$/,/^## CODE REVIEW/{if(/^## CODE REVIEW/)next; print}' review_output.txt > arch_review_output.txt
+          awk '/^## CODE REVIEW$/,0{print}' review_output.txt > code_review_output.txt
 
       - name: Publish results to Job Summary
         if: always()
         run: |
-          echo "## Architecture Review" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f arch_review_output.txt ]; then
+          # Only publish files that have actual review content (awk-extracted sections).
+          # Guard against empty files from failed extraction — don't pollute the summary.
+          if [ -s arch_review_output.txt ]; then
             cat arch_review_output.txt >> $GITHUB_STEP_SUMMARY
+            printf '\n' >> $GITHUB_STEP_SUMMARY
           else
-            echo "_No output produced._" >> $GITHUB_STEP_SUMMARY
+            printf '## Architecture Review\n\n_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Code Review" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f code_review_output.txt ]; then
+          printf -- '---\n\n' >> $GITHUB_STEP_SUMMARY
+          if [ -s code_review_output.txt ]; then
             cat code_review_output.txt >> $GITHUB_STEP_SUMMARY
+            printf '\n' >> $GITHUB_STEP_SUMMARY
           else
-            echo "_No output produced._" >> $GITHUB_STEP_SUMMARY
+            printf '## Code Review\n\n_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Extract Pipeline Telemetry

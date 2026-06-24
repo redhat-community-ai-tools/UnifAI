@@ -63,7 +63,7 @@ When the REVIEWER_SKILL is `arch-reviewer.md` or `code-reviewer.md`, Steps G–I
 1. Re-run the Scout on the updated diff (scope = files changed in the revision).
 2. Receive the fresh Evidence Pack.
 3. Include the previous review's findings in the Judge prompt so it can perform Revision Loop Verification (§8 in code-reviewer).
-4. Spawn the appropriate Judge with the fresh evidence pack + previous findings.
+4. Spawn the appropriate Judge with the fresh evidence pack + previous findings + the approved design from Phase 2 (if available). This matches the initial dispatch inputs so the Judge can perform Design Compliance (§6 in code-reviewer).
 5. Present the Judge's output under REVIEW_HEADER.
 6. Locate the new `PIPELINE_VERDICT:` line and return to the top of this protocol.
 

@@ -33,6 +33,9 @@ MODEL_PRICING = {
 DEFAULT_PRICING = MODEL_PRICING["claude-4.6-sonnet-medium-thinking"]
 
 PHASE_FILES = [
+    # Combined review mode: single orchestrator spawns scout + both judges
+    ("review", "review.json", "ORCHESTRATOR_MODEL"),
+    # Legacy standalone modes (kept for backward compatibility)
     ("arch-review", "arch_review.json", "ARCH_JUDGE_MODEL"),
     ("code-review", "code_review.json", "CODE_JUDGE_MODEL"),
 ]
@@ -108,7 +111,7 @@ def _parse_pr_number(raw: str | None) -> int | None:
         return None
 
 
-def build_telemetry(phases: list[dict]) -> dict:
+def build_telemetry(phases: list[dict], models: dict[str, str]) -> dict:
     """Build the full telemetry document with totals."""
     totals = {
         "inputTokens": 0,
@@ -132,12 +135,7 @@ def build_telemetry(phases: list[dict]) -> dict:
         "run_url": f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', 'unknown')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '0')}",
         "pr_number": _parse_pr_number(os.environ.get("PR_NUMBER")),
         "branch": os.environ.get("BRANCH_REF", "unknown"),
-        "models": {
-            "orchestrator": os.environ.get("ORCHESTRATOR_MODEL", "unknown"),
-            "scout": os.environ.get("SCOUT_MODEL", "unknown"),
-            "arch_judge": os.environ.get("ARCH_JUDGE_MODEL", "unknown"),
-            "code_judge": os.environ.get("CODE_JUDGE_MODEL", "unknown"),
-        },
+        "models": models,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "phases": phases,
         "totals": totals,
@@ -190,6 +188,12 @@ def write_summary(telemetry: dict, summary_path: Path) -> None:
 
 def main() -> int:
     orchestrator_model = os.environ.get("ORCHESTRATOR_MODEL", "claude-4.6-sonnet-medium-thinking")
+    resolved_models = {
+        "orchestrator": orchestrator_model,
+        "scout": os.environ.get("SCOUT_MODEL", "composer-2.5-fast"),
+        "arch_judge": os.environ.get("ARCH_JUDGE_MODEL", orchestrator_model),
+        "code_judge": os.environ.get("CODE_JUDGE_MODEL", orchestrator_model),
+    }
 
     phases = []
     for phase_name, filename, model_env_var in PHASE_FILES:
@@ -200,9 +204,9 @@ def main() -> int:
 
     if not phases:
         print("::warning::Telemetry: No phase data could be extracted.")
-        telemetry = build_telemetry([])
+        telemetry = build_telemetry([], resolved_models)
     else:
-        telemetry = build_telemetry(phases)
+        telemetry = build_telemetry(phases, resolved_models)
 
     # Write telemetry artifact
     telemetry_path = Path("telemetry.json")

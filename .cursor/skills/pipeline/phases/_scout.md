@@ -19,7 +19,7 @@ A structured **Evidence Pack** in the format defined by `.cursor/skills/pipeline
 If the orchestrator already provided a scoped file list, use it. Otherwise self-resolve:
 1. If explicit files/folders were passed in the command, use those.
 2. If no explicit scope: run `git diff --name-only origin/<base>...HEAD` (base = `GITHUB_BASE_REF` env var, or `main`). Use the resulting file list.
-3. If git diff fails or is empty, fall back to the full workspace.
+3. If git diff fails or returns no files, STOP and return an error to the orchestrator: "Scout scope resolution failed: git diff produced no changed files. Provide explicit file/folder scope." Do NOT fall back to the full workspace.
 
 **Immediately after resolving the file list**, run the full unified diff:
 ```
@@ -81,8 +81,9 @@ Perform ALL of the following. Report raw data without severity judgments.
 For every finding that includes a file:line reference, tag it with provenance from the diff:
 - **`[NEW]`** — this line was added or modified in this PR (appears as `+` in the diff)
 - **`[PRE]`** — this line pre-existed before this PR (not in the diff)
+- **`[SCO]`** — provenance cannot be determined from the diff (e.g., file was explicitly scoped but does not appear in the diff)
 
-This tagging is critical: it tells Judges whether a finding was **introduced by this PR** or is **pre-existing tech debt**.
+This tagging is critical: it tells Judges whether a finding was **introduced by this PR** or is **pre-existing tech debt**. Judges treat `[SCO]` as unverified and will check the Diff Summary before assigning severity.
 
 ### Task 1: Import Enumeration
 
