@@ -116,7 +116,12 @@ class ClaudeAgentNode(
 
     def run(self, state: StateView) -> StateView:
         """Main entry point - process all incoming TaskPackets."""
-        self.process_packets(state)
+        from mas.elements.tools.common.context_binder import close_tools
+
+        try:
+            self.process_packets(state)
+        finally:
+            close_tools(self._domain_tools)
         return state
 
     # ========== TASK PROCESSING ==========
@@ -379,16 +384,34 @@ class ClaudeAgentNode(
         return str(content)[:max_len]
 
     def _collect_tools(self) -> List[BaseTool]:
-        """Gather all tools (domain + MCP providers)."""
+        """Gather all tools (domain + MCP providers).
+
+        When sandbox routing is active (a SandboxExecTool with
+        route_all_tools=True is in domain_tools), MCP tools are
+        wrapped in SandboxToolProxy so they execute inside the
+        sandbox. Otherwise originals are used.
+        """
+        from mas.elements.tools.common.context_binder import get_sandbox_wrapped_mcp_tools
+
         all_tools: List[BaseTool] = list[BaseTool](self._domain_tools)
-
-        for provider in self._mcp_providers:
-            all_tools.extend(provider.get_tools())
-
+        wrapped = get_sandbox_wrapped_mcp_tools(self._domain_tools, self._mcp_providers)
+        if wrapped is not None:
+            all_tools.extend(wrapped)
+        else:
+            for provider in self._mcp_providers:
+                all_tools.extend(provider.get_tools())
         return all_tools
 
     def _build_options(self) -> "ClaudeAgentOptions":
         """Build ClaudeAgentOptions from node configuration."""
+        from mas.elements.tools.common.context_binder import bind_tool_context
+
+        bind_tool_context(
+            self._domain_tools,
+            session_id=self.session_id,
+            agent_id=self.uid,
+        )
+
         env = self._build_env()
         work_dir = self._prepare_working_directory()
 

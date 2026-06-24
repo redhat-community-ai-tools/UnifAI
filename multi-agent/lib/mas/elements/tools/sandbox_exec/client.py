@@ -6,6 +6,21 @@ from pathlib import Path
 from openshell import SandboxClient, TlsConfig
 
 
+def _normalize_endpoint(endpoint: str) -> str:
+    """Normalize gateway URL to ``host:port`` for gRPC.
+
+    Accepts ``https://host:port``, ``host:port``, or ``host``
+    (defaults to port 443).
+    """
+    ep = endpoint.strip()
+    if "://" in ep:
+        ep = ep.split("://", 1)[1]
+    ep = ep.rstrip("/")
+    if ":" not in ep:
+        ep = f"{ep}:443"
+    return ep
+
+
 def create_client_from_pem(
     endpoint: str,
     *,
@@ -26,7 +41,7 @@ def create_client_from_pem(
     retains the cert bytes in memory — no files persist on disk.
 
     Args:
-        endpoint: Gateway gRPC endpoint (host:port).
+        endpoint: Gateway gRPC endpoint (host:port or https://host:port).
         ca_pem: CA certificate PEM string.
         cert_pem: Client certificate PEM string.
         key_pem: Client private key PEM string.
@@ -35,6 +50,7 @@ def create_client_from_pem(
     Returns:
         A standard SandboxClient connected via mTLS.
     """
+    endpoint = _normalize_endpoint(endpoint)
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         (tmp / "ca.crt").write_text(ca_pem)

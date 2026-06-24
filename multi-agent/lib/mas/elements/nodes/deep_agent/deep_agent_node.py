@@ -130,8 +130,13 @@ class DeepAgentNode(
 
     def run(self, state: Any) -> Any:
         """Main entry point — build the Deep Agent (if needed), then process packets."""
+        from mas.elements.tools.common.context_binder import close_tools
+
         self._ensure_compiled()
-        self.process_packets(state)
+        try:
+            self.process_packets(state)
+        finally:
+            close_tools(self._domain_tools)
         return state
 
     def _ensure_compiled(self) -> None:
@@ -139,17 +144,33 @@ class DeepAgentNode(
         if self._compiled_agent is not None:
             return
 
+        from mas.elements.tools.common.context_binder import bind_tool_context
+
+        bind_tool_context(
+            self._domain_tools,
+            session_id=self.session_id,
+            agent_id=self.uid,
+        )
+
         langchain_tools = self._collect_langchain_tools()
         self._compiled_agent = self._build_deep_agent(langchain_tools)
         logger.info("DeepAgent %s: compiled graph with %d tools", self.uid, len(langchain_tools))
 
     def _collect_langchain_tools(self) -> List[LangChainBaseTool]:
-        """Gather all tools (domain + MCP) and convert to LangChain format."""
+        """Gather all tools (domain + MCP) and convert to LangChain format.
+
+        When sandbox routing is active, MCP tools are wrapped in
+        SandboxToolProxy. Otherwise originals are used.
+        """
+        from mas.elements.tools.common.context_binder import get_sandbox_wrapped_mcp_tools
+
         all_domain_tools: List[BaseTool] = list(self._domain_tools)
-
-        for provider in self._mcp_providers:
-            all_domain_tools.extend(provider.get_tools())
-
+        wrapped = get_sandbox_wrapped_mcp_tools(self._domain_tools, self._mcp_providers)
+        if wrapped is not None:
+            all_domain_tools.extend(wrapped)
+        else:
+            for provider in self._mcp_providers:
+                all_domain_tools.extend(provider.get_tools())
         return LangChainToolsConverter.to_lc(all_domain_tools)
 
     def _build_deep_agent(self, tools: List[LangChainBaseTool]) -> Any:

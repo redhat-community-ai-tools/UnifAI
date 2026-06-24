@@ -317,6 +317,23 @@ class McpProxyTool(BaseTool):
 
         return tool
 
+    def get_sandbox_config(self) -> Dict[str, Any]:
+        """Extract serializable config for sandbox execution.
+
+        Resolves auth headers in the worker (where auth closures are
+        available) and returns a plain dict of strings that can cross
+        the cloudpickle boundary.
+        """
+        with get_async_bridge() as bridge:
+            headers = bridge.run(self._get_current_headers())
+        return {
+            "_tool_type": "mcp_proxy",
+            "mcp_url": str(self.mcp_url),
+            "mcp_tool_name": self.mcp_tool_name,
+            "headers": headers,
+            "transport_type": self.transport_type.value,
+        }
+
     def __repr__(self) -> str:
         desc = (self.description[:50] + "...") if self.description else "No description"
         return (

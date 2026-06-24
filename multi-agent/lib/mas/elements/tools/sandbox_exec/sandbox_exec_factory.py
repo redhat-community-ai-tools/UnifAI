@@ -32,6 +32,7 @@ class SandboxExecToolFactory(BaseFactory[SandboxExecToolConfig, SandboxExecTool]
                 ca_pem=cfg.ca_cert,
                 cert_pem=cfg.tls_cert,
                 key_pem=cfg.tls_key,
+                keep_sandbox=cfg.keep_sandbox,
             )
         except Exception as e:
             raise PluginConfigurationError(
