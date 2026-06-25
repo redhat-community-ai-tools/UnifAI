@@ -386,10 +386,10 @@ class ClaudeAgentNode(
     def _collect_tools(self) -> List[BaseTool]:
         """Gather all tools (domain + MCP providers).
 
-        When sandbox routing is active (a SandboxExecTool with
-        route_all_tools=True is in domain_tools), MCP tools are
-        wrapped in SandboxToolProxy so they execute inside the
-        sandbox. Otherwise originals are used.
+        When sandbox routing is active (a SandboxExecTool is present
+        in domain_tools), MCP tools are wrapped in SandboxToolProxy
+        so they execute inside the sandbox.  Otherwise originals are
+        used.
         """
         from mas.elements.tools.common.context_binder import get_sandbox_wrapped_mcp_tools
 

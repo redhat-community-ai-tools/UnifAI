@@ -2,8 +2,9 @@
 
 Manages sandbox lifecycle via the OpenShell Python SDK:
 create (with deterministic naming), reconnect, exec, exec_python, and
-cleanup.  Supports ``keep_sandbox`` for session persistence and
-``route_all_tools`` to enable MCP tool routing via ``SandboxToolProxy``.
+cleanup.  Supports ``keep_sandbox`` for session persistence.  When a
+``SandboxExecTool`` is present in ``domain_tools``, MCP tool routing
+via ``SandboxToolProxy`` is automatically activated.
 """
 
 from __future__ import annotations
@@ -122,6 +123,7 @@ class SandboxExecTool(BaseTool):
 
     def _build_sandbox_policy(self) -> Any:
         """Build a SandboxPolicy proto with network policies for allowed endpoints."""
+        # Proto types not re-exported by the SDK's public API
         from openshell._proto import sandbox_pb2
 
         network_policies = {}
@@ -205,6 +207,7 @@ class SandboxExecTool(BaseTool):
             except Exception as exc:
                 logger.warning("Error checking for sandbox %s: %s", name, exc)
 
+            # Proto types not re-exported by the SDK's public API
             from openshell._proto import openshell_pb2
 
             spec_kwargs: Dict[str, Any] = {}
@@ -212,6 +215,7 @@ class SandboxExecTool(BaseTool):
             if policy is not None:
                 spec_kwargs["policy"] = policy
 
+            # SDK's public create() doesn't accept name/labels — bypass to gRPC stub
             self._client._stub.CreateSandbox(
                 openshell_pb2.CreateSandboxRequest(
                     name=name,

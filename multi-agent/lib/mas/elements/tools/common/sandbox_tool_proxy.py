@@ -19,6 +19,7 @@ from mas.elements.tools.common.sandbox_factories import call_mcp_tool
 
 cloudpickle.register_pickle_by_value(_sandbox_factories_module)
 
+# SDK hardcodes "python" for exec_python; override to match the container's 3.12
 _openshell_sandbox._SANDBOX_PYTHON_BIN = "python3.12"
 
 logger = logging.getLogger(__name__)

@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, jsonify, current_app, request
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
@@ -22,8 +22,6 @@ def upload_resource_file(authenticated_user):
     Returns 200 with {content, filename, size_bytes, format_valid}
     or 400 with {error, format_valid: false}.
     """
-    from flask import request
-
     if "file" not in request.files:
         return jsonify({"error": "No file provided", "format_valid": False}), 400
 

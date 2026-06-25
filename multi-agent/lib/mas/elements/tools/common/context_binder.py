@@ -59,8 +59,8 @@ def get_sandbox_wrapped_mcp_tools(
     ``mcp_providers`` and collect originals as it does today.
 
     Args:
-        domain_tools: The node's domain tools list (checked for a
-            ``SandboxExecTool`` with ``route_all_tools=True``).
+        domain_tools: The node's domain tools list (checked for the
+            presence of a ``SandboxExecTool`` instance).
         mcp_providers: MCP providers whose tools will be wrapped.
 
     Returns:
