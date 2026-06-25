@@ -86,7 +86,9 @@ jobs:
           fi
           for MODEL in "$ARCH_JUDGE_MODEL" "$CODE_JUDGE_MODEL"; do
             if ! echo "$MODEL_OUTPUT" | grep -qF "$MODEL"; then
-              echo "::warning::Judge model '$MODEL' is not available — pipeline will fall back to 'claude-4.6-sonnet-medium-thinking'. To override, set ARCH_JUDGE_MODEL / CODE_JUDGE_MODEL env vars."
+              echo "::error::Judge model '$MODEL' is not available. Available models:"
+              echo "$MODEL_OUTPUT"
+              exit 1
             fi
           done
 

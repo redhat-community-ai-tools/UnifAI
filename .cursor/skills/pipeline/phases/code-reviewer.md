@@ -353,7 +353,7 @@ State your verdict with severity summary and the code health score, then emit th
 
 **Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Minor | 🔵 [{N}] Info
 
-`PIPELINE_VERDICT: {CLEAN | NEEDS_REFACTORING | MAJOR_CLEANUP}`
+PIPELINE_VERDICT: {CLEAN | NEEDS_REFACTORING | MAJOR_CLEANUP}
 ```
 
 **You MUST replace X with an actual numeric score. The CI evaluator parses this heading to gate the pipeline.**

@@ -252,7 +252,7 @@ State your verdict with a severity summary line, then emit the machine-parseable
 
 **Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Warnings | 🔵 [{N}] Info
 
-`PIPELINE_VERDICT: {APPROVE | NEEDS_REVISION | REJECT}`
+PIPELINE_VERDICT: {APPROVE | NEEDS_REVISION | REJECT}
 ```
 
 - **APPROVE** — Architecture is sound, no violations found.
