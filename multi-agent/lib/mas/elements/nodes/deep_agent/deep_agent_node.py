@@ -25,6 +25,7 @@ from langchain_core.tools import BaseTool as LangChainBaseTool
 
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
+from deepagents.backends.protocol import BackendProtocol
 
 from mas.core.execution_context import ExecutionContextHolder
 from mas.elements.llms.common.base_llm import BaseLLM
@@ -189,8 +190,26 @@ class DeepAgentNode(
     # Backend / working directory
     # ==================================================================
 
-    def _build_backend(self) -> LocalShellBackend:
-        """Create a LocalShellBackend rooted at the session working directory."""
+    def _build_backend(self) -> BackendProtocol:
+        """Create the appropriate backend for the Deep Agent.
+
+        Returns an OpenShellSandboxBackend when a SandboxExecTool is present
+        in domain tools, otherwise falls back to LocalShellBackend.
+        """
+        from mas.elements.tools.sandbox_exec.sandbox_exec import SandboxExecTool
+
+        sandbox_tool = next(
+            (t for t in self._domain_tools if isinstance(t, SandboxExecTool)),
+            None,
+        )
+        if sandbox_tool is not None:
+            from mas.elements.tools.sandbox_exec.openshell_backend import (
+                OpenShellSandboxBackend,
+            )
+
+            logger.info("DeepAgent %s: using OpenShell sandbox backend", self.uid)
+            return OpenShellSandboxBackend(sandbox_tool)
+
         root_dir = self._prepare_working_directory()
         env = self._build_env()
         return LocalShellBackend(root_dir=root_dir, virtual_mode=True, env=env)
