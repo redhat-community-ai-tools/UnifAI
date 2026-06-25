@@ -13,9 +13,14 @@ class ClaudeAgentNodeFactory(BaseFactory[ClaudeAgentNodeConfig, ClaudeAgentNode]
     """
     Factory for creating Claude Agent Node instances.
 
-    Dependencies injected:
-    - retriever: Optional retriever instance (resolved from RetrieverRef)
-    - providers: Optional list of McpProvider instances (resolved from ProviderRef)
+    Dependencies injected via ``ElementBuildContext``:
+    - execution_holder: runtime execution context (HITL, session ID)
+    - platform_config: shared_storage path
+
+    Dependencies resolved by the registry:
+    - retriever: Optional retriever instance (from RetrieverRef)
+    - providers: Optional list of McpProvider instances (from ProviderRef)
+    - tools: Optional list of BaseTool instances (from ToolRef)
     """
 
     def accepts(self, cfg: ClaudeAgentNodeConfig, element_type: str) -> bool:
@@ -37,9 +42,8 @@ class ClaudeAgentNodeFactory(BaseFactory[ClaudeAgentNodeConfig, ClaudeAgentNode]
                 # Agent behavior
                 system_prompt=cfg.system_prompt,
                 max_turns=cfg.max_turns,
-                permission_mode=cfg.permission_mode,
-                allowed_tools=cfg.allowed_tools,
-                disallowed_tools=cfg.disallowed_tools,
+                # HITL
+                hitl_mode=cfg.hitl_mode,
                 # Skills
                 skills_repos=cfg.skills_repos,
                 cwd=cfg.cwd,

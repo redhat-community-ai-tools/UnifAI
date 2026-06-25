@@ -11,6 +11,8 @@ from mas.core.identity import Identity
 # tokens for the acting human while ``identity`` remains the team (or other owner).
 CREDENTIAL_USER_ID_TAG = "credential_user_id"
 
+HITL_ENABLED_TAG = "hitl_enabled"
+
 
 class ExecutionContext(BaseModel):
     """Runtime execution context — who, what scope, when.
@@ -79,6 +81,21 @@ class ExecutionContext(BaseModel):
         if self.identity.is_team:
             return ""
         return self.identity.id
+
+    def with_hitl(self, enabled: bool) -> ExecutionContext:
+        """Copy with the HITL-enabled flag in ``tags``.
+
+        Nodes configured with ``HITLMode.DYNAMIC`` read this at runtime
+        to decide whether tool calls should be gated.
+        """
+        tags = dict(self.tags or {})
+        tags[HITL_ENABLED_TAG] = enabled
+        return self.model_copy(update={"tags": tags})
+
+    @property
+    def hitl_enabled(self) -> bool:
+        """Whether dynamic HITL was requested for this execution run."""
+        return bool((self.tags or {}).get(HITL_ENABLED_TAG, False))
 
     def mark_active(self) -> ExecutionContext:
         return self.model_copy(update={"last_active_at": datetime.now(timezone.utc)})

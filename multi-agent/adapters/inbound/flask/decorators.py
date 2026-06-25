@@ -76,12 +76,31 @@ def _resolve_identity_or_error(kwargs: dict) -> Tuple[Optional[Identity], Option
 # Decorators
 # ──────────────────────────────────────────────────────────────────────────────
 
-def with_authenticated_user(f):
-    """Extract and validate the ``X-Authenticated-User`` header.
+def require_authentication(f):
+    """Pure auth guard — validates the header, injects nothing.
 
-    When the provider requires authentication, requests without the header
-    receive 401. In permissive mode the header is optional (empty string
-    is injected when absent).
+    Returns 401 when the provider requires authentication and the
+    ``X-Authenticated-User`` header is missing.  The wrapped function
+    signature is unchanged.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        provider = _identity_provider()
+        authenticated_user = request.headers.get("X-Authenticated-User", "").strip()
+        if not authenticated_user and provider.requires_authentication:
+            return jsonify({
+                "error": "Missing authenticated user",
+                "error_type": "AUTHENTICATION_REQUIRED",
+            }), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+def with_authenticated_user(f):
+    """Validate the header AND inject ``authenticated_user`` as a kwarg.
+
+    Use ``require_authentication`` instead when the endpoint does not
+    need the user value — it avoids polluting the function signature.
     """
     @wraps(f)
     def decorated(*args, **kwargs):

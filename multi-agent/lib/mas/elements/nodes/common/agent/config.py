@@ -13,12 +13,13 @@ Design Principles:
 """
 
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional
 
 from .constants import (
     ExecutionDefaults, EarlyStoppingPolicy
 )
 from .execution.handlers import ExecutionMode
+from .hitl_config import HITLHandlerConfig  # noqa: F401 — re-exported
 
 
 @dataclass
@@ -39,19 +40,17 @@ class AgentConfig:
         strategy = ReActStrategy(llm_chat=node.chat, tools=tools)
         result = agent.run_agent(messages, strategy, config=config)
     """
-    # Execution configuration  
     execution_mode: ExecutionMode = ExecutionMode.AUTO
     
-    # Performance limits
     max_execution_time: Optional[float] = ExecutionDefaults.MAX_EXECUTION_TIME
     max_actions_per_minute: Optional[int] = ExecutionDefaults.MAX_ACTIONS_PER_MINUTE
     
-    # Error handling
     early_stopping: str = EarlyStoppingPolicy.FIRST_FINISH.value
     return_intermediate: bool = ExecutionDefaults.RETURN_INTERMEDIATE
     
-    # Tool executor configuration (passed to ToolExecutorManager)
     executor_config: Optional['ExecutorConfig'] = None
+
+    hitl_config: Optional[HITLHandlerConfig] = None
 
 
 # Future extension examples for when we add more config classes:

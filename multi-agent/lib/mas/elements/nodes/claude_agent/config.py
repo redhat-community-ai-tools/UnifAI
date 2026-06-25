@@ -2,20 +2,25 @@
 Claude Agent Node Configuration
 """
 
-from mas.elements.nodes.common.base_config import NodeBaseConfig
-from pydantic import Field
 from typing import Optional, Literal, List, Dict
-from .identifiers import Identifier
+
+from pydantic import Field
+
+from mas.core.field_hints import ActionHint, HiddenHint, HintType
+from mas.core.hitl.models import HITLMode
 from mas.core.ref.models import RetrieverRef, ProviderRef, ToolRef
-from mas.core.field_hints import ActionHint, HintType, HiddenHint
+from mas.elements.nodes.common.base_config import NodeBaseConfig
+from .identifiers import Identifier
 
 
 class ClaudeAgentNodeConfig(NodeBaseConfig):
     """
     Claude Agent Node - runs autonomous Claude Agent SDK sessions.
 
-    Configures the Claude Agent SDK with model, permissions,
-    tools, skills, and Vertex AI authentication.
+    Configures the Claude Agent SDK with model, tools, skills,
+    and Vertex AI authentication.  Tool-call permissions are
+    managed by HITL (``hitl_mode``) instead of the SDK's built-in
+    permission system.
     """
     type: Literal[Identifier.TYPE] = Identifier.TYPE
 
@@ -59,23 +64,9 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
         description="Maximum agentic turns (tool-use round trips). Prevents runaway execution."
     )
 
-    permission_mode: str = Field(
-        default="bypassPermissions",
-        description="Permission mode: 'bypassPermissions' (fully autonomous), "
-                    "'acceptEdits' (auto-accept edits), 'plan' (read-only)"
-    )
-
-    allowed_tools: List[str] = Field(
-        default_factory=lambda: [
-            "Read", "Write", "Edit", "Bash",
-            "Glob", "Grep", "WebSearch", "WebFetch",
-        ],
-        description="Tools to auto-approve without permission checks"
-    )
-
-    disallowed_tools: List[str] = Field(
-        default_factory=list,
-        description="Tools to explicitly deny"
+    hitl_mode: HITLMode = Field(
+        default=HITLMode.SKIP,
+        description="HITL approval mode: ask (always), skip (never), dynamic (runtime flag)",
     )
 
     # --- Skills ---
@@ -86,7 +77,6 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
                     "the value is the git repo URL "
                     '(e.g., {"skills/docx": "https://github.com/org/repo"})'
     )
-
 
     # --- Advanced ---
 

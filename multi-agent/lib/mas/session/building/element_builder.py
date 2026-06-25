@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Type
 from mas.session.domain.session_registry import SessionRegistry
 from mas.blueprints.models.blueprint import BlueprintSpec
 from mas.core.enums import ResourceCategory
-from mas.core.element_deps import ElementDeps
+from mas.core.element_deps import ElementBuildContext
 
 # concrete builders
 from .category_builders.auth_builder import AuthBuilder
@@ -69,12 +69,12 @@ class SessionElementBuilder:
     def build(
         self,
         blueprint: BlueprintSpec,
-        deps: Optional[ElementDeps] = None,
+        deps: Optional[ElementBuildContext] = None,
     ) -> SessionRegistry:
         """Return a fully populated SessionRegistry.
 
         Cross-cutting runtime concerns are forwarded via the typed
-        ``ElementDeps`` bag to each CategoryBuilder.
+        ``ElementBuildContext`` bag to each CategoryBuilder.
         """
         registry = SessionRegistry()
 

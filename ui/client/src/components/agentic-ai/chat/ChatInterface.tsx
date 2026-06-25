@@ -20,8 +20,10 @@ import axios from "../../../http/axiosAgentConfig";
 import { MarkdownComponents, preprocessText } from "./helpers/TextComponents";
 import { SessionPayload } from "../ExecutionTab";
 import { useStreamingData } from "../StreamingDataContext";
-import { Message, StreamLogEntry, WorkPlanSnapshot, isSessionCancellation } from "./types";
+import { Message, StreamLogEntry, WorkPlanSnapshot, ApprovalDecision, ApprovalStatus, AutoRuleAction, isSessionCancellation } from "./types";
 import { StreamLogDisplay } from "./StreamLogDisplay";
+import { ApprovalBadge } from "./ApprovalBadge";
+import { submitApproval, submitApprovalRule } from "@/api/sessions";
 import { useToast } from "@/hooks/use-toast";
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
@@ -477,39 +479,48 @@ export default function ChatInterface({
           const newStatus = mapStreamToStatus(entry.stream);
           const newMessage = entry.text;
 
+          const currentApprovals = entry?.approvals || [];
+          const hasApprovals = currentApprovals.length > 0;
+
           if (
             !existingLog ||
             existingLog.status !== newStatus ||
-            existingLog.message !== newMessage
+            existingLog.message !== newMessage ||
+            (existingLog.approvals?.length || 0) !== currentApprovals.length ||
+            existingLog.approvals?.some(
+              (a, i) => a.status !== currentApprovals[i]?.status
+            )
           ) {
-            // Show stream log if there's text content OR if there are tool calls
-            if (newMessage || (entry?.tools && entry.tools.length > 0)) {
+            if (newMessage || (entry?.tools && entry.tools.length > 0) || hasApprovals) {
               updatedStreamLogs.push({
                 nodeId: entry.node_name,
                 nodeName: entry.node_name
                   .replace(/_/g, " ")
                   .replace(/\b\w/g, (l: string) => l.toUpperCase()),
-                message: newMessage || "", // Allow empty message when showing tools
-                tools: entry?.tools || [],
+                message: newMessage || "",
+                tools: (entry?.tools || []).map(t => ({ ...t })),
+                approvals: currentApprovals.map(a => ({ ...a })),
                 status: newStatus,
-                isExpanded: existingLog?.isExpanded || false,
+                isExpanded: existingLog?.isExpanded || (hasApprovals && !existingLog),
               });
             }
           } else {
-            // Keep existing log unchanged
             updatedStreamLogs.push(existingLog);
           }
         });
 
-        // Only update if there are actual changes
         const hasLogChanges =
           updatedStreamLogs.length !== currentLogs.length ||
           updatedStreamLogs.some((log, index) => {
             const currentLog = currentLogs[index];
-            return (
-              !currentLog ||
-              log.status !== currentLog.status ||
-              log.message !== currentLog.message
+            if (!currentLog) return true;
+            if (log.status !== currentLog.status) return true;
+            if (log.message !== currentLog.message) return true;
+            const prevA = currentLog.approvals || [];
+            const nextA = log.approvals || [];
+            if (prevA.length !== nextA.length) return true;
+            return prevA.some(
+              (a, i) => a.requestId !== nextA[i]?.requestId || a.status !== nextA[i]?.status,
             );
           });
 
@@ -832,6 +843,136 @@ export default function ChatInterface({
     }));
   }, []);
 
+
+  // ── HITL approval ──────────────────────────────────────────────────────────
+
+  const handleApprovalDecision = useCallback(
+    async (
+      requestId: string,
+      decision: ApprovalDecision,
+      feedback?: string,
+      modifiedArgs?: Record<string, any>,
+    ) => {
+      if (!runId) return;
+
+      const statusMap: Record<ApprovalDecision, ApprovalStatus> = {
+        approve: 'approved',
+        reject: 'rejected',
+        modify: 'modified',
+        redirect: 'redirected',
+      };
+
+      try {
+        await submitApproval({
+          sessionId: runId,
+          requestId,
+          decision,
+          feedback,
+          modifiedArgs,
+        });
+
+        // Optimistically update the approval status in nodeListRef
+        for (const entry of nodeListRef.current.values()) {
+          const approval = entry.approvals?.find((a) => a.requestId === requestId);
+          if (approval) {
+            approval.status = statusMap[decision];
+            if (feedback) approval.feedback = feedback;
+            break;
+          }
+        }
+
+        // Flush the mutation into React state so the UI re-renders immediately
+        // (the polling interval stores cloned snapshots, so in-place mutations aren't detected)
+        const currentMessageId = currentStreamingMessageId;
+        if (currentMessageId) {
+          const list = Array.from(nodeListRef.current.values());
+          const flushed = list
+            .filter(e => e.text || (e.tools && e.tools.length > 0) || (e.approvals && e.approvals.length > 0))
+            .map(e => {
+              const prev = streamLogDataRef.current[currentMessageId]?.find(l => l.nodeId === e.node_name);
+              return {
+                nodeId: e.node_name,
+                nodeName: e.node_name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+                message: e.text || '',
+                tools: (e.tools || []).map(t => ({ ...t })),
+                approvals: (e.approvals || []).map(a => ({ ...a })),
+                status: mapStreamToStatus(e.stream),
+                isExpanded: prev?.isExpanded ?? ((e.approvals?.length ?? 0) > 0),
+              };
+            });
+
+          streamLogDataRef.current = { ...streamLogDataRef.current, [currentMessageId]: flushed };
+          setStreamLogData(prev => ({ ...prev, [currentMessageId]: flushed }));
+        }
+      } catch (err) {
+        console.error('Error submitting approval:', err);
+        toast({
+          title: 'Approval failed',
+          description: 'Could not submit your decision. Please try again.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [runId, nodeListRef, toast, currentStreamingMessageId],
+  );
+
+  const handleAutoRule = useCallback(
+    async (
+      requestId: string,
+      nodeUid: string | null,
+      toolName: string | null,
+      action: AutoRuleAction,
+    ) => {
+      if (!runId) return;
+
+      const decision: ApprovalDecision = action === 'auto_approve' ? 'approve' : 'reject';
+      const feedback = action === 'auto_approve' ? undefined : 'auto-reject rule applied';
+
+      try {
+        await submitApprovalRule({
+          sessionId: runId,
+          nodeUid,
+          toolName,
+          action,
+        });
+
+        await handleApprovalDecision(requestId, decision, feedback);
+
+        toast({
+          title: action === 'auto_approve' ? 'Auto-approve rule saved' : 'Auto-reject rule saved',
+          description: 'Future matching requests will be resolved automatically.',
+        });
+      } catch (err) {
+        console.error('Failed to save auto-rule:', err);
+        toast({
+          title: 'Rule save failed',
+          description: 'Could not save the rule. The request was not resolved.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [runId, handleApprovalDecision, toast],
+  );
+
+  const pendingApprovalCount = useMemo(() => {
+    let count = 0;
+    const allLogs = Object.values(streamLogData);
+    for (const logs of allLogs) {
+      for (const log of logs) {
+        if (log.approvals) {
+          count += log.approvals.filter((a) => a.status === 'pending').length;
+        }
+      }
+    }
+    return count;
+  }, [streamLogData]);
+
+  const scrollToFirstPendingApproval = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const el = container.querySelector('[data-node-id]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
 
   // User sends message → Creates an AI message with empty streamLogs
   // Streaming starts → Interval polls for node updates and updates the message
@@ -1267,8 +1408,11 @@ export default function ChatInterface({
           {!isChatOnlyMode && (
             <StreamLogDisplay
               message={messageWithStreamingData}
+              sessionId={runId || ''}
               onToggleExpansion={toggleNodeExpansion}
               onToggleWorkPlanExpansion={toggleWorkPlanExpansion}
+              onApprovalDecision={handleApprovalDecision}
+              onAutoRule={handleAutoRule}
             />
           )}
 
@@ -1445,6 +1589,16 @@ export default function ChatInterface({
           <div ref={messagesEndRef} />
         </div>
         <div className="p-4 border-t border-gray-800 flex-shrink-0">
+          {/* HITL approval badge */}
+          {pendingApprovalCount > 0 && (
+            <div className="mb-3 flex justify-center">
+              <ApprovalBadge
+                pendingCount={pendingApprovalCount}
+                onClick={scrollToFirstPendingApproval}
+              />
+            </div>
+          )}
+
           {/* Status banners - priority order: deleted > sharing disabled > invalid > validating */}
           {!blueprintExists && (
             <WorkflowStatusBanner {...WorkflowBannerMessages.deleted} />

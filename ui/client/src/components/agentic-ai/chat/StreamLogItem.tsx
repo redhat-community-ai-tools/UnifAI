@@ -1,15 +1,29 @@
 import React, { memo, useCallback, useMemo, useRef, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Wrench } from "lucide-react";
-import { StreamLogEntry, ToolEntry } from './types';
+import { ChevronDown, ChevronRight, Wrench, ShieldAlert } from "lucide-react";
+import { StreamLogEntry, ToolEntry, ApprovalEntry, ApprovalDecision, AutoRuleAction } from './types';
 import { StatusIndicator } from './StatusIndicator';
 import { preprocessText, MarkdownComponents } from "./helpers/TextComponents";
+import { ApprovalCard } from './ApprovalCard';
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 interface StreamLogItemProps {
   log: StreamLogEntry;
   messageId: string;
+  sessionId: string;
   onToggleExpansion: (messageId: string, nodeId: string) => void;
+  onApprovalDecision?: (
+    requestId: string,
+    decision: ApprovalDecision,
+    feedback?: string,
+    modifiedArgs?: Record<string, any>,
+  ) => Promise<void>;
+  onAutoRule?: (
+    requestId: string,
+    nodeUid: string | null,
+    toolName: string | null,
+    action: AutoRuleAction,
+  ) => Promise<void>;
 }
 
 // Separate component for tool call display
@@ -162,7 +176,9 @@ const MessageContent = memo(({
 
 MessageContent.displayName = 'MessageContent';
 
-export const StreamLogItem = memo(({ log, messageId, onToggleExpansion }: StreamLogItemProps) => {
+export const StreamLogItem = memo(({
+  log, messageId, sessionId, onToggleExpansion, onApprovalDecision, onAutoRule,
+}: StreamLogItemProps) => {
   const expandedContentRef = useRef<HTMLDivElement>(null);
   const collapsedContentRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -199,12 +215,16 @@ export const StreamLogItem = memo(({ log, messageId, onToggleExpansion }: Stream
     if (!log.tools || log.tools.length === 0) return 0;
     return new Set(log.tools.map(t => t.name)).size;
   }, [log.tools]);
-  // The expansion is now handled purely by the style attributes in JSX
+
+  const approvals = log.approvals || [];
+  const pendingApprovals = approvals.filter(a => a.status === 'pending');
 
   return (
     <div 
       ref={containerRef}
-      className="border border-gray-700 rounded-lg overflow-hidden w-full"
+      className={`border rounded-lg overflow-hidden w-full ${
+        pendingApprovals.length > 0 ? 'border-amber-700/60' : 'border-gray-700'
+      }`}
       data-node-id={log.nodeId}
     >
       <div
@@ -227,6 +247,14 @@ export const StreamLogItem = memo(({ log, messageId, onToggleExpansion }: Stream
               </span>
             </div>
           )}
+          {pendingApprovals.length > 0 && (
+            <div className="flex items-center space-x-1">
+              <ShieldAlert className="h-3 w-3 text-amber-400" />
+              <span className="text-xs text-amber-400 font-medium">
+                {pendingApprovals.length} pending
+              </span>
+            </div>
+          )}
         </div>
         {log.isExpanded ? (
           <ChevronDown className="h-4 w-4 text-gray-400" />
@@ -246,15 +274,30 @@ export const StreamLogItem = memo(({ log, messageId, onToggleExpansion }: Stream
           overflow: 'hidden'
         }}
       >
+        {/* Approvals Section */}
+        {approvals.length > 0 && (
+          <div className="bg-gray-900 border-t border-gray-700 w-full px-3 py-2 space-y-2">
+            {approvals.map((approval) => (
+              <ApprovalCard
+                key={approval.requestId}
+                approval={approval}
+                sessionId={sessionId}
+                onDecision={onApprovalDecision || (async () => {})}
+                onAutoRule={onAutoRule}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Tools Section */}
         {hasTools && (
-          <div className="bg-gray-900 border-t border-gray-700 w-full">
+          <div className={`bg-gray-900 w-full ${approvals.length === 0 ? 'border-t border-gray-700' : ''}`}>
             <ToolsSection tools={log.tools!} />
           </div>
         )}
         
         {/* Message Section */}
-        <div className={`p-3 bg-gray-900 w-full ${hasTools ? '' : 'border-t border-gray-700'}`}>
+        <div className={`p-3 bg-gray-900 w-full ${hasTools || approvals.length > 0 ? '' : 'border-t border-gray-700'}`}>
           <MessageContent
             message={messageAnalysis.message}
             status={log.status}
@@ -283,14 +326,13 @@ export const StreamLogItem = memo(({ log, messageId, onToggleExpansion }: Stream
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison function for memo - prevent re-renders on expansion changes
   const prevLog = prevProps.log;
   const nextLog = nextProps.log;
   
-  // Quick checks for structural changes
   if (
     prevLog.nodeId !== nextLog.nodeId ||
     prevProps.messageId !== nextProps.messageId ||
+    prevProps.sessionId !== nextProps.sessionId ||
     prevLog.status !== nextLog.status ||
     prevLog.nodeName !== nextLog.nodeName ||
     prevLog.isExpanded !== nextLog.isExpanded
@@ -298,12 +340,10 @@ export const StreamLogItem = memo(({ log, messageId, onToggleExpansion }: Stream
     return false;
   }
 
-  // Check message changes
   if (prevLog.message !== nextLog.message) {
     return false;
   }
   
-  // Efficient tools comparison
   const prevTools = prevLog.tools || [];
   const nextTools = nextLog.tools || [];
   
@@ -311,10 +351,23 @@ export const StreamLogItem = memo(({ log, messageId, onToggleExpansion }: Stream
     return false;
   }
   
-  // Quick comparison using tool IDs and outputs
   for (let i = 0; i < prevTools.length; i++) {
     if (prevTools[i]?.id !== nextTools[i]?.id || 
         prevTools[i]?.output !== nextTools[i]?.output) {
+      return false;
+    }
+  }
+
+  const prevApprovals = prevLog.approvals || [];
+  const nextApprovals = nextLog.approvals || [];
+  if (prevApprovals.length !== nextApprovals.length) {
+    return false;
+  }
+  for (let i = 0; i < prevApprovals.length; i++) {
+    if (
+      prevApprovals[i]?.requestId !== nextApprovals[i]?.requestId ||
+      prevApprovals[i]?.status !== nextApprovals[i]?.status
+    ) {
       return false;
     }
   }

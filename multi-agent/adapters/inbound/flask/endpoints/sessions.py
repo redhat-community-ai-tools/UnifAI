@@ -1,12 +1,17 @@
+import logging
+
 from flask import Blueprint, jsonify, current_app, Response, request
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import json
 from pydantic.json import pydantic_encoder
 from mas.core.channels import with_heartbeats
+from mas.core.hitl.models import ApprovalOverrides, ApprovalRuleSet
 from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.session.domain.models import SessionMeta
-from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
+from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user, require_authentication
+
+logger = logging.getLogger(__name__)
 
 sessions_bp = Blueprint("sessions", __name__)
 
@@ -92,8 +97,9 @@ def create_user_session(identity, blueprint_id, metadata):
     "stream": fields.Bool(data_key="stream", load_default=False),
     "scope": fields.Str(data_key="scope", load_default="public"),
     "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
+    "hitl_enabled": fields.Bool(data_key="hitlEnabled", load_default=False),
 })
-def execute_user_session(identity, session_id, inputs, stream_mode, stream, scope, session_type):
+def execute_user_session(identity, session_id, inputs, stream_mode, stream, scope, session_type, hitl_enabled):
     """
     Execute (or stream) an existing session.
     - If `stream` is False (default), returns the full result as JSON.
@@ -101,6 +107,7 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
     - ``sessionType`` controls busy-state semantics:
       - ``"Personal"`` (default): rejects when status is QUEUED or RUNNING.
       - ``"Shared"``: rejects when status is LOCKED, IN_USE, QUEUED, or RUNNING.
+    - ``hitlEnabled`` activates HITL for nodes configured with ``hitl_mode: dynamic``.
     """
     logged_in_user = identity.id
     svc = current_app.container.session_service
@@ -115,6 +122,7 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
             inputs=inputs,
             scope=scope,
             logged_in_user=logged_in_user,
+            hitl_enabled=hitl_enabled,
         )
         return json.dumps(result, default=pydantic_encoder), 200
 
@@ -125,6 +133,7 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
             scope=scope,
             stream=True,
             logged_in_user=logged_in_user,
+            hitl_enabled=hitl_enabled,
         )
         for chunk in with_heartbeats(stream_iter):
             yield json.dumps(chunk, default=pydantic_encoder) + "\n"
@@ -144,8 +153,9 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
     "inputs": fields.Dict(data_key="inputs", required=True),
     "scope": fields.Str(data_key="scope", load_default="public"),
     "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
+    "hitl_enabled": fields.Bool(data_key="hitlEnabled", load_default=False),
 })
-def submit_user_session(identity, session_id, inputs, scope, session_type):
+def submit_user_session(identity, session_id, inputs, scope, session_type, hitl_enabled):
     """
     Fire-and-forget execute for Temporal-backed sessions.
     Starts the Temporal workflow in the background and returns HTTP 202
@@ -154,6 +164,7 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
     Poll /session.status.get?sessionId=<id> for status updates.
 
     ``sessionType`` controls busy-state semantics (see ``execute_user_session``).
+    ``hitlEnabled`` activates HITL for nodes configured with ``hitl_mode: dynamic``.
     """
     try:
         svc = current_app.container.session_service
@@ -167,6 +178,7 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
             inputs=inputs,
             scope=scope,
             logged_in_user=identity.id,
+            hitl_enabled=hitl_enabled,
         )
         return jsonify({"sessionId": session_id, "workflowId": workflow_id}), 202
     except TypeError as e:
@@ -303,6 +315,195 @@ def list_active_streams():
         return jsonify({"active_sessions": active, "count": len(active)}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@sessions_bp.route("/session.approval", methods=["POST"])
+@require_authentication
+@from_body({
+    "session_id": fields.Str(data_key="sessionId", required=True),
+    "request_id": fields.Str(data_key="requestId", required=True),
+    "decision": fields.Str(data_key="decision", required=True),
+    "feedback": fields.Str(data_key="feedback", load_default=""),
+    "modified_args": fields.Dict(data_key="modifiedArgs", load_default=lambda: {}),
+})
+def submit_approval(session_id, request_id, decision, feedback, modified_args):
+    """Submit a human decision for a pending HITL approval request.
+
+    Called by the UI (or curl) when a human reviews a tool call that
+    requires approval.  Finds the ``InputCapableChannel`` for the
+    running session and delivers the response, unblocking the graph
+    thread that is waiting on ``channel.wait_for(request_id)``.
+    """
+    valid_decisions = {"approve", "reject", "modify", "redirect"}
+    if decision not in valid_decisions:
+        return jsonify({
+            "error": f"Invalid decision '{decision}'. Must be one of: {', '.join(sorted(valid_decisions))}",
+        }), 400
+
+    factory = current_app.container.channel_factory
+    channel = factory.get_input_channel(session_id)
+    if channel is None:
+        return jsonify({
+            "error": f"No active HITL channel for session {session_id}",
+        }), 404
+
+    channel.submit(request_id, {
+        "decision": decision,
+        "feedback": feedback,
+        "modified_args": modified_args,
+    })
+    return jsonify({
+        "status": "submitted",
+        "sessionId": session_id,
+        "requestId": request_id,
+        "decision": decision,
+    }), 200
+
+
+@sessions_bp.route("/session.approval.rule", methods=["POST"])
+@require_authentication
+@from_body({
+    "session_id": fields.Str(data_key="sessionId", required=True),
+    "node_uid": fields.Str(data_key="nodeUid", load_default=None, allow_none=True),
+    "tool_name": fields.Str(data_key="toolName", load_default=None, allow_none=True),
+    "action": fields.Str(data_key="action", required=True),
+})
+def add_approval_rule(session_id, node_uid, tool_name, action):
+    """Add or clear an auto-approval rule for this session.
+
+    Scoping is determined by which fields are present:
+      - nodeUid=null, toolName=null → global approve/reject all
+      - nodeUid=null, toolName="x"  → global rule for tool "x"
+      - nodeUid="a",  toolName=null → node "a" approve/reject all
+      - nodeUid="a",  toolName="x"  → node "a" rule for tool "x"
+    """
+    valid_actions = {"auto_approve", "auto_reject", "clear"}
+    if action not in valid_actions:
+        return jsonify({
+            "error": f"Invalid action '{action}'. Must be one of: {', '.join(sorted(valid_actions))}",
+        }), 400
+
+    svc = current_app.container.session_service
+    meta = svc.get_meta(session_id)
+    raw = getattr(meta, "hitl_overrides", None) or {}
+    overrides = ApprovalOverrides.from_dict(raw)
+
+    if action == "clear":
+        if node_uid is None and tool_name is None:
+            overrides = ApprovalOverrides()
+        elif node_uid is not None and tool_name is None:
+            new_node_rules = {k: v for k, v in overrides.node_rules.items() if k != node_uid}
+            overrides = ApprovalOverrides(
+                global_rules=overrides.global_rules,
+                node_rules=new_node_rules,
+            )
+        else:
+            overrides = _remove_tool_from_overrides(overrides, node_uid, tool_name)
+    else:
+        is_approve = action == "auto_approve"
+        overrides = _apply_rule(overrides, node_uid, tool_name, is_approve)
+
+    meta_dict = meta.model_dump(mode="json")
+    meta_dict["hitl_overrides"] = overrides.to_dict()
+    svc.update_meta(session_id, SessionMeta.model_validate(meta_dict))
+
+    overrides_store = getattr(current_app.container, "overrides_store", None)
+    if overrides_store is not None:
+        overrides_store.save(session_id, overrides)
+
+    return jsonify({
+        "status": "saved",
+        "sessionId": session_id,
+        "overrides": overrides.to_dict(),
+    }), 200
+
+
+@sessions_bp.route("/session.approval.rules", methods=["GET"])
+@require_authentication
+@from_query({
+    "session_id": fields.Str(data_key="sessionId", required=True),
+})
+def get_approval_rules(session_id):
+    """Return the current auto-approval rules for this session."""
+    svc = current_app.container.session_service
+    meta = svc.get_meta(session_id)
+    raw = getattr(meta, "hitl_overrides", None) or {}
+    overrides = ApprovalOverrides.from_dict(raw)
+    return jsonify({
+        "sessionId": session_id,
+        "overrides": overrides.to_dict(),
+    }), 200
+
+
+def _apply_rule(
+    overrides,
+    node_uid: str | None,
+    tool_name: str | None,
+    is_approve: bool,
+):
+    """Return a new ApprovalOverrides with the rule applied."""
+
+    def _update_ruleset(rs: ApprovalRuleSet) -> ApprovalRuleSet:
+        if tool_name is None:
+            return ApprovalRuleSet(
+                approve_all=is_approve,
+                reject_all=not is_approve,
+                auto_approve_tools=rs.auto_approve_tools,
+                auto_reject_tools=rs.auto_reject_tools,
+            )
+        if is_approve:
+            return ApprovalRuleSet(
+                approve_all=rs.approve_all,
+                reject_all=rs.reject_all,
+                auto_approve_tools=rs.auto_approve_tools | {tool_name},
+                auto_reject_tools=rs.auto_reject_tools - {tool_name},
+            )
+        return ApprovalRuleSet(
+            approve_all=rs.approve_all,
+            reject_all=rs.reject_all,
+            auto_approve_tools=rs.auto_approve_tools - {tool_name},
+            auto_reject_tools=rs.auto_reject_tools | {tool_name},
+        )
+
+    if node_uid is None:
+        return ApprovalOverrides(
+            global_rules=_update_ruleset(overrides.global_rules),
+            node_rules=overrides.node_rules,
+        )
+
+    existing = overrides.node_rules.get(node_uid, ApprovalRuleSet())
+    new_node_rules = {**overrides.node_rules, node_uid: _update_ruleset(existing)}
+    return ApprovalOverrides(
+        global_rules=overrides.global_rules,
+        node_rules=new_node_rules,
+    )
+
+
+def _remove_tool_from_overrides(overrides, node_uid, tool_name):
+    """Return overrides with a specific tool removed from the target scope."""
+
+    def _strip_tool(rs: ApprovalRuleSet) -> ApprovalRuleSet:
+        return ApprovalRuleSet(
+            approve_all=rs.approve_all,
+            reject_all=rs.reject_all,
+            auto_approve_tools=rs.auto_approve_tools - {tool_name},
+            auto_reject_tools=rs.auto_reject_tools - {tool_name},
+        )
+
+    if node_uid is None:
+        return ApprovalOverrides(
+            global_rules=_strip_tool(overrides.global_rules),
+            node_rules=overrides.node_rules,
+        )
+
+    existing = overrides.node_rules.get(node_uid)
+    if existing is None:
+        return overrides
+    new_node_rules = {**overrides.node_rules, node_uid: _strip_tool(existing)}
+    return ApprovalOverrides(
+        global_rules=overrides.global_rules,
+        node_rules=new_node_rules,
+    )
 
 
 @sessions_bp.route("/session.subscribe", methods=["GET"])

@@ -13,19 +13,14 @@ class ClaudeAgentCardBuilder(CardBuilder):
     """
     Builds element card for Claude Agent Node.
 
-    Skills = allowed tools (Read, Write, Bash, etc.)
-    Capabilities = model, permission mode, max turns
+    Skills = domain tools attached via ToolRef
+    Capabilities = model, HITL mode, max turns
     """
 
     def build(self, input: CardBuildInput) -> ElementCard:
         config = input.config
 
         skills: List[Skill] = []
-        for tool_name in (config.allowed_tools or []):
-            skills.append(Skill(
-                name=tool_name,
-                description=f"Claude Agent built-in tool: {tool_name}",
-            ))
 
         capabilities: List[Capability] = [
             Capability(
@@ -33,8 +28,8 @@ class ClaudeAgentCardBuilder(CardBuilder):
                 description=f"Claude model: {config.model}",
             ),
             Capability(
-                name="autonomous_execution",
-                description=f"Permission mode: {config.permission_mode}",
+                name="hitl_mode",
+                description=f"HITL mode: {config.hitl_mode.value}",
             ),
         ]
 

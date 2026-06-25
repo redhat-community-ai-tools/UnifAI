@@ -1,16 +1,31 @@
 import React, { memo, useCallback } from 'react';
 import { Cpu } from 'lucide-react';
-import { Message } from './types';
+import { Message, ApprovalDecision, AutoRuleAction } from './types';
 import { StreamLogItem } from './StreamLogItem';
 import { WorkPlanDisplay } from './WorkPlanDisplay';
 
 interface StreamLogDisplayProps {
   message: Message;
+  sessionId: string;
   onToggleExpansion: (messageId: string, nodeId: string) => void;
   onToggleWorkPlanExpansion: (messageId: string, planId: string) => void;
+  onApprovalDecision?: (
+    requestId: string,
+    decision: ApprovalDecision,
+    feedback?: string,
+    modifiedArgs?: Record<string, any>,
+  ) => Promise<void>;
+  onAutoRule?: (
+    requestId: string,
+    nodeUid: string | null,
+    toolName: string | null,
+    action: AutoRuleAction,
+  ) => Promise<void>;
 }
 
-export const StreamLogDisplay = memo(({ message, onToggleExpansion, onToggleWorkPlanExpansion }: StreamLogDisplayProps) => {
+export const StreamLogDisplay = memo(({
+  message, sessionId, onToggleExpansion, onToggleWorkPlanExpansion, onApprovalDecision, onAutoRule,
+}: StreamLogDisplayProps) => {
   const memoizedToggleExpansion = useCallback((messageId: string, nodeId: string) => {
     onToggleExpansion(messageId, nodeId);
   }, [onToggleExpansion]);
@@ -54,7 +69,10 @@ export const StreamLogDisplay = memo(({ message, onToggleExpansion, onToggleWork
               key={log.nodeId}
               log={log}
               messageId={message.id}
+              sessionId={sessionId}
               onToggleExpansion={memoizedToggleExpansion}
+              onApprovalDecision={onApprovalDecision}
+              onAutoRule={onAutoRule}
             />
           ))}
         </div>
@@ -73,9 +91,15 @@ export const StreamLogDisplay = memo(({ message, onToggleExpansion, onToggleWork
     return false;
   }
   
+  if (prevProps.sessionId !== nextProps.sessionId) {
+    return false;
+  }
+
   // Check if callback functions changed
   if (prevProps.onToggleExpansion !== nextProps.onToggleExpansion ||
-      prevProps.onToggleWorkPlanExpansion !== nextProps.onToggleWorkPlanExpansion) {
+      prevProps.onToggleWorkPlanExpansion !== nextProps.onToggleWorkPlanExpansion ||
+      prevProps.onApprovalDecision !== nextProps.onApprovalDecision ||
+      prevProps.onAutoRule !== nextProps.onAutoRule) {
     return false;
   }
   
@@ -112,6 +136,21 @@ export const StreamLogDisplay = memo(({ message, onToggleExpansion, onToggleWork
     const nextTools = nextLog.tools || [];
     if (prevTools.length !== nextTools.length) {
       return false;
+    }
+
+    // Check approvals changes
+    const prevApprovals = prevLog.approvals || [];
+    const nextApprovals = nextLog.approvals || [];
+    if (prevApprovals.length !== nextApprovals.length) {
+      return false;
+    }
+    for (let j = 0; j < prevApprovals.length; j++) {
+      if (
+        prevApprovals[j]?.requestId !== nextApprovals[j]?.requestId ||
+        prevApprovals[j]?.status !== nextApprovals[j]?.status
+      ) {
+        return false;
+      }
     }
   }
   
