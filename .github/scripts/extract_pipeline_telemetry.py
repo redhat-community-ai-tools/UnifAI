@@ -37,9 +37,6 @@ PHASE_FILES = [
     # judges at their own rates).  model_env_var=None signals blended pricing
     # computed at runtime in main().
     ("review", "review.json", None),
-    # Legacy standalone modes (kept for backward compatibility)
-    ("arch-review", "arch_review.json", "ARCH_JUDGE_MODEL"),
-    ("code-review", "code_review.json", "CODE_JUDGE_MODEL"),
 ]
 
 
@@ -68,10 +65,14 @@ def format_tokens(count: int) -> str:
     return str(count)
 
 
-def parse_phase(phase_name: str, json_path: Path, model: str) -> dict | None:
+def parse_phase(
+    phase_name: str,
+    json_path: Path,
+    model: str,
+    pricing: dict | None = None,
+) -> dict | None:
     """Parse a single phase JSON file and return structured telemetry, or None on failure."""
     if not json_path.exists():
-        print(f"::warning::Telemetry: {json_path} not found, skipping phase '{phase_name}'")
         return None
 
     try:
@@ -91,13 +92,14 @@ def parse_phase(phase_name: str, json_path: Path, model: str) -> dict | None:
     usage = data.get("usage", {})
     if not isinstance(usage, dict):
         usage = {}
-    if model not in MODEL_PRICING:
-        print(
-            f"::warning::Telemetry: Unknown model '{model}' in phase '{phase_name}', "
-            f"falling back to default pricing (claude-4.6-sonnet-medium-thinking). "
-            f"Add this model to MODEL_PRICING to get accurate cost estimates."
-        )
-    pricing = MODEL_PRICING.get(model, DEFAULT_PRICING)
+    if pricing is None:
+        if model not in MODEL_PRICING:
+            print(
+                f"::warning::Telemetry: Unknown model '{model}' in phase '{phase_name}', "
+                f"falling back to default pricing (claude-4.6-sonnet-medium-thinking). "
+                f"Add this model to MODEL_PRICING to get accurate cost estimates."
+            )
+        pricing = MODEL_PRICING.get(model, DEFAULT_PRICING)
 
     return {
         "name": phase_name,
@@ -215,23 +217,22 @@ def main() -> int:
     # The combined "review" phase mixes orchestrator (scout) and judge models
     # in a single CLI session.  The CLI reports aggregate token usage without a
     # per-model breakdown, so we average rates across participating models.
-    _session_models = list(dict.fromkeys(
+    session_models = list(dict.fromkeys(
         [orchestrator_model, arch_judge_model, code_judge_model]
     ))
-    blended: dict[str, float] = {}
+    blended_pricing: dict[str, float] = {}
     for rate_key in ("input", "output", "cache_read", "cache_write"):
-        rates = [MODEL_PRICING.get(m, DEFAULT_PRICING)[rate_key] for m in _session_models]
-        blended[rate_key] = sum(rates) / len(rates)
-    _REVIEW_BLEND_KEY = "blended"
-    MODEL_PRICING[_REVIEW_BLEND_KEY] = blended
+        rates = [MODEL_PRICING.get(m, DEFAULT_PRICING)[rate_key] for m in session_models]
+        blended_pricing[rate_key] = sum(rates) / len(rates)
 
     phases = []
     for phase_name, filename, model_env_var in PHASE_FILES:
         if model_env_var is None:
-            model = _REVIEW_BLEND_KEY
+            model = f"blended ({len(session_models)} models)"
+            result = parse_phase(phase_name, Path(filename), model, pricing=blended_pricing)
         else:
             model = os.environ.get(model_env_var, orchestrator_model)
-        result = parse_phase(phase_name, Path(filename), model)
+            result = parse_phase(phase_name, Path(filename), model)
         if result:
             phases.append(result)
 

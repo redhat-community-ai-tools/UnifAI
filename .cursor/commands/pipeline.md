@@ -119,7 +119,7 @@ When the verdict is NOT approval, read `.cursor/skills/pipeline/modes/_revision-
 Review phases follow an Inline Scout + Judge pattern. The orchestrator **executes Scout logic directly** (no subagent spawn) to gather evidence, then spawns Judge subagent(s) for reasoning. This minimizes agent spawn overhead — only judges are spawned.
 
 **Model defaults** (override via environment variables `ARCH_JUDGE_MODEL`, `CODE_JUDGE_MODEL`):
-- Arch Judge: `claude-4.6-opus-high-thinking`
+- Arch Judge: `claude-4.6-opus-max-thinking`
 - Code Judge: `claude-4.6-sonnet-medium-thinking`
 
 **Inline Scout execution (applies to all review modes):**

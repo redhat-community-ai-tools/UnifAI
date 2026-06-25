@@ -110,7 +110,7 @@ jobs:
             > review.json 2> >(tee review_stderr.log >&2) || AGENT_EXIT=$?
           # Extract result directly to file — avoids shell variable mangling
           # (echo of large content can lose newlines / interpret backslashes)
-          jq -r '.result // empty' review.json 2>/dev/null > review_output.txt || true
+          jq -r '.result // empty' review.json > review_output.txt || true
           # Normalize line endings (CRLF → LF) so awk anchors work reliably
           sed -i 's/\r$//' review_output.txt
           # Split combined output into separate files for the gate evaluator
