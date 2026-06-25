@@ -2,11 +2,10 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Upload, X, CheckCircle, Loader2 } from "lucide-react";
-import axios from "@/http/axiosAgentConfig";
+import { uploadResourceFile } from "@/api/resources";
 
 interface FileUploadProps {
   accept: string;
-  uploadEndpoint: string;
   validateFormat?: string;
   maxSizeBytes?: number;
   value?: string;
@@ -20,7 +19,6 @@ interface FileUploadProps {
 
 export function FileUpload({
   accept,
-  uploadEndpoint,
   validateFormat = "pem",
   maxSizeBytes = 16384,
   value,
@@ -53,15 +51,7 @@ export function FileUpload({
     setError("");
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("format", validateFormat);
-
-      const response = await axios.post(uploadEndpoint, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      const { content, filename: returnedFilename } = response.data;
+      const { content, filename: returnedFilename } = await uploadResourceFile(file, validateFormat);
       setUploadedFilename(returnedFilename || file.name);
       onUploadSuccess(content, returnedFilename || file.name);
     } catch (err: any) {

@@ -45,6 +45,23 @@ def bind_tool_context(
                 )
 
 
+def find_sandbox_tool(tools: List[BaseTool]) -> Optional[Any]:
+    """Return the first ``SandboxExecTool`` in *tools*, or ``None``.
+
+    Handles the case where the ``openshell`` package is not installed
+    (the tool class cannot be imported) by returning ``None`` — the
+    caller falls through to its non-sandbox code path.  This is safe
+    because the tool factory would have already failed at element
+    creation time if the package were missing while a sandbox tool was
+    actually configured.
+    """
+    try:
+        from mas.elements.tools.sandbox_exec.sandbox_exec import SandboxExecTool
+    except ImportError:
+        return None
+    return next((t for t in tools if isinstance(t, SandboxExecTool)), None)
+
+
 def get_sandbox_wrapped_mcp_tools(
     domain_tools: List[BaseTool],
     mcp_providers: List[Any],
@@ -67,15 +84,18 @@ def get_sandbox_wrapped_mcp_tools(
         A list of ``SandboxToolProxy`` instances, or ``None`` if sandbox
         routing is not active.
     """
-    from mas.elements.tools.sandbox_exec.sandbox_exec import SandboxExecTool
-    from mas.elements.tools.common.sandbox_tool_proxy import SandboxToolProxy
-
-    sandbox_tool = next(
-        (t for t in domain_tools if isinstance(t, SandboxExecTool)),
-        None,
-    )
+    sandbox_tool = find_sandbox_tool(domain_tools)
     if sandbox_tool is None:
         return None
+
+    try:
+        from mas.elements.tools.common.sandbox_tool_proxy import SandboxToolProxy
+    except ImportError:
+        logger.error(
+            "SandboxExecTool is configured but 'openshell' package is not "
+            "installed. Install with: pip install 'mas[openshell]'"
+        )
+        raise
 
     mcp_urls: List[str] = []
     wrapped: List[BaseTool] = []

@@ -11,7 +11,6 @@ import logging
 from typing import Any, Dict
 
 import cloudpickle
-import openshell.sandbox as _openshell_sandbox
 
 from mas.elements.tools.common.base_tool import BaseTool
 import mas.elements.tools.common.sandbox_factories as _sandbox_factories_module
@@ -19,10 +18,9 @@ from mas.elements.tools.common.sandbox_factories import call_mcp_tool
 
 cloudpickle.register_pickle_by_value(_sandbox_factories_module)
 
-# SDK hardcodes "python" for exec_python; override to match the container's 3.12
-_openshell_sandbox._SANDBOX_PYTHON_BIN = "python3.12"
-
 logger = logging.getLogger(__name__)
+
+_sdk_patched = False
 
 _FACTORY_MAP: Dict[str, Any] = {
     "mcp_proxy": call_mcp_tool,
@@ -38,10 +36,6 @@ class SandboxToolProxy(BaseTool):
     Under the hood, the proxy serializes a module-level factory function
     + the tool's serializable config via cloudpickle (handled by the SDK)
     and runs it inside the sandbox container.
-
-    Patches the SDK to use ``python3.12`` instead of the default
-    ``python`` to match the worker's Python version and avoid
-    cross-version cloudpickle bytecode issues.
     """
 
     name: str = ""
@@ -51,11 +45,27 @@ class SandboxToolProxy(BaseTool):
 
     def __init__(self, inner_tool: BaseTool, sandbox: Any) -> None:
         super().__init__()
+        self._patch_sdk_python_bin()
         self.name = inner_tool.name
         self.description = inner_tool.description
         self.args_schema = inner_tool.args_schema
         self._inner = inner_tool
         self._sandbox = sandbox
+
+    @staticmethod
+    def _patch_sdk_python_bin() -> None:
+        """Override the SDK's default python binary once per process.
+
+        The openshell SDK hardcodes ``python`` for ``exec_python``;
+        the container ships Python 3.12, so we patch to ``python3.12``
+        to avoid cross-version cloudpickle bytecode issues.
+        """
+        global _sdk_patched
+        if _sdk_patched:
+            return
+        import openshell.sandbox as _openshell_sandbox
+        _openshell_sandbox._SANDBOX_PYTHON_BIN = "python3.12"
+        _sdk_patched = True
 
     def _resolve_venv_site_packages(self) -> str:
         """Find the sandbox venv's site-packages path (once per sandbox).

@@ -629,7 +629,6 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         )}
         <FileUpload
           accept={fileUploadHint.accept || ".pem,.crt,.key"}
-          uploadEndpoint={fileUploadHint.upload_endpoint || "/resource.upload-file"}
           validateFormat={fileUploadHint.validate_format || "pem"}
           maxSizeBytes={fileUploadHint.max_size_bytes || 16384}
           value={value}

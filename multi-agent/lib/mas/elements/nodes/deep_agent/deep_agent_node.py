@@ -196,12 +196,9 @@ class DeepAgentNode(
         Returns an OpenShellSandboxBackend when a SandboxExecTool is present
         in domain tools, otherwise falls back to LocalShellBackend.
         """
-        from mas.elements.tools.sandbox_exec.sandbox_exec import SandboxExecTool
+        from mas.elements.tools.common.context_binder import find_sandbox_tool
 
-        sandbox_tool = next(
-            (t for t in self._domain_tools if isinstance(t, SandboxExecTool)),
-            None,
-        )
+        sandbox_tool = find_sandbox_tool(self._domain_tools)
         if sandbox_tool is not None:
             from mas.elements.tools.sandbox_exec.openshell_backend import (
                 OpenShellSandboxBackend,

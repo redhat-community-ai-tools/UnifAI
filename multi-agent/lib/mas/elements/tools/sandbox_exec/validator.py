@@ -10,27 +10,11 @@ from mas.elements.common.validator import (
     ValidationCode,
 )
 from .config import SandboxExecToolConfig
+from .client import normalize_endpoint
 
 
 class SandboxExecToolValidator(BaseElementValidator):
     """Validates gateway connectivity via mTLS gRPC health check."""
-
-    @staticmethod
-    def _parse_endpoint(gateway_url: str) -> str:
-        """Extract host:port from gateway URL.
-
-        Accepts formats:
-          - "host:port"         → "host:port"
-          - "https://host:port" → "host:port"
-          - "host"              → "host:443" (default gRPC TLS port)
-        """
-        url = gateway_url.strip()
-        if "://" in url:
-            url = url.split("://", 1)[1]
-        url = url.rstrip("/")
-        if ":" not in url:
-            url = f"{url}:443"
-        return url
 
     def validate(
         self,
@@ -51,7 +35,7 @@ class SandboxExecToolValidator(BaseElementValidator):
                 ])
 
         try:
-            endpoint = self._parse_endpoint(config.gateway_url)
+            endpoint = normalize_endpoint(config.gateway_url)
         except Exception as e:
             return self._build_report(messages=[
                 self._error(
@@ -89,22 +73,21 @@ class SandboxExecToolValidator(BaseElementValidator):
                 field="gateway_url",
             ))
         except Exception as e:
-            import grpc as _grpc
-            if isinstance(e, _grpc.RpcError) and hasattr(e, "code"):
+            if isinstance(e, grpc.RpcError) and hasattr(e, "code"):
                 code = e.code()
-                if code == _grpc.StatusCode.UNAVAILABLE:
+                if code == grpc.StatusCode.UNAVAILABLE:
                     messages.append(self._error(
                         ValidationCode.ENDPOINT_UNREACHABLE.value,
                         f"Gateway unreachable at {endpoint}",
                         field="gateway_url",
                     ))
-                elif code == _grpc.StatusCode.UNAUTHENTICATED:
+                elif code == grpc.StatusCode.UNAUTHENTICATED:
                     messages.append(self._error(
                         ValidationCode.INVALID_CREDENTIALS.value,
                         "mTLS authentication failed — check certificates",
                         field="ca_cert",
                     ))
-                elif code == _grpc.StatusCode.DEADLINE_EXCEEDED:
+                elif code == grpc.StatusCode.DEADLINE_EXCEEDED:
                     messages.append(self._error(
                         ValidationCode.NETWORK_TIMEOUT.value,
                         f"Connection timed out after {context.timeout_seconds}s",

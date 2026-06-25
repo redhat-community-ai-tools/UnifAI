@@ -1,12 +1,22 @@
 """SDK adapter for creating SandboxClient from in-memory PEM strings."""
 
+import os
 import tempfile
 from pathlib import Path
 
 from openshell import SandboxClient, TlsConfig
 
 
-def _normalize_endpoint(endpoint: str) -> str:
+def _write_restricted(path: Path, content: str) -> None:
+    """Write a file with 0600 permissions (owner read/write only)."""
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, content.encode())
+    finally:
+        os.close(fd)
+
+
+def normalize_endpoint(endpoint: str) -> str:
     """Normalize gateway URL to ``host:port`` for gRPC.
 
     Accepts ``https://host:port``, ``host:port``, or ``host``
@@ -50,12 +60,12 @@ def create_client_from_pem(
     Returns:
         A standard SandboxClient connected via mTLS.
     """
-    endpoint = _normalize_endpoint(endpoint)
+    endpoint = normalize_endpoint(endpoint)
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        (tmp / "ca.crt").write_text(ca_pem)
-        (tmp / "tls.crt").write_text(cert_pem)
-        (tmp / "tls.key").write_text(key_pem)
+        _write_restricted(tmp / "ca.crt", ca_pem)
+        _write_restricted(tmp / "tls.crt", cert_pem)
+        _write_restricted(tmp / "tls.key", key_pem)
 
         return SandboxClient(
             endpoint,
