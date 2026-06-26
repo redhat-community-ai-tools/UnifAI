@@ -44,6 +44,7 @@ from outbound.mongo.client_config_repository import MongoServerConfigStore
 from mas.actions.auth.store_credential.action import StoreCredentialAction
 from mas.actions.auth.discovery.action import DiscoveryAction
 from mas.actions.auth.sign_out.action import SignOutAction
+from mas.actions.auth.list_servers.action import ListServersAction
 from mas.actions.providers.mcp.validate_connection.validate_connection import ValidateConnectionAction
 from mas.actions.providers.mcp.get_tools_names.get_tools_names import GetToolsNamesAction
 
@@ -218,6 +219,9 @@ class AppContainer(metaclass=SingletonMeta):
         ))
         self.actions_service.register_instance(SignOutAction(
             auth_service=self.auth_service,
+        ))
+        self.actions_service.register_instance(ListServersAction(
+            server_config_store=self.server_config_store,
         ))
         self.actions_service.register_instance(ValidateConnectionAction(
             auth_service=self.auth_service,

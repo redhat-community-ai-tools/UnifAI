@@ -1,14 +1,14 @@
 """
 MongoServerConfigStore — stores auth server configs in a dedicated collection.
 
-Collection: client_configs
-Index: unique on server_identifier
+Collection: server_configs
+Index: unique on server_identifier, multikey on categories
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from pymongo import MongoClient, ASCENDING
 
@@ -38,6 +38,11 @@ class MongoServerConfigStore(ServerConfigStore):
             unique=True,
             name="uq_server_identifier",
         )
+        self._coll.create_index(
+            [("categories", ASCENDING)],
+            name="idx_categories",
+            sparse=True,
+        )
 
     def find_by_server(self, user_id: str, server_identifier: str) -> Optional[ClientConfig]:
         if not server_identifier:
@@ -54,6 +59,12 @@ class MongoServerConfigStore(ServerConfigStore):
             {"$set": doc},
             upsert=True,
         )
+
+    def list_by_category(self, category: str) -> List[ClientConfig]:
+        if not category:
+            return []
+        docs = self._coll.find({"categories": category})
+        return [self._to_model(doc) for doc in docs]
 
     @staticmethod
     def _to_model(doc: dict) -> ClientConfig:

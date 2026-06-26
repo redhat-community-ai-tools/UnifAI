@@ -80,6 +80,8 @@ class ClientConfig(BaseModel):
     extra_authorize_params: Dict[str, str] = Field(default_factory=dict)
     protocol_type: str = "oauth2"
     server_identifier: str = ""
+    display_name: str = ""
+    categories: List[str] = Field(default_factory=list)
 
 
 class RecoveryResult(BaseModel):

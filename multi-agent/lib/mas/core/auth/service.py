@@ -12,7 +12,7 @@ at build time so they can call ``get_headers()`` with no args.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Optional, Union, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
 from .errors import TokenExpiredError
 from .credentials.models import (
@@ -157,6 +157,12 @@ class AuthService:
         if not self._configs:
             return None
         return self._configs.find_by_server(user_id, server_identifier)
+
+    def list_server_configs(self, category: str) -> List[ClientConfig]:
+        """Return all pre-configured auth servers for the given category."""
+        if not self._configs:
+            return []
+        return self._configs.list_by_category(category)
 
     # ── Token access (async — may trigger refresh I/O) ────────────────
 
