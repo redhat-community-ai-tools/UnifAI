@@ -116,14 +116,15 @@ jobs:
           # Normalize line endings (CRLF → LF) so awk anchors work reliably
           sed -i 's/\r$//' review_output.txt
           # Split combined output into separate files for the gate evaluator
-          awk '/^## ARCHITECTURE REVIEW[[:space:]]*$/,/^## CODE REVIEW[[:space:]]*$/{if(/^## CODE REVIEW[[:space:]]*$/)next; print}' review_output.txt > arch_review_output.txt
-          awk '/^## CODE REVIEW[[:space:]]*$/,0{print}' review_output.txt > code_review_output.txt
+          # Accept optional "PHASE N: " prefix so both "## CODE REVIEW" and "## PHASE 4: CODE REVIEW" work
+          awk '/^## (PHASE [0-9]+: )?ARCHITECTURE REVIEW[[:space:]]*$/,/^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$/{if(/^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$/)next; print}' review_output.txt > arch_review_output.txt
+          awk '/^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$/,0{print}' review_output.txt > code_review_output.txt
 
           # Validate split files contain expected review content
           SPLIT_OK=true
           for f in arch_review_output.txt code_review_output.txt; do
             if [ ! -s "$f" ]; then
-              echo "::error::${f} is empty. Agent output must contain exact '## ARCHITECTURE REVIEW' and '## CODE REVIEW' headers."
+              echo "::error::${f} is empty. Agent output must contain '## ARCHITECTURE REVIEW' and '## CODE REVIEW' headers (optionally prefixed with 'PHASE N: ')."
               SPLIT_OK=false
             elif ! grep -q 'PIPELINE_VERDICT' "$f"; then
               echo "::warning::${f} missing PIPELINE_VERDICT — judge output may be incomplete."
@@ -137,7 +138,7 @@ jobs:
             echo "::warning::Agent exited with code $AGENT_EXIT but review output appears valid. Continuing."
           fi
           if [ "$SPLIT_OK" = false ]; then
-            echo "::error::Output splitting failed — review sections missing or empty. Ensure pipeline.md output uses exact headers: '## ARCHITECTURE REVIEW' then '## CODE REVIEW'."
+            echo "::error::Output splitting failed — review sections missing or empty. Ensure output uses '## ARCHITECTURE REVIEW' then '## CODE REVIEW' headers (with or without 'PHASE N: ' prefix)."
             exit 1
           fi
 

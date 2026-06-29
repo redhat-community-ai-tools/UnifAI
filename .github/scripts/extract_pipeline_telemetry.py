@@ -40,6 +40,16 @@ PHASE_FILES = [
 ]
 
 
+def _as_int(value: object, *, default: int = 0) -> int:
+    """Coerce *value* to int, returning *default* for None/empty/non-numeric."""
+    if value is None or value == "":
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def estimate_cost(usage: dict, pricing: dict) -> float:
     """Compute estimated cost in USD from token counts and per-1M-token pricing."""
     input_tokens = usage.get("inputTokens", 0)
@@ -101,19 +111,21 @@ def parse_phase(
             )
         pricing = MODEL_PRICING.get(model, DEFAULT_PRICING)
 
+    normalized_usage = {
+        "inputTokens": _as_int(usage.get("inputTokens")),
+        "outputTokens": _as_int(usage.get("outputTokens")),
+        "cacheReadTokens": _as_int(usage.get("cacheReadTokens")),
+        "cacheWriteTokens": _as_int(usage.get("cacheWriteTokens")),
+    }
+
     return {
         "name": phase_name,
         "model": model,
         "session_id": data.get("session_id", ""),
         "request_id": data.get("request_id", ""),
-        "duration_ms": data.get("duration_ms", 0),
-        "usage": {
-            "inputTokens": usage.get("inputTokens", 0),
-            "outputTokens": usage.get("outputTokens", 0),
-            "cacheReadTokens": usage.get("cacheReadTokens", 0),
-            "cacheWriteTokens": usage.get("cacheWriteTokens", 0),
-        },
-        "estimated_cost_usd": estimate_cost(usage, pricing),
+        "duration_ms": _as_int(data.get("duration_ms")),
+        "usage": normalized_usage,
+        "estimated_cost_usd": estimate_cost(normalized_usage, pricing),
     }
 
 
@@ -244,12 +256,18 @@ def main() -> int:
 
     # Write telemetry artifact
     telemetry_path = Path("telemetry.json")
-    telemetry_path.write_text(json.dumps(telemetry, indent=2) + "\n")
-    print(f"Telemetry written to {telemetry_path}")
+    try:
+        telemetry_path.write_text(json.dumps(telemetry, indent=2) + "\n")
+        print(f"Telemetry written to {telemetry_path}")
+    except OSError as e:
+        print(f"::warning::Telemetry: Could not write {telemetry_path}: {e}")
 
     # Write summary to GitHub Actions
     summary_path = Path(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"))
-    write_summary(telemetry, summary_path)
+    try:
+        write_summary(telemetry, summary_path)
+    except OSError as e:
+        print(f"::warning::Telemetry: Could not write summary to {summary_path}: {e}")
 
     # Print summary to stdout for workflow log visibility
     print(f"\n{'='*60}")
