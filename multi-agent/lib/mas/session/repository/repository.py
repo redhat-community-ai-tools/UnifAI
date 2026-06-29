@@ -42,6 +42,17 @@ class SessionRepository(ABC):
         ...
 
     @abstractmethod
+    def list_docs_paginated(
+        self,
+        identity: Identity,
+        skip: int = 0,
+        limit: int = 50,
+        blueprint_id: str | None = None,
+    ) -> List[Mapping[str, Any]]:
+        """Return paginated session documents sorted by most recent activity, with newest sessions first."""
+        ...
+
+    @abstractmethod
     def delete(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""
         ...

@@ -115,8 +115,18 @@ class UserSessionManager:
         return self._repo.list_runs(identity)
 
     def list_docs(self, identity: Identity) -> List[Mapping[str, Any]]:
-        """Raw documents for bulk listing (chat history, etc.)."""
+        """Raw documents for bulk listing (all sessions, no pagination)."""
         return self._repo.list_docs(identity)
+
+    def list_docs_paginated(
+        self,
+        identity: Identity,
+        skip: int = 0,
+        limit: int = 50,
+        blueprint_id: str | None = None,
+    ) -> List[Mapping[str, Any]]:
+        """Raw documents for bulk listing (paginated), with newest sessions first."""
+        return self._repo.list_docs_paginated(identity, skip=skip, limit=limit, blueprint_id=blueprint_id)
 
     def delete_session(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""

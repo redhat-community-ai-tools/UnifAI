@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useRoute } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -26,6 +26,7 @@ import { getBlueprintInfo } from "@/api/blueprints";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { UmamiTrack } from "@/components/ui/umamitrack";
 import { UmamiEvents } from "@/config/umamiEvents";
+import { usePaginationTrigger } from "@/hooks/use-pagination-trigger";
 
 export default function PublicChat() {
   const [, params] = useRoute("/chat/:token");
@@ -33,6 +34,7 @@ export default function PublicChat() {
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const { toast } = useToast();
   const { primaryHex } = useTheme();
+  const scrollRef = useRef<HTMLDivElement>(null);
   
   const [blueprintId, setBlueprintId] = useState<string | null>(null);
   const [blueprintName, setBlueprintName] = useState<string>("");
@@ -67,7 +69,19 @@ export default function PublicChat() {
     showDeleteModal,
     setShowDeleteModal,
     chatToDelete,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
   } = usePublicChat(blueprintId);
+
+  const handleScrollPagination = usePaginationTrigger({
+    mode: "scroll",
+    scrollRef,
+    hasNextPage: hasNextPage ?? false,
+    isFetchingNextPage: isFetchingNextPage ?? false,
+    fetchNextPage,
+    threshold: 100,
+  });
 
   // Check sharing status for the blueprint using getBlueprintInfo (usageScope is part of metadata)
   const checkSharingStatus = useCallback(async (blueprintId: string) => {
@@ -283,7 +297,7 @@ export default function PublicChat() {
                 </UmamiTrack>
               </div>
             </CardHeader>
-            <CardContent className="p-0 flex-grow overflow-y-auto">
+            <CardContent className="p-0 flex-grow overflow-y-auto" ref={scrollRef}>
               {isLoadingSessions ? (
                 <div className="p-4 text-center">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
@@ -338,6 +352,11 @@ export default function PublicChat() {
                 </div>
               )}
             </CardContent>
+            {isFetchingNextPage && (
+              <div className="p-4 text-center">
+                <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+              </div>
+            )}
           </Card>
         </div>
 

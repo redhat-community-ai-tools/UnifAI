@@ -236,10 +236,15 @@ def get_session_status(session_id):
 
 @sessions_bp.route("/session.user.list", methods=["GET"])
 @with_require_identity_authorization
-def list_user_sessions(identity):
+@from_query({
+    "limit": fields.Int(data_key="limit", load_default=50, validate=lambda v: 1 <= v <= 100),
+    "offset": fields.Int(data_key="offset", load_default=0, validate=lambda v: v >= 0),
+    "blueprint_id": fields.Str(data_key="blueprintId", required=False),
+})
+def list_user_sessions(identity, limit: int, offset: int, blueprint_id: str | None):
     try:
         svc = current_app.container.session_service
-        return jsonify(svc.list_user_sessions(identity)), 200
+        return jsonify(svc.list_user_sessions(identity, limit=limit, offset=offset, blueprint_id=blueprint_id)), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

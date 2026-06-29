@@ -132,6 +132,41 @@ class MongoSessionRepository(SessionRepository):
         """Return all session documents for a user in a single query."""
         return list(self._col.find(identity_q(identity), {"_id": 0}))
 
+    def list_docs_paginated(
+        self,
+        identity: Identity,
+        skip: int = 0,
+        limit: int = 50,
+        blueprint_id: str | None = None,
+    ) -> List[Mapping[str, Any]]:
+        """Return paginated session documents sorted by most recent activity, with newest sessions first."""
+        bp_filter = {"blueprint_id": blueprint_id} if blueprint_id else {}
+        pipeline = [
+            {"$match": {**identity_q(identity), **bp_filter}},
+            {"$addFields": {"_sort_date": {
+                "$ifNull": [
+                    "$run_context.last_active_at",
+                    {
+                        "$cond": {
+                            "if": {
+                                "$gte": [
+                                    {"$dateFromString": {"dateString": "$run_context.started_at", "onError": None, "onNull": None}},
+                                    {"$subtract": ["$$NOW", 86400000]},
+                                ]
+                            },
+                            "then": "$run_context.started_at",
+                            "else": None,
+                        }
+                    },
+                ]
+            }}},
+            {"$sort": {"_sort_date": pymongo.DESCENDING}},
+            {"$skip": skip},
+            {"$limit": limit},
+            {"$project": {"_id": 0, "_sort_date": 0}},
+        ]
+        return list(self._col.aggregate(pipeline))
+
     def delete(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""
         result = self._col.delete_one({self._RUN_ID_FIELD: run_id})
