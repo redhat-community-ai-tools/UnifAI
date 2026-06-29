@@ -45,42 +45,42 @@ const STATUS_CONFIG: Record<ApprovalStatus, {
 }> = {
   pending: {
     icon: ShieldAlert,
-    iconClass: 'text-amber-400',
-    borderClass: 'border-amber-700/60',
-    bgClass: 'bg-amber-950/30',
+    iconClass: 'text-gray-300',
+    borderClass: 'border-gray-600/60',
+    bgClass: 'bg-gray-800/40',
     label: 'Approval Required',
   },
   approved: {
     icon: ShieldCheck,
-    iconClass: 'text-green-400',
-    borderClass: 'border-green-800/40',
-    bgClass: 'bg-green-950/30',
+    iconClass: 'text-gray-400',
+    borderClass: 'border-gray-700/40',
+    bgClass: 'bg-gray-800/20',
     label: 'Approved',
   },
   rejected: {
     icon: ShieldX,
-    iconClass: 'text-red-400',
-    borderClass: 'border-red-800/40',
-    bgClass: 'bg-red-950/30',
+    iconClass: 'text-gray-400',
+    borderClass: 'border-gray-700/40',
+    bgClass: 'bg-gray-800/20',
     label: 'Rejected',
   },
   modified: {
     icon: Pencil,
-    iconClass: 'text-orange-400',
-    borderClass: 'border-orange-800/40',
-    bgClass: 'bg-orange-950/30',
+    iconClass: 'text-gray-400',
+    borderClass: 'border-gray-700/40',
+    bgClass: 'bg-gray-800/20',
     label: 'Modified & Executed',
   },
   redirected: {
     icon: MessageSquare,
-    iconClass: 'text-blue-400',
-    borderClass: 'border-blue-800/40',
-    bgClass: 'bg-blue-950/30',
+    iconClass: 'text-gray-400',
+    borderClass: 'border-gray-700/40',
+    bgClass: 'bg-gray-800/20',
     label: 'Redirected',
   },
   timed_out: {
     icon: ShieldQuestion,
-    iconClass: 'text-gray-400',
+    iconClass: 'text-gray-500',
     borderClass: 'border-gray-700/40',
     bgClass: 'bg-gray-900/30',
     label: 'Timed Out',
@@ -178,17 +178,17 @@ export const ApprovalCard = memo(({ approval, sessionId, onDecision, onAutoRule 
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-medium text-amber-300">
+            <span className="text-sm font-medium text-gray-200">
               {cfg.label}
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-400 font-mono uppercase">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/50 text-gray-400 font-mono uppercase">
               {approval.accessMode}
             </span>
           </div>
           <div className="text-xs text-gray-400 mb-2">
             <span className="text-gray-300 font-medium">{approval.originNodeName}</span>
             {' wants to execute '}
-            <span className="text-amber-300 font-mono">{approval.toolName}</span>
+            <span className="text-gray-200 font-mono">{approval.toolName}</span>
           </div>
 
           {/* Args table */}
@@ -220,7 +220,7 @@ export const ApprovalCard = memo(({ approval, sessionId, onDecision, onAutoRule 
                     ? 'Reason for rejection...'
                     : 'New instructions for the agent...'
                 }
-                className="bg-gray-800/70 border-gray-600 text-xs min-h-[60px] resize-none"
+                className="bg-gray-800/70 border-gray-600 text-xs text-gray-200 placeholder:text-gray-500 min-h-[60px] resize-none"
                 autoFocus
               />
               <div className="flex gap-2">
@@ -251,7 +251,7 @@ export const ApprovalCard = memo(({ approval, sessionId, onDecision, onAutoRule 
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
-                className="h-7 text-xs bg-green-700 hover:bg-green-600 text-white"
+                className="h-7 text-xs bg-gray-600 hover:bg-gray-500 text-gray-100"
                 onClick={() => handleDecision('approve')}
                 disabled={isSubmitting}
               >
@@ -265,7 +265,7 @@ export const ApprovalCard = memo(({ approval, sessionId, onDecision, onAutoRule 
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 text-xs border-red-800/50 text-red-400 hover:bg-red-950/40 hover:text-red-300"
+                className="h-7 text-xs border-gray-600 text-gray-400 hover:bg-gray-700/50 hover:text-gray-300"
                 onClick={() => setShowFeedback('reject')}
                 disabled={isSubmitting}
               >
@@ -296,19 +296,19 @@ export const ApprovalCard = memo(({ approval, sessionId, onDecision, onAutoRule 
                       <DropdownMenuItem
                         onClick={() => handleAutoRuleClick(approval.originNodeUid, approval.toolName, 'auto_approve')}
                       >
-                        <Zap className="h-3.5 w-3.5 mr-2 text-green-400" />
-                        <span>Always approve <span className="font-mono text-green-300">{approval.toolName}</span> from <span className="text-gray-300">{approval.originNodeName}</span></span>
+                        <Zap className="h-3.5 w-3.5 mr-2 text-gray-400" />
+                        <span>Always approve <span className="font-mono text-gray-300">{approval.toolName}</span> from <span className="text-gray-300">{approval.originNodeName}</span></span>
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => handleAutoRuleClick(null, approval.toolName, 'auto_approve')}
                       >
-                        <Zap className="h-3.5 w-3.5 mr-2 text-green-400" />
-                        <span>Always approve <span className="font-mono text-green-300">{approval.toolName}</span> from any agent</span>
+                        <Zap className="h-3.5 w-3.5 mr-2 text-gray-400" />
+                        <span>Always approve <span className="font-mono text-gray-300">{approval.toolName}</span> from any agent</span>
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => handleAutoRuleClick(approval.originNodeUid, null, 'auto_approve')}
                       >
-                        <Zap className="h-3.5 w-3.5 mr-2 text-green-400" />
+                        <Zap className="h-3.5 w-3.5 mr-2 text-gray-400" />
                         <span>Always approve all tools from <span className="text-gray-300">{approval.originNodeName}</span></span>
                       </DropdownMenuItem>
 
@@ -317,14 +317,14 @@ export const ApprovalCard = memo(({ approval, sessionId, onDecision, onAutoRule 
                       <DropdownMenuItem
                         onClick={() => handleAutoRuleClick(approval.originNodeUid, approval.toolName, 'auto_reject')}
                       >
-                        <X className="h-3.5 w-3.5 mr-2 text-red-400" />
-                        <span>Always reject <span className="font-mono text-red-300">{approval.toolName}</span> from <span className="text-gray-300">{approval.originNodeName}</span></span>
+                        <X className="h-3.5 w-3.5 mr-2 text-gray-500" />
+                        <span>Always reject <span className="font-mono text-gray-400">{approval.toolName}</span> from <span className="text-gray-300">{approval.originNodeName}</span></span>
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() => handleAutoRuleClick(null, approval.toolName, 'auto_reject')}
                       >
-                        <X className="h-3.5 w-3.5 mr-2 text-red-400" />
-                        <span>Always reject <span className="font-mono text-red-300">{approval.toolName}</span> from any agent</span>
+                        <X className="h-3.5 w-3.5 mr-2 text-gray-500" />
+                        <span>Always reject <span className="font-mono text-gray-400">{approval.toolName}</span> from any agent</span>
                       </DropdownMenuItem>
                     </>
                   )}

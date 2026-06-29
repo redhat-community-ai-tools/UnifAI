@@ -19,10 +19,10 @@ export const ApprovalBadge = memo(({ pendingCount, onClick }: ApprovalBadgeProps
           onClick={onClick}
           className="
             flex items-center gap-2 px-3 py-2 rounded-lg
-            bg-amber-950/80 border border-amber-700/60
-            text-amber-300 text-xs font-medium
-            shadow-lg shadow-amber-900/20
-            hover:bg-amber-900/80 transition-colors
+            bg-gray-800/80 border border-gray-600/60
+            text-gray-300 text-xs font-medium
+            shadow-lg shadow-gray-900/20
+            hover:bg-gray-700/80 transition-colors
             cursor-pointer
           "
           title="Scroll to pending approval"
