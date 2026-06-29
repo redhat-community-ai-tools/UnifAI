@@ -47,7 +47,7 @@ class PromptShortcuts(BaseModel):
         manual = [p for p in v if p.kind == "manual"]
         if len(manual) > MAX_MANUAL_PROMPTS:
             raise ValueError(f"At most {MAX_MANUAL_PROMPTS} manual prompt shortcuts allowed")
-        return [item for item in v if item.text.strip()]
+        return v
 
     # ── Factories ──
 
