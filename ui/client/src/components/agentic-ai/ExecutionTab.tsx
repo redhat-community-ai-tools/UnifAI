@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
@@ -49,6 +49,14 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
 
   const isChatOnlyMode = hub.selectedSession?.fromSharedLink ?? false;
+
+  const defaultPrompts = useMemo(() => {
+    if (!hub.selectedSession?.blueprintId) return undefined;
+    const specDict = hub.blueprintSpecCache.get(hub.selectedSession.blueprintId);
+    const shortcuts = specDict?.prompt_shortcuts;
+    if (!Array.isArray(shortcuts)) return undefined;
+    return shortcuts.filter((p: any) => p.kind === "manual");
+  }, [hub.selectedSession?.blueprintId, hub.blueprintSpecCache]);
 
   const carousel = useCarouselLayout({
     defaultChatPercent: 65,
@@ -138,6 +146,7 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
           carouselMode={carousel.carouselMode}
           isLiveRequest={hub.isLiveRequest}
           isSubmitting={hub.sessionStream.isSubmitting}
+          defaultPrompts={defaultPrompts}
         />
       )}
 

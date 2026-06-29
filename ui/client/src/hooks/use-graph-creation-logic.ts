@@ -15,7 +15,7 @@ import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { deriveThemeColors } from "@/lib/colorUtils";
 import axios from "../http/axiosAgentConfig";
 import * as yaml from "js-yaml";
-import { saveBlueprint, updateBlueprint } from "@/api/blueprints";
+import { saveBlueprint, updateBlueprint, setPromptShortcuts, PromptShortcutInput } from "@/api/blueprints";
 import {
   acquireTeamEditLock,
   heartbeatTeamEditLock,
@@ -126,6 +126,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
   const [isLoadingBlueprint, setIsLoadingBlueprint] = useState(!!editBlueprintId);
   const [editBlueprintName, setEditBlueprintName] = useState("");
   const [editBlueprintDescription, setEditBlueprintDescription] = useState("");
+  const [currentPromptShortcuts, setCurrentPromptShortcuts] = useState<PromptShortcutInput[]>([]);
   const blueprintLoadedRef = useRef(false);
   const blueprintEditLockActiveRef = useRef(false);
   const [blueprintEditLockHeld, setBlueprintEditLockHeld] = useState(false);
@@ -745,6 +746,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         setIsEditMode(true);
         setEditBlueprintName(result.name);
         setEditBlueprintDescription(result.description);
+        setCurrentPromptShortcuts(result.promptShortcuts);
         setIsLoadingBlueprint(false);
       } catch (err) {
         console.error("Failed to load blueprint for editing:", err);
@@ -1103,7 +1105,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
   };
 
   const saveGraph = useCallback(
-    async (name: string, description: string) => {
+    async (name: string, description: string, promptShortcuts: PromptShortcutInput[]) => {
       try {
         setIsSaving(true);
 
@@ -1151,6 +1153,10 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
               : "Unknown error occurred while saving blueprint"
           );
         }
+
+        // Save prompt shortcuts via dedicated endpoint (always call, even if empty, to clear)
+        const cleanedPrompts = promptShortcuts.filter(p => p.text.trim());
+        await setPromptShortcuts(blueprintId, cleanedPrompts);
 
         toast({
           title: isEditMode
@@ -1466,5 +1472,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     isLoadingBlueprint,
     editBlueprintName,
     editBlueprintDescription,
+    currentPromptShortcuts,
   };
 };

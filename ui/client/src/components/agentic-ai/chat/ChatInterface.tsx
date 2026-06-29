@@ -79,6 +79,7 @@ interface ChatInterfaceProps {
   collaborationMode?: boolean;
   teamMembers?: MemberDisplay[];
   typingUsers?: string[];
+  defaultPrompts?: Array<{ id: string; kind: "manual"; text: string }>;
 }
 
 export default function ChatInterface({
@@ -104,6 +105,7 @@ export default function ChatInterface({
   collaborationMode = false,
   teamMembers = [],
   typingUsers = [],
+  defaultPrompts,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -133,6 +135,18 @@ export default function ChatInterface({
   }, []);
   const wasCancelledByUserRef = useRef(false);
   const activeUserMessageIdRef = useRef<string | null>(null);
+
+  // Prompt chips state — visible only until the first message is sent
+  const hasExistingConversation = initialMessages.length > 0;
+  const [chipsDismissed, setChipsDismissed] = useState(false);
+  const showPromptChips = !chipsDismissed && !hasExistingConversation && (defaultPrompts?.length ?? 0) > 0;
+  const [previewChipId, setPreviewChipId] = useState<string | null>(null);
+
+  const getDisplayTitle = (prompt: { text: string }): string => {
+    const words = prompt.text.split(/\s+/);
+    const preview = words.length <= 3 ? prompt.text : words.slice(0, 3).join(" ") + "...";
+    return preview.length > 40 ? preview.slice(0, 37) + "..." : preview;
+  };
 
   const updateMessageById = useCallback(
     (messageId: string, updates: Partial<Message>) => {
@@ -843,6 +857,8 @@ export default function ChatInterface({
     const messageContent = messageToSend || inputMessage;
     if (messageContent.trim() === "") return;
 
+    setChipsDismissed(true);
+
     if (isTyping || isLiveRequest) {
       if (onQueueMessage) {
         onQueueMessage(messageContent);
@@ -1457,6 +1473,84 @@ export default function ChatInterface({
           )}
           {blueprintExists && !isSharingDisabled && isValidatingBlueprint && (
             <WorkflowStatusBanner {...WorkflowBannerMessages.validating} />
+          )}
+
+          {/* Prompt shortcut chips */}
+          {showPromptChips && defaultPrompts && defaultPrompts.length > 0 && (
+            <div className="mb-3">
+              <div className="flex flex-wrap gap-3">
+                {defaultPrompts.map((prompt) => (
+                  <div key={prompt.id} className="relative">
+                    <div
+                      className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium border transition-colors ${
+                        previewChipId === prompt.id
+                          ? "bg-primary/20 border-primary/50 text-primary"
+                          : "bg-background-surface border-gray-700 text-gray-300 hover:border-primary/50 hover:text-primary"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5"
+                        onClick={() => {
+                          setInputMessage(prompt.text);
+                          setPreviewChipId(null);
+                          textareaRef.current?.focus();
+                        }}
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span>{getDisplayTitle(prompt)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="ml-1 p-0.5 rounded hover:bg-gray-700/50"
+                        onClick={() => setPreviewChipId(previewChipId === prompt.id ? null : prompt.id)}
+                      >
+                        <Maximize2 className={`h-3.5 w-3.5 transition-transform ${previewChipId === prompt.id ? "rotate-180" : ""}`} />
+                      </button>
+                    </div>
+                    <AnimatePresence>
+                      {previewChipId === prompt.id && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 4 }}
+                          transition={{ duration: 0.15, ease: "easeOut" }}
+                          className="absolute bottom-full left-0 mb-2 z-10 w-64"
+                        >
+                          <div className="rounded-md bg-gray-900 border border-primary/50 p-3 flex flex-col shadow-lg">
+                            <div className="max-h-[200px] overflow-y-auto mb-2">
+                              <pre className="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">
+                                {prompt.text}
+                              </pre>
+                            </div>
+                            <div className="flex justify-between items-center pt-2 border-t border-gray-700">
+                              <button
+                                type="button"
+                                className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+                                onClick={() => setPreviewChipId(null)}
+                              >
+                                Close
+                              </button>
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setInputMessage(prompt.text);
+                                  setPreviewChipId(null);
+                                  textareaRef.current?.focus();
+                                }}
+                                className="bg-primary hover:bg-primary/80"
+                              >
+                                Use this prompt
+                              </Button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
           
           {/* Input area */}

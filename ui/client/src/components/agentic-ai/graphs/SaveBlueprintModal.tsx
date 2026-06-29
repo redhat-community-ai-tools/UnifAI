@@ -13,15 +13,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
+import { PromptShortcutInput } from "@/api/blueprints";
+import PromptShortcutsEditor from "../PromptShortcutsEditor";
 
 interface SaveBlueprintModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (name: string, description: string) => void;
+  onSave: (name: string, description: string, promptShortcuts: PromptShortcutInput[]) => void;
   isLoading?: boolean;
   isEditMode?: boolean;
   currentName?: string;
   currentDescription?: string;
+  currentPromptShortcuts?: PromptShortcutInput[];
 }
 
 const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
@@ -32,14 +35,17 @@ const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
   isEditMode = false,
   currentName = "",
   currentDescription = "",
+  currentPromptShortcuts = [],
 }) => {
   const [name, setName] = useState(currentName);
   const [description, setDescription] = useState(currentDescription);
+  const [promptShortcuts, setPromptShortcuts] = useState<PromptShortcutInput[]>(currentPromptShortcuts);
 
   useEffect(() => {
     if (isOpen) {
       setName(currentName);
       setDescription(currentDescription);
+      setPromptShortcuts(currentPromptShortcuts);
     }
   }, [isOpen]);
 
@@ -47,12 +53,13 @@ const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
     if (!name.trim()) {
       return;
     }
-    onSave(name.trim(), description.trim());
+    onSave(name.trim(), description.trim(), promptShortcuts);
   };
 
   const handleClose = () => {
     setName(isEditMode ? currentName : "");
     setDescription(isEditMode ? currentDescription : "");
+    setPromptShortcuts(isEditMode ? currentPromptShortcuts : []);
     onClose();
   };
 
@@ -60,7 +67,7 @@ const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px] bg-gray-900 border-gray-700">
+      <DialogContent className="sm:max-w-[500px] bg-gray-900 border-gray-700 max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-white">
             {isEditMode ? "Update Workflow" : "Save Workflow"}
@@ -93,6 +100,18 @@ const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
               className="input-dark-theme bg-input border-border text-foreground resize-none"
+              disabled={isLoading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-gray-300">Prompt Shortcuts (optional)</Label>
+            <p className="text-xs text-gray-500">
+              Clickable prompts shown as chips when starting a new chat session.
+            </p>
+            <PromptShortcutsEditor
+              prompts={promptShortcuts}
+              onChange={setPromptShortcuts}
               disabled={isLoading}
             />
           </div>

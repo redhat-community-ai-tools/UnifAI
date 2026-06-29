@@ -42,6 +42,7 @@ export default function PublicChat() {
   const [isSharingDisabled, setIsSharingDisabled] = useState<boolean>(false);
   const [isBlueprintValid, setIsBlueprintValid] = useState<boolean>(true);
   const [isValidatingBlueprint, setIsValidatingBlueprint] = useState<boolean>(false);
+  const [defaultPrompts, setDefaultPrompts] = useState<Array<{ id: string; kind: "manual"; text: string }>>([]);
 
   // Use the cached blueprint validation from context
   const { validateBlueprintWithCache } = useAgenticAI();
@@ -120,6 +121,11 @@ export default function PublicChat() {
         setBlueprintId(token);
         setBlueprintName(blueprintInfo.spec_dict?.name || "Unnamed Workflow");
         setBlueprintOwner(blueprintInfo.user_id || "");
+
+        const shortcuts = blueprintInfo.spec_dict?.prompt_shortcuts;
+        if (Array.isArray(shortcuts)) {
+          setDefaultPrompts(shortcuts.filter((p: any) => p.kind === "manual"));
+        }
         
         // Check sharing status from the same blueprintInfo response (no extra API call)
         const isPublic = blueprintInfo.metadata?.usageScope === "public";
@@ -386,6 +392,7 @@ export default function PublicChat() {
                 isChatOnlyMode={true}
                 isLiveRequest={isLiveRequest}
                 isSubmitting={isSubmitting}
+                defaultPrompts={defaultPrompts.length > 0 ? defaultPrompts : undefined}
               />
             </StreamingDataProvider>
           )}

@@ -250,3 +250,45 @@ export async function getBlueprintDraftSchema(): Promise<any> {
   const response = await axios.get('/blueprints/blueprint.draft.schema.get');
   return response.data;
 }
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Prompt Shortcuts
+// ────────────────────────────────────────────────────────────────────────────────
+
+export interface PromptShortcutInput {
+  id?: string;
+  kind?: "manual";
+  text: string;
+}
+
+export interface PromptShortcut {
+  id: string;
+  kind: "manual";
+  text: string;
+}
+
+/**
+ * Set prompt shortcuts for a blueprint (replaces all existing shortcuts)
+ */
+export async function setPromptShortcuts(
+  blueprintId: string,
+  prompts: PromptShortcutInput[]
+): Promise<{ prompts: PromptShortcut[] }> {
+  const { data } = await axios.put('/blueprints/blueprint.prompt-shortcuts.set', {
+    blueprintId,
+    prompts,
+  });
+  return data;
+}
+
+/**
+ * Get prompt shortcuts for a blueprint
+ */
+export async function getPromptShortcuts(
+  blueprintId: string
+): Promise<{ prompts: PromptShortcut[] }> {
+  const { data } = await axios.get('/blueprints/blueprint.prompt-shortcuts.get', {
+    params: { blueprintId },
+  });
+  return data;
+}
