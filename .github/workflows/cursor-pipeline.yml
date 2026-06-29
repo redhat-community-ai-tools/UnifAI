@@ -113,12 +113,41 @@ jobs:
           # Extract result directly to file — avoids shell variable mangling
           # (echo of large content can lose newlines / interpret backslashes)
           jq -r '.result // empty' review.json > review_output.txt || true
-          # Normalize line endings (CRLF → LF) so awk anchors work reliably
+          # Normalize line endings (CRLF → LF) so grep anchors work reliably
           sed -i 's/\r$//' review_output.txt
-          # Split combined output into separate files for the gate evaluator
-          # Accept optional "PHASE N: " prefix so both "## CODE REVIEW" and "## PHASE 4: CODE REVIEW" work
-          awk '/^## (PHASE [0-9]+: )?ARCHITECTURE REVIEW[[:space:]]*$/,/^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$/{if(/^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$/)next; print}' review_output.txt > arch_review_output.txt
-          awk '/^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$/,0{print}' review_output.txt > code_review_output.txt
+          # Split combined output into separate files for the gate evaluator.
+          # Uses line-number-based extraction to prevent malformed output (repeated
+          # or out-of-order headers) from leaking verdicts across sections.
+          ARCH_LINES=$(grep -n -E '^## (PHASE [0-9]+: )?ARCHITECTURE REVIEW[[:space:]]*$' review_output.txt | cut -d: -f1 || true)
+          CODE_LINES=$(grep -n -E '^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$' review_output.txt | cut -d: -f1 || true)
+          ARCH_COUNT=$(echo "$ARCH_LINES" | grep -c . || true)
+          CODE_COUNT=$(echo "$CODE_LINES" | grep -c . || true)
+          if [ "$ARCH_COUNT" -ne 1 ] || [ "$CODE_COUNT" -ne 1 ]; then
+            echo "::error::Expected exactly one '## ARCHITECTURE REVIEW' and one '## CODE REVIEW' header, found ${ARCH_COUNT} and ${CODE_COUNT} respectively. Agent output is malformed."
+            exit 1
+          fi
+          ARCH_LINE=$(echo "$ARCH_LINES" | head -1)
+          CODE_LINE=$(echo "$CODE_LINES" | head -1)
+          if [ "$ARCH_LINE" -ge "$CODE_LINE" ]; then
+            echo "::error::ARCHITECTURE REVIEW header (line $ARCH_LINE) must appear before CODE REVIEW header (line $CODE_LINE). Agent output is malformed."
+            exit 1
+          fi
+          # Extract arch section: from ARCH_LINE+1 to CODE_LINE-1
+          ARCH_END=$((CODE_LINE - 1))
+          ARCH_START=$((ARCH_LINE + 1))
+          if [ "$ARCH_START" -le "$ARCH_END" ]; then
+            sed -n "${ARCH_START},${ARCH_END}p" review_output.txt > arch_review_output.txt
+          else
+            : > arch_review_output.txt
+          fi
+          # Extract code section: from CODE_LINE+1 to EOF
+          CODE_START=$((CODE_LINE + 1))
+          TOTAL_LINES=$(wc -l < review_output.txt)
+          if [ "$CODE_START" -le "$TOTAL_LINES" ]; then
+            sed -n "${CODE_START},\$p" review_output.txt > code_review_output.txt
+          else
+            : > code_review_output.txt
+          fi
 
           # Validate split files contain expected review content
           SPLIT_OK=true
