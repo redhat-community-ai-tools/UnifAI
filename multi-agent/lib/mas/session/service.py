@@ -222,20 +222,24 @@ class SessionService:
         """
         return self._manager.get_chat(run_id)
 
-    def list_user_sessions(self, identity: Identity) -> list:
+    def list_user_sessions(self, identity: Identity, limit: int = 50, offset: int = 0, blueprint_id: str | None = None) -> Dict[str, Any]:
         """
-        List all sessions created by a user (metadata only, no messages).
+        List sessions created by a user (metadata only, no messages)
+        with pagination envelope.
         """
-        docs = self._manager.list_docs(identity)
-        items = []
+        docs = self._manager.list_docs_paginated(identity, skip=offset, limit=limit, blueprint_id=blueprint_id)
 
+        count_filter = {"blueprint_id": blueprint_id} if blueprint_id else {}
+        total = self._manager.count(identity, count_filter)
+
+        items = []
         for doc in docs:
-            blueprint_id = doc.get("blueprint_id", "")
-            blueprint_exists = self._manager.blueprint_exists(blueprint_id) if blueprint_id else False
-            bp_metadata = self._manager.get_blueprint_metadata(blueprint_id) if blueprint_exists else {}
+            doc_blueprint_id = doc.get("blueprint_id", "")
+            blueprint_exists = self._manager.blueprint_exists(doc_blueprint_id) if doc_blueprint_id else False
+            bp_metadata = self._manager.get_blueprint_metadata(doc_blueprint_id) if blueprint_exists else {}
 
             public_usage_scope = False
-            if blueprint_exists and blueprint_id:
+            if blueprint_exists and doc_blueprint_id:
                 source = doc.get("metadata", {}).get("source", "")
                 if source == "public_link":
                     public_usage_scope = bp_metadata.get("usageScope") == "public"
@@ -243,7 +247,15 @@ class SessionService:
             item = SessionListItem.from_doc(doc, blueprint_exists=blueprint_exists, public_usage_scope=public_usage_scope, blueprint_metadata=bp_metadata)
             items.append(item.model_dump())
 
-        return items
+        return {
+            "sessions": items,
+            "pagination": {
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "has_more": offset + limit < total,
+            },
+        }
 
     def get_user_blueprints(self, identity: Identity) -> List[str]:
         """
