@@ -1,7 +1,8 @@
 """
-HttpxAuthClient — implements :class:`HttpClient` port using httpx.
+HttpxClient — implements :class:`HttpClient` port using httpx.
 
-This is the *only* place in the auth layer that imports httpx.
+Generic async HTTP client. Used by the auth layer for token exchange
+and discovery, but not coupled to any auth-specific logic.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from mas.core.auth.ports import HttpClient, HttpResponse
 logger = logging.getLogger(__name__)
 
 
-class HttpxAuthClient(HttpClient):
+class HttpxClient(HttpClient):
 
     async def post(
         self,

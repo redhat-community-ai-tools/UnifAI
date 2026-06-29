@@ -2,8 +2,9 @@
 response_language = "en-US"
 
 [github_app]
-pr_commands = ["/agentic_describe", "/agentic_review"]
-handle_push_trigger = false
+pr_commands = ["/agentic_describe", "/agentic_review", "/improve"]
+push_commands = ["/agentic_review", "/improve"]
+handle_push_trigger = true
 
 [config]
 enable_auto_approval = true
@@ -14,8 +15,8 @@ enable_auto_best_practices = true
 utilize_auto_best_practices = true
 
 [review_agent]
-demand_self_review = true
-approve_pr_on_self_review = true
+#demand_self_review = true
+#approve_pr_on_self_review = true
 comments_location_policy = "inline"
 inline_comments_severity_threshold = 1
 issues_user_guidelines = """

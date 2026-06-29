@@ -38,16 +38,10 @@ class ResourcesService:
         self._validation_service = validation_service
         self._auth_service = auth_service
 
-    def set_auth_service(self, auth_service) -> None:
-        """Late-bind the auth service (created after ResourcesService in the container)."""
-        self._auth_service = auth_service
-
     # ---------- CRUD ----------
     def create(self, *, identity: Identity, category, type, name, config) -> Resource:
         model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
         cfg_model = model_cls(**config)
-
-        self._run_pre_save_hook(cfg_model, identity.id)
 
         nested_refs = list(RefWalker.external_rids(cfg_model))
 
@@ -77,8 +71,6 @@ class ResourcesService:
         model_cls = self.element_registry.get_schema(
             ResourceCategory(doc.category), doc.type)
         cfg_model = model_cls(**config)
-
-        self._run_pre_save_hook(cfg_model, doc.identity.id)
 
         nested_refs = list(RefWalker.external_rids(cfg_model))
 
@@ -340,11 +332,6 @@ class ResourcesService:
             self._auth_service.delete_credential(identity.id, server_id)
 
     # ---------- Helpers ----------
-    def _run_pre_save_hook(self, cfg_model: BaseModel, user_id: str) -> None:
-        """Call on_pre_save on the config model if it supports it."""
-        if hasattr(cfg_model, "on_pre_save"):
-            cfg_model.on_pre_save(user_id, auth_service=self._auth_service)
-
     def _ensure_validation_service(self) -> None:
         """Raise if validation service not configured."""
         if not self._validation_service:
