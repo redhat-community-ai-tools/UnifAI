@@ -14,8 +14,8 @@ class CustomAgentNodeFactory(BaseFactory[CustomAgentNodeConfig, CustomAgentNode]
 
     ``hitl_mode`` and ``execution_holder`` are build-time concerns:
     the mode is a static config choice; the holder is needed at
-    runtime so the node can read ``hitl_enabled`` from the
-    ExecutionContext when ``hitl_mode == DYNAMIC``.
+    runtime so the node can read ``hitl_enabled`` (sourced from
+    session metadata) when ``hitl_mode == DYNAMIC``.
     """
 
     def accepts(self, cfg: CustomAgentNodeConfig, element_type: str) -> bool:

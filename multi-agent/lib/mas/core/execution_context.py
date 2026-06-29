@@ -85,8 +85,8 @@ class ExecutionContext(BaseModel):
     def with_hitl(self, enabled: bool) -> ExecutionContext:
         """Copy with the HITL-enabled flag in ``tags``.
 
-        Nodes configured with ``HITLMode.DYNAMIC`` read this at runtime
-        to decide whether tool calls should be gated.
+        Stamped from ``SessionMeta.hitl_enabled`` during staging so that
+        nodes configured with ``HITLMode.DYNAMIC`` can read it at runtime.
         """
         tags = dict(self.tags or {})
         tags[HITL_ENABLED_TAG] = enabled
@@ -94,7 +94,7 @@ class ExecutionContext(BaseModel):
 
     @property
     def hitl_enabled(self) -> bool:
-        """Whether dynamic HITL was requested for this execution run."""
+        """Whether dynamic HITL is active (sourced from session metadata)."""
         return bool((self.tags or {}).get(HITL_ENABLED_TAG, False))
 
     def mark_active(self) -> ExecutionContext:

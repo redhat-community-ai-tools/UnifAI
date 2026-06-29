@@ -61,7 +61,8 @@ class HITLCapableMixin:
         """Decide whether HITL gating is active for this execution run.
 
         Combines the static ``hitl_mode`` from config with the runtime
-        gate/policy injection and (for DYNAMIC) the ExecutionContext flag.
+        gate/policy injection and (for DYNAMIC) the session metadata flag
+        stamped into the ExecutionContext during staging.
         """
         gate_present = (self._approval_gate is not None
                         and self._approval_policy is not None)

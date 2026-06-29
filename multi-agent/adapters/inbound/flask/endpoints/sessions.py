@@ -69,10 +69,12 @@ def _check_session_busy(session_id: str, session_type: str, svc):
 @with_require_identity_authorization
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
-    "metadata": fields.Dict(data_key="metadata", required=False, load_default=lambda: {}, dump_default=lambda: {})
+    "metadata": fields.Dict(data_key="metadata", required=False, load_default=lambda: {}, dump_default=lambda: {}),
+    "hitl_enabled": fields.Bool(data_key="hitlEnabled", load_default=False),
 })
-def create_user_session(identity, blueprint_id, metadata):
+def create_user_session(identity, blueprint_id, metadata, hitl_enabled):
     try:
+        metadata.setdefault("hitl_enabled", hitl_enabled)
         session_svc = current_app.container.session_service
         run_id = session_svc.create(identity=identity,
                                     blueprint_id=blueprint_id,
@@ -97,9 +99,8 @@ def create_user_session(identity, blueprint_id, metadata):
     "stream": fields.Bool(data_key="stream", load_default=False),
     "scope": fields.Str(data_key="scope", load_default="public"),
     "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
-    "hitl_enabled": fields.Bool(data_key="hitlEnabled", load_default=False),
 })
-def execute_user_session(identity, session_id, inputs, stream_mode, stream, scope, session_type, hitl_enabled):
+def execute_user_session(identity, session_id, inputs, stream_mode, stream, scope, session_type):
     """
     Execute (or stream) an existing session.
     - If `stream` is False (default), returns the full result as JSON.
@@ -107,7 +108,10 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
     - ``sessionType`` controls busy-state semantics:
       - ``"Personal"`` (default): rejects when status is QUEUED or RUNNING.
       - ``"Shared"``: rejects when status is LOCKED, IN_USE, QUEUED, or RUNNING.
-    - ``hitlEnabled`` activates HITL for nodes configured with ``hitl_mode: dynamic``.
+
+    HITL is controlled by the session's ``hitl_enabled`` metadata flag
+    (set at creation via ``/user.session.create`` or updated via
+    ``/session.meta``).
     """
     logged_in_user = identity.id
     svc = current_app.container.session_service
@@ -122,7 +126,6 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
             inputs=inputs,
             scope=scope,
             logged_in_user=logged_in_user,
-            hitl_enabled=hitl_enabled,
         )
         return json.dumps(result, default=pydantic_encoder), 200
 
@@ -133,7 +136,6 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
             scope=scope,
             stream=True,
             logged_in_user=logged_in_user,
-            hitl_enabled=hitl_enabled,
         )
         for chunk in with_heartbeats(stream_iter):
             yield json.dumps(chunk, default=pydantic_encoder) + "\n"
@@ -153,9 +155,8 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
     "inputs": fields.Dict(data_key="inputs", required=True),
     "scope": fields.Str(data_key="scope", load_default="public"),
     "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
-    "hitl_enabled": fields.Bool(data_key="hitlEnabled", load_default=False),
 })
-def submit_user_session(identity, session_id, inputs, scope, session_type, hitl_enabled):
+def submit_user_session(identity, session_id, inputs, scope, session_type):
     """
     Fire-and-forget execute for Temporal-backed sessions.
     Starts the Temporal workflow in the background and returns HTTP 202
@@ -164,7 +165,7 @@ def submit_user_session(identity, session_id, inputs, scope, session_type, hitl_
     Poll /session.status.get?sessionId=<id> for status updates.
 
     ``sessionType`` controls busy-state semantics (see ``execute_user_session``).
-    ``hitlEnabled`` activates HITL for nodes configured with ``hitl_mode: dynamic``.
+    HITL is controlled by the session's ``hitl_enabled`` metadata flag.
     """
     try:
         svc = current_app.container.session_service
@@ -178,7 +179,6 @@ def submit_user_session(identity, session_id, inputs, scope, session_type, hitl_
             inputs=inputs,
             scope=scope,
             logged_in_user=identity.id,
-            hitl_enabled=hitl_enabled,
         )
         return jsonify({"sessionId": session_id, "workflowId": workflow_id}), 202
     except TypeError as e:

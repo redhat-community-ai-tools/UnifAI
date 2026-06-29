@@ -14,7 +14,7 @@ class HITLMode(str, Enum):
 
     ASK     — always gate tool calls through human approval.
     SKIP    — never gate; tools execute without approval.
-    DYNAMIC — decide at runtime based on ``hitl_enabled`` in ExecutionContext tags.
+    DYNAMIC — decide at runtime based on ``hitl_enabled`` in session metadata.
     """
     ASK = "ask"
     SKIP = "skip"

@@ -62,7 +62,6 @@ class SessionService:
         scope: str = "public",
         stream: bool = False,
         logged_in_user: str = "",
-        hitl_enabled: bool = False,
     ) -> Any:
         """
         Execute the session graph.
@@ -74,11 +73,10 @@ class SessionService:
         The execution runs on a background thread; lifecycle transitions
         are handled internally by the runner.
 
-        ``hitl_enabled`` is stamped into the ExecutionContext so nodes
-        configured with ``hitl_mode: dynamic`` can read it at runtime.
+        ``hitl_enabled`` is read from the session's metadata so nodes
+        configured with ``hitl_mode: dynamic`` can check it at runtime.
         """
-        self._stage(session_id, inputs, logged_in_user=logged_in_user,
-                     hitl_enabled=hitl_enabled)
+        self._stage(session_id, inputs, logged_in_user=logged_in_user)
         session = self._manager.get_session(session_id)
         return self._foreground.run(
             session=session,
@@ -87,8 +85,7 @@ class SessionService:
         )
 
     def submit(self, session_id: str, inputs: Dict[str, Any],
-               scope: str = "public", logged_in_user: str = "",
-               hitl_enabled: bool = False) -> str:
+               scope: str = "public", logged_in_user: str = "") -> str:
         """
         Non-blocking submit: stage inputs, then start a background workflow
         and return its handle/ID immediately (HTTP 202 pattern).
@@ -97,8 +94,8 @@ class SessionService:
         (before the workflow starts), eliminating the race window where
         a cancel request could arrive before the handle is in Mongo.
 
-        ``hitl_enabled`` is stamped into the ExecutionContext so nodes
-        configured with ``hitl_mode: dynamic`` can read it at runtime.
+        ``hitl_enabled`` is read from the session's metadata so nodes
+        configured with ``hitl_mode: dynamic`` can check it at runtime.
         """
         if self._engine is None:
             raise TypeError(
@@ -111,9 +108,10 @@ class SessionService:
         self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
 
         session = self._manager.get_session(session_id)
+        hitl = session.record.metadata.hitl_enabled
         execution_ctx = (session.run_context
                          .with_scope(scope)
-                         .with_hitl(hitl_enabled))
+                         .with_hitl(hitl))
         request = SubmitSessionRequest(execution_context=execution_ctx)
         self._engine.submit(session, request)
 
@@ -160,7 +158,6 @@ class SessionService:
         session_id: str,
         inputs: Dict[str, Any],
         logged_in_user: str = "",
-        hitl_enabled: bool = False,
     ) -> None:
         """Project raw inputs onto the record and persist (QUEUED).
 
@@ -168,8 +165,9 @@ class SessionService:
         so that cancel() won't target a dead workflow if this session
         is now being executed via the foreground run() path.
 
-        ``hitl_enabled`` is stamped into the ExecutionContext so nodes
-        configured with ``hitl_mode: dynamic`` can read it at runtime.
+        ``hitl_enabled`` is read from the session's metadata and stamped
+        into the ExecutionContext so nodes configured with
+        ``hitl_mode: dynamic`` can check it at runtime.
 
         Raises ValueError if the session is already executing.
         """
@@ -181,7 +179,7 @@ class SessionService:
                 f"wait for it to finish before submitting again."
             )
         self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
-        record.run_context = record.run_context.with_hitl(hitl_enabled)
+        record.run_context = record.run_context.with_hitl(record.metadata.hitl_enabled)
         self._manager.save_record(record)
 
     def list_for_user(self, identity: Identity) -> list:
