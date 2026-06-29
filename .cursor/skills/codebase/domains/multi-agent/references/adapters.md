@@ -122,6 +122,7 @@ These patterns are established and reviewers MUST NOT flag them as violations:
 |---------|-----------------|---------------------|
 | `current_app.container.<service>` access in Flask endpoints | All `adapters/inbound/flask/endpoints/` | Standard Flask composition — no DI framework; container is wired at startup |
 | Secondary composition wiring in Temporal worker | `adapters/inbound/temporal/worker.py` | Temporal worker builds `NodeExecutor`, `GraphNodeActivities`, `LifecycleHandler` from container parts — separate entry point needs its own wiring |
+| Single-ID blueprint endpoints without auth decorator | `blueprint.update`, `blueprint.info.get`, `remove.blueprint`, `blueprint.metadata.set`, `blueprint.prompt-shortcuts.*` | Blueprint IDs are UUIDs — single-ID operations rely on ID secrecy rather than per-request auth. Listing/create endpoints use `@with_require_identity_authorization` for identity scoping. Shared-link flow requires unauthenticated access by design. |
 
 ## Rules
 
