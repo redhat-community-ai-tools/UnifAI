@@ -5,6 +5,7 @@ Delegates work to a Claude Agent SDK session configured with
 model, tools, skills, and authentication credentials.
 """
 
+import logging
 from typing import Optional, Any, List, ClassVar, Dict
 from copy import deepcopy
 import os
@@ -13,7 +14,7 @@ import subprocess
 import tempfile
 
 from claude_agent_sdk import (
-    query, ClaudeAgentOptions, create_sdk_mcp_server,
+    query, ClaudeAgentOptions, SdkMcpTool, create_sdk_mcp_server,
     AssistantMessage, ResultMessage, TextBlock,
     ToolUseBlock, ToolResultBlock,
     ServerToolUseBlock, ServerToolResultBlock,
@@ -29,6 +30,8 @@ from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapa
 from mas.elements.nodes.common.workload import Task, AgentResult
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.claude_sdk_converter import ClaudeSDKConverter
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeAgentNode(
@@ -403,8 +406,17 @@ class ClaudeAgentNode(
         return all_tools
 
     def _build_options(self) -> "ClaudeAgentOptions":
-        """Build ClaudeAgentOptions from node configuration."""
-        from mas.elements.tools.common.context_binder import bind_tool_context
+        """Build ClaudeAgentOptions from node configuration.
+
+        When a ``SandboxExecTool`` is present in ``domain_tools``,
+        activates Mode 3: disables built-in file/shell tools and
+        injects sandbox-backed MCP replacements.  Same detection
+        pattern as ``DeepAgentNode._build_backend()``.
+        """
+        from mas.elements.tools.common.context_binder import (
+            bind_tool_context,
+            find_sandbox_tool,
+        )
 
         bind_tool_context(
             self._domain_tools,
@@ -418,8 +430,6 @@ class ClaudeAgentNode(
         kwargs: Dict[str, Any] = {
             "model": self._model,
             "permission_mode": self._permission_mode,
-            "allowed_tools": self._allowed_tools,
-            "disallowed_tools": self._disallowed_tools,
             "max_turns": self._max_turns,
             "cwd": work_dir,
             "env": env,
@@ -428,15 +438,101 @@ class ClaudeAgentNode(
         if self._system_prompt:
             kwargs["system_prompt"] = self._system_prompt
 
-        sdk_tools = ClaudeSDKConverter.to_sdk(self._collect_tools())
+        sandbox_tool = find_sandbox_tool(self._domain_tools)
+
+        if sandbox_tool is not None:
+            self._configure_sandbox_tools(kwargs, sandbox_tool)
+        else:
+            kwargs["allowed_tools"] = self._allowed_tools
+            kwargs["disallowed_tools"] = self._disallowed_tools
+
+        sdk_tools = self._collect_sdk_tools(
+            exclude_sandbox=sandbox_tool is not None,
+        )
         if sdk_tools:
-            kwargs["mcp_servers"] = {
-                "mas-tools": create_sdk_mcp_server(
-                    "mas-tools", tools=sdk_tools
-                ),
-            }
+            kwargs.setdefault("mcp_servers", {})["mas-tools"] = (
+                create_sdk_mcp_server("mas-tools", tools=sdk_tools)
+            )
 
         return ClaudeAgentOptions(**kwargs)
+
+    def _collect_sdk_tools(
+        self, *, exclude_sandbox: bool = False,
+    ) -> List[SdkMcpTool]:
+        """Collect domain + MCP tools and convert to Claude SDK format.
+
+        Args:
+            exclude_sandbox: When ``True``, filters out
+                ``SandboxExecTool`` instances so the raw infrastructure
+                tool is not exposed to Claude alongside the sandbox
+                replacement tools.
+        """
+        collected = self._collect_tools()
+        if exclude_sandbox:
+            from mas.elements.tools.sandbox_exec.sandbox_exec import (
+                SandboxExecTool,
+            )
+            collected = [
+                t for t in collected
+                if not isinstance(t, SandboxExecTool)
+            ]
+        return ClaudeSDKConverter.to_sdk(collected)
+
+    def _configure_sandbox_tools(
+        self,
+        kwargs: Dict[str, Any],
+        sandbox_tool: Any,
+    ) -> None:
+        """Configure Mode 3: disable built-ins, inject sandbox replacements.
+
+        Respects user intent: if the user explicitly disallowed a built-in
+        (e.g. ``disallowed_tools=["Bash"]``), the corresponding sandbox
+        replacement is NOT created either.
+        """
+        from mas.elements.nodes.claude_agent.sandbox_tools import (
+            create_sandbox_mcp_tools,
+            DISABLED_BUILTINS,
+            BUILTIN_TO_SANDBOX,
+        )
+
+        user_blocked = set(self._disallowed_tools)
+
+        all_disallowed = list(self._disallowed_tools)
+        for builtin in DISABLED_BUILTINS:
+            if builtin not in user_blocked:
+                all_disallowed.append(builtin)
+        kwargs["disallowed_tools"] = all_disallowed
+
+        skip_tools = {
+            BUILTIN_TO_SANDBOX[name]
+            for name in user_blocked
+            if name in BUILTIN_TO_SANDBOX
+        }
+        sandbox_mcp_tools = create_sandbox_mcp_tools(
+            sandbox_tool, skip=skip_tools,
+        )
+
+        if sandbox_mcp_tools:
+            sandbox_server = create_sdk_mcp_server(
+                "sandbox", tools=sandbox_mcp_tools,
+            )
+            kwargs.setdefault("mcp_servers", {})["sandbox"] = sandbox_server
+
+        kwargs["allowed_tools"] = [
+            t for t in self._allowed_tools
+            if t not in DISABLED_BUILTINS
+        ]
+        if sandbox_mcp_tools:
+            kwargs["allowed_tools"].append("mcp__sandbox__*")
+
+        logger.info(
+            "ClaudeAgent %s: Mode 3 active — disabled %s, "
+            "injected %d sandbox tools (skipped %d user-blocked)",
+            self.uid,
+            DISABLED_BUILTINS,
+            len(sandbox_mcp_tools),
+            len(skip_tools),
+        )
 
     def _build_env(self) -> Dict[str, str]:
         """Build environment variables for Vertex AI SDK authentication."""

@@ -200,7 +200,7 @@ class DeepAgentNode(
 
         sandbox_tool = find_sandbox_tool(self._domain_tools)
         if sandbox_tool is not None:
-            from mas.elements.tools.sandbox_exec.openshell_backend import (
+            from mas.elements.nodes.deep_agent.openshell_backend import (
                 OpenShellSandboxBackend,
             )
 
