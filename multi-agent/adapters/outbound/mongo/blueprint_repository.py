@@ -78,7 +78,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         else:
             op = {"$unset": {"spec_dict.prompt_shortcuts": ""}, "$set": {"updated_at": now}}
         res = self._col.update_one({"blueprint_id": blueprint_id}, op)
-        return res.modified_count == 1
+        return res.matched_count >= 1
 
     def get_prompt_shortcuts(self, *, blueprint_id: str) -> Optional[List[dict]]:
         doc = self._col.find_one({"blueprint_id": blueprint_id}, {"spec_dict.prompt_shortcuts": 1})

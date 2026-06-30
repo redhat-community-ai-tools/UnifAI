@@ -6,6 +6,7 @@ from mas.blueprints.resolver import BlueprintResolver
 from mas.blueprints.collector import BlueprintConfigCollector
 from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
+    BlueprintAccessDeniedError,
     BlueprintSaveError,
     BlueprintMetadataError,
     PromptShortcutsValidationError,
@@ -173,9 +174,13 @@ class BlueprintService:
         return BlueprintDraft.model_json_schema()
 
     # ────────── Prompt Shortcuts ──────────
-    def set_prompt_shortcuts(self, blueprint_id: str, prompts: list[dict]) -> PromptShortcuts:
+    def set_prompt_shortcuts(self, blueprint_id: str, prompts: list[dict],
+                             *, identity: Identity) -> PromptShortcuts:
         if not self.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
+        doc = self._repo.load(blueprint_id)
+        if doc.identity.id != identity.id:
+            raise BlueprintAccessDeniedError(blueprint_id, identity.id)
         try:
             shortcuts = PromptShortcuts(prompts=prompts)
         except (ValueError, TypeError) as exc:
@@ -189,8 +194,8 @@ class BlueprintService:
             raise BlueprintNotFoundError(blueprint_id)
         try:
             raw = self._repo.get_prompt_shortcuts(blueprint_id=blueprint_id)
-        except KeyError:
-            raise BlueprintNotFoundError(blueprint_id)
+        except KeyError as exc:
+            raise BlueprintNotFoundError(blueprint_id) from exc
         return PromptShortcuts.from_raw_list(raw)
 
     # ────────── Blueprint Metadata ──────────

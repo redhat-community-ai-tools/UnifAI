@@ -7,6 +7,7 @@ from werkzeug.exceptions import BadRequest
 from typing import Optional
 from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
+    BlueprintAccessDeniedError,
     BlueprintSaveError,
     BlueprintMetadataError,
     PromptShortcutsValidationError,
@@ -299,15 +300,18 @@ def remove_blueprint(blueprint_id):
 
 
 @blueprints_bp.route("/blueprint.prompt-shortcuts.set", methods=["PUT"])
+@with_require_identity_authorization
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
     "prompts": fields.List(fields.Dict(), required=True),
 })
-def set_prompt_shortcuts(blueprint_id, prompts):
+def set_prompt_shortcuts(identity, blueprint_id, prompts):
     try:
         svc = current_app.container.blueprint_service
-        shortcuts = svc.set_prompt_shortcuts(blueprint_id=blueprint_id, prompts=prompts)
+        shortcuts = svc.set_prompt_shortcuts(blueprint_id=blueprint_id, prompts=prompts, identity=identity)
         return jsonify(_shortcuts_response(shortcuts)), 200
+    except BlueprintAccessDeniedError:
+        return jsonify({"error": "You do not have permission to modify this blueprint"}), 403
     except BlueprintNotFoundError as e:
         return jsonify({"error": str(e)}), 404
     except PromptShortcutsValidationError as e:

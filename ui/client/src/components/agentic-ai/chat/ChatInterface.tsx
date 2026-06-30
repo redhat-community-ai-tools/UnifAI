@@ -1504,6 +1504,7 @@ export default function ChatInterface({
                         type="button"
                         className="ml-1 p-0.5 rounded hover:bg-gray-700/50"
                         onClick={() => setPreviewChipId(previewChipId === prompt.id ? null : prompt.id)}
+                        aria-label={previewChipId === prompt.id ? "Collapse prompt preview" : "Expand prompt preview"}
                       >
                         <Maximize2 className={`h-3.5 w-3.5 transition-transform ${previewChipId === prompt.id ? "rotate-180" : ""}`} />
                       </button>

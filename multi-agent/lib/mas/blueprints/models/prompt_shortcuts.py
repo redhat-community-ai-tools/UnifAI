@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional
+from typing import ClassVar, List, Optional
 from uuid import uuid4
 
 import re
@@ -33,7 +33,7 @@ class PromptShortcutItem(BaseModel):
     kind: PromptShortcutKind = PromptShortcutKind.MANUAL
     text: str
 
-    _HEX8_RE = re.compile(r"^[0-9a-f]{8}$")
+    _HEX8_RE: ClassVar[re.Pattern[str]] = re.compile(r"^[0-9a-f]{8}$")
 
     @field_validator("id")
     @classmethod
