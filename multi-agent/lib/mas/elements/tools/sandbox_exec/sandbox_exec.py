@@ -220,8 +220,8 @@ class SandboxExecTool(BaseTool):
                 openshell_pb2.CreateSandboxRequest(
                     name=name,
                     labels={
-                        "unifai.session": self._session_id[:12],
-                        "unifai.agent": self._agent_id[:12],
+                        "unifai.session": self._sanitize(self._session_id[:12]),
+                        "unifai.agent": self._sanitize(self._agent_id[:12]),
                     },
                     spec=openshell_pb2.SandboxSpec(**spec_kwargs),
                 ),
