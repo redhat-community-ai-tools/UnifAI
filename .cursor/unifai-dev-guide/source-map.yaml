@@ -1,0 +1,340 @@
+# source-map.yaml — Maps each service to extractable code locations in UnifAI.
+# Used by: extraction scripts, Cursor SDK agent, CI validation.
+# All paths are relative to the UnifAI monorepo root.
+
+rag:
+  endpoints:
+    glob: "rag/infrastructure/http/*.py"
+    pattern: "@.*_bp\\.route"
+    registration: "rag/infrastructure/http/blueprints.py"
+    blueprints:
+      - { file: "rag/infrastructure/http/health.py",          blueprint: health_bp,          prefix: "/api/health/" }
+      - { file: "rag/infrastructure/http/vector.py",          blueprint: vector_bp,          prefix: "/api/vector/" }
+      - { file: "rag/infrastructure/http/settings.py",        blueprint: settings_bp,        prefix: "/api/settings/" }
+      - { file: "rag/infrastructure/http/pipelines.py",       blueprint: pipelines_bp,       prefix: "/api/pipelines/" }
+      - { file: "rag/infrastructure/http/data_sources.py",    blueprint: data_sources_bp,    prefix: "/api/data_sources/" }
+      - { file: "rag/infrastructure/http/docs.py",            blueprint: docs_bp,            prefix: "/api/docs/" }
+      - { file: "rag/infrastructure/http/slack.py",           blueprint: slack_bp,           prefix: "/api/slack/" }
+      - { file: "rag/infrastructure/http/terms_approval.py",  blueprint: terms_approval_bp,  prefix: "/api/terms_approval/" }
+
+  ports:
+    globs:
+      - "rag/core/**/port*.py"
+      - "rag/core/**/repository.py"
+      - "rag/core/**/dispatcher.py"
+      - "rag/core/**/base.py"
+      - "rag/core/**/embedder.py"
+      - "rag/core/**/chunker.py"
+      - "rag/core/**/document_converter.py"
+    pattern: "class.*\\(ABC\\)"
+    files:
+      - rag/core/connector/domain/base.py
+      - rag/core/data_sources/domain/repository.py
+      - rag/core/data_sources/types/document/domain/document_converter.py
+      - rag/core/data_sources/types/slack/domain/channel/repository.py
+      - rag/core/data_sources/types/slack/domain/event/dispatcher.py
+      - rag/core/data_sources/types/slack/domain/event/port.py
+      - rag/core/monitoring/domain/repository.py
+      - rag/core/pipeline/domain/dispatcher.py
+      - rag/core/pipeline/domain/port.py
+      - rag/core/pipeline/domain/repository.py
+      - rag/core/processing/domain/base.py
+      - rag/core/registration/domain/port.py
+      - rag/core/user/terms_approval/domain/repository.py
+      - rag/core/validation/domain/port.py
+      - rag/core/vector/domain/chunker.py
+      - rag/core/vector/domain/embedder.py
+      - rag/core/vector/domain/repository.py
+      - rag/core/health/domain/port.py  # Protocol, not ABC
+
+  config:
+    appConfig: "rag/config/app_config.py"
+    sharedConfig: "global_utils/src/global_utils/config/config.py"
+
+  compositionRoot: "rag/bootstrap/app_container.py"
+  flaskFactory: "rag/bootstrap/flask_app.py"
+  factories: "rag/bootstrap/factories.py"
+
+  mongo:
+    adapterGlob: "rag/infrastructure/mongo/**/*.py"
+    collections:
+      - { db: pipeline_monitoring, collection: pipelines,          adapter: "rag/infrastructure/mongo/pipeline_repository.py" }
+      - { db: pipeline_monitoring, collection: metrics,            adapter: "rag/infrastructure/mongo/monitoring_repository.py" }
+      - { db: pipeline_monitoring, collection: errors,             adapter: "rag/infrastructure/mongo/monitoring_repository.py" }
+      - { db: pipeline_monitoring, collection: logs,               adapter: "rag/infrastructure/mongo/monitoring_repository.py" }
+      - { db: data_sources,       collection: sources,             adapter: "rag/infrastructure/mongo/data_source_repository.py" }
+      - { db: data_sources,       collection: slack_channels,      adapter: "rag/infrastructure/mongo/data_sources/slack_channel_repository.py" }
+      - { db: users,              collection: terms_user_approval,  adapter: "rag/infrastructure/mongo/terms_approval_repository.py" }
+
+  vector:
+    collections: [document_data, slack_data]
+
+  celery:
+    app: "rag/infrastructure/celery/app.py"
+    workers: "rag/infrastructure/celery/workers/*.py"
+
+
+mas:
+  endpoints:
+    glob: "multi-agent/adapters/inbound/flask/endpoints/**/*.py"
+    pattern: "@.*_bp\\.route"
+    registration: "multi-agent/adapters/inbound/flask/endpoints/__init__.py"
+    blueprints:
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/health.py",                    blueprint: health_bp,              prefix: "/api/health/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/blueprints.py",                blueprint: blueprints_bp,          prefix: "/api/blueprints/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/sessions.py",                  blueprint: sessions_bp,            prefix: "/api/sessions/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/catalog.py",                   blueprint: catalog_bp,             prefix: "/api/catalog/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/resources.py",                 blueprint: resources_bp,           prefix: "/api/resources/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/graph_validation.py",          blueprint: graph_validation_bp,    prefix: "/api/graph/validation" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/actions.py",                   blueprint: actions_bp,             prefix: "/api/actions/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/shares.py",                    blueprint: shares_bp,              prefix: "/api/shares/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/statistics.py",                blueprint: statistics_bp,          prefix: "/api/statistics/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/templates.py",                 blueprint: templates_bp,           prefix: "/api/templates/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/collaboration/presence.py",    blueprint: collaboration_bp,       prefix: "/api/collaboration/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/collaboration/locks.py",       blueprint: collaboration_locks_bp, prefix: "/api/collaboration/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/workspace.py",                 blueprint: workspace_bp,           prefix: "/api/workspace/" }
+      - { file: "multi-agent/adapters/inbound/flask/endpoints/credentials.py",               blueprint: credentials_bp,         prefix: "/api/credentials/" }
+
+  ports:
+    globs:
+      - "multi-agent/lib/mas/**/ports.py"
+      - "multi-agent/lib/mas/**/repository*.py"
+      - "multi-agent/lib/mas/**/protocols.py"
+      - "multi-agent/lib/mas/**/interfaces.py"
+    pattern: "class.*\\(ABC\\)"
+    files:
+      - multi-agent/lib/mas/core/auth/credentials/ports.py
+      - multi-agent/lib/mas/core/auth/ports.py
+      - multi-agent/lib/mas/core/identity/ports.py
+      - multi-agent/lib/mas/collaboration/ports.py
+      - multi-agent/lib/mas/session/execution/ports.py
+      - multi-agent/lib/mas/blueprints/repository/repository.py
+      - multi-agent/lib/mas/resources/repository/base.py
+      - multi-agent/lib/mas/session/repository/repository.py
+      - multi-agent/lib/mas/sharing/repository/base.py
+      - multi-agent/lib/mas/templates/repository/repository.py
+
+  config:
+    appConfig: "multi-agent/config/app_config.py"
+    sharedConfig: "global_utils/src/global_utils/config/config.py"
+
+  compositionRoot: "multi-agent/bootstrap/container.py"
+  flaskFactory: "multi-agent/adapters/inbound/flask/flask_app.py"
+  entryPoints:
+    - "multi-agent/run/wsgi.py"
+    - "multi-agent/run/dev.py"
+    - "multi-agent/run/scripts/main.py"
+
+  mongo:
+    adapterGlob: "multi-agent/adapters/outbound/mongo/*.py"
+    database: UnifAI
+    collections:
+      - { collection: blueprints,        configField: blueprint_coll,    adapter: "multi-agent/adapters/outbound/mongo/blueprint_repository.py" }
+      - { collection: workflow_sessions, configField: session_coll,      adapter: "multi-agent/adapters/outbound/mongo/session_repository.py" }
+      - { collection: resources,         configField: resources_coll,    adapter: "multi-agent/adapters/outbound/mongo/resource_repository.py" }
+      - { collection: shares,            configField: shares_coll,       adapter: "multi-agent/adapters/outbound/mongo/share_repository.py" }
+      - { collection: templates,         configField: templates_coll,    adapter: "multi-agent/adapters/outbound/mongo/template_repository.py" }
+      - { collection: credentials,       configField: credentials_coll,  adapter: "multi-agent/adapters/outbound/mongo/auth_token_repository.py" }
+      - { collection: server_configs,    configField: "(hardcoded)",     adapter: "multi-agent/adapters/outbound/mongo/client_config_repository.py" }
+
+  temporal:
+    workflows: "multi-agent/adapters/inbound/temporal/workflows/*.py"
+    activities: "multi-agent/adapters/inbound/temporal/activities/*.py"
+    worker: "multi-agent/adapters/inbound/temporal/worker.py"
+
+  redis:
+    usage: "Session event streaming + collaboration presence/edit locks via global_utils.redis"
+    keyPatterns:
+      - "mas:stream:{session_id}"
+      - "mas:collab:{session_id}:*"
+
+  elements:
+    specGlob: "multi-agent/lib/mas/elements/**/spec/*.py"
+    discoverer: "multi-agent/lib/mas/catalog/spec_discoverer.py"
+    registry: "multi-agent/lib/mas/catalog/element_registry.py"
+
+  elementCategories:
+    nodes:
+      glob: "multi-agent/lib/mas/elements/nodes/**"
+      baseClass: BaseNode
+      docSection: "mas.md → Elements Plugin Layer, Session Management"
+      notableNodes:
+        - { type: claude_agent_node, path: "multi-agent/lib/mas/elements/nodes/claude_agent/", sdk: "claude-agent-sdk>=0.2.0", externalDep: "Anthropic Claude via Vertex AI" }
+        - { type: deep_agent_node, path: "multi-agent/lib/mas/elements/nodes/deep_agent/", sdk: "deepagents (LangChain)", externalDep: "LangChain Deep Agents framework" }
+    llms:
+      glob: "multi-agent/lib/mas/elements/llms/**"
+      baseClass: BaseLLM
+      docSection: "mas.md → Elements Plugin Layer"
+    tools:
+      glob: "multi-agent/lib/mas/elements/tools/**"
+      baseClass: BaseTool
+      docSection: "mas.md → Elements Plugin Layer"
+    providers:
+      glob: "multi-agent/lib/mas/elements/providers/**"
+      baseClass: BaseFactory
+      docSection: "mas.md → Elements Plugin Layer"
+    conditions:
+      glob: "multi-agent/lib/mas/elements/conditions/**"
+      baseClass: BaseCondition
+      docSection: "mas.md → Graph Planning & Validation"
+    retrievers:
+      glob: "multi-agent/lib/mas/elements/retrievers/**"
+      baseClass: BaseRetriever
+      docSection: "mas.md → Elements Plugin Layer"
+    auths:
+      glob: "multi-agent/lib/mas/elements/auths/**"
+      docSection: "mas.md → Resources & Auth"
+
+
+identity:
+  endpoints:
+    globs:
+      - "shared-resources/identity/adapters/inbound/flask/endpoints/*.py"
+      - "shared-resources/identity/utils/auth_manager.py"  # /api/auth/* routes
+    pattern: "@.*\\.route|app\\.add_url_rule"
+    registration: "shared-resources/identity/adapters/inbound/flask/endpoints/__init__.py"
+    blueprints:
+      - { file: "shared-resources/identity/adapters/inbound/flask/endpoints/health.py",                prefix: "/api/health/" }
+      - { file: "shared-resources/identity/adapters/inbound/flask/endpoints/protected_routes.py",      prefix: "/api/protected/" }
+      - { file: "shared-resources/identity/adapters/inbound/flask/endpoints/credentials_callback.py",  prefix: "/api/credentials/" }
+      - { file: "shared-resources/identity/adapters/inbound/flask/endpoints/directory_routes.py",      prefix: "/api/directory/" }
+      - { file: "shared-resources/identity/adapters/inbound/flask/endpoints/team_routes.py",           prefix: "/api/teams/" }
+      - { file: "shared-resources/identity/adapters/inbound/flask/endpoints/identity_routes.py",       prefix: "/api/identity/" }
+      - { file: "shared-resources/identity/utils/auth_manager.py",                                     prefix: "/api/auth/" }
+
+  config:
+    appConfig: "shared-resources/identity/config/app_config.py"
+    loggingConfig: "shared-resources/identity/config/logging_config.py"
+    directoryConfig: "shared-resources/identity/directory.yaml"
+
+  compositionRoot: "shared-resources/identity/bootstrap/factories.py"
+  flaskFactory: "shared-resources/identity/bootstrap/flask_app.py"
+
+  mongo:
+    adapterGlob: "shared-resources/identity/teams/repository/mongo_repository.py"
+    collections:
+      - { db: users, collection: teams, adapter: "shared-resources/identity/teams/repository/mongo_repository.py" }
+
+  redis:
+    usage: "Session storage via global_utils.redis.RedisKVStore"
+    keyPatterns:
+      - "identity:{session_id}"
+      - "identity:groups:{user_id}"
+
+
+platform:
+  endpoints:
+    glob: "backend/api/flask/endpoints/*.py"
+    pattern: "@.*_bp\\.route"
+    registration: "backend/api/flask/endpoints/__init__.py"
+    blueprints:
+      - { file: "backend/api/flask/endpoints/health.py",        prefix: "/api/health/" }
+      - { file: "backend/api/flask/endpoints/admin_config.py",  prefix: "/api/admin_config/" }
+
+  config:
+    appConfig: "backend/config/app_config.py"
+
+  compositionRoot: "backend/core/app_container.py"
+  flaskFactory: "backend/api/flask/flask_app.py"
+  entryPoints:
+    - "backend/run/dev.py"
+    - "backend/run/wsgi.py"
+
+  mongo:
+    adapterGlob: "backend/admin_config/repository/mongo_repository.py"
+    collections:
+      - { db: config, collection: admin_config, adapter: "backend/admin_config/repository/mongo_repository.py" }
+
+  domain:
+    - "backend/admin_config/models.py"
+    - "backend/admin_config/service.py"
+    - "backend/admin_config/template.py"
+    - "backend/admin_config/action_dispatcher.py"
+
+
+ui:
+  apiModules:
+    glob: "ui/client/src/api/*.ts"
+    files:
+      - { file: "ui/client/src/api/actions.ts",               client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/activity.ts",              client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/adminConfig.ts",           client: backendClient,    target: platform }
+      - { file: "ui/client/src/api/agentic.ts",               client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/blueprints.ts",            client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/catalog.ts",               client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/collaboration.ts",         client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/collaborationEditLock.ts", client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/directory.ts",             client: authClient,       target: identity }
+      - { file: "ui/client/src/api/docs.ts",                  client: queryClient,      target: rag }
+      - { file: "ui/client/src/api/health.ts",                client: queryClient,      target: rag }
+      - { file: "ui/client/src/api/pipelines.ts",             client: queryClient,      target: rag }
+      - { file: "ui/client/src/api/sessions.ts",              client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/shares.ts",                client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/slack.ts",                 client: queryClient,      target: rag }
+      - { file: "ui/client/src/api/systemStats.ts",           client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/teams.ts",                 client: authClient,       target: identity }
+      - { file: "ui/client/src/api/templates.ts",             client: axiosAgentConfig, target: mas }
+      - { file: "ui/client/src/api/termsApproval.ts",         client: queryClient,      target: rag }
+
+  hooks:
+    glob: "ui/client/src/hooks/*.{ts,tsx}"
+
+  contexts:
+    glob: "ui/client/src/contexts/*.tsx"
+    files:
+      - ui/client/src/contexts/AgenticAIContext.tsx
+      - ui/client/src/contexts/AuthContext.tsx
+      - ui/client/src/contexts/NotificationContext.tsx
+      - ui/client/src/contexts/ProjectContext.tsx
+      - ui/client/src/contexts/SharedContext.tsx
+      - ui/client/src/contexts/ThemeContext.tsx
+      - ui/client/src/contexts/ViewContext.tsx
+
+  httpClients:
+    glob: "ui/client/src/http/*.ts"
+    clients:
+      - { file: "ui/client/src/http/queryClient.ts",        baseURL: "/api1", target: rag }
+      - { file: "ui/client/src/http/axiosAgentConfig.ts",   baseURL: "/api2", target: mas }
+      - { file: "ui/client/src/http/authClient.ts",          baseURL: "/api3", target: identity }
+      - { file: "ui/client/src/http/backendClient.ts",       baseURL: "/api4", target: platform }
+
+  proxyConfig: "ui/vite.config.ts"
+  nginxConfig: "ui/deployment/nginx.conf.template"
+
+
+global_utils:
+  root: "global_utils/src/global_utils/"
+  exports: "global_utils/src/global_utils/__init__.py"
+
+  config:
+    sharedConfig: "global_utils/src/global_utils/config/config.py"
+    configManager: "global_utils/src/global_utils/config/manager.py"
+    configSources: "global_utils/src/global_utils/config/sources.py"
+
+  redis:
+    glob: "global_utils/src/global_utils/redis/*.py"
+    keyExports: [RedisKVStore, build_redis_client, get_identity_session, UserSessionData]
+
+  ports:
+    glob: "global_utils/src/global_utils/ports/*.py"
+    keyExports: [KVStore]
+
+  utils:
+    glob: "global_utils/src/global_utils/utils/*.py"
+    keyExports: [get_mongo_url, get_redis_url, get_temporal_url, get_rabbitmq_url, SingletonMeta, AsyncBridge]
+
+  docling:
+    glob: "global_utils/src/global_utils/docling/*.py"
+    keyExports: [DoclingClient, DoclingService]
+
+  embedding:
+    glob: "global_utils/src/global_utils/embedding/*.py"
+    keyExports: [EmbeddingClient, EmbeddingService]
+
+  celery:
+    glob: "global_utils/src/global_utils/celery_app/*.py"
+    keyExports: [CeleryApp, send_task]
+
+  flask:
+    glob: "global_utils/src/global_utils/flask/*.py"
+    keyExports: [RequestRules, require_identity_session]

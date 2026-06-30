@@ -13,27 +13,23 @@ export interface ApproveUserResponse {
 }
 
 /**
- * Check if a user has approved the AI transparency notice
+ * Check if the authenticated user has approved the AI transparency notice.
+ * Username is resolved server-side from the session cookie.
  */
-export async function checkUserApproval(username: string): Promise<UserApprovalStatus> {
+export async function checkUserApproval(): Promise<UserApprovalStatus> {
   const response = await api.get<UserApprovalStatus>(
     'terms_approval/user.approval.status.get',
-    {
-      params: {
-        username
-      }
-    }
   );
   return response.data;
 }
 
 /**
- * Record a user's approval of the AI transparency notice
+ * Record the authenticated user's approval of the AI transparency notice.
+ * Username is resolved server-side from the session cookie.
  */
-export async function approveUser(username: string): Promise<ApproveUserResponse> {
+export async function approveUser(): Promise<ApproveUserResponse> {
   const response = await api.post<ApproveUserResponse>(
     'terms_approval/user.approval.record.post',
-    { username }
   );
   return response.data;
 }

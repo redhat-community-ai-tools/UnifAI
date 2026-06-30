@@ -6,7 +6,7 @@ from mas.elements.nodes.common.base_config import NodeBaseConfig
 from pydantic import Field
 from typing import Optional, Literal, List, Dict
 from .identifiers import Identifier
-from mas.core.ref.models import RetrieverRef
+from mas.core.ref.models import RetrieverRef, ProviderRef, ToolRef
 from mas.core.field_hints import ActionHint, HintType, HiddenHint
 
 
@@ -55,7 +55,7 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
     )
 
     max_turns: Optional[int] = Field(
-        default=30,
+        default=200,
         description="Maximum agentic turns (tool-use round trips). Prevents runaway execution."
     )
 
@@ -107,6 +107,16 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
     )
 
     # --- Integration ---
+
+    tools: Optional[List[ToolRef]] = Field(
+        default_factory=list,
+        description="List of tool keys"
+    )
+
+    providers: Optional[List[ProviderRef]] = Field(
+        default_factory=list,
+        description="List of MCP Provider Refs"
+    )
 
     retriever: Optional[RetrieverRef] = Field(
         None,

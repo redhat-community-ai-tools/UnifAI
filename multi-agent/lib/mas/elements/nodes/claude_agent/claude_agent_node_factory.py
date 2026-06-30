@@ -15,6 +15,7 @@ class ClaudeAgentNodeFactory(BaseFactory[ClaudeAgentNodeConfig, ClaudeAgentNode]
 
     Dependencies injected:
     - retriever: Optional retriever instance (resolved from RetrieverRef)
+    - providers: Optional list of McpProvider instances (resolved from ProviderRef)
     """
 
     def accepts(self, cfg: ClaudeAgentNodeConfig, element_type: str) -> bool:
@@ -47,7 +48,9 @@ class ClaudeAgentNodeFactory(BaseFactory[ClaudeAgentNodeConfig, ClaudeAgentNode]
                 # Runtime context
                 execution_holder=execution_holder,
                 shared_storage=shared_storage,
-                # Standard
+                # Integration
+                tools=deps.pop("tools"),
+                mcp_providers=deps.pop("providers"),
                 retriever=deps.pop("retriever"),
                 retries=cfg.retries,
             )

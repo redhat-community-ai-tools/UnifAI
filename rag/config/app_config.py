@@ -34,6 +34,12 @@ class AppConfig(SharedConfig):
     backend_env: str = "development"
     version: str = "1.0.0"
     secret_key: str = ""
+    identity_host: str = "http://localhost:13456"
+
+    # Session cookie — must match Identity so Flask never re-signs with different attributes
+    session_cookie_secure: bool = False
+    session_cookie_http_only: bool = True
+    session_cookie_samesite: str = "Lax"
 
     # Umami Configuration
     umami_url: str = "0.0.0.0"

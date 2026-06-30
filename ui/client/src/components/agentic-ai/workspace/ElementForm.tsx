@@ -64,6 +64,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
   const [itemValidationStates, setItemValidationStates] = useState<{ [fieldName: string]: ItemValidationResult[] }>({});
   const [validatingFields, setValidatingFields] = useState<Set<string>>(new Set());
   const [populateResults, setPopulateResults] = useState<{ [fieldName: string]: string[] | any }>({});
+  const [actionOutputs, setActionOutputs] = useState<Record<string, any>>({});
 
   const { fetchResourcesForCategory } = useWorkspaceData();
   const { user } = useAuth();
@@ -284,9 +285,9 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       // Set default values from combined schema, excluding hidden fields
       Object.entries(elementSchema.config_schema.properties).forEach(
         ([key, property]: [string, any]) => {
-          // Skip hidden fields - don't initialize them (except server_identifier/scheme_type needed by auth flow)
+          // Skip hidden fields - don't initialize them (except auth-flow fields)
           if (property?.hints?.hidden?.hint_type === "hidden") {
-            if (key === "server_identifier" || key === "scheme_type") {
+            if (key === "server_identifier" || key === "scheme_type" || key === "credential_token") {
               initialData[key] = property.default ?? "";
             }
             return;
@@ -319,9 +320,9 @@ export const ElementForm: React.FC<ElementFormProps> = ({
           Object.entries(editingElement.config).forEach(([key, value]) => {
             const fieldSchema = elementSchema.config_schema.properties[key];
             
-            // Skip hidden fields - don't populate them in edit mode (except server_identifier/scheme_type)
+            // Skip hidden fields - don't populate them in edit mode (except auth-flow fields)
             if (fieldSchema?.hints?.hidden?.hint_type === "hidden") {
-              if (key === "server_identifier" || key === "scheme_type") {
+              if (key === "server_identifier" || key === "scheme_type" || key === "credential_token") {
                 initialData[key] = value;
               }
               return;
@@ -604,15 +605,47 @@ export const ElementForm: React.FC<ElementFormProps> = ({
   }, [elementSchema, isOpen, fetchResourcesForCategory]);
 
   const handleInputChange = (field: string, value: any) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setFormData((prev: any) => {
+      const next = { ...prev, [field]: value };
+
+      // Direct propagate from the changed field
+      const fieldSchema = elementSchema?.config_schema?.properties?.[field];
+      const propagate = fieldSchema?.hints?.propagate;
+      if (propagate?.to) {
+        next[propagate.to] = propagate.value !== undefined && propagate.value !== null
+          ? propagate.value
+          : value;
+      }
+
+      // Re-propagate from fields that just became visible due to this change
+      const allProps = elementSchema?.config_schema?.properties;
+      if (allProps) {
+        Object.entries(allProps).forEach(([name, schema]: [string, any]) => {
+          const conditional = schema?.hints?.conditional?.visible_when;
+          const prop = schema?.hints?.propagate;
+          if (!conditional || !prop?.to) return;
+          const isVisible = Object.entries(conditional).every(
+            ([f, v]) => next[f] === v,
+          );
+          if (isVisible && next[name]) {
+            next[prop.to] = prop.value !== undefined && prop.value !== null
+              ? prop.value
+              : next[name];
+          }
+        });
+      }
+
+      return next;
+    });
     // If field has validation hint, mark it as validating immediately
     // This prevents the save button from being enabled during the validation delay
     if (fieldHasValidation(field)) {
       setValidatingFields(prev => new Set(prev).add(field));
     }
+  };
+
+  const handleActionOutput = (fieldName: string, output: any) => {
+    setActionOutputs(prev => ({ ...prev, [fieldName]: output }));
   };
 
   const handleArrayChange = (field: string, index: number, value: any) => {
@@ -879,6 +912,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         fieldType={isSecret ? "secret" : "public"}
         fieldValidationStates={fieldValidationStates}
         itemValidationStates={itemValidationStates}
+        actionOutputs={actionOutputs}
         isArrayWithRefItems={isArrayWithRefItems}
         getArrayItemsSchema={getArrayItemsSchema}
         extractCategoryFromField={extractCategoryFromField}
@@ -889,6 +923,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         onRemoveArrayItem={removeArrayItem}
         onValidationChange={handleValidationChange}
         onPopulateResult={handlePopulateResult}
+        onActionOutput={handleActionOutput}
       />
     );
   };

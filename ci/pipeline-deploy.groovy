@@ -7,13 +7,11 @@ properties([
         // 🚀 Deployment Parameters
         choice(name: 'deploy_location', choices: ['STAGING', 'PRODUCTION'], description: 'Deployment environment'),
         choice(name: 'deploy_type', choices: ['FRESH_INSTALL', 'APPLICATION_UPGRADE'], description: 'Deployment Deployment type fresh install - delete everything including shared resources, application upgrade - update only the specified modules'),
-        string(name: "VERSION", defaultValue: "", description: "DONT SET THIS VALUE!"),
         string(name: "BACKEND_VERSION", defaultValue: "", description: "Image tag for backend"),
         string(name: "RAG_VERSION", defaultValue: "", description: "Image tag for rag"),
         string(name: "MA_VERSION", defaultValue: "", description: "Image tag for multi-agent"),
         string(name: "GUI_VERSION", defaultValue: "", description: "Image tag for UI"),
         string(name: "IDENTITY_VERSION", defaultValue: "", description: "Image tag for Identity"),
-        string(name: "MODULES_TO_DEPLOY", defaultValue: "", description: "Comma-separated list of modules to update (e.g. rag,multiagent,backend,ui,identity)"),
         booleanParam(name: 'debug_mode', defaultValue: false, description: 'debug the pods'),
     ])
 ])
@@ -45,7 +43,7 @@ def secret_lists = [
     umami: ['umami_username', 'umami_password'],
     // keycloak: ['keycloak_base_url', 'client_id', 'client_secret', 'keycloak_realm'],
     global_config: ['secret_key', 'vault_role_id', 'vault_secret_id', 'langfuse_base_url', 'langfuse_public_key', 'langfuse_secret_key'],
-    multiagent: ['CREDENTIAL_ENCRYPTION_KEY', 'MCP_AUTH_STATE_SECRET', 'GCP_SA_KEY_JSON_B64'],
+    multiagent: ['CREDENTIAL_ENCRYPTION_KEY', 'OAUTH_STATE_SECRET', 'GCP_SA_KEY_JSON_B64'],
     rag: ['default_slack_bot_token', 'default_slack_user_token'],
     ]
 
@@ -77,6 +75,16 @@ def generateVaultSecretsEnvFile(String vaultBasePath, Map secretMap ) {
     }
     echo "✅ Vault secrets env file created: ${envFilePath}"
     return envFilePath
+}
+
+def buildModulesList() {
+    def modules = []
+    if (params.IDENTITY_VERSION?.trim()) modules.add('identity')
+    if (params.BACKEND_VERSION?.trim()) modules.add('backend')
+    if (params.RAG_VERSION?.trim())     modules.add('rag')
+    if (params.MA_VERSION?.trim())      modules.add('multiagent')
+    if (params.GUI_VERSION?.trim())     modules.add('ui')
+    return modules
 }
 
 def updateChartVersions(rootPath, version) {
@@ -189,7 +197,7 @@ def deleteRunningApplication(){
 
 def cleanWorkspace() {
     sh """
-        podman rm -f helmfile
+        podman rm -f helmfile || true
         sleep 5        
     """
 }
@@ -204,11 +212,14 @@ pipeline {
                 script {
                     echo "================ Deployment Configuration ================="
                     echo "Branch            : ${params.BRANCH}"
-                    echo "Version           : ${params.VERSION}"
                     echo "Deployment Type   : ${params.deploy_type}"
                     echo "Deployment Target : ${params.deploy_location}"
                     echo "Debug mode        : ${params.debug_mode}"
-                    echo "Modules to deploy : ${params.MODULES_TO_DEPLOY}"
+                    echo "Identity Version  : ${params.IDENTITY_VERSION}"
+                    echo "Backend Version   : ${params.BACKEND_VERSION}"
+                    echo "RAG Version       : ${params.RAG_VERSION}"
+                    echo "Multiagent Version: ${params.MA_VERSION}"
+                    echo "UI Version        : ${params.GUI_VERSION}"
                     echo "Workspace Path:    ${buildParams.DevRoot}/${params.BRANCH}/"
                     echo "==========================================================="
                 }
@@ -272,7 +283,10 @@ pipeline {
                             sh("oc project ${NameSpace}")
                             echo("Deploy Helm container")
                             sh("podman run --replace -dt --env-file=${vaultEnvFile} --env-file=${configEnvFile} --workdir /helm/charts -v .:/helm/charts:Z -v ~/.kube/:/helm/.kube:Z --name helmfile ghcr.io/helmfile/helmfile:latest bash")
-                            def modules = params.MODULES_TO_DEPLOY.tokenize(',')
+                            def modules = buildModulesList()
+                            if (modules.isEmpty()) {
+                                error("No application modules selected for deployment. Set at least one *_VERSION parameter.")
+                            }
                             if(params.deploy_type == 'FRESH_INSTALL') {
                                 modules.add(0,'shared-resources')
                                 deleteRunningApplication()
@@ -281,40 +295,40 @@ pipeline {
                             for (mod in modules) {
                                 switch(mod.trim()) {
                                     case 'shared-resources':
-                                        updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/shared-resource-values.yaml", version)
+                                        updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/shared-resource-values.yaml", "")
                                         deployModules('shared-resources')
                                         break
 
                                     case 'identity':
-                                        def version = params.IDENTITY_VERSION?.trim() ?: params.VERSION?.trim()
+                                        def version = params.IDENTITY_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/shared-resources/identity/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/identity-values.yaml", version)
                                         deployModules('identity')
                                         break
 
                                     case 'backend':
-                                        def version = params.BACKEND_VERSION?.trim() ?: params.VERSION?.trim()
+                                        def version = params.BACKEND_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/backend/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/backend-resource-values.yaml", version)
                                         deployModules('backend')
                                         break
 
                                     case 'rag':
-                                        def version = params.RAG_VERSION?.trim() ?: params.VERSION?.trim()
+                                        def version = params.RAG_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/rag/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/rag-resource-values.yaml", version)
                                         deployModules('rag')
                                         break
 
                                     case 'multiagent':
-                                        def version = params.MA_VERSION?.trim() ?: params.VERSION?.trim()
+                                        def version = params.MA_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/multiagent/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/multiagent-resource-values.yaml", version)
                                         deployModules('multiagent')
                                         break
 
                                     case 'ui':
-                                        def version = params.GUI_VERSION?.trim() ?: params.VERSION?.trim()
+                                        def version = params.GUI_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/ui/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/ui-values.yaml", version)
                                         deployModules('ui')
@@ -323,10 +337,15 @@ pipeline {
                             }
                             echo("Deploy successfully completed")
                         }
-                        cleanWorkspace()
                     }
                 }
             }
+        }
+    }
+    post {
+        always {
+            sh "rm -f ${buildParams.DevRoot}/${params.BRANCH}/helm/vault_secrets.env"
+            cleanWorkspace()
         }
     }
 

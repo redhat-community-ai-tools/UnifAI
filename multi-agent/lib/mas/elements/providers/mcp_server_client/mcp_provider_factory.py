@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, Optional
 from mas.elements.common.base_factory import BaseFactory
 from mas.elements.common.exceptions import PluginConfigurationError
+from mas.core.auth.credentials.credential import AuthCredential
 from .config import McpProviderConfig
 from .mcp_provider import McpProvider
 from .identifiers import Identifier
-
-if TYPE_CHECKING:
-    from mas.core.auth.credentials.credential import AuthCredential
 
 logger = logging.getLogger(__name__)
 

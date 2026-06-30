@@ -1,3 +1,4 @@
+import secrets
 from global_utils.config.config import SharedConfig
 
 
@@ -9,11 +10,18 @@ class AppConfig(SharedConfig):
     shares_coll: str = "shares"
     templates_coll: str = "templates"
     credentials_coll: str = "credentials"
+    server_configs_coll: str = "server_configs"
     hostname: str = "0.0.0.0"
     port: str = "8002"
     version: str = "1.0.0"
     admin_allowed_users: list = []  # Populate with user_ids (usernames) to grant admin access
     secret_key: str = ""
+
+    # Session cookie — must match Identity so Flask never re-signs with different attributes
+    session_cookie_secure: bool = False
+    session_cookie_http_only: bool = True
+    session_cookie_samesite: str = "Lax"
+
     # Storage
     shared_storage: str = "/app/shared"
     # Engine
@@ -36,11 +44,10 @@ class AppConfig(SharedConfig):
     # When empty, ``identity_host`` is used for ``IdentityDirectoryClient`` and auth decorators.
     directory_sso_url: str = ""
 
-    # MCP Auth
-    mcp_auth_state_secret: str = ""
+    # Auth
+    oauth_state_secret: str = secrets.token_urlsafe(32)
     identity_host: str = "http://localhost:13456"
-    # Identity provider mode: "pod" (HTTP to Identity pod), "dev" (permissive),
-    # "noop" (no teams), or "" (auto-detect from identity_host).
+    oauth_callback_path: str = "/api/credentials/callback"
     identity_provider_mode: str = ""
     credential_encryption_key: str = ""
     # Gemini API

@@ -12,6 +12,7 @@ with identity's ``is_authenticated`` (username + access_token present).
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -82,3 +83,9 @@ class UserSessionData(BaseModel):
     def has_auth_credentials(self) -> bool:
         """True when both username and access_token are set (typical for authenticated)."""
         return bool(self.username and self.access_token)
+
+    def is_session_expired(self) -> bool:
+        """True when ``session_expires_at`` is set and in the past."""
+        if self.session_expires_at is None:
+            return False
+        return datetime.now().timestamp() >= self.session_expires_at

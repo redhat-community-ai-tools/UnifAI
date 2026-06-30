@@ -2,7 +2,6 @@ import { formatDate } from '@/features/helpers';
 import { api } from '@/http/queryClient';
 import type { Channel, EmbedChannel } from '@/types';
 import { timeAgo } from '@/utils';
-import { useAuth } from '@/contexts/AuthContext';
 
 export interface SystemStats {
   id: number;
@@ -89,7 +88,6 @@ export interface PipelineEmbedResponse {
 
 export async function submitSlackChannels(
   channels: ChannelWithSettings[],
-  user: string
 ): Promise<PipelineEmbedResponse> {
   // Transform channels to include settings as metadata
   const enrichedChannels = channels.map(channel => ({
@@ -107,17 +105,15 @@ export async function submitSlackChannels(
 
   const { data } = await api.put<PipelineEmbedResponse>(
     'pipelines/embed',
-    { data: enrichedChannels, source_type: 'slack', logged_in_user: user }
+    { data: enrichedChannels, source_type: 'slack' }
   );
   
   return data;
 };
 
 export function useSubmitSlackChannels() {
-  const { user } = useAuth();
-  
   return (channels: ChannelWithSettings[]) => 
-    submitSlackChannels(channels, user?.username || 'default');
+    submitSlackChannels(channels);
 }
 
 export async function fetchEmbeddedSlackChannels(): Promise<EmbedChannel[]> {

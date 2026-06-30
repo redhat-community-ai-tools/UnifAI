@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional
 from pydantic import HttpUrl
 from mcp.types import Tool
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.elements.tools.mcp_proxy.mcp_proxy_tool import McpProxyTool
 from mas.elements.providers.mcp_server_client.mcp_server_client import McpServerClient
+from mas.core.auth.credentials.credential import AuthCredential
 from .provider_tool_registry import ProviderToolRegistry
 from .transport.enums import McpTransportType
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from mas.core.auth.credentials.credential import AuthCredential
 
 
 class McpProvider:

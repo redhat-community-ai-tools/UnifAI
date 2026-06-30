@@ -22,38 +22,37 @@ workflow_app = typer.Typer(
 
 @workflow_app.command("run")
 def run_cmd(
-    user: Optional[str] = typer.Option(None, "--user", "-u", help="User ID", envvar="UNIFAI_USER"),
     mas_url: Optional[str] = typer.Option(None, "--mas-url", help="MAS server URL", envvar="MAS_URL"),
     blueprint_id: Optional[str] = typer.Option(None, "--blueprint-id", "-b", help="Blueprint ID to run"),
     blueprint_name: Optional[str] = typer.Option(None, "--blueprint-name", "-n", help="Blueprint name to resolve"),
     question: Optional[str] = typer.Option(None, "--question", "-q", help="Single prompt (non-interactive mode)"),
 ):
     """Start a workflow session and interact with it."""
-    from unifai_cli.bootstrap import build_client, resolve_user_id
+    from unifai_cli.bootstrap import build_client, resolve_session
     from unifai_cli.display.formatting import console
 
-    user_id = resolve_user_id(user)
-    client = build_client(mas_url, user_id=user_id)
+    session_cookie = resolve_session()
+    client = build_client(mas_url, session_cookie=session_cookie)
 
-    bp_id = _resolve_blueprint(client, user_id, blueprint_id, blueprint_name)
+    bp_id = _resolve_blueprint(client, blueprint_id, blueprint_name)
     if bp_id is None:
         return
 
     if question:
-        _run_single_shot(client, user_id, bp_id, question, console)
+        _run_single_shot(client, bp_id, question, console)
     else:
-        _run_interactive_loop(client, user_id, bp_id, console)
+        _run_interactive_loop(client, bp_id, console)
 
 
-def run_workflow_interactive(client: MASClient, user_id: str) -> None:
+def run_workflow_interactive(client: MASClient) -> None:
     """Entry point from the interactive menu — select blueprint then chat."""
     from unifai_cli.display.formatting import console
 
-    bp_id = _resolve_blueprint(client, user_id, None, None)
+    bp_id = _resolve_blueprint(client, None, None)
     if bp_id is None:
         return
 
-    _run_interactive_loop(client, user_id, bp_id, console)
+    _run_interactive_loop(client, bp_id, console)
 
 
 # ── Blueprint resolution ──
@@ -61,7 +60,6 @@ def run_workflow_interactive(client: MASClient, user_id: str) -> None:
 
 def _resolve_blueprint(
     client: MASClient,
-    user_id: str,
     blueprint_id: Optional[str],
     blueprint_name: Optional[str],
 ) -> Optional[str]:
@@ -70,16 +68,16 @@ def _resolve_blueprint(
         return blueprint_id
 
     if blueprint_name:
-        return _resolve_by_name(client, user_id, blueprint_name)
+        return _resolve_by_name(client, blueprint_name)
 
-    return _resolve_by_selection(client, user_id)
+    return _resolve_by_selection(client)
 
 
-def _resolve_by_name(client: MASClient, user_id: str, name: str) -> Optional[str]:
+def _resolve_by_name(client: MASClient, name: str) -> Optional[str]:
     from unifai_cli.display.formatting import console
 
     try:
-        summaries = client.list_blueprint_summaries(user_id)
+        summaries = client.list_blueprint_summaries()
     except Exception as e:
         console.print(f"[red]Failed to list blueprints:[/red] {e}")
         return None
@@ -97,12 +95,12 @@ def _resolve_by_name(client: MASClient, user_id: str, name: str) -> Optional[str
     return matches[0]["blueprint_id"]
 
 
-def _resolve_by_selection(client: MASClient, user_id: str) -> Optional[str]:
+def _resolve_by_selection(client: MASClient) -> Optional[str]:
     from unifai_cli.display.formatting import console, render_blueprint_table
     from unifai_cli.interaction.menus import select_blueprint
 
     try:
-        summaries = client.list_blueprint_summaries(user_id)
+        summaries = client.list_blueprint_summaries()
     except Exception as e:
         console.print(f"[red]Failed to list blueprints:[/red] {e}")
         return None
@@ -119,13 +117,10 @@ def _resolve_by_selection(client: MASClient, user_id: str) -> Optional[str]:
 # ── Execution ──
 
 
-def _execute_turn(client: MASClient, session_id: str, prompt: str,
-                  user_id: str, console) -> bool:
-    """
-    Execute a single user turn via submit + subscribe (same as the UI).
+def _execute_turn(client: MASClient, session_id: str, prompt: str, console) -> bool:
+    """Execute a single user turn via submit + subscribe (same as the UI).
 
     Falls back to submit + poll if the subscribe stream is unavailable.
-
     Returns True on success, False on failure.
     """
     from unifai_cli.display.streaming import display_streaming_events
@@ -133,9 +128,7 @@ def _execute_turn(client: MASClient, session_id: str, prompt: str,
     inputs = {"user_prompt": prompt}
 
     try:
-        response = client.run_session_turn(
-            session_id, inputs, scope="public", user_id=user_id,
-        )
+        response = client.run_session_turn(session_id, inputs, scope="public")
         if display_streaming_events(response, console):
             return True
         return False
@@ -143,7 +136,7 @@ def _execute_turn(client: MASClient, session_id: str, prompt: str,
         pass
 
     try:
-        client.submit_session(session_id, inputs, user_id=user_id)
+        client.submit_session(session_id, inputs)
         _poll_until_done(client, session_id, console)
         return True
     except Exception as e:
@@ -164,7 +157,6 @@ def _poll_until_done(client: MASClient, session_id: str, console,
                 console.print(" done")
                 return
         except Exception:
-            # stream.status may 404 after completion — check session status
             try:
                 session_status = client.get_session_status(session_id)
                 status_name = session_status.get("status", session_status) if isinstance(session_status, dict) else str(session_status)
@@ -178,14 +170,13 @@ def _poll_until_done(client: MASClient, session_id: str, console,
         time.sleep(interval)
 
 
-def _run_single_shot(client, user_id, blueprint_id, question, console):
+def _run_single_shot(client, bp_id, question, console):
     """Run a single prompt and display the result."""
-    from rich.panel import Panel
 
     console.print(f"\n[bold]Starting workflow...[/bold]")
 
     try:
-        run_id = client.create_session(user_id, blueprint_id)
+        run_id = client.create_session(bp_id)
         if isinstance(run_id, dict):
             run_id = run_id.get("sessionId", run_id.get("session_id", run_id.get("run_id", str(run_id))))
     except Exception as e:
@@ -195,19 +186,18 @@ def _run_single_shot(client, user_id, blueprint_id, question, console):
     console.print(f"[dim]Session: {run_id}[/dim]\n")
     console.print(f"[bold green]You:[/bold green] {question}\n")
 
-    success = _execute_turn(client, run_id, question, user_id, console)
+    success = _execute_turn(client, run_id, question, console)
     if success:
         _show_final_answer(client, run_id, console)
 
 
-def _run_interactive_loop(client, user_id, blueprint_id, console):
+def _run_interactive_loop(client, bp_id, console):
     """Interactive chat loop: prompt -> execute -> display -> repeat."""
-    from rich.panel import Panel
 
     console.print(f"\n[bold]Starting workflow session...[/bold]")
 
     try:
-        run_id = client.create_session(user_id, blueprint_id)
+        run_id = client.create_session(bp_id)
         if isinstance(run_id, dict):
             run_id = run_id.get("sessionId", run_id.get("session_id", run_id.get("run_id", str(run_id))))
     except Exception as e:
@@ -232,7 +222,7 @@ def _run_interactive_loop(client, user_id, blueprint_id, console):
 
         console.print()
 
-        success = _execute_turn(client, run_id, prompt, user_id, console)
+        success = _execute_turn(client, run_id, prompt, console)
         if success:
             _show_final_answer(client, run_id, console)
         else:

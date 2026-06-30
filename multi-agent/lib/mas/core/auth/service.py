@@ -21,10 +21,9 @@ from .credentials.models import (
 from .credentials.ports import CredentialStore, ServerConfigStore
 from .credentials.credential import AuthCredential
 from .ports import AuthStrategy, AuthChallenge
-
-if TYPE_CHECKING:
-    from .discovery.detector import AuthDetector
-    from .discovery.models import DetectionResult
+from .discovery.detector import AuthDetector
+from .discovery.models import DetectionResult
+from global_utils.utils.crypto import FieldCipher
 
 logger = logging.getLogger(__name__)
 
@@ -111,11 +110,21 @@ class AuthService:
         strategy_registry: AuthStrategyRegistry,
         server_config_store: Optional[ServerConfigStore] = None,
         detector: Optional[AuthDetector] = None,
+        encryption_key: str = "",
     ):
         self._store = credential_store
         self._strategies = strategy_registry
         self._configs = server_config_store
         self._detector = detector
+        self._cipher = FieldCipher(encryption_key) if encryption_key else None
+
+    def seal_token(self, token: Optional[str]) -> Optional[str]:
+        """Encrypt a token for transit to the browser."""
+        return self._cipher.encrypt(token) if self._cipher else token
+
+    def unseal_token(self, token: Optional[str]) -> Optional[str]:
+        """Decrypt a token received from the browser."""
+        return self._cipher.decrypt(token) if self._cipher else token
 
     # ── Credential CRUD (sync — pure DB, no external I/O) ────────────
 

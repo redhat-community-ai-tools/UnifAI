@@ -15,16 +15,13 @@ from __future__ import annotations
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional
 
 import httpx
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 
-from mas.core.auth.ports import AuthStrategy, AuthChallenge, CompletionResult
-
-if TYPE_CHECKING:
-    from mas.core.auth.ports import HttpClient
-    from mas.core.auth.credentials.ports import ServerConfigStore
+from mas.core.auth.ports import AuthStrategy, AuthChallenge, CompletionResult, HttpClient
+from mas.core.auth.credentials.ports import ServerConfigStore
 from mas.core.auth.credentials.models import (
     StoredCredential, TokenSet, RecoveryResult,
 )

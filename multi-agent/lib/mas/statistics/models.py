@@ -103,7 +103,7 @@ class BlueprintUsage(BaseModel):
     )
     completed_runs: int = Field(0, description="Number of COMPLETED executions")
     failed_runs: int = Field(0, description="Number of FAILED executions")
-    in_progress_runs: int = Field(0, description="Number of non-terminal executions (PENDING, QUEUED, RUNNING)")
+    active_runs: int = Field(0, description="Number of currently executing sessions (RUNNING, IN_USE)")
     user_list: List[str] = Field(
         default_factory=list,
         description="List of identities who executed this blueprint (format: 'type:id', e.g. 'user:alice', 'team:abc123')"

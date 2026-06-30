@@ -8,6 +8,9 @@ env:
   BACKEND_ENV: "production"
   ROLE: "flask"
   SHARED_STORAGE: "/app/shared"
+  SESSION_COOKIE_SAMESITE: "None"
+  SESSION_COOKIE_SECURE: true
+  SESSION_COOKIE_HTTPONLY: true
 
 debug: false
 

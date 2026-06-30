@@ -62,7 +62,6 @@ export interface PipelineEmbedResponse {
 
 export async function embedDocs(
     docs: {source_name: string, tags?: string[]}[], 
-    user: string,
     skipValidation: boolean = false
 ): Promise<PipelineEmbedResponse> {
     const embedded = await api.put<PipelineEmbedResponse>(
@@ -70,7 +69,6 @@ export async function embedDocs(
       {
         data: docs,
         source_type: 'document',
-        logged_in_user: user,
         skip_validation: skipValidation
       }
     );
@@ -98,19 +96,16 @@ export async function getSupportedFileExtensions(): Promise<string[]> {
  * - Duplicate name detection (allows re-upload of FAILED documents)
  * 
  * @param files - Array of file metadata objects with 'name' and 'size' keys
- * @param username - Username of the person uploading files
  * @param checkDuplicates - Whether to check for duplicate filenames (default: true)
  * @returns Validation results with valid files and errors
  * 
  */
 export async function validateFiles(
     files: { name: string; size: number }[],
-    username: string,
     checkDuplicates: boolean = true
 ): Promise<FileValidationResponse> {
     const response = await api.post<FileValidationResponse>('docs/validate', {
         files,
-        username,
         check_duplicates: checkDuplicates
     });
     return response.data;

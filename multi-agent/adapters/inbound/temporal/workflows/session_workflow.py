@@ -38,7 +38,7 @@ from inbound.temporal.workflows.graph_traversal_workflow import GraphTraversalWo
 _LIFECYCLE_TIMEOUT = timedelta(seconds=30)
 _LIFECYCLE_RETRY = RetryPolicy(maximum_attempts=3)
 
-_GRAPH_WORKFLOW_TIMEOUT = timedelta(hours=1)
+_GRAPH_WORKFLOW_TIMEOUT = timedelta(hours=4)
 
 
 @workflow.defn

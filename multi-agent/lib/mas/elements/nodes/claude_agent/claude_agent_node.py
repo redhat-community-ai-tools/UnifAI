@@ -13,8 +13,11 @@ import subprocess
 import tempfile
 
 from claude_agent_sdk import (
-    query, ClaudeAgentOptions,
+    query, ClaudeAgentOptions, create_sdk_mcp_server,
     AssistantMessage, ResultMessage, TextBlock,
+    ToolUseBlock, ToolResultBlock,
+    ServerToolUseBlock, ServerToolResultBlock,
+    UserMessage,
 )
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.graph.state.state_view import StateView
@@ -24,6 +27,8 @@ from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.retriever_capable import RetrieverCapableMixin
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
 from mas.elements.nodes.common.workload import Task, AgentResult
+from mas.elements.tools.common.base_tool import BaseTool
+from mas.elements.tools.common.claude_sdk_converter import ClaudeSDKConverter
 
 
 class ClaudeAgentNode(
@@ -58,7 +63,7 @@ class ClaudeAgentNode(
             model: str = "claude-sonnet-4-6",
             # Agent behavior
             system_prompt: str = "",
-            max_turns: Optional[int] = 30,
+            max_turns: Optional[int] = 200,
             permission_mode: str = "bypassPermissions",
             allowed_tools: Optional[List[str]] = None,
             disallowed_tools: Optional[List[str]] = None,
@@ -67,6 +72,9 @@ class ClaudeAgentNode(
             cwd: Optional[str] = None,
             # Advanced
             env_vars: Optional[Dict[str, str]] = None,
+            # Integration
+            tools: Optional[List[BaseTool]] = None,
+            mcp_providers: Optional[List[Any]] = None,
             # Runtime context
             execution_holder: Any = None,
             shared_storage: str = "/app/shared",
@@ -90,6 +98,8 @@ class ClaudeAgentNode(
         self._skills_repos = skills_repos or {}
         self._cwd = cwd
         self._env_vars = env_vars or {}
+        self._domain_tools: List[BaseTool] = tools or []
+        self._mcp_providers = mcp_providers or []
         self._execution_holder = execution_holder
         self._shared_storage = shared_storage
 
@@ -241,16 +251,18 @@ class ClaudeAgentNode(
         Uses AsyncBridge to run the async query() generator.
         Streams text blocks as llm_token events if streaming is active.
         """
+        options = self._build_options()
         with get_async_bridge() as bridge:
-            return bridge.run(self._async_execute(prompt))
+            return bridge.run(self._async_execute(prompt, options))
 
     async def _async_execute(
-        self, prompt: str
+        self, prompt: str, options: "ClaudeAgentOptions"
     ) -> tuple[str, Dict[str, Any]]:
         """Async execution of Claude Agent SDK query."""
-        options = self._build_options()
         accumulated_text = ""
         execution_metadata: Dict[str, Any] = {}
+        emitted_tool_call_ids: set[str] = set()
+        tool_id_to_name: Dict[str, str] = {}
 
         async for message in query(prompt=prompt, options=options):
             if isinstance(message, AssistantMessage):
@@ -262,6 +274,60 @@ class ClaudeAgentNode(
                                 "type": "llm_token",
                                 "chunk": block.text,
                             })
+
+                    elif isinstance(block, (ToolUseBlock, ServerToolUseBlock)):
+                        tool_id_to_name[block.id] = block.name
+                        if block.id not in emitted_tool_call_ids:
+                            emitted_tool_call_ids.add(block.id)
+                            if self.is_streaming():
+                                self._stream({
+                                    "type": "tool_calling",
+                                    "tool": block.name,
+                                    "call_id": block.id,
+                                    "args": block.input,
+                                })
+
+                    # elif isinstance(block, ToolResultBlock):
+                    #     if self.is_streaming():
+                    #         self._stream({
+                    #             "type": "tool_result",
+                    #             "tool": tool_id_to_name.get(
+                    #                 block.tool_use_id, "unknown"
+                    #             ),
+                    #             "call_id": block.tool_use_id,
+                    #             "output": self._extract_tool_result_text(
+                    #                 block.content
+                    #             ),
+                    #         })
+
+                    # elif isinstance(block, ServerToolResultBlock):
+                    #     if self.is_streaming():
+                    #         self._stream({
+                    #             "type": "tool_result",
+                    #             "tool": tool_id_to_name.get(
+                    #                 block.tool_use_id, "unknown"
+                    #             ),
+                    #             "call_id": block.tool_use_id,
+                    #             "output": self._extract_tool_result_text(
+                    #                 block.content
+                    #             ),
+                    #         })
+
+            elif isinstance(message, UserMessage):
+                if isinstance(message.content, list):
+                    for block in message.content:
+                        if isinstance(block, ToolResultBlock):
+                            if self.is_streaming():
+                                self._stream({
+                                    "type": "tool_result",
+                                    "tool": tool_id_to_name.get(
+                                        block.tool_use_id, "unknown"
+                                    ),
+                                    "call_id": block.tool_use_id,
+                                    "output": self._extract_tool_result_text(
+                                        block.content
+                                    ),
+                                })
 
             elif isinstance(message, ResultMessage):
                 execution_metadata = {
@@ -290,6 +356,37 @@ class ClaudeAgentNode(
 
         return accumulated_text, execution_metadata
 
+    @staticmethod
+    def _extract_tool_result_text(
+        content: "str | list[Dict[str, Any]] | Dict[str, Any] | None",
+    ) -> str:
+        """Extract displayable text from tool result content, truncated to 500 chars."""
+        max_len = 500
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content[:max_len]
+        if isinstance(content, dict):
+            text = str(content)
+            return text[:max_len]
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(item.get("text", ""))
+            text = "\n".join(parts) if parts else str(content)
+            return text[:max_len]
+        return str(content)[:max_len]
+
+    def _collect_tools(self) -> List[BaseTool]:
+        """Gather all tools (domain + MCP providers)."""
+        all_tools: List[BaseTool] = list[BaseTool](self._domain_tools)
+
+        for provider in self._mcp_providers:
+            all_tools.extend(provider.get_tools())
+
+        return all_tools
+
     def _build_options(self) -> "ClaudeAgentOptions":
         """Build ClaudeAgentOptions from node configuration."""
         env = self._build_env()
@@ -307,6 +404,14 @@ class ClaudeAgentNode(
 
         if self._system_prompt:
             kwargs["system_prompt"] = self._system_prompt
+
+        sdk_tools = ClaudeSDKConverter.to_sdk(self._collect_tools())
+        if sdk_tools:
+            kwargs["mcp_servers"] = {
+                "mas-tools": create_sdk_mcp_server(
+                    "mas-tools", tools=sdk_tools
+                ),
+            }
 
         return ClaudeAgentOptions(**kwargs)
 

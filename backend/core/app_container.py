@@ -5,6 +5,8 @@ from admin_config.repository.mongo_repository import MongoAdminConfigRepository
 from admin_config.service import AdminConfigService
 from admin_config.template import ADMIN_CONFIG_TEMPLATE
 from config.app_config import AppConfig
+from global_utils.identity_client import IdentityClient
+from global_utils.redis import RedisKVStore, TeamMembershipCache, build_redis_client
 from global_utils.utils.singleton import SingletonMeta
 from global_utils.utils.util import get_mongo_url
 
@@ -38,6 +40,13 @@ class AppContainer(metaclass=SingletonMeta):
             repository=self.admin_config_repo,
             template=ADMIN_CONFIG_TEMPLATE,
             action_dispatcher=self.action_dispatcher,
+        )
+
+        self.redis_kv_store = RedisKVStore(build_redis_client())
+        self.team_membership_cache = TeamMembershipCache(self.redis_kv_store)
+        self.identity_client = IdentityClient(
+            base_url=(cfg.identity_host or "").rstrip("/"),
+            team_cache=self.team_membership_cache,
         )
 
         self._initialized = True

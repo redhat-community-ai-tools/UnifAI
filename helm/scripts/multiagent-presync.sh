@@ -8,9 +8,11 @@ source "$(dirname "$0")/postsync-lib.sh"
 #create secret
 create_or_update_resource "secret generic" multiagent-be-secret \
   --from-literal=CREDENTIAL_ENCRYPTION_KEY="$CREDENTIAL_ENCRYPTION_KEY" \
-  --from-literal=MCP_AUTH_STATE_SECRET="$MCP_AUTH_STATE_SECRET" \
+  --from-literal=OAUTH_STATE_SECRET="$OAUTH_STATE_SECRET" \
   --from-literal=gemini_api_key="$gemini_api_key" \
   --from-literal=gemini_model_name="$gemini_model_name"
+
+
 
 # GCP service account key for Vertex AI (stored base64-encoded in Vault)
 if [ -n "$GCP_SA_KEY_JSON_B64" ]; then
