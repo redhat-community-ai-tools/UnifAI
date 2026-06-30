@@ -48,10 +48,15 @@ class MongoBlueprintRepository(BlueprintRepository):
         if existing is None:
             raise KeyError(f"No blueprint with id={blueprint_id}")
 
+        new_spec = spec.model_dump(mode="json")
+        for key, value in (existing.get("spec_dict") or {}).items():
+            if key not in new_spec:
+                new_spec[key] = value
+
         res = self._col.update_one(
             {"blueprint_id": blueprint_id},
             {"$set": {
-                "spec_dict": spec.model_dump(mode="json"),
+                "spec_dict": new_spec,
                 "rid_refs": rid_refs,
                 "updated_at": datetime.now(timezone.utc),
             }}

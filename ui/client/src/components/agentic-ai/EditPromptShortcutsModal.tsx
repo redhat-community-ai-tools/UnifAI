@@ -27,6 +27,7 @@ export default function EditPromptShortcutsModal({
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen || !blueprintId) return;
@@ -51,12 +52,14 @@ export default function EditPromptShortcutsModal({
 
   const handleSave = async () => {
     setIsSaving(true);
+    setSaveError(null);
     try {
       const cleaned = prompts.filter((p) => p.text.trim());
       await onSave(cleaned);
       onClose();
     } catch (error) {
       console.error("Failed to save prompt shortcuts:", error);
+      setSaveError("Failed to save prompt shortcuts. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -89,6 +92,10 @@ export default function EditPromptShortcutsModal({
             />
           )}
         </div>
+
+        {saveError && (
+          <p className="text-red-400 text-sm">{saveError}</p>
+        )}
 
         <DialogFooter>
           <Button
