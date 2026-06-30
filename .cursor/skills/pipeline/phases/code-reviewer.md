@@ -41,6 +41,17 @@ If an architecture review (Arch Judge) was already performed in this session on 
 Machine-generated files are excluded by the Scout. If any appear in the evidence pack, skip them:
 - `**/pnpm-lock.yaml`, `**/package-lock.json`, `**/yarn.lock`, `**/*.lock`, `**/*.generated.*`
 
+## Determinism Rules
+
+These rules reduce output variance across runs. Follow them strictly:
+
+- Do NOT include speculative findings ("this might also be an issue", "consider whether...")
+- Only flag what the evidence **proves** — a finding requires a concrete file:line reference
+- If severity is ambiguous between two adjacent levels, choose the LOWER one
+- Do NOT add "nice to have" or "consider" observations as findings — those belong in INFO only if backed by a file:line
+- Each finding MUST cite a specific `file:line` — no finding without evidence
+- Do NOT produce findings that restate the same underlying issue in different dimensions — one finding per root cause
+
 ## Review Areas
 
 ### 1. Hexagonal Architecture Enforcement (CRITICAL)
@@ -331,7 +342,7 @@ List the specific source files you read and what claims they verified or contrad
 </details>
 ```
 
-Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–7 instead.
+Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 3–6 instead.
 
 ### Section 2: Risks & Follow-ups (only if any exist)
 
@@ -342,44 +353,7 @@ Risks to the existing system, breaking changes, migration concerns. Table format
 
 Omit this section entirely if there are no risks.
 
-### Section 3: Verdict
-
-State your verdict with severity summary and the code health score, then emit the machine-parseable lines:
-
-```
-### Code Health Score: X/10
-
-### Verdict: {CLEAN | NEEDS REFACTORING | MAJOR CLEANUP}
-
-**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Minor | 🔵 [{N}] Info
-
-PIPELINE_VERDICT: {CLEAN | NEEDS_REFACTORING | MAJOR_CLEANUP}
-```
-
-**You MUST replace X with an actual numeric score. The CI evaluator parses this heading to gate the pipeline.**
-
-| Score | Meaning |
-|-------|---------|
-| 9-10 | No issues, or only trivial nits |
-| 7-8 | Minor issues only, no architectural or duplication concerns **introduced by this PR** |
-| 5-6 | At least one MAJOR issue **introduced by this PR**, or several MINORs |
-| 3-4 | Multiple MAJOR issues or one CRITICAL **introduced by this PR** |
-| 1-2 | Fundamental architectural violation or security critical **introduced by this PR** |
-
-The score must be consistent with the verdict: a CLEAN verdict cannot accompany a score below 7.
-Issues classified as **INFO — established pattern** or **INFO — tech debt** do NOT lower the score.
-
-- **CLEAN** — Code is production-ready. Proceed to QA.
-- **NEEDS REFACTORING** — Specific issues must be fixed (list them below the verdict). Loop back to Coder.
-- **MAJOR CLEANUP REQUIRED** — Significant problems found. Loop back to Coder with full issue list.
-
-The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
-
-**Use ONLY the three tokens above (CLEAN, NEEDS_REFACTORING, MAJOR_CLEANUP). Do NOT use tokens from other reviewer phases such as NEEDS_REVISION, APPROVE, REJECT, PASS, or FAIL.**
-
-If the verdict is not CLEAN, clearly list every item the Coder must address in the next iteration.
-
-### Section 4: 🔴 Critical Findings (only if any exist)
+### Section 3: 🔴 Critical Findings (only if any exist)
 
 Number findings sequentially within this section. Render each as a standalone block:
 
@@ -397,7 +371,7 @@ Example: `#### 🔴 1. [Hex Architecture] Service imports concrete repository`
 
 Omit this section entirely if there are zero critical findings.
 
-### Section 5: 🟠 Major Findings (only if any exist)
+### Section 4: 🟠 Major Findings (only if any exist)
 
 Number findings sequentially within this section. Same block format as Critical Findings.
 
@@ -405,7 +379,7 @@ Example: `#### 🟠 1. [Coupling] Business logic in wrong service — belongs in
 
 Omit this section entirely if there are zero major findings.
 
-### Section 6: 🟡 Minor / Alignment Issues (only if any exist)
+### Section 5: 🟡 Minor / Alignment Issues (only if any exist)
 
 Number findings sequentially within this section. Same block format. Includes MINOR severity and ALIGNMENT ISSUE findings. For multi-file issues, include a table of affected locations within the block.
 
@@ -413,7 +387,7 @@ Example: `#### 🟡 1. [Alignment] Inconsistent error response format`
 
 Omit if zero.
 
-### Section 7: 🔵 Info Items (only if any exist)
+### Section 6: 🔵 Info Items (only if any exist)
 
 Number findings sequentially within this section. Render each INFO item as a collapsible `<details>` block:
 
@@ -429,9 +403,65 @@ Number findings sequentially within this section. Render each INFO item as a col
 
 Omit this section entirely if there are zero info items.
 
+### Section 7: Score Derivation & Verdict (LAST — Two-Pass Anti-Anchoring)
+
+**This section MUST be the last substantive section.** You have already produced all findings above (Sections 3-6). Now derive the score mechanically from what you found. Do NOT revisit or adjust findings based on the score.
+
+#### Severity Floor Scoring Formula
+
+Count only findings tagged `[NEW]` (introduced by this PR). INFO and `[PRE]`-tagged findings have zero penalty.
+
+```
+files_changed = <number of files in the PR scope from the evidence pack>
+
+critical_penalty = count_critical_NEW * 3.0        (flat — never diluted)
+major_penalty    = count_major_NEW * 1.5           (flat — never diluted)
+minor_penalty    = (count_minor_NEW * 0.5) / max(1, files_changed / 5)  (density-based)
+
+score = max(1, round(10 - critical_penalty - major_penalty - minor_penalty))
+```
+
+Show the derivation explicitly in your output:
+
+```
+### Score Derivation
+
+Files in scope: {N}
+Findings (NEW only): 🔴 {N} Critical | 🟠 {N} Major | 🟡 {N} Minor | 🔵 {N} Info (no penalty)
+Penalties: critical={N}×3.0={X} | major={N}×1.5={X} | minor=({N}×0.5)/max(1,{files}/5)={X}
+Total penalty: {X}
+Score: max(1, round(10 - {X})) = {final}
+
+### Code Health Score: {final}/10
+
+**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Minor | 🔵 [{N}] Info
+
+PIPELINE_CODE_VERDICT: {CLEAN | NEEDS_REFACTORING | MAJOR_CLEANUP}
+```
+
+**You MUST replace all placeholders with actual values. The CI evaluator parses the Code Health Score heading and the PIPELINE_CODE_VERDICT line.**
+
+#### Verdict Rules (derived from score)
+
+| Score | Verdict Token |
+|-------|--------------|
+| 7-10 | CLEAN |
+| 4-6 | NEEDS_REFACTORING |
+| 1-3 | MAJOR_CLEANUP |
+
+- **CLEAN** — Code is production-ready. Proceed to QA.
+- **NEEDS_REFACTORING** — Specific issues must be fixed (list them below). Loop back to Coder.
+- **MAJOR_CLEANUP** — Significant problems found. Loop back to Coder with full issue list.
+
+The `PIPELINE_CODE_VERDICT:` line MUST appear on its own line. The orchestrator parses this line to drive revision loops.
+
+**Use ONLY the three tokens above (CLEAN, NEEDS_REFACTORING, MAJOR_CLEANUP). Do NOT use tokens from other reviewer phases such as NEEDS_REVISION, APPROVE, REJECT, PASS, or FAIL.**
+
+If the verdict is not CLEAN, clearly list every item the Coder must address in the next iteration.
+
 ### Previous Issues Resolution (only for revision loops)
 
-When reviewing a revision, add this section after the Verdict:
+When reviewing a revision, add this section between findings and Score Derivation:
 
 | Previous Issue | Status | Evidence |
 |----------------|--------|----------|
