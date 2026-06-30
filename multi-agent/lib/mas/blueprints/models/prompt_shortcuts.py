@@ -1,7 +1,14 @@
-from typing import List, Literal, Optional
+from enum import Enum
+from typing import List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class PromptShortcutKind(str, Enum):
+    MANUAL = "manual"
 
 
 MAX_MANUAL_PROMPTS = 3
@@ -20,9 +27,20 @@ class PromptShortcutItem(BaseModel):
     - `text`:  The full prompt text inserted into the textarea on click.
                No character limit.
     """
+    model_config = ConfigDict(frozen=True)
+
     id: str = Field(default_factory=_short_id)
-    kind: Literal["manual"] = "manual"
+    kind: PromptShortcutKind = PromptShortcutKind.MANUAL
     text: str
+
+    _HEX8_RE = re.compile(r"^[0-9a-f]{8}$")
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: str) -> str:
+        if not cls._HEX8_RE.match(v):
+            raise ValueError("id must be exactly 8 lowercase hex characters")
+        return v
 
     @field_validator("text")
     @classmethod
@@ -39,14 +57,19 @@ class PromptShortcuts(BaseModel):
 
     Immutable after construction — create a new instance to modify.
     """
-    prompts: List[PromptShortcutItem] = Field(default_factory=list)
+    model_config = ConfigDict(frozen=True)
+
+    prompts: tuple[PromptShortcutItem, ...] = Field(default=())
 
     @field_validator("prompts")
     @classmethod
-    def validate_prompts(cls, v: List[PromptShortcutItem]) -> List[PromptShortcutItem]:
-        manual = [p for p in v if p.kind == "manual"]
+    def validate_prompts(cls, v: tuple[PromptShortcutItem, ...]) -> tuple[PromptShortcutItem, ...]:
+        manual = [p for p in v if p.kind == PromptShortcutKind.MANUAL]
         if len(manual) > MAX_MANUAL_PROMPTS:
             raise ValueError(f"At most {MAX_MANUAL_PROMPTS} manual prompt shortcuts allowed")
+        ids = [p.id for p in v]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Prompt shortcut ids must be unique")
         return v
 
     # ── Factories ──
@@ -101,7 +124,7 @@ class PromptShortcuts(BaseModel):
 
     @property
     def is_full(self) -> bool:
-        manual = [p for p in self.prompts if p.kind == "manual"]
+        manual = [p for p in self.prompts if p.kind == PromptShortcutKind.MANUAL]
         return len(manual) >= MAX_MANUAL_PROMPTS
 
     @property

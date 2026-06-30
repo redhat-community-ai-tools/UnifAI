@@ -180,13 +180,17 @@ class BlueprintService:
             shortcuts = PromptShortcuts(prompts=prompts)
         except (ValueError, TypeError) as exc:
             raise PromptShortcutsValidationError(str(exc)) from exc
-        self._repo.set_prompt_shortcuts(blueprint_id=blueprint_id, prompts=shortcuts.to_storage())
+        if not self._repo.set_prompt_shortcuts(blueprint_id=blueprint_id, prompts=shortcuts.to_storage()):
+            raise BlueprintNotFoundError(blueprint_id)
         return shortcuts
 
     def get_prompt_shortcuts(self, blueprint_id: str) -> PromptShortcuts:
         if not self.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
-        raw = self._repo.get_prompt_shortcuts(blueprint_id=blueprint_id)
+        try:
+            raw = self._repo.get_prompt_shortcuts(blueprint_id=blueprint_id)
+        except KeyError:
+            raise BlueprintNotFoundError(blueprint_id)
         return PromptShortcuts.from_raw_list(raw)
 
     # ────────── Blueprint Metadata ──────────

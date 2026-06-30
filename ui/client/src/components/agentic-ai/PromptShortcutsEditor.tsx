@@ -45,13 +45,15 @@ export default function PromptShortcutsEditor({
             className="absolute top-1 right-1 h-5 w-5 p-0 text-gray-400 hover:text-red-400"
             onClick={() => handleRemove(index)}
             disabled={disabled}
+            aria-label={`Remove prompt shortcut ${index + 1}`}
           >
             <X className="h-3 w-3" />
           </Button>
 
           <div className="space-y-1">
-            <Label className="text-xs text-gray-400">Prompt text *</Label>
+            <Label htmlFor={`prompt-shortcut-${index}`} className="text-xs text-gray-400">Prompt text *</Label>
             <Textarea
+              id={`prompt-shortcut-${index}`}
               placeholder="Enter the prompt text..."
               value={prompt.text}
               onChange={(e) => handleChange(index, e.target.value)}

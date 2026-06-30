@@ -461,12 +461,15 @@ export default function WorkflowsPanel({
                             <Users className="h-4 w-4 mr-2" />
                             Share
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={(e) => handlePromptShortcutsClick(flow, e)}
-                          >
-                            <MessageSquare className="h-4 w-4 mr-2" />
-                            Prompt Shortcuts
-                          </DropdownMenuItem>
+                          {showEditButton && (
+                            <DropdownMenuItem
+                              disabled={bpLockedByOther || bpLockUnknown}
+                              onClick={(e) => handlePromptShortcutsClick(flow, e)}
+                            >
+                              <MessageSquare className="h-4 w-4 mr-2" />
+                              Prompt Shortcuts
+                            </DropdownMenuItem>
+                          )}
                           {showDeleteButton && (
                             <>
                               <DropdownMenuSeparator />

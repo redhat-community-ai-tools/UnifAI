@@ -122,7 +122,8 @@ These patterns are established and reviewers MUST NOT flag them as violations:
 |---------|-----------------|---------------------|
 | `current_app.container.<service>` access in Flask endpoints | All `adapters/inbound/flask/endpoints/` | Standard Flask composition — no DI framework; container is wired at startup |
 | Secondary composition wiring in Temporal worker | `adapters/inbound/temporal/worker.py` | Temporal worker builds `NodeExecutor`, `GraphNodeActivities`, `LifecycleHandler` from container parts — separate entry point needs its own wiring |
-| Single-ID blueprint endpoints without auth decorator | `blueprint.update`, `blueprint.info.get`, `remove.blueprint`, `blueprint.metadata.set`, `blueprint.prompt-shortcuts.*` | Blueprint IDs are UUIDs — single-ID operations rely on ID secrecy rather than per-request auth. Listing/create endpoints use `@with_require_identity_authorization` for identity scoping. Shared-link flow requires unauthenticated access by design. |
+| Shared-link read endpoints (`blueprint.info.get`, `blueprint.prompt-shortcuts.get`) without `@with_require_identity_authorization` | `adapters/inbound/flask/endpoints/blueprints.py` | These serve the PublicChat shared-link flow, which requires unauthenticated access. Authorization is enforced via `usageScope` validation (only `"public"` blueprints are usable). Reviewers should verify the shared-link validation path, not the identity auth decorator. |
+| Single-ID blueprint **write** endpoints (`blueprint.update`, `remove.blueprint`, `blueprint.metadata.set`, `blueprint.prompt-shortcuts.set`) | `adapters/inbound/flask/endpoints/blueprints.py` | These are authorization-sensitive entry points. Reviewers SHOULD verify that `@with_require_identity_authorization` (or equivalent ownership check) is present at the adapter boundary. Absence of auth on these write endpoints is a finding, not an established pattern. |
 
 ## Rules
 

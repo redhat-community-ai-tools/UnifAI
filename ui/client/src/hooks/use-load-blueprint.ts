@@ -448,6 +448,6 @@ export async function loadBlueprintForEditing(
   );
   return {
     ...graph,
-    promptShortcuts: specDict.prompt_shortcuts || [],
+    promptShortcuts: Array.isArray(specDict.prompt_shortcuts) ? specDict.prompt_shortcuts : [],
   };
 }

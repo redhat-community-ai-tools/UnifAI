@@ -1156,14 +1156,24 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
 
         // Save prompt shortcuts via dedicated endpoint (always call, even if empty, to clear)
         const cleanedPrompts = promptShortcuts.filter(p => p.text.trim());
-        await setPromptShortcuts(blueprintId, cleanedPrompts);
+        let shortcutSaveFailed = false;
+        try {
+          await setPromptShortcuts(blueprintId, cleanedPrompts);
+        } catch (shortcutError) {
+          console.error("Failed to save prompt shortcuts:", shortcutError);
+          shortcutSaveFailed = true;
+        }
 
         toast({
-          title: isEditMode
-            ? "✅ Blueprint Updated Successfully"
-            : "✅ Blueprint Saved Successfully",
-          description: `Blueprint "${name}" ${isEditMode ? "updated" : "saved"} successfully`,
-          variant: "default",
+          title: shortcutSaveFailed
+            ? "⚠️ Workflow Saved — Prompt Shortcuts Failed"
+            : isEditMode
+              ? "✅ Blueprint Updated Successfully"
+              : "✅ Blueprint Saved Successfully",
+          description: shortcutSaveFailed
+            ? `Workflow "${name}" was saved, but prompt shortcuts could not be updated.`
+            : `Blueprint "${name}" ${isEditMode ? "updated" : "saved"} successfully`,
+          variant: shortcutSaveFailed ? "destructive" : "default",
         });
 
         setSaveModalOpen(false);

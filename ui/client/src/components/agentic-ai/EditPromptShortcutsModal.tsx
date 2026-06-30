@@ -26,17 +26,22 @@ export default function EditPromptShortcutsModal({
   const [prompts, setPrompts] = useState<PromptShortcutInput[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen || !blueprintId) return;
     let cancelled = false;
     setIsLoading(true);
+    setLoadError(null);
     getPromptShortcuts(blueprintId)
       .then((data) => {
         if (!cancelled) setPrompts(data.prompts);
       })
       .catch((err) => {
-        if (!cancelled) console.error("Failed to load prompt shortcuts:", err);
+        if (!cancelled) {
+          console.error("Failed to load prompt shortcuts:", err);
+          setLoadError("Failed to load prompt shortcuts. Please close and try again.");
+        }
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -72,6 +77,10 @@ export default function EditPromptShortcutsModal({
             <div className="flex items-center justify-center py-6 text-gray-400 text-sm">
               Loading...
             </div>
+          ) : loadError ? (
+            <div className="flex items-center justify-center py-6 text-red-400 text-sm">
+              {loadError}
+            </div>
           ) : (
             <PromptShortcutsEditor
               prompts={prompts}
@@ -92,7 +101,7 @@ export default function EditPromptShortcutsModal({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || isLoading || !!loadError}
             className="bg-primary hover:bg-primary/80"
           >
             {isSaving ? (
