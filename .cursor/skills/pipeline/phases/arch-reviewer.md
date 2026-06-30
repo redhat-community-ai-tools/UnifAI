@@ -41,6 +41,17 @@ error propagation), load `.cursor/skills/architecture/references/investigation-t
 - Established Patterns and Recipe suppressions from the pack are binding — do NOT flag them as violations.
 - The Import Analysis "Direction Issue" column is a mechanical classification. Apply your judgment to determine if flagged items are true violations or acceptable exceptions.
 
+## Determinism Rules
+
+These rules reduce output variance across runs. Follow them strictly:
+
+- Do NOT include speculative findings ("this might also be an issue", "consider whether...")
+- Only flag what the evidence **proves** — a finding requires a concrete file:line reference
+- If severity is ambiguous between two adjacent levels, choose the LOWER one
+- Do NOT add "nice to have" or "consider" observations as findings — those belong in INFO only if backed by a file:line
+- Each finding MUST cite a specific `file:line` — no finding without evidence
+- Do NOT produce findings that restate the same underlying issue in different dimensions — one finding per root cause
+
 ## System Context Analysis (MANDATORY — do this FIRST)
 
 Before checking any rules, understand what this change is trying to accomplish. Use the diff summary and evidence pack to answer:
@@ -232,7 +243,7 @@ Wrap in a single `<details>` block. This contains proof-of-work — clean dimens
 </details>
 ```
 
-Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–7 instead.
+Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 3–6 instead.
 
 ### Section 2: Risks & Follow-ups (only if any exist)
 
@@ -243,27 +254,7 @@ Table format — one row per risk. Include risks to the existing system, migrati
 
 Omit this section entirely if there are no risks.
 
-### Section 3: Verdict
-
-State your verdict with a severity summary line, then emit the machine-parseable line exactly as shown:
-
-```
-### Verdict: {APPROVE | NEEDS REVISION | REJECT}
-
-**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Warnings | 🔵 [{N}] Info
-
-PIPELINE_VERDICT: {APPROVE | NEEDS_REVISION | REJECT}
-```
-
-- **APPROVE** — Architecture is sound, no violations found.
-- **NEEDS REVISION** — Specific items must be fixed (list them below the verdict).
-- **REJECT** — Fundamental architectural violations require significant rework.
-
-The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
-
-If the verdict is not APPROVE, clearly list every item that must be addressed.
-
-### Section 4: 🔴 Critical Findings (only if any exist)
+### Section 3: 🔴 Critical Findings (only if any exist)
 
 Number findings sequentially within this section. Render each as a standalone block:
 
@@ -281,7 +272,7 @@ Example: `#### 🔴 1. [Hex Compliance] Domain imports infrastructure adapter`
 
 Omit this section entirely if there are zero critical findings.
 
-### Section 5: 🟠 Major Findings (only if any exist)
+### Section 4: 🟠 Major Findings (only if any exist)
 
 Number findings sequentially within this section. Same block format as Critical Findings.
 
@@ -289,7 +280,7 @@ Example: `#### 🟠 1. [SOLID] Service violates SRP with 12 public methods in tw
 
 Omit this section entirely if there are zero major findings.
 
-### Section 6: 🟡 Warnings (only if any exist)
+### Section 5: 🟡 Warnings (only if any exist)
 
 Number findings sequentially within this section. Same block format as Critical Findings. For multi-file warnings (e.g., duplication across services), include a table of affected files within the block:
 
@@ -310,7 +301,7 @@ Example: `#### 🟡 1. [Duplication] Session cookie config duplicated across 4 s
 
 Omit this section entirely if there are zero warnings.
 
-### Section 7: 🔵 Info Items (only if any exist)
+### Section 6: 🔵 Info Items (only if any exist)
 
 Number findings sequentially within this section. Render each INFO item as a collapsible `<details>` block:
 
@@ -325,3 +316,28 @@ Number findings sequentially within this section. Render each INFO item as a col
 ```
 
 Omit this section entirely if there are zero info items.
+
+### Section 7: Verdict Derivation (LAST — Two-Pass Anti-Anchoring)
+
+**This section MUST be the last substantive section.** You have already produced all findings above (Sections 3-6). Now derive the verdict mechanically from what you found. Do NOT revisit or adjust findings based on the verdict.
+
+Show your derivation explicitly, then state the verdict:
+
+```
+### Verdict Derivation
+
+Findings count (NEW only): 🔴 {N} Critical | 🟠 {N} Major | 🟡 {N} Warnings | 🔵 {N} Info
+Verdict rule: REJECT if any CRITICAL [NEW]; NEEDS_REVISION if any MAJOR [NEW]; APPROVE otherwise.
+
+**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Warnings | 🔵 [{N}] Info
+
+PIPELINE_ARCH_VERDICT: {APPROVE | NEEDS_REVISION | REJECT}
+```
+
+- **APPROVE** — Zero CRITICAL and zero MAJOR findings tagged `[NEW]`.
+- **NEEDS_REVISION** — At least one MAJOR finding tagged `[NEW]`, zero CRITICAL.
+- **REJECT** — At least one CRITICAL finding tagged `[NEW]`.
+
+The `PIPELINE_ARCH_VERDICT:` line MUST appear on its own line. The orchestrator parses this line to drive revision loops.
+
+If the verdict is not APPROVE, clearly list every item that must be addressed.
