@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Optional
 
+from pydantic import ValidationError
+
 from mas.blueprints.models.blueprint import BlueprintSpec, BlueprintDraft, BlueprintDocument, BlueprintSummary
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.blueprints.resolver import BlueprintResolver
@@ -176,14 +178,15 @@ class BlueprintService:
     # ────────── Prompt Shortcuts ──────────
     def set_prompt_shortcuts(self, blueprint_id: str, prompts: list[dict],
                              *, identity: Identity) -> PromptShortcuts:
-        if not self.exists(blueprint_id):
+        try:
+            doc = self._repo.load(blueprint_id)
+        except KeyError:
             raise BlueprintNotFoundError(blueprint_id)
-        doc = self._repo.load(blueprint_id)
-        if doc.identity.id != identity.id:
+        if doc.identity.type != identity.type or doc.identity.id != identity.id:
             raise BlueprintAccessDeniedError(blueprint_id, identity.id)
         try:
             shortcuts = PromptShortcuts(prompts=prompts)
-        except (ValueError, TypeError) as exc:
+        except (ValidationError, ValueError, TypeError) as exc:
             raise PromptShortcutsValidationError(str(exc)) from exc
         if not self._repo.set_prompt_shortcuts(blueprint_id=blueprint_id, prompts=shortcuts.to_storage()):
             raise BlueprintNotFoundError(blueprint_id)
@@ -201,7 +204,7 @@ class BlueprintService:
     # ────────── Blueprint Metadata ──────────
     def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
         """
-        Set the metadata dictionary for a blueprint.
+        Merge keys into a blueprint's metadata (key-level upsert, not full replace).
         """
         if not self.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)

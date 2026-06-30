@@ -357,7 +357,7 @@ def _shortcuts_response(shortcuts: PromptShortcuts) -> dict:
 })
 def set_metadata(blueprint_id, metadata):
     """
-    Set the metadata dictionary for a blueprint.
+    Merge keys into a blueprint's metadata (key-level upsert, not full replace).
     """
     try:
         svc = current_app.container.blueprint_service

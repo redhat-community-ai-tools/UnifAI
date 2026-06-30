@@ -18,7 +18,7 @@ class BlueprintRepository(ABC):
         
     @abstractmethod
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
-        """Set the metadata dictionary for a blueprint document."""
+        """Merge keys into the metadata sub-document (key-level upsert, not full replace)."""
 
     @abstractmethod
     def set_prompt_shortcuts(self, *, blueprint_id: str, prompts: Optional[List[dict]]) -> bool:
