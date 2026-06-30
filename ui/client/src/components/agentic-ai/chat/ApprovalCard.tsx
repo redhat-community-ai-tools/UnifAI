@@ -220,7 +220,7 @@ export const ApprovalCard = memo(({ approval, sessionId, onDecision, onAutoRule 
                     ? 'Reason for rejection...'
                     : 'New instructions for the agent...'
                 }
-                className="bg-gray-800/70 border-gray-600 text-xs text-gray-200 placeholder:text-gray-500 min-h-[60px] resize-none"
+                className="dark-textarea bg-gray-700 border-gray-500 text-xs text-white placeholder:text-gray-300 min-h-[60px] resize-none"
                 autoFocus
               />
               <div className="flex gap-2">
