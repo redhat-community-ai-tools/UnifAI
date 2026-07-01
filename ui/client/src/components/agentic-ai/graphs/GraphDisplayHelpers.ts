@@ -90,6 +90,7 @@ export const CATEGORY_TYPE_TO_PLURAL: Record<string, string> = {
   tool: "tools",
   retriever: "retrievers",
   provider: "providers",
+  sandbox: "sandboxes",
 };
 
 // ---------------------------------------------------------------------------

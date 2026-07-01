@@ -72,7 +72,8 @@ class NodeBuilder(CategoryBuilder):
         try:
             return reg.get_instance(category=category, rid=ref.ref)
         except KeyError as e:
+            node_label = getattr(cfg, 'name', cfg.type if hasattr(cfg, 'type') else 'unknown')
             raise PluginConfigurationError(
-                f"Node '{cfg.name}': unknown {category.value} ref '{ref.ref}'",
+                f"Node '{node_label}': unknown {category.value} ref '{ref.ref}'",
                 cfg.model_dump()
             ) from e

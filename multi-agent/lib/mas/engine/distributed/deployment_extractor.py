@@ -36,7 +36,7 @@ class NodeDeploymentExtractor:
         node_spec = node_elem.resource_spec
         dep_rids = _collect_refs(node_spec.config.model_dump(mode="json"))
 
-        llms, providers, tools, retrievers = [], [], [], []
+        llms, providers, tools, retrievers, sandboxes = [], [], [], [], []
         for rid in dep_rids:
             found = self._find_resource_spec(rid)
             if found is None:
@@ -50,12 +50,15 @@ class NodeDeploymentExtractor:
                 tools.append(spec)
             elif category == ResourceCategory.RETRIEVER:
                 retrievers.append(spec)
+            elif category == ResourceCategory.SANDBOX:
+                sandboxes.append(spec)
 
         mini_bp = BlueprintSpec(
             providers=providers,
             llms=llms,
             tools=tools,
             retrievers=retrievers,
+            sandboxes=sandboxes,
             nodes=[node_spec],
             conditions=[],
             plan=[StepDef(uid=step.uid, node=NodeRef(node_spec.rid.root))],
