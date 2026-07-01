@@ -119,6 +119,7 @@ class BlueprintDraft(BaseModel):
 
     name: str = "Untitled blueprint"
     description: str = ""
+    prompt_shortcuts: Optional[List[dict]] = None
 
     class Config:
         extra = Extra.forbid

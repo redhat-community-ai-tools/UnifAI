@@ -15,7 +15,7 @@ import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { deriveThemeColors } from "@/lib/colorUtils";
 import axios from "../http/axiosAgentConfig";
 import * as yaml from "js-yaml";
-import { saveBlueprint, updateBlueprint, setPromptShortcuts, PromptShortcutInput } from "@/api/blueprints";
+import { saveBlueprint, updateBlueprint, PromptShortcutInput } from "@/api/blueprints";
 import {
   acquireTeamEditLock,
   heartbeatTeamEditLock,
@@ -1109,11 +1109,12 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
       try {
         setIsSaving(true);
 
-         // Update yamlFlow with name and description
+        const cleanedPrompts = promptShortcuts.filter(p => p.text.trim());
         const updatedYamlFlow = {
           ...yamlFlow,
           name: name,
           description: description,
+          prompt_shortcuts: cleanedPrompts.length > 0 ? cleanedPrompts : undefined,
         };
 
         setYamlFlow(updatedYamlFlow);
@@ -1154,26 +1155,11 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
           );
         }
 
-        // Save prompt shortcuts via dedicated endpoint (always call, even if empty, to clear)
-        const cleanedPrompts = promptShortcuts.filter(p => p.text.trim());
-        let shortcutSaveFailed = false;
-        try {
-          await setPromptShortcuts(blueprintId, cleanedPrompts);
-        } catch (shortcutError) {
-          console.error("Failed to save prompt shortcuts:", shortcutError);
-          shortcutSaveFailed = true;
-        }
-
         toast({
-          title: shortcutSaveFailed
-            ? "⚠️ Workflow Saved — Prompt Shortcuts Failed"
-            : isEditMode
-              ? "✅ Blueprint Updated Successfully"
-              : "✅ Blueprint Saved Successfully",
-          description: shortcutSaveFailed
-            ? `Workflow "${name}" was saved, but prompt shortcuts could not be updated.`
-            : `Blueprint "${name}" ${isEditMode ? "updated" : "saved"} successfully`,
-          variant: shortcutSaveFailed ? "destructive" : "default",
+          title: isEditMode
+            ? "✅ Blueprint Updated Successfully"
+            : "✅ Blueprint Saved Successfully",
+          description: `Blueprint "${name}" ${isEditMode ? "updated" : "saved"} successfully`,
         });
 
         setSaveModalOpen(false);

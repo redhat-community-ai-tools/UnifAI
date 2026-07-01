@@ -23,9 +23,6 @@ from mas.validation.models import BlueprintValidationResult
 from mas.validation.service import ElementValidationService
 
 
-_NON_DRAFT_KEYS = frozenset({"prompt_shortcuts"})
-
-
 class BlueprintService:
     def __init__(
         self,
@@ -43,22 +40,27 @@ class BlueprintService:
         self._config_collector = BlueprintConfigCollector()
 
     # ────────── Write ──────────
+    @staticmethod
+    def _normalize_prompt_shortcuts(draft_dict: dict) -> dict:
+        """Run prompt_shortcuts through the PromptShortcuts value object
+        so that id and kind defaults are filled in before persistence."""
+        raw = draft_dict.get("prompt_shortcuts")
+        if not raw:
+            return draft_dict
+        shortcuts = PromptShortcuts.from_raw_list(raw)
+        return {**draft_dict, "prompt_shortcuts": shortcuts.to_storage()}
+
     def save_draft(self, *, identity: Identity, draft_dict: dict,
                    metadata: Optional[Dict[str, Any]] = None) -> str:
-        draft_bp = BlueprintDraft(**self._strip_non_draft_keys(draft_dict))
+        draft_bp = BlueprintDraft(**self._normalize_prompt_shortcuts(draft_dict))
         rid_refs = list(RefWalker.external_rids(draft_bp))
         return self._repo.save(identity=identity, spec=draft_bp,
                                rid_refs=rid_refs, metadata=metadata or {})
 
-    @staticmethod
-    def _strip_non_draft_keys(spec_dict: dict) -> dict:
-        """Remove keys stored in spec_dict that are not part of BlueprintDraft."""
-        return {k: v for k, v in spec_dict.items() if k not in _NON_DRAFT_KEYS}
-
     # ────────── Single-blueprint reads (ID is globally unique) ──────────
     def load_draft(self, blueprint_id: str) -> BlueprintDraft:
         doc = self._repo.load(blueprint_id)
-        return BlueprintDraft(**self._strip_non_draft_keys(doc.spec_dict))
+        return BlueprintDraft(**doc.spec_dict)
 
     def get_blueprint_draft_doc(self, blueprint_id: str) -> BlueprintDocument:
         """Get blueprint document with metadata for sharing operations."""
@@ -67,10 +69,10 @@ class BlueprintService:
     def update_draft(self, *, blueprint_id: str, draft_dict: dict) -> bool:
         if not self._repo.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
-        draft = BlueprintDraft(**self._strip_non_draft_keys(draft_dict))
+        draft = BlueprintDraft(**self._normalize_prompt_shortcuts(draft_dict))
         rid_refs = list(RefWalker.external_rids(draft))
         return self._repo.update(
-            blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs
+            blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs,
         )
 
     def load_resolved(self, blueprint_id: str) -> BlueprintSpec:
@@ -78,13 +80,11 @@ class BlueprintService:
 
     def load_draft_from_dict(self, draft_dict: dict) -> BlueprintDraft:
         """Load a BlueprintDraft from a dictionary without saving to database."""
-        return BlueprintDraft(**self._strip_non_draft_keys(draft_dict))
+        return BlueprintDraft(**draft_dict)
 
     def resolve_draft_dict(self, draft_dict: dict) -> BlueprintSpec:
         """Resolve a draft dictionary directly to BlueprintSpec without saving to database."""
-        return self._resolver.resolve(
-            BlueprintDraft(**self._strip_non_draft_keys(draft_dict))
-        )
+        return self._resolver.resolve(BlueprintDraft(**draft_dict))
 
     def to_dict(self, blueprint_id: str) -> Dict[str, Any]:
         """Draft -> JSON-serialisable dict (no meta)."""
@@ -129,10 +129,10 @@ class BlueprintService:
 
     def _resolve_doc(self, doc: BlueprintDocument) -> BlueprintDocument:
         """Resolve a single document's spec_dict from draft to fully resolved form."""
-        non_draft = {k: v for k, v in doc.spec_dict.items() if k in _NON_DRAFT_KEYS and v}
-        draft = BlueprintDraft(**self._strip_non_draft_keys(doc.spec_dict))
+        draft = BlueprintDraft(**doc.spec_dict)
         resolved_dict = self._resolver.resolve(draft).model_dump(mode="json")
-        resolved_dict.update(non_draft)
+        if draft.prompt_shortcuts:
+            resolved_dict["prompt_shortcuts"] = draft.prompt_shortcuts
         return doc.model_copy(update={"spec_dict": resolved_dict})
 
     def list_resolved_docs(
