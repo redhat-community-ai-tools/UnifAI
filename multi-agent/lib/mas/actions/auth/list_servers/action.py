@@ -1,8 +1,9 @@
 """
-auth.list_servers — return pre-configured auth servers filtered by category.
+auth.list_servers — return auth options for a provider category.
 
-Populates dropdowns in provider configs (A2A, MCP, etc.) with available
-identity providers from the auth server registry.
+Returns static entries (none, access_token) merged with dynamic entries
+from the auth server registry. This powers a single dropdown where the
+user picks their auth method directly.
 """
 
 from __future__ import annotations
@@ -16,19 +17,20 @@ from mas.actions.common.base_action import BaseAction
 from mas.actions.common.action_models import BaseActionInput, BaseActionOutput, ActionType
 from mas.core.auth.credentials.ports import ServerConfigStore
 from mas.core.enums import ResourceCategory
+from mas.elements.nodes.a2a_agent.identifiers import Identifier as A2ANodeIdentifier
 from mas.elements.providers.a2a_client.identifiers import Identifier as A2AIdentifier
 from mas.elements.providers.mcp_server_client.identifiers import Identifier as McpIdentifier
 
 logger = logging.getLogger(__name__)
 
+_STATIC_OPTIONS: List[Dict[str, str]] = [
+    {"label": "None", "value": "none"},
+    {"label": "Access Token", "value": "access_token"},
+]
+
 
 class ListServersInput(BaseActionInput):
     category: str = Field(default="", description="Filter servers by category (e.g. 'a2a', 'mcp')")
-
-
-class ServerEntry(BaseActionOutput):
-    label: str
-    value: str
 
 
 class ListServersOutput(BaseActionOutput):
@@ -38,13 +40,14 @@ class ListServersOutput(BaseActionOutput):
 class ListServersAction(BaseAction):
     uid = "auth.list_servers"
     name = "list_servers"
-    description = "List pre-configured auth servers by category"
+    description = "List available auth options (static + registry) by category"
     action_type = ActionType.DISCOVERY
     input_schema = ListServersInput
     output_schema = ListServersOutput
     version = "1.0.0"
     tags = {"auth", "registry"}
     elements = {
+        (ResourceCategory.NODE.value, A2ANodeIdentifier.TYPE),
         (ResourceCategory.PROVIDER.value, A2AIdentifier.TYPE),
         (ResourceCategory.PROVIDER.value, McpIdentifier.TYPE),
     }
@@ -58,13 +61,6 @@ class ListServersAction(BaseAction):
         input_data: ListServersInput,
         context: Optional[Dict[str, Any]] = None,
     ) -> ListServersOutput:
-        if not self._store:
-            return ListServersOutput(
-                success=False,
-                message="Server config store not available",
-                servers=[],
-            )
-
         category = input_data.category
         if not category:
             return ListServersOutput(
@@ -73,15 +69,18 @@ class ListServersAction(BaseAction):
                 servers=[],
             )
 
-        configs = self._store.list_by_category(category)
+        servers: List[Dict[str, str]] = list(_STATIC_OPTIONS)
 
-        servers = [
-            {"label": c.display_name or c.server_identifier, "value": c.server_identifier}
-            for c in configs
-        ]
+        if self._store:
+            configs = self._store.list_by_category(category)
+            for c in configs:
+                servers.append({
+                    "label": c.display_name or c.server_identifier,
+                    "value": c.server_identifier,
+                })
 
         return ListServersOutput(
             success=True,
-            message=f"Found {len(servers)} server(s)",
+            message=f"Found {len(servers)} option(s)",
             servers=servers,
         )

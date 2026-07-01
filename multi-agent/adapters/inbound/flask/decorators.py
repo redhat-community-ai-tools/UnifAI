@@ -53,16 +53,30 @@ _AUTH_HEADER = "X-Authenticated-User"
 
 
 def _get_fallback_user() -> str | None:
-    """Legacy fallback: read ``X-Authenticated-User`` header.
+    """Fallback user resolution when no session cookie is present.
 
-    Used by headless CI/CD scripts that cannot perform browser SSO
-    (e.g. ``scripts/execution_workflow.py``).  Will be removed when
-    API-token auth is implemented.
+    Checks, in order:
+      1. ``X-Authenticated-User`` header (headless CI/CD scripts)
+      2. ``userId`` from query params or JSON body (dev mode / legacy UI)
+
+    Will be tightened when API-token auth is implemented.
     """
     user = request.headers.get(_AUTH_HEADER, "").strip()
     if user:
-        logger.debug("Authenticated via %s header (legacy): %s", _AUTH_HEADER, user)
-    return user or None
+        logger.debug("Authenticated via %s header: %s", _AUTH_HEADER, user)
+        return user
+
+    body = request.get_json(silent=True) or {}
+    user = str(
+        request.args.get("userId")
+        or body.get("userId")
+        or ""
+    ).strip()
+    if user:
+        logger.debug("Authenticated via userId param (no session): %s", user)
+        return user
+
+    return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -114,6 +128,41 @@ def _extract_team_id(kwargs: dict) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Dev-mode fallback
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _run_without_session(f: Callable, args: tuple, kwargs: dict) -> Any:
+    """Permissive path for dev/noop providers that don't require authentication.
+
+    Resolves identity from request params (userId/teamId) instead of a session.
+    """
+    body = request.get_json(silent=True) or {}
+    username = (
+        request.args.get("userId")
+        or body.get("userId")
+        or kwargs.get("userId")
+        or kwargs.get("user_id")
+        or ""
+    )
+    username = str(username).strip()
+
+    team_id = _extract_team_id(kwargs)
+    if team_id:
+        display_name = _identity_provider().resolve_team_display_name(username, team_id)
+        identity = resolve_identity(team_id, "team", display_name)
+    elif username:
+        identity = resolve_identity(username, "user")
+    else:
+        identity = resolve_identity("anonymous", "user")
+
+    setattr(g, G_IDENTITY_SESSION, None)
+    setattr(g, G_IDENTITY_USERNAME, username)
+    setattr(g, G_IDENTITY, identity)
+    kwargs["identity"] = identity
+    return f(*args, **kwargs)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Unified decorator
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -142,6 +191,8 @@ def require_session_identity(f: Callable) -> Callable:
                 _get_fallback_user,
             )
             if err:
+                if not _identity_provider().requires_authentication:
+                    return _run_without_session(f, args, kwargs)
                 msg, err_type, status = err
                 return jsonify({"error": msg, "error_type": err_type}), status
 

@@ -14,6 +14,8 @@ from mas.elements.nodes.common.capabilities.retriever_capable import RetrieverCa
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
 from mas.elements.nodes.common.workload import Task, AgentResult
 from mas.elements.providers.a2a_client import A2AProvider
+from mas.core.auth.credentials.credential import AuthCredential
+from global_utils.utils.async_bridge import get_async_bridge
 
 
 class A2AAgentNode(
@@ -57,29 +59,21 @@ class A2AAgentNode(
             base_url: HttpUrl,
             agent_card: Optional[AgentCard] = None,
             bearer_token: Optional[str] = None,
+            auth_credential: Optional[AuthCredential] = None,
             retriever: Any = None,
             **kwargs: Any
     ):
-        """
-        Initialize A2A Agent Node.
-        
-        Args:
-            base_url: A2A agent endpoint URL
-            agent_card: Optional pre-fetched agent card
-            bearer_token: Optional bearer token for authentication
-            retriever: Optional retriever for context augmentation
-        """
         super().__init__(
             retriever=retriever,
             **kwargs
         )
 
-        # Build headers from bearer_token if provided
+        self._auth_credential = auth_credential
+
         headers = None
         if bearer_token:
             headers = {"Authorization": f"Bearer {bearer_token}"}
 
-        # Create A2A provider from config
         self.a2a_provider = A2AProvider.create_sync(
             base_url=base_url,
             agent_card=agent_card,
@@ -234,6 +228,23 @@ class A2AAgentNode(
 
     # ========== REMOTE AGENT DELEGATION ==========
 
+    def _refresh_auth_headers(self) -> None:
+        """Refresh auth headers from the credential store if available.
+
+        AuthCredential.get_headers() is async (may trigger a token refresh
+        over HTTP), so we bridge into async via the same utility the
+        A2AProvider uses for send_message_sync.
+        """
+        if not self._auth_credential:
+            return
+        try:
+            with get_async_bridge() as bridge:
+                headers = bridge.run(self._auth_credential.get_headers())
+            if headers:
+                self.a2a_provider.update_headers(headers)
+        except Exception:
+            pass
+
     def _delegate_to_remote_agent(
             self,
             context_messages: List[ChatMessage],
@@ -242,24 +253,11 @@ class A2AAgentNode(
         """
         Delegate task to remote agent via A2A Provider.
         
-        Handles both streaming and non-streaming modes:
-        - Checks if node is streaming AND remote agent supports streaming
-        - Streaming: Uses stream_message_sync() and streams llm_token events
-        - Non-streaming: Uses send_message_sync() for direct response
-        
-        Remote agent streaming support is checked via agent_card.capabilities.streaming
-        
-        Combines all context messages into single message for remote agent.
-        Uses task.thread_id as context_id for multi-turn support.
-        
-        Args:
-            context_messages: Full conversation context
-            task: Current task (used for thread_id as context_id)
-            
-        Returns:
-            Tuple of (response ChatMessage, metadata dict)
+        Refreshes auth headers before each delegation to handle
+        short-lived tokens (auto-refresh via AuthHandle).
         """
-        # Combine context into single message for remote agent
+        self._refresh_auth_headers()
+
         combined_content = self._combine_context_messages(context_messages)
 
         message_to_send = ChatMessage(

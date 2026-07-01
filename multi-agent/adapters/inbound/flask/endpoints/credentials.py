@@ -2,10 +2,10 @@
 Flask endpoints for the credentials lifecycle.
 
 Routes:
-  POST /api/credentials/exchange              — Exchange auth code for tokens (internal, from SSO pod)
-  GET  /api/credentials/status                — Check token status for a user + server
-  POST /api/credentials/client-config.save    — Save OAuth client credentials for an auth server
-  GET  /api/credentials/client-config.get     — Get OAuth client config for an auth server
+  POST /api/credentials/exchange            — Exchange auth code for tokens (OAuth callback)
+  GET  /api/credentials/status              — Check token status for a user + server
+  POST /api/credentials/client-config.save  — Save OAuth client credentials for an auth server
+  GET  /api/credentials/client-config.get   — Get OAuth client config for an auth server
 """
 
 import logging
@@ -74,16 +74,20 @@ def token_status(user_id, server_identifier):
     "client_id": fields.Str(data_key="clientId", required=True),
     "client_secret": fields.Str(data_key="clientSecret", required=False, load_default=None),
     "server_identifier": fields.Str(data_key="serverIdentifier", required=True),
+    "display_name": fields.Str(data_key="displayName", required=False, load_default=""),
+    "categories": fields.List(fields.Str(), required=False, load_default=[]),
     "authorization_endpoint": fields.Str(data_key="authorizationEndpoint", required=False, load_default=""),
     "token_endpoint": fields.Str(data_key="tokenEndpoint", required=False, load_default=""),
+    "token_endpoint_auth_method": fields.Str(data_key="tokenEndpointAuthMethod", required=False, load_default="client_secret_post"),
     "scopes": fields.List(fields.Str(), required=False, load_default=[]),
     "extra_authorize_params": fields.Dict(data_key="extraAuthorizeParams", required=False, load_default={}),
     "protocol_type": fields.Str(data_key="protocolType", required=False, load_default="oauth2"),
 })
 def save_client_config(
-    client_id, client_secret, server_identifier,
-    authorization_endpoint, token_endpoint, scopes,
-    extra_authorize_params, protocol_type,
+    client_id, client_secret, server_identifier, display_name,
+    categories, authorization_endpoint, token_endpoint,
+    token_endpoint_auth_method, scopes, extra_authorize_params,
+    protocol_type,
 ):
     """Save or update OAuth client credentials for an auth server."""
     try:
@@ -92,10 +96,13 @@ def save_client_config(
             client_secret=client_secret,
             authorization_endpoint=authorization_endpoint,
             token_endpoint=token_endpoint,
+            token_endpoint_auth_method=token_endpoint_auth_method,
             scopes=scopes,
             extra_authorize_params=extra_authorize_params,
             protocol_type=protocol_type,
             server_identifier=server_identifier,
+            display_name=display_name,
+            categories=categories,
         )
 
         store = current_app.container.server_config_store

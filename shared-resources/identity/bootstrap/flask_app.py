@@ -20,6 +20,7 @@ from config.logging_config import LoggingConfig
 from global_utils.flask.request_rules import RequestRules
 from bootstrap.factories import build_auth_stack, build_team_service
 from global_utils.redis import TeamMembershipCache
+from bootstrap.container import AppContainer
 from utils.user_groups_cache import UserGroupsCache
 from utils.directory_cache import DirectoryCache
 
@@ -83,6 +84,9 @@ def create_app() -> Flask:
         user_groups_cache=user_groups_cache,
         team_membership_cache=team_membership_cache,
     )
+
+    app.container = AppContainer(config)
+
     # Register HTTP adapters (blueprints)
     _register_blueprints(app)
     

@@ -93,7 +93,7 @@ def credentials_callback():
             "error": "Missing code or state",
         })
 
-    multi_agent_url = f"http://{config.multiagent_host}:{config.multiagent_port}/api/credentials/exchange"
+    multi_agent_url = f"http://rhel9-lina:{config.multiagent_port}/api/credentials/exchange"
     try:
         resp = requests.post(
             multi_agent_url,

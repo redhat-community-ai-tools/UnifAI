@@ -229,13 +229,26 @@ export const ElementForm: React.FC<ElementFormProps> = ({
            fieldSchema.hints?.api?.hint_type === 'validate';
   }, [elementSchema]);
 
+  const evaluateCondition = useCallback((actual: any, requiredValue: any): boolean => {
+    if (typeof requiredValue === 'object' && requiredValue !== null && !Array.isArray(requiredValue)) {
+      if (Array.isArray(requiredValue.not_in)) {
+        return !requiredValue.not_in.includes(actual);
+      }
+      if (Array.isArray(requiredValue.in)) {
+        return requiredValue.in.includes(actual);
+      }
+      return false;
+    }
+    return actual === requiredValue;
+  }, []);
+
   const isFieldConditionallyVisible = useCallback((fieldSchema: any): boolean => {
     const conditions = fieldSchema?.hints?.conditional?.visible_when;
     if (!conditions) return true;
     return Object.entries(conditions).every(
-      ([field, requiredValue]) => formData[field] === requiredValue,
+      ([field, requiredValue]) => evaluateCondition(formData[field], requiredValue),
     );
-  }, [formData]);
+  }, [formData, evaluateCondition]);
 
   const handleValidationChange = (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => {
     setFieldValidationStates(prev => ({
@@ -263,15 +276,19 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       [fieldName]: results
     }));
     
-    // For multi-select fields, store the full array of objects (or strings)
-    // For single select, store just the first item (can be object or string)
     if (multiSelect) {
-      // Multi-select: always store as array
       handleInputChange(fieldName, results);
     } else {
-      // Single select: store single item (first in array, or empty string)
       const singleResult = results.length > 0 ? results[0] : "";
-      handleInputChange(fieldName, singleResult);
+      const fieldSchema = elementSchema?.config_schema?.properties?.[fieldName];
+
+      // For scalar-typed fields (e.g. str), extract just the value so the
+      // backend receives the right type instead of the full option object.
+      if (fieldSchema?.type === 'string' && typeof singleResult === 'object' && singleResult !== null) {
+        handleInputChange(fieldName, singleResult.value ?? singleResult.id ?? singleResult.name ?? String(singleResult));
+      } else {
+        handleInputChange(fieldName, singleResult);
+      }
     }
   };
 
@@ -625,7 +642,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
           const prop = schema?.hints?.propagate;
           if (!conditional || !prop?.to) return;
           const isVisible = Object.entries(conditional).every(
-            ([f, v]) => next[f] === v,
+            ([f, v]) => evaluateCondition(next[f], v),
           );
           if (isVisible && next[name]) {
             next[prop.to] = prop.value !== undefined && prop.value !== null

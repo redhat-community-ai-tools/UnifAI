@@ -69,6 +69,10 @@ class A2AProvider:
         self._converter = A2AConverter()
         self._initialized = False
 
+    def update_headers(self, headers: Dict[str, str]) -> None:
+        """Merge new headers (e.g. refreshed auth token) into the provider."""
+        self.headers.update(headers)
+
     async def _ensure_initialized(self) -> None:
         """Initialize on first use."""
         if self._initialized:

@@ -1,6 +1,7 @@
-from typing import Any, Dict, Iterable, Union, get_origin, get_args
+from typing import Any, Dict, Iterable, Optional, Union, get_origin, get_args
 from .category_builder import CategoryBuilder, BlueprintSpec
 from mas.core.enums import ResourceCategory
+from mas.core.element_deps import ElementDeps
 from mas.elements.nodes.types import NodeSpec
 from mas.elements.common.exceptions import PluginConfigurationError
 from mas.core.ref.models import Ref
@@ -13,6 +14,8 @@ class NodeBuilder(CategoryBuilder):
     
     Automatically discovers Ref-typed fields from the config schema
     and resolves them to instances. No manual mapping required.
+    Also injects auth_credential for nodes with server_identifier
+    (same pattern as ProviderBuilder).
     """
     category = ResourceCategory.NODE
     depends_on = {
@@ -25,12 +28,26 @@ class NodeBuilder(CategoryBuilder):
     def _iter_specs(self, bp: BlueprintSpec) -> Iterable[NodeSpec]:
         return bp.nodes
 
-    def _extra_kwargs(self, cfg: NodeSpec, reg: SessionRegistry, deps=None) -> Dict[str, Any]:
-        """Resolve all Ref-typed fields to their instances."""
-        return {
+    def _extra_kwargs(
+        self, cfg: NodeSpec, reg: SessionRegistry, deps: Optional[ElementDeps] = None,
+    ) -> Dict[str, Any]:
+        """Resolve all Ref-typed fields and auth credentials."""
+        kwargs: Dict[str, Any] = {
             name: self._resolve(getattr(cfg, name, None), cfg, reg)
             for name in self._get_ref_field_names(cfg)
         }
+
+        server_id = getattr(cfg, "server_identifier", "")
+        scheme_type = getattr(cfg, "scheme_type", "")
+        if server_id and deps and deps.auth_service:
+            ctx_holder = getattr(deps, "execution_ctx", None)
+            if ctx_holder:
+                resolver = lambda _h=ctx_holder: _h.context.credential_user_id()
+                cred = deps.auth_service.bind_lazy(resolver, server_id, scheme_type)
+                if cred:
+                    kwargs["auth_credential"] = cred
+
+        return kwargs
 
     def _get_ref_field_names(self, cfg: NodeSpec) -> Iterable[str]:
         """Yield field names that are typed as Ref (including Optional/List)."""

@@ -17,8 +17,11 @@ class ActionsService:
 
     def register_instance(self, action: BaseAction) -> None:
         """Register a pre-configured action instance that will be used
-        instead of creating a new one from the class."""
+        instead of creating a new one from the class.
+        Also registers the class in the registry for metadata discovery."""
         self._instance_overrides[action.uid] = action
+        if not self._registry.has_action(action.uid):
+            self._registry.register_action(type(action))
 
     def get_action_by_uid(self, uid: str) -> Optional[BaseAction]:
         """Get action instance by UID.
