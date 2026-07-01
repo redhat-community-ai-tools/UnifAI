@@ -167,19 +167,17 @@ def get_available_tags(cursor="", limit=50, search_regex=None):
 @from_query({
     "query": fields.Str(required=True),
     "top_k_results": fields.Int(required=False, load_default=15),
-    "scope": fields.Str(required=False, load_default="public"),
     "doc_ids": fields.List(fields.Str(), required=False, load_default=None, data_key="docIds"),
     "tags": fields.List(fields.Str(), required=False, load_default=None),
 })
-def query_match(query, top_k_results, scope, doc_ids, tags):
+def query_match(query, top_k_results, doc_ids, tags):
     """
     Search documents using semantic similarity.
     Optionally filter by document IDs or tags.
     
     Args:
         query: Search query text
-        top_k_results: Number of results to return (default: 5)
-        scope: "public" or "private" - filters by upload_by if private
+        top_k_results: Number of results to return (default: 15)
         doc_ids: Optional list of document IDs to filter by
         tags: Optional list of tags to filter by
     """
@@ -188,8 +186,7 @@ def query_match(query, top_k_results, scope, doc_ids, tags):
         results = svc.search(
             query=query,
             limit=top_k_results,
-            scope=scope,
-            user=g.user_id,
+            owner_id=g.user_id,
             doc_ids=doc_ids,
             tags=tags,
         )
