@@ -322,14 +322,17 @@ def set_prompt_shortcuts(identity, blueprint_id, prompts):
 
 
 @blueprints_bp.route("/blueprint.prompt-shortcuts.get", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
 })
-def get_prompt_shortcuts(blueprint_id):
+def get_prompt_shortcuts(identity, blueprint_id):
     try:
         svc = current_app.container.blueprint_service
-        shortcuts = svc.get_prompt_shortcuts(blueprint_id=blueprint_id)
+        shortcuts = svc.get_prompt_shortcuts(blueprint_id=blueprint_id, identity=identity)
         return jsonify(_shortcuts_response(shortcuts)), 200
+    except BlueprintAccessDeniedError:
+        return jsonify({"error": "You do not have permission to view this blueprint"}), 403
     except BlueprintNotFoundError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:

@@ -192,9 +192,13 @@ class BlueprintService:
             raise BlueprintNotFoundError(blueprint_id)
         return shortcuts
 
-    def get_prompt_shortcuts(self, blueprint_id: str) -> PromptShortcuts:
-        if not self.exists(blueprint_id):
+    def get_prompt_shortcuts(self, blueprint_id: str, *, identity: Identity) -> PromptShortcuts:
+        try:
+            doc = self._repo.load(blueprint_id)
+        except KeyError:
             raise BlueprintNotFoundError(blueprint_id)
+        if doc.identity.type != identity.type or doc.identity.id != identity.id:
+            raise BlueprintAccessDeniedError(blueprint_id, identity.id)
         try:
             raw = self._repo.get_prompt_shortcuts(blueprint_id=blueprint_id)
         except KeyError as exc:

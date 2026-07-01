@@ -1477,12 +1477,12 @@ export default function ChatInterface({
 
           {/* Prompt shortcut chips */}
           {showPromptChips && defaultPrompts && defaultPrompts.length > 0 && (
-            <div className="mb-3">
+            <div className="mb-3 max-w-[90%]">
               <div className="flex flex-wrap gap-3">
                 {defaultPrompts.map((prompt) => (
-                  <div key={prompt.id} className="relative">
+                  <div key={prompt.id} className="relative flex-1 min-w-[10rem] max-w-[calc(33%-0.5rem)]">
                     <div
-                      className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium border transition-colors ${
+                      className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium border transition-colors w-full ${
                         previewChipId === prompt.id
                           ? "bg-primary/20 border-primary/50 text-primary"
                           : "bg-background-surface border-gray-700 text-gray-300 hover:border-primary/50 hover:text-primary"
@@ -1516,7 +1516,7 @@ export default function ChatInterface({
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 4 }}
                           transition={{ duration: 0.15, ease: "easeOut" }}
-                          className="absolute bottom-full left-0 mb-2 z-10 w-64"
+                          className="absolute bottom-full left-0 mb-2 z-10 w-[min(16rem,80vw)]"
                         >
                           <div className="rounded-md bg-gray-900 border border-primary/50 p-3 flex flex-col shadow-lg">
                             <div className="max-h-[200px] overflow-y-auto mb-2">

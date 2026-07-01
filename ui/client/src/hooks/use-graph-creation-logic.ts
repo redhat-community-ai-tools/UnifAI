@@ -15,7 +15,7 @@ import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { deriveThemeColors } from "@/lib/colorUtils";
 import axios from "../http/axiosAgentConfig";
 import * as yaml from "js-yaml";
-import { saveBlueprint, updateBlueprint, PromptShortcutInput } from "@/api/blueprints";
+import { saveBlueprint, updateBlueprint, setPromptShortcuts, PromptShortcutInput } from "@/api/blueprints";
 import {
   acquireTeamEditLock,
   heartbeatTeamEditLock,
@@ -1114,7 +1114,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
           ...yamlFlow,
           name: name,
           description: description,
-          prompt_shortcuts: cleanedPrompts.length > 0 ? cleanedPrompts : undefined,
         };
 
         setYamlFlow(updatedYamlFlow);
@@ -1153,6 +1152,19 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
               ? "Unknown error occurred while updating blueprint"
               : "Unknown error occurred while saving blueprint"
           );
+        }
+
+        if (cleanedPrompts.length > 0) {
+          try {
+            await setPromptShortcuts(blueprintId, cleanedPrompts);
+          } catch (shortcutErr) {
+            console.error("Failed to save prompt shortcuts:", shortcutErr);
+            toast({
+              title: "⚠️ Shortcuts not saved",
+              description: "Blueprint saved, but prompt shortcuts failed to update. Try editing them from the workflow panel.",
+              variant: "destructive",
+            });
+          }
         }
 
         toast({
