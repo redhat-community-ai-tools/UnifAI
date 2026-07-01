@@ -169,9 +169,12 @@ class ClaudeAgentNode(
 
             self._route_response(task, agent_result, packet)
 
+            duration_s = (execution_metadata.get('duration_ms') or 0) / 1000
             print(f"ClaudeAgent {self.uid}: Session completed "
                   f"(turns={execution_metadata.get('num_turns')}, "
-                  f"cost=${execution_metadata.get('total_cost_usd', 0):.4f})")
+                  f"cost=${execution_metadata.get('total_cost_usd', 0):.4f}, "
+                  f"tokens={execution_metadata.get('input_tokens', 0)}in/{execution_metadata.get('output_tokens', 0)}out, "
+                  f"duration={duration_s:.1f}s)")
 
         except Exception as e:
             print(f"ClaudeAgent {self.uid}: Error processing task: {e}")
