@@ -25,13 +25,15 @@ class DataSourceRepository(ABC):
         self,
         source_type: Optional[str] = None,
         view: DataSourceView = DataSourceView.SUMMARY,
+        upload_by: Optional[str] = None,
     ) -> List[DataSource]:
-        """Get all sources, optionally filtered by type.
+        """Get all sources, optionally filtered by type and owner.
         
         Args:
             source_type: Filter by source type (e.g., "DOCUMENT", "SLACK")
             view: SUMMARY for list views (excludes heavy fields like full_text),
                   FULL for complete data including all content fields
+            upload_by: Filter by owner username
         """
         ...
 
@@ -42,6 +44,7 @@ class DataSourceRepository(ABC):
         limit: int = 50,
         source_type: Optional[str] = None,
         search: Optional[str] = None,
+        upload_by: Optional[str] = None,
     ) -> PaginatedResult[Dict[str, Any]]:
         """
         Paginated query for sources.
@@ -51,6 +54,7 @@ class DataSourceRepository(ABC):
             limit: Max items to return
             source_type: Filter by type (e.g., "DOCUMENT", "SLACK")
             search: Filter by name prefix (case-insensitive)
+            upload_by: Filter by owner username
             
         Returns:
             PaginatedResult containing source documents
