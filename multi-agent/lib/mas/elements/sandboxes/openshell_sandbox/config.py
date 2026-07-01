@@ -1,12 +1,14 @@
-from typing import Literal, Optional
+from typing import Literal
+
 from pydantic import Field
-from mas.elements.tools.common.base_config import BaseToolConfig
+
+from mas.elements.sandboxes.common.base_config import BaseSandboxConfig
 from mas.core.field_hints import SecretHint, FileUploadHint, combine_hints
 from .identifiers import Identifier
 
 
-class SandboxExecToolConfig(BaseToolConfig):
-    """Configuration for the OpenShell Sandbox Exec tool."""
+class OpenShellSandboxConfig(BaseSandboxConfig):
+    """Configuration for the OpenShell Sandbox."""
 
     type: Literal[Identifier.TYPE] = Identifier.TYPE
 
@@ -40,5 +42,5 @@ class SandboxExecToolConfig(BaseToolConfig):
     )
     keep_sandbox: bool = Field(
         default=False,
-        description="Keep the sandbox container running after use. When disabled, the sandbox is deleted after the session ends.",
+        description="Keep the sandbox container running after use.",
     )

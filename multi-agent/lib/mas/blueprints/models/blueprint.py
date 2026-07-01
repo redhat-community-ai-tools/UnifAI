@@ -34,6 +34,7 @@ from mas.elements.conditions.types import ConditionSpec
 from mas.elements.tools.types import ToolsSpec
 from mas.elements.providers.types import ProviderSpec
 from mas.elements.auths.types import AuthSpec
+from mas.elements.sandboxes.types import SandboxSpec
 from mas.core.ref.models import Ref, NodeRef, ConditionRef
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ class BlueprintDraft(BaseModel):
     nodes: List[BlueprintResource[NodeSpec]] = []
     conditions: List[BlueprintResource[ConditionSpec]] = []
     auths: List[BlueprintResource[AuthSpec]] = []
+    sandboxes: List[BlueprintResource[SandboxSpec]] = []
 
     plan: List[StepDef]
 
@@ -134,6 +136,7 @@ class BlueprintSpec(BaseModel):
     nodes: List[ResourceSpec[NodeSpec]]
     conditions: List[ResourceSpec[ConditionSpec]] = []
     auths: List[ResourceSpec[AuthSpec]] = []
+    sandboxes: List[ResourceSpec[SandboxSpec]] = []
 
     plan: List[StepDef]
 

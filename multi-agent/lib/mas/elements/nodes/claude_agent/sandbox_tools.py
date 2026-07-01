@@ -1,11 +1,11 @@
 """Sandbox-backed replacements for Claude Agent SDK built-in tools.
 
 Creates ``SdkMcpTool`` instances that mirror the built-in Bash, Read,
-Write, Edit, Glob, and Grep tools but route all execution through an
-OpenShell sandbox via ``SandboxExecTool._get_or_create_session().exec()``.
+Write, Edit, Glob, and Grep tools but route all execution through a
+``BaseSandbox.exec()`` call.
 
 Activated automatically by ``ClaudeAgentNode._build_options()`` when a
-``SandboxExecTool`` is present in ``domain_tools``.
+sandbox is attached to the node.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 from claude_agent_sdk import SdkMcpTool
 
 if TYPE_CHECKING:
-    from mas.elements.tools.sandbox_exec.sandbox_exec import SandboxExecTool
+    from mas.elements.sandboxes.common.base_sandbox import BaseSandbox
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +43,13 @@ _TOOL_TIMEOUT_SEC = 30
 
 
 def create_sandbox_mcp_tools(
-    sandbox_tool: SandboxExecTool,
+    sandbox: BaseSandbox,
     skip: Optional[Set[str]] = None,
 ) -> List[SdkMcpTool]:
     """Create sandbox-backed replacement tools as ``SdkMcpTool`` instances.
 
     Args:
-        sandbox_tool: The configured ``SandboxExecTool`` with gRPC connectivity.
+        sandbox: The configured ``BaseSandbox`` instance.
         skip: Set of tool names to skip (e.g. ``{"Bash"}`` when the user
             explicitly disallowed ``"Bash"``). Pass ``None`` to create all 6.
 
@@ -68,7 +68,7 @@ def create_sandbox_mcp_tools(
     tools: List[SdkMcpTool] = []
     for name, builder in builders:
         if name not in skip:
-            tools.append(builder(sandbox_tool))
+            tools.append(builder(sandbox))
     return tools
 
 
@@ -76,15 +76,14 @@ def create_sandbox_mcp_tools(
 # Bash
 # ======================================================================
 
-def _build_bash_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
+def _build_bash_tool(sandbox: BaseSandbox) -> SdkMcpTool:
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             command = args["command"]
             timeout_ms = args.get("timeout", _DEFAULT_BASH_TIMEOUT_MS)
             timeout_sec = int(min(timeout_ms / 1000, _MAX_BASH_TIMEOUT_MS / 1000))
 
-            session = sandbox_tool._get_or_create_session()
-            result = session.exec(
+            result = sandbox.exec(
                 ["bash"], stdin=command.encode("utf-8"),
                 timeout_seconds=timeout_sec,
             )
@@ -138,7 +137,7 @@ def _build_bash_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
 # Read
 # ======================================================================
 
-def _build_read_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
+def _build_read_tool(sandbox: BaseSandbox) -> SdkMcpTool:
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             path = args["file_path"]
@@ -168,8 +167,7 @@ def _build_read_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
                     f" | head -{_MAX_READ_LINES}"
                 )
 
-            session = sandbox_tool._get_or_create_session()
-            result = session.exec(
+            result = sandbox.exec(
                 ["bash", "-c", cmd], timeout_seconds=_TOOL_TIMEOUT_SEC,
             )
 
@@ -228,7 +226,7 @@ def _build_read_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
 # Write
 # ======================================================================
 
-def _build_write_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
+def _build_write_tool(sandbox: BaseSandbox) -> SdkMcpTool:
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             path = args["file_path"]
@@ -240,8 +238,7 @@ def _build_write_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
                 f"&& cat > {shlex.quote(path)}"
             )
 
-            session = sandbox_tool._get_or_create_session()
-            result = session.exec(
+            result = sandbox.exec(
                 ["bash", "-c", cmd],
                 stdin=content.encode("utf-8"),
                 timeout_seconds=_TOOL_TIMEOUT_SEC,
@@ -284,7 +281,7 @@ def _build_write_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
 # Edit
 # ======================================================================
 
-def _build_edit_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
+def _build_edit_tool(sandbox: BaseSandbox) -> SdkMcpTool:
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             path = args["file_path"]
@@ -295,9 +292,7 @@ def _build_edit_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
             if old_string == new_string:
                 return _error("old_string and new_string are identical")
 
-            session = sandbox_tool._get_or_create_session()
-
-            read_result = session.exec(
+            read_result = sandbox.exec(
                 ["bash", "-c", f"cat {shlex.quote(path)}"],
                 timeout_seconds=_TOOL_TIMEOUT_SEC,
             )
@@ -322,7 +317,7 @@ def _build_edit_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
             else:
                 new_content = content.replace(old_string, new_string, 1)
 
-            write_result = session.exec(
+            write_result = sandbox.exec(
                 ["bash", "-c", f"cat > {shlex.quote(path)}"],
                 stdin=new_content.encode("utf-8"),
                 timeout_seconds=_TOOL_TIMEOUT_SEC,
@@ -378,7 +373,7 @@ def _build_edit_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
 # Glob
 # ======================================================================
 
-def _build_glob_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
+def _build_glob_tool(sandbox: BaseSandbox) -> SdkMcpTool:
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             pattern = args["pattern"]
@@ -394,8 +389,7 @@ def _build_glob_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
                 f"print('\\n'.join(matches[:{_MAX_GLOB_RESULTS}]))\n"
             )
 
-            session = sandbox_tool._get_or_create_session()
-            result = session.exec(
+            result = sandbox.exec(
                 ["python3"], stdin=script.encode("utf-8"),
                 timeout_seconds=_TOOL_TIMEOUT_SEC,
             )
@@ -403,7 +397,7 @@ def _build_glob_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
             if result.exit_code != 0:
                 safe_pattern = shlex.quote(pattern)
                 safe_path = shlex.quote(search_path)
-                result = session.exec(
+                result = sandbox.exec(
                     ["bash", "-c", (
                         f"find {safe_path} -path {safe_pattern} -type f "
                         f"2>/dev/null | head -{_MAX_GLOB_RESULTS}"
@@ -449,7 +443,7 @@ def _build_glob_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
 # Grep
 # ======================================================================
 
-def _build_grep_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
+def _build_grep_tool(sandbox: BaseSandbox) -> SdkMcpTool:
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             pattern = args["pattern"]
@@ -506,8 +500,7 @@ def _build_grep_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
                 else:
                     cmd += f" | head -n {limit}"
 
-            session = sandbox_tool._get_or_create_session()
-            result = session.exec(
+            result = sandbox.exec(
                 ["bash", "-c", cmd], timeout_seconds=_TOOL_TIMEOUT_SEC,
             )
 
@@ -516,7 +509,7 @@ def _build_grep_tool(sandbox_tool: SandboxExecTool) -> SdkMcpTool:
                     pattern, path, glob_filter, case_insensitive,
                     after, before, context_lines, head_limit,
                 )
-                result = session.exec(
+                result = sandbox.exec(
                     ["bash", "-c", cmd],
                     timeout_seconds=_TOOL_TIMEOUT_SEC,
                 )

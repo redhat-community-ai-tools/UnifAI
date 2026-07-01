@@ -6,7 +6,7 @@ from mas.elements.nodes.common.base_config import NodeBaseConfig
 from pydantic import Field
 from typing import Optional, Literal, List, Dict
 from .identifiers import Identifier
-from mas.core.ref.models import RetrieverRef, ProviderRef, ToolRef
+from mas.core.ref.models import RetrieverRef, ProviderRef, SandboxRef, ToolRef
 from mas.core.field_hints import ActionHint, HintType, HiddenHint
 
 
@@ -121,4 +121,9 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
     retriever: Optional[RetrieverRef] = Field(
         None,
         description="Retriever for context augmentation (optional)"
+    )
+
+    sandbox: Optional[SandboxRef] = Field(
+        None,
+        description="Sandbox execution environment (optional)"
     )

@@ -52,6 +52,7 @@ class ClaudeAgentNodeFactory(BaseFactory[ClaudeAgentNodeConfig, ClaudeAgentNode]
                 tools=deps.pop("tools"),
                 mcp_providers=deps.pop("providers"),
                 retriever=deps.pop("retriever"),
+                sandbox=deps.pop("sandbox", None),
                 retries=cfg.retries,
             )
         except Exception as e:

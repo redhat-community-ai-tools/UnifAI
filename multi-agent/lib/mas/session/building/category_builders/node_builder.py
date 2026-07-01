@@ -19,7 +19,8 @@ class NodeBuilder(CategoryBuilder):
         ResourceCategory.TOOL,
         ResourceCategory.LLM,
         ResourceCategory.RETRIEVER,
-        ResourceCategory.PROVIDER
+        ResourceCategory.PROVIDER,
+        ResourceCategory.SANDBOX,
     }
 
     def _iter_specs(self, bp: BlueprintSpec) -> Iterable[NodeSpec]:

@@ -2,7 +2,7 @@ from mas.elements.nodes.common.base_config import NodeBaseConfig
 from pydantic import Field
 from typing import Dict, Optional, List, Literal
 from .identifiers import Identifier
-from mas.core.ref.models import LLMRef, RetrieverRef, ToolRef, ProviderRef
+from mas.core.ref.models import LLMRef, RetrieverRef, ToolRef, ProviderRef, SandboxRef
 from mas.core.field_hints import ApiHint, HiddenHint, HintType, SelectionType
 
 
@@ -72,4 +72,9 @@ class DeepAgentNodeConfig(NodeBaseConfig):
         json_schema_extra=HiddenHint(
             reason="Advanced: custom environment variables"
         ).to_hints()
+    )
+
+    sandbox: Optional[SandboxRef] = Field(
+        None,
+        description="Sandbox execution environment (optional)"
     )

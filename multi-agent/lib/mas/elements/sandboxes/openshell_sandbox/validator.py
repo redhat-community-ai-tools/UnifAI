@@ -1,4 +1,4 @@
-"""Validator for Sandbox Exec Tool — PEM pre-check + gRPC health check."""
+"""Validator for OpenShell Sandbox — PEM pre-check + gRPC health check."""
 
 from typing import List
 
@@ -9,16 +9,16 @@ from mas.elements.common.validator import (
     ValidationMessage,
     ValidationCode,
 )
-from .config import SandboxExecToolConfig
+from .config import OpenShellSandboxConfig
 from .client import normalize_endpoint
 
 
-class SandboxExecToolValidator(BaseElementValidator):
+class OpenShellSandboxValidator(BaseElementValidator):
     """Validates gateway connectivity via mTLS gRPC health check."""
 
     def validate(
         self,
-        config: SandboxExecToolConfig,
+        config: OpenShellSandboxConfig,
         context: ValidationContext,
     ) -> ValidatorReport:
         messages: List[ValidationMessage] = []

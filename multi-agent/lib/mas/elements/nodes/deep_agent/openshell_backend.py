@@ -1,8 +1,8 @@
 """OpenShell sandbox backend for the deepagents framework.
 
-Bridges ``BaseSandbox`` to the existing ``SandboxExecTool`` gRPC session,
-causing all 7 built-in file/shell tools (ls, read, write, edit, glob, grep,
-execute) to route through the remote sandbox transparently.
+Bridges the deepagents ``BaseSandbox`` protocol to the MAS ``BaseSandbox``
+abstraction, causing all 7 built-in file/shell tools (ls, read, write, edit,
+glob, grep, execute) to route through the remote sandbox transparently.
 """
 
 from __future__ import annotations
@@ -11,35 +11,33 @@ import base64
 import logging
 import shlex
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
 
 from deepagents.backends.protocol import (
     ExecuteResponse,
     FileDownloadResponse,
     FileUploadResponse,
 )
-from deepagents.backends.sandbox import BaseSandbox
+from deepagents.backends.sandbox import BaseSandbox as DeepAgentBaseSandbox
 
-if TYPE_CHECKING:
-    from mas.elements.tools.sandbox_exec.sandbox_exec import SandboxExecTool
+from mas.elements.sandboxes.common.base_sandbox import BaseSandbox
 
 logger = logging.getLogger(__name__)
 
 
-class OpenShellSandboxBackend(BaseSandbox):
-    """Sandbox backend that delegates execution to an OpenShell sandbox via gRPC.
+class OpenShellSandboxBackend(DeepAgentBaseSandbox):
+    """Sandbox backend that delegates execution to an OpenShell sandbox.
 
-    All operations are routed through ``SandboxExecTool._get_or_create_session()``,
+    All operations are routed through the MAS ``BaseSandbox.exec()`` interface
     which handles lazy creation, reconnection, and thread-safe access.
     """
 
-    def __init__(self, sandbox_tool: SandboxExecTool) -> None:
-        self._sandbox_tool = sandbox_tool
+    def __init__(self, sandbox: BaseSandbox) -> None:
+        self._sandbox = sandbox
 
     @property
     def id(self) -> str:
         """Unique sandbox identifier."""
-        return self._sandbox_tool._sandbox_name or "openshell-pending"
+        return self._sandbox.sandbox_name or "openshell-pending"
 
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
         """Execute a shell command inside the remote sandbox.
@@ -54,8 +52,7 @@ class OpenShellSandboxBackend(BaseSandbox):
         crashing the agent.
         """
         try:
-            session = self._sandbox_tool._get_or_create_session()
-            result = session.exec(
+            result = self._sandbox.exec(
                 ["bash"],
                 stdin=command.encode("utf-8"),
                 timeout_seconds=timeout,
@@ -75,16 +72,15 @@ class OpenShellSandboxBackend(BaseSandbox):
     ) -> list[FileUploadResponse]:
         """Write files into the sandbox using stdin pipe.
 
-        Uses ``session.exec(cmd, stdin=content)`` to transfer file content
+        Uses ``sandbox.exec(cmd, stdin=content)`` to transfer file content
         without base64 encoding overhead.
         """
         responses: list[FileUploadResponse] = []
         for path, content in files:
             try:
-                session = self._sandbox_tool._get_or_create_session()
                 parent = str(PurePosixPath(path).parent)
                 cmd = f"mkdir -p {shlex.quote(parent)} && cat > {shlex.quote(path)}"
-                result = session.exec(
+                result = self._sandbox.exec(
                     ["bash", "-c", cmd],
                     stdin=content,
                 )
@@ -107,8 +103,7 @@ class OpenShellSandboxBackend(BaseSandbox):
         responses: list[FileDownloadResponse] = []
         for path in paths:
             try:
-                session = self._sandbox_tool._get_or_create_session()
-                result = session.exec(
+                result = self._sandbox.exec(
                     ["bash", "-c", f"base64 {shlex.quote(path)}"],
                 )
                 if result.exit_code != 0:

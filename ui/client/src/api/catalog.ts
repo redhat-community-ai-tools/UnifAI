@@ -25,7 +25,7 @@ export const catalogService = {
     } catch (err: any) {
       console.warn("Failed to fetch categories from catalog, using fallback:", err);
       // Fallback categories if API call fails
-      return ['nodes', 'llms', 'tools', 'providers', 'retrievers', 'conditions'];
+      return ['nodes', 'llms', 'tools', 'sandboxes', 'providers', 'retrievers', 'conditions'];
     }
   },
 };

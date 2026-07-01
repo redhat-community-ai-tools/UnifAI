@@ -28,6 +28,7 @@ from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.retriever_capable import RetrieverCapableMixin
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
 from mas.elements.nodes.common.workload import Task, AgentResult
+from mas.elements.sandboxes.common.base_sandbox import BaseSandbox
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.claude_sdk_converter import ClaudeSDKConverter
 
@@ -83,6 +84,7 @@ class ClaudeAgentNode(
             shared_storage: str = "/app/shared",
             # Standard
             retriever: Any = None,
+            sandbox: Optional["BaseSandbox"] = None,
             **kwargs: Any,
     ):
         super().__init__(retriever=retriever, **kwargs)
@@ -105,6 +107,7 @@ class ClaudeAgentNode(
         self._mcp_providers = mcp_providers or []
         self._execution_holder = execution_holder
         self._shared_storage = shared_storage
+        self._sandbox = sandbox
 
         self._max_context_messages = 20
 
@@ -119,12 +122,17 @@ class ClaudeAgentNode(
 
     def run(self, state: StateView) -> StateView:
         """Main entry point - process all incoming TaskPackets."""
-        from mas.elements.tools.common.context_binder import close_tools
+        from mas.elements.nodes.common.context_binder import close_tools
 
         try:
             self.process_packets(state)
         finally:
             close_tools(self._domain_tools)
+            if self._sandbox is not None:
+                try:
+                    self._sandbox.close()
+                except Exception:
+                    pass
         return state
 
     # ========== TASK PROCESSING ==========
@@ -389,15 +397,13 @@ class ClaudeAgentNode(
     def _collect_tools(self) -> List[BaseTool]:
         """Gather all tools (domain + MCP providers).
 
-        When sandbox routing is active (a SandboxExecTool is present
-        in domain_tools), MCP tools are wrapped in SandboxToolProxy
-        so they execute inside the sandbox.  Otherwise originals are
-        used.
+        When a sandbox is attached, MCP tools are wrapped in
+        SandboxToolProxy so they execute inside the sandbox.
         """
-        from mas.elements.tools.common.context_binder import get_sandbox_wrapped_mcp_tools
+        from mas.elements.nodes.common.context_binder import get_sandbox_wrapped_mcp_tools
 
-        all_tools: List[BaseTool] = list[BaseTool](self._domain_tools)
-        wrapped = get_sandbox_wrapped_mcp_tools(self._domain_tools, self._mcp_providers)
+        all_tools: List[BaseTool] = list(self._domain_tools)
+        wrapped = get_sandbox_wrapped_mcp_tools(self._sandbox, self._mcp_providers)
         if wrapped is not None:
             all_tools.extend(wrapped)
         else:
@@ -408,21 +414,23 @@ class ClaudeAgentNode(
     def _build_options(self) -> "ClaudeAgentOptions":
         """Build ClaudeAgentOptions from node configuration.
 
-        When a ``SandboxExecTool`` is present in ``domain_tools``,
+        When a sandbox is attached via ``self._sandbox``,
         activates Mode 3: disables built-in file/shell tools and
-        injects sandbox-backed MCP replacements.  Same detection
-        pattern as ``DeepAgentNode._build_backend()``.
+        injects sandbox-backed MCP replacements.
         """
-        from mas.elements.tools.common.context_binder import (
-            bind_tool_context,
-            find_sandbox_tool,
-        )
+        from mas.elements.nodes.common.context_binder import bind_tool_context
 
         bind_tool_context(
             self._domain_tools,
             session_id=self.session_id,
             agent_id=self.uid,
         )
+
+        if self._sandbox is not None:
+            self._sandbox.bind_context(
+                session_id=self.session_id,
+                agent_id=self.uid,
+            )
 
         env = self._build_env()
         work_dir = self._prepare_working_directory()
@@ -438,17 +446,13 @@ class ClaudeAgentNode(
         if self._system_prompt:
             kwargs["system_prompt"] = self._system_prompt
 
-        sandbox_tool = find_sandbox_tool(self._domain_tools)
-
-        if sandbox_tool is not None:
-            self._configure_sandbox_tools(kwargs, sandbox_tool)
+        if self._sandbox is not None:
+            self._configure_sandbox_tools(kwargs, self._sandbox)
         else:
             kwargs["allowed_tools"] = self._allowed_tools
             kwargs["disallowed_tools"] = self._disallowed_tools
 
-        sdk_tools = self._collect_sdk_tools(
-            exclude_sandbox=sandbox_tool is not None,
-        )
+        sdk_tools = self._collect_sdk_tools()
         if sdk_tools:
             kwargs.setdefault("mcp_servers", {})["mas-tools"] = (
                 create_sdk_mcp_server("mas-tools", tools=sdk_tools)
@@ -456,32 +460,15 @@ class ClaudeAgentNode(
 
         return ClaudeAgentOptions(**kwargs)
 
-    def _collect_sdk_tools(
-        self, *, exclude_sandbox: bool = False,
-    ) -> List[SdkMcpTool]:
-        """Collect domain + MCP tools and convert to Claude SDK format.
-
-        Args:
-            exclude_sandbox: When ``True``, filters out
-                ``SandboxExecTool`` instances so the raw infrastructure
-                tool is not exposed to Claude alongside the sandbox
-                replacement tools.
-        """
+    def _collect_sdk_tools(self) -> List[SdkMcpTool]:
+        """Collect domain + MCP tools and convert to Claude SDK format."""
         collected = self._collect_tools()
-        if exclude_sandbox:
-            from mas.elements.tools.sandbox_exec.sandbox_exec import (
-                SandboxExecTool,
-            )
-            collected = [
-                t for t in collected
-                if not isinstance(t, SandboxExecTool)
-            ]
         return ClaudeSDKConverter.to_sdk(collected)
 
     def _configure_sandbox_tools(
         self,
         kwargs: Dict[str, Any],
-        sandbox_tool: Any,
+        sandbox_tool: "BaseSandbox",
     ) -> None:
         """Configure Mode 3: disable built-ins, inject sandbox replacements.
 

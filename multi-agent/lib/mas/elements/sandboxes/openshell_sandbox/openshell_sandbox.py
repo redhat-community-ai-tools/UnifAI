@@ -1,10 +1,8 @@
-"""OpenShell Sandbox Exec tool — execute commands in a remote sandbox.
+"""OpenShell Sandbox — execute commands in a remote sandbox.
 
 Manages sandbox lifecycle via the OpenShell Python SDK:
 create (with deterministic naming), reconnect, exec, exec_python, and
-cleanup.  Supports ``keep_sandbox`` for session persistence.  When a
-``SandboxExecTool`` is present in ``domain_tools``, MCP tool routing
-via ``SandboxToolProxy`` is automatically activated.
+cleanup.  Supports ``keep_sandbox`` for session persistence.
 """
 
 from __future__ import annotations
@@ -17,9 +15,8 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 import grpc
-from pydantic import BaseModel, Field
 
-from mas.elements.tools.common.base_tool import BaseTool
+from mas.elements.sandboxes.common.base_sandbox import BaseSandbox
 
 logger = logging.getLogger(__name__)
 
@@ -33,31 +30,8 @@ _PYTHON_BINARIES = [
 ]
 
 
-class SandboxExecInput(BaseModel):
-    """Args schema for the sandbox_exec tool."""
-
-    cmd: str = Field(..., description="Shell command to execute in the sandbox")
-    workdir: Optional[str] = Field(
-        None, description="Working directory for the command (e.g. '/workspace')"
-    )
-    env: Optional[Dict[str, str]] = Field(
-        None, description="Environment variables to inject for this command"
-    )
-    timeout_seconds: Optional[int] = Field(
-        None, description="Command timeout in seconds (default: no limit)"
-    )
-
-
-class SandboxExecTool(BaseTool):
-    """Execute shell commands inside an OpenShell sandbox via the gRPC SDK.
-
-    The tool lazily creates a sandbox on first use, reconnects to an
-    existing sandbox by deterministic name, and cleans up on close.
-    """
-
-    name: str = "SandboxExecTool"
-    description: str = "Execute a shell command inside an OpenShell sandbox"
-    args_schema = SandboxExecInput
+class OpenShellSandbox(BaseSandbox):
+    """Execute commands inside an OpenShell sandbox via the gRPC SDK."""
 
     def __init__(
         self,
@@ -68,7 +42,6 @@ class SandboxExecTool(BaseTool):
         key_pem: str,
         keep_sandbox: bool = False,
     ) -> None:
-        super().__init__()
         self._endpoint = endpoint
         self._ca_pem = ca_pem
         self._cert_pem = cert_pem
@@ -83,13 +56,10 @@ class SandboxExecTool(BaseTool):
         self._session_lock = threading.Lock()
         self._allowed_endpoints: Set[Tuple[str, int]] = set()
 
-        translation = str.maketrans(".:- /", "_____")
-        safe_endpoint = endpoint.translate(translation)
-        self.name = f"sandbox_exec_{safe_endpoint}"
-        self.description = (
-            f"Execute a shell command inside an OpenShell sandbox "
-            f"on gateway {endpoint}."
-        )
+    @property
+    def sandbox_name(self) -> Optional[str]:
+        """Current sandbox identifier, or None if not yet created."""
+        return self._sandbox_name
 
     def _build_client(self) -> Any:
         """Create a ``SandboxClient`` via the ephemeral-tempfile factory."""
@@ -123,7 +93,6 @@ class SandboxExecTool(BaseTool):
 
     def _build_sandbox_policy(self) -> Any:
         """Build a SandboxPolicy proto with network policies for allowed endpoints."""
-        # Proto types not re-exported by the SDK's public API
         from openshell._proto import sandbox_pb2
 
         network_policies = {}
@@ -207,7 +176,6 @@ class SandboxExecTool(BaseTool):
             except Exception as exc:
                 logger.warning("Error checking for sandbox %s: %s", name, exc)
 
-            # Proto types not re-exported by the SDK's public API
             from openshell._proto import openshell_pb2
 
             spec_kwargs: Dict[str, Any] = {}
@@ -215,7 +183,6 @@ class SandboxExecTool(BaseTool):
             if policy is not None:
                 spec_kwargs["policy"] = policy
 
-            # SDK's public create() doesn't accept name/labels — bypass to gRPC stub
             self._client._stub.CreateSandbox(
                 openshell_pb2.CreateSandboxRequest(
                     name=name,
@@ -234,24 +201,24 @@ class SandboxExecTool(BaseTool):
             logger.info("Created sandbox %s", name)
             return self._session
 
-    def run(self, *args: Any, **kwargs: Any) -> str:
-        """Execute a shell command inside the sandbox."""
-        inp = self.args_schema(**kwargs)
+    def exec(
+        self,
+        cmd: List[str],
+        *,
+        stdin: Optional[bytes] = None,
+        workdir: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None,
+        timeout_seconds: Optional[int] = None,
+    ) -> Any:
+        """Execute a command inside the sandbox."""
         session = self._get_or_create_session()
-        result = session.exec(
-            ["bash", "-c", inp.cmd],
-            workdir=inp.workdir,
-            env=inp.env,
-            timeout_seconds=inp.timeout_seconds,
+        return session.exec(
+            cmd,
+            stdin=stdin,
+            workdir=workdir,
+            env=env,
+            timeout_seconds=timeout_seconds,
         )
-        if result.exit_code == 0:
-            return result.stdout.strip() or "(no output)"
-        parts: List[str] = [f"EXIT CODE: {result.exit_code}"]
-        if result.stdout.strip():
-            parts.append(result.stdout.strip())
-        if result.stderr.strip():
-            parts.append(f"STDERR:\n{result.stderr.strip()}")
-        return "\n".join(parts)
 
     def exec_python(
         self,

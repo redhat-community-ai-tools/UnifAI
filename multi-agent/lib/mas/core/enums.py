@@ -10,6 +10,7 @@ class ResourceCategory(str, Enum):
     PROVIDER = "providers"
     NODE = "nodes"
     AUTH = "auths"
+    SANDBOX = "sandboxes"
 
     @classmethod
     def plan_categories(cls) -> frozenset:

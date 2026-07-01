@@ -13,8 +13,8 @@ from typing import Any, Dict
 import cloudpickle
 
 from mas.elements.tools.common.base_tool import BaseTool
-import mas.elements.tools.common.sandbox_factories as _sandbox_factories_module
-from mas.elements.tools.common.sandbox_factories import call_mcp_tool
+import mas.elements.sandboxes.common.sandbox_factories as _sandbox_factories_module
+from mas.elements.sandboxes.common.sandbox_factories import call_mcp_tool
 
 cloudpickle.register_pickle_by_value(_sandbox_factories_module)
 
@@ -76,8 +76,7 @@ class SandboxToolProxy(BaseTool):
         """
         if SandboxToolProxy._venv_site_packages:
             return SandboxToolProxy._venv_site_packages
-        session = self._sandbox._get_or_create_session()
-        result = session.exec(
+        result = self._sandbox.exec(
             ["python", "-c", "import cloudpickle,os;print(os.path.dirname(os.path.dirname(cloudpickle.__file__)))"],
             timeout_seconds=30,
         )
