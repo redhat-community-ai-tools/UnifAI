@@ -18,6 +18,7 @@ def build_context():
             source_type="DOCUMENT",
             source_id="src_1",
             source_name="report.pdf",
+            owner_id="alice",
             metadata={"doc_path": "/tmp/report.pdf", "upload_by": "alice"},
         )
         defaults.update(overrides)
