@@ -85,12 +85,15 @@ class PromptShortcuts(BaseModel):
         raw = spec_dict.get("prompt_shortcuts")
         if not raw or not isinstance(raw, list):
             return cls(prompts=[])
+        items = []
+        for entry in raw:
+            if not isinstance(entry, dict) or "text" not in entry:
+                continue
+            try:
+                items.append(PromptShortcutItem(**entry))
+            except (ValueError, TypeError):
+                continue
         try:
-            items = [
-                PromptShortcutItem(**entry)
-                for entry in raw
-                if isinstance(entry, dict) and "text" in entry
-            ]
             return cls(prompts=items)
         except (ValueError, TypeError):
             return cls(prompts=[])

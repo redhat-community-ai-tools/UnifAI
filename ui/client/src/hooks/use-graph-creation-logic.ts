@@ -1154,17 +1154,15 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
           );
         }
 
-        if (cleanedPrompts.length > 0) {
-          try {
-            await setPromptShortcuts(blueprintId, cleanedPrompts);
-          } catch (shortcutErr) {
-            console.error("Failed to save prompt shortcuts:", shortcutErr);
-            toast({
-              title: "⚠️ Shortcuts not saved",
-              description: "Blueprint saved, but prompt shortcuts failed to update. Try editing them from the workflow panel.",
-              variant: "destructive",
-            });
-          }
+        try {
+          await setPromptShortcuts(blueprintId, cleanedPrompts);
+        } catch (shortcutErr) {
+          console.error("Failed to save prompt shortcuts:", shortcutErr);
+          toast({
+            title: "⚠️ Shortcuts not saved",
+            description: "Blueprint saved, but prompt shortcuts failed to update. Try editing them from the workflow panel.",
+            variant: "destructive",
+          });
         }
 
         toast({

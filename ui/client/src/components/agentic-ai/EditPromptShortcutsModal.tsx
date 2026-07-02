@@ -34,6 +34,7 @@ export default function EditPromptShortcutsModal({
     let cancelled = false;
     setIsLoading(true);
     setLoadError(null);
+    setSaveError(null);
     getPromptShortcuts(blueprintId)
       .then((data) => {
         if (!cancelled) setPrompts(data.prompts);

@@ -441,6 +441,7 @@ export default function WorkflowsPanel({
                             size="sm"
                             className="h-6 w-6 p-0 hover:bg-primary/20 hover:text-primary"
                             onClick={(e) => e.stopPropagation()}
+                            aria-label="Row actions"
                           >
                             <MoreHorizontal className="h-3.5 w-3.5" />
                           </Button>

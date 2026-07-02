@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { usePublicChat } from "@/hooks/use-public-chat";
-import { getBlueprintInfo } from "@/api/blueprints";
+import { getBlueprintInfo, type PromptShortcut } from "@/api/blueprints";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { UmamiTrack } from "@/components/ui/umamitrack";
 import { UmamiEvents } from "@/config/umamiEvents";
@@ -42,7 +42,7 @@ export default function PublicChat() {
   const [isSharingDisabled, setIsSharingDisabled] = useState<boolean>(false);
   const [isBlueprintValid, setIsBlueprintValid] = useState<boolean>(true);
   const [isValidatingBlueprint, setIsValidatingBlueprint] = useState<boolean>(false);
-  const [defaultPrompts, setDefaultPrompts] = useState<Array<{ id: string; kind: "manual"; text: string }>>([]);
+  const [defaultPrompts, setDefaultPrompts] = useState<PromptShortcut[]>([]);
 
   // Use the cached blueprint validation from context
   const { validateBlueprintWithCache } = useAgenticAI();

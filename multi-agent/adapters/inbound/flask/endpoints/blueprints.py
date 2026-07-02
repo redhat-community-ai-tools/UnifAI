@@ -10,6 +10,7 @@ from mas.blueprints.exceptions import (
     BlueprintAccessDeniedError,
     BlueprintSaveError,
     BlueprintMetadataError,
+    InvalidMetadataKeysError,
     PromptShortcutsValidationError,
 )
 from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
@@ -182,7 +183,7 @@ def save_blueprint(identity, blueprint_raw=None, metadata=None):
             "blueprint_id": blueprint_id
         }), 201
 
-    except BadRequest as e:
+    except (BadRequest, InvalidMetadataKeysError) as e:
         return jsonify({"status": "error", "error": str(e)}), 400
     except BlueprintSaveError as e:
         logger.exception("Failed to save blueprint for identity %s", identity.id)
@@ -370,6 +371,8 @@ def set_metadata(blueprint_id, metadata):
             return jsonify({"error": "Failed to update metadata"}), 500
         
         return jsonify({"status": "success"}), 200
+    except InvalidMetadataKeysError as e:
+        return jsonify({"error": str(e)}), 400
     except BlueprintNotFoundError as e:
         return jsonify({"error": str(e)}), 404
     except BlueprintMetadataError as e:

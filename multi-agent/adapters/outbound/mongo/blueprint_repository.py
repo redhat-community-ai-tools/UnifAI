@@ -3,6 +3,7 @@ from uuid import uuid4
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintSummary
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.core.enums import ResourceCategory
 from mas.core.identity import Identity
@@ -65,20 +66,22 @@ class MongoBlueprintRepository(BlueprintRepository):
         )
         return res.modified_count == 1
 
-    def set_prompt_shortcuts(self, *, blueprint_id: str, prompts: Optional[List[dict]]) -> bool:
+    def set_prompt_shortcuts(self, *, blueprint_id: str, shortcuts: PromptShortcuts) -> bool:
         now = datetime.now(timezone.utc)
-        if prompts:
-            op = {"$set": {"spec_dict.prompt_shortcuts": prompts, "updated_at": now}}
+        storage = shortcuts.to_storage()
+        if storage:
+            op = {"$set": {"spec_dict.prompt_shortcuts": storage, "updated_at": now}}
         else:
             op = {"$unset": {"spec_dict.prompt_shortcuts": ""}, "$set": {"updated_at": now}}
         res = self._col.update_one({"blueprint_id": blueprint_id}, op)
         return res.matched_count >= 1
 
-    def get_prompt_shortcuts(self, *, blueprint_id: str) -> Optional[List[dict]]:
+    def get_prompt_shortcuts(self, *, blueprint_id: str) -> PromptShortcuts:
         doc = self._col.find_one({"blueprint_id": blueprint_id}, {"spec_dict.prompt_shortcuts": 1})
         if not doc:
             raise KeyError(f"No blueprint with id={blueprint_id}")
-        return (doc.get("spec_dict") or {}).get("prompt_shortcuts")
+        raw = (doc.get("spec_dict") or {}).get("prompt_shortcuts")
+        return PromptShortcuts.from_raw_list(raw)
 
     def load(self, blueprint_id: str) -> BlueprintDocument:
         doc = self._col.find_one({"blueprint_id": blueprint_id})

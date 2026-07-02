@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintSummary
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.core.identity import Identity
 
 
@@ -21,12 +22,12 @@ class BlueprintRepository(ABC):
         """Merge keys into the metadata sub-document (key-level upsert, not full replace)."""
 
     @abstractmethod
-    def set_prompt_shortcuts(self, *, blueprint_id: str, prompts: Optional[List[dict]]) -> bool:
-        """Set or unset prompt shortcuts in spec_dict. When prompts is None, $unset the key."""
+    def set_prompt_shortcuts(self, *, blueprint_id: str, shortcuts: PromptShortcuts) -> bool:
+        """Persist prompt shortcuts for a blueprint. Empty shortcuts clear the stored value."""
 
     @abstractmethod
-    def get_prompt_shortcuts(self, *, blueprint_id: str) -> Optional[List[dict]]:
-        """Return raw prompt shortcuts list from spec_dict, or None if unset."""
+    def get_prompt_shortcuts(self, *, blueprint_id: str) -> PromptShortcuts:
+        """Return prompt shortcuts for a blueprint, or an empty PromptShortcuts if unset."""
 
     # ────────────────────────────── Reads by ID ─────────────────────────
     @abstractmethod

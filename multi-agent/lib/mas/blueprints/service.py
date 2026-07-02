@@ -12,6 +12,7 @@ from mas.blueprints.exceptions import (
     BlueprintSaveError,
     BlueprintMetadataError,
     PromptShortcutsValidationError,
+    validate_metadata_keys,
 )
 from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.core.identity import Identity
@@ -52,6 +53,8 @@ class BlueprintService:
 
     def save_draft(self, *, identity: Identity, draft_dict: dict,
                    metadata: Optional[Dict[str, Any]] = None) -> str:
+        if metadata:
+            validate_metadata_keys(metadata)
         draft_bp = BlueprintDraft(**self._normalize_prompt_shortcuts(draft_dict))
         rid_refs = list(RefWalker.external_rids(draft_bp))
         return self._repo.save(identity=identity, spec=draft_bp,
@@ -132,7 +135,7 @@ class BlueprintService:
         draft = BlueprintDraft(**doc.spec_dict)
         resolved_dict = self._resolver.resolve(draft).model_dump(mode="json")
         if draft.prompt_shortcuts:
-            resolved_dict["prompt_shortcuts"] = draft.prompt_shortcuts
+            resolved_dict["prompt_shortcuts"] = [p.model_dump(mode="json") for p in draft.prompt_shortcuts]
         return doc.model_copy(update={"spec_dict": resolved_dict})
 
     def list_resolved_docs(
@@ -180,36 +183,36 @@ class BlueprintService:
                              *, identity: Identity) -> PromptShortcuts:
         try:
             doc = self._repo.load(blueprint_id)
-        except KeyError:
-            raise BlueprintNotFoundError(blueprint_id)
+        except KeyError as exc:
+            raise BlueprintNotFoundError(blueprint_id) from exc
         if doc.identity.type != identity.type or doc.identity.id != identity.id:
             raise BlueprintAccessDeniedError(blueprint_id, identity.id)
         try:
             shortcuts = PromptShortcuts(prompts=prompts)
         except (ValidationError, ValueError, TypeError) as exc:
             raise PromptShortcutsValidationError(str(exc)) from exc
-        if not self._repo.set_prompt_shortcuts(blueprint_id=blueprint_id, prompts=shortcuts.to_storage()):
+        if not self._repo.set_prompt_shortcuts(blueprint_id=blueprint_id, shortcuts=shortcuts):
             raise BlueprintNotFoundError(blueprint_id)
         return shortcuts
 
     def get_prompt_shortcuts(self, blueprint_id: str, *, identity: Identity) -> PromptShortcuts:
         try:
             doc = self._repo.load(blueprint_id)
-        except KeyError:
-            raise BlueprintNotFoundError(blueprint_id)
+        except KeyError as exc:
+            raise BlueprintNotFoundError(blueprint_id) from exc
         if doc.identity.type != identity.type or doc.identity.id != identity.id:
             raise BlueprintAccessDeniedError(blueprint_id, identity.id)
         try:
-            raw = self._repo.get_prompt_shortcuts(blueprint_id=blueprint_id)
+            return self._repo.get_prompt_shortcuts(blueprint_id=blueprint_id)
         except KeyError as exc:
             raise BlueprintNotFoundError(blueprint_id) from exc
-        return PromptShortcuts.from_raw_list(raw)
 
     # ────────── Blueprint Metadata ──────────
     def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
         """
         Merge keys into a blueprint's metadata (key-level upsert, not full replace).
         """
+        validate_metadata_keys(metadata)
         if not self.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
 

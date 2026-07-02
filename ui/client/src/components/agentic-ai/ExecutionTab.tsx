@@ -13,6 +13,7 @@ import { useCarouselLayout } from "@/hooks/use-carousel-layout";
 import { AnimatedPanelLayout } from "@/components/shared/AnimatedPanelLayout";
 import { AddFlowModal, DeleteSessionModal } from "@/components/shared/SessionModals";
 import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
+import type { PromptShortcut } from "@/api/blueprints";
 
 /**
  * Session execution payload (fire-and-forget submit + stream subscribe pattern)
@@ -55,7 +56,7 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
     const specDict = hub.blueprintSpecCache.get(hub.selectedSession.blueprintId);
     const shortcuts = specDict?.prompt_shortcuts;
     if (!Array.isArray(shortcuts)) return undefined;
-    return shortcuts.filter((p: any) => p.kind === "manual");
+    return shortcuts.filter((p: PromptShortcut) => p.kind === "manual");
   }, [hub.selectedSession?.blueprintId, hub.blueprintSpecCache]);
 
   const carousel = useCarouselLayout({
