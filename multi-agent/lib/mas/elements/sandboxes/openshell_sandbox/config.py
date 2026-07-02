@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import Field
 
 from mas.elements.sandboxes.common.base_config import BaseSandboxConfig
-from mas.core.field_hints import SecretHint, FileUploadHint, combine_hints
+from mas.core.field_hints import SecretHint, FileUploadHint, HiddenHint, combine_hints
 from .identifiers import Identifier
 
 
@@ -43,4 +43,9 @@ class OpenShellSandboxConfig(BaseSandboxConfig):
     keep_sandbox: bool = Field(
         default=False,
         description="Keep the sandbox container running after use.",
+    )
+    workdir: str = Field(
+        default="/sandbox",
+        description="Default working directory for commands executed in the sandbox.",
+        json_schema_extra=HiddenHint(reason="Internal: derived from container image WORKDIR").to_hints(),
     )

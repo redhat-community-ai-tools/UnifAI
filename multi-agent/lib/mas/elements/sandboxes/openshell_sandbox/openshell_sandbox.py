@@ -41,12 +41,14 @@ class OpenShellSandbox(BaseSandbox):
         cert_pem: str,
         key_pem: str,
         keep_sandbox: bool = False,
+        workdir: str = "/sandbox",
     ) -> None:
         self._endpoint = endpoint
         self._ca_pem = ca_pem
         self._cert_pem = cert_pem
         self._key_pem = key_pem
         self._keep_sandbox = keep_sandbox
+        self._workdir = workdir
 
         self._client = self._build_client()
         self._session: Any = None
@@ -60,6 +62,11 @@ class OpenShellSandbox(BaseSandbox):
     def sandbox_name(self) -> Optional[str]:
         """Current sandbox identifier, or None if not yet created."""
         return self._sandbox_name
+
+    @property
+    def workdir(self) -> str:
+        """Default working directory inside the sandbox."""
+        return self._workdir
 
     def _build_client(self) -> Any:
         """Create a ``SandboxClient`` via the ephemeral-tempfile factory."""
@@ -141,7 +148,7 @@ class OpenShellSandbox(BaseSandbox):
         """Generate a deterministic sandbox name from session + agent IDs."""
         if self._session_id and self._agent_id:
             safe_session = self._sanitize(self._session_id[:12])
-            safe_agent = self._sanitize(self._agent_id[:12])
+            safe_agent = self._sanitize(self._agent_id[:24])
             return f"sb-{safe_session}-{safe_agent}"
         return f"sb-{uuid4().hex[:16]}"
 
@@ -215,7 +222,7 @@ class OpenShellSandbox(BaseSandbox):
         return session.exec(
             cmd,
             stdin=stdin,
-            workdir=workdir,
+            workdir=workdir if workdir is not None else self._workdir,
             env=env,
             timeout_seconds=timeout_seconds,
         )
@@ -242,7 +249,7 @@ class OpenShellSandbox(BaseSandbox):
                 function,
                 args=args,
                 kwargs=kwargs,
-                workdir=workdir,
+                workdir=workdir if workdir is not None else self._workdir,
                 env=env,
                 timeout_seconds=timeout_seconds,
             )

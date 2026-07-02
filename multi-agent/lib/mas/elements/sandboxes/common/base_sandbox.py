@@ -16,6 +16,12 @@ class BaseSandbox(ABC):
         """Current sandbox identifier, or None if not yet created."""
         ...
 
+    @property
+    @abstractmethod
+    def workdir(self) -> str:
+        """Default working directory inside the sandbox."""
+        ...
+
     @abstractmethod
     def bind_context(self, *, session_id: str = "", agent_id: str = "") -> None:
         """Late-bind execution context for deterministic sandbox naming."""

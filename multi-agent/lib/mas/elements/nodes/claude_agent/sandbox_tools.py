@@ -138,6 +138,8 @@ def _build_bash_tool(sandbox: BaseSandbox) -> SdkMcpTool:
 # ======================================================================
 
 def _build_read_tool(sandbox: BaseSandbox) -> SdkMcpTool:
+    workdir = sandbox.workdir
+
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             path = args["file_path"]
@@ -191,15 +193,18 @@ def _build_read_tool(sandbox: BaseSandbox) -> SdkMcpTool:
     return SdkMcpTool(
         name="Read",
         description=(
-            "Reads a file from the local filesystem. You can access any "
-            "file directly by using this tool."
+            "Reads a file from the sandbox filesystem. "
+            f"Working directory is {workdir}/."
         ),
         input_schema={
             "type": "object",
             "properties": {
                 "file_path": {
                     "type": "string",
-                    "description": "The absolute path to the file to read",
+                    "description": (
+                        f"Path to the file to read. "
+                        f"Working directory is {workdir}/."
+                    ),
                 },
                 "limit": {
                     "type": "number",
@@ -227,6 +232,8 @@ def _build_read_tool(sandbox: BaseSandbox) -> SdkMcpTool:
 # ======================================================================
 
 def _build_write_tool(sandbox: BaseSandbox) -> SdkMcpTool:
+    workdir = sandbox.workdir
+
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             path = args["file_path"]
@@ -255,15 +262,19 @@ def _build_write_tool(sandbox: BaseSandbox) -> SdkMcpTool:
 
     return SdkMcpTool(
         name="Write",
-        description="Writes a file to the local filesystem.",
+        description=(
+            "Writes a file to the sandbox filesystem. "
+            f"Working directory is {workdir}/."
+        ),
         input_schema={
             "type": "object",
             "properties": {
                 "file_path": {
                     "type": "string",
                     "description": (
-                        "The absolute path to the file to write "
-                        "(must be absolute, not relative)"
+                        f"Path to the file to write. "
+                        f"Working directory is {workdir}/. "
+                        f"Example: {workdir}/report.md"
                     ),
                 },
                 "content": {
@@ -282,6 +293,8 @@ def _build_write_tool(sandbox: BaseSandbox) -> SdkMcpTool:
 # ======================================================================
 
 def _build_edit_tool(sandbox: BaseSandbox) -> SdkMcpTool:
+    workdir = sandbox.workdir
+
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             path = args["file_path"]
@@ -336,13 +349,19 @@ def _build_edit_tool(sandbox: BaseSandbox) -> SdkMcpTool:
 
     return SdkMcpTool(
         name="Edit",
-        description="Performs exact string replacements in files.",
+        description=(
+            "Performs exact string replacements in files. "
+            f"Working directory is {workdir}/."
+        ),
         input_schema={
             "type": "object",
             "properties": {
                 "file_path": {
                     "type": "string",
-                    "description": "The absolute path to the file to modify",
+                    "description": (
+                        f"Path to the file to modify. "
+                        f"Working directory is {workdir}/."
+                    ),
                 },
                 "old_string": {
                     "type": "string",
@@ -374,6 +393,8 @@ def _build_edit_tool(sandbox: BaseSandbox) -> SdkMcpTool:
 # ======================================================================
 
 def _build_glob_tool(sandbox: BaseSandbox) -> SdkMcpTool:
+    workdir = sandbox.workdir
+
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             pattern = args["pattern"]
@@ -428,8 +449,8 @@ def _build_glob_tool(sandbox: BaseSandbox) -> SdkMcpTool:
                 "path": {
                     "type": "string",
                     "description": (
-                        "The directory to search in. If not specified, the "
-                        "current working directory will be used."
+                        f"The directory to search in. "
+                        f"Defaults to {workdir}/."
                     ),
                 },
             },
@@ -444,6 +465,8 @@ def _build_glob_tool(sandbox: BaseSandbox) -> SdkMcpTool:
 # ======================================================================
 
 def _build_grep_tool(sandbox: BaseSandbox) -> SdkMcpTool:
+    workdir = sandbox.workdir
+
     async def handler(args: Dict[str, Any]) -> Dict[str, Any]:
         try:
             pattern = args["pattern"]
@@ -543,8 +566,8 @@ def _build_grep_tool(sandbox: BaseSandbox) -> SdkMcpTool:
                 "path": {
                     "type": "string",
                     "description": (
-                        "File or directory to search in. Defaults to "
-                        "current working directory."
+                        f"File or directory to search in. "
+                        f"Defaults to {workdir}/."
                     ),
                 },
                 "glob": {

@@ -21,6 +21,7 @@ class OpenShellSandboxFactory(BaseFactory[OpenShellSandboxConfig, OpenShellSandb
                 cert_pem=cfg.tls_cert,
                 key_pem=cfg.tls_key,
                 keep_sandbox=cfg.keep_sandbox,
+                workdir=cfg.workdir,
             )
         except Exception as e:
             raise PluginConfigurationError(
