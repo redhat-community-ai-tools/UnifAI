@@ -2,13 +2,7 @@
 Custom exceptions for Blueprint operations.
 Provides specific error types for better debugging and error handling.
 """
-import logging
-import re
-from typing import Any, Dict, List
-
-logger = logging.getLogger(__name__)
-
-_VALID_METADATA_KEY = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_-]*$")
+from typing import List
 
 
 class BlueprintError(Exception):
@@ -54,14 +48,6 @@ class InvalidMetadataKeysError(BlueprintError):
     def __init__(self, bad_keys: List[str]):
         self.bad_keys = bad_keys
         super().__init__(f"Invalid metadata key(s): {bad_keys}")
-
-
-def validate_metadata_keys(metadata: Dict[str, Any]) -> None:
-    """Reject metadata keys that would corrupt Mongo dot-notation paths or clash with operators."""
-    bad = [k for k in metadata if not _VALID_METADATA_KEY.match(k)]
-    if bad:
-        logger.info("Rejected metadata keys: %s", bad)
-        raise InvalidMetadataKeysError(bad)
 
 
 class PromptShortcutsValidationError(BlueprintError):

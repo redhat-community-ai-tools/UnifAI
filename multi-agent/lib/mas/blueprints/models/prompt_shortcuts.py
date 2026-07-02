@@ -81,18 +81,29 @@ class PromptShortcuts(BaseModel):
 
         Legacy blueprints have no ``prompt_shortcuts`` key at all — returns empty.
         Current format: List[dict] with {id?, kind?, text}.
+        Duplicate ids and excess manual items beyond MAX_MANUAL_PROMPTS are dropped.
         """
         raw = spec_dict.get("prompt_shortcuts")
         if not raw or not isinstance(raw, list):
             return cls(prompts=[])
-        items = []
+        items: list[PromptShortcutItem] = []
+        seen_ids: set[str] = set()
+        manual_count = 0
         for entry in raw:
             if not isinstance(entry, dict) or "text" not in entry:
                 continue
             try:
-                items.append(PromptShortcutItem(**entry))
+                item = PromptShortcutItem(**entry)
             except (ValueError, TypeError):
                 continue
+            if item.id in seen_ids:
+                continue
+            if item.kind == PromptShortcutKind.MANUAL:
+                if manual_count >= MAX_MANUAL_PROMPTS:
+                    continue
+                manual_count += 1
+            seen_ids.add(item.id)
+            items.append(item)
         try:
             return cls(prompts=items)
         except (ValueError, TypeError):

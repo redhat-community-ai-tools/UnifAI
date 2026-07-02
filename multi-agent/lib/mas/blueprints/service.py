@@ -1,3 +1,5 @@
+import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
@@ -11,8 +13,8 @@ from mas.blueprints.exceptions import (
     BlueprintAccessDeniedError,
     BlueprintSaveError,
     BlueprintMetadataError,
+    InvalidMetadataKeysError,
     PromptShortcutsValidationError,
-    validate_metadata_keys,
 )
 from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.core.identity import Identity
@@ -22,6 +24,18 @@ from mas.elements.common.validator import ValidationContext
 from mas.catalog.card_service import ElementCardService
 from mas.validation.models import BlueprintValidationResult
 from mas.validation.service import ElementValidationService
+
+logger = logging.getLogger(__name__)
+
+_VALID_METADATA_KEY = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_-]*$")
+
+
+def validate_metadata_keys(metadata: Dict[str, Any]) -> None:
+    """Reject metadata keys that would corrupt Mongo dot-notation paths or clash with operators."""
+    bad = [k for k in metadata if not _VALID_METADATA_KEY.match(k)]
+    if bad:
+        logger.info("Rejected metadata keys: %s", bad)
+        raise InvalidMetadataKeysError(bad)
 
 
 class BlueprintService:
@@ -72,6 +86,11 @@ class BlueprintService:
     def update_draft(self, *, blueprint_id: str, draft_dict: dict) -> bool:
         if not self._repo.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
+        if "prompt_shortcuts" not in draft_dict:
+            existing = self._repo.get_prompt_shortcuts(blueprint_id=blueprint_id)
+            if not existing.is_empty:
+                draft_dict = {**draft_dict, "prompt_shortcuts": existing.to_storage()}
+                
         draft = BlueprintDraft(**self._normalize_prompt_shortcuts(draft_dict))
         rid_refs = list(RefWalker.external_rids(draft))
         return self._repo.update(
