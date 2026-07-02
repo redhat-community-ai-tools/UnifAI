@@ -26,5 +26,5 @@ class OpenShellSandboxFactory(BaseFactory[OpenShellSandboxConfig, OpenShellSandb
         except Exception as e:
             raise PluginConfigurationError(
                 f"OpenShellSandboxFactory.create() failed: {e}",
-                cfg.dict(),
+                cfg.model_dump(),
             ) from e

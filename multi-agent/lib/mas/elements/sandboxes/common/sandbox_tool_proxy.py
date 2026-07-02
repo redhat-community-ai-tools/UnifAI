@@ -41,7 +41,6 @@ class SandboxToolProxy(BaseTool):
     name: str = ""
     description: str = ""
     args_schema = None
-    _venv_site_packages: str = ""
 
     def __init__(self, inner_tool: BaseTool, sandbox: Any) -> None:
         super().__init__()
@@ -51,6 +50,7 @@ class SandboxToolProxy(BaseTool):
         self.args_schema = inner_tool.args_schema
         self._inner = inner_tool
         self._sandbox = sandbox
+        self._venv_site_packages: str = ""
 
     @staticmethod
     def _patch_sdk_python_bin() -> None:
@@ -64,27 +64,36 @@ class SandboxToolProxy(BaseTool):
         if _sdk_patched:
             return
         import openshell.sandbox as _openshell_sandbox
-        _openshell_sandbox._SANDBOX_PYTHON_BIN = "python3.12"
+        if hasattr(_openshell_sandbox, "_SANDBOX_PYTHON_BIN"):
+            _openshell_sandbox._SANDBOX_PYTHON_BIN = "python3.12"
+        else:
+            logger.warning(
+                "openshell SDK missing '_SANDBOX_PYTHON_BIN' attribute; "
+                "exec_python may use wrong Python version"
+            )
         _sdk_patched = True
 
     def _resolve_venv_site_packages(self) -> str:
-        """Find the sandbox venv's site-packages path (once per sandbox).
+        """Find the sandbox venv's site-packages path (once per instance).
 
         cloudpickle is installed in the sandbox's default Python venv
         (3.14). Since cloudpickle is pure Python, python3.12 can import
         it via PYTHONPATH without reinstalling.
+
+        Cached per instance (not class) to support multiple sandboxes
+        with different container images in the same process.
         """
-        if SandboxToolProxy._venv_site_packages:
-            return SandboxToolProxy._venv_site_packages
+        if self._venv_site_packages:
+            return self._venv_site_packages
         result = self._sandbox.exec(
             ["python", "-c", "import cloudpickle,os;print(os.path.dirname(os.path.dirname(cloudpickle.__file__)))"],
             timeout_seconds=30,
         )
         if result.exit_code == 0 and result.stdout.strip():
-            SandboxToolProxy._venv_site_packages = result.stdout.strip()
+            self._venv_site_packages = result.stdout.strip()
         else:
-            SandboxToolProxy._venv_site_packages = "/sandbox/.venv/lib/python3.14/site-packages"
-        return SandboxToolProxy._venv_site_packages
+            self._venv_site_packages = "/sandbox/.venv/lib/python3.14/site-packages"
+        return self._venv_site_packages
 
     def run(self, *args: Any, **kwargs: Any) -> str:
         """Execute the inner tool inside the sandbox.

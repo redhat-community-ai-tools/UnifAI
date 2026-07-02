@@ -239,6 +239,7 @@ def _call_sse(
         headers={**headers, "Content-Type": "application/json"},
         data=_build_jsonrpc_body(tool_name, kwargs),
     )
+    post_error: str = ""
     try:
         with urllib.request.urlopen(post_req, timeout=120) as resp:
             post_resp = resp.read().decode()
@@ -248,14 +249,16 @@ def _call_sse(
                 except json.JSONDecodeError:
                     pass
     except urllib.error.HTTPError as exc:
-        pass
-    except Exception:
-        pass
+        post_error = f"HTTP {exc.code} — {exc.read().decode()[:200]}"
+    except Exception as exc:
+        post_error = f"{type(exc).__name__}: {exc}"
 
     reader.join(timeout=30)
     if response_data is not None:
         return response_data
 
+    if post_error:
+        return f"ERROR: SSE POST failed — {post_error}"
     return "ERROR: No response received from SSE stream"
 
 
