@@ -29,6 +29,8 @@ interface FieldValidationProps {
   isRequired?: boolean;
   /** All current config field values, used to resolve dependencies for validation actions */
   configValues?: Record<string, any>;
+  /** Cached action outputs from other fields, for cross-field output references (field.key syntax) */
+  actionOutputs?: Record<string, any>;
   onValidationChange: (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => void;
   onInputChange?: (field: string, value: any) => void;
 }
@@ -38,6 +40,7 @@ const AUTH_STATUSES = new Set([
   'authenticated', 'requires_consent', 'expired',
   'not_configured', 'needs_client_registration',
   'auth_required', 'authenticated_but_rejected',
+  'challenge',
 ]);
 
 export const FieldValidation: React.FC<FieldValidationProps> = ({
@@ -48,6 +51,7 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
   selectedElementType,
   isRequired = false,
   configValues = {},
+  actionOutputs = {},
   onValidationChange,
   onInputChange,
 }) => {
@@ -85,13 +89,24 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
    * This key is used to determine if validation should be re-triggered.
    * When either the field value or any dependency changes, this key will change.
    */
+  /**
+   * Resolves a dependency key to its value. Supports dot-notation for
+   * cross-field output references: "field.output_key" reads from actionOutputs.
+   */
+  const resolveDependencyValue = (configField: string): any => {
+    if (configField.includes('.')) {
+      const [sourceField, outputKey] = configField.split('.', 2);
+      return actionOutputs[sourceField]?.[outputKey];
+    }
+    return configValues[configField];
+  };
+
   const validationKey = React.useMemo(() => {
-    // Gather dependency values (excluding the current field)
     const dependencyValues: Record<string, any> = {};
     if (validationHint?.dependencies) {
       Object.keys(validationHint.dependencies).forEach((configField) => {
         if (configField !== fieldName) {
-          dependencyValues[configField] = configValues[configField];
+          dependencyValues[configField] = resolveDependencyValue(configField);
         }
       });
     }
@@ -100,7 +115,7 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
       fieldValue,
       dependencies: dependencyValues
     });
-  }, [fieldValue, validationHint?.dependencies, fieldName, configValues]);
+  }, [fieldValue, validationHint?.dependencies, fieldName, configValues, actionOutputs]);
 
   /**
    * Builds the input data for validation by:
@@ -114,20 +129,16 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
   const buildInputWithDependencies = (value: any, fieldNameMapping?: string): Record<string, any> => {
     const inputData: Record<string, any> = {};
     
-    // Always include the current field's value
     const targetFieldName = fieldNameMapping || fieldName;
     inputData[targetFieldName] = value;
     
-    // Gather dependency values from configValues
     if (validationHint.dependencies && Object.keys(validationHint.dependencies).length > 0) {
       Object.entries(validationHint.dependencies).forEach(([configField, actionField]) => {
-        // Skip if this is the current field (already added above)
         if (configField === fieldName) {
           return;
         }
         
-        // Get the dependency value from configValues
-        const dependencyValue = configValues[configField];
+        const dependencyValue = resolveDependencyValue(configField);
         if (dependencyValue !== undefined) {
           inputData[actionField as string] = dependencyValue;
         }
@@ -135,6 +146,31 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
     }
     
     return inputData;
+  };
+
+  /**
+   * Fires the chained on_success action after the primary action succeeds.
+   * Builds input from the chain hint's own dependencies and skips silently
+   * if any required dependency value is empty.
+   */
+  const executeOnSuccessChain = async (chainHint: any) => {
+    const chainAction = elementActions.find((a: any) => a.uid === chainHint.action_uid);
+    if (!chainAction) return;
+
+    const chainInput: Record<string, any> = {};
+    if (chainHint.dependencies) {
+      for (const [configField, actionField] of Object.entries(chainHint.dependencies)) {
+        const val = configValues[configField];
+        if (val === undefined || val === null || val === '') return;
+        chainInput[actionField as string] = val;
+      }
+    }
+
+    try {
+      await executeAction(chainAction.uid, chainInput, userId);
+    } catch (err) {
+      console.warn('on_success chain action failed:', err);
+    }
   };
 
   // Validate using ActionHint (via action system)
@@ -237,8 +273,10 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
       // Extract validation result based on field_mapping or default to 'success'
       const fieldMapping = validationHint.field_mapping || 'success';
 
-      if (onInputChange && responseData.server_identifier) {
-        onInputChange('server_identifier', responseData.server_identifier);
+      if (onInputChange && responseData.form_updates) {
+        for (const [field, value] of Object.entries(responseData.form_updates)) {
+          onInputChange(field, value as any);
+        }
       }
 
       // ── Auth-aware response handling ──
@@ -274,6 +312,10 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
       } else {
         // Single item response (original behavior)
         const isValid = responseData[fieldMapping] === true;
+
+        if (isValid && validationHint.on_success) {
+          await executeOnSuccessChain(validationHint.on_success);
+        }
         
         setValidationState({
           isValidating: false,

@@ -195,17 +195,6 @@ class ConditionRef(Ref):
     }
 
 
-class AuthRef(Ref):
-    """Reference to an Auth resource (OAuth configuration for MCP servers)."""
-    _category: ClassVar[ResourceCategory] = ResourceCategory.AUTH
-
-    model_config = {
-        "json_schema_extra": {
-            "category": ResourceCategory.AUTH.value,
-            "description": "Reference to an Auth resource for managed OAuth",
-            "examples": ["$ref:github-oauth", "atlassian-auth"]
-        }
-    }
 
 
 class SandboxRef(Ref):

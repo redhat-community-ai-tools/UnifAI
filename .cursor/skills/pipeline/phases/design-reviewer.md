@@ -121,61 +121,123 @@ The review has two outputs: the **in-chat review** (always produced) and the **A
 
 ### Part 1: In-Chat Review
 
-Wrap the entire in-chat output inside a `## PHASE 2: DESIGN REVIEW` header. Include ALL of the following sections:
+Wrap the entire in-chat output inside a `## PHASE 2: DESIGN REVIEW` header. Structure the output in this exact section order.
 
-#### Critical Findings
-Issues that must be fixed before proceeding.
+#### Formatting Rules
 
-#### Architectural Violations
-Specific hexagonal architecture violations with layer, issue, and fix.
+1. **Never render empty sections.** If a review dimension has zero findings, list it as a single ✅ line under Review Evidence. Do NOT create a heading or "None." for it.
+2. **One finding = one self-contained block.** Each finding must contain the problem description and the fix — all in one place.
+3. **Inline the fix.** Use a bold **Fix →** prefix within each finding block. There is no separate "Recommended Improvements" section.
+4. **Use severity badges.** Prefix finding sections with: 🔴 Critical, 🟠 Major, 🟡 Warning, 🔵 Info.
+5. **Tag the review dimension.** Each finding must include a category tag showing which Review Dimension (§1–§10) it came from — e.g. `Hex Compliance`, `Efficiency`, `Duplication`, `Layer Completeness`, `Auth Realism`, `Failure Modes`. Place it on the title line after the severity badge.
+6. **No conversational filler.** State findings directly.
 
-#### Efficiency Concerns
-Performance or scalability problems with alternatives.
+#### Section 1: Review Evidence (ALWAYS present — collapsed)
 
-#### Duplication & Reusability Issues
-Existing components that should be reused instead of created.
+Wrap in a single `<details>` block:
 
-#### Risks to Existing System
-Breaking changes, side effects, or migration concerns.
+```html
+### Review Evidence
 
-#### Recommended Improvements
-Concrete suggestions to improve the design.
+<details>
+<summary>Expand</summary>
 
-#### Safer / Cleaner Alternative Approach
-If a fundamentally better design exists, describe it here. You MUST always consider whether a simpler or more aligned approach exists, even if the current design is acceptable. If no better alternative exists, state so explicitly with reasoning.
+##### Dimensions with No Findings
+- ✅ Hex Architecture Compliance: {result}
+- ✅ Layer Completeness: {result}
+- ✅ Auth / Protocol Realism: {result}
+- ✅ External Dependency Failure Modes: {result}
+- ✅ Local Dev & Partial-Access Deployment: {result}
+(one line per review dimension that passed with zero findings)
 
-#### Layer Completeness Findings
-Which layers were missing or incomplete, and what was required.
-
-#### Auth / Protocol Realism Findings
-Whether the OAuth/auth discovery chain was verified end-to-end or left as an unverified label.
-
-#### External Dependency Failure Modes
-Which failure paths were unspecified, and how they should be handled.
-
-#### Local Dev & Partial-Access Deployment Findings
-Which dependencies are missing a local-dev strategy or a partial-access deployment strategy, and what was required.
-
-#### Adversarial Challenges Applied
-List which adversarial techniques (from section 9) you applied and what they revealed.
-
-#### Codebase Verification Evidence
+##### Codebase Verification
 List the specific source files you read and what claims they verified or contradicted.
 
-#### Verdict
+##### Adversarial Techniques Applied
+1. **{Technique name}** — {what it tested and result} ✅/⚠️
+(minimum 3 techniques)
 
-State your verdict, then emit the machine-parseable line exactly as shown:
+</details>
+```
+
+Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–7 instead.
+
+#### Section 2: Risks & Follow-ups (only if any exist)
+
+Breaking changes, side effects, migration concerns. Table format:
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+
+Include the **Safer / Cleaner Alternative Approach** here if one exists — describe the alternative and why it is preferable. If no better alternative exists, omit.
+
+Omit this section entirely if there are no risks and no alternative approach.
+
+#### Section 3: Verdict
+
+State your verdict with a severity summary line, then emit the machine-parseable line:
+
+```
+### Verdict: {APPROVE | NEEDS REVISION | REJECT}
+
+**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Warnings | 🔵 [{N}] Info
+
+PIPELINE_VERDICT: {APPROVE | NEEDS_REVISION | REJECT}
+```
 
 - **APPROVE** — Design is sound, proceed to implementation.
-  `PIPELINE_VERDICT: APPROVE`
-- **NEEDS REVISION** — Specific items must be fixed (list them). Loop back to Designer.
-  `PIPELINE_VERDICT: NEEDS_REVISION`
+- **NEEDS REVISION** — Specific items must be fixed (list them below the verdict). Loop back to Designer.
 - **REJECT** — Fundamental issues require a redesign. Loop back to Designer with rationale.
-  `PIPELINE_VERDICT: REJECT`
 
 The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
 
 If the verdict is not APPROVE, clearly list every item the Designer must address in the next iteration.
+
+#### Section 4: 🔴 Critical Findings (only if any exist)
+
+Number findings sequentially within this section. Render each as a standalone block:
+
+```
+##### 🔴 1. [{Review Dimension}] {Concise title}
+
+{What's wrong — 1-2 sentences max}
+
+**Fix →** {concrete remediation}
+```
+
+Example: `##### 🔴 1. [Layer Completeness] Missing UI component for new OAuth flow`
+
+Omit this section entirely if there are zero critical findings.
+
+#### Section 5: 🟠 Major Findings (only if any exist)
+
+Number findings sequentially within this section. Same block format as Critical Findings.
+
+Example: `##### 🟠 1. [Design Quality] Leaky abstraction — domain exposes ORM entity directly`
+
+Omit this section entirely if there are zero major findings.
+
+#### Section 6: 🟡 Warnings (only if any exist)
+
+Number findings sequentially within this section. Same block format. Omit if zero.
+
+Example: `##### 🟡 1. [Failure Modes] No degradation path for Redis unavailability`
+
+#### Section 7: 🔵 Info Items (only if any exist)
+
+Number findings sequentially within this section. Render each INFO item as a collapsible `<details>` block:
+
+```html
+<details>
+<summary>🔵 1. [{Review Dimension}] <b>{title}</b></summary>
+
+{description — 1-3 sentences}
+
+**Fix →** {remediation}
+</details>
+```
+
+Omit this section entirely if there are zero info items.
 
 ### Part 2: ADR File Annotation (only when ADR file exists)
 

@@ -253,15 +253,20 @@ pipeline {
             }
             steps {
                 script {
-                    def modules = []
-                    if (params.build_identity_image) modules << 'identity'
-                    if (params.build_rag_backend) modules << 'rag'
-                    if (params.build_multiagent_backend) modules << 'multiagent'
-                    if (params.build_backend) modules << 'backend'
-                    if (params.build_gui) modules << 'ui'
-                    def modulesToDeploy = modules.join(',')
 
-                    echo "Triggering deployment pipeline with MODULES_TO_DEPLOY = ${modulesToDeploy}"
+                    def identityVersion = ""
+                    def ragVersion = ""
+                    def multiagentVersion = ""
+                    def backendVersion = ""
+                    def guiVersion = ""
+                    
+                    if (params.build_identity_image) identityVersion = params.VERSION
+                    if (params.build_rag_backend) ragVersion = params.VERSION
+                    if (params.build_multiagent_backend) multiagentVersion = params.VERSION
+                    if (params.build_backend) backendVersion = params.VERSION
+                    if (params.build_gui) guiVersion = params.VERSION
+
+                    echo "Triggering deployment pipeline with IDENTITY_VERSION = ${identityVersion}, RAG_VERSION = ${ragVersion}, MULTIAGENT_VERSION = ${multiagentVersion}, BACKEND_VERSION = ${backendVersion}, GUI_VERSION = ${guiVersion}"
                     // build job: 'Unifai-playground-deploy',
                     build job: 'Unifai-playground-deploy',
                     parameters: [
@@ -269,8 +274,11 @@ pipeline {
                         string(name: 'deploy_namespace', value: params.deploy_namespace),
                         string(name: 'deploy_type', value: params.deploy_type),
                         string(name: 'BRANCH', value: params.BRANCH),
-                        string(name: 'VERSION', value: params.VERSION),
-                        string(name: 'MODULES_TO_DEPLOY', value: modulesToDeploy),
+                        string(name: 'IDENTITY_VERSION', value: identityVersion),
+                        string(name: 'BACKEND_VERSION', value: backendVersion),
+                        string(name: 'RAG_VERSION', value: ragVersion),
+                        string(name: 'MA_VERSION', value: multiagentVersion),
+                        string(name: 'GUI_VERSION', value: guiVersion),
                         booleanParam(name: 'debug_mode', value: params.debug_mode),
                     ]
                 }

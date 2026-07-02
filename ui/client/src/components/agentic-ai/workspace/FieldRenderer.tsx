@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FieldValidation, ItemValidationResult } from "./FieldValidation";
 import { FieldPopulation } from "./FieldPopulation";
-import { AuthSelector } from "./AuthSelector";
 import { AuthFieldRenderer } from "./AuthFieldRenderer";
 import { AgentCardVisualization } from "./AgentCardVisualization";
 import { FileUpload } from "@/components/ui/file-upload";
@@ -47,6 +46,7 @@ interface FieldRendererProps {
   fieldType: "secret" | "public";
   fieldValidationStates?: { [fieldName: string]: boolean };
   itemValidationStates?: { [fieldName: string]: ItemValidationResult[] };
+  actionOutputs?: Record<string, any>;
   isArrayWithRefItems: (fieldSchema: any) => boolean;
   getArrayItemsSchema: (fieldSchema: any) => any;
   extractCategoryFromField: (fieldSchema: any) => string | null;
@@ -57,6 +57,7 @@ interface FieldRendererProps {
   onRemoveArrayItem?: (field: string, index: number) => void;
   onValidationChange: (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => void;
   onPopulateResult: (fieldName: string, results: string[] | any, multiSelect: boolean) => void;
+  onActionOutput?: (fieldName: string, output: any) => void;
 }
 
 // Controlled number input with local state buffer to handle intermediate typing (e.g., "0.")
@@ -178,6 +179,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   fieldType,
   fieldValidationStates,
   itemValidationStates,
+  actionOutputs,
   isArrayWithRefItems,
   getArrayItemsSchema,
   extractCategoryFromField,
@@ -188,6 +190,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   onRemoveArrayItem,
   onValidationChange,
   onPopulateResult,
+  onActionOutput,
 }) => {
   // Check if this field has validation errors based on validation action result
   // Use useMemo to recalculate when fieldValidationStates changes after validation action
@@ -492,6 +495,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
             selectedElementType={elementType}
             isRequired={isRequired}
             configValues={formData}
+            actionOutputs={actionOutputs}
             onValidationChange={onValidationChange}
             onInputChange={onInputChange}
           />
@@ -578,6 +582,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
             selectedElementType={elementType}
             isRequired={isRequired}
             configValues={formData}
+            actionOutputs={actionOutputs}
             onValidationChange={onValidationChange}
             onInputChange={onInputChange}
           />
@@ -611,6 +616,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         elementActions={elementActions}
         onValidationChange={onValidationChange}
         onInputChange={onInputChange}
+        onActionOutput={onActionOutput}
       />
     );
   }
@@ -761,6 +767,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
               selectedElementType={elementType}
               isRequired={isRequired}
               configValues={formData}
+              actionOutputs={actionOutputs}
               onValidationChange={onValidationChange}
               onInputChange={onInputChange}
             />
@@ -942,6 +949,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
           selectedElementType={elementType}
           isRequired={isRequired}
           configValues={formData}
+          actionOutputs={actionOutputs}
           onValidationChange={onValidationChange}
           onInputChange={onInputChange}
         />
@@ -1020,6 +1028,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         selectedElementType={elementType}
         isRequired={isRequired}
         configValues={formData}
+        actionOutputs={actionOutputs}
         onValidationChange={onValidationChange}
         onInputChange={onInputChange}
       />

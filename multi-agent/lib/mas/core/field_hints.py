@@ -20,7 +20,12 @@ class SelectionType(Enum):
 
 class ActionHint(BaseModel):
     """
-    Simple hint that references an action for field population or validation.
+    Hint that references an action for field population or validation.
+
+    ``on_success`` allows declarative chaining: when the primary action
+    succeeds, the UI fires the chained action with its own dependency
+    mapping.  Neither action knows about the other — the hint is the
+    orchestrator, the UI is the executor.
     """
     action_uid: str = Field(
         ..., 
@@ -66,6 +71,12 @@ class ActionHint(BaseModel):
         default=False,
         description="Whether the action supports search filtering (has search_regex param)"
     )
+    on_success: Optional["ActionHint"] = Field(
+        default=None,
+        description="Action to fire after this action succeeds. "
+                    "The chained action receives its own dependencies from the form. "
+                    "Skipped when any required dependency value is empty.",
+    )
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
         """Override to return clean dict for json_schema_extra"""
@@ -78,6 +89,9 @@ class ActionHint(BaseModel):
                 "action": self.model_dump()
             }
         }
+
+
+ActionHint.model_rebuild()
 
 
 class ApiHint(BaseModel):
@@ -210,8 +224,8 @@ class AuthHint(BaseModel):
 
         json_schema_extra=combine_hints(
             ConditionalHint(visible_when={"auth_method": "sign_in"}),
-            AuthHint(action_uid="auth.authenticate",
-                     dependencies={"server_identifier": "server_identifier"}),
+            AuthHint(action_uid="auth.discovery",
+                     dependencies={"mcp_url": "mcp_url"}),
         )
     """
     action_uid: str = Field(
@@ -309,7 +323,40 @@ class ConditionalHint(BaseModel):
         }
 
 
-def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, FileUploadHint]) -> Dict[str, Any]:
+class PropagateHint(BaseModel):
+    """
+    When this field changes, propagate to another field.
+
+    If ``value`` is omitted the field's own new value is copied.
+    If ``value`` is provided that fixed value is written instead
+    (useful for clearing a target on change).
+
+    Example::
+
+        PropagateHint(to="credential_token")            # mirror value
+        PropagateHint(to="credential_token", value="")   # clear on change
+    """
+    to: str = Field(
+        ...,
+        description="Target field name to propagate to",
+    )
+    value: Optional[Any] = Field(
+        default=None,
+        description="Fixed value to write. If None, copies the source field's value.",
+    )
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        return super().model_dump(**kwargs)
+
+    def to_hints(self) -> Dict[str, Any]:
+        return {
+            "hints": {
+                "propagate": self.model_dump()
+            }
+        }
+
+
+def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, PropagateHint, FileUploadHint]) -> Dict[str, Any]:
     """
     Combine multiple hints into a single json_schema_extra structure.
     

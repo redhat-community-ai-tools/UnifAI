@@ -15,6 +15,7 @@ You are a pipeline orchestrator. You drive a multi-agent development workflow th
 /pipeline code-review-only [files/folders]              → code review on changes
 /pipeline qa-only [files/folders]                       → run QA on changes
 /pipeline arch-review [files/folders]                   → architecture review on changes
+/pipeline review [files/folders]                        → arch + code review (shared scout, parallel judges)
 /pipeline debug <error description or log file path>    → structured debug session
 ```
 
@@ -33,6 +34,7 @@ This is the authoritative mapping. Do NOT infer phases from mode names.
 | 7 | `qa-only` | 5 | `qa.md` |
 | 8 | `debug` | 6 | `debugger.md` |
 | 9 | `arch-review` | 9 | `arch-reviewer.md` |
+| 10 | `review` | 9+4 | `_scout.md` → `arch-reviewer.md` + `code-reviewer.md` (parallel) |
 
 All skill files are at `.cursor/skills/pipeline/phases/<name>`.
 
@@ -112,13 +114,61 @@ When the verdict is NOT approval, read `.cursor/skills/pipeline/modes/_revision-
 - PHASE_HEADER: `## PHASE 3: IMPLEMENTATION (QA Fix <N>)` | REVIEW_HEADER: `## PHASE 5: QA (Revision <N>)`
 - Also follow the QA-Specific Extension in the revision loop protocol.
 
-### Scope resolution (Phases 4, 5, 9 in standalone modes)
+### Agent Dispatch Protocol (Inline Scout + Parallel Judges)
 
-For `code-review-only`, `qa-only`, and `arch-review` modes, the reviewer skill handles scope resolution and domain loading itself — it determines the file scope (from explicit paths or git diff) and resolves domains using its built-in path-prefix mapping. No additional orchestrator action is needed beyond passing the user's file/folder arguments (if any) to the reviewer.
+Review phases follow an Inline Scout + Judge pattern. The orchestrator **executes Scout logic directly** (no subagent spawn) to gather evidence, then spawns Judge subagent(s) for reasoning. This minimizes agent spawn overhead — only judges are spawned.
+
+**Model defaults** (override via environment variables `ARCH_JUDGE_MODEL`, `CODE_JUDGE_MODEL`):
+- Arch Judge: `claude-4.6-opus-high-thinking`
+- Code Judge: `claude-4.6-sonnet-medium-thinking`
+
+**Inline Scout execution (applies to all review modes):**
+1. Read `.cursor/skills/pipeline/phases/_scout.md`
+2. Execute the Scout instructions **directly** (you ARE the scout). Use Shell/Grep/Read tools to: run `git diff`, enumerate imports, scan for patterns, build the Evidence Pack.
+3. Format output per `.cursor/skills/pipeline/modes/_evidence-format.md`.
+4. The Evidence Pack is now in your context — no inter-agent transfer needed.
+
+**For `review` (dual-review mode — preferred for CI):**
+1. Run Inline Scout (steps above). Scope = user's file/folder arguments or git diff.
+2. Read both `.cursor/skills/pipeline/phases/arch-reviewer.md` and `.cursor/skills/pipeline/phases/code-reviewer.md`
+3. Spawn BOTH judges in parallel (single message, two Task calls with `run_in_background: true`):
+   - Arch Judge: `Task(model=$ARCH_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<arch-reviewer skill + evidence pack>")`
+   - Code Judge: `Task(model=$CODE_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<code-reviewer skill + evidence pack>")`
+4. Wait for both to complete. Parse `PIPELINE_VERDICT:` from each judge's output.
+5. Present both reviews in this exact order: `## ARCHITECTURE REVIEW` first, then `## CODE REVIEW`. The CI workflow's output splitting depends on this ordering.
+6. The overall pipeline passes only if BOTH verdicts pass (arch=APPROVE AND code=CLEAN).
+
+**For `arch-review` (Phase 9, standalone):**
+1. Run Inline Scout. Scope = user's file/folder arguments.
+2. Read `.cursor/skills/pipeline/phases/arch-reviewer.md`
+3. Spawn Arch Judge: `Task(model=$ARCH_JUDGE_MODEL, ...)` with evidence pack.
+4. Parse `PIPELINE_VERDICT:` from Judge output.
+
+**For `code-review-only` (Phase 4, standalone):**
+1. Run Inline Scout. Scope = user's file/folder arguments.
+2. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
+3. Spawn Code Judge: `Task(model=$CODE_JUDGE_MODEL, ...)` with evidence pack.
+4. Parse `PIPELINE_VERDICT:` from Judge output.
+
+**For `full` pipeline Phase 4 (after Phase 3):**
+1. Run Inline Scout. Scope = changed files from Phase 3.
+2. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
+3. Spawn Code Judge with evidence pack + approved design from Phase 2.
+4. Parse `PIPELINE_VERDICT:`.
+
+**Model fallback:** If the specified model is unavailable (Task tool returns an error), retry with `claude-4.6-sonnet-medium-thinking` and log: "Model fallback: <original> unavailable, using sonnet-medium-thinking."
+
+**Environment variable resolution:** Check `$ARCH_JUDGE_MODEL`, `$CODE_JUDGE_MODEL` env vars first. If not set, use the defaults above.
+
+### Scope resolution (Phases 5 in standalone mode)
+
+For `qa-only` mode, the reviewer skill handles scope resolution and domain loading itself — it determines the file scope (from explicit paths or git diff) and resolves domains using its built-in path-prefix mapping. No additional orchestrator action is needed beyond passing the user's file/folder arguments (if any) to the reviewer.
+
+For `code-review-only`, `arch-review`, and `review` modes, scope resolution is handled by the inline Scout per the Agent Dispatch Protocol above.
 
 ### Single-phase modes (no revision loop)
 
-Modes `design-only`, `review-only`, `code-review-only`, `qa-only`, `arch-review`: execute ONE phase, record the verdict, stop. No revision loop.
+Modes `design-only`, `review-only`, `code-review-only`, `qa-only`, `arch-review`, `review`: execute ONE phase, record the verdict, stop. No revision loop.
 
 ### ADR annotation (Phase 2 only)
 
@@ -144,9 +194,9 @@ After all phases complete (or the single phase finishes), you MUST produce a sum
 <mode used>
 
 ### Phases Summary
-| Phase | Agent | Verdict | Iterations |
-|-------|-------|---------|------------|
-(only include phases that were executed)
+| Phase | Agent | Verdict | Iterations | Skills Used |
+|-------|-------|---------|------------|-------------|
+(only include phases that were executed; list every skill file the agent read during the phase)
 
 ### Files Changed
 <list of all files created or modified, or "None" for design-only modes>
@@ -155,7 +205,7 @@ After all phases complete (or the single phase finishes), you MUST produce a sum
 <important architectural or implementation decisions made during the pipeline>
 ```
 
-**For single-phase modes** (`design-only`, `review-only`, `arch-review`, `code-review-only`, `qa-only`):
+**For single-phase modes** (`design-only`, `review-only`, `arch-review`, `review`, `code-review-only`, `qa-only`):
 
 ```
 ## <PHASE NAME> COMPLETE
@@ -168,6 +218,9 @@ After all phases complete (or the single phase finishes), you MUST produce a sum
 
 ### Verdict
 <final verdict or "Design produced" for design-only>
+
+### Skills Used
+<list of all skill files read during the phase, e.g. "designer.md, codebase/SKILL.md, domain/rag/SKILL.md">
 
 ### Findings Summary
 <key findings, or design document location for design-only>
@@ -192,7 +245,7 @@ To close the pipeline: first update the state tracker with `EXIT_STATUS: SUCCESS
 
 ## Context Management
 
-- After each phase, emit a one-paragraph checkpoint: verdict, key decisions, files changed.
+- After each phase, emit a one-paragraph checkpoint: verdict, key decisions, files changed, and skills used (list every skill file the agent read via the Read tool during the phase, by short name — e.g. "designer.md, codebase/SKILL.md").
 - If >15 tool calls within a single phase, summarize intermediate results before continuing.
 - In code revision loops, produce only changed files + summary of unchanged (not full re-emit).
 - In design revision loops, produce the complete revised design.

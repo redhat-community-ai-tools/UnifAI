@@ -5,7 +5,7 @@ Claude Agent Node Configuration
 from mas.elements.nodes.common.base_config import NodeBaseConfig
 from pydantic import Field
 from typing import Optional, Literal, List, Dict
-from .identifiers import Identifier
+from .identifiers import Identifier, EffortLevel
 from mas.core.ref.models import RetrieverRef, ProviderRef, SandboxRef, ToolRef
 from mas.core.field_hints import ActionHint, HintType, HiddenHint
 
@@ -57,6 +57,15 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
     max_turns: Optional[int] = Field(
         default=200,
         description="Maximum agentic turns (tool-use round trips). Prevents runaway execution."
+    )
+
+    effort: EffortLevel = Field(
+        default=EffortLevel.MEDIUM,
+        description="Controls how much effort Claude puts into reasoning. "
+                    "'low' — minimal thinking, fastest. "
+                    "'medium' — balanced cost/quality. "
+                    "'high' — deep reasoning. "
+                    "'xhigh' — extended reasoning (Opus 4.7+ only)."
     )
 
     permission_mode: str = Field(

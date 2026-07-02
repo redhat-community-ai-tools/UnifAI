@@ -41,7 +41,9 @@ from mas.core.auth.strategies.oauth2.detection import OAuth2DetectionStrategy
 from mas.core.auth.strategies.oauth2.state_manager import OAuthStateManager
 from outbound.auth.api_key_strategy import ApiKeyStrategy
 from outbound.mongo.client_config_repository import MongoServerConfigStore
-from mas.actions.auth.authenticate.action import AuthenticateAction
+from mas.actions.auth.store_credential.action import StoreCredentialAction
+from mas.actions.auth.discovery.action import DiscoveryAction
+from mas.actions.auth.sign_out.action import SignOutAction
 from mas.actions.providers.mcp.validate_connection.validate_connection import ValidateConnectionAction
 from mas.actions.providers.mcp.get_tools_names.get_tools_names import GetToolsNamesAction
 
@@ -59,7 +61,7 @@ from outbound.mongo import (
 # Auth layer — adapters
 from outbound.mongo.auth_token_repository import MongoCredentialStore
 from outbound.redis.auth_pending_store import RedisFlowStateStore
-from outbound.auth.http_oauth_client import HttpxAuthClient
+from outbound.http.httpx_client import HttpxClient
 
 from mas.core.identity.ports import IdentityProvider
 from global_utils.identity_client import IdentityClient
@@ -102,45 +104,9 @@ class AppContainer(metaclass=SingletonMeta):
             element_registry=self.element_registry
         )
 
-        self.blueprint_repo = MongoBlueprintRepository(
-            db_name=cfg.mongo_db,
-            coll_name=cfg.blueprint_coll
-        )
-
-        self.resource_repo = MongoResourceRepository(
-            cfg.mongodb_port,
-            mongodb_ip=cfg.mongodb_ip,
-            db_name=cfg.mongo_db,
-            coll_name=cfg.resources_coll,
-        )
-
-        resource_registry = ResourcesRegistry(
-            repo=self.resource_repo,
-            bp_repo=self.blueprint_repo,
-        )
-
-        self.resources_service = ResourcesService(
-            resource_registry=resource_registry,
-            element_registry=self.element_registry,
-            validation_service=self.validation_service,
-            card_service=self.card_service,
-        )
-
-        self.blueprint_resolver = BlueprintResolver(
-            resource_registry=resource_registry,
-            element_registry=self.element_registry
-        )
-
-        self.blueprint_service = BlueprintService(
-            self.blueprint_repo,
-            resolver=self.blueprint_resolver,
-            validation_service=self.validation_service,
-            card_service=self.card_service,
-        )
-
         # ── Auth layer ────────────────────────────────────────────────
 
-        http_client = HttpxAuthClient()
+        http_client = HttpxClient()
         self.credential_store = MongoCredentialStore(
             mongodb_ip=cfg.mongodb_ip,
             mongodb_port=cfg.mongodb_port,
@@ -171,21 +137,17 @@ class AppContainer(metaclass=SingletonMeta):
             mongodb_ip=cfg.mongodb_ip,
             mongodb_port=cfg.mongodb_port,
             db_name=cfg.mongo_db,
-            coll_name="server_configs",
+            coll_name=cfg.server_configs_coll,
         )
 
         # OAuth2 state manager
-        if not cfg.mcp_auth_state_secret:
-            logger.warning("MCP_AUTH_STATE_SECRET not set — using random key (sessions won't survive restarts)")
-            import secrets as _secrets
-            cfg.mcp_auth_state_secret = _secrets.token_urlsafe(32)
-        state_manager = OAuthStateManager(secret=cfg.mcp_auth_state_secret)
+        state_manager = OAuthStateManager(secret=cfg.oauth_state_secret)
 
         # Strategy registry — self-contained strategies
         oauth2_strategy = OAuth2Strategy(
             pending_store=pending_store,
             state_manager=state_manager,
-            callback_url=f"{cfg.identity_host.rstrip('/')}/api/credentials/callback",
+            callback_url=f"{cfg.identity_host.rstrip('/')}{cfg.oauth_callback_path}",
             client_config_store=self.server_config_store,
             http_client=http_client,
         )
@@ -201,12 +163,60 @@ class AppContainer(metaclass=SingletonMeta):
             strategy_registry=strategy_registry,
             server_config_store=self.server_config_store,
             detector=detector,
+            encryption_key=cfg.credential_encryption_key,
         )
 
-        self.resources_service.set_auth_service(self.auth_service)
-        self.blueprint_service.set_auth_service(self.auth_service)
+        # ── Data repositories ────────────────────────────────────────
 
-        self.actions_service.register_instance(AuthenticateAction(
+        self.blueprint_repo = MongoBlueprintRepository(
+            db_name=cfg.mongo_db,
+            coll_name=cfg.blueprint_coll
+        )
+
+        self.resource_repo = MongoResourceRepository(
+            cfg.mongodb_port,
+            mongodb_ip=cfg.mongodb_ip,
+            db_name=cfg.mongo_db,
+            coll_name=cfg.resources_coll,
+        )
+
+        resource_registry = ResourcesRegistry(
+            repo=self.resource_repo,
+            bp_repo=self.blueprint_repo,
+        )
+
+        # ── Application services ─────────────────────────────────────
+
+        self.resources_service = ResourcesService(
+            resource_registry=resource_registry,
+            element_registry=self.element_registry,
+            validation_service=self.validation_service,
+            card_service=self.card_service,
+            auth_service=self.auth_service,
+        )
+
+        self.blueprint_resolver = BlueprintResolver(
+            resource_registry=resource_registry,
+            element_registry=self.element_registry
+        )
+
+        self.blueprint_service = BlueprintService(
+            self.blueprint_repo,
+            resolver=self.blueprint_resolver,
+            validation_service=self.validation_service,
+            card_service=self.card_service,
+            auth_service=self.auth_service,
+        )
+
+        # ── Auth actions ─────────────────────────────────────────────
+
+        self.actions_service.register_instance(StoreCredentialAction(
+            auth_service=self.auth_service,
+        ))
+        self.actions_service.register_instance(DiscoveryAction(
+            auth_service=self.auth_service,
+        ))
+        self.actions_service.register_instance(SignOutAction(
             auth_service=self.auth_service,
         ))
         self.actions_service.register_instance(ValidateConnectionAction(

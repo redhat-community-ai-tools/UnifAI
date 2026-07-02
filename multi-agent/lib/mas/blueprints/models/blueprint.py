@@ -20,6 +20,7 @@ class BlueprintExecutionStats(BaseModel):
     total_runs: int = Field(0, description="Total number of executions")
     completed_runs: int = Field(0, description="Number of COMPLETED executions")
     failed_runs: int = Field(0, description="Number of FAILED executions")
+    active_runs: int = Field(0, description="Number of currently executing sessions (RUNNING, IN_USE)")
     last_run: Optional[datetime] = Field(None, description="Timestamp of most recent execution")
     avg_duration_ms: Optional[float] = Field(None, description="Average duration in milliseconds")
     users: List[str] = Field(default_factory=list, description="Distinct runner identities as ``type:id`` strings (e.g. ``user:alice``, ``team:acme``)")
@@ -33,7 +34,6 @@ from mas.elements.retrievers.types import RetrieversSpec
 from mas.elements.conditions.types import ConditionSpec
 from mas.elements.tools.types import ToolsSpec
 from mas.elements.providers.types import ProviderSpec
-from mas.elements.auths.types import AuthSpec
 from mas.elements.sandboxes.types import SandboxSpec
 from mas.core.ref.models import Ref, NodeRef, ConditionRef
 
@@ -115,7 +115,6 @@ class BlueprintDraft(BaseModel):
     tools: List[BlueprintResource[ToolsSpec]] = []
     nodes: List[BlueprintResource[NodeSpec]] = []
     conditions: List[BlueprintResource[ConditionSpec]] = []
-    auths: List[BlueprintResource[AuthSpec]] = []
     sandboxes: List[BlueprintResource[SandboxSpec]] = []
 
     plan: List[StepDef]
@@ -135,7 +134,6 @@ class BlueprintSpec(BaseModel):
     tools: List[ResourceSpec[ToolsSpec]]
     nodes: List[ResourceSpec[NodeSpec]]
     conditions: List[ResourceSpec[ConditionSpec]] = []
-    auths: List[ResourceSpec[AuthSpec]] = []
     sandboxes: List[ResourceSpec[SandboxSpec]] = []
 
     plan: List[StepDef]

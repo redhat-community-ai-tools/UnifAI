@@ -34,6 +34,7 @@ class ClaudeAgentNodeFactory(BaseFactory[ClaudeAgentNodeConfig, ClaudeAgentNode]
                 vertex_region=cfg.vertex_region,
                 # Model
                 model=cfg.model,
+                effort=cfg.effort,
                 # Agent behavior
                 system_prompt=cfg.system_prompt,
                 max_turns=cfg.max_turns,

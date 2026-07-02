@@ -31,6 +31,7 @@ from mas.elements.nodes.common.workload import Task, AgentResult
 from mas.elements.sandboxes.common.base_sandbox import BaseSandbox
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.claude_sdk_converter import ClaudeSDKConverter
+from mas.elements.nodes.claude_agent.identifiers import EffortLevel
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ class ClaudeAgentNode(
             vertex_region: str = "us-east5",
             # Model
             model: str = "claude-sonnet-4-6",
+            effort: EffortLevel = EffortLevel.MEDIUM,
             # Agent behavior
             system_prompt: str = "",
             max_turns: Optional[int] = 200,
@@ -92,6 +94,7 @@ class ClaudeAgentNode(
         self._vertex_project_id = vertex_project_id
         self._vertex_region = vertex_region
         self._model = model
+        self._effort = effort
         self._system_prompt = system_prompt
         self._max_turns = max_turns
         self._permission_mode = permission_mode
@@ -440,6 +443,7 @@ class ClaudeAgentNode(
 
         kwargs: Dict[str, Any] = {
             "model": self._model,
+            "effort": self._effort.value,
             "permission_mode": self._permission_mode,
             "max_turns": self._max_turns,
             "cwd": work_dir,
@@ -630,6 +634,7 @@ class ClaudeAgentNode(
             execution_metadata={
                 "claude_agent_sdk": True,
                 "model": self._model,
+                "effort": self._effort.value,
                 "session_id": metadata.get("session_id"),
                 "num_turns": metadata.get("num_turns"),
                 "total_cost_usd": metadata.get("total_cost_usd"),
