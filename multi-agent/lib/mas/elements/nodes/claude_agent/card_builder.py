@@ -27,6 +27,9 @@ class ClaudeAgentCardBuilder(CardBuilder):
                 description=f"Claude Agent built-in tool: {tool_name}",
             ))
 
+        for card in input.dependency_cards.values():
+            skills.extend(card.skills)
+
         capabilities: List[Capability] = [
             Capability(
                 name="model",
