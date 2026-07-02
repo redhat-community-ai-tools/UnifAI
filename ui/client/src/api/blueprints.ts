@@ -272,11 +272,15 @@ export interface PromptShortcut {
  */
 export async function setPromptShortcuts(
   blueprintId: string,
-  prompts: PromptShortcutInput[]
+  prompts: PromptShortcutInput[],
+  userId?: string,
+  identityType?: string,
 ): Promise<{ prompts: PromptShortcut[] }> {
   const { data } = await axios.put('/blueprints/blueprint.prompt-shortcuts.set', {
     blueprintId,
     prompts,
+    userId: userId || 'default',
+    identityType: identityType || 'user',
   });
   return data;
 }
@@ -285,10 +289,16 @@ export async function setPromptShortcuts(
  * Get prompt shortcuts for a blueprint
  */
 export async function getPromptShortcuts(
-  blueprintId: string
+  blueprintId: string,
+  userId?: string,
+  identityType?: string,
 ): Promise<{ prompts: PromptShortcut[] }> {
   const { data } = await axios.get('/blueprints/blueprint.prompt-shortcuts.get', {
-    params: { blueprintId },
+    params: {
+      blueprintId,
+      userId: userId || 'default',
+      identityType: identityType || 'user',
+    },
   });
   return data;
 }

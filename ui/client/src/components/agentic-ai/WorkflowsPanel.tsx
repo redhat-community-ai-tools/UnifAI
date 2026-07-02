@@ -293,7 +293,7 @@ export default function WorkflowsPanel({
 
   const handleSavePromptShortcuts = async (prompts: PromptShortcutInput[]) => {
     if (!promptShortcutsFlow) return;
-    await setPromptShortcuts(promptShortcutsFlow.id, prompts);
+    await setPromptShortcuts(promptShortcutsFlow.id, prompts, contextUserId, identityType);
   };
 
   const handleDeleteConfirm = async () => {
@@ -580,6 +580,8 @@ export default function WorkflowsPanel({
         isOpen={promptShortcutsModalOpen}
         onClose={() => setPromptShortcutsModalOpen(false)}
         blueprintId={promptShortcutsFlow?.id || ""}
+        userId={contextUserId}
+        identityType={identityType}
         onSave={handleSavePromptShortcuts}
       />
     </>

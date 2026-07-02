@@ -14,6 +14,8 @@ interface EditPromptShortcutsModalProps {
   isOpen: boolean;
   onClose: () => void;
   blueprintId: string;
+  userId?: string;
+  identityType?: string;
   onSave: (prompts: PromptShortcutInput[]) => Promise<void>;
 }
 
@@ -21,6 +23,8 @@ export default function EditPromptShortcutsModal({
   isOpen,
   onClose,
   blueprintId,
+  userId,
+  identityType,
   onSave,
 }: EditPromptShortcutsModalProps) {
   const [prompts, setPrompts] = useState<PromptShortcutInput[]>([]);
@@ -35,7 +39,7 @@ export default function EditPromptShortcutsModal({
     setIsLoading(true);
     setLoadError(null);
     setSaveError(null);
-    getPromptShortcuts(blueprintId)
+    getPromptShortcuts(blueprintId, userId, identityType)
       .then((data) => {
         if (!cancelled) setPrompts(data.prompts);
       })
@@ -49,7 +53,7 @@ export default function EditPromptShortcutsModal({
         if (!cancelled) setIsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [isOpen, blueprintId]);
+  }, [isOpen, blueprintId, userId, identityType]);
 
   const handleSave = async () => {
     setIsSaving(true);

@@ -1155,7 +1155,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         }
 
         try {
-          await setPromptShortcuts(blueprintId, cleanedPrompts);
+          await setPromptShortcuts(blueprintId, cleanedPrompts, USER_ID, identityType);
         } catch (shortcutErr) {
           console.error("Failed to save prompt shortcuts:", shortcutErr);
           toast({
