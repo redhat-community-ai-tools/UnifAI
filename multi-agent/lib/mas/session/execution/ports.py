@@ -18,8 +18,13 @@ class SubmitSessionRequest:
     Inputs are already staged into the SessionRecord before submission,
     so this only carries the execution context (scope, user, etc.).
     The engine handle lives in execution_context.engine_handle.
+
+    ``session_cookie`` carries the caller's signed Flask session cookie
+    so background workers can forward it to internal services (e.g. RAG)
+    that require cookie-based auth.  Transient — not persisted to the DB.
     """
     execution_context: ExecutionContext = field(default_factory=ExecutionContext)
+    session_cookie: str = ""
 
 
 class BackgroundSessionEngine(ABC):

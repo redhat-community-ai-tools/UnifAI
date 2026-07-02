@@ -49,11 +49,13 @@ class GetAvailableTagsAction(BaseAction):
             config = RagProviderConfig()
             factory = RagProviderFactory()
             provider = factory.create(config)
+            session_cookie = (context or {}).get("session_cookie", "")
 
             response = provider.get_available_tags(
                 limit=input_data.limit,
                 cursor=input_data.cursor,
                 search_regex=input_data.search_regex,
+                session_cookie=session_cookie,
             )
 
             return GetAvailableTagsOutput(

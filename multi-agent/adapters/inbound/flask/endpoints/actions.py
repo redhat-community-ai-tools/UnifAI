@@ -1,6 +1,6 @@
 import logging
 
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, jsonify, current_app, request
 
 from inbound.flask.decorators import with_authenticated_user
 from global_utils.helpers.apiargs import from_body, from_query
@@ -93,6 +93,8 @@ def execute_action(authenticated_user, uid, input_data, context):
     try:
         if authenticated_user:
             input_data["user_id"] = authenticated_user
+
+        context["session_cookie"] = request.cookies.get("session", "")
 
         svc = current_app.container.actions_service
         result = svc.execute_action_sync(uid, input_data, context)

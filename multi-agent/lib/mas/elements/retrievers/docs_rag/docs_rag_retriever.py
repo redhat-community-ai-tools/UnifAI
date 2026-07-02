@@ -37,6 +37,7 @@ class DocsRagRetriever(BaseRetriever):
     def retrieve(self, query: str) -> List[dict]:
         scope = self._identity.scope if self._identity else "public"
         user_id = self._identity.identity_id if self._identity else ""
+        cookie = self._identity.session_cookie if self._identity else ""
         doc_ids = [doc['id'] for doc in self.docs] if self.docs else None
 
         response = self._provider.query(
@@ -45,6 +46,7 @@ class DocsRagRetriever(BaseRetriever):
             logged_in_user=user_id,
             doc_ids=doc_ids,
             tags=self.tags,
+            session_cookie=cookie,
         )
 
         return [

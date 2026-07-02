@@ -63,6 +63,7 @@ class RagProvider:
             logged_in_user: Optional[str] = None,
             doc_ids: Optional[List[str]] = None,
             tags: Optional[List[str]] = None,
+            session_cookie: str = "",
     ) -> QueryMatchResponse:
         """
         Query vector database for matching documents.
@@ -74,6 +75,7 @@ class RagProvider:
             logged_in_user: Optional user context
             doc_ids: Optional list of document IDs to filter by
             tags: Optional list of tags to filter by
+            session_cookie: Signed Flask session cookie for RAG auth
 
         Returns:
             QueryMatchResponse with matches
@@ -86,6 +88,7 @@ class RagProvider:
                 logged_in_user=logged_in_user,
                 doc_ids=doc_ids,
                 tags=tags,
+                session_cookie=session_cookie,
             )
 
     def get_available_tags(
@@ -93,6 +96,7 @@ class RagProvider:
             limit: int = 50,
             cursor: Optional[str] = None,
             search_regex: Optional[str] = None,
+            session_cookie: str = "",
     ) -> AvailableTagsResponse:
         """
         Fetch available tags.
@@ -101,6 +105,7 @@ class RagProvider:
             limit: Number of tags per page
             cursor: Pagination cursor
             search_regex: Filter pattern
+            session_cookie: Signed Flask session cookie for RAG auth
 
         Returns:
             AvailableTagsResponse with tags and pagination
@@ -110,6 +115,7 @@ class RagProvider:
                 limit=limit,
                 cursor=cursor,
                 search_regex=search_regex,
+                session_cookie=session_cookie,
             )
 
     def get_available_docs(
@@ -117,6 +123,7 @@ class RagProvider:
             limit: int = 50,
             cursor: Optional[str] = None,
             search_regex: Optional[str] = None,
+            session_cookie: str = "",
     ) -> AvailableDocsResponse:
         """
         Fetch available documents.
@@ -125,6 +132,7 @@ class RagProvider:
             limit: Number of documents per page
             cursor: Pagination cursor
             search_regex: Filter pattern
+            session_cookie: Signed Flask session cookie for RAG auth
 
         Returns:
             AvailableDocsResponse with documents and pagination
@@ -134,6 +142,7 @@ class RagProvider:
                 limit=limit,
                 cursor=cursor,
                 search_regex=search_regex,
+                session_cookie=session_cookie,
             )
 
     def __repr__(self) -> str:

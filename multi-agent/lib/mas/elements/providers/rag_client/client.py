@@ -97,6 +97,7 @@ class RagClient:
             limit: int = 50,
             cursor: Optional[str] = None,
             search_regex: Optional[str] = None,
+            session_cookie: str = "",
     ) -> AvailableTagsResponse:
         """
         Fetch available tags from RAG service.
@@ -105,6 +106,7 @@ class RagClient:
             limit: Number of tags per page (default 50)
             cursor: Pagination cursor for subsequent pages
             search_regex: Regex pattern to filter tags
+            session_cookie: Signed Flask session cookie for RAG auth
 
         Returns:
             AvailableTagsResponse with tags and pagination info
@@ -121,6 +123,7 @@ class RagClient:
             response = self._client.get(
                 self._build_url(self.TAGS_ENDPOINT),
                 params=params,
+                cookies={"session": session_cookie} if session_cookie else None,
             )
             response.raise_for_status()
             return AvailableTagsResponse.model_validate(response.json())
@@ -136,6 +139,7 @@ class RagClient:
             limit: int = 50,
             cursor: Optional[str] = None,
             search_regex: Optional[str] = None,
+            session_cookie: str = "",
     ) -> AvailableDocsResponse:
         """
         Fetch available documents from RAG service.
@@ -144,6 +148,7 @@ class RagClient:
             limit: Number of documents per page (default 50)
             cursor: Pagination cursor for subsequent pages
             search_regex: Regex pattern to filter documents
+            session_cookie: Signed Flask session cookie for RAG auth
 
         Returns:
             AvailableDocsResponse with documents and pagination info
@@ -160,6 +165,7 @@ class RagClient:
             response = self._client.get(
                 self._build_url(self.DOCS_ENDPOINT),
                 params=params,
+                cookies={"session": session_cookie} if session_cookie else None,
             )
             response.raise_for_status()
             return AvailableDocsResponse.model_validate(response.json())
@@ -178,6 +184,7 @@ class RagClient:
             logged_in_user: Optional[str] = None,
             doc_ids: Optional[List[str]] = None,
             tags: Optional[List[str]] = None,
+            session_cookie: str = "",
     ) -> QueryMatchResponse:
         """
         Query vector database for matching documents.
@@ -189,6 +196,7 @@ class RagClient:
             logged_in_user: Optional logged-in user context
             doc_ids: Optional list of document IDs to filter by
             tags: Optional list of tags to filter by
+            session_cookie: Signed Flask session cookie for RAG auth
 
         Returns:
             QueryMatchResponse with matching results
@@ -212,6 +220,7 @@ class RagClient:
             response = self._client.get(
                 self._build_url(self.QUERY_ENDPOINT),
                 params=params,
+                cookies={"session": session_cookie} if session_cookie else None,
             )
             response.raise_for_status()
             return QueryMatchResponse.model_validate(response.json())

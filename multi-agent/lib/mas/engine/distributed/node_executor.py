@@ -42,6 +42,7 @@ class NodeExecutor:
         state: GraphState,
         channel: Optional[SessionChannel] = None,
         execution_context: Optional[ExecutionContext] = None,
+        session_cookie: str = "",
     ) -> GraphState:
         """
         Build ONE node from its mini-blueprint, inject context, run it.
@@ -56,6 +57,7 @@ class NodeExecutor:
 
         if execution_context:
             ctx_holder.context = execution_context
+        ctx_holder.session_cookie = session_cookie
 
         step = rt_plan.get_step(node_uid)
 
