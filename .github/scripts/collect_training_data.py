@@ -16,6 +16,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from _scoring import compute_deterministic_score
+
 CSV_HEADERS = [
     "run_id",
     "pr_number",
@@ -50,7 +52,8 @@ def load_json(path: Path) -> dict | None:
         return None
     try:
         data = json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"::warning::Could not parse {path}: {e}. Skipping.")
         return None
     if not isinstance(data, dict):
         print(f"::warning::{path.name} is not a JSON object, skipping.")
@@ -61,25 +64,12 @@ def load_json(path: Path) -> dict | None:
 _CSV_INJECTION_PREFIXES = ("=", "+", "-", "@")
 
 
-def _sanitize_csv_value(value: str) -> str:
+def _sanitize_csv_value(value) -> str:
     """Prevent CSV injection by escaping formula-triggering prefixes."""
+    value = str(value) if value is not None else ""
     if value and value[0] in _CSV_INJECTION_PREFIXES:
         return "'" + value
     return value
-
-
-def compute_deterministic_score(code_findings: dict, files_changed: int) -> int:
-    """Severity Floor hybrid formula — mirrors evaluate_review_gate.py."""
-    critical = code_findings.get("critical", 0)
-    major = code_findings.get("major", 0)
-    minor = code_findings.get("minor", 0)
-
-    critical_penalty = critical * 3.0
-    major_penalty = major * 1.5
-    minor_penalty = (minor * 0.5) / max(1, files_changed / 5)
-
-    score = 10 - critical_penalty - major_penalty - minor_penalty
-    return max(1, min(10, round(score)))
 
 
 def main() -> int:
@@ -97,6 +87,11 @@ def main() -> int:
     code_findings = pipeline_data.get("code_findings", {})
     arch_findings = pipeline_data.get("arch_findings", {})
     files_changed = pipeline_data.get("files_changed", 1)
+    try:
+        files_changed = int(files_changed) if files_changed else 1
+    except (TypeError, ValueError):
+        print(f"::warning::Training data: files_changed is not numeric ({files_changed!r}). Defaulting to 1.")
+        files_changed = 1
 
     model_score = pipeline_data.get("code_health_score", 0)
     computed_score = compute_deterministic_score(code_findings, files_changed)

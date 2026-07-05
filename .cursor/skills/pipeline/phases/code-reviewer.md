@@ -445,8 +445,8 @@ PIPELINE_CODE_VERDICT: {CLEAN | NEEDS_REFACTORING | MAJOR_CLEANUP}
 
 | Score | Verdict Token |
 |-------|--------------|
-| 7-10 | CLEAN |
-| 4-6 | NEEDS_REFACTORING |
+| 8-10 | CLEAN |
+| 4-7 | NEEDS_REFACTORING |
 | 1-3 | MAJOR_CLEANUP |
 
 - **CLEAN** — Code is production-ready. Proceed to QA.

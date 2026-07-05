@@ -13,6 +13,8 @@ import re
 import sys
 from pathlib import Path
 
+from _scoring import compute_deterministic_score
+
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 MARKDOWN_BOLD_RE = re.compile(r"[*`]{1,2}")
 CODE_SCORE_PATTERNS = [
@@ -24,28 +26,6 @@ ARCH_VERDICT_RE = re.compile(r"(APPROVE|NEEDS[_ ]REVISION|REJECT)")
 PIPELINE_ARCH_VERDICT_RE = re.compile(r"^`?PIPELINE_ARCH_VERDICT:\s*(APPROVE|NEEDS_REVISION|REJECT)\b", re.MULTILINE)
 PIPELINE_CODE_VERDICT_RE = re.compile(r"^`?PIPELINE_CODE_VERDICT:\s*(CLEAN|NEEDS_REFACTORING|MAJOR_CLEANUP)\b", re.MULTILINE)
 EXIT_STATUS_RE = re.compile(r"^EXIT_STATUS:\s*(SUCCESS|REVISION_LIMIT|USER_INPUT_REQUIRED|ERROR|SKILL_NOT_FOUND)", re.MULTILINE)
-
-
-# ---------------------------------------------------------------------------
-# Severity Floor Hybrid Formula
-# ---------------------------------------------------------------------------
-
-def compute_deterministic_score(code_findings: dict, files_changed: int) -> int:
-    """Compute score using the Severity Floor hybrid formula.
-
-    MAJOR/CRITICAL penalties are flat (never diluted by scope).
-    MINOR penalties are density-based (diluted by file count, normalized to 5-file baseline).
-    """
-    critical = code_findings.get("critical", 0)
-    major = code_findings.get("major", 0)
-    minor = code_findings.get("minor", 0)
-
-    critical_penalty = critical * 3.0
-    major_penalty = major * 1.5
-    minor_penalty = (minor * 0.5) / max(1, files_changed / 5)
-
-    score = 10 - critical_penalty - major_penalty - minor_penalty
-    return max(1, min(10, round(score)))
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +60,13 @@ def try_json_scoring(json_path: Path) -> dict | None:
         print(f"::warning::{json_path}: code_findings is not an object. Falling back to text parsing.")
         return None
     try:
+        code_findings = {
+            k: int(v) for k, v in code_findings.items() if v is not None
+        }
+    except (TypeError, ValueError):
+        print(f"::warning::{json_path}: code_findings contains non-numeric values. Falling back to text parsing.")
+        return None
+    try:
         files_changed = int(files_changed) if files_changed else 1
     except (TypeError, ValueError):
         print(f"::warning::{json_path}: files_changed is not numeric. Falling back to text parsing.")
@@ -87,6 +74,7 @@ def try_json_scoring(json_path: Path) -> dict | None:
     try:
         model_score = int(model_score) if model_score else 0
     except (TypeError, ValueError):
+        print(f"::warning::{json_path}: code_health_score has non-numeric value {model_score!r}. Defaulting to 0.")
         model_score = 0
 
     computed_score = compute_deterministic_score(code_findings, files_changed)
