@@ -27,15 +27,11 @@ class SlackRetriever(BaseRetriever):
         self._identity = identity
 
     def retrieve(self, query: str) -> Any:
-        scope = self._identity.scope if self._identity else "public"
-        user_id = self._identity.identity_id if self._identity else ""
         cookie = self._identity.session_cookie if self._identity else ""
 
         params = {
             "query": query,
             "top_k_results": self.top_k,
-            "scope": scope,
-            "loggedInUser": user_id,
         }
 
         resp = requests.get(

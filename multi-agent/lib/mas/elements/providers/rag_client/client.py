@@ -180,8 +180,6 @@ class RagClient:
             self,
             query: str,
             top_k_results: int = 10,
-            scope: Optional[str] = None,
-            logged_in_user: Optional[str] = None,
             doc_ids: Optional[List[str]] = None,
             tags: Optional[List[str]] = None,
             session_cookie: str = "",
@@ -192,8 +190,6 @@ class RagClient:
         Args:
             query: Search query string
             top_k_results: Number of top results to return
-            scope: Optional scope filter
-            logged_in_user: Optional logged-in user context
             doc_ids: Optional list of document IDs to filter by
             tags: Optional list of tags to filter by
             session_cookie: Signed Flask session cookie for RAG auth
@@ -207,10 +203,6 @@ class RagClient:
             "query": query,
             "top_k_results": top_k_results,
         }
-        if scope:
-            params["scope"] = scope
-        if logged_in_user:
-            params["loggedInUser"] = logged_in_user
         if doc_ids:
             params["docIds"] = doc_ids
         if tags:

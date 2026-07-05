@@ -7,15 +7,8 @@ class RetrievalIdentity(Protocol):
 
     Defined in the retriever layer (DIP — consumer owns the abstraction).
     ``ExecutionContextHolder`` satisfies this structurally via its
-    forwarding ``.scope``, ``.identity_id``, and ``.session_cookie``
-    properties.
+    forwarding ``.session_cookie`` property.
     """
-
-    @property
-    def scope(self) -> str: ...
-
-    @property
-    def identity_id(self) -> str: ...
 
     @property
     def session_cookie(self) -> str: ...
