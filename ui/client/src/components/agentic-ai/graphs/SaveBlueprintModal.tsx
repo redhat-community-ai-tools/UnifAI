@@ -107,7 +107,7 @@ const SaveBlueprintModal: React.FC<SaveBlueprintModalProps> = ({
           <div className="space-y-2">
             <Label className="text-gray-300">Prompt Shortcuts (optional)</Label>
             <p className="text-xs text-gray-500">
-              Clickable prompts shown as chips when starting a new chat session.
+              Clickable prompts shown as chips when starting a new chat session (limited to 3).
             </p>
             <PromptShortcutsEditor
               prompts={promptShortcuts}

@@ -79,7 +79,7 @@ export default function EditPromptShortcutsModal({
 
         <div className="py-4">
           <p className="text-xs text-gray-500 mb-3">
-            Clickable prompts shown as chips when starting a new chat session.
+            Clickable prompts shown as chips when starting a new chat session (limited to 3).
           </p>
           {isLoading ? (
             <div className="flex items-center justify-center py-6 text-gray-400 text-sm">
