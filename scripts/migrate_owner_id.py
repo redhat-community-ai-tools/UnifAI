@@ -7,9 +7,9 @@ then scrolls Qdrant collections and sets metadata.owner_id on each point.
 
 Points with unmapped source_id get owner_id="unknown".
 
-The script is **idempotent** — safe to re-run. set_payload merges into existing
-metadata (preserves other fields), and create_payload_index is a no-op if the
-index already exists.
+The script is **idempotent** — safe to re-run. set_payload uses dot-notation
+to update only the owner_id field (preserves other metadata fields), and
+create_payload_index is a no-op if the index already exists.
 
 Usage:
     # Dry run (default)
@@ -23,6 +23,9 @@ Usage:
 
     # Custom batch size
     python scripts/migrate_owner_id.py --apply --batch-size 200
+
+    # Audit: list unmapped source_ids that would get owner_id="unknown"
+    python scripts/migrate_owner_id.py --audit-unknowns
 
 Environment:
     MONGODB_IP       (default: localhost)
@@ -73,6 +76,41 @@ def build_owner_map(mongo_col) -> dict:
         if sid and owner:
             owner_map[sid] = owner
     return owner_map
+
+
+def audit_unknowns(
+    qdrant: QdrantClient,
+    collection_name: str,
+    owner_map: dict,
+    batch_size: int,
+) -> dict:
+    """Scroll a collection and report which source_ids have no owner mapping."""
+    unmapped: dict[str, int] = {}
+    total_points = 0
+    offset = None
+
+    while True:
+        points, next_offset = qdrant.scroll(
+            collection_name=collection_name,
+            limit=batch_size,
+            offset=offset,
+            with_payload=True,
+        )
+
+        if not points:
+            break
+
+        total_points += len(points)
+        for point in points:
+            source_id = point.payload.get("metadata", {}).get("source_id", "")
+            if source_id not in owner_map:
+                unmapped[source_id] = unmapped.get(source_id, 0) + 1
+
+        if next_offset is None:
+            break
+        offset = next_offset
+
+    return {"total_points": total_points, "unmapped_sources": unmapped}
 
 
 # ────────────────────────────────────────────────────────────────
@@ -139,7 +177,7 @@ def migrate_collection(
                 try:
                     qdrant.set_payload(
                         collection_name=collection_name,
-                        payload={"metadata": {"owner_id": owner_id}},
+                        payload={"metadata.owner_id": owner_id},
                         points=PointIdsList(points=point_ids),
                     )
                     stats["updated"] += len(point_ids)
@@ -169,6 +207,8 @@ def main():
     )
     parser.add_argument("--apply", action="store_true",
                         help="Apply changes (default is dry-run)")
+    parser.add_argument("--audit-unknowns", action="store_true",
+                        help="List unmapped source_ids that would get owner_id='unknown'")
     parser.add_argument("--collections", nargs="*", default=None,
                         help=f"Collections to migrate (default: {DEFAULT_COLLECTIONS})")
     parser.add_argument("--batch-size", type=int, default=100,
@@ -210,6 +250,32 @@ def main():
     # Build lookup
     owner_map = build_owner_map(sources_col)
     print(f"\nLoaded {len(owner_map)} source_id -> upload_by mappings from MongoDB")
+
+    # Audit mode: report unknowns and exit
+    if args.audit_unknowns:
+        print(f"\n{'=' * 60}")
+        print("AUDIT: Scanning for unmapped source_ids")
+        print(f"{'=' * 60}")
+
+        for coll in collections:
+            print(f"\n  Collection: {coll}")
+            result = audit_unknowns(qdrant, coll, owner_map, args.batch_size)
+            total_points = result["total_points"]
+            unmapped = result["unmapped_sources"]
+            unknown_points = sum(unmapped.values())
+
+            if not unmapped:
+                print(f"    All {total_points} points have a valid owner mapping.")
+            else:
+                pct = (unknown_points / total_points * 100) if total_points else 0
+                print(f"    {unknown_points}/{total_points} points ({pct:.1f}%) "
+                      f"would be flagged as 'unknown'")
+                print(f"    Unmapped source_ids ({len(unmapped)} distinct):")
+                for sid, count in sorted(unmapped.items(), key=lambda x: -x[1]):
+                    print(f"      {sid or '(empty)':<40} → {count} points")
+
+        mongo_client.close()
+        return 0
 
     # Migrate each collection
     total = {"scrolled": 0, "updated": 0, "unknown": 0, "errors": []}
