@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Awaitable, Callable, Optional, Type, Any, Dict, Union, TYPE_CHECKING
+from typing import Awaitable, Callable, Optional, Type, Any, Dict, Union
 from pydantic import BaseModel, HttpUrl
 from global_utils.utils.util import validate_arguments
 from global_utils.utils.async_bridge import get_async_bridge
@@ -9,9 +9,7 @@ from mas.elements.providers.mcp_server_client.transport.enums import McpTranspor
 from mas.core.hitl.models import ToolAccessMode
 from mas.elements.tools.common.base_tool import BaseTool
 from global_utils.utils.util import json_schema_model
-
-if TYPE_CHECKING:
-    from mas.core.auth.credentials.credential import AuthCredential
+from mas.core.auth.credentials.credential import AuthCredential
 
 AsyncHeaderProvider = Callable[..., Awaitable[Dict[str, str]]]
 

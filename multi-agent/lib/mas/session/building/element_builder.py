@@ -21,7 +21,6 @@ from mas.core.enums import ResourceCategory
 from mas.core.element_deps import ElementBuildContext
 
 # concrete builders
-from .category_builders.auth_builder import AuthBuilder
 from .category_builders.provider_builder import ProviderBuilder
 from .category_builders.llm_builder import LLMBuilder
 from .category_builders.retriever_builder import RetrieverBuilder
@@ -39,7 +38,6 @@ class SessionElementBuilder:
     # Register all category builders once.  Order does *not* matter here;
     # topological sort from depends_on determines build order.
     _BUILDER_CLASSES: List[Type[CategoryBuilder]] = [
-        AuthBuilder,
         ProviderBuilder,
         LLMBuilder,
         RetrieverBuilder,

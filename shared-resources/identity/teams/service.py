@@ -11,6 +11,7 @@ from teams.repository.repository import TeamRepository
 
 if TYPE_CHECKING:
     from utils.user_groups_cache import UserGroupsCache
+    from global_utils.redis.team_cache import TeamMembershipCache
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +22,25 @@ class TeamService:
         repository: TeamRepository,
         directory_provider: Optional[DirectoryProvider] = None,
         user_groups_cache: Optional["UserGroupsCache"] = None,
+        team_membership_cache: Optional["TeamMembershipCache"] = None,
     ):
         self._repo = repository
         self._directory = directory_provider
         self._groups_cache = user_groups_cache
+        self._team_cache = team_membership_cache
+
+    # ── team cache invalidation ───────────────────────────────────────
+
+    def _invalidate_team_members(self, team: Team) -> None:
+        """Invalidate the team-membership cache for every user in the team."""
+        if not self._team_cache:
+            return
+        for m in team.members:
+            if m.type == TeamMemberType.USER:
+                self._team_cache.invalidate(m.id)
+            elif m.type == TeamMemberType.GROUP and m.group_members:
+                for uid in m.group_members:
+                    self._team_cache.invalidate(uid)
 
     # ── team CRUD ──────────────────────────────────────────────────────
 
@@ -46,6 +62,7 @@ class TeamService:
 
         team = Team(name=name, created_by=created_by, members=parsed_members)
         self._repo.create(team)
+        self._invalidate_team_members(team)
         return team
 
     def get(self, team_id: str) -> Team:
@@ -58,6 +75,7 @@ class TeamService:
     def update(self, team_id: str, name: Optional[str] = None,
                members: Optional[List[dict]] = None) -> Team:
         team = self._repo.get(team_id)
+        old_members = list(team.members)
 
         if name and name != team.name:
             if self._repo.find_by_name(name):
@@ -79,10 +97,17 @@ class TeamService:
 
         team.updated_at = datetime.utcnow()
         self._repo.update(team)
+
+        # Invalidate old members (removed users) and new members (added users)
+        old_team = Team(team_id=team_id, name="", created_by="", members=old_members)
+        self._invalidate_team_members(old_team)
+        self._invalidate_team_members(team)
         return team
 
     def delete(self, team_id: str) -> None:
+        team = self._repo.get(team_id)
         self._repo.delete(team_id)
+        self._invalidate_team_members(team)
 
     # ── directory lookups ──────────────────────────────────────────────
 

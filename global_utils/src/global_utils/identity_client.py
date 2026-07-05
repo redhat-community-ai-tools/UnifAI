@@ -15,6 +15,8 @@ from typing import Optional
 
 import requests as http_requests
 
+from global_utils.redis.team_cache import TeamMembershipCache
+
 logger = logging.getLogger(__name__)
 
 _TEAM_CACHE_TTL_SEC = 45.0
@@ -26,12 +28,22 @@ class IdentityClient:
     Args:
         base_url: Root URL of the Identity pod (e.g. ``http://identity:13456``).
         timeout: Default HTTP timeout in seconds for all requests.
+        team_cache: Optional Redis-backed cache. When provided, team
+            lookups use Redis instead of a per-process in-memory dict,
+            improving consistency across replicas and surviving restarts.
     """
 
-    def __init__(self, base_url: str, timeout: int = 5):
+    def __init__(
+        self,
+        base_url: str,
+        timeout: int = 5,
+        team_cache: Optional[TeamMembershipCache] = None,
+    ):
         self._base = (base_url or "").rstrip("/")
         self._timeout = timeout
-        self._cache: dict[str, tuple[float, list[dict]]] = {}
+        self._team_cache = team_cache
+        # Fallback in-memory cache used only when no Redis team_cache is injected
+        self._mem_cache: dict[str, tuple[float, list[dict]]] = {}
         self._cache_lock = Lock()
 
     @property
@@ -42,20 +54,32 @@ class IdentityClient:
     # ── Team cache internals ──────────────────────────────────────────
 
     def _get_cached_teams(self, username: str) -> Optional[list[dict]]:
+        if self._team_cache is not None:
+            ids = self._team_cache.get_team_ids(username)
+            if ids is not None:
+                return [{"team_id": tid} for tid in ids]
+            return None
         now = time.monotonic()
         with self._cache_lock:
-            entry = self._cache.get(username)
+            entry = self._mem_cache.get(username)
             if entry is not None and (now - entry[0]) < _TEAM_CACHE_TTL_SEC:
                 return entry[1]
         return None
 
     def _set_cached_teams(self, username: str, teams: list[dict]) -> None:
+        if self._team_cache is not None:
+            ids = [str(t.get("team_id")) for t in teams if t.get("team_id") is not None]
+            self._team_cache.set_team_ids(username, ids)
+            return
         with self._cache_lock:
-            self._cache[username] = (time.monotonic(), teams)
+            self._mem_cache[username] = (time.monotonic(), teams)
 
     def _invalidate_cached_teams(self, username: str) -> None:
+        if self._team_cache is not None:
+            self._team_cache.invalidate(username)
+            return
         with self._cache_lock:
-            self._cache.pop(username, None)
+            self._mem_cache.pop(username, None)
 
     # ── Teams API ─────────────────────────────────────────────────────
 

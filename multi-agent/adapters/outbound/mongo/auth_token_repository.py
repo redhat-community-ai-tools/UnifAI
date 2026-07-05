@@ -18,31 +18,11 @@ from pymongo import MongoClient, ASCENDING
 
 from mas.core.auth.credentials.models import StoredCredential, TokenStatus
 from mas.core.auth.credentials.ports import CredentialStore
+from global_utils.utils.crypto import FieldCipher
 
 logger = logging.getLogger(__name__)
 
 _ENCRYPTED_FIELDS = ("access_token", "refresh_token")
-_FERNET_PREFIX = "gAAAAAB"
-
-
-class _FieldCipher:
-    """Fernet wrapper for encrypting/decrypting individual string fields."""
-
-    def __init__(self, key: str):
-        from cryptography.fernet import Fernet
-        self._fernet = Fernet(key.encode() if isinstance(key, str) else key)
-
-    def encrypt(self, value: Optional[str]) -> Optional[str]:
-        if not value:
-            return value
-        return self._fernet.encrypt(value.encode()).decode()
-
-    def decrypt(self, value: Optional[str]) -> Optional[str]:
-        if not value:
-            return value
-        if not value.startswith(_FERNET_PREFIX):
-            return value
-        return self._fernet.decrypt(value.encode()).decode()
 
 
 class MongoCredentialStore(CredentialStore):
@@ -58,7 +38,7 @@ class MongoCredentialStore(CredentialStore):
         client = MongoClient(f"mongodb://{mongodb_ip}:{mongodb_port}/")
         db = client[db_name]
         self._coll = db[coll_name]
-        self._cipher = _FieldCipher(encryption_key) if encryption_key else None
+        self._cipher = FieldCipher(encryption_key) if encryption_key else None
         self._ensure_indexes()
 
     def _ensure_indexes(self) -> None:

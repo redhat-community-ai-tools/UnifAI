@@ -42,9 +42,8 @@ def get_all(identity):
             error="Time range must be one of {choices}"
         )
     ),
-    "user_id": fields.Str(data_key="userId", required=True)
 })
-def get_system_stats(time_range, user_id):
+def get_system_stats(time_range):
     """
     Get comprehensive system-wide statistics for workflows, users, and blueprints.
     Returns all key metrics in a single response for the admin dashboard.
@@ -53,12 +52,11 @@ def get_system_stats(time_range, user_id):
     endpoint with different time_range values to get different views
     (e.g., today vs. last 7 days vs. all time).
     
-    Requires admin access (user must be in admin_allowed_users list).
+    Requires admin access (authenticated user must be in admin_allowed_users list).
     If admin_allowed_users is empty, system stats are disabled and access is denied.
     
     Query params:
         time_range (str): Time range filter - 'today', '7days', '30days', or 'all' (default: 'all')
-        userId (str, required): User ID for access control (must be in admin_allowed_users list)
     """
     try:
         container = current_app.container

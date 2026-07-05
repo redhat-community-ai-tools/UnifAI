@@ -139,6 +139,9 @@ backend:
   type: ClusterIP
   env:
     LOG_LEVEL: debug
+    SESSION_COOKIE_SAMESITE: "None"
+    SESSION_COOKIE_SECURE: true
+    SESSION_COOKIE_HTTPONLY: true
     # DIRECTORY_LDAP_BIND_DN: ""
     # DIRECTORY_LDAP_BIND_PASSWORD: ""
 

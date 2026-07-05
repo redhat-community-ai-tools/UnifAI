@@ -9,12 +9,10 @@ from unifai_cli.api.base import MASClient
 class BlueprintsAPI(MASClient):
     """API methods for workflow blueprints."""
 
-    def list_blueprint_summaries(self, user_id: str) -> List[dict]:
+    def list_blueprint_summaries(self) -> List[dict]:
         return self._get(
             "blueprints",
             "available.blueprints.summary.get",
-            params={"userId": user_id},
-            user_id=user_id,
         )
 
     def get_blueprint(self, blueprint_id: str) -> dict:

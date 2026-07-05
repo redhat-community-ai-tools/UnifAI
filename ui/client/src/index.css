@@ -130,6 +130,17 @@
     color: #ffffff !important;
   }
 
+  /* Opt-in for inputs on dark backgrounds — add "dark-inputs" to a parent */
+  .dark-inputs input,
+  .dark-inputs textarea,
+  .dark-inputs select {
+    color: hsl(var(--foreground)) !important;
+  }
+  .dark-inputs input::placeholder,
+  .dark-inputs textarea::placeholder {
+    color: hsl(var(--muted-foreground)) !important;
+  }
+
   /* Ensure placeholder text has proper contrast */
   .light-mode input::placeholder,
   .light-mode textarea::placeholder {

@@ -27,7 +27,7 @@ async-bridge    = ["anyio"]
 codegen         = ["datamodel-code-generator", "jsonschema"]
 identity-client = ["requests"]
 
-rag             = ["global_utils[flask,apiargs,celery,docling,embedding]"]
+rag             = ["global_utils[flask,apiargs,celery,docling,embedding,redis]"]
 backend         = ["global_utils[flask,apiargs,redis]"]
 multi-agent     = ["global_utils[flask,apiargs,async-bridge,codegen,identity-client]"]
 identity        = ["global_utils[flask,redis,identity-client]"]

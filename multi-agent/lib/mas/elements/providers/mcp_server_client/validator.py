@@ -7,12 +7,10 @@ Uses the same transport path as the wizard and runtime (McpProviderFactory),
 and resolves auth credentials via ``core/auth`` before probing.
 """
 
-import time
 import logging
 from concurrent.futures import CancelledError
 from typing import List
 
-import anyio
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.elements.common.validator import (
     BaseElementValidator,
@@ -51,7 +49,10 @@ class McpProviderValidator(BaseElementValidator):
 
         try:
             with get_async_bridge() as bridge:
-                bridge.run(self._check_connection(config, context, messages))
+                bridge.run(
+                    self._check_connection(config, context, messages),
+                    timeout=context.timeout_seconds,
+                )
         except (CancelledError, TimeoutError) as e:
             messages.append(self._error(
                 ValidationCode.NETWORK_TIMEOUT.value,
@@ -92,14 +93,11 @@ class McpProviderValidator(BaseElementValidator):
                 )
 
         try:
-            start = time.time()
-            with anyio.fail_after(context.timeout_seconds):
-                await self._factory.create_async(config, auth_credential=auth_cred)
+            await self._factory.create_async(config, auth_credential=auth_cred)
 
-            elapsed = (time.time() - start) * 1000
             messages.append(self._info(
                 "CONNECTION_OK",
-                f"Connected to MCP server at {config.mcp_url} ({elapsed:.0f}ms)",
+                "Connected to MCP server",
                 field="mcp_url",
             ))
 

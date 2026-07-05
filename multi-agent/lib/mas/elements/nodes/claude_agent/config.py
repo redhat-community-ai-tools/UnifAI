@@ -8,9 +8,9 @@ from pydantic import Field
 
 from mas.core.field_hints import ActionHint, HiddenHint, HintType
 from mas.core.hitl.models import HITLMode
+from .identifiers import Identifier, EffortLevel
 from mas.core.ref.models import RetrieverRef, ProviderRef, ToolRef
 from mas.elements.nodes.common.base_config import NodeBaseConfig
-from .identifiers import Identifier
 
 
 class ClaudeAgentNodeConfig(NodeBaseConfig):
@@ -63,10 +63,38 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
         default=200,
         description="Maximum agentic turns (tool-use round trips). Prevents runaway execution."
     )
-
+      
     hitl_mode: HITLMode = Field(
         default=HITLMode.SKIP,
         description="HITL approval mode: ask (always), skip (never), dynamic (runtime flag)",
+    )
+
+    effort: EffortLevel = Field(
+        default=EffortLevel.MEDIUM,
+        description="Controls how much effort Claude puts into reasoning. "
+                    "'low' — minimal thinking, fastest. "
+                    "'medium' — balanced cost/quality. "
+                    "'high' — deep reasoning. "
+                    "'xhigh' — extended reasoning (Opus 4.7+ only)."
+    )
+
+    permission_mode: str = Field(
+        default="bypassPermissions",
+        description="Permission mode: 'bypassPermissions' (fully autonomous), "
+                    "'acceptEdits' (auto-accept edits), 'plan' (read-only)"
+    )
+
+    allowed_tools: List[str] = Field(
+        default_factory=lambda: [
+            "Read", "Write", "Edit", "Bash",
+            "Glob", "Grep", "WebSearch", "WebFetch",
+        ],
+        description="Tools to auto-approve without permission checks"
+    )
+
+    disallowed_tools: List[str] = Field(
+        default_factory=list,
+        description="Tools to explicitly deny"
     )
 
     # --- Skills ---

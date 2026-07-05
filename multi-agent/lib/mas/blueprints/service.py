@@ -34,10 +34,6 @@ class BlueprintService:
         self._auth_service = auth_service
         self._config_collector = BlueprintConfigCollector()
 
-    def set_auth_service(self, auth_service) -> None:
-        """Late-bind the auth service (created after BlueprintService in the container)."""
-        self._auth_service = auth_service
-
     # ────────── Write ──────────
     def save_draft(self, *, identity: Identity, draft_dict: dict,
                    metadata: Optional[Dict[str, Any]] = None) -> str:

@@ -23,3 +23,8 @@ releases:
         command: bash
         args:
         - "./scripts/identity-presync.sh"
+      - events: ["postsync"]
+        showlogs: true
+        command: bash
+        args:
+        - "./scripts/identity-postsync.sh"

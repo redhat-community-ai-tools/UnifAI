@@ -1,5 +1,8 @@
 env:
   BACKEND_ENV: "production"
+  SESSION_COOKIE_SAMESITE: "None"
+  SESSION_COOKIE_SECURE: true
+  SESSION_COOKIE_HTTPONLY: true
 
 debug: false
 

@@ -9,12 +9,13 @@ import json
 import logging
 from typing import List, Optional
 
+from global_utils.redis.constants import IDENTITY_USER_GROUPS_PREFIX
 from global_utils.redis.redis_kv_store import RedisKVStore
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TTL = 3600  # 1 hour
-KEY_PREFIX = "unifai:user_groups:"
+KEY_PREFIX = f"{IDENTITY_USER_GROUPS_PREFIX}:"
 
 
 class UserGroupsCache:

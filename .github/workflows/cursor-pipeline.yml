@@ -1,7 +1,9 @@
 name: Cursor Pipeline Review
 
 env:
-  PIPELINE_MODEL: claude-4.6-opus-high-thinking
+  ORCHESTRATOR_MODEL: composer-2.5-fast
+  ARCH_JUDGE_MODEL: claude-4.6-opus-high-thinking
+  CODE_JUDGE_MODEL: claude-4.6-sonnet-medium-thinking
 
 on:
   pull_request:
@@ -29,7 +31,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      checks: write
+      statuses: write
 
     steps:
       - name: Resolve branch
@@ -77,113 +79,170 @@ jobs:
             echo "::error::Failed to list models. Output: $MODEL_OUTPUT"
             exit 1
           }
-          if ! echo "$MODEL_OUTPUT" | grep -qF "$PIPELINE_MODEL"; then
-            echo "::error::Model '$PIPELINE_MODEL' is not available. Available models:"
+          if ! echo "$MODEL_OUTPUT" | grep -qF "$ORCHESTRATOR_MODEL"; then
+            echo "::error::Orchestrator model '$ORCHESTRATOR_MODEL' is not available. Available models:"
             echo "$MODEL_OUTPUT"
             exit 1
           fi
+          for MODEL in "$ARCH_JUDGE_MODEL" "$CODE_JUDGE_MODEL"; do
+            if ! echo "$MODEL_OUTPUT" | grep -qF "$MODEL"; then
+              echo "::error::Judge model '$MODEL' is not available. Available models:"
+              echo "$MODEL_OUTPUT"
+              exit 1
+            fi
+          done
 
       # Security: --trust grants the agent full tool access (file read/write, shell).
       # --force skips interactive confirmation. The agent runs in a read-only
       # checkout (contents: read permission) so it cannot push changes. The
       # CURSOR_API_KEY is scoped to this organization's Cursor account only.
-      - name: Run Architecture Review
+      #
+      # Uses /pipeline review (dual-review mode): orchestrator runs scout logic
+      # inline, then spawns Arch Judge + Code Judge in parallel. Only 2 subagent
+      # spawns instead of 3.
+      - name: Run Pipeline Review
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
+          CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
         run: |
-          agent --trust --force -p "/pipeline arch-review" \
-            --model "$PIPELINE_MODEL" 2>&1 | tee arch_review_output.txt
+          AGENT_EXIT=0
+          agent --trust --force -p "/pipeline review" \
+            --model "$ORCHESTRATOR_MODEL" --output-format json \
+            > review.json 2> >(tee review_stderr.log >&2) || AGENT_EXIT=$?
+          # Extract result directly to file — avoids shell variable mangling
+          # (echo of large content can lose newlines / interpret backslashes)
+          jq -r '.result // empty' review.json > review_output.txt || true
+          # Normalize line endings (CRLF → LF) so grep anchors work reliably
+          sed -i 's/\r$//' review_output.txt
+          # Split combined output into separate files for the gate evaluator.
+          # Uses line-number-based extraction to prevent malformed output (repeated
+          # or out-of-order headers) from leaking verdicts across sections.
+          ARCH_LINES=$(grep -n -E '^## (PHASE [0-9]+: )?ARCHITECTURE REVIEW[[:space:]]*$' review_output.txt | cut -d: -f1 || true)
+          CODE_LINES=$(grep -n -E '^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$' review_output.txt | cut -d: -f1 || true)
+          ARCH_COUNT=$(echo "$ARCH_LINES" | grep -c . || true)
+          CODE_COUNT=$(echo "$CODE_LINES" | grep -c . || true)
+          if [ "$ARCH_COUNT" -ne 1 ] || [ "$CODE_COUNT" -ne 1 ]; then
+            echo "::error::Expected exactly one '## ARCHITECTURE REVIEW' and one '## CODE REVIEW' header, found ${ARCH_COUNT} and ${CODE_COUNT} respectively. Agent output is malformed."
+            exit 1
+          fi
+          ARCH_LINE=$(echo "$ARCH_LINES" | head -1)
+          CODE_LINE=$(echo "$CODE_LINES" | head -1)
+          if [ "$ARCH_LINE" -ge "$CODE_LINE" ]; then
+            echo "::error::ARCHITECTURE REVIEW header (line $ARCH_LINE) must appear before CODE REVIEW header (line $CODE_LINE). Agent output is malformed."
+            exit 1
+          fi
+          # Extract arch section: from ARCH_LINE+1 to CODE_LINE-1
+          ARCH_END=$((CODE_LINE - 1))
+          ARCH_START=$((ARCH_LINE + 1))
+          if [ "$ARCH_START" -le "$ARCH_END" ]; then
+            sed -n "${ARCH_START},${ARCH_END}p" review_output.txt > arch_review_output.txt
+          else
+            : > arch_review_output.txt
+          fi
+          # Extract code section: from CODE_LINE+1 to EOF
+          CODE_START=$((CODE_LINE + 1))
+          TOTAL_LINES=$(wc -l < review_output.txt)
+          if [ "$CODE_START" -le "$TOTAL_LINES" ]; then
+            sed -n "${CODE_START},\$p" review_output.txt > code_review_output.txt
+          else
+            : > code_review_output.txt
+          fi
 
-      - name: Run Code Review
-        if: "!cancelled()"
-        env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-        run: |
-          agent --trust --force -p "/pipeline code-review-only" \
-            --model "$PIPELINE_MODEL" 2>&1 | tee code_review_output.txt
+          # Validate split files contain expected review content
+          SPLIT_OK=true
+          for f in arch_review_output.txt code_review_output.txt; do
+            if [ ! -s "$f" ]; then
+              echo "::error::${f} is empty. Agent output must contain '## ARCHITECTURE REVIEW' and '## CODE REVIEW' headers (optionally prefixed with 'PHASE N: ')."
+              SPLIT_OK=false
+            elif ! grep -q 'PIPELINE_VERDICT' "$f"; then
+              echo "::warning::${f} missing PIPELINE_VERDICT — judge output may be incomplete."
+            fi
+          done
+          if [ "$AGENT_EXIT" -ne 0 ]; then
+            if [ "$SPLIT_OK" = false ]; then
+              echo "::error::Agent exited with code $AGENT_EXIT and produced unusable output. See review_stderr.log."
+              exit 1
+            fi
+            echo "::warning::Agent exited with code $AGENT_EXIT but review output appears valid. Continuing."
+          fi
+          if [ "$SPLIT_OK" = false ]; then
+            echo "::error::Output splitting failed — review sections missing or empty. Ensure output uses '## ARCHITECTURE REVIEW' then '## CODE REVIEW' headers (with or without 'PHASE N: ' prefix)."
+            exit 1
+          fi
 
       - name: Publish results to Job Summary
         if: always()
         run: |
-          echo "## Architecture Review" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f arch_review_output.txt ]; then
+          # Only publish files that have actual review content (awk-extracted sections).
+          # Guard against empty files from failed extraction — don't pollute the summary.
+          if [ -s arch_review_output.txt ]; then
             cat arch_review_output.txt >> $GITHUB_STEP_SUMMARY
+            printf '\n' >> $GITHUB_STEP_SUMMARY
           else
-            echo "_No output produced._" >> $GITHUB_STEP_SUMMARY
+            printf '## Architecture Review\n\n_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Code Review" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f code_review_output.txt ]; then
+          printf -- '---\n\n' >> $GITHUB_STEP_SUMMARY
+          if [ -s code_review_output.txt ]; then
             cat code_review_output.txt >> $GITHUB_STEP_SUMMARY
+            printf '\n' >> $GITHUB_STEP_SUMMARY
           else
-            echo "_No output produced._" >> $GITHUB_STEP_SUMMARY
+            printf '## Code Review\n\n_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Extract Pipeline Telemetry
+        if: always()
+        env:
+          ORCHESTRATOR_MODEL: ${{ env.ORCHESTRATOR_MODEL }}
+          ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
+          CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
+        run: python3 .github/scripts/extract_pipeline_telemetry.py
+
+      - name: Upload Telemetry Data
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pipeline-telemetry-${{ github.run_id }}
+          path: telemetry.json
+          retention-days: 90
+          if-no-files-found: warn
 
       - name: Evaluate Review Scores
         id: gate
         if: always()
         run: python3 .github/scripts/evaluate_review_gate.py
 
-      - name: Publish Check Run
+      - name: Publish Commit Status
         if: always() && github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GATE_OUTCOME: ${{ steps.gate.outcome }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_REPOSITORY: ${{ github.repository }}
         run: |
-          ARCH_VERDICT=$(sed 's/\x1b\[[0-9;]*m//g; s/\*\{1,2\}//g; s/__//g' arch_review_output.txt 2>/dev/null | grep -oP '(?:APPROVE|NEEDS REVISION|REJECT)' | head -1 || echo "UNKNOWN")
-          CODE_SCORE=$(sed 's/\x1b\[[0-9;]*m//g; s/\*\{1,2\}//g; s/__//g' code_review_output.txt 2>/dev/null | grep -oP 'Code\s+Health\s+Score\b[^\d]*\K[0-9]{1,2}(?=\s*/\s*10)' | tail -1 || echo "?")
+          ARCH_VERDICT="${{ steps.gate.outputs.arch_verdict }}"
+          CODE_SCORE="${{ steps.gate.outputs.code_score }}"
+          ARCH_VERDICT="${ARCH_VERDICT:-UNKNOWN}"
+          CODE_SCORE="${CODE_SCORE:-?}"
 
-          TITLE="Architecture: ${ARCH_VERDICT} | Code: ${CODE_SCORE}/10"
+          DESCRIPTION="Architecture: ${ARCH_VERDICT} | Code: ${CODE_SCORE}/10"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          if [ "$GATE_OUTCOME" = "success" ]; then
-            CONCLUSION="success"
+          if [ "${{ steps.gate.outcome }}" = "success" ]; then
+            STATE="success"
           else
-            CONCLUSION="failure"
+            STATE="failure"
           fi
 
-          {
-            echo "## Architecture Review"
-            echo ""
-            if [ -f arch_review_output.txt ]; then
-              echo '```'
-              sed 's/\x1b\[[0-9;]*m//g' arch_review_output.txt | head -c 30000
-              echo ""
-              echo '```'
-            else
-              echo "_No output produced._"
-            fi
-            echo ""
-            echo "## Code Review"
-            echo ""
-            if [ -f code_review_output.txt ]; then
-              echo '```'
-              sed 's/\x1b\[[0-9;]*m//g' code_review_output.txt | head -c 30000
-              echo ""
-              echo '```'
-            else
-              echo "_No output produced._"
-            fi
-          } > check_run_summary.md
-
-          SUMMARY=$(cat check_run_summary.md)
-
           jq -n \
-            --arg name "Pipeline Review" \
-            --arg sha "$PR_HEAD_SHA" \
-            --arg conclusion "$CONCLUSION" \
-            --arg title "$TITLE" \
-            --arg summary "$SUMMARY" \
+            --arg state "$STATE" \
+            --arg target_url "$RUN_URL" \
+            --arg description "$DESCRIPTION" \
+            --arg context "Pipeline Review" \
             '{
-              name: $name,
-              head_sha: $sha,
-              status: "completed",
-              conclusion: $conclusion,
-              output: { title: $title, summary: $summary }
-            }' | gh api "repos/${GH_REPOSITORY}/check-runs" \
+              state: $state,
+              target_url: $target_url,
+              description: $description,
+              context: $context
+            }' | gh api "repos/${GH_REPOSITORY}/statuses/${{ github.event.pull_request.head.sha }}" \
               -X POST --input -

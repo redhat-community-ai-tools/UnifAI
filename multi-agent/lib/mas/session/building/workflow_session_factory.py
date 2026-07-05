@@ -14,9 +14,9 @@ from mas.graph.rt_graph_plan import RTGraphPlan
 from mas.core.execution_context import ExecutionContextHolder
 from mas.core.element_deps import ElementBuildContext
 from mas.blueprints.models.blueprint import BlueprintSpec
+from mas.core.auth.service import AuthService
 
 if TYPE_CHECKING:
-    from mas.core.auth.service import AuthService
     from mas.core.platform_config import PlatformConfig
 
 

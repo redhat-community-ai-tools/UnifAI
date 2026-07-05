@@ -105,6 +105,7 @@ This pipeline takes the images built by the first pipeline and deploys them to a
 - `deploy-bu.groovy` - Build utility functions
 
 ### Related Documentation
+- [GitHub Actions Workflows](../.github/DOC.md)
 - [Helm Deployment Guide](../helm/README.md)
 - [Helm Architecture](../helm/ARCHITECTURE.md)
 

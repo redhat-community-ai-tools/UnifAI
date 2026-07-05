@@ -41,9 +41,9 @@ class AppConfig(SharedConfig):
     multiagent_port: str = "8002"
 
     # Session Configuration
-    session_cookie_secure: bool = True
+    session_cookie_secure: bool = False
     session_cookie_http_only: bool = True
-    session_cookie_samesite: str = "None"
+    session_cookie_samesite: str = "Lax"
     permanent_session_lifetime: int = 10
 
     # MongoDB — teams collection (lives in the "users" DB alongside user approval terms)
