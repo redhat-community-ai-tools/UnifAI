@@ -114,8 +114,11 @@ Locate these lines to drive revision loops.
 }
 ```
 
-- `pipeline_pass` = `true` only if arch_verdict is "APPROVE" AND code_verdict is "CLEAN".
-- If only one judge ran (e.g., `code-review-only` mode), omit the other judge's fields.
+- `pipeline_pass` rules (one rule per mode):
+  - `review` (dual-judge): `true` only if arch_verdict is "APPROVE" AND code_verdict is "CLEAN".
+  - `arch-review` (single-judge): `true` only if arch_verdict is "APPROVE".
+  - `code-review-only` (single-judge): `true` only if code_verdict is "CLEAN".
+- If only one judge ran, omit the non-running judge's fields entirely so the CI gate can rely on `pipeline_pass` as a consistent boolean in all modes.
 - Use the Shell tool: `echo '<json>' > /tmp/pipeline_results.json`
 
 This file is consumed by the CI gate script for deterministic score computation. Writing it is mandatory in CI (`$CI=true`) for `review`, `arch-review`, `code-review-only` modes.
