@@ -4,7 +4,7 @@ from mas.resources.repository.base import ResourceRepository
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.resources.errors import ResourceInUseError
 from mas.core.identity import Identity
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 from mas.core.dto import GroupedCount
 
 
@@ -15,9 +15,11 @@ class ResourcesRegistry:
             self,
             repo: ResourceRepository,
             bp_repo: BlueprintRepository,
+            cipher: Optional[Any] = None,
     ):
         self._repo = repo
         self._bp_repo = bp_repo
+        self._cipher = cipher
 
     # ---------- write ----------
     def create(self, doc: Resource) -> Resource:
@@ -58,7 +60,18 @@ class ResourcesRegistry:
         return resources, total_count
 
     def raw_config(self, rid: str) -> dict:
-        return self.get(rid).cfg_dict
+        """Return cfg_dict with encrypted string fields decrypted.
+
+        Uses a shallow copy so the in-memory Resource is not mutated.
+        FieldCipher.decrypt() is prefix-aware: non-encrypted values
+        pass through unchanged, making this safe for all resource types.
+        """
+        cfg = dict(self.get(rid).cfg_dict)
+        if self._cipher:
+            for key, value in cfg.items():
+                if isinstance(value, str):
+                    cfg[key] = self._cipher.decrypt(value)
+        return cfg
 
     def meta(self, rid: str) -> tuple[str, str]:
         return self._repo.meta(rid)

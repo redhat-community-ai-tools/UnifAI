@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, ClassVar, Tuple
 
 from pydantic import Field
 
@@ -9,6 +9,8 @@ from .identifiers import Identifier
 
 class OpenShellSandboxConfig(BaseSandboxConfig):
     """Configuration for the OpenShell Sandbox."""
+
+    ENCRYPTED_FIELDS: ClassVar[Tuple[str, ...]] = ("ca_cert", "tls_cert", "tls_key")
 
     type: Literal[Identifier.TYPE] = Identifier.TYPE
 

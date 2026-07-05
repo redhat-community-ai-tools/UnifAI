@@ -1,6 +1,8 @@
 """Validator for OpenShell Sandbox — PEM pre-check + gRPC health check."""
 
-from typing import List
+import importlib.metadata
+import re
+from typing import List, Optional, Tuple
 
 from mas.elements.common.validator import (
     BaseElementValidator,
@@ -11,6 +13,31 @@ from mas.elements.common.validator import (
 )
 from .config import OpenShellSandboxConfig
 from .client import normalize_endpoint
+
+
+def _get_installed_sdk_version() -> Optional[str]:
+    """Return the installed openshell SDK version, or None if unavailable."""
+    try:
+        return importlib.metadata.version("openshell")
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _parse_version_tuple(raw: str) -> Optional[Tuple[int, ...]]:
+    """Parse a dotted version string into a comparable integer tuple.
+
+    Strips pre-release suffixes (e.g. ``rc1``, ``dev3``, ``a1``) from each
+    segment before parsing so that versions like ``"0.0.62rc1"`` are
+    comparable rather than silently rejected.
+
+    Returns None if the string is empty or contains no numeric content.
+    """
+    try:
+        parts = raw.strip().split(".")
+        numeric_parts = [int(re.sub(r"[^0-9].*", "", p)) for p in parts]
+        return tuple(numeric_parts)
+    except (ValueError, AttributeError):
+        return None
 
 
 class OpenShellSandboxValidator(BaseElementValidator):
@@ -63,6 +90,7 @@ class OpenShellSandboxValidator(BaseElementValidator):
                     f"Gateway v{resp.version}",
                     field="gateway_url",
                 ))
+                self._check_gateway_version(resp.version, messages)
             finally:
                 client.close()
 
@@ -107,3 +135,39 @@ class OpenShellSandboxValidator(BaseElementValidator):
                 ))
 
         return self._build_report(messages=messages)
+
+    def _check_gateway_version(
+        self,
+        gateway_version_str: str,
+        messages: List[ValidationMessage],
+    ) -> None:
+        """Compare the remote gateway version against the installed SDK version.
+
+        Emits a warning when the gateway is older than the SDK — the sandbox
+        will still be created, but functionality is not guaranteed if the SDK
+        introduced breaking changes between the two versions.
+        """
+        sdk_version_str = _get_installed_sdk_version()
+        if not sdk_version_str or not gateway_version_str:
+            return
+
+        gateway_ver = _parse_version_tuple(gateway_version_str)
+        sdk_ver = _parse_version_tuple(sdk_version_str)
+
+        if gateway_ver is None or sdk_ver is None:
+            messages.append(self._warning(
+                "VERSION_MISMATCH",
+                f"Could not parse gateway version '{gateway_version_str}' "
+                f"or SDK version '{sdk_version_str}' for compatibility check.",
+                field="gateway_url",
+            ))
+            return
+
+        if gateway_ver < sdk_ver:
+            messages.append(self._warning(
+                "VERSION_MISMATCH",
+                f"Gateway v{gateway_version_str} is older than the installed "
+                f"SDK v{sdk_version_str}. Proper functionality cannot be "
+                f"guaranteed if the SDK introduced breaking changes.",
+                field="gateway_url",
+            ))
