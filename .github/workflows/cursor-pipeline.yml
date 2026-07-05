@@ -174,20 +174,20 @@ jobs:
       - name: Publish results to Job Summary
         if: always()
         run: |
-          # Only publish files that have actual review content (awk-extracted sections).
-          # Guard against empty files from failed extraction — don't pollute the summary.
+          printf '## Architecture Review\n\n' >> $GITHUB_STEP_SUMMARY
           if [ -s arch_review_output.txt ]; then
             cat arch_review_output.txt >> $GITHUB_STEP_SUMMARY
             printf '\n' >> $GITHUB_STEP_SUMMARY
           else
-            printf '## Architecture Review\n\n_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
+            printf '_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
           fi
           printf -- '---\n\n' >> $GITHUB_STEP_SUMMARY
+          printf '## Code Review\n\n' >> $GITHUB_STEP_SUMMARY
           if [ -s code_review_output.txt ]; then
             cat code_review_output.txt >> $GITHUB_STEP_SUMMARY
             printf '\n' >> $GITHUB_STEP_SUMMARY
           else
-            printf '## Code Review\n\n_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
+            printf '_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
           fi
 
       - name: Upload Review Summary

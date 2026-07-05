@@ -159,7 +159,7 @@ When the verdict is NOT approval, read `.cursor/skills/pipeline/modes/_revision-
 Review phases follow an Inline Scout + Judge pattern. The orchestrator **executes Scout logic directly** (no subagent spawn) to gather evidence, then spawns Judge subagent(s) for reasoning. This minimizes agent spawn overhead — only judges are spawned.
 
 **Model defaults** (override via environment variables `ARCH_JUDGE_MODEL`, `CODE_JUDGE_MODEL`):
-- Arch Judge: `claude-4.6-opus-high-thinking`
+- Arch Judge: `claude-4.6-opus-max-thinking`
 - Code Judge: `claude-4.6-sonnet-medium-thinking`
 
 **Inline Scout execution (applies to all review modes):**
@@ -174,9 +174,10 @@ Review phases follow an Inline Scout + Judge pattern. The orchestrator **execute
 3. Spawn BOTH judges in parallel (single message, two Task calls with `run_in_background: true`):
    - Arch Judge: `Task(model=$ARCH_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<arch-reviewer skill + evidence pack>")`
    - Code Judge: `Task(model=$CODE_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<code-reviewer skill + evidence pack>")`
-4. Wait for both to complete. Parse `PIPELINE_ARCH_VERDICT:` from arch judge and `PIPELINE_CODE_VERDICT:` from code judge.
+4. Wait for both to complete. Parse `PIPELINE_ARCH_VERDICT:` from arch judge and `PIPELINE_CODE_VERDICT:` from code judge. Do NOT emit per-judge checkpoints — wait silently until both finish, then emit ONE combined checkpoint (see below).
 5. Present both reviews in this exact order: `## ARCHITECTURE REVIEW` first, then `## CODE REVIEW`. The CI workflow's output splitting depends on this ordering.
 6. The overall pipeline passes only if BOTH verdicts pass (arch=APPROVE AND code=CLEAN).
+7. Emit a single post-judge checkpoint (one paragraph max): state both verdicts, the overall pass/fail, the health score, and any blocking items. Do NOT repeat this information — the Pipeline Summary at the end covers the rest.
 
 **For `arch-review` (Phase 9, standalone):**
 1. Run Inline Scout. Scope = user's file/folder arguments.
@@ -285,7 +286,7 @@ To close the pipeline: first update the state tracker with `EXIT_STATUS: SUCCESS
 
 ## Context Management
 
-- After each phase, emit a one-paragraph checkpoint: verdict, key decisions, files changed, and skills used (list every skill file the agent read via the Read tool during the phase, by short name — e.g. "designer.md, codebase/SKILL.md").
+- After each phase, emit a one-paragraph checkpoint: verdict, key decisions, files changed, and skills used (list every skill file the agent read via the Read tool during the phase, by short name — e.g. "designer.md, codebase/SKILL.md"). For parallel-judge phases (`review` mode), emit ONE checkpoint after both judges complete — do not narrate each judge's arrival separately.
 - If >15 tool calls within a single phase, summarize intermediate results before continuing.
 - In code revision loops, produce only changed files + summary of unchanged (not full re-emit).
 - In design revision loops, produce the complete revised design.
