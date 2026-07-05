@@ -190,6 +190,15 @@ jobs:
             printf '## Code Review\n\n_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
           fi
 
+      - name: Upload Review Summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pipeline-review-summary-${{ github.run_id }}
+          path: review_output.txt
+          retention-days: 90
+          if-no-files-found: warn
+
       - name: Extract Pipeline Telemetry
         if: always()
         env:

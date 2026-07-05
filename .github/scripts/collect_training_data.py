@@ -45,13 +45,27 @@ CSV_HEADERS = [
 
 
 def load_json(path: Path) -> dict | None:
-    """Load a JSON file, returning None on failure."""
+    """Load a JSON file, returning None if missing, unreadable, or not an object."""
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
     except (json.JSONDecodeError, OSError):
         return None
+    if not isinstance(data, dict):
+        print(f"::warning::{path.name} is not a JSON object, skipping.")
+        return None
+    return data
+
+
+_CSV_INJECTION_PREFIXES = ("=", "+", "-", "@")
+
+
+def _sanitize_csv_value(value: str) -> str:
+    """Prevent CSV injection by escaping formula-triggering prefixes."""
+    if value and value[0] in _CSV_INJECTION_PREFIXES:
+        return "'" + value
+    return value
 
 
 def compute_deterministic_score(code_findings: dict, files_changed: int) -> int:
@@ -104,15 +118,15 @@ def main() -> int:
         orchestrator_model = models.get("orchestrator", "")
 
     row = {
-        "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
-        "pr_number": os.environ.get("PR_NUMBER", ""),
-        "branch": os.environ.get("BRANCH_REF", "unknown"),
+        "run_id": _sanitize_csv_value(os.environ.get("GITHUB_RUN_ID", "local")),
+        "pr_number": _sanitize_csv_value(os.environ.get("PR_NUMBER", "")),
+        "branch": _sanitize_csv_value(os.environ.get("BRANCH_REF", "unknown")),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "files_changed": files_changed,
         "lines_added": pipeline_data.get("lines_added", 0),
         "lines_removed": pipeline_data.get("lines_removed", 0),
-        "arch_verdict": pipeline_data.get("arch_verdict", ""),
-        "code_verdict": pipeline_data.get("code_verdict", ""),
+        "arch_verdict": _sanitize_csv_value(pipeline_data.get("arch_verdict", "")),
+        "code_verdict": _sanitize_csv_value(pipeline_data.get("code_verdict", "")),
         "model_score": model_score,
         "computed_score": computed_score,
         "critical_count": code_findings.get("critical", 0),
@@ -123,9 +137,9 @@ def main() -> int:
         "arch_major": arch_findings.get("major", 0),
         "arch_minor": arch_findings.get("minor", 0),
         "arch_info": arch_findings.get("info", 0),
-        "arch_model": arch_model,
-        "code_model": code_model,
-        "orchestrator_model": orchestrator_model,
+        "arch_model": _sanitize_csv_value(arch_model),
+        "code_model": _sanitize_csv_value(code_model),
+        "orchestrator_model": _sanitize_csv_value(orchestrator_model),
         "duration_ms": duration_ms,
         "cost_usd": round(cost_usd, 4),
     }

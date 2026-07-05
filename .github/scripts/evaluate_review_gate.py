@@ -21,7 +21,8 @@ CODE_SCORE_PATTERNS = [
     re.compile(r"(?:verdict|review|code)[^\n]{0,40}(\d{1,2})\s*/\s*10", re.IGNORECASE),
 ]
 ARCH_VERDICT_RE = re.compile(r"(APPROVE|NEEDS[_ ]REVISION|REJECT)")
-PIPELINE_VERDICT_RE = re.compile(r"^`?PIPELINE_(?:ARCH_|CODE_)?VERDICT:\s*(APPROVE|NEEDS_REVISION|REJECT|CLEAN|NEEDS_REFACTORING|MAJOR_CLEANUP|PASS|FAIL)\b", re.MULTILINE)
+PIPELINE_ARCH_VERDICT_RE = re.compile(r"^`?PIPELINE_ARCH_VERDICT:\s*(APPROVE|NEEDS_REVISION|REJECT)\b", re.MULTILINE)
+PIPELINE_CODE_VERDICT_RE = re.compile(r"^`?PIPELINE_CODE_VERDICT:\s*(CLEAN|NEEDS_REFACTORING|MAJOR_CLEANUP)\b", re.MULTILINE)
 EXIT_STATUS_RE = re.compile(r"^EXIT_STATUS:\s*(SUCCESS|REVISION_LIMIT|USER_INPUT_REQUIRED|ERROR|SKILL_NOT_FOUND)", re.MULTILINE)
 
 
@@ -75,6 +76,19 @@ def try_json_scoring(json_path: Path) -> dict | None:
     files_changed = data.get("files_changed", 1)
     model_score = data.get("code_health_score", 0)
 
+    if not isinstance(code_findings, dict):
+        print(f"::warning::{json_path}: code_findings is not an object. Falling back to text parsing.")
+        return None
+    try:
+        files_changed = int(files_changed) if files_changed else 1
+    except (TypeError, ValueError):
+        print(f"::warning::{json_path}: files_changed is not numeric. Falling back to text parsing.")
+        return None
+    try:
+        model_score = int(model_score) if model_score else 0
+    except (TypeError, ValueError):
+        model_score = 0
+
     computed_score = compute_deterministic_score(code_findings, files_changed)
 
     if model_score and abs(computed_score - model_score) >= 2:
@@ -121,7 +135,7 @@ def parse_code_score(path: Path) -> tuple[int, str]:
             source = "ok" if i == 0 else f"ok_fallback_{i}"
             return int(matches[-1]), source
 
-    pv_matches = PIPELINE_VERDICT_RE.findall(clean)
+    pv_matches = PIPELINE_CODE_VERDICT_RE.findall(clean)
     if pv_matches:
         token = pv_matches[-1]
         if token == "CLEAN":
@@ -130,14 +144,6 @@ def parse_code_score(path: Path) -> tuple[int, str]:
             return 5, "ok_pipeline_verdict"
         elif token == "MAJOR_CLEANUP":
             return 3, "ok_pipeline_verdict"
-        elif token in ("APPROVE", "PASS"):
-            return 8, "ok_pipeline_verdict_mapped"
-        elif token == "NEEDS_REVISION":
-            return 5, "ok_pipeline_verdict_mapped"
-        elif token in ("REJECT", "FAIL"):
-            return 3, "ok_pipeline_verdict_mapped"
-        else:
-            return 0, f"verdict_not_code_review_{token.lower()}"
 
     return 0, "pattern_not_found"
 
@@ -151,12 +157,10 @@ def parse_arch_verdict(path: Path) -> tuple[str, str]:
 
     clean = strip_markdown(strip_ansi(content))
 
-    pv_matches = PIPELINE_VERDICT_RE.findall(clean)
+    pv_matches = PIPELINE_ARCH_VERDICT_RE.findall(clean)
     if pv_matches:
         token = pv_matches[-1]
         verdict_map = {"APPROVE": "APPROVE", "NEEDS_REVISION": "NEEDS REVISION", "REJECT": "REJECT"}
-        if token not in verdict_map:
-            return "UNKNOWN", f"unexpected_arch_verdict_{token.lower()}"
         return verdict_map[token], "ok"
 
     matches = ARCH_VERDICT_RE.findall(clean)
@@ -217,14 +221,11 @@ def main() -> int:
         model_score = None
 
         code_score, code_status = parse_code_score(code_file)
-        if code_status == "pattern_not_found" or code_status.startswith("file_") or code_status.startswith("verdict_not_code_review"):
+        if code_status == "pattern_not_found" or code_status.startswith("file_"):
             print(f"::warning::Could not extract code review score (reason: {code_status}). Check {code_file}.")
         elif code_status == "ok_pipeline_verdict":
-            print(f"::notice::Code review score ({code_score}/10) derived from PIPELINE_VERDICT, "
+            print(f"::notice::Code review score ({code_score}/10) derived from PIPELINE_CODE_VERDICT, "
                   f"not an explicit score in the output. Check {code_file}.")
-        elif code_status == "ok_pipeline_verdict_mapped":
-            print(f"::warning::Code review score ({code_score}/10) derived from non-code-review "
-                  f"PIPELINE_VERDICT token (agent used wrong token set). Check {code_file}.")
         elif code_status.startswith("ok_fallback"):
             print(f"::warning::Code review score extracted via fallback pattern ({code_status}). "
                   f"The output may not follow the expected format. Check {code_file}.")
