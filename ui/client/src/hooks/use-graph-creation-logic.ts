@@ -15,7 +15,7 @@ import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { deriveThemeColors } from "@/lib/colorUtils";
 import axios from "../http/axiosAgentConfig";
 import * as yaml from "js-yaml";
-import { saveBlueprint, updateBlueprint, setPromptShortcuts, PromptShortcutInput } from "@/api/blueprints";
+import { saveBlueprint, updateBlueprint, PromptShortcutInput } from "@/api/blueprints";
 import {
   acquireTeamEditLock,
   heartbeatTeamEditLock,
@@ -1114,6 +1114,13 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
           ...yamlFlow,
           name: name,
           description: description,
+          prompt_shortcuts: cleanedPrompts.length > 0
+            ? cleanedPrompts.map(p => ({
+                ...(p.id && { id: p.id }),
+                kind: "manual",
+                text: p.text,
+              }))
+            : undefined,
         };
 
         setYamlFlow(updatedYamlFlow);
@@ -1130,7 +1137,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         let blueprintId;
         
         if (isEditMode && editBlueprintId) {
-          response = await updateBlueprint(editBlueprintId, yamlString);
+          response = await updateBlueprint(editBlueprintId, yamlString, USER_ID, identityType);
           blueprintId = editBlueprintId;
         } else {
           if (!USER_ID) {
@@ -1152,17 +1159,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
               ? "Unknown error occurred while updating blueprint"
               : "Unknown error occurred while saving blueprint"
           );
-        }
-
-        try {
-          await setPromptShortcuts(blueprintId, cleanedPrompts, USER_ID, identityType);
-        } catch (shortcutErr) {
-          console.error("Failed to save prompt shortcuts:", shortcutErr);
-          toast({
-            title: "⚠️ Shortcuts not saved",
-            description: "Blueprint saved, but prompt shortcuts failed to update. Try editing them from the workflow panel.",
-            variant: "destructive",
-          });
         }
 
         toast({
@@ -1194,7 +1190,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         setIsSaving(false);
       }
     },
-    [yamlFlow, toast, onSaveComplete, USER_ID, identityType, isEditMode, editBlueprintId],
+    [yamlFlow, toast, onSaveComplete, USER_ID, USER_DISPLAY_NAME, identityType, isEditMode, editBlueprintId],
   );
 
   useEffect(() => {

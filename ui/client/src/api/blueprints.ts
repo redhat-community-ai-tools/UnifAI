@@ -185,10 +185,14 @@ export async function saveBlueprint(
 export async function updateBlueprint(
   blueprintId: string,
   blueprintRaw: string,
+  userId: string,
+  identityType?: string,
 ): Promise<SaveBlueprintResponse> {
   const { data } = await axios.put<SaveBlueprintResponse>('/blueprints/blueprint.update', {
     blueprintId,
     blueprintRaw,
+    userId,
+    identityType: identityType || 'user',
   });
   return data;
 }

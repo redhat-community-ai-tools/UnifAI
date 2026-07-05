@@ -24,6 +24,7 @@ import { useSessionManagement } from "@/hooks/use-session-management";
 import { useSessionStream } from "@/hooks/use-session-stream";
 import { useSessionHub } from "@/hooks/use-session-hub";
 import { useCarouselLayout } from "@/hooks/use-carousel-layout";
+import { useDefaultPrompts } from "@/hooks/use-default-prompts";
 import { sortSessionsByTimestamp } from "@/utils/sessionHelpers";
 import {
   CollaborationHubSessionSidebar,
@@ -341,13 +342,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
   }, []);
 
   // ── Prompt shortcuts ───────────────────────────────────────────────────
-  const defaultPrompts = useMemo(() => {
-    if (!hub.selectedSession?.blueprintId) return undefined;
-    const specDict = hub.blueprintSpecCache.get(hub.selectedSession.blueprintId);
-    const shortcuts = specDict?.prompt_shortcuts;
-    if (!Array.isArray(shortcuts)) return undefined;
-    return shortcuts.filter((p: PromptShortcut) => p.kind === "manual");
-  }, [hub.selectedSession?.blueprintId, hub.blueprintSpecCache]);
+  const defaultPrompts = useDefaultPrompts(hub);
 
   // ── Loading / Error ────────────────────────────────────────────────────
   if (hub.isLoading) {
