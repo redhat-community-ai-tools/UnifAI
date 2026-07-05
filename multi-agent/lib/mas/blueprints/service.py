@@ -16,7 +16,7 @@ from mas.blueprints.exceptions import (
     InvalidMetadataKeysError,
     PromptShortcutsValidationError,
 )
-from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts, PromptShortcutItem
 from mas.core.identity import Identity
 from mas.core.ref import RefWalker
 from mas.elements.common.card import ElementCard
@@ -57,12 +57,16 @@ class BlueprintService:
     # ────────── Write ──────────
     @staticmethod
     def _normalize_prompt_shortcuts(draft_dict: dict) -> dict:
-        """Run prompt_shortcuts through the PromptShortcuts value object
-        so that id and kind defaults are filled in before persistence."""
+        """Validate and normalize prompt_shortcuts before persistence.
+        Raises PromptShortcutsValidationError for invalid data."""
         raw = draft_dict.get("prompt_shortcuts")
         if not raw:
             return draft_dict
-        shortcuts = PromptShortcuts.from_raw_list(raw)
+        try:
+            items = [PromptShortcutItem(**entry) for entry in raw]
+            shortcuts = PromptShortcuts(prompts=items)
+        except (ValidationError, ValueError, TypeError) as exc:
+            raise PromptShortcutsValidationError(str(exc)) from exc
         return {**draft_dict, "prompt_shortcuts": shortcuts.to_storage()}
 
     def save_draft(self, *, identity: Identity, draft_dict: dict,
@@ -83,14 +87,19 @@ class BlueprintService:
         """Get blueprint document with metadata for sharing operations."""
         return self._repo.load(blueprint_id)
 
-    def update_draft(self, *, blueprint_id: str, draft_dict: dict) -> bool:
-        if not self._repo.exists(blueprint_id):
-            raise BlueprintNotFoundError(blueprint_id)
+    def update_draft(self, *, blueprint_id: str, draft_dict: dict,
+                     identity: Identity) -> bool:
+        try:
+            doc = self._repo.load(blueprint_id)
+        except KeyError as exc:
+            raise BlueprintNotFoundError(blueprint_id) from exc
+        if doc.identity.type != identity.type or doc.identity.id != identity.id:
+            raise BlueprintAccessDeniedError(blueprint_id, identity.id)
         if "prompt_shortcuts" not in draft_dict:
-            existing = self._repo.get_prompt_shortcuts(blueprint_id=blueprint_id)
+            existing = PromptShortcuts.from_spec(doc.spec_dict)
             if not existing.is_empty:
                 draft_dict = {**draft_dict, "prompt_shortcuts": existing.to_storage()}
-                
+
         draft = BlueprintDraft(**self._normalize_prompt_shortcuts(draft_dict))
         rid_refs = list(RefWalker.external_rids(draft))
         return self._repo.update(

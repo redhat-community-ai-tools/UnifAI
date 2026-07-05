@@ -194,11 +194,12 @@ def save_blueprint(identity, blueprint_raw=None, metadata=None):
 
 
 @blueprints_bp.route("/blueprint.update", methods=["PUT"])
+@with_require_identity_authorization
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
     "blueprint_raw": fields.Str(data_key="blueprintRaw", required=True),
 })
-def update_blueprint(blueprint_id, blueprint_raw):
+def update_blueprint(identity, blueprint_id, blueprint_raw):
     """Update an existing blueprint in-place, keeping the same ID."""
     try:
         parsed = _extract_blueprint_data(
@@ -207,7 +208,8 @@ def update_blueprint(blueprint_id, blueprint_raw):
         )
 
         svc = current_app.container.blueprint_service
-        success = svc.update_draft(blueprint_id=blueprint_id, draft_dict=parsed)
+        success = svc.update_draft(blueprint_id=blueprint_id, draft_dict=parsed,
+                                   identity=identity)
 
         if not success:
             return jsonify({"status": "error", "error": "Failed to update blueprint"}), 500
@@ -217,9 +219,11 @@ def update_blueprint(blueprint_id, blueprint_raw):
             "blueprint_id": blueprint_id,
         }), 200
 
+    except BlueprintAccessDeniedError:
+        return jsonify({"status": "error", "error": "You do not have permission to modify this blueprint"}), 403
     except BlueprintNotFoundError as e:
         return jsonify({"status": "error", "error": str(e)}), 404
-    except BadRequest as e:
+    except (BadRequest, PromptShortcutsValidationError) as e:
         return jsonify({"status": "error", "error": str(e)}), 400
     except Exception as e:
         logger.exception(f"Unexpected error updating blueprint {blueprint_id}")
