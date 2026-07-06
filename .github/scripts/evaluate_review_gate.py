@@ -13,7 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-from _scoring import compute_deterministic_score
+from _scoring import compute_deterministic_score, require_int
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 MARKDOWN_BOLD_RE = re.compile(r"[*`]{1,2}")
@@ -59,23 +59,40 @@ def try_json_scoring(json_path: Path) -> dict | None:
     if not isinstance(code_findings, dict):
         print(f"::warning::{json_path}: code_findings is not an object. Falling back to text parsing.")
         return None
-    try:
-        code_findings = {
-            k: int(v) for k, v in code_findings.items() if v is not None
-        }
-    except (TypeError, ValueError):
-        print(f"::warning::{json_path}: code_findings contains non-numeric values. Falling back to text parsing.")
-        return None
-    try:
-        files_changed = int(files_changed) if files_changed else 1
-    except (TypeError, ValueError):
-        print(f"::warning::{json_path}: files_changed is not numeric. Falling back to text parsing.")
-        return None
-    try:
-        model_score = int(model_score) if model_score else 0
-    except (TypeError, ValueError):
-        print(f"::warning::{json_path}: code_health_score has non-numeric value {model_score!r}. Defaulting to 0.")
+    parsed_findings: dict[str, int] = {}
+    for key, value in code_findings.items():
+        if value is None:
+            continue
+        count = require_int(value, default_if_empty=0, min_value=0)
+        if count is None:
+            print(
+                f"::warning::{json_path}: code_findings[{key!r}] has non-numeric value "
+                f"{value!r}. Falling back to text parsing."
+            )
+            return None
+        parsed_findings[key] = count
+    code_findings = parsed_findings
+
+    if files_changed is None or files_changed == "":
+        files_changed = 1
+    else:
+        parsed_files_changed = require_int(files_changed, default_if_empty=1, min_value=0)
+        if parsed_files_changed is None:
+            print(f"::warning::{json_path}: files_changed is not numeric ({files_changed!r}). Falling back to text parsing.")
+            return None
+        files_changed = parsed_files_changed or 1
+
+    if model_score is None or model_score == "":
         model_score = 0
+    else:
+        parsed_model_score = require_int(model_score, default_if_empty=0, min_value=0)
+        if parsed_model_score is None:
+            print(
+                f"::warning::{json_path}: code_health_score has non-numeric value "
+                f"{model_score!r}. Falling back to text parsing."
+            )
+            return None
+        model_score = parsed_model_score
 
     computed_score = compute_deterministic_score(code_findings, files_changed)
 
