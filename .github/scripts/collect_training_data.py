@@ -16,7 +16,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from _scoring import compute_deterministic_score
+from _scoring import compute_deterministic_score, to_int
 
 CSV_HEADERS = [
     "run_id",
@@ -86,14 +86,21 @@ def main() -> int:
 
     code_findings = pipeline_data.get("code_findings", {})
     arch_findings = pipeline_data.get("arch_findings", {})
-    files_changed = pipeline_data.get("files_changed", 1)
-    try:
-        files_changed = int(files_changed) if files_changed else 1
-    except (TypeError, ValueError):
-        print(f"::warning::Training data: files_changed is not numeric ({files_changed!r}). Defaulting to 1.")
-        files_changed = 1
+    if not isinstance(code_findings, dict):
+        print(
+            f"::warning::Training data: code_findings is not an object ({type(code_findings).__name__}). "
+            "Using empty findings."
+        )
+        code_findings = {}
+    if not isinstance(arch_findings, dict):
+        print(
+            f"::warning::Training data: arch_findings is not an object ({type(arch_findings).__name__}). "
+            "Using empty findings."
+        )
+        arch_findings = {}
 
-    model_score = pipeline_data.get("code_health_score", 0)
+    files_changed = to_int(pipeline_data.get("files_changed"), default=1, min_value=0) or 1
+    model_score = to_int(pipeline_data.get("code_health_score"), default=0)
     computed_score = compute_deterministic_score(code_findings, files_changed)
 
     # Extract telemetry data
@@ -105,8 +112,15 @@ def main() -> int:
 
     if telemetry_data:
         totals = telemetry_data.get("totals", {})
-        duration_ms = totals.get("duration_ms", 0)
-        cost_usd = totals.get("estimated_cost_usd", 0.0)
+        duration_ms = to_int(totals.get("duration_ms"), default=0)
+        try:
+            cost_usd = round(float(totals.get("estimated_cost_usd", 0.0)), 4)
+        except (TypeError, ValueError):
+            print(
+                "::warning::Training data: estimated_cost_usd is not numeric "
+                f"({totals.get('estimated_cost_usd')!r}). Defaulting to 0."
+            )
+            cost_usd = 0.0
         models = telemetry_data.get("models", {})
         arch_model = models.get("arch_judge", "")
         code_model = models.get("code_judge", "")
@@ -118,20 +132,20 @@ def main() -> int:
         "branch": _sanitize_csv_value(os.environ.get("BRANCH_REF", "unknown")),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "files_changed": files_changed,
-        "lines_added": pipeline_data.get("lines_added", 0),
-        "lines_removed": pipeline_data.get("lines_removed", 0),
+        "lines_added": to_int(pipeline_data.get("lines_added"), default=0),
+        "lines_removed": to_int(pipeline_data.get("lines_removed"), default=0),
         "arch_verdict": _sanitize_csv_value(pipeline_data.get("arch_verdict", "")),
         "code_verdict": _sanitize_csv_value(pipeline_data.get("code_verdict", "")),
         "model_score": model_score,
         "computed_score": computed_score,
-        "critical_count": code_findings.get("critical", 0),
-        "major_count": code_findings.get("major", 0),
-        "minor_count": code_findings.get("minor", 0),
-        "info_count": code_findings.get("info", 0),
-        "arch_critical": arch_findings.get("critical", 0),
-        "arch_major": arch_findings.get("major", 0),
-        "arch_minor": arch_findings.get("minor", 0),
-        "arch_info": arch_findings.get("info", 0),
+        "critical_count": to_int(code_findings.get("critical"), default=0),
+        "major_count": to_int(code_findings.get("major"), default=0),
+        "minor_count": to_int(code_findings.get("minor"), default=0),
+        "info_count": to_int(code_findings.get("info"), default=0),
+        "arch_critical": to_int(arch_findings.get("critical"), default=0),
+        "arch_major": to_int(arch_findings.get("major"), default=0),
+        "arch_minor": to_int(arch_findings.get("minor"), default=0),
+        "arch_info": to_int(arch_findings.get("info"), default=0),
         "arch_model": _sanitize_csv_value(arch_model),
         "code_model": _sanitize_csv_value(code_model),
         "orchestrator_model": _sanitize_csv_value(orchestrator_model),
