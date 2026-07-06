@@ -10,7 +10,8 @@
  * useSessionHub with its own collab hooks.
  */
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "@/http/axiosAgentConfig";
 import { fetchResolvedBlueprint } from "@/api/blueprints";
 import { useStreamingData } from "@/components/agentic-ai/StreamingDataContext";
@@ -52,7 +53,8 @@ export interface UseSessionHubOptions {
 export interface UseSessionHubReturn {
   // ── Session list ────────────────────────────────────────────────────────
   chatSessions: ChatSession[];
-  setChatSessions: React.Dispatch<React.SetStateAction<ChatSession[]>>;
+  updateSessionInCache: (sessionId: string, updater: (s: ChatSession) => ChatSession) => void;
+  refreshSessions: () => Promise<void>;
   selectedSession: ChatSession | null;
   setSelectedSession: React.Dispatch<React.SetStateAction<ChatSession | null>>;
   currentSessionMessages: ChatMessage[];
@@ -60,7 +62,11 @@ export interface UseSessionHubReturn {
   isLoading: boolean;
   error: string | null;
   isLoadingSessionMessages: boolean;
-  fetchChatSessions: () => Promise<void>;
+
+  // ── Pagination ─────────────────────────────────────────────────────────
+  fetchNextPage: () => void;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
 
   // ── Session selection ───────────────────────────────────────────────────
   handleSessionSelect: (session: ChatSession) => Promise<void>;
@@ -135,15 +141,15 @@ type ChunkData = {
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 50;
+
 export function useSessionHub({
   runId,
   manualStreamControl = false,
 }: UseSessionHubOptions): UseSessionHubReturn {
   // ── Session state ──────────────────────────────────────────────────────
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<ChatSession | null>(null);
   const [currentSessionMessages, setCurrentSessionMessages] = useState<ChatMessage[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isLiveRequest, setIsLiveRequest] = useState(false);
   const [isCancelled, setIsCancelled] = useState(false);
@@ -169,6 +175,7 @@ export function useSessionHub({
   const { isTeam, userId: contextUserId, displayName, identityType } =
     useWorkspaceIdentity();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Refs
   const sessionSelectRequestId = useRef(0);
@@ -190,6 +197,69 @@ export function useSessionHub({
 
   // ── Session management (message loading) ───────────────────────────────
   const { loadSessionMessages } = useSessionManagement();
+
+  // ── transformApiDataToSessions ─────────────────────────────────────────
+  const transformApiDataToSessions = useCallback(
+    (apiData: ChatSessionData[]): ChatSession[] =>
+      apiData.map((sessionData, index) => {
+        const base = transformSessionData(sessionData, index);
+        let sharing = false;
+        if (base.fromSharedLink && base.blueprintExists && base.blueprintId) {
+          sharing = !(sessionData.metadata?.public_usage_scope ?? false);
+        }
+        return { ...base, isSharingDisabled: sharing };
+      }),
+    [],
+  );
+
+  // ── Paginated session fetching ────────────────────────────────────────
+  const sessionsQueryKey = useMemo(
+    () => ['chatSessions', contextUserId, identityType] as const,
+    [contextUserId, identityType],
+  );
+
+  const {
+    data: sessionsData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError: isSessionsError,
+    error: sessionsQueryError,
+  } = useInfiniteQuery({
+    queryKey: sessionsQueryKey,
+    queryFn: async ({ pageParam = 0 }) => {
+      const params = new URLSearchParams({
+        userId: contextUserId,
+        identityType,
+        limit: String(PAGE_SIZE),
+        offset: String(pageParam),
+      });
+      const response = await axios.get(`/sessions/session.user.list?${params}`);
+      const { sessions, pagination } = response.data as {
+        sessions: ChatSessionData[];
+        pagination: { total: number; limit: number; offset: number; has_more: boolean };
+      };
+      return {
+        sessions: sortSessionsByTimestamp(transformApiDataToSessions(sessions)),
+        hasMore: pagination.has_more,
+        nextOffset: pagination.offset + pagination.limit,
+        total: pagination.total,
+      };
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      if (!lastPage.hasMore) return undefined;
+      return lastPage.nextOffset;
+    },
+  });
+
+  const chatSessions = sessionsData?.pages.flatMap((p) => p.sessions) ?? [];
+  const sessionsError = isSessionsError
+    ? (sessionsQueryError instanceof Error
+        ? sessionsQueryError.message
+        : "Failed to load chat sessions")
+    : null;
 
   // ── Node-list streaming ────────────────────────────────────────────────
   const updateNodeList = useCallback(
@@ -277,22 +347,8 @@ export function useSessionHub({
     }, []),
   });
 
-  // ── transformApiDataToSessions ─────────────────────────────────────────
-  const transformApiDataToSessions = useCallback(
-    (apiData: ChatSessionData[]): ChatSession[] =>
-      apiData.map((sessionData, index) => {
-        const base = transformSessionData(sessionData, index);
-        let sharing = false;
-        if (base.fromSharedLink && base.blueprintExists && base.blueprintId) {
-          sharing = !(sessionData.metadata?.public_usage_scope ?? false);
-        }
-        return { ...base, isSharingDisabled: sharing };
-      }),
-    [],
-  );
-
   // ── handleSessionSelect ────────────────────────────────────────────────
-  // Stable ref so fetchChatSessions can call it without a circular dep
+  // Stable ref so auto-select and handleAddFlow can call it without a circular dep
   const handleSessionSelectRef = useRef<(session: ChatSession) => Promise<void>>(null!);
 
   const handleSessionSelect = useCallback(
@@ -336,19 +392,13 @@ export function useSessionHub({
               const disabled = !(resolved.metadata?.usageScope === "public");
               setIsSharingDisabled(disabled);
               current = { ...current, isSharingDisabled: disabled };
-              setChatSessions((prev) =>
-                prev.map((s) =>
-                  s.id === current.id
-                    ? { ...s, blueprintName, isSharingDisabled: disabled }
-                    : s,
-                ),
-              );
+              updateSessionInCache(current.id, (s) => ({
+                ...s, blueprintName, isSharingDisabled: disabled,
+              }));
             } else if (blueprintName) {
-              setChatSessions((prev) =>
-                prev.map((s) =>
-                  s.id === current.id ? { ...s, blueprintName } : s,
-                ),
-              );
+              updateSessionInCache(current.id, (s) => ({
+                ...s, blueprintName,
+              }));
             }
             setSelectedSession(current);
           }
@@ -367,9 +417,7 @@ export function useSessionHub({
         const merged = { ...current, ...updated };
         setSelectedSession(merged);
         setCurrentSessionMessages(merged.messages);
-        setChatSessions((prev) =>
-          prev.map((s) => (s.id === current.id ? merged : s)),
-        );
+        updateSessionInCache(current.id, () => merged);
       } else {
         setCurrentSessionMessages([]);
       }
@@ -407,32 +455,42 @@ export function useSessionHub({
   );
   handleSessionSelectRef.current = handleSessionSelect;
 
-  // ── fetchChatSessions ──────────────────────────────────────────────────
-  const fetchChatSessions = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const response = await axios.get(
-        `/sessions/session.user.list?userId=${contextUserId}&identityType=${identityType}`,
-      );
-      const sorted = sortSessionsByTimestamp(
-        transformApiDataToSessions(response.data),
-      );
-      setChatSessions(sorted);
+  // ── refreshSessions ────────────────────────────────────────────────────
+  const refreshSessions = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
+  }, [queryClient, sessionsQueryKey]);
 
-      if (sorted.length > 0) {
-        const target = runId
-          ? sorted.find((s) => s.id === runId) ?? sorted[0]
-          : sorted[0];
-        await handleSessionSelectRef.current(target);
-      }
-    } catch (err) {
-      console.error("Error fetching chat sessions:", err);
-      setError("Failed to load chat sessions");
-    } finally {
-      setIsLoading(false);
+  // Update a single session inside the paged query cache without refetching.
+  const updateSessionInCache = useCallback(
+    (sessionId: string, updater: (s: ChatSession) => ChatSession) => {
+      queryClient.setQueryData(sessionsQueryKey, (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            sessions: page.sessions.map((s: ChatSession) =>
+              s.id === sessionId ? updater(s) : s,
+            ),
+          })),
+        };
+      });
+    },
+    [queryClient, sessionsQueryKey],
+  );
+
+  // Auto-select first session (or URL-targeted session) when data loads
+  const didAutoSelectRef = useRef(false);
+  useEffect(() => {
+    if (isLoading || !sessionsData || didAutoSelectRef.current) return;
+    if (chatSessions.length > 0 && !selectedSession) {
+      didAutoSelectRef.current = true;
+      const target = runId
+        ? chatSessions.find((s) => s.id === runId) ?? chatSessions[0]
+        : chatSessions[0];
+      handleSessionSelectRef.current(target);
     }
-  }, [contextUserId, identityType, runId, transformApiDataToSessions]);
+  }, [isLoading, sessionsData, chatSessions, selectedSession, runId]);
 
   // ── Delete ─────────────────────────────────────────────────────────────
   const handleDeleteChat = useCallback(
@@ -449,7 +507,7 @@ export function useSessionHub({
     setIsDeleting(true);
     try {
       await axios.delete(`/sessions/session.delete?sessionId=${chatToDelete.id}`);
-      setChatSessions((prev) => prev.filter((s) => s.id !== chatToDelete.id));
+      refreshSessions();
       if (selectedSession?.id === chatToDelete.id) {
         setSelectedSession(null);
         setCurrentSessionMessages([]);
@@ -466,7 +524,7 @@ export function useSessionHub({
     } finally {
       setIsDeleting(false);
     }
-  }, [chatToDelete, selectedSession?.id, toast]);
+  }, [chatToDelete, selectedSession?.id, toast, refreshSessions]);
 
   const cancelDeleteChat = useCallback(() => {
     setShowDeleteModal(false);
@@ -485,15 +543,7 @@ export function useSessionHub({
         displayName,
         identityType,
       });
-      const response = await axios.get(
-        `/sessions/session.user.list?userId=${contextUserId}&identityType=${identityType}`,
-      );
-      const sorted = sortSessionsByTimestamp(
-        transformApiDataToSessions(response.data),
-      );
-      setChatSessions(sorted);
-      const newest = sorted.find((s) => s.blueprintId === graphId);
-      if (newest) await handleSessionSelectRef.current(newest);
+      refreshSessions();
       setShowAddFlowModal(false);
       setSelectedFlowForModal(null);
     } catch (err) {
@@ -501,7 +551,7 @@ export function useSessionHub({
     } finally {
       setIsCreatingSession(false);
     }
-  }, [selectedFlowForModal, contextUserId, displayName, identityType, transformApiDataToSessions]);
+  }, [selectedFlowForModal, contextUserId, displayName, identityType, refreshSessions]);
 
   const handleCancelAddFlow = useCallback(() => {
     setShowAddFlowModal(false);
@@ -591,25 +641,31 @@ export function useSessionHub({
   // ── Workspace-switch effect ────────────────────────────────────────────
   useEffect(() => {
     sessionSelectRequestId.current += 1;
+    didAutoSelectRef.current = false;
     sessionStream.cancelStream();
     clearStream();
     setSelectedSession(null);
     setCurrentSessionMessages([]);
-    fetchChatSessions();
+    queryClient.removeQueries({ queryKey: sessionsQueryKey });
+    refreshSessions();
   }, [contextUserId, identityType]);
 
   // ── Return ─────────────────────────────────────────────────────────────
   return {
     chatSessions,
-    setChatSessions,
+    updateSessionInCache,
+    refreshSessions,
     selectedSession,
     setSelectedSession,
     currentSessionMessages,
     setCurrentSessionMessages,
     isLoading,
-    error,
+    error: sessionsError ?? error,
     isLoadingSessionMessages,
-    fetchChatSessions,
+
+    fetchNextPage,
+    hasNextPage: hasNextPage ?? false,
+    isFetchingNextPage,
 
     handleSessionSelect,
     sessionSelectRequestId,

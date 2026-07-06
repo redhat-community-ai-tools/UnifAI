@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
-import { MessageSquare, Users, Clock, Trash2, Plus } from "lucide-react";
+import { MessageSquare, Users, Clock, Trash2, Plus, Loader2 } from "lucide-react";
 import ChatInterface from "./chat/ChatInterface";
 import ExecutionStream from "./ExecutionStream";
 import GraphDisplay from "./graphs/GraphDisplay";
@@ -13,6 +13,7 @@ import { useCarouselLayout } from "@/hooks/use-carousel-layout";
 import { AnimatedPanelLayout } from "@/components/shared/AnimatedPanelLayout";
 import { AddFlowModal, DeleteSessionModal } from "@/components/shared/SessionModals";
 import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
+import { usePaginationTrigger } from "@/hooks/use-pagination-trigger";
 
 /**
  * Session execution payload (fire-and-forget submit + stream subscribe pattern)
@@ -43,6 +44,18 @@ const SessionMessagesLoader: React.FC = () => (
 
 export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactElement {
   const hub = useSessionHub({ runId });
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Scroll mode handles pagination automatically; manual trigger not needed
+  const _pagination = usePaginationTrigger({
+    mode: "scroll",
+    scrollRef,
+    hasNextPage: hub.hasNextPage,
+    isFetchingNextPage: hub.isFetchingNextPage,
+    fetchNextPage: hub.fetchNextPage,
+    threshold: 100,
+  });
+  void _pagination;
 
   const [showExecutionStream, setShowExecutionStream] = useState(false);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(15);
@@ -253,7 +266,7 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
                   No chat sessions available
                 </div>
               ) : (
-                <div className="h-full overflow-y-auto py-2">
+                <div className="h-full overflow-y-auto py-2" ref={scrollRef}>
                   {hub.chatSessions.map((session) => (
                     <motion.div
                       key={session.id}
@@ -300,6 +313,11 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
                 </div>
               )}
             </div>
+            {hub.isFetchingNextPage && (
+              <div className="p-2 text-center flex-shrink-0">
+                <Loader2 className="h-4 w-4 animate-spin mx-auto text-primary" />
+              </div>
+            )}
           </Card>
         </div>
 

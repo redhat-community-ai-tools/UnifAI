@@ -239,9 +239,9 @@ def get_session_status(session_id):
 @from_query({
     "limit": fields.Int(data_key="limit", load_default=50, validate=lambda v: 1 <= v <= 100),
     "offset": fields.Int(data_key="offset", load_default=0, validate=lambda v: v >= 0),
-    "blueprint_id": fields.Str(data_key="blueprintId", required=False),
+    "blueprint_id": fields.Str(data_key="blueprintId", required=False, load_default=None),
 })
-def list_user_sessions(identity, limit: int, offset: int, blueprint_id: str | None):
+def list_user_sessions(identity, limit: int, offset: int, blueprint_id: str | None = None):
     try:
         svc = current_app.container.session_service
         return jsonify(svc.list_user_sessions(identity, limit=limit, offset=offset, blueprint_id=blueprint_id)), 200
