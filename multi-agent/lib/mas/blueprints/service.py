@@ -218,10 +218,7 @@ class BlueprintService:
             raise BlueprintNotFoundError(blueprint_id) from exc
         if doc.identity.type != identity.type or doc.identity.id != identity.id:
             raise BlueprintAccessDeniedError(blueprint_id, identity.id)
-        try:
-            return self._repo.get_prompt_shortcuts(blueprint_id=blueprint_id)
-        except KeyError as exc:
-            raise BlueprintNotFoundError(blueprint_id) from exc
+        return PromptShortcuts.from_spec(doc.spec_dict)
 
     # ────────── Blueprint Metadata ──────────
     def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:

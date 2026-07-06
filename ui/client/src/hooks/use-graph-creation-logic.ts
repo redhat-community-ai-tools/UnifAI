@@ -1119,7 +1119,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
                 ...(p.id && { id: p.id }),
                 text: p.text,
               }))
-            : undefined,
+            : [],
         };
 
         setYamlFlow(updatedYamlFlow);

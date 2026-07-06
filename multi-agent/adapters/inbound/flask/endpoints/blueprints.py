@@ -13,7 +13,6 @@ from mas.blueprints.exceptions import (
     InvalidMetadataKeysError,
     PromptShortcutsValidationError,
 )
-from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
 
 logger = logging.getLogger(__name__)
@@ -304,6 +303,7 @@ def remove_blueprint(blueprint_id):
         }), 500
 
 
+# Dedicated endpoints wrap shortcuts as {"prompts": [...]}; spec_dict stores prompt_shortcuts as a flat array.
 @blueprints_bp.route("/blueprint.prompt-shortcuts.set", methods=["PUT"])
 @with_require_identity_authorization
 @from_body({
@@ -314,7 +314,7 @@ def set_prompt_shortcuts(identity, blueprint_id, prompts):
     try:
         svc = current_app.container.blueprint_service
         shortcuts = svc.set_prompt_shortcuts(blueprint_id=blueprint_id, prompts=prompts, identity=identity)
-        return jsonify(_shortcuts_response(shortcuts)), 200
+        return jsonify({"prompts": shortcuts.to_storage() or []}), 200
     except BlueprintAccessDeniedError:
         return jsonify({"error": "You do not have permission to modify this blueprint"}), 403
     except BlueprintNotFoundError as e:
@@ -335,7 +335,7 @@ def get_prompt_shortcuts(identity, blueprint_id):
     try:
         svc = current_app.container.blueprint_service
         shortcuts = svc.get_prompt_shortcuts(blueprint_id=blueprint_id, identity=identity)
-        return jsonify(_shortcuts_response(shortcuts)), 200
+        return jsonify({"prompts": shortcuts.to_storage() or []}), 200
     except BlueprintAccessDeniedError:
         return jsonify({"error": "You do not have permission to view this blueprint"}), 403
     except BlueprintNotFoundError as e:
@@ -343,18 +343,6 @@ def get_prompt_shortcuts(identity, blueprint_id):
     except Exception as e:
         logger.exception("Failed to get prompt shortcuts for blueprint %s", blueprint_id)
         return jsonify({"error": str(e)}), 500
-
-
-def _shortcuts_response(shortcuts: PromptShortcuts) -> dict:
-    return {
-        "prompts": [
-            {
-                "id": p.id,
-                "text": p.text,
-            }
-            for p in shortcuts.prompts
-        ]
-    }
 
 
 @blueprints_bp.route("/blueprint.metadata.set", methods=["PUT"])
