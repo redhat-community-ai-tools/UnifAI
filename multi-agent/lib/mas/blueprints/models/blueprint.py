@@ -35,7 +35,7 @@ from mas.elements.conditions.types import ConditionSpec
 from mas.elements.tools.types import ToolsSpec
 from mas.elements.providers.types import ProviderSpec
 from mas.core.ref.models import Ref, NodeRef, ConditionRef
-from mas.blueprints.models.prompt_shortcuts import PromptShortcutItem
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Author-time helper types
@@ -120,7 +120,7 @@ class BlueprintDraft(BaseModel):
 
     name: str = "Untitled blueprint"
     description: str = ""
-    prompt_shortcuts: Optional[List[PromptShortcutItem]] = None
+    prompt_shortcuts: Optional[PromptShortcuts] = None
 
     class Config:
         extra = Extra.forbid

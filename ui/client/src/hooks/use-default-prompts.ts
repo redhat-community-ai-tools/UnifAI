@@ -8,7 +8,7 @@ interface HubWithSpecCache {
 
 
 /**
- * Derives the active manual prompt shortcuts from the selected session's blueprint spec.
+ * Derives the active prompt shortcuts from the selected session's blueprint spec.
  *
  * Returns `undefined` when no session/blueprint is selected or no shortcuts are configured.
  */
@@ -19,6 +19,6 @@ export function useDefaultPrompts(hub: HubWithSpecCache): PromptShortcut[] | und
     const specDict = hub.blueprintSpecCache.get(hub.selectedSession.blueprintId);
     const shortcuts = specDict?.prompt_shortcuts;
     if (!Array.isArray(shortcuts)) return undefined;
-    return shortcuts.filter((p: PromptShortcut) => p.kind === "manual");
+    return shortcuts as PromptShortcut[];
   }, [hub.selectedSession?.blueprintId, hub.blueprintSpecCache]);
 }

@@ -123,9 +123,7 @@ export default function PublicChat() {
         setBlueprintOwner(blueprintInfo.user_id || "");
 
         const shortcuts = blueprintInfo.spec_dict?.prompt_shortcuts;
-        setDefaultPrompts(
-          Array.isArray(shortcuts) ? shortcuts.filter((p: PromptShortcut) => p.kind === "manual") : []
-        );
+        setDefaultPrompts(Array.isArray(shortcuts) ? shortcuts : []);
         
         // Check sharing status from the same blueprintInfo response (no extra API call)
         const isPublic = blueprintInfo.metadata?.usageScope === "public";

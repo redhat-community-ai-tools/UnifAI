@@ -261,13 +261,11 @@ export async function getBlueprintDraftSchema(): Promise<any> {
 
 export interface PromptShortcutInput {
   id?: string;
-  kind?: "manual";
   text: string;
 }
 
 export interface PromptShortcut {
   id: string;
-  kind: "manual";
   text: string;
 }
 

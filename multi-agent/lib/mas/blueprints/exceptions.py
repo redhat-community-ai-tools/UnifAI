@@ -51,8 +51,9 @@ class InvalidMetadataKeysError(BlueprintError):
 
 
 class PromptShortcutsValidationError(BlueprintError):
-    """Raised when prompt shortcuts fail validation (bad text, duplicate ids, >3 manual items)."""
-    def __init__(self, message: str) -> None:
+    """Raised when prompt shortcuts are invalid (save, update, load, or dedicated set)."""
+    def __init__(self, message: str, blueprint_id: str | None = None):
+        self.blueprint_id = blueprint_id
         self.message = message
-        super().__init__(message)
+        super().__init__(self.message)
 

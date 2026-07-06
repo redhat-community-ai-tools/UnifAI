@@ -1117,7 +1117,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
           prompt_shortcuts: cleanedPrompts.length > 0
             ? cleanedPrompts.map(p => ({
                 ...(p.id && { id: p.id }),
-                kind: "manual",
                 text: p.text,
               }))
             : undefined,

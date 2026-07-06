@@ -2,8 +2,6 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from pydantic import ValidationError
-
 from mas.blueprints.models.blueprint import BlueprintSpec, BlueprintDraft, BlueprintDocument, BlueprintSummary
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.blueprints.resolver import BlueprintResolver
@@ -16,7 +14,7 @@ from mas.blueprints.exceptions import (
     InvalidMetadataKeysError,
     PromptShortcutsValidationError,
 )
-from mas.blueprints.models.prompt_shortcuts import PromptShortcuts, PromptShortcutItem
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.core.identity import Identity
 from mas.core.ref import RefWalker
 from mas.elements.common.card import ElementCard
@@ -55,25 +53,11 @@ class BlueprintService:
         self._config_collector = BlueprintConfigCollector()
 
     # ────────── Write ──────────
-    @staticmethod
-    def _normalize_prompt_shortcuts(draft_dict: dict) -> dict:
-        """Validate and normalize prompt_shortcuts before persistence.
-        Raises PromptShortcutsValidationError for invalid data."""
-        raw = draft_dict.get("prompt_shortcuts")
-        if not raw:
-            return draft_dict
-        try:
-            items = [PromptShortcutItem(**entry) for entry in raw]
-            shortcuts = PromptShortcuts(prompts=items)
-        except (ValidationError, ValueError, TypeError) as exc:
-            raise PromptShortcutsValidationError(str(exc)) from exc
-        return {**draft_dict, "prompt_shortcuts": shortcuts.to_storage()}
-
     def save_draft(self, *, identity: Identity, draft_dict: dict,
                    metadata: Optional[Dict[str, Any]] = None) -> str:
         if metadata:
             validate_metadata_keys(metadata)
-        draft_bp = BlueprintDraft(**self._normalize_prompt_shortcuts(draft_dict))
+        draft_bp = BlueprintDraft(**draft_dict)
         rid_refs = list(RefWalker.external_rids(draft_bp))
         return self._repo.save(identity=identity, spec=draft_bp,
                                rid_refs=rid_refs, metadata=metadata or {})
@@ -95,12 +79,13 @@ class BlueprintService:
             raise BlueprintNotFoundError(blueprint_id) from exc
         if doc.identity.type != identity.type or doc.identity.id != identity.id:
             raise BlueprintAccessDeniedError(blueprint_id, identity.id)
+
         if "prompt_shortcuts" not in draft_dict:
             existing = PromptShortcuts.from_spec(doc.spec_dict)
             if not existing.is_empty:
                 draft_dict = {**draft_dict, "prompt_shortcuts": existing.to_storage()}
 
-        draft = BlueprintDraft(**self._normalize_prompt_shortcuts(draft_dict))
+        draft = BlueprintDraft(**draft_dict)
         rid_refs = list(RefWalker.external_rids(draft))
         return self._repo.update(
             blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs,
@@ -162,8 +147,9 @@ class BlueprintService:
         """Resolve a single document's spec_dict from draft to fully resolved form."""
         draft = BlueprintDraft(**doc.spec_dict)
         resolved_dict = self._resolver.resolve(draft).model_dump(mode="json")
-        if draft.prompt_shortcuts:
-            resolved_dict["prompt_shortcuts"] = [p.model_dump(mode="json") for p in draft.prompt_shortcuts]
+        shortcuts = draft.model_dump(mode="json").get("prompt_shortcuts")
+        if shortcuts is not None:
+            resolved_dict["prompt_shortcuts"] = shortcuts
         return doc.model_copy(update={"spec_dict": resolved_dict})
 
     def list_resolved_docs(
@@ -216,9 +202,11 @@ class BlueprintService:
         if doc.identity.type != identity.type or doc.identity.id != identity.id:
             raise BlueprintAccessDeniedError(blueprint_id, identity.id)
         try:
-            shortcuts = PromptShortcuts(prompts=prompts)
-        except (ValidationError, ValueError, TypeError) as exc:
-            raise PromptShortcutsValidationError(str(exc)) from exc
+            shortcuts = PromptShortcuts.parse(prompts)
+        except PromptShortcutsValidationError as exc:
+            raise PromptShortcutsValidationError(
+                exc.message, blueprint_id=blueprint_id,
+            ) from exc
         if not self._repo.set_prompt_shortcuts(blueprint_id=blueprint_id, shortcuts=shortcuts):
             raise BlueprintNotFoundError(blueprint_id)
         return shortcuts

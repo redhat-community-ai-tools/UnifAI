@@ -183,7 +183,7 @@ def save_blueprint(identity, blueprint_raw=None, metadata=None):
             "blueprint_id": blueprint_id
         }), 201
 
-    except (BadRequest, InvalidMetadataKeysError) as e:
+    except (BadRequest, InvalidMetadataKeysError, PromptShortcutsValidationError) as e:
         return jsonify({"status": "error", "error": str(e)}), 400
     except BlueprintSaveError as e:
         logger.exception("Failed to save blueprint for identity %s", identity.id)
@@ -350,7 +350,6 @@ def _shortcuts_response(shortcuts: PromptShortcuts) -> dict:
         "prompts": [
             {
                 "id": p.id,
-                "kind": p.kind,
                 "text": p.text,
             }
             for p in shortcuts.prompts
