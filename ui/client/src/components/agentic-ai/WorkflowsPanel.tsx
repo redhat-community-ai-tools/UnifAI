@@ -404,6 +404,7 @@ export default function WorkflowsPanel({
                               hitlEnabled ? "text-yellow-500" : "text-gray-500",
                             )} />
                             <Switch
+                              aria-label={`${hitlEnabled ? "Disable" : "Enable"} Human-in-the-Loop for dynamic nodes`}
                               checked={hitlEnabled}
                               onCheckedChange={onHitlToggle}
                               className="h-4 w-7 data-[state=checked]:bg-yellow-600 data-[state=unchecked]:bg-gray-600 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
@@ -416,6 +417,7 @@ export default function WorkflowsPanel({
                           <Button
                             variant="ghost"
                             size="sm"
+                            aria-label={`Open actions for ${flow.name}`}
                             className="h-6 w-6 p-0 hover:bg-background-surface"
                             onClick={(e) => e.stopPropagation()}
                           >

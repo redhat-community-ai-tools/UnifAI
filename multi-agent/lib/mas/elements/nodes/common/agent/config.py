@@ -19,7 +19,7 @@ from .constants import (
     ExecutionDefaults, EarlyStoppingPolicy
 )
 from .execution.handlers import ExecutionMode
-from .hitl_config import HITLHandlerConfig  # noqa: F401 — re-exported
+from .hitl_config import HITLHandlerConfig
 
 
 @dataclass
