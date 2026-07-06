@@ -9,7 +9,7 @@ from mas.core.channels import with_heartbeats
 from mas.core.hitl.models import ApprovalOverrides, ApprovalRuleSet
 from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.session.domain.models import SessionMeta
-from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user, require_authentication
+from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user, require_session_identity
 
 logger = logging.getLogger(__name__)
 
@@ -318,7 +318,7 @@ def list_active_streams():
 
 
 @sessions_bp.route("/session.approval", methods=["POST"])
-@require_authentication
+@require_session_identity
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
     "request_id": fields.Str(data_key="requestId", required=True),
@@ -326,7 +326,7 @@ def list_active_streams():
     "feedback": fields.Str(data_key="feedback", load_default=""),
     "modified_args": fields.Dict(data_key="modifiedArgs", load_default=lambda: {}),
 })
-def submit_approval(session_id, request_id, decision, feedback, modified_args):
+def submit_approval(identity, session_id, request_id, decision, feedback, modified_args):
     """Submit a human decision for a pending HITL approval request.
 
     Called by the UI (or curl) when a human reviews a tool call that
@@ -361,14 +361,14 @@ def submit_approval(session_id, request_id, decision, feedback, modified_args):
 
 
 @sessions_bp.route("/session.approval.rule", methods=["POST"])
-@require_authentication
+@require_session_identity
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
     "node_uid": fields.Str(data_key="nodeUid", load_default=None, allow_none=True),
     "tool_name": fields.Str(data_key="toolName", load_default=None, allow_none=True),
     "action": fields.Str(data_key="action", required=True),
 })
-def add_approval_rule(session_id, node_uid, tool_name, action):
+def add_approval_rule(identity, session_id, node_uid, tool_name, action):
     """Add or clear an auto-approval rule for this session.
 
     Scoping is determined by which fields are present:
@@ -419,11 +419,11 @@ def add_approval_rule(session_id, node_uid, tool_name, action):
 
 
 @sessions_bp.route("/session.approval.rules", methods=["GET"])
-@require_authentication
+@require_session_identity
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
-def get_approval_rules(session_id):
+def get_approval_rules(identity, session_id):
     """Return the current auto-approval rules for this session."""
     svc = current_app.container.session_service
     meta = svc.get_meta(session_id)
