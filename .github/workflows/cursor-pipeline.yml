@@ -173,22 +173,7 @@ jobs:
 
       - name: Publish results to Job Summary
         if: always()
-        run: |
-          printf '## Architecture Review\n\n' >> $GITHUB_STEP_SUMMARY
-          if [ -s arch_review_output.txt ]; then
-            cat arch_review_output.txt >> $GITHUB_STEP_SUMMARY
-            printf '\n' >> $GITHUB_STEP_SUMMARY
-          else
-            printf '_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
-          fi
-          printf -- '---\n\n' >> $GITHUB_STEP_SUMMARY
-          printf '## Code Review\n\n' >> $GITHUB_STEP_SUMMARY
-          if [ -s code_review_output.txt ]; then
-            cat code_review_output.txt >> $GITHUB_STEP_SUMMARY
-            printf '\n' >> $GITHUB_STEP_SUMMARY
-          else
-            printf '_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
-          fi
+        run: python3 .github/scripts/publish_review_summary.py
 
       - name: Upload Review Summary
         if: always()
