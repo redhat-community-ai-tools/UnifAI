@@ -24,7 +24,7 @@ import { useSessionManagement } from "@/hooks/use-session-management";
 import { useSessionStream } from "@/hooks/use-session-stream";
 import { useSessionHub } from "@/hooks/use-session-hub";
 import { useCarouselLayout } from "@/hooks/use-carousel-layout";
-import { sortSessionsByTimestamp } from "@/utils/sessionHelpers";
+import { usePaginationTrigger } from "@/hooks/use-pagination-trigger";
 import {
   CollaborationHubSessionSidebar,
   CollaborationHubMainColumn,
@@ -33,8 +33,6 @@ import {
 import { AnimatedPanelLayout } from "@/components/shared/AnimatedPanelLayout";
 import { AddFlowModal, DeleteSessionModal } from "@/components/shared/SessionModals";
 import { MemberDisplay, buildMemberDisplay } from "@/utils/memberDisplay";
-import type { ChatSessionData } from "@/types/session";
-import { transformSessionData } from "@/utils/sessionHelpers";
 
 const COLLAB_POLL_INTERVAL = 3000;
 const COLLAB_HEARTBEAT_INTERVAL = 30000;
@@ -47,6 +45,16 @@ interface CollaborationHubViewProps {
 
 export default function CollaborationHubView({ runId, teamMembers, teamName }: CollaborationHubViewProps) {
   const hub = useSessionHub({ runId, manualStreamControl: true });
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  usePaginationTrigger({
+    mode: "scroll",
+    scrollRef,
+    hasNextPage: hub.hasNextPage,
+    isFetchingNextPage: hub.isFetchingNextPage,
+    fetchNextPage: hub.fetchNextPage,
+    threshold: 100,
+  });
 
   // ── Collab-specific state ──────────────────────────────────────────────
   const [sessionParticipants, setSessionParticipants] = useState<Record<string, string[]>>({});
@@ -94,9 +102,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
         loadSessionMessages(session).then((updated) => {
           if (updated) {
             hub.setCurrentSessionMessages(updated.messages);
-            hub.setChatSessions(prev =>
-              prev.map(s => (s.id === session.id ? { ...s, ...updated } : s)),
-            );
+            hub.updateSessionInCache(session.id, (s) => ({ ...s, ...updated }));
           }
         });
       }
@@ -226,22 +232,8 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
     sessionListPollCounterRef.current += 1;
     if (sessionListPollCounterRef.current % 5 === 0) {
-      try {
-        const listRes = await axios.get(
-          `/sessions/session.user.list?userId=${hub.contextUserId}&identityType=${hub.identityType}`,
-        );
-        const transformApiDataToSessions = (apiData: ChatSessionData[]) =>
-          apiData.map((sd, i) => {
-            const base = transformSessionData(sd, i);
-            let sharing = false;
-            if (base.fromSharedLink && base.blueprintExists && base.blueprintId)
-              sharing = !(sd.metadata?.public_usage_scope ?? false);
-            return { ...base, isSharingDisabled: sharing };
-          });
-        const sorted = sortSessionsByTimestamp(transformApiDataToSessions(listRes.data));
-        hub.setChatSessions(sorted);
-        await Promise.allSettled(sorted.map(s => fetchParticipants(s.id)));
-      } catch { /* ignore */ }
+      await hub.refreshSessions();
+      await Promise.allSettled(hub.chatSessions.map(s => fetchParticipants(s.id)));
     }
 
     if (!isLiveRequestRef.current) {
@@ -259,9 +251,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
     const updated = await loadSessionMessages(session);
     if (updated) {
       hub.setCurrentSessionMessages(updated.messages);
-      hub.setChatSessions(prev =>
-        prev.map(s => (s.id === session.id ? { ...s, ...updated } : s)),
-      );
+      hub.updateSessionInCache(session.id, (s) => ({ ...s, ...updated }));
     }
 
     await fetchParticipants(session.id);
@@ -367,6 +357,8 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
           onDeleteChat={hub.handleDeleteChat}
           onOpenAddFlow={() => hub.setShowAddFlowModal(true)}
           getSessionParticipantMembers={getSessionParticipantMembers}
+          scrollRef={scrollRef}
+          isFetchingNextPage={hub.isFetchingNextPage}
         />
 
         <AnimatedPanelLayout
