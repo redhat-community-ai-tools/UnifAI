@@ -281,6 +281,7 @@ pipeline {
                             for (mod in modules) {
                                 switch(mod.trim()) {
                                     case 'shared-resources':
+                                        def version = params.VERSION?.trim() ?: ''
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/shared-resource-values.yaml", version)
                                         deployModules('shared-resources')
                                         break
