@@ -19,11 +19,13 @@ class SlackRetriever(BaseRetriever):
         api_url: HttpUrl,
         top_k_results: int,
         threshold: float,
+        timeout: float = 30.0,
         identity: Optional[RetrievalIdentity] = None,
     ):
         self.api_url = str(api_url)
         self.top_k = top_k_results
         self.threshold = threshold
+        self.timeout = timeout
         self._identity = identity
 
     _AUTH_HEADER = "X-Authenticated-User"
@@ -45,6 +47,7 @@ class SlackRetriever(BaseRetriever):
             self.api_url,
             params=params,
             headers=headers,
+            timeout=self.timeout,
         )
         resp.raise_for_status()
         data = resp.json()
