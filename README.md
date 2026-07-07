@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/redhat-community-ai-tools-unifai-badge.png)](https://mseep.ai/app/redhat-community-ai-tools-unifai)
+
 # UnifAI
 
 **A platform for building and running multi-agent AI workflows over your enterprise knowledge.**
