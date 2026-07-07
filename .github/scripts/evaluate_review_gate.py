@@ -59,8 +59,10 @@ def try_json_scoring(json_path: Path) -> dict | None:
     if not isinstance(code_findings, dict):
         print(f"::warning::{json_path}: code_findings is not an object. Falling back to text parsing.")
         return None
+    _SCORING_KEYS = ("critical", "major", "minor")
     parsed_findings: dict[str, int] = {}
-    for key, value in code_findings.items():
+    for key in _SCORING_KEYS:
+        value = code_findings.get(key)
         if value is None:
             continue
         count = require_int(value, default_if_empty=0, min_value=0)
@@ -94,6 +96,9 @@ def try_json_scoring(json_path: Path) -> dict | None:
             return None
         model_score = parsed_model_score
 
+    pipeline_pass = data.get("pipeline_pass")
+    code_verdict = data.get("code_verdict")
+
     computed_score = compute_deterministic_score(code_findings, files_changed)
 
     if model_score and abs(computed_score - model_score) >= 2:
@@ -109,7 +114,9 @@ def try_json_scoring(json_path: Path) -> dict | None:
         "model_score": model_score,
         "computed_score": computed_score,
         "code_findings": code_findings,
+        "code_verdict": code_verdict,
         "files_changed": files_changed,
+        "pipeline_pass": pipeline_pass,
         "source": "json",
     }
 
@@ -251,19 +258,39 @@ def main() -> int:
         print(f"::error::Architecture review pipeline errored (EXIT_STATUS: {arch_exit}). Check {arch_file}.")
         pipeline_error = True
 
+    # Determine gate pass/fail.
+    # Primary: pipeline_pass from JSON (handles single-judge modes correctly).
+    # Fallback: reconstruct from individual verdicts (text path, or legacy JSON without pipeline_pass).
+    pipeline_pass = json_result.get("pipeline_pass") if json_result else None
+    use_pipeline_pass = json_result and isinstance(pipeline_pass, bool)
+
+    arch_ran = arch_verdict != "UNKNOWN"
+    code_ran = code_score > 0 or (json_result and "code_findings" in json_result)
     arch_pass = arch_verdict == "APPROVE"
     code_pass = code_score >= threshold
 
-    arch_display = "✅ PASS" if arch_pass else f"❌ FAIL ({arch_verdict})"
+    if use_pipeline_pass:
+        gate_pass = pipeline_pass
+    else:
+        gate_pass = (arch_pass or not arch_ran) and (code_pass or not code_ran)
+
+    if arch_ran:
+        arch_display = "✅ PASS" if arch_pass else f"❌ FAIL ({arch_verdict})"
+    else:
+        arch_display = "⏭️ N/A"
     code_display = "✅ PASS" if code_pass else "❌ FAIL"
 
     summary_path = Path(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"))
     with summary_path.open("a") as summary:
         summary.write("\n---\n\n## Review Gate Results\n\n")
         summary.write(f"**Scoring method:** {scoring_source}\n\n")
+        if use_pipeline_pass:
+            summary.write(f"**Gate signal:** `pipeline_pass={pipeline_pass}` from JSON\n\n")
         summary.write("| Review | Result | Threshold | Exit Status | Status |\n")
         summary.write("|--------|--------|-----------|-------------|--------|\n")
-        summary.write(f"| Architecture Review | {arch_verdict} | APPROVE | {arch_exit} | {arch_display} |\n")
+        arch_result = arch_verdict if arch_ran else "N/A"
+        arch_thresh = "APPROVE" if arch_ran else "—"
+        summary.write(f"| Architecture Review | {arch_result} | {arch_thresh} | {arch_exit} | {arch_display} |\n")
         summary.write(f"| Code Review | {code_score}/10 | ≥{threshold}/10 | {code_exit} | {code_display} |\n\n")
         if model_score is not None and model_score != code_score:
             summary.write(f"_Model self-reported score: {model_score}/10 | Deterministic computed score: {code_score}/10_\n\n")
@@ -274,11 +301,13 @@ def main() -> int:
             out.write(f"arch_verdict={arch_verdict}\n")
             out.write(f"code_score={code_score}\n")
             out.write(f"scoring_source={scoring_source}\n")
+            if use_pipeline_pass:
+                out.write(f"pipeline_pass={str(pipeline_pass).lower()}\n")
 
     if pipeline_error:
         return 1
 
-    if not (arch_pass and code_pass):
+    if not gate_pass:
         print(f"::error::Review gate failed. Architecture: {arch_verdict}, Code: {code_score}/10 (threshold: {threshold})")
         return 1
 
