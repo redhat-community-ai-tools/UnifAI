@@ -63,7 +63,7 @@ class RagClient:
         """
         self._base_url = str(base_url).rstrip("/")
         self._timeout = timeout
-        self._headers = headers or {}
+        self._headers = dict(headers or {})
         if authenticated_user:
             self._headers[self._AUTH_HEADER] = authenticated_user
         self._client: Optional[httpx.Client] = None
