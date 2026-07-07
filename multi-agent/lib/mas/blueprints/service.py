@@ -1,3 +1,5 @@
+import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from mas.blueprints.models.blueprint import BlueprintSpec, BlueprintDraft, BlueprintDocument, BlueprintSummary
@@ -6,9 +8,13 @@ from mas.blueprints.resolver import BlueprintResolver
 from mas.blueprints.collector import BlueprintConfigCollector
 from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
+    BlueprintAccessDeniedError,
     BlueprintSaveError,
     BlueprintMetadataError,
+    InvalidMetadataKeysError,
+    PromptShortcutsValidationError,
 )
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.core.identity import Identity
 from mas.core.ref import RefWalker
 from mas.elements.common.card import ElementCard
@@ -16,6 +22,18 @@ from mas.elements.common.validator import ValidationContext
 from mas.catalog.card_service import ElementCardService
 from mas.validation.models import BlueprintValidationResult
 from mas.validation.service import ElementValidationService
+
+logger = logging.getLogger(__name__)
+
+_VALID_METADATA_KEY = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_-]*$")
+
+
+def validate_metadata_keys(metadata: Dict[str, Any]) -> None:
+    """Reject metadata keys that would corrupt Mongo dot-notation paths or clash with operators."""
+    bad = [k for k in metadata if not _VALID_METADATA_KEY.match(k)]
+    if bad:
+        logger.info("Rejected metadata keys: %s", bad)
+        raise InvalidMetadataKeysError(bad)
 
 
 class BlueprintService:
@@ -37,6 +55,8 @@ class BlueprintService:
     # ────────── Write ──────────
     def save_draft(self, *, identity: Identity, draft_dict: dict,
                    metadata: Optional[Dict[str, Any]] = None) -> str:
+        if metadata:
+            validate_metadata_keys(metadata)
         draft_bp = BlueprintDraft(**draft_dict)
         rid_refs = list(RefWalker.external_rids(draft_bp))
         return self._repo.save(identity=identity, spec=draft_bp,
@@ -51,13 +71,24 @@ class BlueprintService:
         """Get blueprint document with metadata for sharing operations."""
         return self._repo.load(blueprint_id)
 
-    def update_draft(self, *, blueprint_id: str, draft_dict: dict) -> bool:
-        if not self._repo.exists(blueprint_id):
-            raise BlueprintNotFoundError(blueprint_id)
+    def update_draft(self, *, blueprint_id: str, draft_dict: dict,
+                     identity: Identity) -> bool:
+        try:
+            doc = self._repo.load(blueprint_id)
+        except KeyError as exc:
+            raise BlueprintNotFoundError(blueprint_id) from exc
+        if doc.identity.type != identity.type or doc.identity.id != identity.id:
+            raise BlueprintAccessDeniedError(blueprint_id, identity.id)
+
+        if "prompt_shortcuts" not in draft_dict:
+            existing = PromptShortcuts.from_spec(doc.spec_dict)
+            if not existing.is_empty:
+                draft_dict = {**draft_dict, "prompt_shortcuts": existing.to_storage()}
+
         draft = BlueprintDraft(**draft_dict)
         rid_refs = list(RefWalker.external_rids(draft))
         return self._repo.update(
-            blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs
+            blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs,
         )
 
     def load_resolved(self, blueprint_id: str) -> BlueprintSpec:
@@ -69,8 +100,7 @@ class BlueprintService:
 
     def resolve_draft_dict(self, draft_dict: dict) -> BlueprintSpec:
         """Resolve a draft dictionary directly to BlueprintSpec without saving to database."""
-        draft_bp = BlueprintDraft(**draft_dict)
-        return self._resolver.resolve(draft_bp)
+        return self._resolver.resolve(BlueprintDraft(**draft_dict))
 
     def to_dict(self, blueprint_id: str) -> Dict[str, Any]:
         """Draft -> JSON-serialisable dict (no meta)."""
@@ -116,8 +146,11 @@ class BlueprintService:
     def _resolve_doc(self, doc: BlueprintDocument) -> BlueprintDocument:
         """Resolve a single document's spec_dict from draft to fully resolved form."""
         draft = BlueprintDraft(**doc.spec_dict)
-        resolved_spec = self._resolver.resolve(draft)
-        return doc.model_copy(update={"spec_dict": resolved_spec.model_dump(mode="json")})
+        resolved_dict = self._resolver.resolve(draft).model_dump(mode="json")
+        shortcuts = draft.model_dump(mode="json").get("prompt_shortcuts")
+        if shortcuts is not None:
+            resolved_dict["prompt_shortcuts"] = shortcuts
+        return doc.model_copy(update={"spec_dict": resolved_dict})
 
     def list_resolved_docs(
             self, *, identity: Optional[Identity] = None, **pg
@@ -159,11 +192,40 @@ class BlueprintService:
         """
         return BlueprintDraft.model_json_schema()
 
+    # ────────── Prompt Shortcuts ──────────
+    def set_prompt_shortcuts(self, blueprint_id: str, prompts: list[dict],
+                             *, identity: Identity) -> PromptShortcuts:
+        try:
+            doc = self._repo.load(blueprint_id)
+        except KeyError as exc:
+            raise BlueprintNotFoundError(blueprint_id) from exc
+        if doc.identity.type != identity.type or doc.identity.id != identity.id:
+            raise BlueprintAccessDeniedError(blueprint_id, identity.id)
+        try:
+            shortcuts = PromptShortcuts.parse(prompts)
+        except PromptShortcutsValidationError as exc:
+            raise PromptShortcutsValidationError(
+                exc.message, blueprint_id=blueprint_id,
+            ) from exc
+        if not self._repo.set_prompt_shortcuts(blueprint_id=blueprint_id, shortcuts=shortcuts):
+            raise BlueprintNotFoundError(blueprint_id)
+        return shortcuts
+
+    def get_prompt_shortcuts(self, blueprint_id: str, *, identity: Identity) -> PromptShortcuts:
+        try:
+            doc = self._repo.load(blueprint_id)
+        except KeyError as exc:
+            raise BlueprintNotFoundError(blueprint_id) from exc
+        if doc.identity.type != identity.type or doc.identity.id != identity.id:
+            raise BlueprintAccessDeniedError(blueprint_id, identity.id)
+        return PromptShortcuts.from_spec(doc.spec_dict)
+
     # ────────── Blueprint Metadata ──────────
     def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
         """
-        Set the metadata dictionary for a blueprint.
+        Merge keys into a blueprint's metadata (key-level upsert, not full replace).
         """
+        validate_metadata_keys(metadata)
         if not self.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
 

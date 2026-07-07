@@ -185,10 +185,14 @@ export async function saveBlueprint(
 export async function updateBlueprint(
   blueprintId: string,
   blueprintRaw: string,
+  userId: string,
+  identityType?: string,
 ): Promise<SaveBlueprintResponse> {
   const { data } = await axios.put<SaveBlueprintResponse>('/blueprints/blueprint.update', {
     blueprintId,
     blueprintRaw,
+    userId,
+    identityType: identityType || 'user',
   });
   return data;
 }
@@ -249,4 +253,54 @@ export async function validateDraft(
 export async function getBlueprintDraftSchema(): Promise<any> {
   const response = await axios.get('/blueprints/blueprint.draft.schema.get');
   return response.data;
+}
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Prompt Shortcuts
+// ────────────────────────────────────────────────────────────────────────────────
+
+export interface PromptShortcutInput {
+  id?: string;
+  text: string;
+}
+
+export interface PromptShortcut {
+  id: string;
+  text: string;
+}
+
+/**
+ * Set prompt shortcuts for a blueprint (replaces all existing shortcuts)
+ */
+export async function setPromptShortcuts(
+  blueprintId: string,
+  prompts: PromptShortcutInput[],
+  userId?: string,
+  identityType?: string,
+): Promise<{ prompts: PromptShortcut[] }> {
+  const { data } = await axios.put('/blueprints/blueprint.prompt-shortcuts.set', {
+    blueprintId,
+    prompts,
+    userId: userId || 'default',
+    identityType: identityType || 'user',
+  });
+  return data;
+}
+
+/**
+ * Get prompt shortcuts for a blueprint
+ */
+export async function getPromptShortcuts(
+  blueprintId: string,
+  userId?: string,
+  identityType?: string,
+): Promise<{ prompts: PromptShortcut[] }> {
+  const { data } = await axios.get('/blueprints/blueprint.prompt-shortcuts.get', {
+    params: {
+      blueprintId,
+      userId: userId || 'default',
+      identityType: identityType || 'user',
+    },
+  });
+  return data;
 }
