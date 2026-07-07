@@ -11,6 +11,7 @@ Produces a single CSV row appended to training_data.csv.
 
 import csv
 import json
+import math
 import os
 import sys
 from datetime import datetime, timezone
@@ -115,6 +116,8 @@ def main() -> int:
         duration_ms = to_int(totals.get("duration_ms"), default=0)
         try:
             cost_usd = round(float(totals.get("estimated_cost_usd", 0.0)), 4)
+            if not math.isfinite(cost_usd):
+                raise ValueError("non-finite")
         except (TypeError, ValueError):
             print(
                 "::warning::Training data: estimated_cost_usd is not numeric "

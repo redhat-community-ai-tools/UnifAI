@@ -7,10 +7,10 @@ def to_int(value, default: int = 0, *, min_value: int = 0) -> int:
         return default
     try:
         number = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         try:
             number = int(float(value))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return default
     return max(min_value, number)
 
@@ -25,10 +25,10 @@ def require_int(value, *, default_if_empty: int, min_value: int = 0) -> int | No
         return default_if_empty
     try:
         number = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         try:
             number = int(float(value))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return None
     if number < min_value:
         return None
