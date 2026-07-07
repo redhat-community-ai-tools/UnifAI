@@ -49,11 +49,13 @@ class GetAvailableDocsAction(BaseAction):
             config = RagProviderConfig()
             factory = RagProviderFactory()
             provider = factory.create(config)
+            user_id = (context or {}).get("user_id", "")
 
             response = provider.get_available_docs(
                 limit=input_data.limit,
                 cursor=input_data.cursor,
                 search_regex=input_data.search_regex,
+                authenticated_user=user_id,
             )
 
             return GetAvailableDocsOutput(

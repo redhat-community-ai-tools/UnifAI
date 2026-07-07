@@ -26,6 +26,8 @@ class SlackRetriever(BaseRetriever):
         self.threshold = threshold
         self._identity = identity
 
+    _AUTH_HEADER = "X-Authenticated-User"
+
     def retrieve(self, query: str) -> Any:
         scope = self._identity.scope if self._identity else "public"
         user_id = self._identity.identity_id if self._identity else ""
@@ -37,9 +39,12 @@ class SlackRetriever(BaseRetriever):
             "loggedInUser": user_id,
         }
 
+        headers = {self._AUTH_HEADER: user_id} if user_id else {}
+
         resp = requests.get(
             self.api_url,
             params=params,
+            headers=headers,
         )
         resp.raise_for_status()
         data = resp.json()

@@ -43,11 +43,14 @@ class RagClient:
     DOCS_ENDPOINT = "/api/docs/available.docs.get"
     QUERY_ENDPOINT = "/api/docs/query.match"
 
+    _AUTH_HEADER = "X-Authenticated-User"
+
     def __init__(
             self,
             base_url: HttpUrl,
             timeout: float = 30.0,
             headers: Optional[Dict[str, str]] = None,
+            authenticated_user: str = "",
     ):
         """
         Initialize RAG client.
@@ -56,10 +59,13 @@ class RagClient:
             base_url: RAG server base URL
             timeout: Request timeout in seconds
             headers: Optional HTTP headers
+            authenticated_user: User ID for internal auth header
         """
         self._base_url = str(base_url).rstrip("/")
         self._timeout = timeout
         self._headers = headers or {}
+        if authenticated_user:
+            self._headers[self._AUTH_HEADER] = authenticated_user
         self._client: Optional[httpx.Client] = None
 
     def __enter__(self) -> "RagClient":

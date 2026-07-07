@@ -45,6 +45,7 @@ class DocsRagRetriever(BaseRetriever):
             logged_in_user=user_id,
             doc_ids=doc_ids,
             tags=self.tags,
+            authenticated_user=user_id,
         )
 
         return [
