@@ -98,12 +98,25 @@ class OpenShellSandbox(BaseSandbox):
             if host:
                 self._allowed_endpoints.add((host, port))
 
+    _DEFAULT_ENDPOINTS: List[Tuple[str, int]] = [
+        ("pypi.org", 443),
+        ("files.pythonhosted.org", 443),
+    ]
+
     def _build_sandbox_policy(self) -> Any:
-        """Build a SandboxPolicy proto with network policies for allowed endpoints."""
+        """Build a SandboxPolicy proto with network policies for allowed endpoints.
+
+        Always includes PyPI endpoints so that ``pip install`` works inside
+        the sandbox without requiring callers to register them explicitly.
+        """
         from openshell._proto import sandbox_pb2
 
+        all_endpoints = set(self._allowed_endpoints)
+        for host, port in self._DEFAULT_ENDPOINTS:
+            all_endpoints.add((host, port))
+
         network_policies = {}
-        for host, port in self._allowed_endpoints:
+        for host, port in all_endpoints:
             safe_key = re.sub(r"[^a-z0-9]", "_", host.lower()).strip("_")[:50]
             policy_key = f"mcp_{safe_key}"
 
@@ -124,9 +137,6 @@ class OpenShellSandbox(BaseSandbox):
                     sandbox_pb2.NetworkBinary(path=p) for p in _PYTHON_BINARIES
                 ],
             )
-
-        if not network_policies:
-            return None
 
         logger.info(
             "Built sandbox network policy with %d endpoints: %s",
