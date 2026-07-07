@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict
 
-from mas.elements.llms.common.chat.file_attachment import FileAttachment
+from mas.core.file_attachment import FileAttachment
 
 
 class Role(str, Enum):

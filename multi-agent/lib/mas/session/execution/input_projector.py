@@ -16,7 +16,7 @@ After staging, the UI can immediately read messages from the DB.
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from mas.elements.llms.common.chat.file_attachment import FileAttachment
+from mas.core.file_attachment import FileAttachment
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.status import SessionStatus

@@ -1,11 +1,14 @@
-from flask import Blueprint, jsonify, current_app, Response, request
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
+from flask import Blueprint, Request, jsonify, current_app, Response, request
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import json
 from pydantic.json import pydantic_encoder
 from mas.core.channels import with_heartbeats
 from mas.session.domain.exceptions import BlueprintNotFoundError
-from mas.session.execution.ports import FileUploadRequest, FileUploadError
+from mas.session.execution.ports import FileUploadLimits, FileUploadRequest, FileUploadError
 from mas.session.domain.models import SessionMeta
 from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
 
@@ -138,69 +141,72 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
     return resp
 
 
-@sessions_bp.route("/user.session.submit", methods=["POST"])
-@with_require_identity_authorization
-def submit_user_session(identity):
-    """
-    Fire-and-forget execute for Temporal-backed sessions.
-    Supports both application/json and multipart/form-data (for file attachments).
-    Returns HTTP 202 with the workflow_id.
+@dataclass
+class _SubmitPayload:
+    """Parsed submit-session request — output of ``_parse_submit_request``."""
+    session_id: str
+    inputs: Dict
+    scope: str
+    session_type: str
+    files: Optional[List[FileUploadRequest]]
 
-    Note: this endpoint manually parses request data instead of using @from_body
-    because webargs does not support multipart/form-data with embedded JSON payloads.
-    File validation (size, count, MIME) is enforced here as a boundary guard to reject
-    oversized uploads before reading file bytes into memory.
-    Poll /session.status.get?sessionId=<id> for status updates.
 
-    ``sessionType`` controls busy-state semantics (see ``execute_user_session``).
+def _parse_submit_request(req: Request, limits: FileUploadLimits) -> _SubmitPayload:
+    """Parse and validate a submit request from either JSON or multipart.
+
+    Performs boundary validation (file count, size, MIME type) BEFORE reading
+    file bytes into memory.  The domain layer (``SessionInputProjector``)
+    performs its own validation on byte-length as a defense-in-depth guard
+    for non-HTTP callers.
+
+    Raises:
+        ValueError: with a descriptive, user-presentable message for each
+            specific validation failure.
     """
-    limits = current_app.container.file_upload_limits
     raw_files = None
 
-    if request.content_type and request.content_type.startswith("multipart/form-data"):
-        raw_payload = request.form.get("payload")
+    if req.content_type and req.content_type.startswith("multipart/form-data"):
+        raw_payload = req.form.get("payload")
         if not raw_payload:
-            return jsonify({"error": "Missing 'payload' form field"}), 400
+            raise ValueError("Missing 'payload' form field")
         try:
             payload = json.loads(raw_payload)
         except json.JSONDecodeError:
-            return jsonify({"error": "Invalid JSON in 'payload' field"}), 400
+            raise ValueError("Invalid JSON in 'payload' field")
 
         session_id = payload.get("sessionId")
         inputs = payload.get("inputs", {})
         scope = payload.get("scope", "public")
         session_type = payload.get("sessionType", "Personal")
 
-        raw_files = request.files.getlist("files")
+        raw_files = req.files.getlist("files")
         if len(raw_files) > limits.max_files:
-            return jsonify({"error": f"Maximum {limits.max_files} files allowed"}), 400
+            raise ValueError(f"Maximum {limits.max_files} files allowed")
         for f in raw_files:
             f.seek(0, 2)
             size = f.tell()
             f.seek(0)
             if size < limits.min_file_size_bytes:
-                return jsonify({"error": f"File '{f.filename}' is empty"}), 400
+                raise ValueError(f"File '{f.filename}' is empty")
             if size > limits.max_file_size_bytes:
                 max_mb = limits.max_file_size_bytes // (1024 * 1024)
-                return jsonify({"error": f"File '{f.filename}' exceeds {max_mb}MB limit"}), 400
+                raise ValueError(f"File '{f.filename}' exceeds {max_mb}MB limit")
             if f.content_type not in limits.allowed_mime_types:
-                return jsonify({"error": f"Unsupported file type: {f.content_type}"}), 400
+                raise ValueError(f"Unsupported file type: {f.content_type}")
     else:
-        payload = request.get_json(silent=True) or {}
+        payload = req.get_json(silent=True) or {}
         session_id = payload.get("sessionId")
         inputs = payload.get("inputs", {})
         scope = payload.get("scope", "public")
         session_type = payload.get("sessionType", "Personal")
 
     if not session_id or not isinstance(session_id, str):
-        return jsonify({"error": "sessionId must be a non-empty string"}), 400
+        raise ValueError("sessionId must be a non-empty string")
     if not isinstance(inputs, dict):
-        return jsonify({"error": "inputs must be a JSON object"}), 400
+        raise ValueError("inputs must be a JSON object")
 
     inputs.pop("file_attachments", None)
 
-    # Reads all file bytes into memory (up to max_files * max_file_size_bytes = 60MB).
-    # If limits increase significantly, consider streaming to the upload adapter.
     upload_requests = None
     if raw_files:
         upload_requests = [
@@ -212,21 +218,47 @@ def submit_user_session(identity):
             for f in raw_files
         ]
 
+    return _SubmitPayload(
+        session_id=session_id,
+        inputs=inputs,
+        scope=scope,
+        session_type=session_type,
+        files=upload_requests,
+    )
+
+
+@sessions_bp.route("/user.session.submit", methods=["POST"])
+@with_require_identity_authorization
+def submit_user_session(identity):
+    """Fire-and-forget execute for Temporal-backed sessions.
+
+    Supports both ``application/json`` and ``multipart/form-data`` (for file
+    attachments).  Returns HTTP 202 with the workflow_id.
+
+    Poll ``/session.status.get?sessionId=<id>`` for status updates.
+    ``sessionType`` controls busy-state semantics (see ``execute_user_session``).
+    """
+    limits = current_app.container.file_upload_limits
+    try:
+        payload = _parse_submit_request(request, limits)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
     try:
         svc = current_app.container.session_service
 
-        busy_response = _check_session_busy(session_id, session_type, svc)
+        busy_response = _check_session_busy(payload.session_id, payload.session_type, svc)
         if busy_response is not None:
             return busy_response
 
         workflow_id = svc.submit(
-            session_id=session_id,
-            inputs=inputs,
-            scope=scope,
-            files=upload_requests,
+            session_id=payload.session_id,
+            inputs=payload.inputs,
+            scope=payload.scope,
+            files=payload.files,
             logged_in_user=identity.id,
         )
-        return jsonify({"sessionId": session_id, "workflowId": workflow_id}), 202
+        return jsonify({"sessionId": payload.session_id, "workflowId": workflow_id}), 202
     except FileUploadError as e:
         status = 503 if e.retriable else 502
         return jsonify({"error": str(e), "retriable": e.retriable}), status

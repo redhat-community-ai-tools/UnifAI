@@ -2,7 +2,7 @@ from typing import Any, Callable, Dict, Iterator, List, Tuple, Set, get_type_hin
 from typing_extensions import Annotated
 from pydantic import BaseModel, Field, ConfigDict
 from mas.elements.llms.common.chat.message import ChatMessage
-from mas.elements.llms.common.chat.file_attachment import FileAttachment
+from mas.core.file_attachment import FileAttachment
 from mas.core.iem.packets import IEMPacket
 from .merge_strategies import merge_string_dicts, append_chat_messages, append_iem_packets, merge_task_threads, merge_threads, merge_workspaces
 from enum import Enum

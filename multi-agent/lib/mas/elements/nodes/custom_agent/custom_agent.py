@@ -3,10 +3,11 @@ from typing import Callable, Optional, Any, List, ClassVar, Set, Dict
 from copy import deepcopy
 from mas.graph.state.state_view import StateView
 from mas.graph.state.graph_state import Channel
-from mas.elements.llms.common.chat.file_attachment import (
+from mas.core.file_attachment import (
+    FileAttachment,
+    coerce_attachments,
     filter_active_attachments,
     format_attachment_lines,
-    get_attachment_field,
     partition_attachments,
 )
 from mas.elements.llms.common.chat.message import ChatMessage, Role
@@ -133,15 +134,11 @@ class CustomAgentNode(
                 attachments_raw = state.get(Channel.FILE_ATTACHMENTS, [])
             except Exception as e:
                 logger.warning("Error checking file attachments: %s", e)
-            active = filter_active_attachments(attachments_raw)
+            active = filter_active_attachments(coerce_attachments(attachments_raw))
             if active:
                 try:
-                    att_dicts = [
-                        a.model_dump() if hasattr(a, "model_dump") else a
-                        for a in active
-                    ]
-                    builtin_tools.append(self._file_retrieve_tool_factory(attachments=att_dicts))
-                    logger.info("Injected read_attached_file tool with %d attachments", len(att_dicts))
+                    builtin_tools.append(self._file_retrieve_tool_factory(attachments=active))
+                    logger.info("Injected read_attached_file tool with %d attachments", len(active))
                 except Exception as e:
                     logger.warning("Failed to create file retrieve tool: %s", e)
 
@@ -246,7 +243,8 @@ class CustomAgentNode(
             return None
 
         raw_attachments = self.workspaces.get_variable(thread_id, "file_attachments", []) or []
-        active, expired = partition_attachments(raw_attachments)
+        attachments = coerce_attachments(raw_attachments)
+        active, expired = partition_attachments(attachments)
         facts = self.workspaces.get_facts(thread_id) or []
 
         parts: List[str] = []
@@ -256,11 +254,10 @@ class CustomAgentNode(
                 + "\n".join(format_attachment_lines(active))
             )
         if expired:
-            expired_names = [get_attachment_field(att, "file_name") for att in expired]
             parts.append(
                 "EXPIRED FILE ATTACHMENTS (these files have expired after 48 hours "
                 "and can no longer be accessed — inform the user they need to re-upload):\n"
-                + "\n".join(f"- {name}" for name in expired_names)
+                + "\n".join(f"- {att.file_name}" for att in expired)
             )
         if facts:
             parts.append("WORKSPACE CONTEXT:\n" + "\n".join(f"- {f}" for f in facts))

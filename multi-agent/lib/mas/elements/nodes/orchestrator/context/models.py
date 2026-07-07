@@ -10,7 +10,7 @@ from typing import Optional, List, Dict, Any, Set
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 
-from mas.elements.llms.common.chat.file_attachment import format_attachment_lines
+from mas.core.file_attachment import FileAttachment, format_attachment_lines
 
 
 class CycleTriggerReason(Enum):
@@ -348,7 +348,7 @@ class OrchestratorContext(BaseModel):
     phase_state: Any = Field(None, description="PhaseState from existing system")
     
     # Attached files from user (structured data from workspace variable)
-    file_attachments: List[Dict[str, Any]] = Field(
+    file_attachments: List[FileAttachment] = Field(
         default_factory=list,
         description="Attached files from user for delegation to agents"
     )

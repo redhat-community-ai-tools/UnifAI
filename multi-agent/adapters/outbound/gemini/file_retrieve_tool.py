@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 
-from mas.elements.llms.common.chat.file_attachment import FILE_ATTACHMENT_TTL_HOURS, get_attachment_field
+from mas.core.file_attachment import FILE_ATTACHMENT_TTL_HOURS, FileAttachment
 from mas.elements.tools.common.base_tool import BaseTool
 
 
@@ -33,16 +33,18 @@ class GeminiFileRetrieveTool(BaseTool):
     )
     args_schema = GeminiFileRetrieveArgs
 
-    def __init__(self, api_key: str, model_name: str, file_attachments: List[dict] = None):
+    def __init__(
+        self, api_key: str, model_name: str, file_attachments: List[FileAttachment] = None
+    ):
         super().__init__()
         self._client = genai.Client(api_key=api_key)
         self._model_name = model_name
-        self._file_attachments = file_attachments or []
+        self._file_attachments: List[FileAttachment] = file_attachments or []
 
-    def _resolve_attachment(self, file_uri: str) -> dict | None:
+    def _resolve_attachment(self, file_uri: str) -> FileAttachment | None:
         """Find attachment by URI, return it or None."""
         for att in self._file_attachments:
-            if get_attachment_field(att, "file_uri") == file_uri:
+            if att.file_uri == file_uri:
                 return att
         return None
 
@@ -51,9 +53,7 @@ class GeminiFileRetrieveTool(BaseTool):
 
         attachment = self._resolve_attachment(args.file_uri)
         if not attachment:
-            valid_uris = [
-                get_attachment_field(a, "file_uri") for a in self._file_attachments
-            ]
+            valid_uris = [a.file_uri for a in self._file_attachments]
             return {
                 "success": False,
                 "error": (
@@ -62,7 +62,7 @@ class GeminiFileRetrieveTool(BaseTool):
                 ),
             }
 
-        mime_type = get_attachment_field(attachment, "mime_type", "application/octet-stream")
+        mime_type = attachment.mime_type or "application/octet-stream"
 
         try:
             response = self._client.models.generate_content(
