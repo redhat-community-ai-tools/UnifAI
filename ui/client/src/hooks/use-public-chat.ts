@@ -346,6 +346,11 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
 
   const didAutoInitRef = useRef(false);
 
+  // Reset auto-init flag when blueprint or user changes
+  useEffect(() => {
+    didAutoInitRef.current = false;
+  }, [blueprintId, user?.username]);
+
   // Auto-create or auto-select session when data first loads
   useEffect(() => {
     if (isLoading || !sessionsData || didAutoInitRef.current) {
