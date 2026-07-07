@@ -1516,7 +1516,7 @@ export default function ChatInterface({
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: 4 }}
                           transition={{ duration: 0.15, ease: "easeOut" }}
-                          className="absolute bottom-full left-0 mb-2 z-10 w-[min(16rem,80vw)]"
+                          className="absolute bottom-full left-0 mb-2 z-10 w-full"
                         >
                           <div className="rounded-md bg-gray-900 border border-primary/50 p-3 flex flex-col shadow-lg">
                             <div className="max-h-[200px] overflow-y-auto mb-2">
