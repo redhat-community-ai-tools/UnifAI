@@ -15,6 +15,8 @@ import {
   type AdminConfigResponse,
 } from "@/api/adminConfig";
 import AdminConfigSection from "@/features/configuration/AdminConfigSection";
+import RepositoryManagement from "@/features/configuration/RepositoryManagement";
+import { AgenticAIProvider } from "@/contexts/AgenticAIContext";
 
 export default function Configuration() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -117,6 +119,12 @@ function AdminConfigTabs() {
               {category.title}
             </TabsTrigger>
           ))}
+          <TabsTrigger
+            value="__repository_management__"
+            className="data-[state=active]:bg-primary data-[state=active]:text-white"
+          >
+            Repository Management
+          </TabsTrigger>
         </TabsList>
 
         {config.categories.map((category) => (
@@ -139,6 +147,12 @@ function AdminConfigTabs() {
             </div>
           </TabsContent>
         ))}
+
+        <TabsContent value="__repository_management__">
+          <AgenticAIProvider>
+            <RepositoryManagement />
+          </AgenticAIProvider>
+        </TabsContent>
       </Tabs>
     </motion.div>
   );
