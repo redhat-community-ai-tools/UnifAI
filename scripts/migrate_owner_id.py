@@ -94,7 +94,7 @@ def audit_unknowns(
             collection_name=collection_name,
             limit=batch_size,
             offset=offset,
-            with_payload=True,
+            with_payload=["metadata.source_id"],
         )
 
         if not points:
