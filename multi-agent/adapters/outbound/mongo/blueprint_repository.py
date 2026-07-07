@@ -76,13 +76,6 @@ class MongoBlueprintRepository(BlueprintRepository):
         res = self._col.update_one({"blueprint_id": blueprint_id}, op)
         return res.matched_count >= 1
 
-    def get_prompt_shortcuts(self, *, blueprint_id: str) -> PromptShortcuts:
-        doc = self._col.find_one({"blueprint_id": blueprint_id}, {"spec_dict.prompt_shortcuts": 1})
-        if not doc:
-            raise KeyError(f"No blueprint with id={blueprint_id}")
-        raw = (doc.get("spec_dict") or {}).get("prompt_shortcuts")
-        return PromptShortcuts.from_raw_list(raw)
-
     def load(self, blueprint_id: str) -> BlueprintDocument:
         doc = self._col.find_one({"blueprint_id": blueprint_id})
         if not doc:

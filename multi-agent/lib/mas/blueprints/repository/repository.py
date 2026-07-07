@@ -25,10 +25,6 @@ class BlueprintRepository(ABC):
     def set_prompt_shortcuts(self, *, blueprint_id: str, shortcuts: PromptShortcuts) -> bool:
         """Persist prompt shortcuts for a blueprint. Empty shortcuts clear the stored value."""
 
-    @abstractmethod
-    def get_prompt_shortcuts(self, *, blueprint_id: str) -> PromptShortcuts:
-        """Return prompt shortcuts for a blueprint, or an empty PromptShortcuts if unset."""
-
     # ────────────────────────────── Reads by ID ─────────────────────────
     @abstractmethod
     def load(self, blueprint_id: str) -> BlueprintDocument:
