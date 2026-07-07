@@ -8,7 +8,7 @@ import json
 from pydantic.json import pydantic_encoder
 from mas.core.channels import with_heartbeats
 from mas.session.domain.exceptions import BlueprintNotFoundError
-from mas.session.execution.ports import FileUploadLimits, FileUploadRequest, FileUploadError
+from mas.session.execution.file_upload import FileUploadLimits, FileUploadRequest, FileUploadError
 from mas.session.domain.models import SessionMeta
 from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
 

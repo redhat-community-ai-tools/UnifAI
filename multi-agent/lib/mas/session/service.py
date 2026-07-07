@@ -4,7 +4,8 @@ from datetime import datetime
 from mas.session.management.user_session_manager import UserSessionManager
 from mas.session.execution.foreground_runner import ForegroundSessionRunner
 from mas.session.execution.input_projector import SessionInputProjector
-from mas.session.execution.ports import BackgroundSessionEngine, SubmitSessionRequest, FileUploadRequest
+from mas.session.execution.ports import BackgroundSessionEngine, SubmitSessionRequest
+from mas.session.execution.file_upload import FileUploadRequest
 from mas.session.domain.status import SessionStatus
 from mas.session.domain.workflow_session import WorkflowSession
 from mas.session.domain.session_record import SessionRecord

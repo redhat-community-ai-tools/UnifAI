@@ -12,7 +12,7 @@ from google.api_core.exceptions import (
     InternalServerError,
 )
 
-from mas.session.execution.ports import (
+from mas.session.execution.file_upload import (
     IFileUploadService,
     FileUploadRequest,
     FileUploadResult,
