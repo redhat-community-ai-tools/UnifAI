@@ -201,6 +201,31 @@ Review phases follow an Inline Scout + Judge pattern. The orchestrator **execute
 
 **Environment variable resolution:** Check `$ARCH_JUDGE_MODEL`, `$CODE_JUDGE_MODEL` env vars first. If not set, use the defaults above.
 
+### Severity Validation (Post-Judge)
+
+After a Judge subagent completes and you have parsed its output:
+
+1. **Extract Major findings**: Scan the Judge output for `#### 🟠` headings. Collect the full block for each (title, file:line, description, fix, provenance tag).
+2. **Gate check**: If zero Major findings → skip validation, proceed directly to report assembly / score derivation.
+3. **Spawn Critic**: If 1+ Major findings exist, read `.cursor/skills/pipeline/phases/_severity-critic.md` and spawn a Critic subagent:
+   - `Task(subagent_type="generalPurpose", run_in_background: false)`
+   - Prompt includes: the Critic skill content, the extracted Major findings, and these Evidence Pack sections: Diff Summary, Domain Context (Established Patterns), and the review type ("code" or "architecture").
+   - Model: use the same model as the Judge that produced the findings.
+4. **Parse reclassifications**: Locate the `CRITIC_RECLASSIFICATIONS:` block in the Critic's output. For each finding:
+   - If reclassified to CRITICAL → move to Section 3 of the Judge report
+   - If confirmed as MAJOR → leave in Section 4
+   - If downgraded to WARNING → move to Section 5
+   - If downgraded to INFO → move to Section 6
+5. **Recompute score**: Using the patched finding counts, re-run the scoring formula from the Judge's Section 7.
+6. **Re-derive verdict**: Apply verdict rules to the new score. Emit the patched final report.
+
+**Skip conditions** (do NOT spawn Critic):
+- The Judge produced zero Major findings
+- Pipeline is in a revision loop iteration ≥2 (trust the Judge on subsequent passes to avoid latency compounding)
+- Environment variable `SKIP_SEVERITY_CRITIC=true` is set
+
+**Latency budget**: The Critic adds ~5-10s. This is acceptable given it prevents false-positive Major findings from triggering unnecessary revision loops (which cost 30-60s each).
+
 ### Scope resolution (Phases 5 in standalone mode)
 
 For `qa-only` mode, the reviewer skill handles scope resolution and domain loading itself — it determines the file scope (from explicit paths or git diff) and resolves domains using its built-in path-prefix mapping. No additional orchestrator action is needed beyond passing the user's file/folder arguments (if any) to the reviewer.
