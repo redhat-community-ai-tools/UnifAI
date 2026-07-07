@@ -225,37 +225,55 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     setChatToDelete(null);
   }, []);
 
-  // Handle new chat creation
+  // Core session creation logic (shared by manual and auto-init)
+  const createSession = useCallback(async () => {
+    if (!blueprintId || !user) {
+      throw new Error('Blueprint ID and user are required');
+    }
+
+    const response = await axios.post('/sessions/user.session.create', {
+      blueprintId: blueprintId,
+      userId: user.username,
+      metadata: { source: 'public_link' },
+    });
+
+    const newSessionId = response.data;
+
+    if (!newSessionId || typeof newSessionId !== 'string') {
+      throw new Error('Invalid session ID received from server');
+    }
+
+    const tempSession: ChatSession = {
+      id: newSessionId,
+      blueprintId: blueprintId,
+      title: 'New Chat',
+      lastActive: 'Just now',
+      timestamp: new Date(),
+      preview: 'New conversation',
+      messages: [],
+      blueprintExists: true,
+      fromSharedLink: true,
+    };
+
+    setSelectedSession(tempSession);
+    setChatHistory([]);
+    setRunId(newSessionId);
+
+    // Invalidate to refresh with real data from server
+    queryClient.invalidateQueries({
+      queryKey: ['publicChatSessions', user.username, blueprintId],
+    });
+
+    return tempSession;
+  }, [blueprintId, user, queryClient]);
+
+  // Handle new chat creation (manual trigger with UI feedback)
   const handleNewChat = useCallback(async () => {
     if (!blueprintId || !user) return;
 
     setIsCreatingSession(true);
     try {
-      const response = await axios.post('/sessions/user.session.create', {
-        blueprintId: blueprintId,
-        userId: user.username,
-        metadata: { source: 'public_link' },
-      });
-
-      const newSessionId = response.data;
-
-      const tempSession: ChatSession = {
-        id: newSessionId,
-        blueprintId: blueprintId,
-        title: 'New Chat',
-        lastActive: 'Just now',
-        timestamp: new Date(),
-        preview: 'New conversation',
-        messages: [],
-        blueprintExists: true,
-        fromSharedLink: true,
-      };
-
-      setSelectedSession(tempSession);
-      setChatHistory([]);
-      setRunId(newSessionId);
-
-      queryClient.invalidateQueries({ queryKey: ['publicChatSessions', user.username, blueprintId] });
+      await createSession();
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -265,7 +283,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     } finally {
       setIsCreatingSession(false);
     }
-  }, [blueprintId, user, queryClient, toast]);
+  }, [blueprintId, user, createSession, toast]);
 
   const handleCancelSession = useCallback(async () => {
     if (!runId) return;
@@ -361,42 +379,16 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
       didAutoInitRef.current = true;
       (async () => {
         try {
-          const createResponse = await axios.post('/sessions/user.session.create', {
-            blueprintId: blueprintId,
-            userId: user.username,
-            metadata: { source: 'public_link' },
-          });
-
-          const newSessionId = createResponse.data;
-          if (!newSessionId || typeof newSessionId !== 'string') {
-            throw new Error('Invalid session ID received from server');
-          }
-
-          setRunId(newSessionId);
-          setChatHistory([]);
-
-          const tempSession: ChatSession = {
-            id: newSessionId,
-            blueprintId: blueprintId,
-            title: 'New Chat',
-            lastActive: 'Just now',
-            timestamp: new Date(),
-            preview: 'New conversation',
-            messages: [],
-            blueprintExists: true,
-            fromSharedLink: true,
-          };
-
-          setSelectedSession(tempSession);
-          queryClient.invalidateQueries({ queryKey: ['publicChatSessions', user.username, blueprintId] });
+          await createSession();
         } catch (createError: any) {
           console.error('Error auto-creating new chat:', createError);
+          // Don't show toast for auto-init failures (silent failure)
         }
       })();
     } else if (sessions.length > 0 && !selectedSession) {
       handleSessionSelect(sessions[0]);
     }
-  }, [sessions.length, isLoading, sessionsData, blueprintId, user, selectedSession, runId, handleSessionSelect, queryClient]);
+  }, [sessions.length, isLoading, sessionsData, blueprintId, user, selectedSession, runId, createSession, handleSessionSelect]);
 
   return {
     sessions,
