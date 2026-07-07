@@ -283,6 +283,8 @@ Evidence required: quote the boundary declaration that supports or contradicts t
 
 ## Severity Calibration
 
+For the authoritative severity thresholds, see `.cursor/skills/pipeline/modes/_severity-rubric.md`.
+
 Before assigning any severity, apply these modifiers:
 
 - **Provenance tag is `[PRE]`** → the finding pre-existed this PR. MUST classify as **INFO — tech debt**. Cannot be MAJOR or CRITICAL regardless of severity of the issue itself. Does not count against the verdict or score.
