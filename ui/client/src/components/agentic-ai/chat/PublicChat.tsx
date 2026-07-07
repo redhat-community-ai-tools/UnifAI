@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRoute } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -34,7 +34,6 @@ export default function PublicChat() {
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const { toast } = useToast();
   const { primaryHex } = useTheme();
-  const scrollRef = useRef<HTMLDivElement>(null);
   
   const [blueprintId, setBlueprintId] = useState<string | null>(null);
   const [blueprintName, setBlueprintName] = useState<string>("");
@@ -74,13 +73,11 @@ export default function PublicChat() {
     isFetchingNextPage,
   } = usePublicChat(blueprintId);
 
-  const handleScrollPagination = usePaginationTrigger({
+  const { scrollRef, isFetchingNextPage: isScrollFetching } = usePaginationTrigger({
     mode: "scroll",
-    scrollRef,
     hasNextPage: hasNextPage ?? false,
     isFetchingNextPage: isFetchingNextPage ?? false,
     fetchNextPage,
-    threshold: 100,
   });
 
   // Check sharing status for the blueprint using getBlueprintInfo (usageScope is part of metadata)

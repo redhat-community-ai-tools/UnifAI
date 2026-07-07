@@ -44,18 +44,12 @@ const SessionMessagesLoader: React.FC = () => (
 
 export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactElement {
   const hub = useSessionHub({ runId });
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Scroll mode handles pagination automatically; manual trigger not needed
-  const _pagination = usePaginationTrigger({
+  const { scrollRef, isFetchingNextPage } = usePaginationTrigger({
     mode: "scroll",
-    scrollRef,
     hasNextPage: hub.hasNextPage,
     isFetchingNextPage: hub.isFetchingNextPage,
     fetchNextPage: hub.fetchNextPage,
-    threshold: 100,
   });
-  void _pagination;
 
   const [showExecutionStream, setShowExecutionStream] = useState(false);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(15);

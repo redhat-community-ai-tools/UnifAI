@@ -45,15 +45,11 @@ interface CollaborationHubViewProps {
 
 export default function CollaborationHubView({ runId, teamMembers, teamName }: CollaborationHubViewProps) {
   const hub = useSessionHub({ runId, manualStreamControl: true });
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  usePaginationTrigger({
+  const { scrollRef, isFetchingNextPage } = usePaginationTrigger({
     mode: "scroll",
-    scrollRef,
     hasNextPage: hub.hasNextPage,
     isFetchingNextPage: hub.isFetchingNextPage,
     fetchNextPage: hub.fetchNextPage,
-    threshold: 100,
   });
 
   // ── Collab-specific state ──────────────────────────────────────────────

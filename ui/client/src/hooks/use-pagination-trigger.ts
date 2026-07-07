@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, RefObject } from "react";
 
-type TriggerMode = "scroll" | "manual";
+type TriggerMode = "scroll" | "manual" | "intersection" | "button";
 
 interface UsePaginationTriggerOptions {
   mode: TriggerMode;
@@ -11,17 +11,59 @@ interface UsePaginationTriggerOptions {
   threshold?: number;
 }
 
+interface UsePaginationTriggerReturn {
+  scrollRef: RefObject<HTMLDivElement>;
+  next: () => void;
+  canFetch: boolean;
+  isFetchingNextPage: boolean;
+}
+
+/**
+ * Hook for managing pagination triggers (scroll, manual button, intersection observer, etc.)
+ *
+ * For scroll mode, you can either:
+ * 1. Pass your own scrollRef
+ * 2. Use the returned scrollRef (hook creates it for you)
+ *
+ * @example Scroll mode (auto-managed ref):
+ * ```tsx
+ * const { scrollRef, isFetchingNextPage } = usePaginationTrigger({
+ *   mode: "scroll",
+ *   hasNextPage: query.hasNextPage,
+ *   isFetchingNextPage: query.isFetchingNextPage,
+ *   fetchNextPage: query.fetchNextPage,
+ * });
+ *
+ * return <div ref={scrollRef}>...</div>;
+ * ```
+ *
+ * @example Manual mode (button):
+ * ```tsx
+ * const { next, canFetch } = usePaginationTrigger({
+ *   mode: "manual",
+ *   hasNextPage: query.hasNextPage,
+ *   isFetchingNextPage: query.isFetchingNextPage,
+ *   fetchNextPage: query.fetchNextPage,
+ * });
+ *
+ * return <Button onClick={next} disabled={!canFetch}>Load More</Button>;
+ * ```
+ */
 export function usePaginationTrigger({
   mode,
-  scrollRef,
+  scrollRef: externalScrollRef,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
-  threshold = 100,
-}: UsePaginationTriggerOptions) {
+  threshold = 200, //early trigger when 200px from bottom for more seamless experience
+}: UsePaginationTriggerOptions): UsePaginationTriggerReturn {
   const canFetch = hasNextPage && !isFetchingNextPage;
 
-  // This function can be called to manually (with a button) trigger fetching the next page
+  // Create internal ref if none provided (for convenience)
+  const internalScrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = externalScrollRef || internalScrollRef;
+
+  // Manual trigger function (for button mode)
   const next = useCallback(() => {
     if (canFetch) {
       fetchNextPage();
@@ -47,5 +89,10 @@ export function usePaginationTrigger({
     return () => container.removeEventListener("scroll", handleScroll);
   }, [mode, scrollRef, handleScroll]);
 
-  return { next, canFetch };
+  return {
+    scrollRef: scrollRef as RefObject<HTMLDivElement>,
+    next,
+    canFetch,
+    isFetchingNextPage,
+  };
 }
