@@ -4,10 +4,13 @@ File attachment model and helpers.
 Cross-cutting shared type consumed by elements, session, graph, and adapters.
 Same pattern as Identity (mas.core.identity) and ExecutionContext (mas.core.execution_context).
 """
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Tuple
 
 from pydantic import BaseModel, ConfigDict
+
+logger = logging.getLogger(__name__)
 
 FILE_ATTACHMENT_TTL_HOURS = 48
 
@@ -29,13 +32,20 @@ def coerce_attachments(raw: list) -> List[FileAttachment]:
 
     Workspace variables store attachments as plain dicts after serialisation.
     Call this at every deserialization boundary to ensure typed access downstream.
+    Malformed entries are skipped with a warning rather than crashing the caller.
     """
     if not raw:
         return []
-    return [
-        att if isinstance(att, FileAttachment) else FileAttachment.model_validate(att)
-        for att in raw
-    ]
+    result: List[FileAttachment] = []
+    for att in raw:
+        if isinstance(att, FileAttachment):
+            result.append(att)
+            continue
+        try:
+            result.append(FileAttachment.model_validate(att))
+        except Exception:
+            logger.warning("Skipping malformed file attachment: %s", att)
+    return result
 
 
 def is_attachment_active(att: FileAttachment) -> bool:
