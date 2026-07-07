@@ -27,7 +27,6 @@ class GraphExecutionParams(BaseModel):
     graph_definition: GraphDefinition = Field(default_factory=GraphDefinition)
     session_id: str = ""
     execution_context: ExecutionContext = Field(default_factory=ExecutionContext)
-    session_cookie: str = ""
 
 
 class SessionWorkflowParams(BaseModel):
@@ -44,7 +43,6 @@ class SessionWorkflowParams(BaseModel):
     run_id: str
     execution_context: ExecutionContext = Field(default_factory=ExecutionContext)
     graph_execution_params: GraphExecutionParams = Field(default_factory=GraphExecutionParams)
-    session_cookie: str = ""
 
 
 # ── Activity params ──────────────────────────────────────────────────
@@ -57,7 +55,6 @@ class ExecuteNodeParams(BaseModel):
     state: GraphState = Field(default_factory=GraphState)
     session_id: str = ""
     execution_context: ExecutionContext = Field(default_factory=ExecutionContext)
-    session_cookie: str = ""
 
 
 class EvaluateConditionParams(BaseModel):

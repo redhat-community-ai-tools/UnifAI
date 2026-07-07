@@ -103,7 +103,6 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
       - ``"Shared"``: rejects when status is LOCKED, IN_USE, QUEUED, or RUNNING.
     """
     logged_in_user = identity.id
-    session_cookie = request.cookies.get("session", "")
     svc = current_app.container.session_service
 
     busy_response = _check_session_busy(session_id, session_type, svc)
@@ -116,7 +115,6 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
             inputs=inputs,
             scope=scope,
             logged_in_user=logged_in_user,
-            session_cookie=session_cookie,
         )
         return json.dumps(result, default=pydantic_encoder), 200
 
@@ -127,7 +125,6 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
             scope=scope,
             stream=True,
             logged_in_user=logged_in_user,
-            session_cookie=session_cookie,
         )
         for chunk in with_heartbeats(stream_iter):
             yield json.dumps(chunk, default=pydantic_encoder) + "\n"
@@ -160,7 +157,6 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
     """
     try:
         svc = current_app.container.session_service
-        session_cookie = request.cookies.get("session", "")
 
         busy_response = _check_session_busy(session_id, session_type, svc)
         if busy_response is not None:
@@ -171,7 +167,6 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
             inputs=inputs,
             scope=scope,
             logged_in_user=identity.id,
-            session_cookie=session_cookie,
         )
         return jsonify({"sessionId": session_id, "workflowId": workflow_id}), 202
     except TypeError as e:

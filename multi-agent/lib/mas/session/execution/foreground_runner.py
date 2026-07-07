@@ -46,7 +46,6 @@ class ForegroundSessionRunner:
         session: WorkflowSession,
         scope: str = "public",
         stream: bool = False,
-        session_cookie: str = "",
     ) -> Union[GraphState, Iterator[Any]]:
         """
         Execute the session graph.
@@ -57,16 +56,14 @@ class ForegroundSessionRunner:
             stream: If True, returns an event iterator instead of the
                     final state.  The lifecycle is completed internally
                     once execution finishes.
-            session_cookie: Signed Flask session cookie from the caller,
-                    forwarded to internal services (e.g. RAG) for auth.
 
         Returns:
             ``GraphState`` when *stream* is False;
             ``Iterator[Any]`` of channel events when *stream* is True.
         """
         if stream:
-            return self._run_streaming(session, scope, session_cookie)
-        return self._run_blocking(session, scope, session_cookie)
+            return self._run_streaming(session, scope)
+        return self._run_blocking(session, scope)
 
     # ── Blocking path ────────────────────────────────────────────
 
@@ -74,11 +71,9 @@ class ForegroundSessionRunner:
         self,
         session: WorkflowSession,
         scope: str,
-        session_cookie: str = "",
     ) -> GraphState:
         self._lifecycle.begin(session.record, scope)
         session.execution_holder.context = session.record.run_context
-        session.execution_holder.session_cookie = session_cookie
 
         try:
             final_state = session.executable_graph.run(
@@ -97,11 +92,9 @@ class ForegroundSessionRunner:
         self,
         session: WorkflowSession,
         scope: str,
-        session_cookie: str = "",
     ) -> Iterator[Any]:
         self._lifecycle.begin(session.record, scope)
         session.execution_holder.context = session.record.run_context
-        session.execution_holder.session_cookie = session_cookie
 
         channel = self._channel_factory.create(session.get_run_id())
         reader = self._channel_factory.create_reader(session.get_run_id())

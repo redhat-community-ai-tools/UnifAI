@@ -27,17 +27,19 @@ class SlackRetriever(BaseRetriever):
         self._identity = identity
 
     def retrieve(self, query: str) -> Any:
-        cookie = self._identity.session_cookie if self._identity else ""
+        scope = self._identity.scope if self._identity else "public"
+        user_id = self._identity.identity_id if self._identity else ""
 
         params = {
             "query": query,
             "top_k_results": self.top_k,
+            "scope": scope,
+            "loggedInUser": user_id,
         }
 
         resp = requests.get(
             self.api_url,
             params=params,
-            cookies={"session": cookie} if cookie else None,
         )
         resp.raise_for_status()
         data = resp.json()

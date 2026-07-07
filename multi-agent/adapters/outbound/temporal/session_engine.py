@@ -79,13 +79,11 @@ class TemporalSessionEngine(BackgroundSessionEngine):
             graph_definition=executor.graph_definition,
             session_id=session.get_run_id(),
             execution_context=request.execution_context,
-            session_cookie=request.session_cookie,
         )
         params = SessionWorkflowParams(
             run_id=session.get_run_id(),
             execution_context=request.execution_context,
             graph_execution_params=graph_params,
-            session_cookie=request.session_cookie,
         )
         await client.start_workflow(
             _WORKFLOW_NAME,

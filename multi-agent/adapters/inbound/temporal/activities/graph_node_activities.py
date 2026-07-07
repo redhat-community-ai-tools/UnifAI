@@ -49,7 +49,6 @@ class GraphNodeActivities:
             state=params.state,
             channel=channel,
             execution_context=params.execution_context,
-            session_cookie=params.session_cookie,
         )
 
     @activity.defn(name="evaluate_condition")

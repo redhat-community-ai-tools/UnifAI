@@ -92,7 +92,6 @@ class SessionWorkflow:
             graph_definition=self._params.graph_execution_params.graph_definition,
             session_id=self._params.run_id,
             execution_context=self._params.execution_context,
-            session_cookie=self._params.session_cookie,
         )
         try:
             return await workflow.execute_child_workflow(

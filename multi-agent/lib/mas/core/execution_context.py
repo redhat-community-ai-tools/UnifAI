@@ -100,11 +100,10 @@ class ExecutionContextHolder:
     silent defaults.
     """
 
-    __slots__ = ("_ctx", "_session_cookie")
+    __slots__ = ("_ctx",)
 
     def __init__(self) -> None:
         self._ctx: Optional[ExecutionContext] = None
-        self._session_cookie: str = ""
 
     @property
     def context(self) -> ExecutionContext:
@@ -126,14 +125,6 @@ class ExecutionContextHolder:
     @property
     def identity_id(self) -> str:
         return self.context.identity_id
-
-    @property
-    def session_cookie(self) -> str:
-        return self._session_cookie
-
-    @session_cookie.setter
-    def session_cookie(self, value: str) -> None:
-        self._session_cookie = value or ""
 
     @property
     def identity(self) -> Identity:

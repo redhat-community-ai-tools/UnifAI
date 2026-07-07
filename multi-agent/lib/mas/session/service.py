@@ -62,7 +62,6 @@ class SessionService:
         scope: str = "public",
         stream: bool = False,
         logged_in_user: str = "",
-        session_cookie: str = "",
     ) -> Any:
         """
         Execute the session graph.
@@ -80,12 +79,10 @@ class SessionService:
             session=session,
             scope=scope,
             stream=stream,
-            session_cookie=session_cookie,
         )
 
     def submit(self, session_id: str, inputs: Dict[str, Any],
-               scope: str = "public", logged_in_user: str = "",
-               session_cookie: str = "") -> str:
+               scope: str = "public", logged_in_user: str = "") -> str:
         """
         Non-blocking submit: stage inputs, then start a background workflow
         and return its handle/ID immediately (HTTP 202 pattern).
@@ -106,10 +103,7 @@ class SessionService:
 
         session = self._manager.get_session(session_id)
         execution_ctx = session.run_context.with_scope(scope)
-        request = SubmitSessionRequest(
-            execution_context=execution_ctx,
-            session_cookie=session_cookie,
-        )
+        request = SubmitSessionRequest(execution_context=execution_ctx)
         self._engine.submit(session, request)
 
         return handle
