@@ -26,7 +26,7 @@ def _get_internal_user() -> str | None:
     """
     user = request.headers.get(_AUTH_HEADER, "").strip()
     if user:
-        logger.debug("Authenticated via %s header: %s", _AUTH_HEADER, user)
+        logger.debug("Authenticated via %s header", _AUTH_HEADER)
     return user or None
 
 
