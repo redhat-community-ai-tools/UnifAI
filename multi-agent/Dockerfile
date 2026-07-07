@@ -83,7 +83,7 @@ RUN pip install -e './global_utils/[multi-agent]'
 # Download .proto sources from the OpenShell repo and generate them into the
 # installed package. This mirrors the upstream python:proto build task.
 ARG OPENSHELL_PROTO_REF="main"
-RUN pip install grpcio-tools && \
+RUN pip install grpcio-tools 'protobuf>=7.35.0' && \
     PROTO_DIR=$(mktemp -d) && \
     SITE_PKG=$(python3 -c "import pathlib,site; p=next(pathlib.Path(site.getsitepackages()[0]).rglob('openshell/_proto')); print(p)") && \
     for f in datamodel.proto openshell.proto sandbox.proto inference.proto; do \
