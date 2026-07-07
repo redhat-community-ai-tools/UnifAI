@@ -20,26 +20,20 @@ export function usePaginationTrigger({
   threshold = 100,
 }: UsePaginationTriggerOptions) {
   const canFetch = hasNextPage && !isFetchingNextPage;
-  const fetchingRef = useRef(false);
-
-  useEffect(() => {
-    if (!isFetchingNextPage) fetchingRef.current = false;
-  }, [isFetchingNextPage]);
 
   // This function can be called to manually (with a button) trigger fetching the next page
-  const next = useCallback(() => { 
+  const next = useCallback(() => {
     if (canFetch) {
       fetchNextPage();
     }
   }, [canFetch, fetchNextPage]);
 
   const handleScroll = useCallback(() => {
-    if (!scrollRef?.current || !canFetch || fetchingRef.current) return;
+    if (!scrollRef?.current || !canFetch) return;
 
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     if (scrollHeight - scrollTop - clientHeight < threshold) {
-      fetchingRef.current = true;
-      fetchNextPage();
+      fetchNextPage(); // React Query deduplicates internally
     }
   }, [scrollRef, canFetch, fetchNextPage, threshold]);
 
