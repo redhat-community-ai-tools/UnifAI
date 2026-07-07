@@ -13,6 +13,7 @@ from mas.elements.common.validator import (
     ValidationCode,
 )
 from mas.elements.nodes.claude_agent.config import ClaudeAgentNodeConfig
+from mas.elements.nodes.claude_agent.identifiers import EffortLevel
 from mas.core.ref.models import Ref
 
 
@@ -23,6 +24,7 @@ class ClaudeAgentNodeValidator(BaseElementValidator):
     Checks:
     - Vertex AI project ID is present
     - Model string is valid
+    - Effort level is valid
     - Permission mode is recognized
     - Max turns bounds
     - Retriever dependency (if configured)
@@ -30,6 +32,8 @@ class ClaudeAgentNodeValidator(BaseElementValidator):
     Note: Vertex AI credential reachability is validated in real-time
     via the claude_agent.validate_vertex_connection action (ActionHint).
     """
+
+    VALID_EFFORT_LEVELS = {e.value for e in EffortLevel}
 
     VALID_PERMISSION_MODES = {
         "default", "acceptEdits", "plan", "dontAsk", "bypassPermissions",
@@ -45,6 +49,7 @@ class ClaudeAgentNodeValidator(BaseElementValidator):
 
         self._check_vertex_project(config, messages)
         self._check_model(config, messages)
+        self._check_effort(config, messages)
         self._check_permission_mode(config, messages)
         self._check_max_turns(config, messages)
         self._check_skills_repos(config, messages)
@@ -95,6 +100,19 @@ class ClaudeAgentNodeValidator(BaseElementValidator):
                 "UNUSUAL_MODEL_NAME",
                 f"Model '{config.model}' doesn't look like a standard Claude model ID",
                 field="model",
+            ))
+
+    def _check_effort(
+        self,
+        config: ClaudeAgentNodeConfig,
+        messages: List[ValidationMessage],
+    ) -> None:
+        if config.effort not in self.VALID_EFFORT_LEVELS:
+            messages.append(self._error(
+                "INVALID_EFFORT_LEVEL",
+                f"Unknown effort level: {config.effort}. "
+                f"Valid: {sorted(self.VALID_EFFORT_LEVELS)}",
+                field="effort",
             ))
 
     def _check_permission_mode(

@@ -10,9 +10,11 @@ import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
 import { useSessionHub } from "@/hooks/use-session-hub";
 import { useCarouselLayout } from "@/hooks/use-carousel-layout";
+import { useDefaultPrompts } from "@/hooks/use-default-prompts";
 import { AnimatedPanelLayout } from "@/components/shared/AnimatedPanelLayout";
 import { AddFlowModal, DeleteSessionModal } from "@/components/shared/SessionModals";
 import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
+import type { PromptShortcut } from "@/api/blueprints";
 
 /**
  * Session execution payload (fire-and-forget submit + stream subscribe pattern)
@@ -50,6 +52,8 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
 
   const isChatOnlyMode = hub.selectedSession?.fromSharedLink ?? false;
+
+  const defaultPrompts = useDefaultPrompts(hub);
 
   const carousel = useCarouselLayout({
     defaultChatPercent: 65,
@@ -139,6 +143,7 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
           carouselMode={carousel.carouselMode}
           isLiveRequest={hub.isLiveRequest}
           isSubmitting={hub.sessionStream.isSubmitting}
+          defaultPrompts={defaultPrompts}
         />
       )}
 

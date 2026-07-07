@@ -33,6 +33,10 @@ class ClaudeAgentCardBuilder(CardBuilder):
                 description=f"Claude model: {config.model}",
             ),
             Capability(
+                name="effort",
+                description=f"Effort level: {config.effort}",
+            ),
+            Capability(
                 name="autonomous_execution",
                 description=f"Permission mode: {config.permission_mode}",
             ),
