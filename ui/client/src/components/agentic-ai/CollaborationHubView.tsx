@@ -8,7 +8,7 @@
  * adds the ~150 lines of collaboration wiring.
  */
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import axios from "@/http/axiosAgentConfig";
 import { cancelSession } from "@/api/sessions";
 import {
