@@ -117,12 +117,35 @@ def audit_unknowns(
 # Migration
 # ────────────────────────────────────────────────────────────────
 
+def _verify_batch(qdrant: QdrantClient, collection_name: str,
+                   point_ids: list, expected_owner_id: str,
+                   sample_size: int = 3) -> None:
+    """Read back a sample of updated points and assert owner_id is set."""
+    sample_ids = point_ids[:sample_size]
+    points = qdrant.retrieve(
+        collection_name=collection_name,
+        ids=sample_ids,
+        with_payload=True,
+    )
+    for point in points:
+        actual = point.payload.get("metadata", {}).get("owner_id")
+        if actual != expected_owner_id:
+            raise RuntimeError(
+                f"Verification failed for point {point.id} in {collection_name}: "
+                f"expected metadata.owner_id={expected_owner_id!r}, "
+                f"got {actual!r}. "
+                f"The set_payload dot-notation may not be updating the nested "
+                f"field as expected. Aborting migration."
+            )
+
+
 def migrate_collection(
     qdrant: QdrantClient,
     collection_name: str,
     owner_map: dict,
     batch_size: int,
     dry_run: bool,
+    verify: bool = True,
 ) -> dict:
     stats = {"scrolled": 0, "updated": 0, "unknown": 0, "errors": []}
 
@@ -181,6 +204,12 @@ def migrate_collection(
                         points=PointIdsList(points=point_ids),
                     )
                     stats["updated"] += len(point_ids)
+
+                    if verify and batch_num == 1:
+                        _verify_batch(qdrant, collection_name,
+                                      point_ids, owner_id)
+                        print(f"    ✓ Verified metadata.owner_id on sample points")
+                        verify = False
                 except Exception as e:
                     stats["errors"].append(
                         f"Batch {batch_num}, owner={owner_id}: {e}"
@@ -213,6 +242,8 @@ def main():
                         help=f"Collections to migrate (default: {DEFAULT_COLLECTIONS})")
     parser.add_argument("--batch-size", type=int, default=100,
                         help="Points per scroll batch (default: 100)")
+    parser.add_argument("--no-verify", action="store_true",
+                        help="Skip postcondition verification of first batch")
     args = parser.parse_args()
 
     dry_run = not args.apply
@@ -285,7 +316,8 @@ def main():
         print(f"COLLECTION: {coll}")
         print(f"{'=' * 60}")
 
-        stats = migrate_collection(qdrant, coll, owner_map, args.batch_size, dry_run)
+        stats = migrate_collection(qdrant, coll, owner_map, args.batch_size, dry_run,
+                                   verify=not args.no_verify)
 
         for key in ("scrolled", "updated", "unknown"):
             total[key] += stats[key]
