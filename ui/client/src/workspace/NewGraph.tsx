@@ -42,6 +42,7 @@ export default function NewGraph({ onBack, editBlueprintId }: NewGraphProps) {
     isLoadingBlueprint,
     editBlueprintName,
     editBlueprintDescription,
+    currentPromptShortcuts,
   } = useGraphCreationLogic({
     onSaveComplete: onBack,
     editBlueprintId,
@@ -151,6 +152,7 @@ export default function NewGraph({ onBack, editBlueprintId }: NewGraphProps) {
         isEditMode={isEditMode}
         currentName={editBlueprintName}
         currentDescription={editBlueprintDescription}
+        currentPromptShortcuts={currentPromptShortcuts}
       />
     </div>
   );
