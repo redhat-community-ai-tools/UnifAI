@@ -9,8 +9,8 @@ from pydantic import Field
 from mas.core.field_hints import ActionHint, HiddenHint, HintType
 from mas.core.hitl.models import HITLMode
 from .identifiers import Identifier, EffortLevel
-from mas.core.ref.models import RetrieverRef, ProviderRef, ToolRef
 from mas.elements.nodes.common.base_config import NodeBaseConfig
+from mas.core.ref.models import RetrieverRef, ProviderRef, SandboxRef, ToolRef
 
 
 class ClaudeAgentNodeConfig(NodeBaseConfig):
@@ -139,4 +139,9 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
     retriever: Optional[RetrieverRef] = Field(
         None,
         description="Retriever for context augmentation (optional)"
+    )
+
+    sandbox: Optional[SandboxRef] = Field(
+        None,
+        description="Sandbox execution environment (optional)"
     )

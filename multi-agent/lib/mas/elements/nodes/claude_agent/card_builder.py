@@ -22,6 +22,9 @@ class ClaudeAgentCardBuilder(CardBuilder):
 
         skills: List[Skill] = []
 
+        for card in input.dependency_cards.values():
+            skills.extend(card.skills)
+
         capabilities: List[Capability] = [
             Capability(
                 name="model",

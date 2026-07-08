@@ -28,6 +28,7 @@ class DeepAgentNodeFactory(BaseFactory[DeepAgentNodeConfig, DeepAgentNode]):
                 retriever=deps.pop("retriever"),
                 tools=deps.pop("tools"),
                 mcp_providers=deps.pop("providers"),
+                sandbox=deps.pop("sandbox", None),
                 system_message=cfg.system_message,
                 cwd=cfg.cwd,
                 env_vars=cfg.env_vars,

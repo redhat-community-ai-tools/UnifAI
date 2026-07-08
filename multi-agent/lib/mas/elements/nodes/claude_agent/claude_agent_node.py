@@ -17,7 +17,7 @@ from copy import deepcopy
 from typing import Optional, Any, List, ClassVar, Dict
 
 from claude_agent_sdk import (
-    query, ClaudeAgentOptions, create_sdk_mcp_server,
+    query, ClaudeAgentOptions, SdkMcpTool, create_sdk_mcp_server,
     AssistantMessage, ResultMessage, TextBlock,
     ToolUseBlock, ToolResultBlock,
     ServerToolUseBlock, ServerToolResultBlock,
@@ -35,6 +35,7 @@ from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.retriever_capable import RetrieverCapableMixin
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
 from mas.elements.nodes.common.workload import Task, AgentResult
+from mas.elements.sandboxes.common.base_sandbox import BaseSandbox
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.claude_sdk_converter import ClaudeSDKConverter
 from mas.elements.nodes.claude_agent.identifiers import EffortLevel
@@ -98,6 +99,7 @@ class ClaudeAgentNode(
             execution_holder: Any = None,
             # Standard
             retriever: Any = None,
+            sandbox: Optional["BaseSandbox"] = None,
             **kwargs: Any,
     ):
         super().__init__(
@@ -119,6 +121,7 @@ class ClaudeAgentNode(
         self._domain_tools: List[BaseTool] = tools or []
         self._mcp_providers = mcp_providers or []
         self._shared_storage = shared_storage
+        self._sandbox = sandbox
 
         self._max_context_messages = 20
 
@@ -133,7 +136,17 @@ class ClaudeAgentNode(
 
     def run(self, state: StateView) -> StateView:
         """Main entry point - process all incoming TaskPackets."""
-        self.process_packets(state)
+        from mas.elements.nodes.common.context_binder import close_tools
+
+        try:
+            self.process_packets(state)
+        finally:
+            close_tools(self._domain_tools)
+            if self._sandbox is not None:
+                try:
+                    self._sandbox.close()
+                except Exception:
+                    pass
         return state
 
     # ========== TASK PROCESSING ==========
@@ -161,12 +174,12 @@ class ClaudeAgentNode(
 
             self._route_response(task, agent_result, packet)
 
-            logger.info(
-                "ClaudeAgent %s: Session completed (turns=%s, cost=$%.4f)",
-                self.uid,
-                execution_metadata.get("num_turns"),
-                execution_metadata.get("total_cost_usd", 0),
-            )
+            duration_s = (execution_metadata.get('duration_ms') or 0) / 1000
+            print(f"ClaudeAgent {self.uid}: Session completed "
+                  f"(turns={execution_metadata.get('num_turns')}, "
+                  f"cost=${execution_metadata.get('total_cost_usd', 0):.4f}, "
+                  f"tokens={execution_metadata.get('input_tokens', 0)}in/{execution_metadata.get('output_tokens', 0)}out, "
+                  f"duration={duration_s:.1f}s)")
 
         except Exception as e:
             logger.error("ClaudeAgent %s: Error processing task: %s", self.uid, e)
@@ -357,16 +370,43 @@ class ClaudeAgentNode(
         return str(content)[:max_len]
 
     def _collect_tools(self) -> List[BaseTool]:
-        """Gather all tools (domain + MCP providers)."""
+        """Gather all tools (domain + MCP providers).
+
+        When a sandbox is attached, MCP tools are wrapped in
+        SandboxToolProxy so they execute inside the sandbox.
+        """
+        from mas.elements.nodes.common.context_binder import get_sandbox_wrapped_mcp_tools
+
         all_tools: List[BaseTool] = list(self._domain_tools)
-
-        for provider in self._mcp_providers:
-            all_tools.extend(provider.get_tools())
-
+        wrapped = get_sandbox_wrapped_mcp_tools(self._sandbox, self._mcp_providers)
+        if wrapped is not None:
+            all_tools.extend(wrapped)
+        else:
+            for provider in self._mcp_providers:
+                all_tools.extend(provider.get_tools())
         return all_tools
 
     def _build_options(self) -> "ClaudeAgentOptions":
-        """Build ClaudeAgentOptions from node configuration."""
+        """Build ClaudeAgentOptions from node configuration.
+
+        When a sandbox is attached via ``self._sandbox``,
+        activates Mode 3: disables built-in file/shell tools and
+        injects sandbox-backed MCP replacements.
+        """
+        from mas.elements.nodes.common.context_binder import bind_tool_context
+
+        bind_tool_context(
+            self._domain_tools,
+            session_id=self.session_id,
+            agent_id=self.uid,
+        )
+
+        if self._sandbox is not None:
+            self._sandbox.bind_context(
+                session_id=self.session_id,
+                agent_id=self.uid,
+            )
+
         env = self._build_env()
         work_dir = self._prepare_working_directory()
 
@@ -382,13 +422,14 @@ class ClaudeAgentNode(
         if self._system_prompt:
             kwargs["system_prompt"] = self._system_prompt
 
-        sdk_tools = ClaudeSDKConverter.to_sdk(self._collect_tools())
+        if self._sandbox is not None:
+            self._configure_sandbox_tools(kwargs, self._sandbox)
+
+        sdk_tools = self._collect_sdk_tools()
         if sdk_tools:
-            kwargs["mcp_servers"] = {
-                "mas-tools": create_sdk_mcp_server(
-                    "mas-tools", tools=sdk_tools
-                ),
-            }
+            kwargs.setdefault("mcp_servers", {})["mas-tools"] = (
+                create_sdk_mcp_server("mas-tools", tools=sdk_tools)
+            )
 
         hitl_hook = self._build_hitl_hook()
         if hitl_hook is not None:
@@ -440,6 +481,39 @@ class ClaudeAgentNode(
         )
 
         return HookMatcher(hooks=[HITLHook(gatekeeper)])
+
+    # ========== SDK TOOLS & SANDBOX ==========
+
+    def _collect_sdk_tools(self) -> List[SdkMcpTool]:
+        """Collect domain + MCP tools and convert to Claude SDK format."""
+        collected = self._collect_tools()
+        return ClaudeSDKConverter.to_sdk(collected)
+
+    def _configure_sandbox_tools(
+        self,
+        kwargs: Dict[str, Any],
+        sandbox_tool: "BaseSandbox",
+    ) -> None:
+        """Configure Mode 3: disable built-ins, inject sandbox replacements."""
+        from mas.elements.nodes.claude_agent.sandbox_tools import (
+            create_sandbox_mcp_tools,
+            DISABLED_BUILTINS,
+        )
+
+        kwargs["disallowed_tools"] = list(DISABLED_BUILTINS)
+
+        sandbox_mcp_tools = create_sandbox_mcp_tools(sandbox_tool)
+
+        if sandbox_mcp_tools:
+            sandbox_server = create_sdk_mcp_server(
+                "sandbox", tools=sandbox_mcp_tools,
+            )
+            kwargs.setdefault("mcp_servers", {})["sandbox"] = sandbox_server
+
+        print(
+            f"ClaudeAgent {self.uid}: Mode 3 active — disabled {DISABLED_BUILTINS}, "
+            f"injected {len(sandbox_mcp_tools)} sandbox tools"
+        )
 
     # ========== ENVIRONMENT ==========
 

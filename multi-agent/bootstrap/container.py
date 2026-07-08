@@ -66,6 +66,7 @@ from outbound.http.httpx_client import HttpxClient
 from mas.core.identity.ports import IdentityProvider
 from global_utils.identity_client import IdentityClient
 from global_utils.redis import RedisKVStore, TeamMembershipCache, build_redis_client
+from global_utils.utils.crypto import FieldCipher
 from global_utils.utils.singleton import SingletonMeta
 from global_utils.utils.util import get_redis_url
 
@@ -180,9 +181,12 @@ class AppContainer(metaclass=SingletonMeta):
             coll_name=cfg.resources_coll,
         )
 
+        field_cipher = FieldCipher(cfg.credential_encryption_key) if cfg.credential_encryption_key else None
+
         resource_registry = ResourcesRegistry(
             repo=self.resource_repo,
             bp_repo=self.blueprint_repo,
+            cipher=field_cipher,
         )
 
         # ── Application services ─────────────────────────────────────
@@ -193,6 +197,7 @@ class AppContainer(metaclass=SingletonMeta):
             validation_service=self.validation_service,
             card_service=self.card_service,
             auth_service=self.auth_service,
+            encryption_key=cfg.credential_encryption_key,
         )
 
         self.blueprint_resolver = BlueprintResolver(

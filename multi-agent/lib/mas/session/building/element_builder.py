@@ -26,6 +26,7 @@ from .category_builders.llm_builder import LLMBuilder
 from .category_builders.retriever_builder import RetrieverBuilder
 from .category_builders.condition_builder import ConditionBuilder
 from .category_builders.tool_builder import ToolBuilder
+from .category_builders.sandbox_builder import SandboxBuilder
 from .category_builders.node_builder import NodeBuilder
 from .category_builders.category_builder import CategoryBuilder
 
@@ -43,6 +44,7 @@ class SessionElementBuilder:
         RetrieverBuilder,
         ConditionBuilder,
         ToolBuilder,
+        SandboxBuilder,
         NodeBuilder
     ]
 
