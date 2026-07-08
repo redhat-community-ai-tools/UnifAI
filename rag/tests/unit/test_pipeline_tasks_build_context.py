@@ -122,4 +122,4 @@ class TestBuildContextHappyPath:
         ctx = build_context("DOCUMENT", source_data)
 
         assert "pipeline_id" not in ctx.metadata
-        assert ctx.metadata.get("type_data") is None or ctx.metadata.get("type_data") != "should_be_removed"
+        assert "type_data" not in ctx.metadata
