@@ -96,7 +96,7 @@ Could this finding actually be Critical? Upgrade ONLY if ALL of these are true:
 - The violation directly breaks a MUST-level system invariant (not a SHOULD-level guideline)
 - The blast radius is 5+ components OR involves data integrity/security
 - It cannot be reliably caught by unit tests (silent corruption or security hole)
-- It violates the dependency rule at the structural level (domain depends on infrastructure)
+- It meets at least one of: (a) violates the dependency rule at the structural level, (b) enables silent data corruption, or (c) introduces an exploitable security vulnerability
 
 If all four conditions are met → **UPGRADE to CRITICAL**.
 If fewer than four → CONFIRMED as Major.

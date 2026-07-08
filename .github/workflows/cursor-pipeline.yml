@@ -92,6 +92,9 @@ jobs:
             fi
           done
 
+      - name: Install Langfuse SDK
+        run: pip install -r .cursor/hooks/requirements.txt
+
       # Security: --trust grants the agent full tool access (file read/write, shell).
       # --force skips interactive confirmation. The agent runs in a read-only
       # checkout (contents: read permission) so it cannot push changes. The
@@ -105,6 +108,11 @@ jobs:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
           CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
         run: |
           AGENT_EXIT=0
           agent --trust --force -p "/pipeline review" \
@@ -193,6 +201,17 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BRANCH_REF: ${{ steps.branch.outputs.ref }}
         run: python3 .github/scripts/extract_pipeline_telemetry.py
+
+      - name: Send Langfuse Trace
+        if: always()
+        env:
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
+          PIPELINE_RESULTS_JSON: /tmp/pipeline_results.json
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
+        run: python3 .github/scripts/send_langfuse_trace.py
 
       - name: Evaluate Review Scores
         id: gate
