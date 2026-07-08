@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
+from typing import List, Tuple, Dict, Any, Optional
+
 from mas.resources.models import Resource, ResourceQuery
 from mas.resources.repository.base import ResourceRepository
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.resources.errors import ResourceInUseError
 from mas.core.identity import Identity
-from typing import List, Tuple, Dict, Any
 from mas.core.dto import GroupedCount
 
 
@@ -24,6 +25,10 @@ class ResourcesRegistry:
         # uniqueness guard
         if self._repo.find_by_name(doc.identity, doc.category, doc.type, doc.name):
             raise ValueError(f"{doc.category}:{doc.type}:{doc.name} exists for user")
+
+        if not doc.is_builtin:
+            self._check_builtin_url_collision(doc)
+
         self._repo.save(doc)
         return doc
 
@@ -95,13 +100,28 @@ class ResourcesRegistry:
         """
         Group resources by specified fields and return counts.
         Performs efficient server-side grouping via the repository.
-        
-        Args:
-            identity: The identity to filter by
-            group_by: List of field names to group by (e.g., ["category", "type"])
-            filter: Optional additional filter criteria
-            
-        Returns:
-            List of GroupedCount DTOs with grouped field values and count.
         """
         return self._repo.group_count(identity, group_by, filter)
+
+    # ---------- built-in resources ----------
+
+    def find_builtin_by_url(self, url: str) -> Optional[Resource]:
+        """Find a built-in resource whose cfg_dict.mcp_url matches *url*."""
+        return self._repo.find_builtin_by_url(url)
+
+    def set_user_config(self, rid: str, identity_key: str, config: Dict[str, Any]) -> bool:
+        """Atomically set user_configs.<identity_key> on a resource."""
+        return self._repo.set_user_config(rid, identity_key, config)
+
+    def _check_builtin_url_collision(self, doc: Resource) -> None:
+        """Block registration of a custom MCP whose URL matches a built-in."""
+        if doc.category != "providers":
+            return
+        mcp_url = doc.cfg_dict.get("mcp_url", "")
+        if not mcp_url:
+            return
+        existing = self._repo.find_builtin_by_url(mcp_url)
+        if existing:
+            raise ValueError(
+                "An identical built-in MCP server already exists and is ready for use."
+            )

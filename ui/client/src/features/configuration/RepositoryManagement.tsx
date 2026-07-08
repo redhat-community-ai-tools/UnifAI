@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -44,9 +46,9 @@ import {
   Trash2,
   Globe,
   FileText,
-  RefreshCw,
   Settings,
   Eye,
+  KeyRound,
 } from "lucide-react";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
@@ -54,7 +56,6 @@ import { ElementForm } from "@/components/agentic-ai/workspace/ElementForm";
 import { ElementData } from "@/components/agentic-ai/workspace/ElementData";
 import type {
   ElementType,
-  ElementCategory,
   ElementInstance,
 } from "@/types/workspace";
 
@@ -118,9 +119,11 @@ interface ResourceItem {
   config: any;
   category?: string;
   availableToAll?: boolean;
+  is_builtin?: boolean;
+  configurable_keys?: string[];
 }
 
-type WizardStep = "idle" | "select-category" | "configure";
+type WizardStep = "idle" | "select-category" | "configure" | "configure-builtin";
 
 export default function RepositoryManagement() {
   const {
@@ -130,9 +133,10 @@ export default function RepositoryManagement() {
     isLoading,
     fetchElementSchema,
     fetchElementActions,
-    fetchResourcesForCategory,
-    saveElement,
-    deleteElement,
+    configureBuiltin,
+    saveBuiltinElement,
+    toggleBuiltinStatus,
+    deleteBuiltinElement,
   } = useWorkspaceData();
 
   const [step, setStep] = useState<WizardStep>("idle");
@@ -144,13 +148,11 @@ export default function RepositoryManagement() {
   const [editingElement, setEditingElement] = useState<ElementInstance | null>(
     null,
   );
+  const [configuringBuiltin, setConfiguringBuiltin] = useState<ResourceItem | null>(null);
 
   const [categoryResources, setCategoryResources] = useState<
     Record<string, ResourceItem[]>
   >({});
-  const [loadingCategories, setLoadingCategories] = useState<Set<string>>(
-    new Set(),
-  );
   const [availableToAll, setAvailableToAll] = useState<
     Record<string, boolean>
   >({});
@@ -166,6 +168,11 @@ export default function RepositoryManagement() {
     useState<ElementType | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
+  const [newElementAvailableToAll, setNewElementAvailableToAll] = useState(true);
+  const [configurableKeys, setConfigurableKeys] = useState<string[]>([]);
+  const [showConfigurableKeys, setShowConfigurableKeys] = useState(false);
+  const [isTogglingStatus, setIsTogglingStatus] = useState<string | null>(null);
+
   const availableCategories = useMemo(
     () => categories.filter((c) => c.elements.length > 0),
     [categories],
@@ -179,37 +186,40 @@ export default function RepositoryManagement() {
     );
   }, [selectedCategoryKey, availableCategories]);
 
-  const loadCategoryResources = useCallback(
-    async (categoryKey: string) => {
-      setLoadingCategories((prev) => new Set(prev).add(categoryKey));
-      try {
-        const resources = await fetchResourcesForCategory(categoryKey);
-        const items: ResourceItem[] = resources.map((r: any) => ({
+  const reloadBuiltins = useCallback(async () => {
+    try {
+      const axios = (await import("@/http/axiosAgentConfig")).default;
+      const response = await axios.get(
+        `/resources/resources.list?userId=system&identityType=system&limit=1000`,
+      );
+      const resources = response.data.resources || [];
+      const grouped: Record<string, ResourceItem[]> = {};
+      const newAvailable: Record<string, boolean> = {};
+      for (const r of resources) {
+        const cat = r.category?.toLowerCase() || "other";
+        if (!grouped[cat]) grouped[cat] = [];
+        grouped[cat].push({
           rid: r.rid,
           name: r.name,
           type: r.type,
-          config: r.config,
-          category: categoryKey,
-        }));
-        setCategoryResources((prev) => ({ ...prev, [categoryKey]: items }));
-      } finally {
-        setLoadingCategories((prev) => {
-          const next = new Set(prev);
-          next.delete(categoryKey);
-          return next;
+          config: r.cfg_dict,
+          category: cat,
+          availableToAll: r.is_builtin ?? false,
+          is_builtin: r.is_builtin ?? false,
+          configurable_keys: r.configurable_keys || [],
         });
+        newAvailable[r.rid] = r.is_builtin ?? false;
       }
-    },
-    [fetchResourcesForCategory],
-  );
-
-  const handleAccordionChange = (openValues: string[]) => {
-    for (const key of openValues) {
-      if (!categoryResources[key]) {
-        loadCategoryResources(key);
-      }
+      setCategoryResources(grouped);
+      setAvailableToAll(newAvailable);
+    } catch (err) {
+      console.error("Failed to load built-in resources:", err);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    reloadBuiltins();
+  }, [reloadBuiltins]);
 
   const handleAddNew = () => {
     setStep("select-category");
@@ -250,6 +260,8 @@ export default function RepositoryManagement() {
         ),
       ]);
       setEditingElement(null);
+      setConfigurableKeys([]);
+      setShowConfigurableKeys(false);
       setIsFormOpen(true);
       setStep("configure");
     } finally {
@@ -267,6 +279,9 @@ export default function RepositoryManagement() {
       setSelectedElementType(elType);
       setIsLoadingSchema(true);
       setStep("configure");
+      setNewElementAvailableToAll(resource.availableToAll ?? resource.is_builtin ?? false);
+      setConfigurableKeys(resource.configurable_keys ?? []);
+      setShowConfigurableKeys((resource.configurable_keys ?? []).length > 0);
 
       try {
         await Promise.all([
@@ -288,6 +303,15 @@ export default function RepositoryManagement() {
     [availableCategories, fetchElementSchema, fetchElementActions],
   );
 
+  const handleSaveBuiltinConfig = async (elementData: any) => {
+    if (!configuringBuiltin) return null;
+    const result = await configureBuiltin(
+      configuringBuiltin.rid,
+      elementData.cfg_dict || elementData,
+    );
+    return result;
+  };
+
   const handleViewDetails = (resource: ResourceItem) => {
     const categoryKey = resource.category!;
     const elType = resolveElementType(categoryKey, resource.type);
@@ -304,14 +328,16 @@ export default function RepositoryManagement() {
 
   const handleSaveElement = async (elementData: any) => {
     if (!selectedElementType) return null;
-    const result = await saveElement(
+    const result = await saveBuiltinElement(
       selectedElementType.category,
       selectedElementType.type,
       elementData,
+      newElementAvailableToAll,
+      configurableKeys,
       editingElement?.rid,
     );
     if (result) {
-      loadCategoryResources(selectedElementType.category);
+      reloadBuiltins();
     }
     return result;
   };
@@ -319,9 +345,13 @@ export default function RepositoryManagement() {
   const handleFormClose = () => {
     setIsFormOpen(false);
     setEditingElement(null);
+    setConfiguringBuiltin(null);
     setStep("idle");
     setSelectedCategoryKey("");
     setSelectedElementType(null);
+    setNewElementAvailableToAll(true);
+    setConfigurableKeys([]);
+    setShowConfigurableKeys(false);
   };
 
   const handleBack = () => {
@@ -338,9 +368,9 @@ export default function RepositoryManagement() {
     if (!deleteTarget) return;
     setIsDeleting(true);
     try {
-      const success = await deleteElement(deleteTarget.rid);
-      if (success && deleteTarget.category) {
-        loadCategoryResources(deleteTarget.category);
+      const success = await deleteBuiltinElement(deleteTarget.rid);
+      if (success) {
+        reloadBuiltins();
       }
     } finally {
       setIsDeleting(false);
@@ -348,8 +378,15 @@ export default function RepositoryManagement() {
     }
   };
 
-  const toggleAvailableToAll = (rid: string) => {
-    setAvailableToAll((prev) => ({ ...prev, [rid]: !prev[rid] }));
+  const toggleAvailableToAll = async (rid: string) => {
+    const currentValue = availableToAll[rid] ?? false;
+    const newValue = !currentValue;
+    setIsTogglingStatus(rid);
+    const result = await toggleBuiltinStatus(rid, newValue);
+    if (result) {
+      setAvailableToAll((prev) => ({ ...prev, [rid]: newValue }));
+    }
+    setIsTogglingStatus(null);
   };
 
   const getTypeName = (categoryKey: string, typeKey: string): string => {
@@ -500,6 +537,49 @@ export default function RepositoryManagement() {
                   </div>
                 </div>
 
+                {/* Available to All toggle */}
+                {selectedElementType && (
+                  <div className="mt-6 pt-4 border-t border-gray-800 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Globe className="h-4 w-4 text-green-400" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-200">
+                            Available to All
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            When enabled, all users will see this resource in their workspace
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={newElementAvailableToAll}
+                        onCheckedChange={setNewElementAvailableToAll}
+                      />
+                    </div>
+
+                    {newElementAvailableToAll && (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <KeyRound className="h-4 w-4 text-amber-400" />
+                          <div>
+                            <p className="text-sm font-medium text-gray-200">
+                              User-Configurable Fields
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              Choose which fields users can edit (all others will be read-only)
+                            </p>
+                          </div>
+                        </div>
+                        <Switch
+                          checked={showConfigurableKeys}
+                          onCheckedChange={setShowConfigurableKeys}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex justify-end mt-6 pt-4 border-t border-gray-800">
                   <Button
                     onClick={handleNext}
@@ -524,23 +604,29 @@ export default function RepositoryManagement() {
           </motion.div>
         )}
 
-        {step === "configure" && (
+        {(step === "configure" || step === "configure-builtin") && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.25 }}
           >
-            <Card className="bg-background-card shadow-card border-gray-800 border-green-500/30">
+            <Card className={`bg-background-card shadow-card border-gray-800 ${step === "configure-builtin" ? "border-blue-500/30" : "border-green-500/30"}`}>
               <CardContent className="p-6">
                 <div className="flex items-center justify-center py-4 gap-3">
-                  <LoaderCircle className="h-5 w-5 animate-spin text-green-400" />
+                  <LoaderCircle className={`h-5 w-5 animate-spin ${step === "configure-builtin" ? "text-blue-400" : "text-green-400"}`} />
                   <p className="text-sm text-gray-300">
-                    {editingElement ? "Editing" : "Configuring"}{" "}
+                    {step === "configure-builtin"
+                      ? "Configuring your settings for"
+                      : editingElement
+                        ? "Editing"
+                        : "Configuring"}{" "}
                     <span className="text-white font-medium">
                       {selectedElementType?.name}
                     </span>{" "}
-                    — fill in the form and save.
+                    — {step === "configure-builtin"
+                      ? "editable fields are unlocked, read-only fields are locked."
+                      : "fill in the form and save."}
                   </p>
                   <Button
                     variant="ghost"
@@ -568,14 +654,12 @@ export default function RepositoryManagement() {
           <CardContent className="p-0">
             <Accordion
               type="multiple"
-              onValueChange={handleAccordionChange}
               className="w-full"
             >
               {availableCategories.map((cat) => {
                 const meta = getCategoryMeta(cat.category);
-                const resources = categoryResources[cat.category];
-                const isCatLoading = loadingCategories.has(cat.category);
-                const count = resources?.length;
+                const resources = categoryResources[cat.category] ?? [];
+                const count = resources.length;
 
                 return (
                   <AccordionItem
@@ -594,25 +678,16 @@ export default function RepositoryManagement() {
                             {meta.description}
                           </p>
                         </div>
-                        {count !== undefined && (
-                          <Badge
-                            variant="outline"
-                            className="ml-2 text-xs text-gray-400 border-gray-700"
-                          >
-                            {count} resource{count !== 1 ? "s" : ""}
-                          </Badge>
-                        )}
+                        <Badge
+                          variant="outline"
+                          className="ml-2 text-xs text-gray-400 border-gray-700"
+                        >
+                          {count} resource{count !== 1 ? "s" : ""}
+                        </Badge>
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="px-6 pb-4">
-                      {isCatLoading ? (
-                        <div className="flex items-center justify-center py-8 text-gray-400 gap-2">
-                          <LoaderCircle className="h-4 w-4 animate-spin" />
-                          <span className="text-sm">
-                            Loading {meta.label.toLowerCase()}...
-                          </span>
-                        </div>
-                      ) : resources && resources.length === 0 ? (
+                      {resources.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-8 text-gray-500 gap-2">
                           <PackagePlus className="h-6 w-6 opacity-40" />
                           <p className="text-sm">
@@ -632,7 +707,7 @@ export default function RepositoryManagement() {
                             Add {meta.label}
                           </Button>
                         </div>
-                      ) : resources ? (
+                      ) : (
                         <div className="space-y-0">
                           {/* Table Header */}
                           <div className="grid grid-cols-12 gap-4 px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-800">
@@ -705,6 +780,14 @@ export default function RepositoryManagement() {
                                   <span className="text-sm font-medium truncate">
                                     {resource.name || "Unnamed"}
                                   </span>
+                                  {resource.is_builtin && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] px-1.5 py-0 text-blue-400 border-blue-400/30 flex-shrink-0"
+                                    >
+                                      Built-in
+                                    </Badge>
+                                  )}
                                 </div>
                                 {/* Type */}
                                 <div className="col-span-2">
@@ -730,15 +813,19 @@ export default function RepositoryManagement() {
                                     }
                                   >
                                     <div className="flex items-center gap-2">
-                                      <Switch
-                                        checked={
-                                          availableToAll[resource.rid] ??
-                                          false
-                                        }
-                                        onCheckedChange={() =>
-                                          toggleAvailableToAll(resource.rid)
-                                        }
-                                      />
+                                      {isTogglingStatus === resource.rid ? (
+                                        <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+                                      ) : (
+                                        <Switch
+                                          checked={
+                                            availableToAll[resource.rid] ??
+                                            false
+                                          }
+                                          onCheckedChange={() =>
+                                            toggleAvailableToAll(resource.rid)
+                                          }
+                                        />
+                                      )}
                                       {availableToAll[resource.rid] && (
                                         <Globe className="h-3.5 w-3.5 text-green-400" />
                                       )}
@@ -808,20 +895,9 @@ export default function RepositoryManagement() {
                               <Plus className="h-3 w-3 mr-1" />
                               Add {meta.label}
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-xs text-gray-500 hover:text-gray-300 ml-1"
-                              onClick={() =>
-                                loadCategoryResources(cat.category)
-                              }
-                            >
-                              <RefreshCw className="h-3 w-3 mr-1" />
-                              Refresh
-                            </Button>
                           </div>
                         </div>
-                      ) : null}
+                      )}
                     </AccordionContent>
                   </AccordionItem>
                 );
@@ -831,7 +907,7 @@ export default function RepositoryManagement() {
         </Card>
       )}
 
-      {/* ElementForm Dialog (create & edit) */}
+      {/* ElementForm Dialog (create & edit, including built-in configure) */}
       {isFormOpen && selectedElementType && elementSchema && (
         <ElementForm
           isOpen={isFormOpen}
@@ -841,7 +917,16 @@ export default function RepositoryManagement() {
           elementActions={elementActions}
           editingElement={editingElement}
           existingNames={[]}
-          onSave={handleSaveElement}
+          onSave={configuringBuiltin ? handleSaveBuiltinConfig : handleSaveElement}
+        />
+      )}
+
+      {/* Configurable Keys Selector — shows when form is open and admin enabled configurable keys */}
+      {isFormOpen && showConfigurableKeys && newElementAvailableToAll && elementSchema && !configuringBuiltin && (
+        <ConfigurableKeysSelector
+          schema={elementSchema}
+          selectedKeys={configurableKeys}
+          onSelectionChange={setConfigurableKeys}
         />
       )}
 
@@ -887,5 +972,88 @@ export default function RepositoryManagement() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ConfigurableKeysSelector — lets admin pick which fields users can edit
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ConfigurableKeysSelector({
+  schema,
+  selectedKeys,
+  onSelectionChange,
+}: {
+  schema: any;
+  selectedKeys: string[];
+  onSelectionChange: (keys: string[]) => void;
+}) {
+  const fields = useMemo(() => {
+    const props = schema?.config_schema?.properties;
+    if (!props) return [];
+    return Object.entries(props)
+      .filter(([key, fieldSchema]: [string, any]) => {
+        if (fieldSchema?.hints?.hidden?.hint_type === "hidden") return false;
+        const systemFields = [
+          "name", "category", "type", "cfg_dict", "version",
+          "created", "updated", "nested_refs", "rid", "user_id",
+        ];
+        return !systemFields.includes(key);
+      })
+      .map(([key, fieldSchema]: [string, any]) => ({
+        key,
+        title: fieldSchema.title || key,
+        description: fieldSchema.description || "",
+      }));
+  }, [schema]);
+
+  const toggleKey = (key: string) => {
+    if (selectedKeys.includes(key)) {
+      onSelectionChange(selectedKeys.filter((k) => k !== key));
+    } else {
+      onSelectionChange([...selectedKeys, key]);
+    }
+  };
+
+  if (fields.length === 0) return null;
+
+  return (
+    <Card className="bg-background-card shadow-card border-amber-500/20 mt-4">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <KeyRound className="h-4 w-4 text-amber-400" />
+          <h4 className="text-sm font-medium text-gray-200">
+            User-Configurable Fields
+          </h4>
+          <Badge variant="outline" className="text-[10px] text-amber-400 border-amber-400/30">
+            {selectedKeys.length} selected
+          </Badge>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">
+          Selected fields will be editable by users. All other fields will be read-only.
+        </p>
+        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+          {fields.map(({ key, title }) => (
+            <div
+              key={key}
+              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/[.03] transition-colors"
+            >
+              <Checkbox
+                id={`ck-${key}`}
+                checked={selectedKeys.includes(key)}
+                onCheckedChange={() => toggleKey(key)}
+                className="border-gray-600"
+              />
+              <Label
+                htmlFor={`ck-${key}`}
+                className="text-xs text-gray-300 cursor-pointer truncate"
+              >
+                {title}
+              </Label>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

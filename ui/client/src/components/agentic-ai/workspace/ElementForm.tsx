@@ -671,12 +671,11 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     }));
   };
 
-  // Check if all required fields are filled and validated
+  // Check if all required fields are filled.
+  // Validation hints (connection checks, ref validation) are informational —
+  // they show status visually but do NOT block saving.
   const isFormValid = () => {
     if (!elementSchema) return false;
-
-    // If any field is currently being validated, form is not valid yet
-    if (validatingFields.size > 0) return false;
 
     // Check all required fields from combined schema, excluding hidden fields
     const required = elementSchema.config_schema.required || [];
@@ -695,33 +694,15 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       
       const value = formData[field];
       
-      // Check if field has validation hint (supports both ActionHint and ApiHint)
-      const hasValidationHint = fieldSchema?.hints?.action?.hint_type === 'validate' || 
-                                fieldSchema?.hints?.api?.hint_type === 'validate';
-      
-      // Basic value validation
-      let hasValue = false;
+      // Basic value validation — just check if value exists
       if (Array.isArray(value)) {
-        hasValue = value.length > 0;
-      } else {
-        hasValue = value !== undefined && value !== null && value !== "" && 
-                  (typeof value !== "string" || value.trim() !== "");
+        return value.length > 0;
       }
-      
-      // If field has validation hint and a value, check validation state
-      if (hasValidationHint && hasValue) {
-        return fieldValidationStates[field] === true;
-      }
-      
-      // Otherwise, just check if value exists
-      return hasValue;
+      return value !== undefined && value !== null && value !== "" && 
+                (typeof value !== "string" || value.trim() !== "");
     });
 
-    // Additionally, check that no field validation has returned false
-    // This handles both required and non-required fields with validation hints (ActionHint or ApiHint)
-    const noFailedValidations = !Object.values(fieldValidationStates).some(isValid => isValid === false);
-
-    return allRequiredFieldsValid && noFailedValidations && !nameError;
+    return allRequiredFieldsValid && !nameError;
   };
 
   const handleSave = async () => {

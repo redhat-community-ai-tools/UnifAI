@@ -12,6 +12,10 @@ class Resource(BaseModel):
     One persisted element in the user's Library.
     
     cfg_dict is plain JSON; we do NOT store the Pydantic instance.
+    For built-in resources, user_configs stores per-user/team overlays
+    keyed by identity key (e.g. "user:alice", "team:engineering").
+    configurable_keys lists field names from the element's pydantic schema
+    that users can configure (all other fields are read-only).
     """
     rid: str = Field(default_factory=lambda: uuid4().hex, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     identity: Identity = Field(json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
@@ -24,6 +28,10 @@ class Resource(BaseModel):
     contributed_by: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     created: datetime = Field(default_factory=datetime.utcnow, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     updated: datetime = Field(default_factory=datetime.utcnow, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
+    is_builtin: bool = Field(default=False, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
+    parent_builtin_id: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
+    configurable_keys: List[str] = Field(default_factory=list, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
+    user_configs: Dict[str, Dict[str, Any]] = Field(default_factory=dict, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
 
 
 class ResourceQuery(BaseModel):

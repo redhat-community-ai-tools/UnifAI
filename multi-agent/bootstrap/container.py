@@ -193,7 +193,10 @@ class AppContainer(metaclass=SingletonMeta):
             validation_service=self.validation_service,
             card_service=self.card_service,
             auth_service=self.auth_service,
+            encryption_key=cfg.credential_encryption_key,
         )
+
+        self._seed_builtin_resources()
 
         self.blueprint_resolver = BlueprintResolver(
             resource_registry=resource_registry,
@@ -423,3 +426,15 @@ class AppContainer(metaclass=SingletonMeta):
             identity_client=identity_client,
             timeout=cfg.directory_timeout,
         )
+
+    def _seed_builtin_resources(self):
+        """Idempotently seed built-in resources from static templates."""
+        from mas.resources.builtin_templates import BUILTIN_RESOURCES
+
+        seeded = 0
+        for template in BUILTIN_RESOURCES:
+            if not self.resource_repo.exists(template.rid):
+                self.resource_repo.save(template)
+                seeded += 1
+        if seeded:
+            logger.info("Seeded %d built-in resource(s)", seeded)

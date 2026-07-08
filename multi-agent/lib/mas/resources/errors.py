@@ -15,7 +15,19 @@ class ResourceInUseError(RuntimeError):
 
         super().__init__(msg)
 
-    # optional: for `str(exc)` explicitness in logs
+    def __str__(self) -> str:
+        return self.args[0]
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
+class BuiltInWriteProtectedError(RuntimeError):
+    def __init__(self):
+        super().__init__(
+            "Built-in system resources cannot be modified or deleted."
+        )
+
     def __str__(self) -> str:
         return self.args[0]
 

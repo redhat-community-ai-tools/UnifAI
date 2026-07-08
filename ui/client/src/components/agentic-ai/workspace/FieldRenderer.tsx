@@ -19,7 +19,7 @@ import { AuthFieldRenderer } from "./AuthFieldRenderer";
 import { AgentCardVisualization } from "./AgentCardVisualization";
 import { ElementType } from "../../../types/workspace";
 import { maskSecretValue } from "../../../utils/maskSecretFields";
-import { XCircle } from "lucide-react";
+import { XCircle, Lock } from "lucide-react";
 import {getArrayDisplayText, getArrayFieldMode, getValidRefOptions,} from "./arrayFieldHelpers";
 
 /** Resolved string enum definition from $defs */
@@ -217,6 +217,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
 
   const [showMasked, setShowMasked] = useState(true);
   const isSecret = fieldType === "secret";
+  const isReadOnly = fieldSchema?.hints?.read_only?.read_only === true;
 
   // Calculate if dependencies are validated for automatic population fields
   const areDependenciesValid = React.useMemo(() => {
@@ -526,7 +527,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
     const enumTitle = stringEnumDef.title;
 
     return (
-      <div key={fieldName} className="space-y-2">
+      <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
         <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
           {fieldName} {isRequired && <span className="text-red-400">*</span>}
           {enumTitle && (
@@ -544,6 +545,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
               populate
             </Badge>
           )}
+          {isReadOnly && <Lock className="h-3.5 w-3.5 text-gray-500 ml-1" />}
           {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
         </Label>
         
@@ -556,7 +558,8 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
           onValueChange={(newValue) => {
             onInputChange(fieldName, newValue);
           }}
-          className={`flex flex-wrap gap-4 ${hasFieldError ? 'border border-red-500 rounded-md p-2' : ''}`}
+          disabled={isReadOnly}
+          className={`flex flex-wrap gap-4 ${hasFieldError ? 'border border-red-500 rounded-md p-2' : ''} ${isReadOnly ? 'pointer-events-none' : ''}`}
         >
           {enumOptions.map((option: string) => (
             <div key={option} className="flex items-center space-x-2">
@@ -771,17 +774,19 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   // Handle boolean fields
   if (fieldSchema.type === "boolean") {
     return (
-      <div key={fieldName} className="space-y-2">
-        <div className="flex items-center space-x-2">
+      <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
+        <div className={`flex items-center space-x-2 ${isReadOnly ? "pointer-events-none" : ""}`}>
           <Checkbox
             id={fieldName}
             checked={value}
             onCheckedChange={(checked) => onInputChange(fieldName, checked)}
             className={hasFieldError ? 'border-red-500' : ''}
+            disabled={isReadOnly}
           />
           <Label htmlFor={fieldName} className="flex items-center">
             {fieldName}{" "}
             {isRequired && <span className="text-red-400">*</span>}
+            {isReadOnly && <Lock className="h-3.5 w-3.5 text-gray-500 ml-1" />}
             {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
           </Label>
         </div>
@@ -810,7 +815,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
 
   if (isNumberField) {
     return (
-      <div key={fieldName} className="space-y-2">
+      <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
         <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
           {fieldName} {isRequired && <span className="text-red-400">*</span>}
           {isFloatField && (
@@ -818,17 +823,20 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
               float
             </Badge>
           )}
+          {isReadOnly && <Lock className="h-3.5 w-3.5 text-gray-500 ml-1" />}
           {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
         </Label>
-        <NumberFieldInput
-          key={`${fieldName}-${editingElement?.rid || 'new'}`}
-          fieldName={fieldName}
-          value={value}
-          isFloatField={isFloatField}
-          hasFieldError={hasFieldError}
-          placeholder={fieldSchema.description}
-          onChange={(numValue) => onInputChange(fieldName, numValue)}
-        />
+        <div className={isReadOnly ? "pointer-events-none" : ""}>
+          <NumberFieldInput
+            key={`${fieldName}-${editingElement?.rid || 'new'}`}
+            fieldName={fieldName}
+            value={value}
+            isFloatField={isFloatField}
+            hasFieldError={hasFieldError}
+            placeholder={fieldSchema.description}
+            onChange={(numValue) => onInputChange(fieldName, numValue)}
+          />
+        </div>
         {fieldSchema.description && (
           <p className="text-xs text-gray-400">{fieldSchema.description}</p>
         )}
@@ -843,7 +851,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
     fieldName.includes("description")
   ) {
     return (
-      <div key={fieldName} className="space-y-2">
+      <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
         <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
           {fieldName} {isRequired && <span className="text-red-400">*</span>}
           {isSecret && (
@@ -861,6 +869,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
             populate
           </Badge>
         )}
+        {isReadOnly && <Lock className="h-3.5 w-3.5 text-gray-500 ml-1" />}
         {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
       </Label>
 
@@ -876,8 +885,8 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
           rows={4}
           className={`bg-background-dark resize-none ${hasFieldError ? 'border-red-500' : ''}`}
           placeholder={fieldSchema.description}
-          readOnly={!!populateHint}
-          disabled={!!populateHint}
+          readOnly={isReadOnly || !!populateHint}
+          disabled={isReadOnly || !!populateHint}
         />
       )}
 
@@ -921,7 +930,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   const secretProps = getSecretInputProps();
 
   return (
-    <div key={fieldName} className="space-y-2">
+    <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
       <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
         {fieldName} {isRequired && <span className="text-red-400">*</span>}
         {isSecret && (
@@ -939,6 +948,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
           populate
         </Badge>
       )}
+      {isReadOnly && <Lock className="h-3.5 w-3.5 text-gray-500 ml-1" />}
       {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
     </Label>
     
@@ -955,8 +965,8 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         onFocus={secretProps.handleFocus}
         className={`bg-background-dark ${hasFieldError ? 'border-red-500' : ''}`}
         placeholder={fieldSchema.description}
-        readOnly={!!populateHint}
-        disabled={!!populateHint}
+        readOnly={isReadOnly || !!populateHint}
+        disabled={isReadOnly || !!populateHint}
       />
     )}
 

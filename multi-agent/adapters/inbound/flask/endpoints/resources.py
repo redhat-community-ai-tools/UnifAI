@@ -2,10 +2,19 @@ from flask import Blueprint, jsonify, current_app
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
-from mas.resources.errors import ResourceInUseError
-from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
+from mas.resources.errors import ResourceInUseError, BuiltInWriteProtectedError
+from inbound.flask.decorators import (
+    with_require_identity_authorization,
+    with_authenticated_user,
+)
 
 resources_bp = Blueprint("resources", __name__)
+
+
+def _is_admin_user(username: str) -> bool:
+    """Check if the authenticated user is in the admin_allowed_users list."""
+    admin_users = current_app.config.get("admin_allowed_users", [])
+    return username in admin_users
 
 
 @resources_bp.route("/resource.save", methods=["POST"])
@@ -88,36 +97,42 @@ def list_resources(identity, category=None, type=None, limit=1000, offset=0):
 
 
 @resources_bp.route("/resource.update", methods=["PUT"])
+@with_authenticated_user
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "config": fields.Dict(required=True),
     "name": fields.Str(required=False),
 })
-def update_resource(resource_id, config, name=None):
+def update_resource(authenticated_user, resource_id, config, name=None):
     svc = current_app.container.resources_service
     try:
+        svc.guard_builtin_write(resource_id, _is_admin_user(authenticated_user))
         doc = svc.update(resource_id, config=config, name=name)
         return jsonify(doc.model_dump(mode="json")), 200
-    except KeyError as e:  # unknown id
+    except BuiltInWriteProtectedError as e:
+        return jsonify({"error": str(e)}), 403
+    except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
-    except ValueError as e:  # validation, duplicate name, etc.
+    except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @resources_bp.route("/resource.delete", methods=["DELETE"])
+@with_authenticated_user
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def delete_resource(resource_id):
-    # TODO: Add authorization check - verify user has permission to delete this resource
+def delete_resource(authenticated_user, resource_id):
     svc = current_app.container.resources_service
     try:
+        svc.guard_builtin_write(resource_id, _is_admin_user(authenticated_user))
         svc.delete(resource_id)
         return jsonify({"status": "deleted"}), 200
+    except BuiltInWriteProtectedError as e:
+        return jsonify({"error": str(e)}), 403
     except ResourceInUseError as e:
-        # The resource is referenced by blueprints or other resources
         return jsonify({"error": str(e),
                         "blueprints": e.by_blueprints,
                         "resources": e.by_resources}), 400
@@ -299,5 +314,232 @@ def validate_config(category, type, config, name=None, timeout_seconds=10.0):
         return jsonify({"error": f"Schema validation failed: {e}"}), 400
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Built-in resource endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+@resources_bp.route("/builtin.schema", methods=["GET"])
+@from_query({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+})
+def get_builtin_schema(resource_id):
+    """Get the element schema for a built-in resource with readOnly annotations.
+
+    Returns the same config_schema as /catalog/element.spec.get but with
+    each field annotated with a readOnly hint based on the resource's
+    configurable_keys. Fields in configurable_keys get readOnly=false,
+    all others get readOnly=true.
+    """
+    svc = current_app.container.resources_service
+    try:
+        schema = svc.get_builtin_schema(resource_id)
+        return jsonify(schema), 200
+    except KeyError as e:
+        return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@resources_bp.route("/builtin.configure", methods=["PATCH"])
+@with_require_identity_authorization
+@from_body({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+    "config": fields.Dict(required=True),
+})
+def configure_builtin(identity, resource_id, config):
+    """Save per-user/team configuration overlay for a built-in resource.
+
+    The identity_key is derived from the caller's resolved identity:
+    "user:<id>" or "team:<id>".
+    """
+    svc = current_app.container.resources_service
+    try:
+        identity_key = f"{identity.type.value}:{identity.id}"
+        doc = svc.configure_builtin(
+            rid=resource_id,
+            identity_key=identity_key,
+            config=config,
+        )
+        return jsonify(doc.model_dump(mode="json")), 200
+    except KeyError as e:
+        return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@resources_bp.route("/resource.duplicate", methods=["POST"])
+@with_require_identity_authorization
+@from_body({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+    "name": fields.Str(required=True),
+    "config_overrides": fields.Dict(data_key="configOverrides", load_default=None),
+})
+def duplicate_resource(identity, resource_id, name, config_overrides=None):
+    """Duplicate a built-in resource into the caller's workspace.
+
+    The clone gets is_builtin=False and parent_builtin_id set to the source.
+    Users can optionally override config fields (e.g. select a subset of tools).
+    """
+    svc = current_app.container.resources_service
+    try:
+        doc = svc.duplicate_builtin(
+            rid=resource_id,
+            identity=identity,
+            name=name,
+            config_overrides=config_overrides,
+        )
+        return jsonify(doc.model_dump(mode="json")), 201
+    except KeyError as e:
+        return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@resources_bp.route("/resource.promote", methods=["PATCH"])
+@with_authenticated_user
+@from_body({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+    "configurable_keys": fields.List(
+        fields.Str(), data_key="configurableKeys", load_default=None,
+    ),
+})
+def promote_resource(authenticated_user, resource_id, configurable_keys=None):
+    """Promote a custom resource to built-in status (admin only).
+
+    Toggles is_builtin=True and sets identity to system.
+    Optionally declares which field names from the element schema users can configure.
+    """
+    if not _is_admin_user(authenticated_user):
+        return jsonify({"error": "Admin access required"}), 403
+
+    svc = current_app.container.resources_service
+    try:
+        doc = svc.promote(resource_id, configurable_keys=configurable_keys)
+        return jsonify(doc.model_dump(mode="json")), 200
+    except KeyError as e:
+        return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@resources_bp.route("/builtin.create", methods=["POST"])
+@with_authenticated_user
+@from_body({
+    "category": fields.Str(required=True),
+    "type": fields.Str(required=True),
+    "name": fields.Str(required=True),
+    "config": fields.Dict(required=True),
+    "available_to_all": fields.Bool(data_key="availableToAll", load_default=True),
+    "configurable_keys": fields.List(
+        fields.Str(), data_key="configurableKeys", load_default=None,
+    ),
+})
+def create_builtin_resource(
+    authenticated_user, category, type, name, config,
+    available_to_all=True, configurable_keys=None,
+):
+    """Create a resource directly as built-in (admin only).
+
+    Creates with system identity and is_builtin flag based on availableToAll.
+    Admins can specify which fields are user-configurable via configurableKeys.
+    """
+    if not _is_admin_user(authenticated_user):
+        return jsonify({"error": "Admin access required"}), 403
+
+    svc = current_app.container.resources_service
+    try:
+        doc = svc.create_builtin(
+            category=category,
+            type=type,
+            name=name,
+            config=config,
+            available_to_all=available_to_all,
+            configurable_keys=configurable_keys,
+        )
+        return jsonify(doc.model_dump(mode="json")), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@resources_bp.route("/builtin.update", methods=["PUT"])
+@with_authenticated_user
+@from_body({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+    "config": fields.Dict(required=False, load_default=None),
+    "name": fields.Str(required=False, load_default=None),
+    "available_to_all": fields.Bool(data_key="availableToAll", load_default=None),
+    "configurable_keys": fields.List(
+        fields.Str(), data_key="configurableKeys", load_default=None,
+    ),
+})
+def update_builtin_resource(
+    authenticated_user, resource_id, config=None, name=None,
+    available_to_all=None, configurable_keys=None,
+):
+    """Update a built-in/admin resource (admin only).
+
+    Allows updating config, name, availableToAll status, and configurableKeys.
+    """
+    if not _is_admin_user(authenticated_user):
+        return jsonify({"error": "Admin access required"}), 403
+
+    svc = current_app.container.resources_service
+    try:
+        doc = svc.update_builtin(
+            resource_id,
+            config=config,
+            name=name,
+            available_to_all=available_to_all,
+            configurable_keys=configurable_keys,
+        )
+        return jsonify(doc.model_dump(mode="json")), 200
+    except KeyError as e:
+        return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@resources_bp.route("/builtin.toggle", methods=["PATCH"])
+@with_authenticated_user
+@from_body({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+    "available_to_all": fields.Bool(data_key="availableToAll", required=True),
+})
+def toggle_builtin_status(authenticated_user, resource_id, available_to_all):
+    """Toggle the available_to_all (is_builtin) status for a resource (admin only).
+
+    When toggled on, the resource becomes visible to all users.
+    When toggled off, only the system identity can see it.
+    """
+    if not _is_admin_user(authenticated_user):
+        return jsonify({"error": "Admin access required"}), 403
+
+    svc = current_app.container.resources_service
+    try:
+        if available_to_all:
+            doc = svc.promote(resource_id)
+        else:
+            doc = svc.demote(resource_id)
+        return jsonify(doc.model_dump(mode="json")), 200
+    except KeyError as e:
+        return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500

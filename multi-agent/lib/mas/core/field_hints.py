@@ -311,7 +311,29 @@ class PropagateHint(BaseModel):
         }
 
 
-def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, PropagateHint]) -> Dict[str, Any]:
+class ReadOnlyHint(BaseModel):
+    """
+    Hint marking a field as read-only in the UI for built-in resources.
+    Applied at serve-time by get_builtin_schema() — not baked into the
+    pydantic model itself.
+    """
+    read_only: bool = Field(
+        default=True,
+        description="When True, the field cannot be edited by users"
+    )
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        return super().model_dump(**kwargs)
+
+    def to_hints(self) -> Dict[str, Any]:
+        return {
+            "hints": {
+                "read_only": self.model_dump()
+            }
+        }
+
+
+def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, PropagateHint, ReadOnlyHint]) -> Dict[str, Any]:
     """
     Combine multiple hints into a single json_schema_extra structure.
     

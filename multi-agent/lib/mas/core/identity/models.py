@@ -13,6 +13,7 @@ from pydantic import BaseModel
 class IdentityType(str, Enum):
     USER = "user"
     TEAM = "team"
+    SYSTEM = "system"
 
 
 class IdentityFieldKey(str, Enum):
@@ -53,6 +54,11 @@ class Identity(BaseModel):
     def team(cls, team_id: str, display_name: str = "") -> "Identity":
         return cls(type=IdentityType.TEAM, id=team_id,
                    display_name=display_name or team_id)
+
+    @classmethod
+    def system(cls) -> "Identity":
+        return cls(type=IdentityType.SYSTEM, id="system",
+                   display_name="System")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

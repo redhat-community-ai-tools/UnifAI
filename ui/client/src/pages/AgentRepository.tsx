@@ -11,6 +11,71 @@ import { ElementType, ElementInstance } from '../types/workspace';
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
 import { useView } from "@/contexts/ViewContext";
+import { cn } from "@/lib/utils";
+
+type ResourceFilter = "all" | "built-in" | "personal";
+
+const MOCK_BUILTIN_INSTANCES: Record<string, ElementInstance[]> = {
+  openai: [
+    {
+      rid: "builtin-openai-gpt4o",
+      name: "GPT-4o",
+      type: "openai",
+      category: "llms",
+      config: {
+        model_name: "gpt-4o",
+        base_url: "https://api.openai.com/v1",
+        temperature: 0.7,
+        max_tokens: 4096,
+        verify_ssl: true,
+      },
+      version: 1,
+      isBuiltIn: true,
+    },
+  ],
+  mcp_server: [
+    {
+      rid: "builtin-mcp-github",
+      name: "GitHub MCP",
+      type: "mcp_server",
+      category: "providers",
+      config: {
+        mcp_url: "https://mcp.github.com/sse",
+        transport_type: "streamable http",
+        auth_method: "access_token",
+        tool_names: ["get_repo", "list_issues", "create_issue", "search_code"],
+        additional_headers: {},
+      },
+      version: 1,
+      isBuiltIn: true,
+    },
+  ],
+  web_fetch: [
+    {
+      rid: "builtin-tool-webfetch",
+      name: "Web Fetch",
+      type: "web_fetch",
+      category: "tools",
+      config: {},
+      version: 1,
+      isBuiltIn: true,
+    },
+  ],
+  deep_agent_node: [
+    {
+      rid: "builtin-node-deep-agent",
+      name: "Research Assistant",
+      type: "deep_agent_node",
+      category: "nodes",
+      config: {
+        system_message: "You are a thorough research assistant.",
+        retries: 1,
+      },
+      version: 1,
+      isBuiltIn: true,
+    },
+  ],
+};
 
 export default function UserWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -21,6 +86,7 @@ export default function UserWorkspace() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [elementToDelete, setElementToDelete] = useState<ElementInstance | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [resourceFilter, setResourceFilter] = useState<ResourceFilter>("all");
   const { viewMode, selectedTeam } = useView();
   const isTeam = viewMode === "team";
   const {
@@ -36,6 +102,27 @@ export default function UserWorkspace() {
     saveElement,
     deleteElement
   } = useWorkspaceData();
+
+  const builtInForType = useMemo(() => {
+    if (!selectedElementType) return [];
+    return MOCK_BUILTIN_INSTANCES[selectedElementType.type] ?? [];
+  }, [selectedElementType]);
+
+  const mergedInstances = useMemo(() => {
+    return [...builtInForType, ...elementInstances];
+  }, [builtInForType, elementInstances]);
+
+  const filteredInstances = useMemo(() => {
+    if (resourceFilter === "all") return mergedInstances;
+    if (resourceFilter === "built-in") return mergedInstances.filter(el => el.isBuiltIn);
+    return mergedInstances.filter(el => !el.isBuiltIn);
+  }, [mergedInstances, resourceFilter]);
+
+  const filterCounts = useMemo(() => ({
+    all: mergedInstances.length,
+    "built-in": mergedInstances.filter(el => el.isBuiltIn).length,
+    personal: mergedInstances.filter(el => !el.isBuiltIn).length,
+  }), [mergedInstances]);
 
   useEffect(() => {
     if (selectedElementType) {
@@ -131,43 +218,73 @@ export default function UserWorkspace() {
           <div className="col-span-12 md:col-span-9 lg:col-span-10">
             <div className="flex flex-col h-full">
               {selectedElementType && (
-                <div className="flex justify-between items-center mb-6 sticky top-0 z-10 pb-4 pt-px -mt-px bg-[hsl(var(--background-dark))] shadow-[0_4px_12px_-2px_rgba(0,0,0,0.4)]">
-                  <div>
-                    <h2 className="text-2xl font-heading font-bold">
-                      {selectedElementType.name} Instances
-                    </h2>
-                    <p className="text-gray-400 text-sm">
-                      {isTeam
-                        ? `Shared ${selectedElementType.name.toLowerCase()} configurations from your team`
-                        : `Manage your ${selectedElementType.name.toLowerCase()} configurations`}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        const guidesUrl = `/guides?section=agentic-inventory`;
-                        window.open(guidesUrl, '_blank');
-                      }}
-                      className="border-gray-700 hover:bg-background-dark"
-                      title="View guides"
-                    >
-                      <Info className="h-4 w-4" />
-                    </Button>
-
-                    <UmamiTrack
-                      event={UmamiEvents.AGENT_REPOSITORY_CREATE_NEW_BUTTON}
-                      eventData={{ elementType: selectedElementType?.name }}
-                    >
+                <div className="mb-6 sticky top-0 z-10 pb-4 pt-px -mt-px bg-[hsl(var(--background-dark))] shadow-[0_4px_12px_-2px_rgba(0,0,0,0.4)]">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h2 className="text-2xl font-heading font-bold">
+                        {selectedElementType.name} Instances
+                      </h2>
+                      <p className="text-gray-400 text-sm">
+                        {isTeam
+                          ? `Shared ${selectedElementType.name.toLowerCase()} configurations from your team`
+                          : `Manage your ${selectedElementType.name.toLowerCase()} configurations`}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
                       <Button
-                        onClick={handleCreateNew}
-                        className="bg-primary hover:bg-opacity-80"
-                        disabled={!elementSchema}
+                        variant="outline"
+                        onClick={() => {
+                          const guidesUrl = `/guides?section=agentic-inventory`;
+                          window.open(guidesUrl, '_blank');
+                        }}
+                        className="border-gray-700 hover:bg-background-dark"
+                        title="View guides"
                       >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create New
+                        <Info className="h-4 w-4" />
                       </Button>
-                    </UmamiTrack>
+
+                      <UmamiTrack
+                        event={UmamiEvents.AGENT_REPOSITORY_CREATE_NEW_BUTTON}
+                        eventData={{ elementType: selectedElementType?.name }}
+                      >
+                        <Button
+                          onClick={handleCreateNew}
+                          className="bg-primary hover:bg-opacity-80"
+                          disabled={!elementSchema}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Create New
+                        </Button>
+                      </UmamiTrack>
+                    </div>
+                  </div>
+
+                  {/* Resource filter tabs */}
+                  <div className="flex items-center gap-1 mt-4 p-1 bg-background-card rounded-lg border border-gray-800 w-fit">
+                    {([
+                      { key: "all" as const, label: "All" },
+                      { key: "built-in" as const, label: "Built-in" },
+                      { key: "personal" as const, label: "My Resources" },
+                    ]).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setResourceFilter(key)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                          resourceFilter === key
+                            ? "bg-primary text-white shadow-sm"
+                            : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                        )}
+                      >
+                        {label}
+                        <span className={cn(
+                          "ml-1.5 text-[10px] tabular-nums",
+                          resourceFilter === key ? "text-white/70" : "text-gray-500"
+                        )}>
+                          {filterCounts[key]}
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
@@ -175,7 +292,7 @@ export default function UserWorkspace() {
               <div className="flex-1">
                 {selectedElementType ? (
                   <ElementGrid
-                    elements={elementInstances}
+                    elements={filteredInstances}
                     elementType={selectedElementType}
                     isLoading={isLoadingInstances}
                     onEditElement={handleEditElement}

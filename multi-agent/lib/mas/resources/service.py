@@ -1,9 +1,12 @@
+import logging
 from typing import List, Optional, Tuple, Dict, Any
+from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from cryptography.fernet import Fernet
 from pydantic import BaseModel
 
-from mas.core.identity import Identity
+from mas.core.identity import Identity, IdentityType
 from mas.resources.registry import ResourcesRegistry
 from mas.catalog.element_registry import ElementRegistry
 from mas.resources.models import Resource, ResourceQuery
@@ -15,7 +18,10 @@ from mas.elements.common.validator import ElementValidationResult, ValidationCon
 from mas.elements.common.card import ElementCard
 from mas.catalog.card_service import ElementCardService
 from mas.resources.resolver import DependencyResolver
+from mas.resources.errors import BuiltInWriteProtectedError
 from mas.validation.service import ElementValidationService
+
+logger = logging.getLogger(__name__)
 
 class ResourcesService:
     """
@@ -30,6 +36,7 @@ class ResourcesService:
             validation_service: ElementValidationService = None,
             card_service: ElementCardService = None,
             auth_service=None,
+            encryption_key: str = "",
     ):
         self._store = resource_registry
         self.element_registry = element_registry
@@ -37,6 +44,7 @@ class ResourcesService:
         self._dependency_resolver = DependencyResolver(resource_registry=self._store)
         self._validation_service = validation_service
         self._auth_service = auth_service
+        self._fernet = Fernet(encryption_key.encode()) if encryption_key else None
 
     # ---------- CRUD ----------
     def create(self, *, identity: Identity, category, type, name, config) -> Resource:
@@ -116,10 +124,18 @@ class ResourcesService:
         return self._store.find_resources(query)
 
     # ---------- resolve ----------
-    def resolve(self, rid: str) -> BaseModel:
-        category, _type = self._store.meta(rid)
-        model_cls = self.element_registry.get_schema(ResourceCategory(category), _type)
-        return model_cls(**self._store.raw_config(rid))
+    def resolve(self, rid: str, identity: Identity = None) -> BaseModel:
+        resource = self._store.get(rid)
+        config = dict(resource.cfg_dict)
+
+        if resource.is_builtin and identity:
+            overlay = self._resolve_user_overlay(resource, identity)
+            if overlay:
+                config.update(overlay)
+
+        model_cls = self.element_registry.get_schema(
+            ResourceCategory(resource.category), resource.type)
+        return model_cls(**config)
 
     def get_dict(self, rid: str) -> dict:
         """Raw JSON for UI."""
@@ -321,6 +337,201 @@ class ResourcesService:
             raise KeyError(f"Resource not found: {rid}")
         return cards[rid]
 
+    # ---------- Built-in Resource Operations ----------
+
+    BUILTIN_CONFIGURABLE_KEYS: Dict[str, Dict[str, List[str]]] = {
+        "providers": {
+            "mcp_server": ["sign_in", "bearer_token", "tool_names"],
+        },
+    }
+
+    def get_builtin_schema(self, rid: str) -> dict:
+        """Return the element JSON schema with readOnly annotations for a built-in resource.
+
+        All visible fields default to read_only=true. Fields listed in the
+        resource's configurable_keys (or the category/type default mapping)
+        are marked read_only=false so users can edit them.
+        Hidden fields are left untouched.
+
+        This annotation is only applied when serving the schema to regular
+        users viewing built-in elements — admins use the normal schema.
+        """
+        resource = self._store.get(rid)
+        if not resource.is_builtin:
+            raise ValueError("Resource is not a built-in resource")
+
+        schema = self.element_registry.get_schema_json(
+            ResourceCategory(resource.category), resource.type
+        )
+
+        if resource.configurable_keys:
+            configurable = set(resource.configurable_keys)
+        else:
+            category_defaults = self.BUILTIN_CONFIGURABLE_KEYS.get(resource.category, {})
+            configurable = set(category_defaults.get(resource.type, []))
+
+        for field_name, field_schema in schema.get("properties", {}).items():
+            hints = field_schema.get("hints", {})
+            if "hidden" in hints:
+                continue
+
+            hints["read_only"] = {"read_only": field_name not in configurable}
+            field_schema["hints"] = hints
+
+        return schema
+
+    def configure_builtin(
+        self,
+        rid: str,
+        identity_key: str,
+        config: Dict[str, Any],
+    ) -> Resource:
+        """Save per-user/team configuration overlay for a built-in resource.
+
+        Args:
+            rid: The built-in resource ID.
+            identity_key: Key in format "user:<id>" or "team:<id>".
+            config: Dict of field values to store (only configurable_keys allowed).
+        """
+        resource = self._store.get(rid)
+        if not resource.is_builtin:
+            raise ValueError("Resource is not a built-in resource")
+
+        allowed_keys = set(resource.configurable_keys)
+        filtered = {k: v for k, v in config.items() if k in allowed_keys}
+        if not filtered:
+            raise ValueError("No valid configurable fields provided")
+
+        sensitive_keys = self._get_sensitive_keys(resource.category, resource.type)
+        encrypted = self._encrypt_config_fields(filtered, sensitive_keys)
+
+        self._store.set_user_config(rid, identity_key, encrypted)
+        logger.info("Built-in resource '%s' configured for %s", rid, identity_key)
+
+        return self._store.get(rid)
+
+    def duplicate_builtin(
+        self,
+        rid: str,
+        identity: Identity,
+        name: str,
+        config_overrides: Dict[str, Any] = None,
+    ) -> Resource:
+        """Clone a built-in resource into a personal/team resource."""
+        source = self._store.get(rid)
+        if not source.is_builtin:
+            raise ValueError("Resource is not a built-in resource")
+
+        merged_config = dict(source.cfg_dict)
+        if config_overrides:
+            merged_config.update(config_overrides)
+
+        model_cls = self.element_registry.get_schema(
+            ResourceCategory(source.category), source.type)
+        cfg_model = model_cls(**merged_config)
+        nested_refs = list(RefWalker.external_rids(cfg_model))
+
+        doc = Resource(
+            rid=uuid4().hex,
+            identity=identity,
+            category=source.category,
+            type=source.type,
+            name=name,
+            cfg_dict=cfg_model.model_dump(mode="json"),
+            nested_refs=nested_refs,
+            parent_builtin_id=source.rid,
+        )
+        return self._store.create(doc)
+
+    def create_builtin(
+        self,
+        *,
+        category: str,
+        type: str,
+        name: str,
+        config: dict,
+        available_to_all: bool = True,
+        configurable_keys: List[str] = None,
+    ) -> Resource:
+        """Create a resource directly as built-in (admin only).
+
+        Uses system identity and sets is_builtin based on available_to_all flag.
+        """
+        model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
+        cfg_model = model_cls(**config)
+
+        nested_refs = list(RefWalker.external_rids(cfg_model))
+
+        doc = Resource(
+            identity=Identity.system(),
+            category=category,
+            type=type,
+            name=name,
+            cfg_dict=cfg_model.model_dump(mode="json"),
+            nested_refs=nested_refs,
+            is_builtin=available_to_all,
+            configurable_keys=configurable_keys or [],
+        )
+        return self._store.create(doc)
+
+    def promote(self, rid: str, configurable_keys: List[str] = None) -> Resource:
+        """Promote a custom resource to built-in (admin only)."""
+        resource = self._store.get(rid)
+        resource.is_builtin = True
+        resource.identity = Identity.system()
+        if configurable_keys is not None:
+            resource.configurable_keys = configurable_keys
+        return self._store.update(resource)
+
+    def demote(self, rid: str) -> Resource:
+        """Demote a built-in resource back to a system-owned non-built-in resource (admin only)."""
+        resource = self._store.get(rid)
+        if not resource.is_builtin:
+            raise ValueError("Resource is not a built-in resource")
+        resource.is_builtin = False
+        return self._store.update(resource)
+
+    def update_builtin(
+        self,
+        rid: str,
+        *,
+        config: dict = None,
+        name: str = None,
+        available_to_all: bool = None,
+        configurable_keys: List[str] = None,
+    ) -> Resource:
+        """Update a built-in/admin resource (admin only).
+
+        Allows updating config, name, available_to_all status, and configurable_keys.
+        """
+        resource = self._store.get(rid)
+
+        if config is not None:
+            model_cls = self.element_registry.get_schema(
+                ResourceCategory(resource.category), resource.type)
+            cfg_model = model_cls(**config)
+            resource.cfg_dict = cfg_model.model_dump(mode="json")
+            resource.nested_refs = list(RefWalker.external_rids(cfg_model))
+
+        if name is not None:
+            resource.name = name
+
+        if available_to_all is not None:
+            resource.is_builtin = available_to_all
+
+        if configurable_keys is not None:
+            resource.configurable_keys = configurable_keys
+
+        return self._store.update(resource)
+
+    def guard_builtin_write(self, rid: str, is_admin: bool) -> None:
+        """Raise BuiltInWriteProtectedError if resource is built-in and caller is not admin."""
+        resource = self._store.get(rid)
+        if resource.is_builtin and not is_admin:
+            raise BuiltInWriteProtectedError()
+
+    # ---------- Internal Helpers ----------
+
     def _cleanup_orphaned_credential(self, identity: Identity, server_id: str) -> None:
         """Delete the stored credential if no other resource uses the same server_identifier."""
         if not self._auth_service:
@@ -342,12 +553,14 @@ class ResourcesService:
         if not self._card_service:
             raise RuntimeError("CardService not configured")
 
-    def _build_configs_from_rids(self, rids: List[str]) -> List[ElementConfigMeta]:
+    def _build_configs_from_rids(
+        self, rids: List[str], identity: Identity = None,
+    ) -> List[ElementConfigMeta]:
         """Build ElementConfigMeta list from saved resource rids."""
         configs: List[ElementConfigMeta] = []
         for rid in rids:
             resource = self._store.get(rid)
-            config = self.resolve(rid)
+            config = self.resolve(rid, identity=identity)
             configs.append(ElementConfigMeta(
                 rid=rid,
                 category=resource.category,
@@ -379,3 +592,71 @@ class ResourcesService:
         )
         results = self._validation_service.validate_ordered(ordered_configs, context)
         return results[target_rid]
+
+    def _resolve_user_overlay(self, resource: Resource, identity: Identity) -> Dict[str, Any]:
+        """Resolve the best-matching user_configs overlay for an identity.
+
+        Priority: user-specific > team-level > empty.
+        Decrypts sensitive fields before returning.
+        """
+        user_key = f"user:{identity.id}"
+        overlay = resource.user_configs.get(user_key)
+
+        if not overlay and identity.is_team:
+            team_key = f"team:{identity.id}"
+            overlay = resource.user_configs.get(team_key)
+
+        if overlay:
+            sensitive_keys = self._get_sensitive_keys(resource.category, resource.type)
+            return self._decrypt_config_fields(overlay, sensitive_keys)
+        return {}
+
+    def _get_sensitive_keys(self, category: str, type_key: str) -> set:
+        """Get field names marked as secret from the element's pydantic schema."""
+        try:
+            schema = self.element_registry.get_schema_json(
+                ResourceCategory(category), type_key
+            )
+        except KeyError:
+            return set()
+        sensitive = set()
+        for field_name, field_schema in schema.get("properties", {}).items():
+            hints = field_schema.get("hints", {})
+            if "secret" in hints:
+                sensitive.add(field_name)
+        return sensitive
+
+    def _encrypt_config_fields(
+        self,
+        config: Dict[str, Any],
+        sensitive_keys: set,
+    ) -> Dict[str, Any]:
+        """Encrypt values of fields identified as sensitive by schema hints."""
+        if not self._fernet:
+            return config
+        result = {}
+        for k, v in config.items():
+            if k in sensitive_keys and v:
+                result[k] = self._fernet.encrypt(str(v).encode()).decode()
+            else:
+                result[k] = v
+        return result
+
+    def _decrypt_config_fields(
+        self,
+        config: Dict[str, Any],
+        sensitive_keys: set,
+    ) -> Dict[str, Any]:
+        """Decrypt values of fields identified as sensitive by schema hints."""
+        if not self._fernet:
+            return config
+        result = {}
+        for k, v in config.items():
+            if k in sensitive_keys and v and isinstance(v, str):
+                try:
+                    result[k] = self._fernet.decrypt(v.encode()).decode()
+                except Exception:
+                    result[k] = v
+            else:
+                result[k] = v
+        return result

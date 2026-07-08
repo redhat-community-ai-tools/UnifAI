@@ -85,3 +85,22 @@ class ResourceRepository(ABC):
     def delete_by_identity(self, identity: Identity) -> int:
         """Delete all resources owned by *identity*.  Returns the count of deleted documents."""
         ...
+
+    @abstractmethod
+    def find_all_builtins(
+        self,
+        category: str | None = None,
+        type: str | None = None,
+    ) -> List[Resource]:
+        """Return all built-in resources, optionally filtered by category/type."""
+        ...
+
+    @abstractmethod
+    def find_builtin_by_url(self, url: str) -> Resource | None:
+        """Find a built-in resource whose cfg_dict.mcp_url matches *url*."""
+        ...
+
+    @abstractmethod
+    def set_user_config(self, rid: str, identity_key: str, config: Dict[str, Any]) -> bool:
+        """Atomically set user_configs.<identity_key> on a resource."""
+        ...

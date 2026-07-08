@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import pymongo
 from mas.resources.models import Resource, ResourceQuery
 from mas.resources.repository.base import ResourceRepository
@@ -24,6 +24,7 @@ class MongoResourceRepository(ResourceRepository):
         self.col.create_index(
             [("identity.type", 1), ("identity.id", 1), ("created", -1)],
             background=True)
+        self.col.create_index("is_builtin", sparse=True, background=True)
 
     # ---------- CRUD ----------
     def save(self, doc: Resource) -> str:
@@ -67,22 +68,27 @@ class MongoResourceRepository(ResourceRepository):
 
     # ---------- queries ----------
     def find_resources(self, query: ResourceQuery) -> List[Resource]:
-        """Find resources based on query criteria with pagination."""
-        filter_dict = identity_q(query.identity)
+        """Find resources based on query criteria with pagination.
+
+        Includes built-in resources alongside identity-scoped ones via $or.
+        """
+        identity_filter = identity_q(query.identity)
+        builtin_filter: Dict[str, Any] = {"is_builtin": True}
 
         if query.category:
-            filter_dict["category"] = query.category.value
+            identity_filter["category"] = query.category.value
+            builtin_filter["category"] = query.category.value
         if query.type:
-            filter_dict["type"] = query.type
+            identity_filter["type"] = query.type
+            builtin_filter["type"] = query.type
 
-        # Build cursor with filtering
+        filter_dict = {"$or": [identity_filter, builtin_filter]}
+
         cursor = self.col.find(filter_dict)
 
-        # Apply sorting
         sort_direction = pymongo.DESCENDING if query.sort_order == "desc" else pymongo.ASCENDING
         cursor = cursor.sort(query.sort_by, sort_direction)
 
-        # Apply pagination
         if query.offset:
             cursor = cursor.skip(query.offset)
         if query.limit:
@@ -91,14 +97,18 @@ class MongoResourceRepository(ResourceRepository):
         return [Resource(**doc) for doc in cursor]
 
     def count_resources(self, query: ResourceQuery) -> int:
-        """Count resources matching query criteria."""
-        filter_dict = identity_q(query.identity)
+        """Count resources matching query criteria (includes built-ins)."""
+        identity_filter = identity_q(query.identity)
+        builtin_filter: Dict[str, Any] = {"is_builtin": True}
 
         if query.category:
-            filter_dict["category"] = query.category.value
+            identity_filter["category"] = query.category.value
+            builtin_filter["category"] = query.category.value
         if query.type:
-            filter_dict["type"] = query.type
+            identity_filter["type"] = query.type
+            builtin_filter["type"] = query.type
 
+        filter_dict = {"$or": [identity_filter, builtin_filter]}
         return self.col.count_documents(filter_dict)
 
     def count(self, identity: Identity, filter: dict | None = None) -> int:
@@ -163,3 +173,34 @@ class MongoResourceRepository(ResourceRepository):
             GroupedCount(fields=doc["_id"], count=doc["count"])
             for doc in self.col.aggregate(pipeline)
         ]
+
+    # ---------- built-in resources ----------
+
+    def find_all_builtins(
+        self,
+        category: str | None = None,
+        type: str | None = None,
+    ) -> List[Resource]:
+        """Return all built-in resources, optionally filtered."""
+        filter_dict: Dict[str, Any] = {"is_builtin": True}
+        if category:
+            filter_dict["category"] = category
+        if type:
+            filter_dict["type"] = type
+        return [Resource(**doc) for doc in self.col.find(filter_dict)]
+
+    def find_builtin_by_url(self, url: str) -> Optional[Resource]:
+        """Find a built-in MCP resource matching the given URL."""
+        raw = self.col.find_one({
+            "is_builtin": True,
+            "cfg_dict.mcp_url": url,
+        })
+        return Resource(**raw) if raw else None
+
+    def set_user_config(self, rid: str, identity_key: str, config: Dict[str, Any]) -> bool:
+        """Atomically set user_configs.<identity_key> on a resource."""
+        result = self.col.update_one(
+            {"_id": rid},
+            {"$set": {f"user_configs.{identity_key}": config}},
+        )
+        return result.modified_count > 0

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { motion } from 'framer-motion';
 import { 
   Settings, 
@@ -12,7 +13,11 @@ import {
   Eye,
   Users,
   Check,
-  AlertTriangle
+  AlertTriangle,
+  ShieldCheck,
+  LogIn,
+  ArrowLeft,
+  KeyRound,
 } from 'lucide-react';
 import SimpleTooltip from '@/components/shared/SimpleTooltip';
 import { useShared } from '@/contexts/SharedContext';
@@ -24,8 +29,6 @@ import { ElementInstance, ElementType, ElementSchema } from '../../../types/work
 import { ElementValidationResult } from '../../../types/validation';
 import { ElementData } from './ElementData';
 import { ValidationResultModal } from './ValidationResultModal';
-import { formatConfigValue } from '../../../utils/maskSecretFields';
-import { getDisplayValueFromItem } from '../../../utils/displayUtils';
 import { cn } from "@/lib/utils";
 
 interface ElementGridProps {
@@ -35,6 +38,79 @@ interface ElementGridProps {
   onEditElement: (element: ElementInstance) => void;
   onDeleteElement: (rid: string) => void;
   elementSchema?: ElementSchema | null;
+}
+
+const FIELD_PRIORITY: Record<string, number> = {
+  mcp_url: 1, model_name: 1, base_url: 2,
+  llm: 2, tools: 3, providers: 3, tool_names: 3,
+  temperature: 4, max_tokens: 4, transport_type: 4,
+  system_message: 5, retries: 6, verify_ssl: 6,
+};
+
+const HIDDEN_CARD_FIELDS = new Set([
+  "type", "server_identifier", "scheme_type", "credential_token",
+  "sign_in", "cwd", "env_vars",
+]);
+
+const BUILTIN_USER_FIELDS = new Set([
+  "auth_method", "bearer_token", "api_key", "tool_names",
+]);
+
+function builtInNeedsAuth(config: any): boolean {
+  return config && typeof config.auth_method === "string";
+}
+
+function sortFieldsByPriority(keys: string[]): string[] {
+  return [...keys].sort((a, b) => {
+    const pa = FIELD_PRIORITY[a] ?? 99;
+    const pb = FIELD_PRIORITY[b] ?? 99;
+    return pa - pb;
+  });
+}
+
+function smartFormatValue(
+  key: string,
+  value: any,
+  getResourceName: (ref: string) => string,
+): string {
+  if (value == null || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") return String(value);
+
+  if (typeof value === "string") {
+    if (value.startsWith("$ref:")) {
+      const name = getResourceName(value);
+      return name || value.replace("$ref:", "").slice(0, 8) + "…";
+    }
+    if (value.length > 40) return value.slice(0, 37) + "…";
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "None";
+    const items = value.map((v) => {
+      if (typeof v === "string") {
+        if (v.startsWith("$ref:")) return getResourceName(v) || v.replace("$ref:", "").slice(0, 8);
+        return v;
+      }
+      if (v?.$ref) return getResourceName(v) || "ref";
+      if (v?.name) return v.name;
+      return "…";
+    });
+    if (items.length <= 2) return items.join(", ");
+    return `${items[0]}, ${items[1]} +${items.length - 2} more`;
+  }
+
+  if (typeof value === "object") {
+    const keys = Object.keys(value);
+    if (keys.length === 0) return "None";
+    if (value.$ref) return getResourceName(value) || "ref";
+    if (value.name) return value.name;
+    const label = key.includes("header") ? "header" : "entry";
+    return `${keys.length} ${label}${keys.length !== 1 ? "s" : ""}`;
+  }
+
+  return String(value);
 }
 
 export const ElementGrid: React.FC<ElementGridProps> = ({
@@ -49,14 +125,17 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isValidationModalOpen, setIsValidationModalOpen] = useState(false);
   const [selectedValidationResult, setSelectedValidationResult] = useState<ElementValidationResult | null>(null);
+  const [flippedCards, setFlippedCards] = useState<Set<string>>(new Set());
+  const [authTokens, setAuthTokens] = useState<Record<string, string>>({});
   const { openShareForItem } = useShared();
   const { user } = useAuth();
   const { viewMode, selectedTeam } = useView();
   const isTeamWorkspace = viewMode === "team" && !!selectedTeam;
+  const nonBuiltInElements = elements.filter(el => !el.isBuiltIn);
   const resourceEditLocks = useTeamEditLockPoll(
     selectedTeam?.id,
     "resource",
-    elements.map((el) => el.rid),
+    nonBuiltInElements.map((el) => el.rid),
     isTeamWorkspace,
   );
   const { 
@@ -66,13 +145,26 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
     validateResources 
   } = useAgenticAI();
 
-  // Trigger validation for all elements when they change
   useEffect(() => {
-    if (elements.length > 0) {
-      const rids = elements.map(el => el.rid);
+    const realElements = elements.filter(el => !el.isBuiltIn);
+    if (realElements.length > 0) {
+      const rids = realElements.map(el => el.rid);
       validateResources(rids);
     }
   }, [elements, validateResources]);
+
+  const toggleCardFlip = (rid: string) => {
+    setFlippedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(rid)) next.delete(rid);
+      else next.add(rid);
+      return next;
+    });
+  };
+
+  const handleAuthSubmit = (rid: string) => {
+    toggleCardFlip(rid);
+  };
 
   const handleViewDetails = (element: ElementInstance) => {
     setSelectedElement(element);
@@ -161,9 +253,14 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {elements.map((element, index) => {
-        const lockHolder = resourceEditLocks[element.rid];
-        const lockUnknown = lockHolder === "unknown";
+        const isBuiltIn = !!element.isBuiltIn;
+        const isFlipped = flippedCards.has(element.rid);
+        const hasAuthField = isBuiltIn && builtInNeedsAuth(element.config);
+
+        const lockHolder = isBuiltIn ? undefined : resourceEditLocks[element.rid];
+        const lockUnknown = !isBuiltIn && lockHolder === "unknown";
         const lockedByOther =
+          !isBuiltIn &&
           isTeamWorkspace &&
           !lockUnknown &&
           !!lockHolder &&
@@ -171,7 +268,15 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
           lockHolder.userId !== user.username;
         const lockedByLabel = lockUnknown
           ? "unknown"
-          : lockHolder?.displayName?.trim() || lockHolder?.userId || "another teammate";
+          : (lockHolder as any)?.displayName?.trim() || (lockHolder as any)?.userId || "another teammate";
+
+        const allConfigKeys = element.config ? Object.keys(element.config) : [];
+        const displayableKeys = sortFieldsByPriority(
+          allConfigKeys.filter(k => !HIDDEN_CARD_FIELDS.has(k))
+        );
+        const builtInUserKeys = isBuiltIn
+          ? allConfigKeys.filter(k => BUILTIN_USER_FIELDS.has(k))
+          : [];
 
         return (
         <motion.div
@@ -179,156 +284,314 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: index * 0.1 }}
+          style={{ perspective: 1000 }}
         >
-          <Card className="bg-background-card shadow-card border-gray-800 h-full flex flex-col">
-            <CardHeader className="py-4 px-6 border-b border-gray-800">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center">
-                  <FileText className="h-5 w-5 mr-2 text-primary" />
-                  <CardTitle className="text-lg font-heading">
-                    {element.name || `${elementType.name} Instance`}
-                  </CardTitle>
-                </div>
-                <div className="flex items-center gap-1">
-                  {renderValidationStatus(element.rid)}
-                  <SimpleTooltip content={<p>Share this resource</p>}>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="text-gray-400 hover:text-blue-400 hover:bg-blue-500/10"
-                      onClick={() => handleShareElement(element)}
-                    >
-                      <Users className="h-4 w-4" />
-                    </Button>
-                  </SimpleTooltip>
-                  <SimpleTooltip content={<p>Delete this resource</p>}>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="text-gray-400 hover:text-red-400"
-                      onClick={() => onDeleteElement(element.rid)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </SimpleTooltip>
-                </div>
-              </div>
-            </CardHeader>
-            
-            <CardContent className="p-4 flex-grow">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-xs text-gray-500">ID:</span>
-                  <span className="text-xs font-mono text-gray-300">
-                    {element.rid.slice(0, 8)}...
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-xs text-gray-500">Type:</span>
-                  <Badge variant="outline" className="text-xs">
-                    {elementType.type}
-                  </Badge>
-                </div>
-                {element.version && (
-                  <div className="flex justify-between">
-                    <span className="text-xs text-gray-500">Version:</span>
-                    <span className="text-xs text-gray-300">v{element.version}</span>
-                  </div>
-                )}
-                {element.updated && (
-                  <div className="flex justify-between">
-                    <span className="text-xs text-gray-500">Last Updated:</span>
-                    <span className="text-xs text-gray-300">
-                      {new Date(element.updated).toLocaleDateString()}
-                    </span>
-                  </div>
-                )}
-                {element.contributed_by && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-500">Contributed by:</span>
-                    <span className="inline-flex items-center gap-1 text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
-                      <Users className="h-2.5 w-2.5" />
-                      {element.contributed_by}
-                    </span>
-                  </div>
-                )}
-                {element.config && (
-                  <div className="mt-3">
-                    <span className="text-xs text-gray-500">Configuration:</span>
-                    <div className="text-xs text-gray-300 mt-1 space-y-1">
-                      {Object.keys(element.config).slice(0, 3).map((key) => {
-                        const fieldSchema = elementSchema?.config_schema?.properties?.[key];
-                        const rawValue = element.config[key];
-                        const displayValue = Array.isArray(rawValue)
-                          ? rawValue.map((item: any) => getDisplayValueFromItem(item, getResourceName)).join(', ')
-                          : getDisplayValueFromItem(rawValue, getResourceName);
-                        return (
-                          <div key={key} className="flex justify-between">
-                            <span className="truncate">{key}:</span>
-                            <span className="text-gray-400 ml-2 truncate max-w-24" title={displayValue}>
-                              {formatConfigValue(displayValue, fieldSchema)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                      {Object.keys(element.config).length > 3 && (
-                        <div className="text-gray-500 text-center">
-                          +{Object.keys(element.config).length - 3} more...
-                        </div>
+          <div
+            className="relative h-full transition-transform duration-500"
+            style={{
+              transformStyle: "preserve-3d",
+              transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
+            }}
+          >
+            {/* ---- FRONT FACE ---- */}
+            <div
+              className="w-full"
+              style={{ backfaceVisibility: "hidden" }}
+            >
+              <Card className={cn(
+                "bg-background-card shadow-card border-gray-800 h-full flex flex-col",
+                isBuiltIn && "border-primary/20"
+              )}>
+                <CardHeader className="py-4 px-6 border-b border-gray-800">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText className={cn("h-5 w-5 flex-shrink-0", isBuiltIn ? "text-primary" : "text-primary")} />
+                      <CardTitle className="text-lg font-heading truncate">
+                        {element.name || `${elementType.name} Instance`}
+                      </CardTitle>
+                      {isBuiltIn && (
+                        <Badge className="bg-primary/15 text-primary border-primary/30 text-[10px] px-1.5 py-0 font-medium flex-shrink-0 gap-1">
+                          <ShieldCheck className="h-3 w-3" />
+                          Built-in
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {!isBuiltIn && renderValidationStatus(element.rid)}
+                      {!isBuiltIn && (
+                        <>
+                          <SimpleTooltip content={<p>Share this resource</p>}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-gray-400 hover:text-blue-400 hover:bg-blue-500/10"
+                              onClick={() => handleShareElement(element)}
+                            >
+                              <Users className="h-4 w-4" />
+                            </Button>
+                          </SimpleTooltip>
+                          <SimpleTooltip content={<p>Delete this resource</p>}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-gray-400 hover:text-red-400"
+                              onClick={() => onDeleteElement(element.rid)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </SimpleTooltip>
+                        </>
                       )}
                     </div>
                   </div>
-                )}
-              </div>
-            </CardContent>
-
-            <CardFooter className="px-6 py-3 border-t border-gray-800 bg-background-dark">
-              <div className="flex gap-2 w-full">
-                <SimpleTooltip
-                  collisionPadding={12}
-                  content={
-                    lockUnknown ? (
-                      <p>Could not verify edit lock — try again shortly</p>
-                    ) : lockedByOther ? (
-                      <p>Currently being edited by {lockedByLabel}</p>
-                    ) : (
-                      <p>Configure this element</p>
-                    )
-                  }
-                >
-                  <span
-                    className={cn(
-                      "flex flex-1",
-                      (lockedByOther || lockUnknown) && "cursor-not-allowed",
+                </CardHeader>
+                
+                <CardContent className="p-4 flex-grow">
+                  <div className="space-y-2">
+                    {!isBuiltIn && (
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">ID:</span>
+                        <span className="text-xs font-mono text-gray-300">
+                          {element.rid.slice(0, 8)}...
+                        </span>
+                      </div>
                     )}
-                  >
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={cn(
-                        "flex flex-1 items-center justify-center gap-2",
-                        (lockedByOther || lockUnknown) && "pointer-events-none",
+                    <div className="flex justify-between">
+                      <span className="text-xs text-gray-500">Type:</span>
+                      <Badge variant="outline" className="text-xs">
+                        {elementType.type}
+                      </Badge>
+                    </div>
+                    {!isBuiltIn && element.version && (
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">Version:</span>
+                        <span className="text-xs text-gray-300">v{element.version}</span>
+                      </div>
+                    )}
+                    {!isBuiltIn && element.updated && (
+                      <div className="flex justify-between">
+                        <span className="text-xs text-gray-500">Last Updated:</span>
+                        <span className="text-xs text-gray-300">
+                          {new Date(element.updated).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                    {element.contributed_by && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-gray-500">Contributed by:</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
+                          <Users className="h-2.5 w-2.5" />
+                          {element.contributed_by}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Config preview — works for both built-in and personal */}
+                    {element.config && displayableKeys.length > 0 && (
+                      <div className="mt-3">
+                        <span className="text-xs text-gray-500">
+                          {isBuiltIn ? "Overview:" : "Configuration:"}
+                        </span>
+                        <div className="text-xs text-gray-300 mt-1 space-y-1">
+                          {displayableKeys
+                            .filter(k => !(isBuiltIn && BUILTIN_USER_FIELDS.has(k)))
+                            .slice(0, 4)
+                            .map((key) => {
+                              const fieldSchema = elementSchema?.config_schema?.properties?.[key];
+                              const rawValue = element.config[key];
+                              const isSecret = fieldSchema?.hints?.secret?.hint_type === "secret";
+                              const display = isSecret
+                                ? "••••••••"
+                                : smartFormatValue(key, rawValue, getResourceName);
+                              return (
+                                <div key={key} className="flex justify-between gap-2">
+                                  <span className="text-gray-500 flex-shrink-0">{key}:</span>
+                                  <span className="text-gray-300 truncate text-right" title={display}>
+                                    {display}
+                                  </span>
+                                </div>
+                              );
+                          })}
+                          {displayableKeys.filter(k => !(isBuiltIn && BUILTIN_USER_FIELDS.has(k))).length > 4 && (
+                            <div className="text-gray-500 text-center">
+                              +{displayableKeys.filter(k => !(isBuiltIn && BUILTIN_USER_FIELDS.has(k))).length - 4} more...
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Built-in user-configurable fields */}
+                    {isBuiltIn && builtInUserKeys.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-gray-800/50">
+                        <span className="text-xs text-gray-500">Your configuration:</span>
+                        <div className="text-xs text-gray-300 mt-1 space-y-1">
+                          {builtInUserKeys.map(key => {
+                            const val = element.config[key];
+                            const display = smartFormatValue(key, val, getResourceName);
+                            return (
+                              <div key={key} className="flex justify-between items-center gap-2">
+                                <span className="text-gray-500 flex-shrink-0">{key}:</span>
+                                <span className="text-gray-300 truncate text-right">{display}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {isBuiltIn && displayableKeys.length === 0 && builtInUserKeys.length === 0 && (
+                      <div className="mt-3 py-2 text-center">
+                        <p className="text-xs text-gray-500">
+                          Pre-configured &mdash; ready to use
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+
+                <CardFooter className="px-6 py-3 border-t border-gray-800 bg-background-dark">
+                  {isBuiltIn ? (
+                    <div className="flex gap-2 w-full">
+                      {hasAuthField && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1 flex items-center justify-center gap-2 border-primary/40 text-primary hover:bg-primary/10"
+                          onClick={() => toggleCardFlip(element.rid)}
+                        >
+                          <LogIn className="h-3 w-3" />
+                          Sign In
+                        </Button>
                       )}
-                      onClick={() => onEditElement(element)}
-                      disabled={lockedByOther || lockUnknown}
-                    >
-                      <Settings className="h-3 w-3" />
-                      Configure
-                    </Button>
-                  </span>
-                </SimpleTooltip>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="flex-1 flex items-center justify-center gap-2"
-                  onClick={() => handleViewDetails(element)}
-                >
-                  <Eye className="h-3 w-3" />
-                  Details
-                </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex-1 flex items-center justify-center gap-2"
+                        onClick={() => handleViewDetails(element)}
+                      >
+                        <Eye className="h-3 w-3" />
+                        Details
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2 w-full">
+                      <SimpleTooltip
+                        collisionPadding={12}
+                        content={
+                          lockUnknown ? (
+                            <p>Could not verify edit lock — try again shortly</p>
+                          ) : lockedByOther ? (
+                            <p>Currently being edited by {lockedByLabel}</p>
+                          ) : (
+                            <p>Configure this element</p>
+                          )
+                        }
+                      >
+                        <span
+                          className={cn(
+                            "flex flex-1",
+                            (lockedByOther || lockUnknown) && "cursor-not-allowed",
+                          )}
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className={cn(
+                              "flex flex-1 items-center justify-center gap-2",
+                              (lockedByOther || lockUnknown) && "pointer-events-none",
+                            )}
+                            onClick={() => onEditElement(element)}
+                            disabled={lockedByOther || lockUnknown}
+                          >
+                            <Settings className="h-3 w-3" />
+                            Configure
+                          </Button>
+                        </span>
+                      </SimpleTooltip>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex-1 flex items-center justify-center gap-2"
+                        onClick={() => handleViewDetails(element)}
+                      >
+                        <Eye className="h-3 w-3" />
+                        Details
+                      </Button>
+                    </div>
+                  )}
+                </CardFooter>
+              </Card>
+            </div>
+
+            {/* ---- BACK FACE (Sign-in) — only for elements requiring auth ---- */}
+            {isBuiltIn && hasAuthField && (
+              <div
+                className="absolute inset-0 w-full"
+                style={{
+                  backfaceVisibility: "hidden",
+                  transform: "rotateY(180deg)",
+                }}
+              >
+                <Card className="bg-background-card shadow-card border-primary/30 h-full flex flex-col">
+                  <CardHeader className="py-4 px-6 border-b border-gray-800">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => toggleCardFlip(element.rid)}
+                        className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                      </button>
+                      <KeyRound className="h-5 w-5 text-primary" />
+                      <CardTitle className="text-lg font-heading">
+                        Authenticate
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="p-6 flex-grow flex flex-col justify-center">
+                    <div className="space-y-4">
+                      <p className="text-sm text-gray-400 text-center">
+                        Provide your credentials to use <span className="text-white font-medium">{element.name}</span>
+                      </p>
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-gray-300">API Key / Access Token</label>
+                        <Input
+                          type="password"
+                          placeholder="Enter your API key..."
+                          className="bg-background-dark border-gray-700 text-sm"
+                          value={authTokens[element.rid] ?? ""}
+                          onChange={(e) => setAuthTokens(prev => ({ ...prev, [element.rid]: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+
+                  <CardFooter className="px-6 py-3 border-t border-gray-800 bg-background-dark">
+                    <div className="flex gap-2 w-full">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => toggleCardFlip(element.rid)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="flex-1 bg-primary hover:bg-primary/80"
+                        disabled={!authTokens[element.rid]?.trim()}
+                        onClick={() => handleAuthSubmit(element.rid)}
+                      >
+                        <Check className="h-3 w-3 mr-1" />
+                        Authenticate
+                      </Button>
+                    </div>
+                  </CardFooter>
+                </Card>
               </div>
-            </CardFooter>
-          </Card>
+            )}
+          </div>
         </motion.div>
         );
       })}

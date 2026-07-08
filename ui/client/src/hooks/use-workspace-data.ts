@@ -418,6 +418,213 @@ export const useWorkspaceData = () => {
     [toast],
   );
 
+  // Fetch the annotated schema for a built-in resource (same schema as inventory,
+  // but each field has a readOnly hint based on the resource's configurable_keys)
+  const fetchBuiltinSchema = useCallback(
+    async (resourceId: string) => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const response = await axios.get(
+          `/resources/builtin.schema?resourceId=${resourceId}`,
+        );
+
+        const builtinSchema = response.data;
+        setElementSchema({
+          category: "",
+          name: "",
+          type: "",
+          description: "",
+          tags: [],
+          config_schema: builtinSchema,
+        });
+        return builtinSchema;
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.error || "Failed to fetch built-in schema";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error("Error fetching built-in schema:", err);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [toast],
+  );
+
+  // Save per-user configuration for a built-in resource (only non-readOnly fields)
+  const configureBuiltin = useCallback(
+    async (resourceId: string, config: Record<string, any>) => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const response = await axios.patch("/resources/builtin.configure", {
+          resourceId,
+          userId: USER_ID,
+          identityType: identityType,
+          config,
+        });
+
+        toast({
+          title: "Success",
+          description: "Built-in resource configured successfully",
+        });
+        return response.data;
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.error || "Failed to configure built-in resource";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error("Error configuring built-in:", err);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [toast, USER_ID, identityType],
+  );
+
+  // Create a built-in resource directly (admin only)
+  const saveBuiltinElement = useCallback(
+    async (
+      category: string,
+      type: string,
+      elementData: any,
+      availableToAll: boolean = true,
+      configurableKeys: string[] = [],
+      rid?: string,
+    ) => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        if (rid) {
+          const response = await axios.put("/resources/builtin.update", {
+            resourceId: rid,
+            config: elementData.cfg_dict,
+            name: elementData.name,
+            availableToAll,
+            configurableKeys,
+          });
+          toast({
+            title: "Success",
+            description: "Built-in resource updated successfully",
+          });
+          return response.data;
+        } else {
+          const { cfg_dict, name } = elementData;
+          const response = await axios.post("/resources/builtin.create", {
+            category,
+            type,
+            name,
+            config: cfg_dict,
+            availableToAll,
+            configurableKeys,
+          });
+          toast({
+            title: "Success",
+            description: "Built-in resource created successfully",
+          });
+          return response.data;
+        }
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.error || "Failed to save built-in resource";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error("Error saving built-in element:", err);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [toast],
+  );
+
+  // Toggle available_to_all status for a resource (admin only)
+  const toggleBuiltinStatus = useCallback(
+    async (resourceId: string, availableToAll: boolean) => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const response = await axios.patch("/resources/builtin.toggle", {
+          resourceId,
+          availableToAll,
+        });
+
+        toast({
+          title: "Success",
+          description: availableToAll
+            ? "Resource is now available to all users"
+            : "Resource is no longer available to all users",
+        });
+        return response.data;
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.error || "Failed to toggle resource status";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error("Error toggling built-in status:", err);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [toast],
+  );
+
+  // Delete a built-in/admin resource (admin only)
+  const deleteBuiltinElement = useCallback(
+    async (rid: string) => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        await axios.delete(`/resources/resource.delete?resourceId=${rid}`);
+
+        toast({
+          title: "Success",
+          description: "Built-in resource deleted successfully",
+        });
+        return true;
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.error || "Failed to delete built-in resource";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error("Error deleting built-in element:", err);
+        return false;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [toast],
+  );
+
   // Initialize categories on mount
   useEffect(() => {
     fetchCategories();
@@ -437,8 +644,13 @@ export const useWorkspaceData = () => {
     fetchElementActions,
     fetchResourcesForCategory,
     fetchResourceById,
+    fetchBuiltinSchema,
+    configureBuiltin,
     saveElement,
     deleteElement,
+    saveBuiltinElement,
+    toggleBuiltinStatus,
+    deleteBuiltinElement,
     refetchCategories: fetchCategories,
   };
 };
