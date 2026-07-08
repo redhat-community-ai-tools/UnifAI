@@ -25,6 +25,8 @@ interface ResourceInstance {
   contributed_by?: string;
   created: string;
   updated: string;
+  is_builtin?: boolean;
+  configurable_keys?: string[];
 }
 
 interface ResourcesListResponse {
@@ -115,6 +117,7 @@ export const useWorkspaceData = () => {
             updated: resource.updated,
             nested_refs: resource.nested_refs,
             contributed_by: resource.contributed_by,
+            isBuiltIn: resource.is_builtin ?? false,
           }),
         );
 
