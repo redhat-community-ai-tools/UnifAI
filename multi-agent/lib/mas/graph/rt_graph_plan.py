@@ -11,9 +11,10 @@ from mas.catalog.element_registry import ElementRegistry
 from mas.catalog.card_service import ElementCardService
 from mas.elements.common.card import ElementCard
 from mas.core.enums import ResourceCategory
+from mas.core.contracts import SupportsStepContext
 from .graph_plan import GraphPlan
-from .models import Step, RTStep
-from .models import StepContext
+from .models import AdjacentNodes, Step, RTStep, StepContext
+from .topology.finalizer_analyzer import FinalizerAnalyzer
 
 
 class RTGraphPlan:
@@ -111,9 +112,6 @@ class RTGraphPlan:
 
     def _create_runtime_step(self, step: Step) -> RTStep:
         """Create a runtime step from a logical step."""
-        from .models import AdjacentNodes
-        from .topology.finalizer_analyzer import FinalizerAnalyzer
-
         adjacent_nodes_dict = {}
 
         for other_step in self._logical_plan.steps:
@@ -150,13 +148,13 @@ class RTGraphPlan:
         )
 
         node_func = self._session.get_instance(ResourceCategory.NODE, step.rid)
-        if hasattr(node_func, "set_context"):
+        if isinstance(node_func, SupportsStepContext):
             node_func.set_context(step_context)
 
         condition_func = None
         if step.condition:
             condition_func = self._session.get_instance(ResourceCategory.CONDITION, step.condition.rid)
-            if hasattr(condition_func, "set_context"):
+            if isinstance(condition_func, SupportsStepContext):
                 condition_func.set_context(step_context)
 
         return RTStep(

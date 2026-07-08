@@ -1,11 +1,19 @@
 // StreamingDataContext.tsx
-import React, { createContext, useContext, useRef } from 'react';
-import { NodeEntry } from './chat/types'
+import React, { createContext, useContext, useRef, useCallback } from 'react';
+import type { NodeEntry, ApprovalStatus } from './chat/types';
+
+export type { NodeEntry };
 
 type StreamingContextType = {
   nodeListRef: React.MutableRefObject<Map<string, NodeEntry>>;
   forceUpdate: () => void;
   clearStream: () => void;
+  updateApprovalStatus: (
+    nodeUid: string,
+    requestId: string,
+    status: ApprovalStatus,
+    feedback?: string,
+  ) => void;
 };
 
 export const StreamingDataContext = createContext<StreamingContextType | null>(null);
@@ -17,12 +25,29 @@ export const StreamingDataProvider: React.FC<{ children: React.ReactNode }> = ({
   const forceUpdate = () => setTick(t => t + 1);
 
   const clearStream = () => {
-    nodeListRef.current.clear(); // Clears the stream
-    forceUpdate();               // Triggers re-render if needed
+    nodeListRef.current.clear();
+    forceUpdate();
   };
 
+  const updateApprovalStatus = useCallback(
+    (nodeUid: string, requestId: string, status: ApprovalStatus, feedback?: string) => {
+      for (const entry of nodeListRef.current.values()) {
+        const approval = entry.approvals?.find((a) => a.requestId === requestId);
+        if (approval) {
+          approval.status = status;
+          if (feedback) approval.feedback = feedback;
+          forceUpdate();
+          return;
+        }
+      }
+    },
+    [],
+  );
+
   return (
-    <StreamingDataContext.Provider value={{ nodeListRef, forceUpdate, clearStream }}>
+    <StreamingDataContext.Provider
+      value={{ nodeListRef, forceUpdate, clearStream, updateApprovalStatus }}
+    >
       {children}
     </StreamingDataContext.Provider>
   );

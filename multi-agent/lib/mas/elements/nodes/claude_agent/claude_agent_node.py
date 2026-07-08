@@ -1,28 +1,36 @@
-"""
-Claude Agent Node - Runs autonomous Claude Agent SDK sessions
+"""Claude Agent Node - Runs autonomous Claude Agent SDK sessions.
 
 Delegates work to a Claude Agent SDK session configured with
 model, tools, skills, and authentication credentials.
+
+Tool-call permissions are managed by the HITL system (via a
+``PreToolUse`` hook) instead of the SDK's built-in permission
+mode — the SDK always runs with ``bypassPermissions``.
 """
 
-from typing import Optional, Any, List, ClassVar, Dict
-from copy import deepcopy
+import logging
 import os
 import shutil
 import subprocess
 import tempfile
+from copy import deepcopy
+from typing import Optional, Any, List, ClassVar, Dict
 
 from claude_agent_sdk import (
     query, ClaudeAgentOptions, create_sdk_mcp_server,
     AssistantMessage, ResultMessage, TextBlock,
     ToolUseBlock, ToolResultBlock,
     ServerToolUseBlock, ServerToolResultBlock,
+    HookMatcher,
     UserMessage,
 )
 from global_utils.utils.async_bridge import get_async_bridge
+from mas.core.hitl.models import HITLMode, RequestOrigin
 from mas.graph.state.state_view import StateView
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.elements.nodes.common.base_node import BaseNode
+from mas.elements.nodes.common.capabilities.hitl_capable import HITLCapableMixin
+from mas.elements.nodes.common.capabilities.hitl_gatekeeper import HITLToolGatekeeper
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.retriever_capable import RetrieverCapableMixin
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
@@ -31,24 +39,33 @@ from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.claude_sdk_converter import ClaudeSDKConverter
 from mas.elements.nodes.claude_agent.identifiers import EffortLevel
 
+from .hitl_hook import HITLHook, CLAUDE_BUILTIN_ACCESS_MODES
+
+logger = logging.getLogger(__name__)
+
 
 class ClaudeAgentNode(
     WorkloadCapableMixin,
     IEMCapableMixin,
     RetrieverCapableMixin,
+    HITLCapableMixin,
     BaseNode,
 ):
-    """
-    Claude Agent Node - Runs Claude Agent SDK sessions autonomously.
+    """Claude Agent Node - Runs Claude Agent SDK sessions autonomously.
 
     Architecture:
     - Builds ClaudeAgentOptions from stored configuration
-    - Constructs environment with auth credentials (API key or Vertex AI)
+    - Constructs environment with auth credentials (Vertex AI)
     - Prepares working directory (optionally cloning skills repos)
     - Calls query() with the task content as prompt
     - Streams AssistantMessage text blocks as llm_token events
     - Converts ResultMessage to AgentResult
     - Routes response via IEM (same pattern as A2A node)
+
+    HITL integration:
+    - When HITL is active, a ``PreToolUse`` hook is attached to
+      ``ClaudeAgentOptions.hooks`` that gates every tool call through
+      the shared ``HITLToolGatekeeper``.
     """
 
     READS: ClassVar[set[str]] = set()
@@ -66,9 +83,6 @@ class ClaudeAgentNode(
             # Agent behavior
             system_prompt: str = "",
             max_turns: Optional[int] = 200,
-            permission_mode: str = "bypassPermissions",
-            allowed_tools: Optional[List[str]] = None,
-            disallowed_tools: Optional[List[str]] = None,
             # Skills
             skills_repos: Optional[Dict[str, str]] = None,
             cwd: Optional[str] = None,
@@ -78,13 +92,20 @@ class ClaudeAgentNode(
             tools: Optional[List[BaseTool]] = None,
             mcp_providers: Optional[List[Any]] = None,
             # Runtime context
-            execution_holder: Any = None,
             shared_storage: str = "/app/shared",
+            # HITL + execution context (forwarded to HITLCapableMixin)
+            hitl_mode: HITLMode = HITLMode.SKIP,
+            execution_holder: Any = None,
             # Standard
             retriever: Any = None,
             **kwargs: Any,
     ):
-        super().__init__(retriever=retriever, **kwargs)
+        super().__init__(
+            retriever=retriever,
+            hitl_mode=hitl_mode,
+            execution_holder=execution_holder,
+            **kwargs,
+        )
 
         self._vertex_project_id = vertex_project_id
         self._vertex_region = vertex_region
@@ -92,18 +113,11 @@ class ClaudeAgentNode(
         self._effort = effort
         self._system_prompt = system_prompt
         self._max_turns = max_turns
-        self._permission_mode = permission_mode
-        self._allowed_tools = allowed_tools or [
-            "Read", "Write", "Edit", "Bash",
-            "Glob", "Grep", "WebSearch", "WebFetch",
-        ]
-        self._disallowed_tools = disallowed_tools or []
         self._skills_repos = skills_repos or {}
         self._cwd = cwd
         self._env_vars = env_vars or {}
         self._domain_tools: List[BaseTool] = tools or []
         self._mcp_providers = mcp_providers or []
-        self._execution_holder = execution_holder
         self._shared_storage = shared_storage
 
         self._max_context_messages = 20
@@ -125,16 +139,7 @@ class ClaudeAgentNode(
     # ========== TASK PROCESSING ==========
 
     def handle_task_packet(self, packet) -> None:
-        """
-        Process task by running a Claude Agent SDK session.
-
-        Flow:
-        1. Extract and record task in workspace
-        2. Build prompt from conversation context
-        3. Execute Claude Agent SDK session
-        4. Create agent result from response
-        5. Route response based on task.should_respond
-        """
+        """Process task by running a Claude Agent SDK session."""
         task = None
         try:
             task = packet.extract_task()
@@ -156,12 +161,15 @@ class ClaudeAgentNode(
 
             self._route_response(task, agent_result, packet)
 
-            print(f"ClaudeAgent {self.uid}: Session completed "
-                  f"(turns={execution_metadata.get('num_turns')}, "
-                  f"cost=${execution_metadata.get('total_cost_usd', 0):.4f})")
+            logger.info(
+                "ClaudeAgent %s: Session completed (turns=%s, cost=$%.4f)",
+                self.uid,
+                execution_metadata.get("num_turns"),
+                execution_metadata.get("total_cost_usd", 0),
+            )
 
         except Exception as e:
-            print(f"ClaudeAgent {self.uid}: Error processing task: {e}")
+            logger.error("ClaudeAgent %s: Error processing task: %s", self.uid, e)
             error_result = AgentResult(
                 content=f"Error running Claude Agent SDK: {str(e)}",
                 agent_id=self.uid,
@@ -177,12 +185,7 @@ class ClaudeAgentNode(
     # ========== CONTEXT BUILDING ==========
 
     def _build_prompt(self, task: Task) -> str:
-        """
-        Build prompt from task content, workspace history, and retriever.
-
-        Same context-building logic as A2A node but combined into
-        a single string prompt for the SDK query() call.
-        """
+        """Build prompt from task content, workspace history, and retriever."""
         context_parts = []
 
         if task.thread_id:
@@ -191,7 +194,6 @@ class ClaudeAgentNode(
             )
             history = deepcopy(workspace_messages)
 
-            # Pop user prompt from end if it duplicates the task
             if (
                 history
                 and hasattr(history[-1], "role")
@@ -248,8 +250,7 @@ class ClaudeAgentNode(
     def _execute_claude_session(
         self, prompt: str
     ) -> tuple[str, Dict[str, Any]]:
-        """
-        Execute Claude Agent SDK session synchronously.
+        """Execute Claude Agent SDK session synchronously.
 
         Uses AsyncBridge to run the async query() generator.
         Streams text blocks as llm_token events if streaming is active.
@@ -289,32 +290,6 @@ class ClaudeAgentNode(
                                     "call_id": block.id,
                                     "args": block.input,
                                 })
-
-                    # elif isinstance(block, ToolResultBlock):
-                    #     if self.is_streaming():
-                    #         self._stream({
-                    #             "type": "tool_result",
-                    #             "tool": tool_id_to_name.get(
-                    #                 block.tool_use_id, "unknown"
-                    #             ),
-                    #             "call_id": block.tool_use_id,
-                    #             "output": self._extract_tool_result_text(
-                    #                 block.content
-                    #             ),
-                    #         })
-
-                    # elif isinstance(block, ServerToolResultBlock):
-                    #     if self.is_streaming():
-                    #         self._stream({
-                    #             "type": "tool_result",
-                    #             "tool": tool_id_to_name.get(
-                    #                 block.tool_use_id, "unknown"
-                    #             ),
-                    #             "call_id": block.tool_use_id,
-                    #             "output": self._extract_tool_result_text(
-                    #                 block.content
-                    #             ),
-                    #         })
 
             elif isinstance(message, UserMessage):
                 if isinstance(message.content, list):
@@ -383,7 +358,7 @@ class ClaudeAgentNode(
 
     def _collect_tools(self) -> List[BaseTool]:
         """Gather all tools (domain + MCP providers)."""
-        all_tools: List[BaseTool] = list[BaseTool](self._domain_tools)
+        all_tools: List[BaseTool] = list(self._domain_tools)
 
         for provider in self._mcp_providers:
             all_tools.extend(provider.get_tools())
@@ -397,10 +372,8 @@ class ClaudeAgentNode(
 
         kwargs: Dict[str, Any] = {
             "model": self._model,
+            "permission_mode": "bypassPermissions",
             "effort": self._effort.value,
-            "permission_mode": self._permission_mode,
-            "allowed_tools": self._allowed_tools,
-            "disallowed_tools": self._disallowed_tools,
             "max_turns": self._max_turns,
             "cwd": work_dir,
             "env": env,
@@ -417,7 +390,58 @@ class ClaudeAgentNode(
                 ),
             }
 
+        hitl_hook = self._build_hitl_hook()
+        if hitl_hook is not None:
+            kwargs["hooks"] = {"PreToolUse": [hitl_hook]}
+            logger.info(
+                "ClaudeAgent %s: PreToolUse HITL hook attached", self.uid,
+            )
+        else:
+            logger.info(
+                "ClaudeAgent %s: HITL hook NOT attached "
+                "(hitl_mode=%s, gate=%s, policy=%s)",
+                self.uid,
+                self._hitl_mode.value,
+                self._approval_gate is not None,
+                self._approval_policy is not None,
+            )
+
         return ClaudeAgentOptions(**kwargs)
+
+    # ========== HITL HOOK ==========
+
+    def _build_hitl_hook(self) -> Optional[HookMatcher]:
+        """Build a ``PreToolUse`` HookMatcher if HITL is active."""
+        if not self._should_activate_hitl():
+            return None
+
+        origin = RequestOrigin(
+            node_uid=self.uid,
+            node_display_name=self.display_name,
+            session_id=self.hitl_session_id,
+        )
+
+        tool_registry: Dict[str, BaseTool] = {t.name: t for t in self._domain_tools}
+        for provider in self._mcp_providers:
+            for tool in provider.get_tools():
+                tool_registry[tool.name] = tool
+
+        gatekeeper = HITLToolGatekeeper(
+            gate=self._approval_gate,
+            policy=self._approval_policy,
+            tool_registry=tool_registry,
+            origin=origin,
+            builtin_access_modes=CLAUDE_BUILTIN_ACCESS_MODES,
+        )
+
+        logger.info(
+            "ClaudeAgent %s: HITL hook enabled (hitl_mode=%s) with %d registered tools",
+            self.uid, self._hitl_mode.value, len(tool_registry),
+        )
+
+        return HookMatcher(hooks=[HITLHook(gatekeeper)])
+
+    # ========== ENVIRONMENT ==========
 
     def _build_env(self) -> Dict[str, str]:
         """Build environment variables for Vertex AI SDK authentication."""
@@ -430,14 +454,7 @@ class ClaudeAgentNode(
         return env
 
     def _prepare_working_directory(self) -> str:
-        """
-        Prepare working directory for the Claude agent session.
-
-        Path: /tmp/{session_id}/{node_uid}/
-        Reuses an existing directory for the same session + node,
-        giving persistence across multiple prompts in one session.
-        Falls back to a random temp dir when session_id is unavailable.
-        """
+        """Prepare working directory for the Claude agent session."""
         if self._cwd:
             work_dir = self._cwd
         elif self.session_id:
@@ -455,13 +472,7 @@ class ClaudeAgentNode(
         return work_dir
 
     def _clone_skills_repos(self, base_dir: str) -> None:
-        """Install skills into .claude/skills/ within the working directory.
-
-        Each entry maps a git repo URL to a path within it pointing to
-        the skill folder. The repo is shallow-cloned into a temp directory,
-        the skill subfolder is copied to .claude/skills/{folder_name}/,
-        and the temp clone is removed.
-        """
+        """Install skills into .claude/skills/ within the working directory."""
         skills_dir = os.path.join(base_dir, ".claude", "skills")
         os.makedirs(skills_dir, exist_ok=True)
 
@@ -472,10 +483,9 @@ class ClaudeAgentNode(
             try:
                 self._install_skill(repo_url, skill_path, skills_dir)
             except Exception as e:
-                print(
-                    f"ClaudeAgent {self.uid}: "
-                    f"Failed to install skill from {repo_url} "
-                    f"(path: {skill_path}): {e}"
+                logger.error(
+                    "ClaudeAgent %s: Failed to install skill from %s (path: %s): %s",
+                    self.uid, repo_url, skill_path, e,
                 )
 
     def _install_skill(
@@ -548,10 +558,7 @@ class ClaudeAgentNode(
         agent_result: AgentResult,
         original_packet,
     ) -> None:
-        """
-        Route response based on task.should_respond.
-        Same routing logic as A2A/Custom agent nodes.
-        """
+        """Route response based on task.should_respond."""
         if not task.should_respond:
             self._execute_normal_broadcast(task, agent_result)
         else:

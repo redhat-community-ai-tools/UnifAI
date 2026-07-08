@@ -133,6 +133,7 @@ export function useGraphDisplay({
         width: NODE_WIDTH,
         nodeHeight: size.height,
         nodeRid: n.nodeDefinition?.rid,
+        hitlMode: n.nodeDefinition?.config?.hitl_mode as string | undefined,
       });
 
       if (!hasElements) continue;

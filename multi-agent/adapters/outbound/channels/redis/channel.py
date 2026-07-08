@@ -79,9 +79,6 @@ class RedisSessionChannel(SessionChannel):
         self._redis.srem(ACTIVE_SESSIONS_KEY, self._session_id)
         self._redis.delete(self._stream_key)
 
-    def supports_input(self) -> bool:
-        return True
-
     def _touch_ttl(self) -> None:
         if self._ttl > 0:
             self._redis.expire(self._stream_key, self._ttl)

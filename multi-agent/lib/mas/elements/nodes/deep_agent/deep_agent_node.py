@@ -11,8 +11,6 @@ The Deep Agent graph is compiled lazily on first ``run()`` because MCP tools
 require network initialization that isn't available at ``__init__`` time.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 import tempfile
@@ -26,7 +24,7 @@ from langchain_core.tools import BaseTool as LangChainBaseTool
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 
-from mas.core.execution_context import ExecutionContextHolder
+from mas.core.hitl.models import HITLMode, RequestOrigin
 from mas.elements.llms.common.base_llm import BaseLLM
 from mas.elements.llms.common.chat.converter import LangChainConverter, normalise_content
 from mas.elements.llms.common.chat.message import ChatMessage, Role
@@ -35,8 +33,10 @@ from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.retriever_capable import RetrieverCapableMixin
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
+from mas.elements.nodes.common.capabilities.hitl_capable import HITLCapableMixin
 from mas.elements.nodes.common.workload import AgentResult, Task
 from mas.elements.providers.mcp_server_client.mcp_provider import McpProvider
+from mas.elements.nodes.deep_agent.hitl_middleware import HITLMiddleware
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.converter import LangChainToolsConverter
 
@@ -67,6 +67,7 @@ class DeepAgentNode(
     WorkloadCapableMixin,
     IEMCapableMixin,
     RetrieverCapableMixin,
+    HITLCapableMixin,
     BaseNode,
 ):
     """Agent node that delegates to a LangChain Deep Agent for execution.
@@ -93,11 +94,17 @@ class DeepAgentNode(
         retriever: Any = None,
         cwd: Optional[str] = None,
         env_vars: Optional[Dict[str, str]] = None,
-        execution_holder: Optional[ExecutionContextHolder] = None,
+        execution_holder=None,
         shared_storage: str = "/app/shared",
+        hitl_mode: HITLMode = HITLMode.SKIP,
         **kwargs: Any,
     ) -> None:
-        super().__init__(retriever=retriever, **kwargs)
+        super().__init__(
+            retriever=retriever,
+            hitl_mode=hitl_mode,
+            execution_holder=execution_holder,
+            **kwargs,
+        )
 
         self._llm = llm
         self._domain_tools: List[BaseTool] = tools or []
@@ -105,24 +112,9 @@ class DeepAgentNode(
         self._system_message = system_message
         self._cwd = cwd
         self._env_vars: Dict[str, str] = env_vars or {}
-        self._execution_holder = execution_holder
         self._shared_storage = shared_storage
 
         self._compiled_agent: Any = None
-
-    # ==================================================================
-    # Session context
-    # ==================================================================
-
-    @property
-    def session_id(self) -> str:
-        """Get session_id from execution context (filled at runtime by the runner)."""
-        if self._execution_holder is None:
-            return ""
-        try:
-            return self._execution_holder.context.session_id
-        except (RuntimeError, AttributeError):
-            return ""
 
     # ==================================================================
     # Graph lifecycle
@@ -153,16 +145,58 @@ class DeepAgentNode(
         return LangChainToolsConverter.to_lc(all_domain_tools)
 
     def _build_deep_agent(self, tools: List[LangChainBaseTool]) -> Any:
-        """Compile a Deep Agent graph with LocalShellBackend for filesystem access."""
+        """Compile a Deep Agent graph with LocalShellBackend for filesystem access.
+
+        When HITL is active (gate + policy injected), a ``HITLMiddleware``
+        is added to the Deep Agent's middleware stack.  The middleware
+        intercepts tool calls inside LangGraph's tool node, using the
+        same ``ApprovalGate`` / ``ToolApprovalPolicy`` as the native
+        ``HITLExecutionHandler``.
+        """
         adapter = BaseLLMChatModelAdapter(llm=self._llm)
         backend = self._build_backend()
+        middleware = self._build_middleware()
 
         return create_deep_agent(
             model=adapter,
             tools=tools or None,
             system_prompt=self._system_message or None,
             backend=backend,
+            middleware=middleware,
         )
+
+    # ==================================================================
+    # HITL middleware
+    # ==================================================================
+
+    def _build_middleware(self) -> list:
+        """Assemble the middleware stack for Deep Agent compilation."""
+        middleware: list = []
+
+        if self._should_activate_hitl():
+            origin = RequestOrigin(
+                node_uid=self.uid,
+                node_display_name=self.display_name,
+                session_id=self.hitl_session_id,
+            )
+            tool_registry = {t.name: t for t in self._domain_tools}
+            for provider in self._mcp_providers:
+                for tool in provider.get_tools():
+                    tool_registry[tool.name] = tool
+
+            middleware.append(HITLMiddleware(
+                gate=self._approval_gate,
+                policy=self._approval_policy,
+                tool_registry=tool_registry,
+                origin=origin,
+            ))
+            logger.info(
+                "DeepAgent %s: HITL middleware enabled with %d registered tools",
+                self.uid,
+                len(tool_registry),
+            )
+
+        return middleware
 
     # ==================================================================
     # Backend / working directory
@@ -184,8 +218,8 @@ class DeepAgentNode(
         """
         if self._cwd:
             work_dir = self._cwd
-        elif self.session_id:
-            work_dir = os.path.join(self._shared_storage, self.session_id, self.uid)
+        elif self.hitl_session_id:
+            work_dir = os.path.join(self._shared_storage, self.hitl_session_id, self.uid)
         else:
             work_dir = tempfile.mkdtemp(prefix="deep_agent_")
 

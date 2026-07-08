@@ -204,6 +204,7 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
             isLiveRequest={hub.isLiveRequest}
             isCancelled={hub.isCancelled}
             isGraphVisible={carousel.carouselMode !== 'chat'}
+            hitlEnabled={hub.selectedSession.hitlEnabled}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-gray-400 text-sm">

@@ -31,6 +31,7 @@ class ExecutionMode(Enum):
     """Different modes of agent execution."""
     AUTO = "auto"          # Automatically execute all actions
     GUIDED = "guided"      # Ask for confirmation before execution
+    HITL = "hitl"          # Gate WRITE tools through human approval
 
 
 class ExecutionHandler(ABC):
@@ -226,42 +227,3 @@ class GuidedExecutionHandler(ExecutionHandler):
         return len(self.pending_actions) == 0
 
 
-class ExecutionHandlerFactory:
-    """
-    Factory for creating execution handlers.
-    
-    Provides a clean way to create handlers without tight coupling
-    to concrete implementations.
-    """
-    
-    @staticmethod
-    def create(
-        mode: ExecutionMode, 
-        action_executor: AgentActionExecutor,
-        **kwargs
-    ) -> ExecutionHandler:
-        """
-        Create an execution handler for the specified mode.
-        
-        Args:
-            mode: Execution mode
-            action_executor: Action executor instance
-            **kwargs: Additional handler-specific configuration
-            
-        Returns:
-            Appropriate execution handler instance
-            
-        Raises:
-            ValueError: If mode is not supported
-        """
-        if mode == ExecutionMode.AUTO:
-            return AutoExecutionHandler(action_executor)
-        elif mode == ExecutionMode.GUIDED:
-            return GuidedExecutionHandler(action_executor)
-        else:
-            raise ValueError(f"Unsupported execution mode: {mode}")
-    
-    @staticmethod
-    def get_supported_modes() -> List[ExecutionMode]:
-        """Get list of supported execution modes."""
-        return [ExecutionMode.AUTO, ExecutionMode.GUIDED]

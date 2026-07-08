@@ -1,15 +1,16 @@
 import { ElementValidationResult } from "@/types/validation";
 import { BADGE_BG, BADGE_BORDER, CATEGORY_TYPE_TO_PLURAL, ELEMENT_BADGE_HEIGHT, NODE_HEADER_HEIGHT, nodeIconForType, OverlayBadge, OverlayHeader, STATUS_STYLES } from "./GraphDisplayHelpers";
 import { motion } from "framer-motion";
-import { Eye } from "lucide-react";
+import { Eye, ShieldCheck } from "lucide-react";
 import { getCategoryDisplay } from "@/components/shared/helpers";
 import NodeValidationIndicator from "./NodeValidationIndicator";
+import SimpleTooltip from "@/components/shared/SimpleTooltip";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export type NodeStatus = "IDLE" | "PROGRESS" | "DONE" | "CANCELLED";
+export type NodeStatus = "IDLE" | "PROGRESS" | "DONE" | "CANCELLED" | "PENDING_APPROVAL";
 
 /**
  * Per-node overlay: status border ring, header (icon + label + status pill),
@@ -27,6 +28,7 @@ export function AgentNodeOverlay({
   isValidating,
   interactive,
   previewMode = false,
+  hitlEnabled = false,
   onValidationClick,
   onBadgeClick,
 }: {
@@ -40,10 +42,12 @@ export function AgentNodeOverlay({
   /** When true, badges are non-interactive (clicks pass through) except for
    *  a preview button that triggers onBadgeClick. Used in the creation canvas. */
   previewMode?: boolean;
+  /** When true, nodes with hitl_mode "dynamic" show the HITL tag. */
+  hitlEnabled?: boolean;
   onValidationClick: (result: ElementValidationResult) => void;
   onBadgeClick: (elementId: string) => void;
 }) {
-  const hasStatus = nodeStatus === "PROGRESS" || nodeStatus === "DONE" || nodeStatus === "CANCELLED";
+  const hasStatus = nodeStatus === "PROGRESS" || nodeStatus === "DONE" || nodeStatus === "CANCELLED" || nodeStatus === "PENDING_APPROVAL";
   const hdrHeight = hdr.hasElements ? NODE_HEADER_HEIGHT : hdr.nodeHeight;
   const icon = nodeIconForType(hdr.nodeType);
   const circleSize = Math.max(20 / sx, 26);
@@ -65,7 +69,7 @@ export function AgentNodeOverlay({
           flexShrink: 0,
         }}
       >
-        {nodeStatus === "PROGRESS" ? (
+        {nodeStatus === "PROGRESS" || nodeStatus === "PENDING_APPROVAL" ? (
           <motion.div
             style={{ width: dotSize, height: dotSize, borderRadius: "50%", background: s.dotColor }}
             animate={{ opacity: [1, 0.3, 1] }}
@@ -85,8 +89,36 @@ export function AgentNodeOverlay({
   const showValidation = isValidating || !!validationResult;
   const indicatorSize = Math.max(24 / sx, 28);
 
+  // HITL tag visibility: always for "ask", conditionally for "dynamic"
+  const showHitlTag = hdr.hitlMode === "ask" || (hitlEnabled && hdr.hitlMode === "dynamic");
+
   return (
     <>
+      {/* HITL tag (top-right corner) */}
+      {showHitlTag && (
+        <div
+          className="absolute z-10 pointer-events-auto"
+          style={{
+            left: hdr.x + hdr.width - (showValidation ? indicatorSize * 0.45 + 52 : 52),
+            top: hdr.y - 10,
+          }}
+        >
+          <SimpleTooltip content={<p>Human-in-the-Loop enabled: tool calls require approval</p>}>
+            <div
+              className="flex items-center gap-1 rounded-full px-2 py-0.5"
+              style={{
+                background: "rgba(234, 179, 8, 0.2)",
+                border: "1px solid rgba(234, 179, 8, 0.5)",
+                fontSize: Math.max(8 / sx, 10),
+              }}
+            >
+              <ShieldCheck style={{ width: Math.max(10 / sx, 12), height: Math.max(10 / sx, 12), color: "rgb(234, 179, 8)" }} />
+              <span style={{ color: "rgb(234, 179, 8)", fontWeight: 600, whiteSpace: "nowrap" }}>HITL</span>
+            </div>
+          </SimpleTooltip>
+        </div>
+      )}
+
       {/* Status border (colored ring + glow around active nodes) */}
       {hasStatus && (() => {
         const s = STATUS_STYLES[nodeStatus!];
@@ -99,7 +131,7 @@ export function AgentNodeOverlay({
           border: `${s.strokeWidth}px solid ${s.stroke}`,
           boxShadow: s.boxShadow,
         };
-        return nodeStatus === "PROGRESS" ? (
+        return nodeStatus === "PROGRESS" || nodeStatus === "PENDING_APPROVAL" ? (
           <motion.div
             className="absolute"
             style={borderStyle}

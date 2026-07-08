@@ -5,6 +5,7 @@ from .identifiers import Identifier
 from mas.core.ref.models import LLMRef, RetrieverRef, ToolRef, ProviderRef
 from mas.elements.nodes.common.agent.constants import StrategyType
 from mas.core.field_hints import ApiHint, HintType, SelectionType
+from mas.core.hitl.models import HITLMode
 
 
 class CustomAgentNodeConfig(NodeBaseConfig):
@@ -40,3 +41,7 @@ class CustomAgentNodeConfig(NodeBaseConfig):
     system_message: str = Field("", description="Custom system prompt")
     strategy_type: str = Field(default=StrategyType.REACT.value, description="Agent strategy type")
     max_rounds: Optional[int] = Field(default=100, description="Maximum number of agent execution rounds")
+    hitl_mode: HITLMode = Field(
+        default=HITLMode.SKIP,
+        description="HITL approval mode: ask (always), skip (never), dynamic (runtime flag)",
+    )

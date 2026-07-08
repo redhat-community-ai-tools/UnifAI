@@ -6,6 +6,7 @@ from global_utils.utils.util import validate_arguments
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.elements.providers.mcp_server_client.mcp_server_client import McpServerClient
 from mas.elements.providers.mcp_server_client.transport.enums import McpTransportType
+from mas.core.hitl.models import ToolAccessMode
 from mas.elements.tools.common.base_tool import BaseTool
 from global_utils.utils.util import json_schema_model
 from mas.core.auth.credentials.credential import AuthCredential
@@ -19,6 +20,7 @@ class McpProxyToolError(Exception):
 
 
 class McpProxyTool(BaseTool):
+    access_mode: ToolAccessMode = ToolAccessMode.WRITE
     """
     A proxy tool that forwards calls to MCP server tools by creating fresh clients per portal.
     This approach eliminates cross-event-loop thread safety issues by avoiding shared state.
