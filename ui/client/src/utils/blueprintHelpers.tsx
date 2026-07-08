@@ -87,7 +87,8 @@ const FILE_UPLOAD_UNSUPPORTED_NODE_TYPES = [
  * Returns false if any node in the blueprint uses an unsupported agent type.
  */
 export function blueprintSupportsFileUpload(specDict: any): boolean {
-  const nodes: any[] = specDict?.nodes ?? [];
+  const raw = specDict?.nodes;
+  const nodes: any[] = Array.isArray(raw) ? raw : [];
   return !nodes.some(
     (n) => FILE_UPLOAD_UNSUPPORTED_NODE_TYPES.includes(n.type ?? n.config?.type)
   );
