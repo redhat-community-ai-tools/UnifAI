@@ -199,8 +199,9 @@ Wrap the entire output inside a `## ARCHITECTURE REVIEW` header. Structure the o
 ### Formatting Rules
 
 1. **Never render empty sections.** If a review dimension has zero findings, list it as a single ✅ line under Review Evidence. Do NOT create a heading, table, or "None." declaration for it.
-2. **One finding = one self-contained block.** Each finding must contain the file path(s), the problem description, and the fix — all in one place. Do NOT split recommendations into a separate section.
+2. **One finding = one self-contained block.** Each finding must contain the file path(s), the problem description, the severity justification, and the fix — all in one place. Do NOT split recommendations into a separate section.
 3. **Inline the fix.** Use a bold **Fix →** prefix within each finding block. There is no separate "Recommended Improvements" section.
+3a. **Justify the severity.** Use a bold **Why {Severity} →** line (e.g. **Why Major →**) in each finding block. Cite which rubric criteria from `.cursor/skills/pipeline/modes/_severity-rubric.md` the finding meets. This is mandatory — a finding without severity justification is incomplete.
 4. **Use severity badges.** Prefix finding sections with: 🔴 Critical, 🟠 Major, 🟡 Warning, 🔵 Info.
 5. **Tag the review dimension.** Each finding must include a category tag showing which Review Dimension (§1–§10) it came from — e.g. `Hex Compliance`, `Import Rules`, `Duplication`, `Error Handling`, `Efficiency`. Place it on the title line after the severity badge.
 6. **File paths are mandatory.** Every finding at WARNING or above must include at least one `file:line` reference. INFO items should include file references where applicable.
@@ -267,6 +268,8 @@ Number findings sequentially within this section. Render each as a standalone bl
 
 {What's wrong — 1-2 sentences max}
 
+**Why Critical →** {1-sentence justification citing which rubric criteria are met: invariant broken, blast radius, failure mode, detection difficulty, reversibility}
+
 **Fix →** {concrete remediation with code example if helpful}
 ```
 
@@ -276,7 +279,19 @@ Omit this section entirely if there are zero critical findings.
 
 ### Section 4: 🟠 Major Findings (only if any exist)
 
-Number findings sequentially within this section. Same block format as Critical Findings.
+Number findings sequentially within this section. Same block format as Critical Findings, with severity justification:
+
+```
+#### 🟠 1. [{Review Dimension}] {Concise title}
+
+**`{file:line}`** {— additional files if applicable}
+
+{What's wrong — 1-2 sentences max}
+
+**Why Major →** {1-sentence justification citing which 2+ rubric criteria are met: rule violated, blast radius, failure mode, detection, reversibility}
+
+**Fix →** {concrete remediation}
+```
 
 Example: `#### 🟠 1. [SOLID] Service violates SRP with 12 public methods in two unrelated clusters`
 
@@ -284,10 +299,12 @@ Omit this section entirely if there are zero major findings.
 
 ### Section 5: 🟡 Warnings (only if any exist)
 
-Number findings sequentially within this section. Same block format as Critical Findings. For multi-file warnings (e.g., duplication across services), include a table of affected files within the block:
+Number findings sequentially within this section. Same block format. For multi-file warnings (e.g., duplication across services), include a table of affected files within the block:
 
 ```
 #### 🟡 1. [{Review Dimension}] {Concise title}
+
+**`{file:line}`** {— or table of files if multi-file}
 
 | File | Lines |
 |------|-------|
@@ -295,6 +312,8 @@ Number findings sequentially within this section. Same block format as Critical 
 | `{file2}` | {lines} |
 
 {What's wrong — 1-2 sentences}
+
+**Why Warning →** {1-sentence justification: contained blast radius, no runtime failure, trivially reversible, or convention deviation}
 
 **Fix →** {remediation}
 ```
@@ -312,6 +331,8 @@ Number findings sequentially within this section. Render each INFO item as a col
 <summary>🔵 1. [{Review Dimension}] <b>{title}</b> — <code>{file:line}</code></summary>
 
 {description — 1-3 sentences}
+
+**Why Info →** {reason: pre-existing tech debt, established pattern, cosmetic, or duplicate root cause}
 
 **Fix →** {remediation}
 </details>
