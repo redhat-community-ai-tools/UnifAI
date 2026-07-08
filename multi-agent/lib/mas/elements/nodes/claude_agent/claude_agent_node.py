@@ -99,7 +99,7 @@ class ClaudeAgentNode(
             execution_holder: Any = None,
             # Standard
             retriever: Any = None,
-            sandbox: Optional["BaseSandbox"] = None,
+            sandbox: Optional[BaseSandbox] = None,
             **kwargs: Any,
     ):
         super().__init__(
@@ -125,14 +125,6 @@ class ClaudeAgentNode(
 
         self._max_context_messages = 20
 
-    @property
-    def session_id(self) -> str:
-        if self._execution_holder is None:
-            return ""
-        try:
-            return self._execution_holder.context.session_id
-        except RuntimeError:
-            return ""
 
     def run(self, state: StateView) -> StateView:
         """Main entry point - process all incoming TaskPackets."""
@@ -397,13 +389,13 @@ class ClaudeAgentNode(
 
         bind_tool_context(
             self._domain_tools,
-            session_id=self.session_id,
+            session_id=self.hitl_session_id,
             agent_id=self.uid,
         )
 
         if self._sandbox is not None:
             self._sandbox.bind_context(
-                session_id=self.session_id,
+                session_id=self.hitl_session_id,
                 agent_id=self.uid,
             )
 
@@ -492,7 +484,7 @@ class ClaudeAgentNode(
     def _configure_sandbox_tools(
         self,
         kwargs: Dict[str, Any],
-        sandbox_tool: "BaseSandbox",
+        sandbox_tool: BaseSandbox,
     ) -> None:
         """Configure Mode 3: disable built-ins, inject sandbox replacements."""
         from mas.elements.nodes.claude_agent.sandbox_tools import (
@@ -531,9 +523,9 @@ class ClaudeAgentNode(
         """Prepare working directory for the Claude agent session."""
         if self._cwd:
             work_dir = self._cwd
-        elif self.session_id:
+        elif self.hitl_session_id:
             work_dir = os.path.join(
-                self._shared_storage, self.session_id, self.uid
+                self._shared_storage, self.hitl_session_id, self.uid
             )
         else:
             work_dir = tempfile.mkdtemp(prefix="claude_agent_")

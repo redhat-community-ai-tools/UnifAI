@@ -149,13 +149,13 @@ class DeepAgentNode(
 
         bind_tool_context(
             self._domain_tools,
-            session_id=self.session_id,
+            session_id=self.hitl_session_id,
             agent_id=self.uid,
         )
 
         if self._sandbox is not None:
             self._sandbox.bind_context(
-                session_id=self.session_id,
+                session_id=self.hitl_session_id,
                 agent_id=self.uid,
             )
 
