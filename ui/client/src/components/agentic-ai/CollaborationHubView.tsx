@@ -8,7 +8,7 @@
  * adds the ~150 lines of collaboration wiring.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import axios from "@/http/axiosAgentConfig";
 import { cancelSession, submitSession } from "@/api/sessions";
 import {
@@ -26,6 +26,7 @@ import { useSessionHub } from "@/hooks/use-session-hub";
 import { useCarouselLayout } from "@/hooks/use-carousel-layout";
 import { useDefaultPrompts } from "@/hooks/use-default-prompts";
 import { sortSessionsByTimestamp } from "@/utils/sessionHelpers";
+import { blueprintSupportsFileUpload } from "@/utils/blueprintHelpers";
 import {
   CollaborationHubSessionSidebar,
   CollaborationHubMainColumn,
@@ -346,6 +347,13 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
   // ── Prompt shortcuts ───────────────────────────────────────────────────
   const defaultPrompts = useDefaultPrompts(hub);
 
+  const fileUploadEnabled = useMemo(() => {
+    const blueprintId = hub.selectedSession?.blueprintId;
+    if (!blueprintId) return true;
+    const spec = hub.blueprintSpecCache.get(blueprintId);
+    return spec ? blueprintSupportsFileUpload(spec) : true;
+  }, [hub.selectedSession?.blueprintId, hub.blueprintSpecCache]);
+
   // ── Loading / Error ────────────────────────────────────────────────────
   if (hub.isLoading) {
     return (
@@ -396,6 +404,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
               typingUsers={typingUsers}
               teamMembers={teamMembers}
               defaultPrompts={defaultPrompts}
+              fileUploadEnabled={fileUploadEnabled}
               triggerExecution={triggerExecution}
               onCancelSession={handleCancelSession}
               getSessionParticipantMembers={getSessionParticipantMembers}

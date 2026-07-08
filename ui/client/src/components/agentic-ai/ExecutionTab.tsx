@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
@@ -15,6 +15,7 @@ import { AnimatedPanelLayout } from "@/components/shared/AnimatedPanelLayout";
 import { AddFlowModal, DeleteSessionModal } from "@/components/shared/SessionModals";
 import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
 import type { PromptShortcut } from "@/api/blueprints";
+import { blueprintSupportsFileUpload } from "@/utils/blueprintHelpers";
 
 /**
  * Session execution payload (fire-and-forget submit + stream subscribe pattern)
@@ -54,6 +55,13 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
   const isChatOnlyMode = hub.selectedSession?.fromSharedLink ?? false;
 
   const defaultPrompts = useDefaultPrompts(hub);
+
+  const fileUploadEnabled = useMemo(() => {
+    const blueprintId = hub.selectedSession?.blueprintId;
+    if (!blueprintId) return true;
+    const spec = hub.blueprintSpecCache.get(blueprintId);
+    return spec ? blueprintSupportsFileUpload(spec) : true;
+  }, [hub.selectedSession?.blueprintId, hub.blueprintSpecCache]);
 
   const carousel = useCarouselLayout({
     defaultChatPercent: 65,
@@ -144,6 +152,7 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
           isLiveRequest={hub.isLiveRequest}
           isSubmitting={hub.sessionStream.isSubmitting}
           defaultPrompts={defaultPrompts}
+          fileUploadEnabled={fileUploadEnabled}
         />
       )}
 

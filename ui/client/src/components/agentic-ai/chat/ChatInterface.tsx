@@ -84,6 +84,7 @@ interface ChatInterfaceProps {
   teamMembers?: MemberDisplay[];
   typingUsers?: string[];
   defaultPrompts?: PromptShortcut[];
+  fileUploadEnabled?: boolean;
 }
 
 export default function ChatInterface({
@@ -110,6 +111,7 @@ export default function ChatInterface({
   teamMembers = [],
   typingUsers = [],
   defaultPrompts,
+  fileUploadEnabled = true,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -1633,14 +1635,16 @@ export default function ChatInterface({
           )}
 
           {/* Input area */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.csv,.txt,.html,.md,application/pdf,text/csv,text/plain,text/html,text/markdown"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
+          {fileUploadEnabled && (
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.csv,.txt,.html,.md,application/pdf,text/csv,text/plain,text/html,text/markdown"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+          )}
           <div className="relative">
             <Textarea
               ref={textareaRef}
@@ -1651,7 +1655,7 @@ export default function ChatInterface({
               }}
               onKeyDown={handleKeyDown}
               placeholder={getInputPlaceholder()}
-              className={`bg-background-dark resize-none transition-[height] duration-200 ease-out w-full pl-10 pr-12 ${
+              className={`bg-background-dark resize-none transition-[height] duration-200 ease-out w-full ${fileUploadEnabled ? 'pl-10' : 'pl-4'} pr-12 ${
                 isInputDisabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{ height: `${TEXTAREA_MIN_HEIGHT}px` }}
@@ -1659,15 +1663,17 @@ export default function ChatInterface({
               disabled={isInputDisabled}
             />
             {/* Paperclip button inside textarea, bottom-left */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isInputDisabled || attachedFiles.length >= FILE_MAX_COUNT}
-              className="absolute bottom-2.5 left-2.5 p-1 rounded text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              title="Attach file (PDF, CSV, TXT, HTML, Markdown)"
-              type="button"
-            >
-              <Paperclip className="h-4 w-4" />
-            </button>
+            {fileUploadEnabled && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isInputDisabled || attachedFiles.length >= FILE_MAX_COUNT}
+                className="absolute bottom-2.5 left-2.5 p-1 rounded text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Attach file (PDF, CSV, TXT, HTML, Markdown)"
+                type="button"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+            )}
             {/* Expand/Collapse icon - shows when textarea is at max height or expanded */}
             <AnimatePresence>
               {(isAtMaxHeight || isExpanded) && (

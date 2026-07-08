@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { usePublicChat } from "@/hooks/use-public-chat";
 import { getBlueprintInfo, type PromptShortcut } from "@/api/blueprints";
+import { blueprintSupportsFileUpload } from "@/utils/blueprintHelpers";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { UmamiTrack } from "@/components/ui/umamitrack";
 import { UmamiEvents } from "@/config/umamiEvents";
@@ -43,6 +44,7 @@ export default function PublicChat() {
   const [isBlueprintValid, setIsBlueprintValid] = useState<boolean>(true);
   const [isValidatingBlueprint, setIsValidatingBlueprint] = useState<boolean>(false);
   const [defaultPrompts, setDefaultPrompts] = useState<PromptShortcut[]>([]);
+  const [fileUploadEnabled, setFileUploadEnabled] = useState<boolean>(true);
 
   // Use the cached blueprint validation from context
   const { validateBlueprintWithCache } = useAgenticAI();
@@ -124,6 +126,7 @@ export default function PublicChat() {
 
         const shortcuts = blueprintInfo.spec_dict?.prompt_shortcuts;
         setDefaultPrompts(Array.isArray(shortcuts) ? shortcuts : []);
+        setFileUploadEnabled(blueprintSupportsFileUpload(blueprintInfo.spec_dict));
         
         // Check sharing status from the same blueprintInfo response (no extra API call)
         const isPublic = blueprintInfo.metadata?.usageScope === "public";
@@ -392,6 +395,7 @@ export default function PublicChat() {
                 isLiveRequest={isLiveRequest}
                 isSubmitting={isSubmitting}
                 defaultPrompts={defaultPrompts.length > 0 ? defaultPrompts : undefined}
+                fileUploadEnabled={fileUploadEnabled}
               />
             </StreamingDataProvider>
           )}
