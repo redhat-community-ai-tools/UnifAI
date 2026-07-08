@@ -1,6 +1,15 @@
-from typing import Optional, Any, List, ClassVar, Set, Dict
+import logging
+from typing import Callable, Optional, Any, List, ClassVar, Set, Dict
 from copy import deepcopy
 from mas.graph.state.state_view import StateView
+from mas.graph.state.graph_state import Channel
+from mas.core.file_attachment import (
+    FileAttachment,
+    coerce_attachments,
+    filter_active_attachments,
+    format_attachment_lines,
+    partition_attachments,
+)
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.nodes.common.base_node import BaseNode
@@ -9,7 +18,7 @@ from mas.elements.nodes.common.capabilities.llm_capable import LlmCapableMixin
 from mas.elements.nodes.common.capabilities.retriever_capable import RetrieverCapableMixin
 from mas.elements.nodes.common.capabilities.agent_capable import AgentCapableMixin
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
-from mas.elements.nodes.common.workload import Task, AgentResult, WorkspaceContext
+from mas.elements.nodes.common.workload import Task, AgentResult
 from mas.elements.providers.mcp_server_client.mcp_provider import McpProvider
 from mas.elements.nodes.common.agent import AgentConfig
 from mas.elements.nodes.common.agent.execution import ExecutionMode
@@ -17,6 +26,8 @@ from mas.elements.nodes.common.agent.constants import StrategyType
 from mas.elements.tools.common.execution.models import ExecutorConfig
 from mas.elements.tools.builtin.time import GetCurrentTimeTool
 from mas.elements.tools.builtin.retriever import RetrieverTool
+
+logger = logging.getLogger(__name__)
 
 
 class CustomAgentNode(
@@ -39,7 +50,7 @@ class CustomAgentNode(
     - Automatic builtin tools (time, etc.)
     """
 
-    READS: ClassVar[set[str]] = set()
+    READS: ClassVar[set[str]] = {Channel.FILE_ATTACHMENTS}
     WRITES: ClassVar[set[str]] = set()
 
     def __init__(
@@ -53,6 +64,7 @@ class CustomAgentNode(
             max_rounds: Optional[int] = 15,
             strategy_type: str = StrategyType.REACT.value,
             include_builtin_tools: bool = True,
+            file_retrieve_tool_factory: Optional[Callable] = None,
             **kwargs: Any
     ):
         super().__init__(
@@ -65,10 +77,10 @@ class CustomAgentNode(
         self.max_rounds = max_rounds
         self.strategy_type = strategy_type
 
-        # SOLID: Separate domain tools from builtin tools
-        self._domain_tools = tools or []  # Tools from configuration
+        self._domain_tools = tools or []
         self._include_builtin_tools = include_builtin_tools
-        self.tools = []  # Will be populated in run()
+        self._file_retrieve_tool_factory = file_retrieve_tool_factory
+        self.tools = []
 
     def run(self, state: StateView) -> StateView:
         """Main entry point - process all incoming TaskPackets."""
@@ -107,26 +119,28 @@ class CustomAgentNode(
         return all_tools
 
     def _create_builtin_tools(self) -> List[BaseTool]:
-        """
-        Create built-in tools with dependency injection.
-        
-        Pattern follows OrchestratorPhaseProvider design:
-        - Tools initialized with clean lambda dependencies
-        - No hard dependencies on node internals
-        - Easy to test and mock
-        
-        Returns:
-            List of initialized builtin tools
-        """
+        """Create built-in tools with dependency injection."""
         builtin_tools = []
 
-        # Time tool (no dependencies needed)
         builtin_tools.append(GetCurrentTimeTool())
 
-        # Retriever as tool (if available)
-        # Allows agent to decide when to retrieve context
         if self.retriever is not None:
             builtin_tools.append(RetrieverTool(self.retriever))
+
+        if self._file_retrieve_tool_factory:
+            attachments_raw = []
+            try:
+                state = self.get_state()
+                attachments_raw = state.get(Channel.FILE_ATTACHMENTS, [])
+            except Exception as e:
+                logger.warning("Error checking file attachments: %s", e)
+            active = filter_active_attachments(coerce_attachments(attachments_raw))
+            if active:
+                try:
+                    builtin_tools.append(self._file_retrieve_tool_factory(attachments=active))
+                    logger.info("Injected read_attached_file tool with %d attachments", len(active))
+                except Exception as e:
+                    logger.warning("Failed to create file retrieve tool: %s", e)
 
         return builtin_tools
 
@@ -187,9 +201,9 @@ class CustomAgentNode(
         """
         Build conversation context:
         1. Get workspace conversation history
-        2. Add system message if configured
+        2. Inject workspace facts (file attachments, etc.)
         3. Add agent results context
-        4. Add current task with retriever context if available
+        4. Add current task as final user message
         """
         context_messages = []
 
@@ -208,15 +222,49 @@ class CustomAgentNode(
         ):
             context_messages.pop()
 
-        # 3. Add agent results context
+        # 3. Inject workspace facts so agent sees file attachments, etc.
+        facts_context = self._build_facts_context(task.thread_id)
+        if facts_context:
+            context_messages.append(facts_context)
+
+        # 4. Add agent results context
         agent_results_context = self._build_agent_results_context(task.thread_id)
         if agent_results_context:
             context_messages.append(agent_results_context)
 
-        # 4. User prompt is always last
+        # 5. User prompt is always last
         context_messages.append(ChatMessage(role=Role.USER, content=task.content))
 
         return context_messages
+
+    def _build_facts_context(self, thread_id: str) -> Optional[ChatMessage]:
+        """Inject workspace facts and file attachments into conversation."""
+        if not thread_id:
+            return None
+
+        raw_attachments = self.workspaces.get_variable(thread_id, "file_attachments", []) or []
+        attachments = coerce_attachments(raw_attachments)
+        active, expired = partition_attachments(attachments)
+        facts = self.workspaces.get_facts(thread_id) or []
+
+        parts: List[str] = []
+        if active:
+            parts.append(
+                "ATTACHED FILES (use the read_attached_file tool to access these before proceeding):\n"
+                + "\n".join(format_attachment_lines(active))
+            )
+        if expired:
+            parts.append(
+                "EXPIRED FILE ATTACHMENTS (these files have expired after 48 hours "
+                "and can no longer be accessed — inform the user they need to re-upload):\n"
+                + "\n".join(f"- {att.file_name}" for att in expired)
+            )
+        if facts:
+            parts.append("WORKSPACE CONTEXT:\n" + "\n".join(f"- {f}" for f in facts))
+
+        if not parts:
+            return None
+        return ChatMessage(role=Role.USER, content="\n\n".join(parts))
 
     def _build_agent_results_context(self, thread_id: str) -> Optional[ChatMessage]:
         """Build agent results context from workspace."""

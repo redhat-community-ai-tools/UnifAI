@@ -12,13 +12,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Send, Square, Trash2, Loader2, Sparkles, Info, Copy, RotateCcw,
   ThumbsUp, ThumbsDown, Check,
-  Maximize2, Minimize2, Download, FileText, FileJson, Ban, ChevronDown, ChevronUp,
+  Maximize2, Minimize2, Download, FileText, FileJson, Paperclip, X,
+  Ban, ChevronDown, ChevronUp,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import axios from "../../../http/axiosAgentConfig";
 import { MarkdownComponents, preprocessText } from "./helpers/TextComponents";
 import { SessionPayload } from "../ExecutionTab";
+import { FILE_MAX_COUNT, FILE_MAX_SIZE_BYTES, FILE_ALLOWED_MIME_TYPES } from "@/api/sessions";
 import { useStreamingData } from "../StreamingDataContext";
 import { Message, StreamLogEntry, WorkPlanSnapshot, isSessionCancellation } from "./types";
 import { StreamLogDisplay } from "./StreamLogDisplay";
@@ -53,6 +55,7 @@ const isTerminalStatus = (status?: string): boolean =>
 interface BackendMessage {
   content: string;
   role: "user" | "assistant";
+  file_attachments?: Array<{ file_name: string; mime_type?: string; file_uri?: string }>;
   sender_id?: string;
   metadata?: Record<string, unknown>;
 }
@@ -81,6 +84,7 @@ interface ChatInterfaceProps {
   teamMembers?: MemberDisplay[];
   typingUsers?: string[];
   defaultPrompts?: PromptShortcut[];
+  fileUploadEnabled?: boolean;
 }
 
 export default function ChatInterface({
@@ -107,6 +111,7 @@ export default function ChatInterface({
   teamMembers = [],
   typingUsers = [],
   defaultPrompts,
+  fileUploadEnabled = true,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -129,6 +134,8 @@ export default function ChatInterface({
   const [userPromptsMap, setUserPromptsMap] = useState<Record<string, string>>({});
   const userPromptsMapRef = useRef<Record<string, string>>({});
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelledExpanded, setCancelledExpanded] = useState<Record<string, boolean>>({});
   const toggleCancelledExpansion = useCallback((messageId: string) => {
@@ -332,7 +339,10 @@ export default function ChatInterface({
         ...(msg.role === "assistant" && {
           finalAnswer: msg.content,
         }),
-        ...(msg.metadata?.is_cancelled && { isCancelled: true }),
+        ...(msg.role === "user" && msg.file_attachments && msg.file_attachments.length > 0
+          ? { fileNames: msg.file_attachments.map(f => f.file_name) }
+          : {}),
+        ...(msg.metadata?.is_cancelled ? { isCancelled: true } : {}),
       }));
     },
     [],
@@ -853,9 +863,40 @@ export default function ChatInterface({
   // User interaction → Can expand/collapse individual node logs
   // Completion → Final answer appears and streaming stops
   // Cleanup → All intervals are properly cleared
+  // ── File attachment handlers ──────────────────────────────────────────
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(e.target.files || []);
+    if (!selectedFiles.length) return;
+
+    const totalFiles = attachedFiles.length + selectedFiles.length;
+    if (totalFiles > FILE_MAX_COUNT) {
+      toast({ title: "Too many files", description: `Maximum ${FILE_MAX_COUNT} files allowed.`, variant: "destructive" });
+      return;
+    }
+
+    for (const file of selectedFiles) {
+      if (!(FILE_ALLOWED_MIME_TYPES as readonly string[]).includes(file.type)) {
+        toast({ title: "Unsupported file type", description: `"${file.name}" is not a supported file type. Allowed: PDF, CSV, TXT, HTML, Markdown.`, variant: "destructive" });
+        return;
+      }
+      if (file.size > FILE_MAX_SIZE_BYTES) {
+        toast({ title: "File too large", description: `"${file.name}" exceeds the 20MB limit.`, variant: "destructive" });
+        return;
+      }
+    }
+
+    setAttachedFiles((prev) => [...prev, ...selectedFiles]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, [attachedFiles, toast]);
+
+  const removeFile = useCallback((index: number) => {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleSendMessage = async (messageToSend?: string) => {
     const messageContent = messageToSend || inputMessage;
-    if (messageContent.trim() === "") return;
+    if (messageContent.trim() === "" && attachedFiles.length === 0) return;
 
     setChipsDismissed(true);
 
@@ -885,11 +926,11 @@ export default function ChatInterface({
       return;
     }
 
-    // Add user message
     const userMessage: Message = {
       id: Date.now().toString(),
       content: messageContent,
       sender: "user",
+      fileNames: attachedFiles.length > 0 ? attachedFiles.map(f => f.name) : undefined,
       senderName: collaborationMode ? (authUser?.username || "default") : undefined,
     };
 
@@ -936,7 +977,9 @@ export default function ChatInterface({
         inputs: { user_prompt: messageContent },
         scope: "public",
         loggedInUser: authUser?.username || "default",
+        files: attachedFiles.length > 0 ? attachedFiles : undefined,
       };
+      setAttachedFiles([]);
 
       const response = await triggerExecution(sessionPayload);
 
@@ -1269,7 +1312,22 @@ export default function ChatInterface({
         );
       }
       return (
-        <div className="text-sm whitespace-pre-line">{message.content}</div>
+        <div className="text-sm">
+          <div className="whitespace-pre-line">{message.content}</div>
+          {message.fileNames && message.fileNames.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {message.fileNames.map((name, idx) => (
+                <div
+                  key={`${name}-${idx}`}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-white/10 rounded text-xs text-white/80"
+                >
+                  <FileText className="h-3 w-3" />
+                  <span>{name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       );
     }
 
@@ -1554,7 +1612,39 @@ export default function ChatInterface({
             </div>
           )}
           
+          {/* File attachment chips */}
+          {attachedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {attachedFiles.map((file, idx) => (
+                <div
+                  key={`${file.name}-${idx}`}
+                  className="flex items-center gap-1.5 px-2.5 py-1 bg-background-surface border border-gray-700 rounded-md text-xs text-gray-300"
+                >
+                  <FileText className="h-3 w-3 text-gray-400" />
+                  <span className="max-w-[140px] truncate">{file.name}</span>
+                  <button
+                    onClick={() => removeFile(idx)}
+                    className="ml-0.5 p-0.5 rounded hover:bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+                    type="button"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Input area */}
+          {fileUploadEnabled && (
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.csv,.txt,.html,.md,application/pdf,text/csv,text/plain,text/html,text/markdown"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+          )}
           <div className="relative">
             <Textarea
               ref={textareaRef}
@@ -1565,13 +1655,25 @@ export default function ChatInterface({
               }}
               onKeyDown={handleKeyDown}
               placeholder={getInputPlaceholder()}
-              className={`bg-background-dark resize-none transition-[height] duration-200 ease-out w-full pr-12 ${
+              className={`bg-background-dark resize-none transition-[height] duration-200 ease-out w-full ${fileUploadEnabled ? 'pl-10' : 'pl-4'} pr-12 ${
                 isInputDisabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{ height: `${TEXTAREA_MIN_HEIGHT}px` }}
               rows={1}
               disabled={isInputDisabled}
             />
+            {/* Paperclip button inside textarea, bottom-left */}
+            {fileUploadEnabled && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isInputDisabled || attachedFiles.length >= FILE_MAX_COUNT}
+                className="absolute bottom-2.5 left-2.5 p-1 rounded text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Attach file (PDF, CSV, TXT, HTML, Markdown)"
+                type="button"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+            )}
             {/* Expand/Collapse icon - shows when textarea is at max height or expanded */}
             <AnimatePresence>
               {(isAtMaxHeight || isExpanded) && (

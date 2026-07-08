@@ -9,6 +9,7 @@ import { useSessionManagement } from '@/hooks/use-session-management';
 import { useSessionStream } from '@/hooks/use-session-stream';
 import { getBlueprintInfo } from '@/api/blueprints';
 import { createSessionError } from '@/components/agentic-ai/chat/types';
+import type { SessionPayload } from '@/components/agentic-ai/ExecutionTab';
 
 interface UsePublicChatReturn {
   sessions: ChatSession[];
@@ -24,7 +25,7 @@ interface UsePublicChatReturn {
   handleDeleteChat: (session: ChatSession, event: React.MouseEvent) => void;
   confirmDeleteChat: () => Promise<void>;
   cancelDeleteChat: () => void;
-  triggerExecution: (sessionPayload: any) => Promise<string>;
+  triggerExecution: (sessionPayload: SessionPayload) => Promise<string>;
   handleCancelSession: () => Promise<void>;
   isSubmitting: boolean;
   showDeleteModal: boolean;
@@ -371,7 +372,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
 
   // Trigger execution using Temporal submit + Redis stream (same path as Agentic-Chats)
   const triggerExecution = useCallback(
-    async (sessionPayload: any): Promise<string> => {
+    async (sessionPayload: SessionPayload): Promise<string> => {
       if (!runId) {
         throw new Error('No session available');
       }
@@ -404,6 +405,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
           inputs: sessionPayload.inputs || {},
           scope: 'public',
           userId: user?.username || '',
+          files: sessionPayload.files,
         });
 
         await streamCompletePromise;

@@ -1,5 +1,11 @@
 import axios from '@/http/axiosAgentConfig';
 
+export const FILE_MAX_COUNT = 3;
+export const FILE_MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
+export const FILE_ALLOWED_MIME_TYPES = [
+  "application/pdf", "text/csv", "text/plain", "text/html", "text/markdown",
+] as const;
+
 export interface CreateSessionParams {
   blueprintId: string;
   userId: string;
@@ -18,6 +24,7 @@ export interface SubmitSessionParams {
   sessionId: string;
   inputs: Record<string, any>;
   scope?: 'public' | 'private';
+  files?: File[];
   userId: string;
 }
 
@@ -41,7 +48,21 @@ export interface SubmitSessionResponse {
  * @throws Error if submission fails (400, 500)
  */
 export async function submitSession(params: SubmitSessionParams): Promise<SubmitSessionResponse> {
-  const response = await axios.post('/sessions/user.session.submit', params);
+  const { files, ...jsonPayload } = params;
+
+  if (files && files.length > 0) {
+    const formData = new FormData();
+    formData.append('payload', JSON.stringify(jsonPayload));
+    files.forEach((file) => formData.append('files', file));
+    const response = await axios.post(
+      `/sessions/user.session.submit?userId=${encodeURIComponent(jsonPayload.userId)}`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return response.data;
+  }
+
+  const response = await axios.post('/sessions/user.session.submit', jsonPayload);
   return response.data;
 }
 
@@ -140,3 +161,4 @@ export async function subscribeToSessionStream(sessionId: string): Promise<Respo
     return null;
   }
 }
+

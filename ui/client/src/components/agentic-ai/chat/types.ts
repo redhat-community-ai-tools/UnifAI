@@ -21,6 +21,7 @@ export interface Message {
   isCancelled?: boolean;
   streamLogs?: StreamLogEntry[];
   workPlans?: WorkPlanSnapshot[];
+  fileNames?: string[];
 }
 
 export interface StreamLogEntry {

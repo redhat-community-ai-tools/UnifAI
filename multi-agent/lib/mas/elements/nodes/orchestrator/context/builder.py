@@ -7,9 +7,10 @@ Follows SOLID principles:
 - Dependency Inversion: Depends on abstractions (callable interfaces)
 """
 
-from typing import Optional, Callable, List
+from typing import Optional, Callable
 from datetime import datetime, timezone
 
+from mas.core.file_attachment import coerce_attachments, filter_active_attachments
 from .models import (
     OrchestratorContext,
     CycleTrigger,
@@ -93,12 +94,17 @@ class OrchestratorContextBuilder:
         # Get current history
         history = self._history
         
-        # Compose final context
+        raw_attachments = workspace_service.get_variable(
+            self._thread_id, "file_attachments", []
+        ) or []
+        attachments = coerce_attachments(raw_attachments)
+
         return OrchestratorContext(
             trigger=trigger,
             health=health,
             history=history,
-            phase_state=phase_state
+            phase_state=phase_state,
+            file_attachments=filter_active_attachments(attachments),
         )
     
     def record_phase_transition(

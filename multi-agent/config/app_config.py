@@ -50,3 +50,14 @@ class AppConfig(SharedConfig):
     oauth_callback_path: str = "/api/credentials/callback"
     identity_provider_mode: str = ""
     credential_encryption_key: str = ""
+    # Gemini API
+    gemini_api_key: str = ""
+    gemini_model_name: str = "gemini-2.5-flash"
+    # File upload limits
+    file_upload_max_files: int = 3
+    file_upload_max_size_bytes: int = 20 * 1024 * 1024
+    file_upload_min_size_bytes: int = 1
+    file_upload_allowed_mime_types: list = [
+        "application/pdf", "text/csv", "text/plain", "text/html", "text/markdown",
+    ]
+

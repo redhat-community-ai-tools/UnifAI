@@ -8,9 +8,9 @@
  * adds the ~150 lines of collaboration wiring.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import axios from "@/http/axiosAgentConfig";
-import { cancelSession } from "@/api/sessions";
+import { cancelSession, submitSession } from "@/api/sessions";
 import {
   joinSession as joinSessionApi,
   leaveSession as leaveSessionApi,
@@ -26,6 +26,7 @@ import { useSessionHub } from "@/hooks/use-session-hub";
 import { useCarouselLayout } from "@/hooks/use-carousel-layout";
 import { useDefaultPrompts } from "@/hooks/use-default-prompts";
 import { sortSessionsByTimestamp } from "@/utils/sessionHelpers";
+import { blueprintSupportsFileUpload } from "@/utils/blueprintHelpers";
 import {
   CollaborationHubSessionSidebar,
   CollaborationHubMainColumn,
@@ -37,6 +38,7 @@ import { MemberDisplay, buildMemberDisplay } from "@/utils/memberDisplay";
 import type { ChatSessionData } from "@/types/session";
 import type { PromptShortcut } from "@/api/blueprints";
 import { transformSessionData } from "@/utils/sessionHelpers";
+import type { SessionPayload } from "./ExecutionTab";
 
 const COLLAB_POLL_INTERVAL = 3000;
 const COLLAB_HEARTBEAT_INTERVAL = 30000;
@@ -111,16 +113,17 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
   // ── Local execution (current user triggers run) ────────────────────────
   const triggerExecution = useCallback(
-    async (sessionPayload: { sessionId: string; inputs: { user_prompt: string }; scope?: "public" | "private"; loggedInUser?: string }) => {
+    async (sessionPayload: SessionPayload) => {
       try {
         hub.setIsLiveRequest(true);
         setIsSubmitting(true);
 
-        await axios.post("/sessions/user.session.submit", {
+        await submitSession({
           sessionId: sessionPayload.sessionId,
           inputs: sessionPayload.inputs,
           scope: hub.globalScope,
           userId: user?.username || "default",
+          files: sessionPayload.files,
         });
         setIsSubmitting(false);
         subscribeRemoteStream(sessionPayload.sessionId);
@@ -344,6 +347,13 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
   // ── Prompt shortcuts ───────────────────────────────────────────────────
   const defaultPrompts = useDefaultPrompts(hub);
 
+  const fileUploadEnabled = useMemo(() => {
+    const blueprintId = hub.selectedSession?.blueprintId;
+    if (!blueprintId) return true;
+    const spec = hub.blueprintSpecCache.get(blueprintId);
+    return spec ? blueprintSupportsFileUpload(spec) : true;
+  }, [hub.selectedSession?.blueprintId, hub.blueprintSpecCache]);
+
   // ── Loading / Error ────────────────────────────────────────────────────
   if (hub.isLoading) {
     return (
@@ -394,6 +404,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
               typingUsers={typingUsers}
               teamMembers={teamMembers}
               defaultPrompts={defaultPrompts}
+              fileUploadEnabled={fileUploadEnabled}
               triggerExecution={triggerExecution}
               onCancelSession={handleCancelSession}
               getSessionParticipantMembers={getSessionParticipantMembers}

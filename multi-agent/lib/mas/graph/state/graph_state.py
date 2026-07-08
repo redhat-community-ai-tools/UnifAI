@@ -2,6 +2,7 @@ from typing import Any, Callable, Dict, Iterator, List, Tuple, Set, get_type_hin
 from typing_extensions import Annotated
 from pydantic import BaseModel, Field, ConfigDict
 from mas.elements.llms.common.chat.message import ChatMessage
+from mas.core.file_attachment import FileAttachment
 from mas.core.iem.packets import IEMPacket
 from .merge_strategies import merge_string_dicts, append_chat_messages, append_iem_packets, merge_task_threads, merge_threads, merge_workspaces
 from enum import Enum
@@ -27,6 +28,11 @@ class GraphState(BaseModel):
     user_prompt: Annotated[str, lambda old, new: new] = Field(
         default="", 
         json_schema_extra={'external': True, 'streamable': True}
+    )
+
+    file_attachments: Annotated[List[FileAttachment], lambda old, new: new] = Field(
+        default_factory=list,
+        json_schema_extra={'external': True, 'streamable': False}
     )
 
     nodes_output: Annotated[Dict[str, str], merge_string_dicts] = Field(

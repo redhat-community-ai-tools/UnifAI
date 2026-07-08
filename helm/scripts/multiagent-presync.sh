@@ -8,7 +8,9 @@ source "$(dirname "$0")/postsync-lib.sh"
 #create secret
 create_or_update_resource "secret generic" multiagent-be-secret \
   --from-literal=CREDENTIAL_ENCRYPTION_KEY="$CREDENTIAL_ENCRYPTION_KEY" \
-  --from-literal=OAUTH_STATE_SECRET="$OAUTH_STATE_SECRET"
+  --from-literal=OAUTH_STATE_SECRET="$OAUTH_STATE_SECRET" \
+  --from-literal=gemini_api_key="$gemini_api_key" \
+  --from-literal=gemini_model_name="$gemini_model_name"
 
 
 

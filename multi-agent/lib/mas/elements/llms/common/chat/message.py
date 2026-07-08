@@ -2,6 +2,8 @@ from enum import Enum
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict
 
+from mas.core.file_attachment import FileAttachment
+
 
 class Role(str, Enum):
     SYSTEM = "system"
@@ -26,6 +28,7 @@ class ChatMessage(BaseModel):
     tool_calls: Optional[List[ToolCall]] = None
     tool_call_id: Optional[str] = None
     additional_kwargs: Optional[Dict[str, Any]] = None
+    file_attachments: Optional[List[FileAttachment]] = None
     sender_id: Optional[str] = None
     metadata: Dict[str, Any] = {}
 

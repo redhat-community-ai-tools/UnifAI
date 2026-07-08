@@ -135,6 +135,7 @@ export interface CollaborationHubMainColumnProps {
   typingUsers: string[];
   teamMembers: MemberDisplay[];
   defaultPrompts?: PromptShortcut[];
+  fileUploadEnabled?: boolean;
   triggerExecution: (payload: SessionPayload) => Promise<unknown>;
   onCancelSession: () => Promise<void>;
   getSessionParticipantMembers: (sessionId: string) => MemberDisplay[];
@@ -154,6 +155,7 @@ export function CollaborationHubMainColumn({
   typingUsers,
   teamMembers,
   defaultPrompts,
+  fileUploadEnabled,
   triggerExecution,
   onCancelSession,
   getSessionParticipantMembers,
@@ -217,6 +219,7 @@ export function CollaborationHubMainColumn({
             teamMembers={teamMembers}
             typingUsers={typingUsers}
             defaultPrompts={defaultPrompts}
+            fileUploadEnabled={fileUploadEnabled}
             carouselMode={carouselMode}
             onSetCarouselMode={onSetCarouselMode}
           />

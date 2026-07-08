@@ -4,6 +4,7 @@ Session input projector — stages a user turn into the SessionRecord.
 Responsibility (SRP):
   • Map raw external inputs onto GraphState channels
   • Mirror user_prompt into the messages conversation history
+  • Upload attached files via the file upload port
   • Derive a human-readable title when missing
   • Transition status to QUEUED
   • Persist the staged record
@@ -12,11 +13,14 @@ This runs synchronously at the service boundary — BEFORE any
 execution engine (foreground or background) touches the record.
 After staging, the UI can immediately read messages from the DB.
 """
-from typing import Any, Dict
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
+from mas.core.file_attachment import FileAttachment
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.status import SessionStatus
+from mas.session.execution.file_upload import FileUploadLimits, FileUploadRequest, IFileUploadService
 from mas.session.domain.constants import CANCELLED_TAG
 from mas.session.management.utils import derive_title
 from mas.session.repository.repository import SessionRepository
@@ -29,14 +33,46 @@ class SessionInputProjector:
     Stateless — all state lives in the SessionRecord and the repository.
     """
 
-    def __init__(self, repository: SessionRepository) -> None:
+    def __init__(
+        self,
+        repository: SessionRepository,
+        file_upload_service: Optional[IFileUploadService] = None,
+        file_upload_limits: Optional[FileUploadLimits] = None,
+    ) -> None:
         self._repo = repository
+        self._file_upload_service = file_upload_service
+        self._limits = file_upload_limits
+
+    @property
+    def supports_file_upload(self) -> bool:
+        """Whether a file upload service is configured."""
+        return self._file_upload_service is not None
+
+    def _validate_files(self, files: List[FileUploadRequest]) -> None:
+        """Validate file upload batch against configured limits.
+
+        Raises:
+            ValueError: If any file violates the upload constraints.
+        """
+        if not self._limits:
+            return
+        if len(files) > self._limits.max_files:
+            raise ValueError(f"Maximum {self._limits.max_files} files allowed")
+        for f in files:
+            if len(f.file_bytes) < self._limits.min_file_size_bytes:
+                raise ValueError(f"File '{f.file_name}' is empty")
+            if len(f.file_bytes) > self._limits.max_file_size_bytes:
+                max_mb = self._limits.max_file_size_bytes // (1024 * 1024)
+                raise ValueError(f"File '{f.file_name}' exceeds {max_mb}MB limit")
+            if f.mime_type not in self._limits.allowed_mime_types:
+                raise ValueError(f"Unsupported file type: {f.mime_type}")
 
     def apply(
         self,
         record: SessionRecord,
         inputs: Dict[str, Any],
         logged_in_user: str = "",
+        files: Optional[List[FileUploadRequest]] = None,
     ) -> None:
         """
         Project raw inputs onto the record's graph state, making the
@@ -48,7 +84,25 @@ class SessionInputProjector:
             if title := derive_title(inputs):
                 record.metadata.title = title
 
+        inputs.pop("file_attachments", None)
         record.graph_state.update(inputs)
+
+        attachments: List[FileAttachment] = []
+        if files and self._file_upload_service:
+            self._validate_files(files)
+            results = self._file_upload_service.upload_batch(files)
+            now = datetime.now(timezone.utc).isoformat()
+            attachments = [
+                FileAttachment(
+                    file_name=r.file_name,
+                    mime_type=r.mime_type,
+                    file_uri=r.file_uri,
+                    size_bytes=r.size_bytes,
+                    uploaded_at=now,
+                )
+                for r in results
+            ]
+            record.graph_state.file_attachments = attachments
 
         prompt = (inputs.get("user_prompt") or "").strip()
         if prompt:
@@ -56,6 +110,7 @@ class SessionInputProjector:
                 ChatMessage(
                     role=Role.USER,
                     content=prompt,
+                    file_attachments=attachments or None,
                     sender_id=logged_in_user or None,
                 )
             )

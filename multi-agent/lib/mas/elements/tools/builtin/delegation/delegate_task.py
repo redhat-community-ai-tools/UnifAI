@@ -2,6 +2,7 @@
 Tool for delegating tasks to other nodes.
 """
 
+import logging
 from typing import Dict, Any, Callable, Optional
 from pydantic import BaseModel, Field
 from mas.elements.tools.common.base_tool import BaseTool
@@ -13,6 +14,8 @@ from mas.elements.nodes.common.workload import (
     WorkItemResult
 )
 from mas.elements.nodes.common.agent.constants import ToolNames
+
+logger = logging.getLogger(__name__)
 
 
 class DelegateTaskArgs(BaseModel):
@@ -158,6 +161,8 @@ class DelegateTaskTool(BaseTool):
                 objective=args.content,
                 initiator=owner_uid
             )
+            # Propagate file attachments variable from parent to child thread
+            self._propagate_file_attachments(current_thread.thread_id, child_thread.thread_id)
         
         # Create task with child thread context
         task = Task.create(
@@ -256,6 +261,19 @@ class DelegateTaskTool(BaseTool):
     
     # ========== HELPER METHODS ==========
     
+    def _propagate_file_attachments(self, parent_thread_id: str, child_thread_id: str) -> None:
+        """Copy file_attachments variable from parent workspace to child workspace."""
+        try:
+            workspace_service = self._get_workspace_service()
+            attachments = workspace_service.get_variable(parent_thread_id, "file_attachments", [])
+            if attachments:
+                workspace_service.set_variable(child_thread_id, "file_attachments", attachments)
+        except Exception as e:
+            logger.warning(
+                "Failed to propagate file_attachments from thread %s to %s: %s",
+                parent_thread_id, child_thread_id, e,
+            )
+
     def _would_create_cycle(self, dst_uid: str, current_thread) -> bool:
         """
         Check if delegation would create a cycle using thread service.

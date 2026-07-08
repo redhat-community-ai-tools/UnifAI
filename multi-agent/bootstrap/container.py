@@ -226,6 +226,15 @@ class AppContainer(metaclass=SingletonMeta):
             auth_service=self.auth_service,
         ))
 
+        # ── File retrieve tool factory (if Gemini config present) ─────
+        file_retrieve_tool_factory = None
+        if cfg.gemini_api_key:
+            from outbound.gemini.file_retrieve_tool import GeminiFileRetrieveTool
+            file_retrieve_tool_factory = lambda attachments=None: GeminiFileRetrieveTool(
+                api_key=cfg.gemini_api_key,
+                model_name=cfg.gemini_model_name,
+                file_attachments=attachments or [],
+            )
         # ── Platform config (domain-layer projection of AppConfig) ────
         self.platform_config = PlatformConfig(
             shared_storage=cfg.shared_storage,
@@ -236,6 +245,7 @@ class AppContainer(metaclass=SingletonMeta):
             element_registry=self.element_registry,
             engine_name=cfg.engine_name,
             auth_service=self.auth_service,
+            file_retrieve_tool_factory=file_retrieve_tool_factory,
             platform_config=self.platform_config,
         )
         self.session_repo = MongoSessionRepository(
@@ -256,7 +266,27 @@ class AppContainer(metaclass=SingletonMeta):
         )
 
         self.session_lifecycle = SessionLifecycle(repository=self.session_repo)
-        self.input_projector = SessionInputProjector(repository=self.session_repo)
+
+        # ── File upload limits (from config → frozen value object) ─────
+        from mas.session.execution.file_upload import FileUploadLimits
+        self.file_upload_limits = FileUploadLimits(
+            max_files=cfg.file_upload_max_files,
+            max_file_size_bytes=cfg.file_upload_max_size_bytes,
+            min_file_size_bytes=cfg.file_upload_min_size_bytes,
+            allowed_mime_types=tuple(cfg.file_upload_allowed_mime_types),
+        )
+
+        # ── File upload adapter (if Gemini config present) ────────────
+        file_upload_service = None
+        if cfg.gemini_api_key:
+            from outbound.gemini.file_upload_adapter import GeminiFileUploadAdapter
+            file_upload_service = GeminiFileUploadAdapter(api_key=cfg.gemini_api_key)
+
+        self.input_projector = SessionInputProjector(
+            repository=self.session_repo,
+            file_upload_service=file_upload_service,
+            file_upload_limits=self.file_upload_limits,
+        )
 
         self.channel_factory = self._create_channel_factory(cfg)
 

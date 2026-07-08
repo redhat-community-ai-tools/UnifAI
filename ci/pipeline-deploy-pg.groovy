@@ -41,7 +41,7 @@ def secret_lists = [
     rabbitmq: ['rmq_username', 'rmq_password'],
     umami: ['umami_username', 'umami_password'],
     global_config: ['secret_key', 'vault_role_id', 'vault_secret_id', 'langfuse_base_url', 'langfuse_public_key', 'langfuse_secret_key'],
-    multiagent: ['CREDENTIAL_ENCRYPTION_KEY', 'OAUTH_STATE_SECRET', 'GCP_SA_KEY_JSON_B64'],
+    multiagent: ['CREDENTIAL_ENCRYPTION_KEY', 'OAUTH_STATE_SECRET', 'GCP_SA_KEY_JSON_B64',"gemini_api_key","gemini_model_name"],
     rag: ['default_slack_bot_token', 'default_slack_user_token'],
 ]
 

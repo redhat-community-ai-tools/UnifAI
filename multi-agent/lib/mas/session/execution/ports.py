@@ -1,8 +1,10 @@
 """
-Outbound ports for session execution.
+Outbound ports for background session execution.
 
 Ports are defined by the use-case owner (session layer) and implemented
 by infrastructure adapters.
+
+File-upload port, DTOs, and exception live in ``file_upload.py``.
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

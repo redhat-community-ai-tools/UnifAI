@@ -29,7 +29,7 @@ class UserQuestionNode(WorkloadCapableMixin, IEMCapableMixin, BaseNode):
     """
 
     # Channel permissions - includes workload channels
-    READS: ClassVar[set[str]] = {Channel.USER_PROMPT, Channel.MESSAGES}
+    READS: ClassVar[set[str]] = {Channel.USER_PROMPT, Channel.MESSAGES, Channel.FILE_ATTACHMENTS}
     WRITES: ClassVar[set[str]] = {Channel.MESSAGES}
 
     def __init__(self, *, name: str = "user_question", **kwargs):
@@ -127,7 +127,13 @@ class UserQuestionNode(WorkloadCapableMixin, IEMCapableMixin, BaseNode):
         self.workspaces.set_variable(thread.thread_id, "workflow_type", "user_query_processing")
         self.workspaces.set_variable(thread.thread_id, "initiator", self.uid)
 
-        
+        # Store file attachments as structured workspace variable
+        attachments = state.get(Channel.FILE_ATTACHMENTS, [])
+        if attachments:
+            self.workspaces.set_variable(
+                thread.thread_id, "file_attachments", [a.model_dump() for a in attachments]
+            )
+
         # Create clean, minimal task
         task = Task.create(
             content=user_query,

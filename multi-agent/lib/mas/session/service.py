@@ -5,12 +5,12 @@ from mas.session.management.user_session_manager import UserSessionManager
 from mas.session.execution.foreground_runner import ForegroundSessionRunner
 from mas.session.execution.input_projector import SessionInputProjector
 from mas.session.execution.ports import BackgroundSessionEngine, SubmitSessionRequest
+from mas.session.execution.file_upload import FileUploadRequest
 from mas.session.domain.status import SessionStatus
 from mas.session.domain.workflow_session import WorkflowSession
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.dto import SessionListItem
 from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
-from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 
@@ -82,7 +82,8 @@ class SessionService:
         )
 
     def submit(self, session_id: str, inputs: Dict[str, Any],
-               scope: str = "public", logged_in_user: str = "") -> str:
+               scope: str = "public", logged_in_user: str = "",
+               files: Optional[List[FileUploadRequest]] = None) -> str:
         """
         Non-blocking submit: stage inputs, then start a background workflow
         and return its handle/ID immediately (HTTP 202 pattern).
@@ -96,10 +97,14 @@ class SessionService:
                 "No BackgroundSessionEngine configured — "
                 "submit() is not available for this engine."
             )
+        if files and not self._projector.supports_file_upload:
+            raise ValueError(
+                "File attachments are not supported for this deployment."
+            )
         record = self._manager.get_record(session_id)
         handle = self._engine.generate_handle(session_id)
         record.update_context(engine_handle=handle)
-        self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
+        self._projector.apply(record, inputs or {}, files=files, logged_in_user=logged_in_user)
 
         session = self._manager.get_session(session_id)
         execution_ctx = session.run_context.with_scope(scope)
@@ -149,6 +154,7 @@ class SessionService:
         session_id: str,
         inputs: Dict[str, Any],
         logged_in_user: str = "",
+        files: Optional[List[FileUploadRequest]] = None,
     ) -> None:
         """Project raw inputs onto the record and persist (QUEUED).
 
@@ -165,7 +171,7 @@ class SessionService:
                 f"Session {session_id} is already {record.status.name} — "
                 f"wait for it to finish before submitting again."
             )
-        self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
+        self._projector.apply(record, inputs or {}, files=files, logged_in_user=logged_in_user)
 
     def list_for_user(self, identity: Identity) -> list:
         """

@@ -72,3 +72,25 @@ export const constructShareLink = (blueprintId: string): string => {
   return `${window.location.origin}/chat/${blueprintId}`;
 };
 
+/**
+ * Node types that do not support file attachments in chat.
+ * These agents have no file-attachment consumption code on the backend.
+ */
+const FILE_UPLOAD_UNSUPPORTED_NODE_TYPES = [
+  'deep_agent_node',
+  'claude_agent_node',
+  'a2a_agent_node',
+] as const;
+
+/**
+ * Determine whether a blueprint supports file upload based on its node types.
+ * Returns false if any node in the blueprint uses an unsupported agent type.
+ */
+export function blueprintSupportsFileUpload(specDict: any): boolean {
+  const raw = specDict?.nodes;
+  const nodes: any[] = Array.isArray(raw) ? raw : [];
+  return !nodes.some(
+    (n) => FILE_UPLOAD_UNSUPPORTED_NODE_TYPES.includes(n.type ?? n.config?.type)
+  );
+}
+
