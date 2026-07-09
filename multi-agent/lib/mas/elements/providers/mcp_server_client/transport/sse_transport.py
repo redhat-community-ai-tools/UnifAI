@@ -7,26 +7,10 @@ stream to the MCP server.
 
 from typing import Any, Tuple
 
-import httpx
 from mcp.client.sse import sse_client
 
 from .base_transport import BaseTransportManager
 from .enums import McpTransportType
-
-
-def _create_httpx_client(
-    headers=None, timeout=None, auth=None,
-) -> httpx.AsyncClient:
-    """httpx client factory that skips SSL verification and forces IPv4."""
-    transport = httpx.AsyncHTTPTransport(verify=False, local_address="0.0.0.0")
-    kwargs: dict[str, Any] = {"follow_redirects": True, "verify": False, "transport": transport}
-    if headers:
-        kwargs["headers"] = headers
-    if timeout:
-        kwargs["timeout"] = timeout
-    if auth:
-        kwargs["auth"] = auth
-    return httpx.AsyncClient(**kwargs)
 
 
 class SseTransportManager(BaseTransportManager):
@@ -46,12 +30,7 @@ class SseTransportManager(BaseTransportManager):
         return "SSE"
 
     def _create_transport_context(self) -> Any:
-        return sse_client(
-            url=self.endpoint,
-            headers=self.headers,
-            timeout=30,
-            httpx_client_factory=_create_httpx_client,
-        )
+        return sse_client(url=self.endpoint, headers=self.headers)
 
     async def _enter_transport_context(self, ctx: Any) -> Tuple:
         read_stream, write_stream = await ctx.__aenter__()

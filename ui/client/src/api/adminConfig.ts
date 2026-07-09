@@ -1,5 +1,4 @@
 import { backendApi } from '@/http/backendClient';
-import agentApi from '@/http/axiosAgentConfig';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Types
@@ -74,7 +73,7 @@ export async function updateAdminConfigSection(
 export async function checkAdminAccess(
   username: string,
 ): Promise<{ is_admin: boolean }> {
-  const response = await agentApi.get('/admin_config/access.check', {
+  const response = await backendApi.get('/admin_config/access.check', {
     params: { username },
   });
   return response.data;

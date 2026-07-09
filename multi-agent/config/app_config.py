@@ -1,8 +1,6 @@
 import secrets
-from typing import List
-from pydantic import field_validator
 from global_utils.config.config import SharedConfig
-import secrets
+
 
 class AppConfig(SharedConfig):
     mongo_db: str = "UnifAI"
@@ -16,8 +14,7 @@ class AppConfig(SharedConfig):
     hostname: str = "0.0.0.0"
     port: str = "8002"
     version: str = "1.0.0"
-    admin_allowed_users: List[str] = []  # Set via env: ADMIN_ALLOWED_USERS="user1,user2"
-
+    admin_allowed_users: list = []  # Populate with user_ids (usernames) to grant admin access
     secret_key: str = ""
 
     # Session cookie — must match Identity so Flask never re-signs with different attributes
@@ -49,7 +46,7 @@ class AppConfig(SharedConfig):
 
     # Auth
     oauth_state_secret: str = secrets.token_urlsafe(32)
-    identity_host: str = "http://127.0.0.1:13456"
+    identity_host: str = "http://localhost:13456"
     oauth_callback_path: str = "/api/credentials/callback"
     identity_provider_mode: str = ""
     credential_encryption_key: str = ""

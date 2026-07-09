@@ -62,11 +62,11 @@ class AuthManager:
         self._setup_session_configuration(app)
 
     def _setup_keycloak(self):
-        # if config.local_auth_enabled:
-        #     from utils.dev_oauth_client import DevOAuthClient
-        #     self.keycloak_client = DevOAuthClient()
-        #     logger.info("Local auth mode -- using DevOAuthClient (Keycloak bypassed)")
-        #     return
+        if config.local_auth_enabled:
+            from utils.dev_oauth_client import DevOAuthClient
+            self.keycloak_client = DevOAuthClient()
+            logger.info("Local auth mode -- using DevOAuthClient (Keycloak bypassed)")
+            return
 
         keycloak_base_url = config.keycloak_base_url
         client_id = config.client_id
@@ -255,7 +255,6 @@ class AuthManager:
                         'session_cookie': cookie_value,
                     }
                     logger.info(f"CLI user '{user_data['username']}' authenticated successfully")
-
                     user_b64 = (
                         base64.urlsafe_b64encode(json.dumps(user_data).encode())
                         .decode()
@@ -309,7 +308,8 @@ class AuthManager:
                         userinfo.get('preferred_username'),
                         token.get('access_token'),
                     )
-
+                # Redirect to frontend with auth status and state parameter
+                # Frontend will extract the original URL from state and restore it
                 state_param = f"&state={quote(request_state, safe='')}" if request_state else ""
                 final_url = f"{config.frontend_url}/?auth=success{state_param}"
                 return redirect(final_url)
