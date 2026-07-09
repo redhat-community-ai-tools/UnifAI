@@ -149,9 +149,6 @@ class ForegroundSessionRunner:
             thread.join(timeout=60)
             self._binder.unbind_all(session.session_registry)
 
-            if self._gate_factory is not None:
-                self._gate_factory.remove(run_id)
-
             try:
                 if result["error"]:
                     self._lifecycle.fail(session.record, result["error"])

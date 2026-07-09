@@ -11,6 +11,11 @@ etc.) that are NOT in our domain tool registry.
 ``CLAUDE_BUILTIN_ACCESS_MODES`` maps these to the correct
 ``ToolAccessMode`` so they are properly gated.
 
+When sandbox mode is active, built-in tools are replaced by MCP tools
+served under the ``sandbox`` server name (e.g. ``sandbox__Bash``).
+The hook strips any ``<server>__`` prefix before lookup so that
+rules and access modes resolve against the canonical tool name.
+
 The hook callback is async (Claude SDK requirement).  Since
 ``ApprovalGate.request_approval`` is synchronous (blocks on Redis),
 we bridge via ``asyncio.to_thread``.
@@ -24,7 +29,7 @@ from mas.elements.nodes.common.capabilities.hitl_gatekeeper import HITLToolGatek
 
 logger = logging.getLogger(__name__)
 
-_MCP_SERVER_PREFIX = "mas-tools__"
+_MCP_TOOL_SEPARATOR = "__"
 
 CLAUDE_BUILTIN_ACCESS_MODES: Dict[str, ToolAccessMode] = {
     "Read": ToolAccessMode.READ,
@@ -126,7 +131,9 @@ class HITLHook:
 
     @staticmethod
     def _strip_mcp_prefix(tool_name: str) -> str:
-        """Strip the ``mas-tools__`` prefix added by the SDK for MCP tools."""
-        if tool_name.startswith(_MCP_SERVER_PREFIX):
-            return tool_name[len(_MCP_SERVER_PREFIX):]
+        """Strip any MCP server prefix (e.g. ``mas-tools__``, ``sandbox__``)
+        added by the Claude SDK for MCP tools.  The convention is
+        ``<server>__<tool>``, so we split on the first ``__``."""
+        if _MCP_TOOL_SEPARATOR in tool_name:
+            return tool_name.split(_MCP_TOOL_SEPARATOR, 1)[1]
         return tool_name
