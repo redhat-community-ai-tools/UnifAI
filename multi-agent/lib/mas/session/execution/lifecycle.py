@@ -53,19 +53,13 @@ class SessionLifecycle:
         """
         Post-execution: attach final state, mark COMPLETED, persist.
         No-op if session is already in terminal CANCELLED state.
-
-        Re-fetches the record from the database so that fields updated
-        externally during execution (e.g. ``hitl_overrides`` set via
-        the approval-rule API) are not overwritten by this stale
-        in-memory copy.
         """
         if record.status == SessionStatus.CANCELLED:
             return
-        current = self._repo.fetch(record.run_id)
-        current.graph_state = final_state
-        current.run_context = current.run_context.mark_finished()
-        current.status = SessionStatus.COMPLETED
-        self._repo.save(current)
+        record.graph_state = final_state
+        record.run_context = record.run_context.mark_finished()
+        record.status = SessionStatus.COMPLETED
+        self._repo.save(record)
 
     def fail(
         self,
@@ -75,15 +69,12 @@ class SessionLifecycle:
         """
         On error: mark FAILED, persist.
         No-op if session is already in terminal CANCELLED state.
-
-        Re-fetches the record (same rationale as ``complete``).
         """
         if record.status == SessionStatus.CANCELLED:
             return
-        current = self._repo.fetch(record.run_id)
-        current.run_context = current.run_context.mark_finished()
-        current.status = SessionStatus.FAILED
-        self._repo.save(current)
+        record.run_context = record.run_context.mark_finished()
+        record.status = SessionStatus.FAILED
+        self._repo.save(record)
 
     def cancel(
         self,
