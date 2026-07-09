@@ -10,6 +10,7 @@ from mas.core.enums import ResourceCategory
 
 class GetAvailableDocsInput(BaseActionInput):
     """Input for fetching available documents"""
+    user_id: str = ""
     limit: int = 50
     cursor: Optional[str] = None
     search_regex: Optional[str] = None
@@ -49,13 +50,12 @@ class GetAvailableDocsAction(BaseAction):
             config = RagProviderConfig()
             factory = RagProviderFactory()
             provider = factory.create(config)
-            user_id = (context or {}).get("user_id", "")
 
             response = provider.get_available_docs(
                 limit=input_data.limit,
                 cursor=input_data.cursor,
                 search_regex=input_data.search_regex,
-                authenticated_user=user_id,
+                authenticated_user=input_data.user_id,
             )
 
             return GetAvailableDocsOutput(
