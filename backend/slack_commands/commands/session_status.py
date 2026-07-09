@@ -29,6 +29,8 @@ class StatusCommand(CommandHandler):
             )
             status_resp.raise_for_status()
             status = status_resp.json()
+            if isinstance(status, dict):
+                status = status.get("status")
             status = status.upper() if isinstance(status, str) else None
 
             meta_resp = mas_get(

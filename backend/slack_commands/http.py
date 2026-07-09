@@ -3,17 +3,13 @@ import logging
 
 import requests
 
-from slack_commands.models import MASRequestError, SlackResponse
+from slack_commands.models import SlackResponse
 
 logger = logging.getLogger(__name__)
 
 _AUTH_HEADER = "X-Authenticated-User"
 
 MAS_TIMEOUT = 10
-
-
-def auth_headers(user_id: str) -> dict:
-    return {_AUTH_HEADER: user_id}
 
 
 def mas_get(
