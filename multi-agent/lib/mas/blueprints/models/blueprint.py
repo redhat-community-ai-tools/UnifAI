@@ -20,6 +20,7 @@ class BlueprintExecutionStats(BaseModel):
     total_runs: int = Field(0, description="Total number of executions")
     completed_runs: int = Field(0, description="Number of COMPLETED executions")
     failed_runs: int = Field(0, description="Number of FAILED executions")
+    active_runs: int = Field(0, description="Number of currently executing sessions (RUNNING, IN_USE)")
     last_run: Optional[datetime] = Field(None, description="Timestamp of most recent execution")
     avg_duration_ms: Optional[float] = Field(None, description="Average duration in milliseconds")
     users: List[str] = Field(default_factory=list, description="Distinct runner identities as ``type:id`` strings (e.g. ``user:alice``, ``team:acme``)")
@@ -34,6 +35,7 @@ from mas.elements.conditions.types import ConditionSpec
 from mas.elements.tools.types import ToolsSpec
 from mas.elements.providers.types import ProviderSpec
 from mas.core.ref.models import Ref, NodeRef, ConditionRef
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Author-time helper types
@@ -118,6 +120,7 @@ class BlueprintDraft(BaseModel):
 
     name: str = "Untitled blueprint"
     description: str = ""
+    prompt_shortcuts: Optional[PromptShortcuts] = None
 
     class Config:
         extra = Extra.forbid

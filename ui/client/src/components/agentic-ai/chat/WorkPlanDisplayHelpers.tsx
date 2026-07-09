@@ -40,11 +40,14 @@ export const getStatusConfig = (status: string) => {
  */
 export function getWorkflowStatusColors(): Record<string, string> {
   return {
-    COMPLETED: '#10B981',   // green-400
-    RUNNING: '#60A5FA',     // blue-400
-    FAILED: '#F87171',      // red-400
-    PENDING: '#9CA3AF',     // gray-400
-    CANCELLED: '#9CA3AF',   // gray-400
+    COMPLETED: '#10B981',   // green
+    RUNNING: '#60A5FA',     // blue
+    FAILED: '#F87171',      // red
+    PENDING: '#FBBF24',     // amber/yellow
+    QUEUED: '#A78BFA',      // purple
+    CANCELLED: '#9CA3AF',   // gray
+    LOCKED: '#F97316',      // orange
+    IN_USE: '#2DD4BF',      // teal
   };
 }
 

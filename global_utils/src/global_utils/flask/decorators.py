@@ -8,7 +8,13 @@ Also provides identity-session decorators that validate callers against
 a Redis-backed server session written by the Identity service after
 Keycloak login.  These are generic (no MAS/domain concepts) and can be
 consumed by any Flask-based service.
+
+The Slack signature decorator verifies incoming webhook requests using
+HMAC-SHA256, ensuring they genuinely originate from Slack.
 """
+import hashlib
+import hmac
+import time
 import logging
 from functools import wraps
 from typing import Any, Callable, Optional, Tuple
@@ -267,4 +273,74 @@ def require_admin_access(get_current_user, is_admin):
                     "error_type": "ACCESS_CONTROL_ERROR",
                 }), 500
         return decorated_function
+    return decorator
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Slack signature verification
+# ──────────────────────────────────────────────────────────────────────────────
+
+def require_slack_signature(get_signing_secret: Callable[[], str]) -> Callable:
+    """
+    Decorator factory: verify that a request was signed by Slack.
+
+    Each app supplies:
+      - ``get_signing_secret()`` -> str
+        Return the Slack signing secret (from config/env).
+
+    Validates:
+      - ``X-Slack-Request-Timestamp`` is within 5 minutes (replay protection)
+      - ``X-Slack-Signature`` matches HMAC-SHA256 of the request body
+
+    Returns 401 on failure.
+    """
+    def decorator(f: Callable) -> Callable:
+        @wraps(f)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            signing_secret = get_signing_secret()
+
+            if not signing_secret:
+                logger.error("Slack signing secret is not configured")
+                return jsonify({
+                    "error": "Slack signing secret not configured",
+                    "error_type": "AUTHENTICATION_REQUIRED",
+                }), 401
+
+            timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+            signature = request.headers.get("X-Slack-Signature", "")
+
+            if not timestamp or not signature:
+                return jsonify({
+                    "error": "Missing Slack signature headers",
+                    "error_type": "AUTHENTICATION_REQUIRED",
+                }), 401
+
+            try:
+                if abs(time.time() - int(timestamp)) > 300:
+                    return jsonify({
+                        "error": "Request timestamp too old",
+                        "error_type": "AUTHENTICATION_REQUIRED",
+                    }), 401
+            except ValueError:
+                return jsonify({
+                    "error": "Invalid timestamp",
+                    "error_type": "AUTHENTICATION_REQUIRED",
+                }), 401
+
+            body = request.get_data(cache=True)
+            sig_basestring = b"v0:" + timestamp.encode("utf-8") + b":" + body
+            expected = "v0=" + hmac.new(
+                signing_secret.encode("utf-8"),
+                sig_basestring,
+                hashlib.sha256,
+            ).hexdigest()
+
+            if not hmac.compare_digest(expected, signature):
+                return jsonify({
+                    "error": "Invalid signature",
+                    "error_type": "AUTHENTICATION_REQUIRED",
+                }), 401
+
+            return f(*args, **kwargs)
+        return wrapped
     return decorator

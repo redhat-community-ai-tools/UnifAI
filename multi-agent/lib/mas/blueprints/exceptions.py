@@ -2,6 +2,7 @@
 Custom exceptions for Blueprint operations.
 Provides specific error types for better debugging and error handling.
 """
+from typing import List
 
 
 class BlueprintError(Exception):
@@ -39,5 +40,20 @@ class BlueprintMetadataError(BlueprintError):
     def __init__(self, blueprint_id: str, message: str = None):
         self.blueprint_id = blueprint_id
         self.message = message or f"Failed to update metadata for blueprint '{blueprint_id}'"
+        super().__init__(self.message)
+
+
+class InvalidMetadataKeysError(BlueprintError):
+    """Raised when metadata keys contain characters unsafe for storage (e.g. '.' or '$')."""
+    def __init__(self, bad_keys: List[str]):
+        self.bad_keys = bad_keys
+        super().__init__(f"Invalid metadata key(s): {bad_keys}")
+
+
+class PromptShortcutsValidationError(BlueprintError):
+    """Raised when prompt shortcuts are invalid (save, update, load, or dedicated set)."""
+    def __init__(self, message: str, blueprint_id: str | None = None):
+        self.blueprint_id = blueprint_id
+        self.message = message
         super().__init__(self.message)
 

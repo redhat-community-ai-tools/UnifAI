@@ -36,7 +36,7 @@ export interface BlueprintUsage {
   success_rate: number;
   completed_runs: number;
   failed_runs: number;
-  in_progress_runs: number;
+  active_runs: number;
   user_list: string[];
 }
 
