@@ -19,6 +19,7 @@ dependencies = [
     "python-dotenv",
     "webargs",
     "requests",
+    "slack-bolt",
 ]
 
 [tool.setuptools.packages.find]

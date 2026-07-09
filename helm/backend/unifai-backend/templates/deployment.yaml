@@ -73,6 +73,29 @@ spec:
           volumeMounts:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+        {{- if .Values.slackSocket.enabled }}
+        - name: slack-socket
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+          - name: ROLE
+            value: "slack-socket"
+          {{- range $key, $value := .Values.env }}
+          {{- if ne $key "ROLE" }}
+          - name: "{{ $key }}"
+            value: "{{ $value }}"
+          {{- end }}
+          {{- end }}
+          envFrom:
+          - configMapRef:
+              name: {{ .Values.globalConfigMapName }}
+          - secretRef:
+              name: {{ .Values.globalSecretName }}
+          {{- with .Values.slackSocket.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
       {{- with .Values.volumes }}
       volumes:
         {{- toYaml . | nindent 8 }}
