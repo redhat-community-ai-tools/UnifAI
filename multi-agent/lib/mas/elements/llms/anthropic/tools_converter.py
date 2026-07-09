@@ -14,7 +14,10 @@ from typing import Any, Dict, List, Optional
 
 from ...tools.common.tool_definition import ToolDefinition
 
-_EMPTY_SCHEMA: Dict[str, Any] = {"type": "object", "properties": {}}
+
+def _empty_input_schema() -> Dict[str, Any]:
+    """Return a fresh, unshared empty JSON Schema object."""
+    return {"type": "object", "properties": {}}
 
 
 class AnthropicToolsConverter:
@@ -40,5 +43,5 @@ class AnthropicToolsConverter:
         return {
             "name": tool.name,
             "description": tool.description,
-            "input_schema": tool.parameters or dict(_EMPTY_SCHEMA),
+            "input_schema": tool.parameters or _empty_input_schema(),
         }

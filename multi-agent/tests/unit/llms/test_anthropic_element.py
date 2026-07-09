@@ -5,6 +5,7 @@ response parsing, and factory instantiation. No network calls are made — the
 Anthropic client constructor does not hit the API, and response objects are
 faked with ``SimpleNamespace``.
 """
+from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Union, get_args, get_origin
 
@@ -123,6 +124,14 @@ class TestAnthropicMessageConverter:
         )
         assert msg.tool_calls is None
 
+    def test_tool_result_without_tool_call_id_fails_fast(self):
+        # A tool-result with no tool_call_id cannot produce a valid Anthropic
+        # request, so conversion must raise rather than emit an empty id.
+        with pytest.raises(ValueError):
+            AnthropicMessageConverter.to_anthropic([
+                ChatMessage(role=Role.TOOL, content="result", tool_call_id=None),
+            ])
+
 
 class TestAnthropicToolsConverter:
     def test_none_when_no_tools(self):
@@ -159,3 +168,100 @@ class TestAnthropicFactory:
         bound = llm.bind_tools([ToolDefinition(name="t", description="d")])
         assert bound is not llm
         assert isinstance(bound, AnthropicLLM)
+
+
+class _FakeMessages:
+    """Records the request and returns canned Anthropic-shaped responses."""
+
+    def __init__(self, captured: dict):
+        self._captured = captured
+
+    def create(self, **kwargs):
+        self._captured.clear()
+        self._captured.update(kwargs)
+        return SimpleNamespace(content=[
+            SimpleNamespace(type="text", text="Hello!"),
+            SimpleNamespace(type="tool_use", id="tu1", name="search", input={"q": "x"}),
+        ])
+
+    @contextmanager
+    def stream(self, **kwargs):
+        self._captured.clear()
+        self._captured.update(kwargs)
+
+        class _Stream:
+            text_stream = iter(["Hel", "lo"])
+
+            def get_final_message(self):
+                return SimpleNamespace(content=[
+                    SimpleNamespace(type="text", text="Hello"),
+                    SimpleNamespace(type="tool_use", id="tu2", name="lookup", input={}),
+                ])
+
+        yield _Stream()
+
+
+def _llm_with_fake_client():
+    captured: dict = {}
+    llm = AnthropicFactory().create(AnthropicConfig(api_key="sk-test", max_tokens=256))
+    llm._client = SimpleNamespace(messages=_FakeMessages(captured))
+    return llm, captured
+
+
+class TestAnthropicLLMChatStream:
+    """Exercises chat()/stream() against a mocked client (no network)."""
+
+    def test_chat_builds_request_and_parses_response(self):
+        llm, captured = _llm_with_fake_client()
+        bound = llm.bind_tools([
+            ToolDefinition(name="search", description="d",
+                           parameters={"type": "object", "properties": {}}),
+        ])
+        result = bound.chat([
+            ChatMessage(role=Role.SYSTEM, content="be nice"),
+            ChatMessage(role=Role.USER, content="hi"),
+        ])
+
+        # Request construction
+        assert captured["system"] == "be nice"          # system split out
+        assert captured["max_tokens"] == 256
+        assert captured["tools"]                          # bound tools forwarded
+        assert [m["role"] for m in captured["messages"]] == ["user"]
+
+        # Response parsing
+        assert result.content == "Hello!"
+        assert result.tool_calls is not None and len(result.tool_calls) == 1
+        assert result.tool_calls[0].name == "search"
+
+    def test_stream_yields_text_then_final_tool_message(self):
+        llm, _ = _llm_with_fake_client()
+        chunks = list(llm.stream([ChatMessage(role=Role.USER, content="hi")]))
+
+        text_chunks = [c for c in chunks if isinstance(c, str)]
+        final = [c for c in chunks if isinstance(c, ChatMessage)]
+
+        assert text_chunks == ["Hel", "lo"]
+        assert len(final) == 1
+        assert final[0].content == "Hello"
+        assert final[0].tool_calls is not None
+        assert final[0].tool_calls[0].name == "lookup"
+
+    def test_stream_without_tool_calls_yields_only_text(self):
+        llm, _ = _llm_with_fake_client()
+
+        # Swap the fake to return a tool-free final message.
+        @contextmanager
+        def _text_only_stream(**kwargs):
+            class _S:
+                text_stream = iter(["only ", "text"])
+
+                def get_final_message(self):
+                    return SimpleNamespace(content=[
+                        SimpleNamespace(type="text", text="only text"),
+                    ])
+            yield _S()
+
+        llm._client.messages.stream = _text_only_stream
+        chunks = list(llm.stream([ChatMessage(role=Role.USER, content="hi")]))
+        assert chunks == ["only ", "text"]
+        assert all(isinstance(c, str) for c in chunks)

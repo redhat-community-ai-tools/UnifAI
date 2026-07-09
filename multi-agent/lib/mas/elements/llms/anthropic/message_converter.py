@@ -144,10 +144,22 @@ class AnthropicMessageConverter:
 
     @staticmethod
     def _tool_result_block(msg: ChatMessage) -> Dict[str, Any]:
-        """Convert a tool-result message to a ``tool_result`` content block."""
+        """Convert a tool-result message to a ``tool_result`` content block.
+
+        Anthropic requires ``tool_use_id`` to correlate the result with the
+        originating ``tool_use`` block. A tool-result message without a
+        ``tool_call_id`` would silently produce an invalid request, so fail
+        fast with a clear error instead of defaulting to an empty id.
+        """
+        if not msg.tool_call_id:
+            raise ValueError(
+                "Tool-result message is missing 'tool_call_id'; Anthropic "
+                "requires 'tool_use_id' to correlate the tool result with its "
+                "originating tool_use block."
+            )
         return {
             "type": "tool_result",
-            "tool_use_id": msg.tool_call_id or "",
+            "tool_use_id": msg.tool_call_id,
             "content": msg.content,
         }
 
