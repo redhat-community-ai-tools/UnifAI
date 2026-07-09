@@ -1,5 +1,4 @@
 """Unit tests for SlackRetriever internal auth header and timeout."""
-import pytest
 from unittest.mock import patch, MagicMock
 
 from mas.elements.retrievers.slack.slack_retriever import SlackRetriever

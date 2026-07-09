@@ -3,7 +3,6 @@
 Asserts that upload_by is correctly forwarded to the repository and that
 only the requested owner's DONE documents/tags are returned.
 """
-import pytest
 from datetime import datetime
 from unittest.mock import create_autospec, MagicMock
 
@@ -62,7 +61,6 @@ class TestListAvailableDocsUserIsolation:
 
     def test_only_done_docs_for_owner_returned(self):
         alice_doc = _make_source("d1", "alice_report.pdf", "alice")
-        bob_doc = _make_source("d2", "bob_file.pdf", "bob")
 
         self.repo.find_paginated.return_value = PaginatedResult(
             data=[alice_doc.to_dict()],

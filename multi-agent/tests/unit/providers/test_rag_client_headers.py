@@ -1,7 +1,4 @@
 """Unit tests for RagClient and RagProvider internal auth header behavior."""
-import pytest
-from unittest.mock import patch, MagicMock
-
 from mas.elements.providers.rag_client.client import RagClient
 from mas.elements.providers.rag_client.rag_provider import RagProvider
 
