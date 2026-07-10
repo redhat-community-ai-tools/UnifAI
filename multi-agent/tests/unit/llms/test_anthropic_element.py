@@ -58,6 +58,8 @@ class TestAnthropicCatalogRegistration:
         assert cfg.max_tokens > 0
         with pytest.raises(Exception):
             AnthropicConfig(temperature=5.0)  # outside [0, 1]
+        with pytest.raises(Exception):
+            AnthropicConfig(top_k=-1)  # top_k must be non-negative
 
 
 class TestAnthropicMessageConverter:

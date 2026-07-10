@@ -76,25 +76,21 @@ class AnthropicValidator(BaseElementValidator):
             messages.append(self._error(
                 LLMValidationCode.RATE_LIMITED.value,
                 "Rate limit exceeded",
-                field="api_key",
             ))
         except APIConnectionError as e:
             messages.append(self._error(
                 ValidationCode.NETWORK_ERROR.value,
                 f"Connection error: {str(e)}",
-                field="api_key",
             ))
         except APIStatusError as e:
             messages.append(self._error(
                 ValidationCode.NETWORK_ERROR.value,
                 f"API error ({e.status_code}): {str(e)}",
-                field="api_key",
             ))
         except Exception as e:
             messages.append(self._error(
                 ValidationCode.NETWORK_ERROR.value,
                 f"Unexpected error: {type(e).__name__}",
-                field="api_key",
             ))
 
         return self._build_report(messages=messages)

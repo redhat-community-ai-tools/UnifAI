@@ -42,7 +42,8 @@ class AnthropicConfig(BaseModel):
 
     top_k: Optional[int] = Field(
         default=None,
-        description="Top-k sampling parameter"
+        ge=0,
+        description="Top-k sampling parameter (non-negative)"
     )
 
     extra: Dict[str, Any] = Field(
