@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from typing import Union, get_args, get_origin
 
 import pytest
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from mas.core.enums import ResourceCategory
 from mas.elements.llms.types import LLMsSpec
@@ -27,7 +27,7 @@ from mas.elements.tools.common.tool_definition import ToolDefinition
 pytestmark = pytest.mark.unit
 
 
-def _llmsspec_members():
+def _llmsspec_members() -> tuple:
     union = get_args(LLMsSpec)[0]
     assert get_origin(union) is Union
     return get_args(union)
@@ -56,9 +56,9 @@ class TestAnthropicCatalogRegistration:
     def test_config_defaults_and_bounds(self):
         cfg = AnthropicConfig()
         assert cfg.max_tokens > 0
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             AnthropicConfig(temperature=5.0)  # outside [0, 1]
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             AnthropicConfig(top_k=-1)  # top_k must be non-negative
 
 
