@@ -269,10 +269,19 @@ def main() -> int:
     arch_pass = arch_verdict == "APPROVE"
     code_pass = code_score >= threshold
 
+    reconstructed_pass = (arch_pass or not arch_ran) and (code_pass or not code_ran)
+
     if use_pipeline_pass:
-        gate_pass = pipeline_pass
+        gate_pass = pipeline_pass and reconstructed_pass
+        if pipeline_pass != reconstructed_pass:
+            print(
+                f"::warning::Gate signal conflict: pipeline_pass={pipeline_pass}, "
+                f"reconstructed={reconstructed_pass} (arch={arch_verdict}, "
+                f"code_score={code_score}, threshold={threshold}). "
+                f"Using stricter of the two."
+            )
     else:
-        gate_pass = (arch_pass or not arch_ran) and (code_pass or not code_ran)
+        gate_pass = reconstructed_pass
 
     if arch_ran:
         arch_display = "✅ PASS" if arch_pass else f"❌ FAIL ({arch_verdict})"

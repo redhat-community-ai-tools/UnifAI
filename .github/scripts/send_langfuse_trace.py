@@ -75,6 +75,19 @@ def _attach_scores(langfuse, trace_id: str, pipeline_results: dict) -> None:
                 comment="Code review health score (0-10)",
             )
 
+    code_findings = pipeline_results.get("code_findings", {})
+    files_changed = _as_int(pipeline_results.get("files_changed", 1)) or 1
+    if isinstance(code_findings, dict):
+        from _scoring import compute_deterministic_score
+        computed = compute_deterministic_score(code_findings, files_changed)
+        langfuse.create_score(
+            name="computed_score",
+            value=float(computed),
+            trace_id=trace_id,
+            data_type="NUMERIC",
+            comment="Deterministic score from Severity Floor formula",
+        )
+
     for domain, key_prefix in [
         ("code_findings", "code"),
         ("arch_findings", "arch"),

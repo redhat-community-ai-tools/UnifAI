@@ -94,7 +94,7 @@ Locate these lines to drive revision loops.
 **Data extraction rules:**
 1. Parse `PIPELINE_ARCH_VERDICT:` and/or `PIPELINE_CODE_VERDICT:` from each judge's output.
 2. Parse `Code Health Score: X/10` from the code judge's output.
-3. Count severity badges from each judge's output: count `#### 🔴` for critical, `#### 🟠` for major, `#### 🟡` for minor, `<summary>🔵` for info (info items use collapsible `<details>` blocks, not headings).
+3. Parse finding counts from each judge's `Findings (NEW only):` line (regex: `🔴 (\d+) Critical \| 🟠 (\d+) Major \| 🟡 (\d+) (?:Minor|Warnings) \| 🔵 (\d+) Info`). Do NOT count badge headers (`#### 🔴`, `#### 🟠`, etc.) — those include `[PRE]` findings that judges exclude from scoring. The `Findings (NEW only):` line is the authoritative source because it reflects post-self-check counts.
 4. Get `files_changed` from the scout's file scope list (count of files in scope).
 5. Get `lines_added` and `lines_removed` from the diff summary (approximate from `+`/`-` line counts).
 
