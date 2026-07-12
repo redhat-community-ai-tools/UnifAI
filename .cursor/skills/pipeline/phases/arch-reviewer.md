@@ -150,6 +150,7 @@ You MUST apply at least 3 of the following techniques to actively try to break t
 - **Dependency Inversion Test**: For each new or modified component, ask "what happens if I remove this — does the domain still compile?" If not, the dependency direction is wrong.
 - **Blast Radius Test**: Identify every existing file that depends on the changed files. For each, ask "what else depends on this file?" and flag cascade risks.
 - **Edge Case Injection**: Propose 3 realistic edge cases (empty input, concurrent access, partial failure) and verify the code handles them.
+- **Execution Path Comparison**: Using the Factory Call-Site Analysis from the evidence pack, compare every call-site of each factory/builder port. For each factory, verify: (a) arguments are consistent across all execution paths (foreground, background/Temporal, CLI), (b) lifecycle is symmetric (if one path calls `remove()`, all paths that call `create()` must also call `remove()` — and at the correct granularity), (c) no path passes `None` or a default for a parameter that carries real data in another path. Flag divergences as potential functional defects.
 - **Reuse Audit**: Using the evidence pack's duplication candidates, evaluate whether any new component overlaps >50% with existing implementations. If the overlap is with 2+ existing files that also duplicate each other, this is an established convention — note as INFO consolidation opportunity, not a violation against this diff.
 - **Constructor Dependency Audit**: Using the evidence pack's Port/Adapter Wiring map, verify every dependency parameter in new/changed service/adapter classes is a Port (ABC) not a concrete class, and trace where the concrete is injected.
 - **Import Chain Tracing**: For critical modules, trace the FULL import chain (including transitive imports) and classify each by layer. A service importing a utility that imports an adapter is still a violation. Use tools to read transitive imports if the evidence pack doesn't cover them.
@@ -340,16 +341,37 @@ Number findings sequentially within this section. Render each INFO item as a col
 
 Omit this section entirely if there are zero info items.
 
-### Section 7: Verdict Derivation (LAST — Two-Pass Anti-Anchoring)
+### Section 7: Severity Self-Check & Verdict Derivation (LAST)
 
-**This section MUST be the last substantive section.** You have already produced all findings above (Sections 3-6). Now derive the verdict mechanically from what you found. Do NOT revisit or adjust findings based on the verdict.
+**This section MUST be the last substantive section.** Before deriving the verdict, re-examine
+every finding at WARNING or above. This is a calibration pass — you are verifying your own
+classifications are correct, not trying to remove findings.
 
-Show your derivation explicitly, then state the verdict:
+#### Step 1: Severity Self-Check
+
+For each finding at 🟡 WARNING, 🟠 MAJOR, or 🔴 CRITICAL, verify it against the rubric
+from `_severity-rubric.md`:
+
+| # | Finding | Assigned | Rubric Check | Confirmed |
+|---|---------|----------|-------------|-----------|
+| 1 | {title} | 🟠 Major | {which 2+ Major criteria are met, or why they aren't} | ✅ Confirmed / ⬆️ Upgraded to {X} / ⬇️ Corrected to {X} |
+
+Rules:
+- If a MAJOR finding meets ALL 5 Critical criteria → upgrade to CRITICAL
+- If a MAJOR finding meets fewer than 2 Major criteria → correct to WARNING
+- If a WARNING finding actually meets 2+ Major criteria → correct to MAJOR
+- If a finding follows an established codebase convention or is `[PRE]` → correct to INFO
+- Do NOT remove findings — every finding stays in the report, only its severity may change
+- After corrections, move findings to their correct sections (3-6) in the report above
+
+#### Step 2: Verdict Derivation
+
+Show your derivation explicitly using the post-self-check counts:
 
 ```
 ### Verdict Derivation
 
-Findings count (NEW only): 🔴 {N} Critical | 🟠 {N} Major | 🟡 {N} Warnings | 🔵 {N} Info
+Findings (NEW only): 🔴 {N} Critical | 🟠 {N} Major | 🟡 {N} Warnings | 🔵 {N} Info
 Verdict rule: REJECT if any CRITICAL [NEW]; NEEDS_REVISION if any MAJOR [NEW]; APPROVE otherwise.
 
 **Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Warnings | 🔵 [{N}] Info

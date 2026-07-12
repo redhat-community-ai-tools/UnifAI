@@ -219,9 +219,12 @@ Check for violations:
 - Try/catch blocks in controllers that handle domain-specific errors instead of delegating to a global exception handler.
 
 For each finding: show the file path and line number, and explain what logic should be moved and where.
-- Business logic in endpoint = **MAJOR**
-- Orchestration logic in endpoint (multiple service calls) = **MAJOR**
-- Complex data transformation in endpoint = **MAJOR**
+
+Severity floor (apply rubric modifiers from `_severity-rubric.md` — confirm 2+ Major criteria are met before assigning Major; downgrade to Warning if blast radius is 0-1 components and no runtime failure):
+- Business logic in endpoint → floor **MAJOR** (confirm blast radius ≥2 components or failure mode beyond maintenance burden)
+- Orchestration logic in endpoint (multiple service calls) → floor **MAJOR**
+- Complex data transformation in endpoint → floor **MAJOR**
+- Pure helper functions called only from one endpoint, with no side effects → **WARNING** (blast radius 0-1, trivially movable)
 - Trivial mapping in endpoint = **MINOR**
 
 ### 11. Coupling & Responsibility Violations (STRICT)
@@ -264,9 +267,15 @@ The Scout has pre-scanned for security patterns in the evidence pack. For each f
 Additionally check:
 - Insecure deserialization or unsafe use of reflection.
 
+**Authorization Completeness** (use the Authorization Pattern Scan from the evidence pack):
+- For every new endpoint in the diff, compare its decorator stack against sibling endpoints in the same blueprint/router. If siblings perform ownership/permission checks (or have TODO comments indicating the check is needed), the new endpoint must match or exceed their auth level.
+- Search for `TODO.*auth`, `TODO.*permission`, `TODO.*ownership` in the same file — these indicate known authorization gaps. New endpoints MUST NOT replicate these gaps; flag if they do.
+- For security-sensitive operations (approval, payment, deletion, credential management): verify the endpoint checks not just authentication but also **resource ownership** (does the caller own or have access to the target resource?). Authentication alone is insufficient.
+
 For each confirmed finding: show exact file path and line number, explain the attack surface.
 - Hardcoded secrets or injection risk = **CRITICAL**
 - Missing authz check = **MAJOR**
+- Missing ownership verification on security-sensitive endpoint = **MAJOR**
 - Sensitive data in logs/errors = **MAJOR**
 
 ### 13. Component Placement Verification (MANDATORY)
@@ -280,6 +289,18 @@ Using the Boundaries data from the evidence pack's Domain Context:
 5. If no component claims it, flag as **WARNING — UNCLAIMED RESPONSIBILITY** and suggest where it belongs
 
 Evidence required: quote the boundary declaration that supports or contradicts the placement.
+
+### 14. Execution Path Consistency
+
+Using the Factory Call-Site Analysis from the evidence pack, verify that factories and builders
+are called consistently across all execution paths:
+
+- If a factory's `create()` is called with different arguments in different paths (e.g.
+  foreground passes real metadata, Temporal passes `None`), flag as a potential functional defect.
+- If lifecycle is asymmetric (e.g. `remove()` called per-node in one path but per-session in
+  another), flag the divergence.
+- Severity: functional defect (incorrect behavior in specific execution path) = **MAJOR**;
+  lifecycle asymmetry without functional impact = **WARNING**.
 
 ## Severity Calibration
 
@@ -434,11 +455,30 @@ Number findings sequentially within this section. Render each INFO item as a col
 
 Omit this section entirely if there are zero info items.
 
-### Section 7: Score Derivation & Verdict (LAST — Two-Pass Anti-Anchoring)
+### Section 7: Severity Self-Check, Score Derivation & Verdict (LAST)
 
-**This section MUST be the last substantive section.** You have already produced all findings above (Sections 3-6). Now derive the score mechanically from what you found. Do NOT revisit or adjust findings based on the score.
+**This section MUST be the last substantive section.** Before deriving the score, re-examine
+every finding at WARNING or above. This is a calibration pass — you are verifying your own
+classifications are correct, not trying to remove findings.
 
-#### Severity Floor Scoring Formula
+#### Step 1: Severity Self-Check
+
+For each finding at 🟡 WARNING/MINOR, 🟠 MAJOR, or 🔴 CRITICAL, verify it against the rubric
+from `_severity-rubric.md`:
+
+| # | Finding | Assigned | Rubric Check | Confirmed |
+|---|---------|----------|-------------|-----------|
+| 1 | {title} | 🟠 Major | {which 2+ Major criteria are met, or why they aren't} | ✅ Confirmed / ⬆️ Upgraded to {X} / ⬇️ Corrected to {X} |
+
+Rules:
+- If a MAJOR finding meets ALL 5 Critical criteria → upgrade to CRITICAL
+- If a MAJOR finding meets fewer than 2 Major criteria → correct to WARNING
+- If a WARNING finding actually meets 2+ Major criteria → correct to MAJOR
+- If a finding follows an established codebase convention or is `[PRE]` → correct to INFO
+- Do NOT remove findings — every finding stays in the report, only its severity may change
+- After corrections, move findings to their correct sections (3-6) in the report above
+
+#### Step 2: Scoring Formula
 
 Count only findings tagged `[NEW]` (introduced by this PR). INFO and `[PRE]`-tagged findings have zero penalty.
 
