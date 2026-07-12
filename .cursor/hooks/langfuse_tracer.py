@@ -31,8 +31,8 @@ def main() -> None:
         return
 
     event = payload.get("hook_event_name", "")
-    conversation_id = payload.get("conversation_id", "")
-    if not event or not conversation_id:
+    trace_seed = payload.get("session_id") or payload.get("conversation_id", "")
+    if not event or not trace_seed:
         return
 
     handler = _HANDLERS.get(event)
@@ -43,7 +43,7 @@ def main() -> None:
         from langfuse import Langfuse
 
         langfuse = Langfuse()
-        trace_id = langfuse.create_trace_id(seed=conversation_id)
+        trace_id = langfuse.create_trace_id(seed=trace_seed)
         handler(langfuse, trace_id, payload)
         langfuse.flush()
     except Exception as exc:

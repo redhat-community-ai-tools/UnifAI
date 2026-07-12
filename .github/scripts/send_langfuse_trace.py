@@ -20,6 +20,8 @@ import os
 import sys
 from pathlib import Path
 
+from _scoring import to_int
+
 
 def _load_json(path: Path) -> dict | None:
     if not path.exists():
@@ -30,15 +32,6 @@ def _load_json(path: Path) -> dict | None:
         print(f"::warning::Langfuse: Could not parse {path}: {exc}")
         return None
     return data if isinstance(data, dict) else None
-
-
-def _as_int(value: object, default: int = 0) -> int:
-    if value is None or value == "":
-        return default
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _as_float(value: object, default: float = 0.0) -> float:
@@ -76,7 +69,7 @@ def _attach_scores(langfuse, trace_id: str, pipeline_results: dict) -> None:
             )
 
     code_findings = pipeline_results.get("code_findings", {})
-    files_changed = _as_int(pipeline_results.get("files_changed", 1)) or 1
+    files_changed = to_int(pipeline_results.get("files_changed", 1)) or 1
     if isinstance(code_findings, dict):
         from _scoring import compute_deterministic_score
         computed = compute_deterministic_score(code_findings, files_changed)
@@ -139,19 +132,19 @@ def _add_dataset_item(
     item_input = {
         "pr_number": pr_number,
         "branch": branch,
-        "files_changed": _as_int(pr.get("files_changed"), default=0),
+        "files_changed": to_int(pr.get("files_changed"), default=0),
     }
 
     item_output = {
         "arch_verdict": pr.get("arch_verdict", ""),
         "code_verdict": pr.get("code_verdict", ""),
-        "model_score": _as_int(pr.get("code_health_score"), default=0),
+        "model_score": to_int(pr.get("code_health_score"), default=0),
         "code_findings": {
-            sev: _as_int(code_findings.get(sev), default=0)
+            sev: to_int(code_findings.get(sev), default=0)
             for sev in ("critical", "major", "minor", "info")
         },
         "arch_findings": {
-            sev: _as_int(arch_findings.get(sev), default=0)
+            sev: to_int(arch_findings.get(sev), default=0)
             for sev in ("critical", "major", "minor", "info")
         },
     }
@@ -165,7 +158,7 @@ def _add_dataset_item(
         "arch_model": models.get("arch_judge", ""),
         "code_model": models.get("code_judge", ""),
         "orchestrator_model": models.get("orchestrator", ""),
-        "duration_ms": _as_int(totals.get("duration_ms"), default=0),
+        "duration_ms": to_int(totals.get("duration_ms"), default=0),
         "cost_usd": round(_as_float(totals.get("estimated_cost_usd")), 4),
     }
 
@@ -202,7 +195,7 @@ def main() -> int:
     usage = review_data.get("usage", {})
     if not isinstance(usage, dict):
         usage = {}
-    duration_ms = _as_int(review_data.get("duration_ms"))
+    duration_ms = to_int(review_data.get("duration_ms"))
     model = review_data.get("model", "")
     request_id = review_data.get("request_id", "")
     is_error = bool(review_data.get("is_error"))
@@ -223,10 +216,10 @@ def main() -> int:
         if is_error:
             tags.append("error")
 
-        input_tokens = _as_int(usage.get("inputTokens"))
-        output_tokens = _as_int(usage.get("outputTokens"))
-        cache_read = _as_int(usage.get("cacheReadTokens"))
-        cache_write = _as_int(usage.get("cacheWriteTokens"))
+        input_tokens = to_int(usage.get("inputTokens"))
+        output_tokens = to_int(usage.get("outputTokens"))
+        cache_read = to_int(usage.get("cacheReadTokens"))
+        cache_write = to_int(usage.get("cacheWriteTokens"))
 
         usage_details: dict = {
             "input": input_tokens,

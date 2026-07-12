@@ -489,7 +489,7 @@ critical_penalty = count_critical_NEW * 3.0        (flat — never diluted)
 major_penalty    = count_major_NEW * 1.5           (flat — never diluted)
 minor_penalty    = (count_minor_NEW * 0.5) / max(1, files_changed / 5)  (density-based)
 
-score = max(1, round(10 - critical_penalty - major_penalty - minor_penalty))
+score = max(1, min(10, round(10 - critical_penalty - major_penalty - minor_penalty)))
 ```
 
 Show the derivation explicitly in your output:
