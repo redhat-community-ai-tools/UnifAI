@@ -228,6 +228,7 @@ class DataSourceService:
         self,
         source_type: Optional[str] = None,
         include_full_details: bool = False,
+        upload_by: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Get all sources enriched with pipeline stats.
         
@@ -236,9 +237,10 @@ class DataSourceService:
             include_full_details: If False (default), uses SUMMARY view which 
                                   excludes heavy fields for better performance.
                                   If True, uses FULL view with all data.
+            upload_by: Filter by owner username
         """
         view = DataSourceView.FULL if include_full_details else DataSourceView.SUMMARY
-        sources = self._source_repo.find_all(source_type, view=view)
+        sources = self._source_repo.find_all(source_type, view=view, upload_by=upload_by)
         result = self.enrich_with_pipeline_stats(sources)
         return sorted(result, key=lambda x: x.get("created_at") or 0, reverse=True)
 
