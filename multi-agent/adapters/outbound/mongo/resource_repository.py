@@ -24,7 +24,11 @@ class MongoResourceRepository(ResourceRepository):
         self.col.create_index(
             [("identity.type", 1), ("identity.id", 1), ("created", -1)],
             background=True)
-        self.col.create_index("is_builtin", sparse=True, background=True)
+        self.col.create_index(
+            "builtin_status",
+            partialFilterExpression={"builtin_status": {"$type": "string"}},
+            background=True,
+        )
 
     # ---------- CRUD ----------
     def save(self, doc: Resource) -> str:
@@ -70,10 +74,10 @@ class MongoResourceRepository(ResourceRepository):
     def find_resources(self, query: ResourceQuery) -> List[Resource]:
         """Find resources based on query criteria with pagination.
 
-        Includes built-in resources alongside identity-scoped ones via $or.
+        Includes public built-in resources alongside identity-scoped ones via $or.
         """
         identity_filter = identity_q(query.identity)
-        builtin_filter: Dict[str, Any] = {"is_builtin": True}
+        builtin_filter: Dict[str, Any] = {"builtin_status": "public"}
 
         if query.category:
             identity_filter["category"] = query.category.value
@@ -97,9 +101,9 @@ class MongoResourceRepository(ResourceRepository):
         return [Resource(**doc) for doc in cursor]
 
     def count_resources(self, query: ResourceQuery) -> int:
-        """Count resources matching query criteria (includes built-ins)."""
+        """Count resources matching query criteria (includes public built-ins)."""
         identity_filter = identity_q(query.identity)
-        builtin_filter: Dict[str, Any] = {"is_builtin": True}
+        builtin_filter: Dict[str, Any] = {"builtin_status": "public"}
 
         if query.category:
             identity_filter["category"] = query.category.value
@@ -181,8 +185,8 @@ class MongoResourceRepository(ResourceRepository):
         category: str | None = None,
         type: str | None = None,
     ) -> List[Resource]:
-        """Return all built-in resources, optionally filtered."""
-        filter_dict: Dict[str, Any] = {"is_builtin": True}
+        """Return all built-in resources (public and private), optionally filtered."""
+        filter_dict: Dict[str, Any] = {"builtin_status": {"$in": ["public", "private"]}}
         if category:
             filter_dict["category"] = category
         if type:
@@ -192,7 +196,7 @@ class MongoResourceRepository(ResourceRepository):
     def find_builtin_by_url(self, url: str) -> Optional[Resource]:
         """Find a built-in MCP resource matching the given URL."""
         raw = self.col.find_one({
-            "is_builtin": True,
+            "builtin_status": {"$in": ["public", "private"]},
             "cfg_dict.mcp_url": url,
         })
         return Resource(**raw) if raw else None

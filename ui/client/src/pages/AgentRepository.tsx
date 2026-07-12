@@ -15,68 +15,6 @@ import { cn } from "@/lib/utils";
 
 type ResourceFilter = "all" | "built-in" | "personal";
 
-const MOCK_BUILTIN_INSTANCES: Record<string, ElementInstance[]> = {
-  openai: [
-    {
-      rid: "builtin-openai-gpt4o",
-      name: "GPT-4o",
-      type: "openai",
-      category: "llms",
-      config: {
-        model_name: "gpt-4o",
-        base_url: "https://api.openai.com/v1",
-        temperature: 0.7,
-        max_tokens: 4096,
-        verify_ssl: true,
-      },
-      version: 1,
-      isBuiltIn: true,
-    },
-  ],
-  mcp_server: [
-    {
-      rid: "builtin-mcp-github",
-      name: "GitHub MCP",
-      type: "mcp_server",
-      category: "providers",
-      config: {
-        mcp_url: "https://mcp.github.com/sse",
-        transport_type: "streamable http",
-        auth_method: "access_token",
-        tool_names: ["get_repo", "list_issues", "create_issue", "search_code"],
-        additional_headers: {},
-      },
-      version: 1,
-      isBuiltIn: true,
-    },
-  ],
-  web_fetch: [
-    {
-      rid: "builtin-tool-webfetch",
-      name: "Web Fetch",
-      type: "web_fetch",
-      category: "tools",
-      config: {},
-      version: 1,
-      isBuiltIn: true,
-    },
-  ],
-  deep_agent_node: [
-    {
-      rid: "builtin-node-deep-agent",
-      name: "Research Assistant",
-      type: "deep_agent_node",
-      category: "nodes",
-      config: {
-        system_message: "You are a thorough research assistant.",
-        retries: 1,
-      },
-      version: 1,
-      isBuiltIn: true,
-    },
-  ],
-};
-
 export default function UserWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -103,26 +41,17 @@ export default function UserWorkspace() {
     deleteElement
   } = useWorkspaceData();
 
-  const builtInForType = useMemo(() => {
-    if (!selectedElementType) return [];
-    return MOCK_BUILTIN_INSTANCES[selectedElementType.type] ?? [];
-  }, [selectedElementType]);
-
-  const mergedInstances = useMemo(() => {
-    return [...builtInForType, ...elementInstances];
-  }, [builtInForType, elementInstances]);
-
   const filteredInstances = useMemo(() => {
-    if (resourceFilter === "all") return mergedInstances;
-    if (resourceFilter === "built-in") return mergedInstances.filter(el => el.isBuiltIn);
-    return mergedInstances.filter(el => !el.isBuiltIn);
-  }, [mergedInstances, resourceFilter]);
+    if (resourceFilter === "all") return elementInstances;
+    if (resourceFilter === "built-in") return elementInstances.filter(el => !!el.builtinStatus);
+    return elementInstances.filter(el => !el.builtinStatus);
+  }, [elementInstances, resourceFilter]);
 
   const filterCounts = useMemo(() => ({
-    all: mergedInstances.length,
-    "built-in": mergedInstances.filter(el => el.isBuiltIn).length,
-    personal: mergedInstances.filter(el => !el.isBuiltIn).length,
-  }), [mergedInstances]);
+    all: elementInstances.length,
+    "built-in": elementInstances.filter(el => !!el.builtinStatus).length,
+    personal: elementInstances.filter(el => !el.builtinStatus).length,
+  }), [elementInstances]);
 
   useEffect(() => {
     if (selectedElementType) {

@@ -322,6 +322,32 @@ def validate_config(category, type, config, name=None, timeout_seconds=10.0):
 #  Built-in resource endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
+@resources_bp.route("/builtins.list", methods=["GET"])
+@with_authenticated_user
+@from_query({
+    "category": fields.Str(required=False),
+    "type": fields.Str(required=False),
+})
+def list_builtins(authenticated_user, category=None, type=None):
+    """List all built-in resources (admin only).
+
+    Returns only resources with builtin_status set (public or private),
+    regardless of the caller's identity. Used by the Repository Management
+    admin panel.
+    """
+    if not _is_admin_user(authenticated_user):
+        return jsonify({"error": "Admin access required"}), 403
+
+    svc = current_app.container.resources_service
+    try:
+        resources = svc.find_all_builtins(category=category, type=type)
+        return jsonify({
+            "resources": [doc.model_dump(mode="json") for doc in resources],
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @resources_bp.route("/builtin.schema", methods=["GET"])
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
@@ -385,7 +411,7 @@ def configure_builtin(identity, resource_id, config):
 def duplicate_resource(identity, resource_id, name, config_overrides=None):
     """Duplicate a built-in resource into the caller's workspace.
 
-    The clone gets is_builtin=False and parent_builtin_id set to the source.
+    The clone gets builtin_status=None and parent_builtin_id set to the source.
     Users can optionally override config fields (e.g. select a subset of tools).
     """
     svc = current_app.container.resources_service
@@ -414,9 +440,9 @@ def duplicate_resource(identity, resource_id, name, config_overrides=None):
     ),
 })
 def promote_resource(authenticated_user, resource_id, configurable_keys=None):
-    """Promote a custom resource to built-in status (admin only).
+    """Promote a custom resource to public built-in status (admin only).
 
-    Toggles is_builtin=True and sets identity to system.
+    Sets builtin_status='public' and identity to system.
     Optionally declares which field names from the element schema users can configure.
     """
     if not _is_admin_user(authenticated_user):
@@ -452,7 +478,7 @@ def create_builtin_resource(
 ):
     """Create a resource directly as built-in (admin only).
 
-    Creates with system identity and is_builtin flag based on availableToAll.
+    Creates with system identity and builtin_status based on availableToAll.
     Admins can specify which fields are user-configurable via configurableKeys.
     """
     if not _is_admin_user(authenticated_user):
@@ -522,10 +548,10 @@ def update_builtin_resource(
     "available_to_all": fields.Bool(data_key="availableToAll", required=True),
 })
 def toggle_builtin_status(authenticated_user, resource_id, available_to_all):
-    """Toggle the available_to_all (is_builtin) status for a resource (admin only).
+    """Toggle the builtin_status between public and private (admin only).
 
-    When toggled on, the resource becomes visible to all users.
-    When toggled off, only the system identity can see it.
+    When toggled on (public), the resource becomes visible to all users.
+    When toggled off (private), only admins can see it in the configuration panel.
     """
     if not _is_admin_user(authenticated_user):
         return jsonify({"error": "Admin access required"}), 403

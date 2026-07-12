@@ -28,7 +28,7 @@ class Resource(BaseModel):
     contributed_by: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     created: datetime = Field(default_factory=datetime.utcnow, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     updated: datetime = Field(default_factory=datetime.utcnow, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
-    is_builtin: bool = Field(default=False, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
+    builtin_status: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     parent_builtin_id: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     configurable_keys: List[str] = Field(default_factory=list, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     user_configs: Dict[str, Dict[str, Any]] = Field(default_factory=dict, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())

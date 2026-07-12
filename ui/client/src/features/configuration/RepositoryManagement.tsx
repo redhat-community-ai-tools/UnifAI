@@ -118,8 +118,7 @@ interface ResourceItem {
   type: string;
   config: any;
   category?: string;
-  availableToAll?: boolean;
-  is_builtin?: boolean;
+  builtin_status?: 'public' | 'private' | null;
   configurable_keys?: string[];
 }
 
@@ -189,9 +188,7 @@ export default function RepositoryManagement() {
   const reloadBuiltins = useCallback(async () => {
     try {
       const axios = (await import("@/http/axiosAgentConfig")).default;
-      const response = await axios.get(
-        `/resources/resources.list?userId=system&identityType=system&limit=1000`,
-      );
+      const response = await axios.get(`/resources/builtins.list`);
       const resources = response.data.resources || [];
       const grouped: Record<string, ResourceItem[]> = {};
       const newAvailable: Record<string, boolean> = {};
@@ -204,11 +201,10 @@ export default function RepositoryManagement() {
           type: r.type,
           config: r.cfg_dict,
           category: cat,
-          availableToAll: r.is_builtin ?? false,
-          is_builtin: r.is_builtin ?? false,
+          builtin_status: r.builtin_status || null,
           configurable_keys: r.configurable_keys || [],
         });
-        newAvailable[r.rid] = r.is_builtin ?? false;
+        newAvailable[r.rid] = r.builtin_status === "public";
       }
       setCategoryResources(grouped);
       setAvailableToAll(newAvailable);
@@ -279,7 +275,7 @@ export default function RepositoryManagement() {
       setSelectedElementType(elType);
       setIsLoadingSchema(true);
       setStep("configure");
-      setNewElementAvailableToAll(resource.availableToAll ?? resource.is_builtin ?? false);
+      setNewElementAvailableToAll(resource.builtin_status === "public");
       setConfigurableKeys(resource.configurable_keys ?? []);
       setShowConfigurableKeys((resource.configurable_keys ?? []).length > 0);
 
@@ -780,12 +776,16 @@ export default function RepositoryManagement() {
                                   <span className="text-sm font-medium truncate">
                                     {resource.name || "Unnamed"}
                                   </span>
-                                  {resource.is_builtin && (
+                                  {resource.builtin_status && (
                                     <Badge
                                       variant="outline"
-                                      className="text-[10px] px-1.5 py-0 text-blue-400 border-blue-400/30 flex-shrink-0"
+                                      className={`text-[10px] px-1.5 py-0 flex-shrink-0 ${
+                                        resource.builtin_status === "public"
+                                          ? "text-blue-400 border-blue-400/30"
+                                          : "text-gray-400 border-gray-500/30"
+                                      }`}
                                     >
-                                      Built-in
+                                      {resource.builtin_status === "public" ? "Public" : "Private"}
                                     </Badge>
                                   )}
                                 </div>

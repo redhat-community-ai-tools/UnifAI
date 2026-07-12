@@ -131,7 +131,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   const { user } = useAuth();
   const { viewMode, selectedTeam } = useView();
   const isTeamWorkspace = viewMode === "team" && !!selectedTeam;
-  const nonBuiltInElements = elements.filter(el => !el.isBuiltIn);
+  const nonBuiltInElements = elements.filter(el => !el.builtinStatus);
   const resourceEditLocks = useTeamEditLockPoll(
     selectedTeam?.id,
     "resource",
@@ -146,7 +146,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   } = useAgenticAI();
 
   useEffect(() => {
-    const realElements = elements.filter(el => !el.isBuiltIn);
+    const realElements = elements.filter(el => !el.builtinStatus);
     if (realElements.length > 0) {
       const rids = realElements.map(el => el.rid);
       validateResources(rids);
@@ -253,7 +253,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {elements.map((element, index) => {
-        const isBuiltIn = !!element.isBuiltIn;
+        const isBuiltIn = !!element.builtinStatus;
         const isFlipped = flippedCards.has(element.rid);
         const hasAuthField = isBuiltIn && builtInNeedsAuth(element.config);
 

@@ -26,7 +26,7 @@ class ResourcesRegistry:
         if self._repo.find_by_name(doc.identity, doc.category, doc.type, doc.name):
             raise ValueError(f"{doc.category}:{doc.type}:{doc.name} exists for user")
 
-        if not doc.is_builtin:
+        if not doc.builtin_status:
             self._check_builtin_url_collision(doc)
 
         self._repo.save(doc)
@@ -104,6 +104,14 @@ class ResourcesRegistry:
         return self._repo.group_count(identity, group_by, filter)
 
     # ---------- built-in resources ----------
+
+    def find_all_builtins(
+        self,
+        category: str | None = None,
+        type: str | None = None,
+    ) -> List[Resource]:
+        """Return all built-in resources (public and private)."""
+        return self._repo.find_all_builtins(category=category, type=type)
 
     def find_builtin_by_url(self, url: str) -> Optional[Resource]:
         """Find a built-in resource whose cfg_dict.mcp_url matches *url*."""

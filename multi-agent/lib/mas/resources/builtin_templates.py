@@ -20,7 +20,7 @@ BUILTIN_RESOURCES = [
         category=ResourceCategory.LLM,
         type="openai",
         name="GPT-4o",
-        is_builtin=True,
+        builtin_status="public",
         configurable_keys=["api_key"],
         cfg_dict={
             "model_name": "gpt-4o",
@@ -36,7 +36,7 @@ BUILTIN_RESOURCES = [
         category=ResourceCategory.PROVIDER,
         type="mcp_server",
         name="GitHub MCP",
-        is_builtin=True,
+        builtin_status="public",
         configurable_keys=["bearer_token", "tool_names", "additional_headers"],
         cfg_dict={
             "mcp_url": "https://mcp.github.com/sse",
@@ -57,7 +57,7 @@ BUILTIN_RESOURCES = [
         category=ResourceCategory.TOOL,
         type="web_fetch",
         name="Web Fetch",
-        is_builtin=True,
+        builtin_status="public",
         configurable_keys=[],
         cfg_dict={},
     ),
@@ -67,7 +67,7 @@ BUILTIN_RESOURCES = [
         category=ResourceCategory.NODE,
         type="deep_agent_node",
         name="Research Assistant",
-        is_builtin=True,
+        builtin_status="public",
         configurable_keys=["tool_names"],
         cfg_dict={
             "system_message": "You are a thorough research assistant.",

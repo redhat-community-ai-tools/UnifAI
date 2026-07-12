@@ -128,7 +128,7 @@ class ResourcesService:
         resource = self._store.get(rid)
         config = dict(resource.cfg_dict)
 
-        if resource.is_builtin and identity:
+        if resource.builtin_status and identity:
             overlay = self._resolve_user_overlay(resource, identity)
             if overlay:
                 config.update(overlay)
@@ -337,6 +337,14 @@ class ResourcesService:
             raise KeyError(f"Resource not found: {rid}")
         return cards[rid]
 
+    def find_all_builtins(
+        self,
+        category: Optional[str] = None,
+        type: Optional[str] = None,
+    ) -> List[Resource]:
+        """Return all built-in resources (public and private), for admin listing."""
+        return self._store.find_all_builtins(category=category, type=type)
+
     # ---------- Built-in Resource Operations ----------
 
     BUILTIN_CONFIGURABLE_KEYS: Dict[str, Dict[str, List[str]]] = {
@@ -357,7 +365,7 @@ class ResourcesService:
         users viewing built-in elements — admins use the normal schema.
         """
         resource = self._store.get(rid)
-        if not resource.is_builtin:
+        if not resource.builtin_status:
             raise ValueError("Resource is not a built-in resource")
 
         schema = self.element_registry.get_schema_json(
@@ -394,7 +402,7 @@ class ResourcesService:
             config: Dict of field values to store (only configurable_keys allowed).
         """
         resource = self._store.get(rid)
-        if not resource.is_builtin:
+        if not resource.builtin_status:
             raise ValueError("Resource is not a built-in resource")
 
         allowed_keys = set(resource.configurable_keys)
@@ -419,7 +427,7 @@ class ResourcesService:
     ) -> Resource:
         """Clone a built-in resource into a personal/team resource."""
         source = self._store.get(rid)
-        if not source.is_builtin:
+        if not source.builtin_status:
             raise ValueError("Resource is not a built-in resource")
 
         merged_config = dict(source.cfg_dict)
@@ -455,7 +463,7 @@ class ResourcesService:
     ) -> Resource:
         """Create a resource directly as built-in (admin only).
 
-        Uses system identity and sets is_builtin based on available_to_all flag.
+        Uses system identity and sets builtin_status based on available_to_all flag.
         """
         model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
         cfg_model = model_cls(**config)
@@ -469,26 +477,26 @@ class ResourcesService:
             name=name,
             cfg_dict=cfg_model.model_dump(mode="json"),
             nested_refs=nested_refs,
-            is_builtin=available_to_all,
+            builtin_status="public" if available_to_all else "private",
             configurable_keys=configurable_keys or [],
         )
         return self._store.create(doc)
 
     def promote(self, rid: str, configurable_keys: List[str] = None) -> Resource:
-        """Promote a custom resource to built-in (admin only)."""
+        """Promote a resource to public built-in (admin only)."""
         resource = self._store.get(rid)
-        resource.is_builtin = True
+        resource.builtin_status = "public"
         resource.identity = Identity.system()
         if configurable_keys is not None:
             resource.configurable_keys = configurable_keys
         return self._store.update(resource)
 
     def demote(self, rid: str) -> Resource:
-        """Demote a built-in resource back to a system-owned non-built-in resource (admin only)."""
+        """Demote a public built-in to private (admin-only visibility)."""
         resource = self._store.get(rid)
-        if not resource.is_builtin:
+        if not resource.builtin_status:
             raise ValueError("Resource is not a built-in resource")
-        resource.is_builtin = False
+        resource.builtin_status = "private"
         return self._store.update(resource)
 
     def update_builtin(
@@ -517,7 +525,7 @@ class ResourcesService:
             resource.name = name
 
         if available_to_all is not None:
-            resource.is_builtin = available_to_all
+            resource.builtin_status = "public" if available_to_all else "private"
 
         if configurable_keys is not None:
             resource.configurable_keys = configurable_keys
@@ -527,7 +535,7 @@ class ResourcesService:
     def guard_builtin_write(self, rid: str, is_admin: bool) -> None:
         """Raise BuiltInWriteProtectedError if resource is built-in and caller is not admin."""
         resource = self._store.get(rid)
-        if resource.is_builtin and not is_admin:
+        if resource.builtin_status and not is_admin:
             raise BuiltInWriteProtectedError()
 
     # ---------- Internal Helpers ----------
