@@ -46,8 +46,8 @@ def main() -> None:
         trace_id = langfuse.create_trace_id(seed=conversation_id)
         handler(langfuse, trace_id, payload)
         langfuse.flush()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"::warning::Langfuse hook failed: {exc}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
