@@ -25,7 +25,8 @@ class ListSessionsCommand(CommandHandler):
                 timeout=MAS_TIMEOUT,
             )
             resp.raise_for_status()
-            sessions = resp.json()
+            data = resp.json()
+            sessions = data.get("sessions", data) if isinstance(data, dict) else data
         except requests.RequestException as e:
             raise MASRequestError(
                 handle_client_error(e, operation="Session listing"),
