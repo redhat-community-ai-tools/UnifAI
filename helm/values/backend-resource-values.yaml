@@ -8,6 +8,7 @@ unifai_backend:
   env:
     BACKEND_ENV: "production"
     RAG_URL: "http://unifai-rag-server:13457"
+    MULTIAGENT_URL: "http://unifai-multiagent-be:8003"
     VERSION: ""
   resources:
     limits:

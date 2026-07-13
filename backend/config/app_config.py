@@ -9,6 +9,10 @@ class AppConfig(SharedConfig):
     version: str = "1.0.0"
     admin_allowed_users: list = []
     rag_url: str = "http://localhost:13457"
+    multiagent_url: str = "http://localhost:8003"
+    slack_signing_secret: str = ""
+    slack_app_token: str = ""
+    slack_bot_token: str = ""
     identity_host: str = "http://localhost:13456"
     secret_key: str = ""
 

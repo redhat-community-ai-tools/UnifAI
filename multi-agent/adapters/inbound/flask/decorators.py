@@ -10,8 +10,8 @@ service at login) and resolves the workspace identity:
   URL kwarg). Its presence triggers team mode; the decorator validates
   membership before proceeding.
 
-Headless scripts/CI may fall back to the ``X-Authenticated-User`` header
-until API-token support is implemented (see design-genie-1618.md §7).
+Internal services (e.g. the backend relaying Slack commands) authenticate
+via the ``X-Authenticated-User`` header.
 
 Backward compatibility: The decorator still accepts legacy ``userId`` +
 ``identityType`` params from older UI/CLI clients. These are mapped to the
@@ -53,16 +53,19 @@ _AUTH_HEADER = "X-Authenticated-User"
 
 
 def _get_fallback_user() -> str | None:
-    """Legacy fallback: read ``X-Authenticated-User`` header.
+    """Fallback authentication for non-browser callers.
 
-    Used by headless CI/CD scripts that cannot perform browser SSO
-    (e.g. ``scripts/execution_workflow.py``).  Will be removed when
-    API-token auth is implemented.
+    Reads the ``X-Authenticated-User`` header set by trusted internal
+    services (e.g. the backend relaying Slack commands).  The value is
+    the Slack *username* (e.g. ``sfiresht``), which matches the identity
+    stored in MongoDB for session ownership.
     """
     user = request.headers.get(_AUTH_HEADER, "").strip()
     if user:
-        logger.debug("Authenticated via %s header (legacy): %s", _AUTH_HEADER, user)
-    return user or None
+        logger.debug("Authenticated via %s header: %s", _AUTH_HEADER, user)
+        return user
+
+    return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────

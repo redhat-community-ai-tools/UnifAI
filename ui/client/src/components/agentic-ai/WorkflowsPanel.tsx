@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
-import { Trash2, Users, Pencil, Search, X } from "lucide-react";
+import { Trash2, Users, Pencil, Search, X, MoreHorizontal, MessageSquare } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useView } from "@/contexts/ViewContext";
 import { useShared } from "@/contexts/SharedContext";
@@ -15,12 +15,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { FlowObject } from "./graphs/interfaces";
 import GraphDisplay from "./graphs/GraphDisplay";
 import { fetchActiveSessions } from "@/api/agentic";
-import { fetchBlueprintSummaries, deleteBlueprint, fetchResolvedBlueprint } from "@/api/blueprints";
+import { fetchBlueprintSummaries, deleteBlueprint, fetchResolvedBlueprint, setPromptShortcuts, PromptShortcutInput } from "@/api/blueprints";
 import { convertGraphFlowToFlowObject } from "@/utils/blueprintHelpers";
 import ShareWorkflow from "./ShareWorkflow";
+import EditPromptShortcutsModal from "./EditPromptShortcutsModal";
 import { BlueprintValidationResult } from "@/types/validation";
 import { useBlueprintValidation } from "@/hooks/use-blueprint-validation";
 import { useTeamEditLockPoll } from "@/hooks/use-team-edit-lock-poll";
@@ -71,6 +79,8 @@ export default function WorkflowsPanel({
   } | null>(null);
   
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [promptShortcutsModalOpen, setPromptShortcutsModalOpen] = useState(false);
+  const [promptShortcutsFlow, setPromptShortcutsFlow] = useState<FlowObject | null>(null);
 
   const { selectedTeam } = useView();
   const { openShareForItem } = useShared();
@@ -275,6 +285,17 @@ export default function WorkflowsPanel({
     });
   };
 
+  const handlePromptShortcutsClick = (flow: FlowObject, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setPromptShortcutsFlow(flow);
+    setPromptShortcutsModalOpen(true);
+  };
+
+  const handleSavePromptShortcuts = async (prompts: PromptShortcutInput[]) => {
+    if (!promptShortcutsFlow) return;
+    await setPromptShortcuts(promptShortcutsFlow.id, prompts, contextUserId, identityType);
+  };
+
   const handleDeleteConfirm = async () => {
     if (!flowToDelete) return;
 
@@ -413,64 +434,57 @@ export default function WorkflowsPanel({
                           Active
                         </span>
                       )}
-                      {showEditButton && (
-                        <SimpleTooltip
-                          side="left"
-                          align="center"
-                          collisionPadding={12}
-                          content={
-                            bpLockUnknown ? (
-                              <p>Could not verify edit lock — try again shortly</p>
-                            ) : bpLockedByOther ? (
-                              <p>Currently being edited by {bpLockedByLabel}</p>
-                            ) : (
-                              <p>Edit this workflow</p>
-                            )
-                          }
-                        >
-                          <span
-                            className={cn(
-                              "inline-flex",
-                              (bpLockedByOther || bpLockUnknown) && "cursor-not-allowed",
-                            )}
-                          >
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className={cn(
-                                "h-6 w-6 p-0 hover:bg-primary/20 hover:text-primary",
-                                (bpLockedByOther || bpLockUnknown) && "pointer-events-none",
-                              )}
-                              onClick={(e) => handleEditClick(flow, e)}
-                              disabled={bpLockedByOther || bpLockUnknown}
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </Button>
-                          </span>
-                        </SimpleTooltip>
-                      )}
-                      <SimpleTooltip content={<p>Share this workflow</p>}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 hover:bg-blue-500/20 hover:text-blue-400"
-                          onClick={(e) => handleShareClick(flow, e)}
-                        >
-                          <Users className="h-3 w-3" />
-                        </Button>
-                      </SimpleTooltip>
-                      {showDeleteButton && (
-                        <SimpleTooltip content={<p>Delete this workflow</p>}>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-6 w-6 p-0 hover:bg-red-500/20 hover:text-red-400"
-                            onClick={(e) => handleDeleteClick(flow, e)}
+                            className="h-6 w-6 p-0 hover:bg-primary/20 hover:text-primary"
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label="Row actions"
                           >
-                            <Trash2 className="h-3 w-3" />
+                            <MoreHorizontal className="h-3.5 w-3.5" />
                           </Button>
-                        </SimpleTooltip>
-                      )}
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-popover border-gray-700">
+                          {showEditButton && (
+                            <DropdownMenuItem
+                              disabled={bpLockedByOther || bpLockUnknown}
+                              onClick={(e) => handleEditClick(flow, e)}
+                            >
+                              <Pencil className="h-4 w-4 mr-2" />
+                              Edit Workflow
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            onClick={(e) => handleShareClick(flow, e)}
+                          >
+                            <Users className="h-4 w-4 mr-2" />
+                            Share
+                          </DropdownMenuItem>
+                          {showEditButton && (
+                            <DropdownMenuItem
+                              disabled={bpLockedByOther || bpLockUnknown}
+                              onClick={(e) => handlePromptShortcutsClick(flow, e)}
+                            >
+                              <MessageSquare className="h-4 w-4 mr-2" />
+                              Prompt Shortcuts
+                            </DropdownMenuItem>
+                          )}
+                          {showDeleteButton && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-red-400 focus:text-red-400 focus:bg-red-500/10"
+                                onClick={(e) => handleDeleteClick(flow, e)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-1 truncate">
@@ -560,6 +574,16 @@ export default function WorkflowsPanel({
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Prompt Shortcuts Modal */}
+      <EditPromptShortcutsModal
+        isOpen={promptShortcutsModalOpen}
+        onClose={() => setPromptShortcutsModalOpen(false)}
+        blueprintId={promptShortcutsFlow?.id || ""}
+        userId={contextUserId}
+        identityType={identityType}
+        onSave={handleSavePromptShortcuts}
+      />
     </>
   );
 }

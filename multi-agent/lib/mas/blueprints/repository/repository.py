@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintSummary
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.core.identity import Identity
 
 
@@ -18,7 +19,11 @@ class BlueprintRepository(ABC):
         
     @abstractmethod
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
-        """Set the metadata dictionary for a blueprint document."""
+        """Merge keys into the metadata sub-document (key-level upsert, not full replace)."""
+
+    @abstractmethod
+    def set_prompt_shortcuts(self, *, blueprint_id: str, shortcuts: PromptShortcuts) -> bool:
+        """Persist prompt shortcuts for a blueprint. Empty shortcuts clear the stored value."""
 
     # ────────────────────────────── Reads by ID ─────────────────────────
     @abstractmethod

@@ -51,3 +51,4 @@ class AppConfig(SharedConfig):
     oauth_callback_path: str = "/api/credentials/callback"
     identity_provider_mode: str = ""
     credential_encryption_key: str = ""
+

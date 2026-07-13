@@ -15,7 +15,7 @@ import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { deriveThemeColors } from "@/lib/colorUtils";
 import axios from "../http/axiosAgentConfig";
 import * as yaml from "js-yaml";
-import { saveBlueprint, updateBlueprint } from "@/api/blueprints";
+import { saveBlueprint, updateBlueprint, PromptShortcutInput } from "@/api/blueprints";
 import {
   acquireTeamEditLock,
   heartbeatTeamEditLock,
@@ -126,6 +126,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
   const [isLoadingBlueprint, setIsLoadingBlueprint] = useState(!!editBlueprintId);
   const [editBlueprintName, setEditBlueprintName] = useState("");
   const [editBlueprintDescription, setEditBlueprintDescription] = useState("");
+  const [currentPromptShortcuts, setCurrentPromptShortcuts] = useState<PromptShortcutInput[]>([]);
   const blueprintLoadedRef = useRef(false);
   const blueprintEditLockActiveRef = useRef(false);
   const [blueprintEditLockHeld, setBlueprintEditLockHeld] = useState(false);
@@ -745,6 +746,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         setIsEditMode(true);
         setEditBlueprintName(result.name);
         setEditBlueprintDescription(result.description);
+        setCurrentPromptShortcuts(result.promptShortcuts);
         setIsLoadingBlueprint(false);
       } catch (err) {
         console.error("Failed to load blueprint for editing:", err);
@@ -1103,15 +1105,21 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
   };
 
   const saveGraph = useCallback(
-    async (name: string, description: string) => {
+    async (name: string, description: string, promptShortcuts: PromptShortcutInput[]) => {
       try {
         setIsSaving(true);
 
-         // Update yamlFlow with name and description
+        const cleanedPrompts = promptShortcuts.filter(p => p.text.trim());
         const updatedYamlFlow = {
           ...yamlFlow,
           name: name,
           description: description,
+          prompt_shortcuts: cleanedPrompts.length > 0
+            ? cleanedPrompts.map(p => ({
+                ...(p.id && { id: p.id }),
+                text: p.text,
+              }))
+            : [],
         };
 
         setYamlFlow(updatedYamlFlow);
@@ -1128,7 +1136,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         let blueprintId;
         
         if (isEditMode && editBlueprintId) {
-          response = await updateBlueprint(editBlueprintId, yamlString);
+          response = await updateBlueprint(editBlueprintId, yamlString, USER_ID, identityType);
           blueprintId = editBlueprintId;
         } else {
           if (!USER_ID) {
@@ -1157,7 +1165,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
             ? "✅ Blueprint Updated Successfully"
             : "✅ Blueprint Saved Successfully",
           description: `Blueprint "${name}" ${isEditMode ? "updated" : "saved"} successfully`,
-          variant: "default",
         });
 
         setSaveModalOpen(false);
@@ -1182,7 +1189,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         setIsSaving(false);
       }
     },
-    [yamlFlow, toast, onSaveComplete, USER_ID, identityType, isEditMode, editBlueprintId],
+    [yamlFlow, toast, onSaveComplete, USER_ID, USER_DISPLAY_NAME, identityType, isEditMode, editBlueprintId],
   );
 
   useEffect(() => {
@@ -1466,5 +1473,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     isLoadingBlueprint,
     editBlueprintName,
     editBlueprintDescription,
+    currentPromptShortcuts,
   };
 };

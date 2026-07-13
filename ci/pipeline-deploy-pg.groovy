@@ -40,7 +40,7 @@ def secret_lists = [
     identity_stage: ['client_id', 'client_secret', 'keycloak_realm', 'keycloak_base_url'],
     rabbitmq: ['rmq_username', 'rmq_password'],
     umami: ['umami_username', 'umami_password'],
-    global_config: ['secret_key', 'vault_role_id', 'vault_secret_id', 'langfuse_base_url', 'langfuse_public_key', 'langfuse_secret_key'],
+    global_config: ['secret_key', 'vault_role_id', 'vault_secret_id', 'langfuse_base_url', 'langfuse_public_key', 'langfuse_secret_key', 'slack_signing_secret', 'slack_app_token', 'slack_bot_token'],
     multiagent: ['CREDENTIAL_ENCRYPTION_KEY', 'OAUTH_STATE_SECRET', 'GCP_SA_KEY_JSON_B64'],
     rag: ['default_slack_bot_token', 'default_slack_user_token'],
 ]
