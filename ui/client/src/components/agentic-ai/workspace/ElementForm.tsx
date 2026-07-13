@@ -28,6 +28,7 @@ import {
   releaseTeamEditLock,
 } from "@/api/collaborationEditLock";
 import { LoaderCircle } from "lucide-react";
+import OpenShellSandboxGuidelines from "./OpenShellSandboxGuidelines";
 
 function normalizeElementName(v: string): string {
   return v.trim().toLowerCase();
@@ -942,6 +943,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
             {editingElement ? "Edit" : "Create"} {elementType.name}
           </DialogTitle>
           <DialogDescription>{elementSchema.description}</DialogDescription>
+          {elementType.type === "openshell_sandbox" && <OpenShellSandboxGuidelines />}
         </DialogHeader>
 
         {needsResourceEditLock && !resourceEditLockReady ? (

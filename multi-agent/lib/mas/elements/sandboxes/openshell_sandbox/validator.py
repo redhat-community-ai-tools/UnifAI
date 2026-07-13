@@ -144,8 +144,8 @@ class OpenShellSandboxValidator(BaseElementValidator):
         """Compare the remote gateway version against the installed SDK version.
 
         Emits a warning when the gateway is older than the SDK — the sandbox
-        will still be created, but functionality is not guaranteed if the SDK
-        introduced breaking changes between the two versions.
+        will still be created, but the SDK may have changed or removed APIs
+        the older gateway depends on, causing backward-compatibility issues.
         """
         sdk_version_str = _get_installed_sdk_version()
         if not sdk_version_str or not gateway_version_str:
@@ -167,7 +167,8 @@ class OpenShellSandboxValidator(BaseElementValidator):
             messages.append(self._warning(
                 "VERSION_MISMATCH",
                 f"Gateway v{gateway_version_str} is older than the installed "
-                f"SDK v{sdk_version_str}. Proper functionality cannot be "
-                f"guaranteed if the SDK introduced breaking changes.",
+                f"SDK v{sdk_version_str}. The SDK may have removed or changed "
+                f"APIs that the older gateway still relies on, which can cause "
+                f"backward-compatibility issues.",
                 field="gateway_url",
             ))
