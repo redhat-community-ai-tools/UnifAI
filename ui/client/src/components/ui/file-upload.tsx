@@ -6,7 +6,7 @@ import { uploadResourceFile } from "@/api/resources";
 
 interface FileUploadProps {
   accept: string;
-  validateFormat?: string;
+  formatType?: string;
   maxSizeBytes?: number;
   value?: string;
   filename?: string;
@@ -19,7 +19,7 @@ interface FileUploadProps {
 
 export function FileUpload({
   accept,
-  validateFormat = "pem",
+  formatType = "pem",
   maxSizeBytes = 16384,
   value,
   filename: existingFilename,
@@ -51,7 +51,7 @@ export function FileUpload({
     setError("");
 
     try {
-      const { content, filename: returnedFilename } = await uploadResourceFile(file, validateFormat);
+      const { content, filename: returnedFilename } = await uploadResourceFile(file, formatType);
       setUploadedFilename(returnedFilename || file.name);
       onUploadSuccess(content, returnedFilename || file.name);
     } catch (err: any) {
