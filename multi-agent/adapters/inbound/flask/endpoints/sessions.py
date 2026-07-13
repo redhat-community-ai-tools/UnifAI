@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, current_app, Response, request
 from global_utils.helpers.apiargs import from_body, from_query
+from marshmallow import validate
 from webargs import fields
 import json
 from pydantic.json import pydantic_encoder
@@ -237,14 +238,25 @@ def get_session_status(session_id):
 @sessions_bp.route("/session.user.list", methods=["GET"])
 @with_require_identity_authorization
 @from_query({
-    "limit": fields.Int(data_key="limit", load_default=50, validate=lambda v: 1 <= v <= 100),
-    "offset": fields.Int(data_key="offset", load_default=0, validate=lambda v: v >= 0),
+    "limit": fields.Int(data_key="limit", load_default=50, validate=validate.Range(min=1, max=100)),
+    "offset": fields.Int(data_key="offset", load_default=0, validate=validate.Range(min=0)),
     "blueprint_id": fields.Str(data_key="blueprintId", required=False, load_default=None),
 })
 def list_user_sessions(identity, limit: int, offset: int, blueprint_id: str | None = None):
     try:
         svc = current_app.container.session_service
-        return jsonify(svc.list_user_sessions(identity, limit=limit, offset=offset, blueprint_id=blueprint_id)), 200
+        count_filter = {"blueprint_id": blueprint_id} if blueprint_id else {}
+        total = svc.count(identity, count_filter)
+        items = svc.list_user_sessions(identity, limit=limit, offset=offset, blueprint_id=blueprint_id)
+        return jsonify({
+            "sessions": items,
+            "pagination": {
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "has_more": offset + limit < total,
+            },
+        }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

@@ -222,15 +222,12 @@ class SessionService:
         """
         return self._manager.get_chat(run_id)
 
-    def list_user_sessions(self, identity: Identity, limit: int = 50, offset: int = 0, blueprint_id: str | None = None) -> Dict[str, Any]:
+    def list_user_sessions(self, identity: Identity, limit: int = 50, offset: int = 0, blueprint_id: str | None = None) -> list:
         """
-        List sessions created by a user (metadata only, no messages)
-        with pagination envelope.
+        List sessions created by a user (metadata only, no messages).
+        Returns a list of session dicts. Pagination envelope is built by the adapter.
         """
         docs = self._manager.list_docs_paginated(identity, skip=offset, limit=limit, blueprint_id=blueprint_id)
-
-        count_filter = {"blueprint_id": blueprint_id} if blueprint_id else {}
-        total = self._manager.count(identity, count_filter)
 
         items = []
         for doc in docs:
@@ -247,15 +244,7 @@ class SessionService:
             item = SessionListItem.from_doc(doc, blueprint_exists=blueprint_exists, public_usage_scope=public_usage_scope, blueprint_metadata=bp_metadata)
             items.append(item.model_dump())
 
-        return {
-            "sessions": items,
-            "pagination": {
-                "total": total,
-                "limit": limit,
-                "offset": offset,
-                "has_more": offset + limit < total,
-            },
-        }
+        return items
 
     def get_user_blueprints(self, identity: Identity) -> List[str]:
         """
