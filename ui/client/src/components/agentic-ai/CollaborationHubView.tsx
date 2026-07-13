@@ -26,7 +26,7 @@ import { useSessionHub } from "@/hooks/use-session-hub";
 import { useCarouselLayout } from "@/hooks/use-carousel-layout";
 import { usePaginationTrigger } from "@/hooks/use-pagination-trigger";
 import { useDefaultPrompts } from "@/hooks/use-default-prompts";
-import { sortSessionsByTimestamp } from "@/utils/sessionHelpers";
+
 import {
   CollaborationHubSessionSidebar,
   CollaborationHubMainColumn,

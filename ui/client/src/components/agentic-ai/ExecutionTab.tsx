@@ -46,7 +46,7 @@ const SessionMessagesLoader: React.FC = () => (
 
 export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactElement {
   const hub = useSessionHub({ runId });
-  const { scrollRef, isFetchingNextPage } = usePaginationTrigger({
+  const { scrollRef } = usePaginationTrigger({
     mode: "scroll",
     hasNextPage: hub.hasNextPage,
     isFetchingNextPage: hub.isFetchingNextPage,

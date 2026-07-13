@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, RefObject } from "react";
 
-type TriggerMode = "scroll" | "manual" | "button";
+type TriggerMode = "scroll" | "manual";
 
 interface UsePaginationTriggerOptions {
   mode: TriggerMode;
