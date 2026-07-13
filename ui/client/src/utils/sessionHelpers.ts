@@ -45,7 +45,7 @@ export const transformSessionData = (
   const blueprintId = sessionData.blueprint_id;
   const blueprintExists = sessionData.blueprint_exists;
   const fromSharedLink = sessionData.metadata?.source === 'public_link';
-  const hitlEnabled = sessionData.metadata?.hitl_enabled === true || sessionData.metadata?.hitlEnabled === true;
+  const hitlEnabled = sessionData.metadata?.hitl_enabled === true;
   const activityTimestamp = sessionData.last_active_at || sessionData.started_at;
   const timestamp = new Date(activityTimestamp);
   const lastActive = formatRelativeTimestamp(activityTimestamp);
