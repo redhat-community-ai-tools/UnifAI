@@ -54,8 +54,7 @@ def delete_sources(pipeline_ids):
         
         for source_id in pipeline_ids:
             try:
-                # Get source by source_id (matching backend behavior)
-                source = svc.get_by_id(source_id)
+                source = svc.get_by_id(source_id, upload_by=g.user_id)
                 if not source:
                     results["failed"].append({
                         "pipeline_id": source_id,
@@ -63,7 +62,7 @@ def delete_sources(pipeline_ids):
                     })
                     continue
                 
-                result = svc.delete(source.source_id)
+                result = svc.delete(source.source_id, upload_by=g.user_id)
                 if result.success:
                     results["succeeded"].append({
                         "pipeline_id": source_id,
@@ -120,7 +119,7 @@ def get_source_details(source_id):
     This endpoint is used for lazy loading expanded row data.
     """
     try:
-        result = data_source_service().get_with_stats(source_id)
+        result = data_source_service().get_with_stats(source_id, upload_by=g.user_id)
         
         if result:
             return jsonify({"success": True, "source": result}), 200
@@ -144,7 +143,9 @@ def get_source_details(source_id):
 def update_source(source_id, updates):
     """Update a data source by its source ID."""
     try:
-        success = data_source_service().update(source_id, updates)
+        success = data_source_service().update(
+            source_id, updates, upload_by=g.user_id
+        )
         
         if success:
             return jsonify({

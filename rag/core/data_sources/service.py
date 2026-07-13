@@ -38,9 +38,11 @@ class DataSourceService:
         self._vector_repo_factory = vector_repo_factory
 
     # --- CRUD ---
-    def get_by_id(self, source_id: str) -> Optional[DataSource]:
-        """Get a source by its source_id."""
-        return self._source_repo.find_by_id(source_id)
+    def get_by_id(
+        self, source_id: str, upload_by: Optional[str] = None
+    ) -> Optional[DataSource]:
+        """Get a source by its source_id, optionally scoped to owner."""
+        return self._source_repo.find_by_id(source_id, upload_by=upload_by)
 
     def get_by_pipeline_id(self, pipeline_id: str) -> Optional[DataSource]:
         """Get a source by its pipeline_id."""
@@ -64,7 +66,7 @@ class DataSourceService:
         """Save (insert or update) a source."""
         self._source_repo.save(source)
 
-    def delete(self, source_id: str) -> DeleteResult:
+    def delete(self, source_id: str, upload_by: Optional[str] = None) -> DeleteResult:
         """
         Delete a source and all associated data with transaction-like behavior.
         
@@ -74,11 +76,12 @@ class DataSourceService:
         
         Args:
             source_id: The source ID to delete
+            upload_by: If provided, only delete if owned by this user
             
         Returns:
             DeleteResult with deletion details
         """
-        source = self._source_repo.find_by_id(source_id)
+        source = self._source_repo.find_by_id(source_id, upload_by=upload_by)
         if not source:
             return DeleteResult(
                 success=False,
@@ -121,9 +124,11 @@ class DataSourceService:
             vectors_deleted=vectors_deleted,
         )
 
-    def update(self, source_id: str, updates: Dict[str, Any]) -> bool:
+    def update(
+        self, source_id: str, updates: Dict[str, Any], upload_by: Optional[str] = None
+    ) -> bool:
         """Update specific fields of a source."""
-        source = self._source_repo.find_by_id(source_id)
+        source = self._source_repo.find_by_id(source_id, upload_by=upload_by)
         if not source:
             return False
         # Apply updates to domain model
@@ -244,7 +249,9 @@ class DataSourceService:
         result = self.enrich_with_pipeline_stats(sources)
         return sorted(result, key=lambda x: x.get("created_at") or 0, reverse=True)
 
-    def get_with_stats(self, source_id: str) -> Optional[Dict[str, Any]]:
+    def get_with_stats(
+        self, source_id: str, upload_by: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Get a single source by ID, enriched with pipeline stats.
         
@@ -252,11 +259,12 @@ class DataSourceService:
         
         Args:
             source_id: The source ID to retrieve
+            upload_by: If provided, only return if owned by this user
             
         Returns:
             Dict with source data + pipeline stats, or None if not found
         """
-        source = self._source_repo.find_by_id(source_id)
+        source = self._source_repo.find_by_id(source_id, upload_by=upload_by)
         if not source:
             return None
         

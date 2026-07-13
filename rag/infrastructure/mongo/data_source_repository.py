@@ -21,9 +21,14 @@ class MongoDataSourceRepository(DataSourceRepository):
     def __init__(self, collection: Collection):
         self._col = collection
 
-    def find_by_id(self, source_id: str) -> Optional[DataSource]:
-        """Get source by source_id."""
-        doc = self._col.find_one({"source_id": source_id})
+    def find_by_id(
+        self, source_id: str, upload_by: Optional[str] = None
+    ) -> Optional[DataSource]:
+        """Get source by source_id, optionally scoped to owner."""
+        query: Dict[str, Any] = {"source_id": source_id}
+        if upload_by:
+            query["upload_by"] = upload_by
+        doc = self._col.find_one(query)
         return self._to_model(doc) if doc else None
 
     def find_by_pipeline_id(self, pipeline_id: str) -> Optional[DataSource]:

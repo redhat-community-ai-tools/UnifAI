@@ -11,8 +11,15 @@ class DataSourceRepository(ABC):
     """Port for DataSource persistence - one interface per aggregate."""
 
     @abstractmethod
-    def find_by_id(self, source_id: str) -> Optional[DataSource]:
-        """Get source by source_id."""
+    def find_by_id(
+        self, source_id: str, upload_by: Optional[str] = None
+    ) -> Optional[DataSource]:
+        """Get source by source_id, optionally scoped to owner.
+        
+        Args:
+            source_id: The source identifier
+            upload_by: If provided, only return the source if owned by this user
+        """
         ...
 
     @abstractmethod
