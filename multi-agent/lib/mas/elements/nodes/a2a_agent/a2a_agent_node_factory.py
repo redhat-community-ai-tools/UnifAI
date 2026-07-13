@@ -35,9 +35,7 @@ class A2AAgentNodeFactory(BaseFactory[A2AAgentNodeConfig, A2AAgentNode]):
             retriever = deps.pop("retriever")
 
             bearer_token = None
-            if auth_credential:
-                bearer_token = auth_credential.get_token()
-            elif cfg.auth_method == "access_token" and cfg.bearer_token:
+            if not auth_credential and cfg.auth_method == "access_token" and cfg.bearer_token:
                 bearer_token = cfg.bearer_token
 
             return A2AAgentNode(
