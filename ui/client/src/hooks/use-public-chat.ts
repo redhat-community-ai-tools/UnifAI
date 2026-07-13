@@ -133,8 +133,9 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
       };
 
       const transformedSessions = await transformApiDataToSessions(allSessions);
+      const validSessions = transformedSessions.filter(s => s.blueprintExists !== false);
       return {
-        sessions: sortSessionsByTimestamp(transformedSessions),
+        sessions: sortSessionsByTimestamp(validSessions),
         hasMore: pagination.has_more,
         nextOffset: pagination.offset + pagination.limit,
         total: pagination.total,
