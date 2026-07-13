@@ -929,6 +929,15 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     );
   };
 
+  const renderFormGuidelines = (): React.ReactNode => {
+    switch (elementType.type) {
+      case "openshell_sandbox":
+        return <OpenShellSandboxGuidelines />;
+      default:
+        return null;
+    }
+  };
+
   if (!elementSchema) return null;
 
   return (
@@ -943,7 +952,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
             {editingElement ? "Edit" : "Create"} {elementType.name}
           </DialogTitle>
           <DialogDescription>{elementSchema.description}</DialogDescription>
-          {elementType.type === "openshell_sandbox" && <OpenShellSandboxGuidelines />}
+          {renderFormGuidelines()}
         </DialogHeader>
 
         {needsResourceEditLock && !resourceEditLockReady ? (
