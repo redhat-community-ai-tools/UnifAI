@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { usePublicChat } from "@/hooks/use-public-chat";
-import { getBlueprintInfo } from "@/api/blueprints";
+import { getBlueprintInfo, type PromptShortcut } from "@/api/blueprints";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { UmamiTrack } from "@/components/ui/umamitrack";
 import { UmamiEvents } from "@/config/umamiEvents";
@@ -43,6 +43,7 @@ export default function PublicChat() {
   const [isSharingDisabled, setIsSharingDisabled] = useState<boolean>(false);
   const [isBlueprintValid, setIsBlueprintValid] = useState<boolean>(true);
   const [isValidatingBlueprint, setIsValidatingBlueprint] = useState<boolean>(false);
+  const [defaultPrompts, setDefaultPrompts] = useState<PromptShortcut[]>([]);
 
   // Use the cached blueprint validation from context
   const { validateBlueprintWithCache } = useAgenticAI();
@@ -132,7 +133,10 @@ export default function PublicChat() {
         setBlueprintId(token);
         setBlueprintName(blueprintInfo.spec_dict?.name || "Unnamed Workflow");
         setBlueprintOwner(blueprintInfo.user_id || "");
-        
+
+        const shortcuts = blueprintInfo.spec_dict?.prompt_shortcuts;
+        setDefaultPrompts(Array.isArray(shortcuts) ? shortcuts : []);
+
         // Check sharing status from the same blueprintInfo response (no extra API call)
         const isPublic = blueprintInfo.metadata?.usageScope === "public";
         if (!isPublic) {
@@ -295,7 +299,7 @@ export default function PublicChat() {
                 </UmamiTrack>
               </div>
             </CardHeader>
-            <CardContent className="p-0 flex-grow overflow-y-auto" ref={scrollRef}>
+            <CardContent className="p-0 flex-grow overflow-y-auto" ref={scrollRef as any}>
               {isLoadingSessions ? (
                 <div className="p-4 text-center">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
@@ -393,6 +397,7 @@ export default function PublicChat() {
           ) : (
             <StreamingDataProvider>
               <ChatInterface
+                key={runId}
                 runId={runId}
                 triggerExecution={triggerExecution}
                 onCancelSession={handleCancelSession}
@@ -407,6 +412,7 @@ export default function PublicChat() {
                 isChatOnlyMode={true}
                 isLiveRequest={isLiveRequest}
                 isSubmitting={isSubmitting}
+                defaultPrompts={defaultPrompts.length > 0 ? defaultPrompts : undefined}
               />
             </StreamingDataProvider>
           )}
