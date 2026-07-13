@@ -57,6 +57,7 @@ from outbound.mongo import (
     MongoResourceRepository,
     MongoShareRepository,
     MongoTemplateRepository,
+    MongoAdminConfigReader,
 )
 # Auth layer — adapters
 from outbound.mongo.auth_token_repository import MongoCredentialStore
@@ -178,6 +179,12 @@ class AppContainer(metaclass=SingletonMeta):
             mongodb_ip=cfg.mongodb_ip,
             db_name=cfg.mongo_db,
             coll_name=cfg.resources_coll,
+        )
+
+        self.admin_config_reader = MongoAdminConfigReader(
+            mongodb_ip=cfg.mongodb_ip,
+            mongodb_port=cfg.mongodb_port,
+            db_name=cfg.admin_config_db,
         )
 
         resource_registry = ResourcesRegistry(

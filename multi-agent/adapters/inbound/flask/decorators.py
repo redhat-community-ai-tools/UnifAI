@@ -220,24 +220,36 @@ def with_identity(f: Callable) -> Callable:
 # Admin access (unchanged)
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _is_admin(username: str) -> bool:
+    """Check admin status via the container's admin config reader,
+    falling back to the static ``admin_allowed_users`` Flask config.
+
+    Mirrors the backend pattern where ``_is_admin`` delegates to
+    ``current_app.container.admin_config_service.is_admin()``.
+    """
+    container = getattr(current_app, "container", None)
+    reader = getattr(container, "admin_config_reader", None) if container else None
+    if reader and reader.is_admin(username):
+        return True
+    admin_allowed_users = current_app.config.get("admin_allowed_users", [])
+    return username.lower() in [u.lower() for u in admin_allowed_users]
+
+
 def require_admin_access(f):
-    """Gate an endpoint to users listed in ``admin_allowed_users``.
+    """Gate an endpoint to admin users.
 
     Reads the authenticated username from the session (via
-    :func:`require_session_identity`) and checks it against the app config.
+    :func:`require_session_identity`) and checks admin status through
+    ``current_app.container.admin_config_reader`` (centralized admin
+    config managed via the admin panel).  Falls back to the static
+    ``admin_allowed_users`` Flask config.
+
     Does NOT inject ``identity`` into the wrapped function's kwargs.
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         try:
             kwargs.pop("identity", None)
-
-            admin_allowed_users = current_app.config.get("admin_allowed_users", [])
-            if not admin_allowed_users:
-                return jsonify({
-                    "error": "Access denied: Analytics is not enabled",
-                    "error_type": "FEATURE_DISABLED",
-                }), 403
 
             username = getattr(g, G_IDENTITY_USERNAME, "")
             if not username:
@@ -246,7 +258,7 @@ def require_admin_access(f):
                     "error_type": "AUTHENTICATION_REQUIRED",
                 }), 401
 
-            if username not in admin_allowed_users:
+            if not _is_admin(username):
                 return jsonify({
                     "error": "Access denied: insufficient permissions",
                     "error_type": "ACCESS_DENIED",

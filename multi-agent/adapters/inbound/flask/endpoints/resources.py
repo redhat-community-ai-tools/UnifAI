@@ -6,6 +6,7 @@ from mas.resources.errors import ResourceInUseError, BuiltInWriteProtectedError
 from inbound.flask.decorators import (
     with_require_identity_authorization,
     with_authenticated_user,
+    require_admin_access,
 )
 
 resources_bp = Blueprint("resources", __name__)
@@ -323,21 +324,18 @@ def validate_config(category, type, config, name=None, timeout_seconds=10.0):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @resources_bp.route("/builtins.list", methods=["GET"])
-@with_authenticated_user
+@require_admin_access
 @from_query({
     "category": fields.Str(required=False),
     "type": fields.Str(required=False),
 })
-def list_builtins(authenticated_user, category=None, type=None):
+def list_builtins(category=None, type=None):
     """List all built-in resources (admin only).
 
     Returns only resources with builtin_status set (public or private),
     regardless of the caller's identity. Used by the Repository Management
     admin panel.
     """
-    if not _is_admin_user(authenticated_user):
-        return jsonify({"error": "Admin access required"}), 403
-
     svc = current_app.container.resources_service
     try:
         resources = svc.find_all_builtins(category=category, type=type)
@@ -432,22 +430,19 @@ def duplicate_resource(identity, resource_id, name, config_overrides=None):
 
 
 @resources_bp.route("/resource.promote", methods=["PATCH"])
-@with_authenticated_user
+@require_admin_access
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "configurable_keys": fields.List(
         fields.Str(), data_key="configurableKeys", load_default=None,
     ),
 })
-def promote_resource(authenticated_user, resource_id, configurable_keys=None):
+def promote_resource(resource_id, configurable_keys=None):
     """Promote a custom resource to public built-in status (admin only).
 
     Sets builtin_status='public' and identity to system.
     Optionally declares which field names from the element schema users can configure.
     """
-    if not _is_admin_user(authenticated_user):
-        return jsonify({"error": "Admin access required"}), 403
-
     svc = current_app.container.resources_service
     try:
         doc = svc.promote(resource_id, configurable_keys=configurable_keys)
@@ -461,7 +456,7 @@ def promote_resource(authenticated_user, resource_id, configurable_keys=None):
 
 
 @resources_bp.route("/builtin.create", methods=["POST"])
-@with_authenticated_user
+@require_admin_access
 @from_body({
     "category": fields.Str(required=True),
     "type": fields.Str(required=True),
@@ -473,7 +468,7 @@ def promote_resource(authenticated_user, resource_id, configurable_keys=None):
     ),
 })
 def create_builtin_resource(
-    authenticated_user, category, type, name, config,
+    category, type, name, config,
     available_to_all=True, configurable_keys=None,
 ):
     """Create a resource directly as built-in (admin only).
@@ -481,9 +476,6 @@ def create_builtin_resource(
     Creates with system identity and builtin_status based on availableToAll.
     Admins can specify which fields are user-configurable via configurableKeys.
     """
-    if not _is_admin_user(authenticated_user):
-        return jsonify({"error": "Admin access required"}), 403
-
     svc = current_app.container.resources_service
     try:
         doc = svc.create_builtin(
@@ -502,7 +494,7 @@ def create_builtin_resource(
 
 
 @resources_bp.route("/builtin.update", methods=["PUT"])
-@with_authenticated_user
+@require_admin_access
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "config": fields.Dict(required=False, load_default=None),
@@ -513,16 +505,13 @@ def create_builtin_resource(
     ),
 })
 def update_builtin_resource(
-    authenticated_user, resource_id, config=None, name=None,
+    resource_id, config=None, name=None,
     available_to_all=None, configurable_keys=None,
 ):
     """Update a built-in/admin resource (admin only).
 
     Allows updating config, name, availableToAll status, and configurableKeys.
     """
-    if not _is_admin_user(authenticated_user):
-        return jsonify({"error": "Admin access required"}), 403
-
     svc = current_app.container.resources_service
     try:
         doc = svc.update_builtin(
@@ -542,20 +531,17 @@ def update_builtin_resource(
 
 
 @resources_bp.route("/builtin.toggle", methods=["PATCH"])
-@with_authenticated_user
+@require_admin_access
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "available_to_all": fields.Bool(data_key="availableToAll", required=True),
 })
-def toggle_builtin_status(authenticated_user, resource_id, available_to_all):
+def toggle_builtin_status(resource_id, available_to_all):
     """Toggle the builtin_status between public and private (admin only).
 
     When toggled on (public), the resource becomes visible to all users.
     When toggled off (private), only admins can see it in the configuration panel.
     """
-    if not _is_admin_user(authenticated_user):
-        return jsonify({"error": "Admin access required"}), 403
-
     svc = current_app.container.resources_service
     try:
         if available_to_all:
