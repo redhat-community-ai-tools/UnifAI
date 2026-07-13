@@ -382,7 +382,7 @@ Omit this section entirely if there are no risks.
 Number findings sequentially within this section. Render each as a standalone block:
 
 ```
-#### 🔴 1. [{Review Area}] {Concise title}
+#### 🔴 1. [NEW] [{Review Area}] {Concise title}
 
 **`{file:line}`**
 
@@ -393,7 +393,9 @@ Number findings sequentially within this section. Render each as a standalone bl
 **Fix →** {concrete remediation}
 ```
 
-Example: `#### 🔴 1. [Hex Architecture] Service imports concrete repository`
+Tag rules: mark `[NEW]` for findings introduced by this diff, `[PRE]` for pre-existing issues. Only `[NEW]` findings count toward the score; `[PRE]` findings MUST be classified as INFO regardless of severity.
+
+Example: `#### 🔴 1. [NEW] [Hex Architecture] Service imports concrete repository`
 
 Omit this section entirely if there are zero critical findings.
 
@@ -402,7 +404,7 @@ Omit this section entirely if there are zero critical findings.
 Number findings sequentially within this section. Same block format as Critical Findings, with severity justification:
 
 ```
-#### 🟠 1. [{Review Area}] {Concise title}
+#### 🟠 1. [NEW] [{Review Area}] {Concise title}
 
 **`{file:line}`**
 
@@ -413,7 +415,7 @@ Number findings sequentially within this section. Same block format as Critical 
 **Fix →** {concrete remediation}
 ```
 
-Example: `#### 🟠 1. [Coupling] Business logic in wrong service — belongs in OrderService`
+Example: `#### 🟠 1. [NEW] [Coupling] Business logic in wrong service — belongs in OrderService`
 
 Omit this section entirely if there are zero major findings.
 
@@ -422,7 +424,7 @@ Omit this section entirely if there are zero major findings.
 Number findings sequentially within this section. Same block format. Includes MINOR severity and ALIGNMENT ISSUE findings. For multi-file issues, include a table of affected locations within the block.
 
 ```
-#### 🟡 1. [{Review Area}] {Concise title}
+#### 🟡 1. [NEW] [{Review Area}] {Concise title}
 
 **`{file:line}`**
 
@@ -433,7 +435,7 @@ Number findings sequentially within this section. Same block format. Includes MI
 **Fix →** {concrete remediation}
 ```
 
-Example: `#### 🟡 1. [Alignment] Inconsistent error response format`
+Example: `#### 🟡 1. [NEW] [Alignment] Inconsistent error response format`
 
 Omit if zero.
 
@@ -443,7 +445,7 @@ Number findings sequentially within this section. Render each INFO item as a col
 
 ```html
 <details>
-<summary>🔵 1. [{Review Area}] <b>{title}</b> — <code>{file:line}</code></summary>
+<summary>🔵 1. [PRE] [{Review Area}] <b>{title}</b> — <code>{file:line}</code></summary>
 
 {description — 1-3 sentences}
 
@@ -452,6 +454,8 @@ Number findings sequentially within this section. Render each INFO item as a col
 **Fix →** {remediation}
 </details>
 ```
+
+Info items are typically `[PRE]` (pre-existing tech debt) or established-pattern findings. Use `[NEW]` only when the item is genuinely introduced by this diff but does not warrant a higher severity.
 
 Omit this section entirely if there are zero info items.
 

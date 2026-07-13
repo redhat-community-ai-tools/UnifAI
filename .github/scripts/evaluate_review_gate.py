@@ -51,7 +51,16 @@ def try_json_scoring(json_path: Path) -> dict | None:
         print(f"::warning::{json_path} is not a JSON object. Falling back to text parsing.")
         return None
 
-    arch_verdict = data.get("arch_verdict", "UNKNOWN")
+    raw_arch = data.get("arch_verdict")
+    arch_verdict_in_json = raw_arch is not None
+    if raw_arch is None:
+        arch_verdict = "UNKNOWN"
+    elif isinstance(raw_arch, str) and raw_arch.strip().upper().replace(" ", "_") in {"APPROVE", "NEEDS_REVISION", "REJECT"}:
+        arch_verdict = raw_arch.strip().upper().replace(" ", "_")
+    else:
+        print(f"::warning::{json_path}: unrecognized arch_verdict {raw_arch!r}. Treating as UNKNOWN.")
+        arch_verdict = "UNKNOWN"
+
     code_findings = data.get("code_findings", {})
     files_changed = data.get("files_changed", 1)
     model_score = data.get("code_health_score", 0)
@@ -110,6 +119,7 @@ def try_json_scoring(json_path: Path) -> dict | None:
 
     return {
         "arch_verdict": arch_verdict,
+        "arch_verdict_in_json": arch_verdict_in_json,
         "code_score": computed_score,
         "model_score": model_score,
         "computed_score": computed_score,
@@ -264,10 +274,33 @@ def main() -> int:
     pipeline_pass = json_result.get("pipeline_pass") if json_result else None
     use_pipeline_pass = json_result and isinstance(pipeline_pass, bool)
 
-    arch_ran = arch_verdict != "UNKNOWN"
     code_ran = code_score > 0 or (json_result and "code_findings" in json_result)
-    arch_pass = arch_verdict == "APPROVE"
     code_pass = code_score >= threshold
+
+    # Dual-review mode: both judges ran (arch_verdict and code_verdict in JSON).
+    # Single-judge modes (code-review-only, arch-review) omit the non-running
+    # judge's fields, so code_verdict alone does NOT imply dual-review.
+    dual_review_mode = (
+        json_result
+        and json_result.get("arch_verdict_in_json", False)
+        and json_result.get("code_verdict") is not None
+    )
+    if dual_review_mode and arch_verdict == "UNKNOWN":
+        text_arch_verdict, text_arch_status = parse_arch_verdict(arch_file)
+        if text_arch_verdict != "UNKNOWN":
+            print(
+                f"::warning::arch_verdict missing from JSON but found in {arch_file} "
+                f"via text parsing: {text_arch_verdict}. Using text value."
+            )
+            arch_verdict = text_arch_verdict
+        else:
+            print(
+                f"::error::Dual-review mode (code_verdict present) but arch_verdict "
+                f"missing from both JSON and {arch_file}. Treating as gate failure."
+            )
+
+    arch_ran = arch_verdict != "UNKNOWN" or bool(dual_review_mode)
+    arch_pass = arch_verdict == "APPROVE"
 
     reconstructed_pass = (arch_pass or not arch_ran) and (code_pass or not code_ran)
 

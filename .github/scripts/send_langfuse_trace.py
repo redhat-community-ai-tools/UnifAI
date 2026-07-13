@@ -56,6 +56,16 @@ def _attach_scores(langfuse, trace_id: str, pipeline_results: dict) -> None:
             comment="Architecture review verdict",
         )
 
+    code_verdict = pipeline_results.get("code_verdict", "")
+    if code_verdict:
+        langfuse.create_score(
+            name="code_verdict",
+            value=str(code_verdict),
+            trace_id=trace_id,
+            data_type="CATEGORICAL",
+            comment="Code review verdict",
+        )
+
     code_score = pipeline_results.get("code_health_score")
     if code_score is not None:
         score_val = _as_float(code_score, default=-1)
