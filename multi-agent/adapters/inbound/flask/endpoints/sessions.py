@@ -245,18 +245,24 @@ def get_session_status(session_id):
 def list_user_sessions(identity, limit: int, offset: int, blueprint_id: str | None = None):
     try:
         svc = current_app.container.session_service
-        count_filter = {"blueprint_id": blueprint_id} if blueprint_id else {}
-        total = svc.count(identity, count_filter)
-        items = svc.list_user_sessions(identity, limit=limit, offset=offset, blueprint_id=blueprint_id)
-        return jsonify({
-            "sessions": items,
-            "pagination": {
-                "total": total,
-                "limit": limit,
-                "offset": offset,
-                "has_more": offset + limit < total,
-            },
-        }), 200
+        paginated = "limit" in request.args or "offset" in request.args
+
+        if paginated:
+            count_filter = {"blueprint_id": blueprint_id} if blueprint_id else {}
+            total = svc.count(identity, count_filter)
+            items = svc.list_user_sessions(identity, limit=limit, offset=offset, blueprint_id=blueprint_id)
+            return jsonify({
+                "sessions": items,
+                "pagination": {
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                    "has_more": offset + limit < total,
+                },
+            }), 200
+        else:
+            items = svc.list_user_sessions(identity)
+            return jsonify(items), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

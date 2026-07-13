@@ -222,12 +222,15 @@ class SessionService:
         """
         return self._manager.get_chat(run_id)
 
-    def list_user_sessions(self, identity: Identity, limit: int = 50, offset: int = 0, blueprint_id: str | None = None) -> list:
+    def list_user_sessions(self, identity: Identity, limit: int | None = None, offset: int = 0, blueprint_id: str | None = None) -> list:
         """
         List sessions created by a user (metadata only, no messages).
-        Returns a list of session dicts. Pagination envelope is built by the adapter.
+        When limit is provided, returns a paginated slice. Otherwise returns all sessions.
         """
-        docs = self._manager.list_docs_paginated(identity, skip=offset, limit=limit, blueprint_id=blueprint_id)
+        if limit is not None:
+            docs = self._manager.list_docs_paginated(identity, skip=offset, limit=limit, blueprint_id=blueprint_id)
+        else:
+            docs = self._manager.list_docs(identity)
 
         items = []
         for doc in docs:
