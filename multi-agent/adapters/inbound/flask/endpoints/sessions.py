@@ -261,7 +261,7 @@ def list_user_sessions(identity, limit: int, offset: int, blueprint_id: str | No
                 },
             }), 200
         else:
-            items = svc.list_user_sessions(identity)
+            items = svc.list_user_sessions(identity, blueprint_id=blueprint_id)
             return jsonify(items), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

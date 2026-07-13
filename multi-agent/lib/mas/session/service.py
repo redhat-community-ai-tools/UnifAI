@@ -231,6 +231,8 @@ class SessionService:
             docs = self._manager.list_docs_paginated(identity, skip=offset, limit=limit, blueprint_id=blueprint_id)
         else:
             docs = self._manager.list_docs(identity)
+            if blueprint_id:
+                docs = [d for d in docs if d.get("blueprint_id") == blueprint_id]
 
         items = []
         for doc in docs:
