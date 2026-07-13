@@ -5,7 +5,7 @@ from pydantic import Field, HttpUrl
 from mas.elements.providers.common.base_config import ProviderBaseConfig
 from mas.core.field_hints import (
     ActionHint, HintType, SelectionType,
-    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, combine_hints,
+    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, ReadOnlyHint, combine_hints,
 )
 from .transport.enums import McpTransportType
 
@@ -88,6 +88,7 @@ class McpProviderConfig(ProviderBaseConfig):
                     "mcp_url": "mcp_url",
                 },
             ),
+            ReadOnlyHint(read_only=False),
         ),
     )
     bearer_token: Optional[str] = Field(
@@ -97,11 +98,13 @@ class McpProviderConfig(ProviderBaseConfig):
             SecretHint(allow_reveal=True),
             ConditionalHint(visible_when={"auth_method": "access_token"}),
             PropagateHint(to="credential_token"),
+            ReadOnlyHint(read_only=False),
         ),
     )
     additional_headers: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Additional HTTP headers to include in MCP server requests"
+        description="Additional HTTP headers to include in MCP server requests",
+        json_schema_extra=ReadOnlyHint(read_only=False).to_hints(),
     )
     tool_names: Optional[List[str]] = Field(
         default_factory=list,

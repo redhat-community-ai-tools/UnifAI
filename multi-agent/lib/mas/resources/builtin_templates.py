@@ -4,9 +4,13 @@ Built-in resource definitions seeded on application startup.
 Each resource uses a deterministic `rid` so re-seeding is idempotent.
 Admins can manage these via the admin UI; this file provides the initial set.
 
-configurable_keys lists the field names from the element's pydantic schema
-that users can configure (readOnly=false). All other fields are read-only.
-Sensitive field detection is automatic via SecretHint in the schema.
+User-configurable fields are determined by the element's pydantic schema:
+fields with ``ReadOnlyHint(read_only=False)`` are configurable, all others
+are read-only for end-users.  No explicit ``configurable_keys`` needed here
+— the service layer derives them from the schema at runtime.
+
+Resources default to ``builtin_status="private"``; admins toggle them to
+public via the admin panel when ready.
 """
 from mas.core.enums import ResourceCategory
 from mas.core.identity import Identity
@@ -20,8 +24,7 @@ BUILTIN_RESOURCES = [
         category=ResourceCategory.LLM,
         type="openai",
         name="GPT-4o",
-        builtin_status="public",
-        configurable_keys=["api_key"],
+        builtin_status="private",
         cfg_dict={
             "model_name": "gpt-4o",
             "base_url": "https://api.openai.com/v1",
@@ -36,8 +39,7 @@ BUILTIN_RESOURCES = [
         category=ResourceCategory.PROVIDER,
         type="mcp_server",
         name="GitHub MCP",
-        builtin_status="public",
-        configurable_keys=["bearer_token", "tool_names", "additional_headers"],
+        builtin_status="private",
         cfg_dict={
             "mcp_url": "https://mcp.github.com/sse",
             "transport_type": "streamable http",
@@ -57,8 +59,7 @@ BUILTIN_RESOURCES = [
         category=ResourceCategory.TOOL,
         type="web_fetch",
         name="Web Fetch",
-        builtin_status="public",
-        configurable_keys=[],
+        builtin_status="private",
         cfg_dict={},
     ),
     Resource(
@@ -67,8 +68,7 @@ BUILTIN_RESOURCES = [
         category=ResourceCategory.NODE,
         type="deep_agent_node",
         name="Research Assistant",
-        builtin_status="public",
-        configurable_keys=["tool_names"],
+        builtin_status="private",
         cfg_dict={
             "system_message": "You are a thorough research assistant.",
             "retries": 1,

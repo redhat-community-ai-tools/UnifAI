@@ -27,6 +27,7 @@ interface ResourceInstance {
   updated: string;
   builtin_status?: 'public' | 'private' | null;
   configurable_keys?: string[];
+  user_configured?: boolean;
 }
 
 interface ResourcesListResponse {
@@ -118,6 +119,7 @@ export const useWorkspaceData = () => {
             nested_refs: resource.nested_refs,
             contributed_by: resource.contributed_by,
             builtinStatus: resource.builtin_status || null,
+            userConfigured: resource.user_configured ?? false,
           }),
         );
 
@@ -498,14 +500,15 @@ export const useWorkspaceData = () => {
     [toast, USER_ID, identityType],
   );
 
-  // Create a built-in resource directly (admin only)
+  // Create a built-in resource directly (admin only).
+  // Configurable keys are derived from the schema's ReadOnlyHint annotations
+  // on the backend — no need to pass them from the frontend.
   const saveBuiltinElement = useCallback(
     async (
       category: string,
       type: string,
       elementData: any,
-      availableToAll: boolean = true,
-      configurableKeys: string[] = [],
+      availableToAll: boolean = false,
       rid?: string,
     ) => {
       try {
@@ -518,7 +521,6 @@ export const useWorkspaceData = () => {
             config: elementData.cfg_dict,
             name: elementData.name,
             availableToAll,
-            configurableKeys,
           });
           toast({
             title: "Success",
@@ -533,7 +535,6 @@ export const useWorkspaceData = () => {
             name,
             config: cfg_dict,
             availableToAll,
-            configurableKeys,
           });
           toast({
             title: "Success",

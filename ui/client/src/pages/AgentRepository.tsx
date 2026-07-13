@@ -38,7 +38,8 @@ export default function UserWorkspace() {
     fetchElementSchema,
     fetchElementActions,
     saveElement,
-    deleteElement
+    deleteElement,
+    configureBuiltin,
   } = useWorkspaceData();
 
   const filteredInstances = useMemo(() => {
@@ -226,6 +227,7 @@ export default function UserWorkspace() {
                     isLoading={isLoadingInstances}
                     onEditElement={handleEditElement}
                     onDeleteElement={handleDeleteElement}
+                    onConfigureBuiltin={configureBuiltin}
                     elementSchema={elementSchema}
                   />
                 ) : (

@@ -26,8 +26,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
@@ -48,7 +46,6 @@ import {
   FileText,
   Settings,
   Eye,
-  KeyRound,
 } from "lucide-react";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
@@ -167,9 +164,7 @@ export default function RepositoryManagement() {
     useState<ElementType | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
-  const [newElementAvailableToAll, setNewElementAvailableToAll] = useState(true);
-  const [configurableKeys, setConfigurableKeys] = useState<string[]>([]);
-  const [showConfigurableKeys, setShowConfigurableKeys] = useState(false);
+  const [newElementAvailableToAll, setNewElementAvailableToAll] = useState(false);
   const [isTogglingStatus, setIsTogglingStatus] = useState<string | null>(null);
 
   const availableCategories = useMemo(
@@ -256,8 +251,6 @@ export default function RepositoryManagement() {
         ),
       ]);
       setEditingElement(null);
-      setConfigurableKeys([]);
-      setShowConfigurableKeys(false);
       setIsFormOpen(true);
       setStep("configure");
     } finally {
@@ -276,8 +269,6 @@ export default function RepositoryManagement() {
       setIsLoadingSchema(true);
       setStep("configure");
       setNewElementAvailableToAll(resource.builtin_status === "public");
-      setConfigurableKeys(resource.configurable_keys ?? []);
-      setShowConfigurableKeys((resource.configurable_keys ?? []).length > 0);
 
       try {
         await Promise.all([
@@ -329,7 +320,6 @@ export default function RepositoryManagement() {
       selectedElementType.type,
       elementData,
       newElementAvailableToAll,
-      configurableKeys,
       editingElement?.rid,
     );
     if (result) {
@@ -345,9 +335,7 @@ export default function RepositoryManagement() {
     setStep("idle");
     setSelectedCategoryKey("");
     setSelectedElementType(null);
-    setNewElementAvailableToAll(true);
-    setConfigurableKeys([]);
-    setShowConfigurableKeys(false);
+    setNewElementAvailableToAll(false);
   };
 
   const handleBack = () => {
@@ -554,25 +542,6 @@ export default function RepositoryManagement() {
                       />
                     </div>
 
-                    {newElementAvailableToAll && (
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <KeyRound className="h-4 w-4 text-amber-400" />
-                          <div>
-                            <p className="text-sm font-medium text-gray-200">
-                              User-Configurable Fields
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Choose which fields users can edit (all others will be read-only)
-                            </p>
-                          </div>
-                        </div>
-                        <Switch
-                          checked={showConfigurableKeys}
-                          onCheckedChange={setShowConfigurableKeys}
-                        />
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -921,15 +890,6 @@ export default function RepositoryManagement() {
         />
       )}
 
-      {/* Configurable Keys Selector — shows when form is open and admin enabled configurable keys */}
-      {isFormOpen && showConfigurableKeys && newElementAvailableToAll && elementSchema && !configuringBuiltin && (
-        <ConfigurableKeysSelector
-          schema={elementSchema}
-          selectedKeys={configurableKeys}
-          onSelectionChange={setConfigurableKeys}
-        />
-      )}
-
       {/* View Details Dialog */}
       {isDetailsOpen && detailsElement && detailsElementType && (
         <ElementData
@@ -975,85 +935,3 @@ export default function RepositoryManagement() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  ConfigurableKeysSelector — lets admin pick which fields users can edit
-// ─────────────────────────────────────────────────────────────────────────────
-
-function ConfigurableKeysSelector({
-  schema,
-  selectedKeys,
-  onSelectionChange,
-}: {
-  schema: any;
-  selectedKeys: string[];
-  onSelectionChange: (keys: string[]) => void;
-}) {
-  const fields = useMemo(() => {
-    const props = schema?.config_schema?.properties;
-    if (!props) return [];
-    return Object.entries(props)
-      .filter(([key, fieldSchema]: [string, any]) => {
-        if (fieldSchema?.hints?.hidden?.hint_type === "hidden") return false;
-        const systemFields = [
-          "name", "category", "type", "cfg_dict", "version",
-          "created", "updated", "nested_refs", "rid", "user_id",
-        ];
-        return !systemFields.includes(key);
-      })
-      .map(([key, fieldSchema]: [string, any]) => ({
-        key,
-        title: fieldSchema.title || key,
-        description: fieldSchema.description || "",
-      }));
-  }, [schema]);
-
-  const toggleKey = (key: string) => {
-    if (selectedKeys.includes(key)) {
-      onSelectionChange(selectedKeys.filter((k) => k !== key));
-    } else {
-      onSelectionChange([...selectedKeys, key]);
-    }
-  };
-
-  if (fields.length === 0) return null;
-
-  return (
-    <Card className="bg-background-card shadow-card border-amber-500/20 mt-4">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <KeyRound className="h-4 w-4 text-amber-400" />
-          <h4 className="text-sm font-medium text-gray-200">
-            User-Configurable Fields
-          </h4>
-          <Badge variant="outline" className="text-[10px] text-amber-400 border-amber-400/30">
-            {selectedKeys.length} selected
-          </Badge>
-        </div>
-        <p className="text-xs text-gray-500 mb-3">
-          Selected fields will be editable by users. All other fields will be read-only.
-        </p>
-        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-          {fields.map(({ key, title }) => (
-            <div
-              key={key}
-              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/[.03] transition-colors"
-            >
-              <Checkbox
-                id={`ck-${key}`}
-                checked={selectedKeys.includes(key)}
-                onCheckedChange={() => toggleKey(key)}
-                className="border-gray-600"
-              />
-              <Label
-                htmlFor={`ck-${key}`}
-                className="text-xs text-gray-300 cursor-pointer truncate"
-              >
-                {title}
-              </Label>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}

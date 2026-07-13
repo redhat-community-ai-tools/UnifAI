@@ -82,8 +82,16 @@ def list_resources(identity, category=None, type=None, limit=1000, offset=0):
             limit=limit,
             offset=offset,
         )
+        identity_key = f"{identity.type.value}:{identity.id}"
+        resources_data = []
+        for doc in resources:
+            data = doc.model_dump(mode="json")
+            if doc.builtin_status:
+                data["user_configured"] = identity_key in doc.user_configs
+            data.pop("user_configs", None)
+            resources_data.append(data)
         return jsonify({
-            "resources": [doc.model_dump(mode="json") for doc in resources],
+            "resources": resources_data,
             "pagination": {
                 "total": total_count,
                 "limit": limit,
@@ -433,19 +441,17 @@ def duplicate_resource(identity, resource_id, name, config_overrides=None):
 @require_admin_access
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),
-    "configurable_keys": fields.List(
-        fields.Str(), data_key="configurableKeys", load_default=None,
-    ),
 })
-def promote_resource(resource_id, configurable_keys=None):
+def promote_resource(resource_id):
     """Promote a custom resource to public built-in status (admin only).
 
     Sets builtin_status='public' and identity to system.
-    Optionally declares which field names from the element schema users can configure.
+    Configurable keys are derived automatically from the element schema's
+    ReadOnlyHint annotations.
     """
     svc = current_app.container.resources_service
     try:
-        doc = svc.promote(resource_id, configurable_keys=configurable_keys)
+        doc = svc.promote(resource_id)
         return jsonify(doc.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
@@ -462,19 +468,17 @@ def promote_resource(resource_id, configurable_keys=None):
     "type": fields.Str(required=True),
     "name": fields.Str(required=True),
     "config": fields.Dict(required=True),
-    "available_to_all": fields.Bool(data_key="availableToAll", load_default=True),
-    "configurable_keys": fields.List(
-        fields.Str(), data_key="configurableKeys", load_default=None,
-    ),
+    "available_to_all": fields.Bool(data_key="availableToAll", load_default=False),
 })
 def create_builtin_resource(
     category, type, name, config,
-    available_to_all=True, configurable_keys=None,
+    available_to_all=False,
 ):
     """Create a resource directly as built-in (admin only).
 
     Creates with system identity and builtin_status based on availableToAll.
-    Admins can specify which fields are user-configurable via configurableKeys.
+    Configurable keys are derived automatically from the element schema's
+    ReadOnlyHint annotations.
     """
     svc = current_app.container.resources_service
     try:
@@ -484,7 +488,6 @@ def create_builtin_resource(
             name=name,
             config=config,
             available_to_all=available_to_all,
-            configurable_keys=configurable_keys,
         )
         return jsonify(doc.model_dump(mode="json")), 201
     except ValueError as e:
@@ -500,17 +503,15 @@ def create_builtin_resource(
     "config": fields.Dict(required=False, load_default=None),
     "name": fields.Str(required=False, load_default=None),
     "available_to_all": fields.Bool(data_key="availableToAll", load_default=None),
-    "configurable_keys": fields.List(
-        fields.Str(), data_key="configurableKeys", load_default=None,
-    ),
 })
 def update_builtin_resource(
     resource_id, config=None, name=None,
-    available_to_all=None, configurable_keys=None,
+    available_to_all=None,
 ):
     """Update a built-in/admin resource (admin only).
 
-    Allows updating config, name, availableToAll status, and configurableKeys.
+    Allows updating config, name, and availableToAll status.
+    Configurable keys are derived automatically from the element schema.
     """
     svc = current_app.container.resources_service
     try:
@@ -519,7 +520,6 @@ def update_builtin_resource(
             config=config,
             name=name,
             available_to_all=available_to_all,
-            configurable_keys=configurable_keys,
         )
         return jsonify(doc.model_dump(mode="json")), 200
     except KeyError as e:

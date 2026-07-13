@@ -347,22 +347,35 @@ class ResourcesService:
 
     # ---------- Built-in Resource Operations ----------
 
-    BUILTIN_CONFIGURABLE_KEYS: Dict[str, Dict[str, List[str]]] = {
-        "providers": {
-            "mcp_server": ["sign_in", "bearer_token", "tool_names"],
-        },
-    }
+    def _get_configurable_keys_from_schema(self, category: str, type_key: str) -> set:
+        """Derive user-configurable field names from the schema's ReadOnlyHint annotations.
+
+        Fields with ``read_only.read_only == false`` are configurable.
+        All other visible fields are read-only for built-in resources.
+        """
+        try:
+            schema = self.element_registry.get_schema_json(
+                ResourceCategory(category), type_key
+            )
+        except KeyError:
+            return set()
+        configurable = set()
+        for field_name, field_schema in schema.get("properties", {}).items():
+            hints = field_schema.get("hints", {})
+            if "hidden" in hints:
+                continue
+            ro_hint = hints.get("read_only", {})
+            if ro_hint.get("read_only") is False:
+                configurable.add(field_name)
+        return configurable
 
     def get_builtin_schema(self, rid: str) -> dict:
         """Return the element JSON schema with readOnly annotations for a built-in resource.
 
-        All visible fields default to read_only=true. Fields listed in the
-        resource's configurable_keys (or the category/type default mapping)
-        are marked read_only=false so users can edit them.
-        Hidden fields are left untouched.
-
-        This annotation is only applied when serving the schema to regular
-        users viewing built-in elements — admins use the normal schema.
+        Reads the ``read_only`` hints baked into the pydantic config schema:
+        - Fields with ``read_only: false`` remain configurable.
+        - All other visible fields get ``read_only: true`` added.
+        - Hidden fields are left untouched.
         """
         resource = self._store.get(rid)
         if not resource.builtin_status:
@@ -372,19 +385,15 @@ class ResourcesService:
             ResourceCategory(resource.category), resource.type
         )
 
-        if resource.configurable_keys:
-            configurable = set(resource.configurable_keys)
-        else:
-            category_defaults = self.BUILTIN_CONFIGURABLE_KEYS.get(resource.category, {})
-            configurable = set(category_defaults.get(resource.type, []))
-
         for field_name, field_schema in schema.get("properties", {}).items():
             hints = field_schema.get("hints", {})
             if "hidden" in hints:
                 continue
 
-            hints["read_only"] = {"read_only": field_name not in configurable}
-            field_schema["hints"] = hints
+            ro_hint = hints.get("read_only", {})
+            if ro_hint.get("read_only") is not False:
+                hints["read_only"] = {"read_only": True}
+                field_schema["hints"] = hints
 
         return schema
 
@@ -396,16 +405,19 @@ class ResourcesService:
     ) -> Resource:
         """Save per-user/team configuration overlay for a built-in resource.
 
+        Allowed fields are derived from the schema's ReadOnlyHint annotations
+        (fields with ``read_only: false``).
+
         Args:
             rid: The built-in resource ID.
             identity_key: Key in format "user:<id>" or "team:<id>".
-            config: Dict of field values to store (only configurable_keys allowed).
+            config: Dict of field values to store (only schema-configurable fields allowed).
         """
         resource = self._store.get(rid)
         if not resource.builtin_status:
             raise ValueError("Resource is not a built-in resource")
 
-        allowed_keys = set(resource.configurable_keys)
+        allowed_keys = self._get_configurable_keys_from_schema(resource.category, resource.type)
         filtered = {k: v for k, v in config.items() if k in allowed_keys}
         if not filtered:
             raise ValueError("No valid configurable fields provided")
@@ -458,17 +470,19 @@ class ResourcesService:
         type: str,
         name: str,
         config: dict,
-        available_to_all: bool = True,
-        configurable_keys: List[str] = None,
+        available_to_all: bool = False,
     ) -> Resource:
         """Create a resource directly as built-in (admin only).
 
         Uses system identity and sets builtin_status based on available_to_all flag.
+        Configurable keys are derived automatically from the element schema's
+        ReadOnlyHint annotations.
         """
         model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
         cfg_model = model_cls(**config)
 
         nested_refs = list(RefWalker.external_rids(cfg_model))
+        derived_keys = list(self._get_configurable_keys_from_schema(category, type))
 
         doc = Resource(
             identity=Identity.system(),
@@ -478,17 +492,21 @@ class ResourcesService:
             cfg_dict=cfg_model.model_dump(mode="json"),
             nested_refs=nested_refs,
             builtin_status="public" if available_to_all else "private",
-            configurable_keys=configurable_keys or [],
+            configurable_keys=derived_keys,
         )
         return self._store.create(doc)
 
-    def promote(self, rid: str, configurable_keys: List[str] = None) -> Resource:
-        """Promote a resource to public built-in (admin only)."""
+    def promote(self, rid: str) -> Resource:
+        """Promote a resource to public built-in (admin only).
+
+        Configurable keys are derived from the schema's ReadOnlyHint annotations.
+        """
         resource = self._store.get(rid)
         resource.builtin_status = "public"
         resource.identity = Identity.system()
-        if configurable_keys is not None:
-            resource.configurable_keys = configurable_keys
+        resource.configurable_keys = list(
+            self._get_configurable_keys_from_schema(resource.category, resource.type)
+        )
         return self._store.update(resource)
 
     def demote(self, rid: str) -> Resource:
@@ -506,11 +524,11 @@ class ResourcesService:
         config: dict = None,
         name: str = None,
         available_to_all: bool = None,
-        configurable_keys: List[str] = None,
     ) -> Resource:
         """Update a built-in/admin resource (admin only).
 
-        Allows updating config, name, available_to_all status, and configurable_keys.
+        Allows updating config, name, and available_to_all status.
+        Configurable keys are always derived from the schema's ReadOnlyHint annotations.
         """
         resource = self._store.get(rid)
 
@@ -527,8 +545,9 @@ class ResourcesService:
         if available_to_all is not None:
             resource.builtin_status = "public" if available_to_all else "private"
 
-        if configurable_keys is not None:
-            resource.configurable_keys = configurable_keys
+        resource.configurable_keys = list(
+            self._get_configurable_keys_from_schema(resource.category, resource.type)
+        )
 
         return self._store.update(resource)
 

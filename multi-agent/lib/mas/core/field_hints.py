@@ -313,13 +313,19 @@ class PropagateHint(BaseModel):
 
 class ReadOnlyHint(BaseModel):
     """
-    Hint marking a field as read-only in the UI for built-in resources.
-    Applied at serve-time by get_builtin_schema() — not baked into the
-    pydantic model itself.
+    Hint marking a field's configurability for built-in resources.
+
+    Baked into the pydantic config schema on each field:
+    - ``read_only=True``  → field is locked for end-users on built-in elements.
+    - ``read_only=False`` → field is user-configurable (per-user overlay).
+
+    Fields without this hint default to read-only when served via
+    ``get_builtin_schema()``.  For non-built-in resources the hint is
+    ignored and all fields remain editable.
     """
     read_only: bool = Field(
         default=True,
-        description="When True, the field cannot be edited by users"
+        description="When True, the field cannot be edited by users on built-in resources"
     )
 
     def model_dump(self, **kwargs) -> Dict[str, Any]:
