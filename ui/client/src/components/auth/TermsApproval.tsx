@@ -37,7 +37,7 @@ const TermsApproval: React.FC<TermsApprovalProps> = ({ children }) => {
     
     setIsCheckingApproval(true);
     try {
-      const approvalStatus = await checkUserApproval(username);
+      const approvalStatus = await checkUserApproval();
       
       if (!approvalStatus.approved) {
         setShowModal(true);
@@ -65,7 +65,7 @@ const TermsApproval: React.FC<TermsApprovalProps> = ({ children }) => {
         
         // Verify the approval was saved to database
         try {
-          const approvalStatus = await checkUserApproval(user.username);
+          const approvalStatus = await checkUserApproval();
           if (!approvalStatus.approved) {
             console.warn("User approval was not saved properly");
           }

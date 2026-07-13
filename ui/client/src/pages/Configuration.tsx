@@ -89,7 +89,7 @@ function AdminConfigTabs() {
     error,
   } = useQuery<AdminConfigResponse>({
     queryKey: ["admin_config", user?.username],
-    queryFn: () => getAdminConfig(user?.username),
+    queryFn: () => getAdminConfig(),
     staleTime: 30 * 1000,
     refetchOnMount: true,
   });

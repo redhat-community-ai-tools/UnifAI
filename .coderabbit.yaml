@@ -230,4 +230,4 @@ chat:
 knowledge_base:
   opt_out: false
   learnings:
-    scope: auto
+    scope: local

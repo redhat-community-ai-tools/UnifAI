@@ -18,8 +18,6 @@ class CatalogService:
         elements_by_category = {}
 
         for category in self.reg.list_categories():
-            if category.is_hidden():
-                continue
             category_name = category.value if hasattr(category, 'value') else str(category)
             elements = []
 
@@ -62,8 +60,8 @@ class CatalogService:
         )
 
     def list_categories(self) -> List[str]:
-        """List all available element categories (excludes hidden categories)."""
-        return [c.value for c in self.reg.list_categories() if not c.is_hidden()]
+        """List all available element categories."""
+        return [c.value if hasattr(c, "value") else str(c) for c in self.reg.list_categories()]
 
     def list_types(self, category: str) -> List[str]:
         """List all element types in a category"""

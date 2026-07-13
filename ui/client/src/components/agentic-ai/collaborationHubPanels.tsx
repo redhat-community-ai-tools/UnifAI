@@ -9,6 +9,7 @@ import type { MemberDisplay } from "@/utils/memberDisplay";
 import type { ChatSession, ChatMessage } from "@/types/session";
 import type { SessionPayload } from "./ExecutionTab";
 import type { ElementValidationResult } from "@/types/validation";
+import type { PromptShortcut } from "@/api/blueprints";
 import { ViewModeToggle, type CarouselMode } from "@/components/shared/ViewModeToggle";
 
 export interface CollaborationHubSessionSidebarProps {
@@ -142,6 +143,7 @@ export interface CollaborationHubMainColumnProps {
   isValidatingBlueprint: boolean;
   typingUsers: string[];
   teamMembers: MemberDisplay[];
+  defaultPrompts?: PromptShortcut[];
   triggerExecution: (payload: SessionPayload) => Promise<unknown>;
   onCancelSession: () => Promise<void>;
   getSessionParticipantMembers: (sessionId: string) => MemberDisplay[];
@@ -160,6 +162,7 @@ export function CollaborationHubMainColumn({
   isValidatingBlueprint,
   typingUsers,
   teamMembers,
+  defaultPrompts,
   triggerExecution,
   onCancelSession,
   getSessionParticipantMembers,
@@ -222,6 +225,7 @@ export function CollaborationHubMainColumn({
             collaborationMode={true}
             teamMembers={teamMembers}
             typingUsers={typingUsers}
+            defaultPrompts={defaultPrompts}
             carouselMode={carouselMode}
             onSetCarouselMode={onSetCarouselMode}
           />

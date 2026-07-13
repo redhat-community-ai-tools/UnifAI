@@ -61,9 +61,5 @@ def status_cmd():
         return
 
     expires = session_expires_at(session)
-    display_name = session.get("name") or session.get("username", "unknown")
-    console.print(
-        f"[green]Authenticated[/green] as [bold]{display_name}[/bold]"
-        f" ([dim]{session.get('username')}[/dim])"
-    )
+    console.print("[green]Authenticated[/green] (session cookie active)")
     console.print(f"[dim]Session expires: {expires.strftime('%Y-%m-%d %H:%M:%S')}[/dim]")

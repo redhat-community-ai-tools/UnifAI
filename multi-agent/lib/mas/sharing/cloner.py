@@ -129,7 +129,7 @@ class ShareCloner:
             if not ctx.is_authorized_owner(bp_doc.identity.id):
                 raise ValueError(f"Blueprint {blueprint_id} not owned by sender")
 
-            draft = BlueprintDraft(**bp_doc.spec_dict)
+            draft = self.blueprints.load_draft_from_dict(bp_doc.spec_dict)
             # Union stored rid_refs with a fresh walk of the draft (avoids stale rid_refs).
             external_rids = set(bp_doc.rid_refs or [])
             external_rids |= RefWalker.external_rids(draft)
@@ -364,6 +364,7 @@ class ShareCloner:
             plan=self._clone_plan(draft.plan, rid_mapping),
             name=clone_name,
             description=draft.description,
+            prompt_shortcuts=draft.prompt_shortcuts,
             **resource_fields
         )
 

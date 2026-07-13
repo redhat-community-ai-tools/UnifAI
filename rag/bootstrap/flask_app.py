@@ -35,8 +35,15 @@ def create_app() -> Flask:
     config = AppConfig.get_instance()
     
     # Application config
-    app.secret_key = config.get("secret_key", os.urandom(24))
+    if not config.secret_key:
+        raise RuntimeError("secret_key is not configured. Set the SECRET_KEY environment variable.")
+    app.secret_key = config.secret_key
     app.version = config.get("version", "1.0.0")
+    app.config.update({
+        'SESSION_COOKIE_SECURE': config.session_cookie_secure,
+        'SESSION_COOKIE_HTTPONLY': config.session_cookie_http_only,
+        'SESSION_COOKIE_SAMESITE': config.session_cookie_samesite,
+    })
     
     # CORS
     CORS(
@@ -45,6 +52,11 @@ def create_app() -> Flask:
         origins=os.environ.get("FRONTEND_URL", "http://localhost:5000"),
     )
     
+    # Identity wiring — make Redis store and IdentityClient available to decorators
+    from bootstrap.app_container import redis_kv_store, identity_client
+    app.extensions['redis_kv_store'] = redis_kv_store()
+    app.extensions['identity_client'] = identity_client()
+
     # Register HTTP adapters (blueprints)
     _register_blueprints(app)
     

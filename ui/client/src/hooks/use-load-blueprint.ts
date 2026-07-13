@@ -9,7 +9,7 @@ import {
   YamlFlowCondition,
 } from "@/types/graph";
 import { getCategoryDisplay } from "@/components/shared/helpers";
-import { getBlueprintInfo } from "@/api/blueprints";
+import { getBlueprintInfo, PromptShortcutInput } from "@/api/blueprints";
 import { NODE_WIDTH } from "@/components/agentic-ai/graphs/GraphDisplayHelpers";
 
 export interface ReconstructedGraph {
@@ -19,6 +19,7 @@ export interface ReconstructedGraph {
   nextNodeId: number;
   name: string;
   description: string;
+  promptShortcuts: PromptShortcutInput[];
 }
 
 function stripRef(rid: string): string {
@@ -426,6 +427,7 @@ export function reconstructBlueprintGraph(
     nextNodeId: maxNodeId,
     name,
     description,
+    promptShortcuts: [],
   };
 }
 
@@ -439,9 +441,13 @@ export async function loadBlueprintForEditing(
 ): Promise<ReconstructedGraph> {
   const blueprintInfo = await getBlueprintInfo(blueprintId);
   const specDict = blueprintInfo.spec_dict;
-  return reconstructBlueprintGraph(
+  const graph = reconstructBlueprintGraph(
     specDict,
     allBlocksData,
     conditionsData,
   );
+  return {
+    ...graph,
+    promptShortcuts: Array.isArray(specDict.prompt_shortcuts) ? specDict.prompt_shortcuts : [],
+  };
 }

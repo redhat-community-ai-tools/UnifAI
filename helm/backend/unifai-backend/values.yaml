@@ -1,5 +1,9 @@
 env:
+  ROLE: "flask"
   BACKEND_ENV: "production"
+  SESSION_COOKIE_SAMESITE: "None"
+  SESSION_COOKIE_SECURE: true
+  SESSION_COOKIE_HTTPONLY: true
 
 debug: false
 
@@ -68,6 +72,16 @@ autoscaling:
   minReplicas: 1
   maxReplicas: 100
   targetCPUUtilizationPercentage: 80
+
+slackSocket:
+  enabled: true
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
 
 volumes: []
 volumeMounts: []

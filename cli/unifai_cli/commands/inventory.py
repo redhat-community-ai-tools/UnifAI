@@ -18,7 +18,6 @@ inventory_app = typer.Typer(
 
 @inventory_app.command("list")
 def list_cmd(
-    user: Optional[str] = typer.Option(None, "--user", "-u", help="User ID", envvar="UNIFAI_USER"),
     mas_url: Optional[str] = typer.Option(None, "--mas-url", help="MAS server URL", envvar="MAS_URL"),
     category: Optional[str] = typer.Option(
         None, "--category", "-c",
@@ -26,15 +25,15 @@ def list_cmd(
     ),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Select a resource to inspect"),
 ):
-    """List inventory elements for a user."""
-    from unifai_cli.bootstrap import build_client, resolve_user_id
+    """List inventory elements for the authenticated user."""
+    from unifai_cli.bootstrap import build_client, resolve_session
     from unifai_cli.display.formatting import console, render_resource_table
 
-    user_id = resolve_user_id(user)
-    client = build_client(mas_url, user_id=user_id)
+    session_cookie = resolve_session()
+    client = build_client(mas_url, session_cookie=session_cookie)
 
     try:
-        result = client.list_resources(user_id, category=category)
+        result = client.list_resources(category=category)
     except Exception as e:
         console.print(f"[red]Failed to list resources:[/red] {e}")
         return
@@ -73,7 +72,7 @@ def inspect_cmd(
 # ── Helpers used by both CLI commands and the interactive menu ──
 
 
-def list_inventory_interactive(client: MASClient, user_id: str) -> Optional[dict]:
+def list_inventory_interactive(client: MASClient) -> Optional[dict]:
     """List resources with optional category filter and let the user select one."""
     from unifai_cli.display.formatting import console, render_resource_table
     from unifai_cli.interaction.menus import select_category, select_resource
@@ -83,7 +82,7 @@ def list_inventory_interactive(client: MASClient, user_id: str) -> Optional[dict
         return None
 
     try:
-        result = client.list_resources(user_id, category=category)
+        result = client.list_resources(category=category)
     except Exception as e:
         console.print(f"[red]Failed to list resources:[/red] {e}")
         return None

@@ -72,6 +72,7 @@ MIN_POLLING_INTERVAL = 5
 MAX_POLLING_INTERVAL = 60
 SESSION_API_PREFIX = "/api2/sessions"
 BLUEPRINTS_API_PREFIX = "/api2/blueprints"
+TERMINAL_STATUSES = {"COMPLETED", "FAILED", "CANCELLED"}
 
 
 class WorkflowConfig:
@@ -262,12 +263,27 @@ def submit_session(client: UnifAIClient, session_id: str) -> dict:
     return result
 
 
+def _check_session_status(client: UnifAIClient, session_id: str) -> str:
+    """Query the persistent session status from the database."""
+    url = client._url("session.status.get")
+    params = {"sessionId": session_id}
+    response = client.session.get(url, params=params)
+    result = client._handle_response(response, "Session status check")
+    if isinstance(result, str):
+        return result
+    return result.get("status", result) if isinstance(result, dict) else str(result)
+
+
 def poll_session_status(client: UnifAIClient, session_id: str) -> None:
     """
     Step 3: Poll session status until execution completes.
-    
+
     Polls the session.stream.status endpoint at the configured interval
     until is_active becomes False (or stream is removed after completion).
+
+    When the stream disappears (404), falls back to the persistent
+    session.status.get endpoint to distinguish genuine completion from
+    Redis stream TTL expiry on long-running sessions.
     """
     url = client._url("session.stream.status")
     params = {"sessionId": session_id}
@@ -276,35 +292,38 @@ def poll_session_status(client: UnifAIClient, session_id: str) -> None:
     print(f"[3/5] Polling session status every {interval}s...", file=sys.stderr)
 
     poll_count = 0
-    seen_active = False  # Track if we've seen the session running
-    
+    seen_active = False
+
     while True:
         poll_count += 1
         response = client.session.get(url, params=params)
-        
+
         try:
             status = client._handle_response(response, "Status poll")
         except RuntimeError as e:
             if "404" in str(e):
                 if poll_count == 1:
-                    # Session not yet initialized, wait and retry
                     print(f"      Waiting for session to initialize...", file=sys.stderr)
                     time.sleep(interval)
                     continue
                 elif seen_active:
-                    # We saw the session running before, 404 means stream was cleaned up after completion
-                    print(f"      Session stream removed (session completed)", file=sys.stderr)
-                    return
+                    db_status = _check_session_status(client, session_id)
+                    if db_status in TERMINAL_STATUSES:
+                        print(f"      Session stream removed (status: {db_status})", file=sys.stderr)
+                        return
+                    print(f"      Stream expired but session still {db_status}, continuing to poll...", file=sys.stderr)
+                    time.sleep(interval)
+                    continue
             raise
 
         is_active = status.get("is_active", False)
         event_count = status.get("event_count", 0)
-        
+
         if is_active:
             seen_active = True
-        
+
         print(f"      Poll #{poll_count}: events={event_count}, active={is_active}", file=sys.stderr)
-        
+
         if not is_active:
             print(f"      Session completed after {poll_count} polls", file=sys.stderr)
             return

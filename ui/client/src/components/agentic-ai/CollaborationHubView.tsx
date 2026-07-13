@@ -25,6 +25,8 @@ import { useSessionStream } from "@/hooks/use-session-stream";
 import { useSessionHub } from "@/hooks/use-session-hub";
 import { useCarouselLayout } from "@/hooks/use-carousel-layout";
 import { usePaginationTrigger } from "@/hooks/use-pagination-trigger";
+import { useDefaultPrompts } from "@/hooks/use-default-prompts";
+import { sortSessionsByTimestamp } from "@/utils/sessionHelpers";
 import {
   CollaborationHubSessionSidebar,
   CollaborationHubMainColumn,
@@ -33,6 +35,9 @@ import {
 import { AnimatedPanelLayout } from "@/components/shared/AnimatedPanelLayout";
 import { AddFlowModal, DeleteSessionModal } from "@/components/shared/SessionModals";
 import { MemberDisplay, buildMemberDisplay } from "@/utils/memberDisplay";
+import type { ChatSessionData } from "@/types/session";
+import type { PromptShortcut } from "@/api/blueprints";
+import { transformSessionData } from "@/utils/sessionHelpers";
 
 const COLLAB_POLL_INTERVAL = 3000;
 const COLLAB_HEARTBEAT_INTERVAL = 30000;
@@ -325,6 +330,9 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
     };
   }, []);
 
+  // ── Prompt shortcuts ───────────────────────────────────────────────────
+  const defaultPrompts = useDefaultPrompts(hub);
+
   // ── Loading / Error ────────────────────────────────────────────────────
   if (hub.isLoading) {
     return (
@@ -376,6 +384,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
               isValidatingBlueprint={hub.isValidatingBlueprint}
               typingUsers={typingUsers}
               teamMembers={teamMembers}
+              defaultPrompts={defaultPrompts}
               triggerExecution={triggerExecution}
               onCancelSession={handleCancelSession}
               getSessionParticipantMembers={getSessionParticipantMembers}

@@ -12,6 +12,14 @@ class Identifier(str, Enum):
     TYPE = "claude_agent_node"
 
 
+class EffortLevel(str, Enum):
+    """Controls how much effort Claude puts into reasoning."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+
+
 @dataclass(frozen=True)
 class Meta:
     """Human-readable metadata about the element."""

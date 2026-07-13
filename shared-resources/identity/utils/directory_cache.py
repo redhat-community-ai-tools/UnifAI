@@ -9,11 +9,12 @@ import json
 import logging
 from typing import Any, Optional
 
+from global_utils.redis.constants import IDENTITY_DIRECTORY_PREFIX
 from global_utils.redis.redis_kv_store import RedisKVStore
 
 logger = logging.getLogger(__name__)
 
-KEY_PREFIX = "unifai:directory:"
+KEY_PREFIX = f"{IDENTITY_DIRECTORY_PREFIX}:"
 DEFAULT_TTL_SECONDS = 300
 
 

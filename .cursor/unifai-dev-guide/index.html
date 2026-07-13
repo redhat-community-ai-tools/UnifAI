@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UnifAI — Developer Guide</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a855f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polygon points='12 2 2 7 12 12 22 7 12 2'/><polyline points='2 17 12 22 22 17'/><polyline points='2 12 12 17 22 12'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Inter:wght@300;400;500&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css?v=14">
+</head>
+<body>
+  <header id="top-bar">
+    <div class="logo">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#BB86FC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+        <polyline points="2 17 12 22 22 17"/>
+        <polyline points="2 12 12 17 22 12"/>
+      </svg>
+      <span>UnifAI</span>
+      <span class="subtitle">Developer Guide</span>
+      <span class="separator">|</span>
+      <span class="subtitle">powered by Applied AI Enablement Team (part of UIE)</span>
+    </div>
+    <nav id="view-tabs">
+      <button class="view-tab active" data-view="map">Map</button>
+      <button class="view-tab" data-view="services">Services</button>
+      <button class="view-tab" data-view="features">Features</button>
+    </nav>
+  </header>
+
+  <div id="legend-bar">
+    <span class="legend-item"><span class="legend-dot app"></span>Application Service</span>
+    <span class="legend-item"><span class="legend-dot worker"></span>Worker / Process</span>
+    <span class="legend-item"><span class="legend-dot infra"></span>Infrastructure</span>
+    <span class="legend-item"><span class="legend-dot external"></span>External / Optional</span>
+    <span class="legend-item"><span class="legend-dot feature"></span>Feature Flow</span>
+    <span class="legend-item"><span class="legend-dot shared"></span>Shared Library</span>
+    <span class="legend-item"><span class="legend-dot disabled"></span>Disabled</span>
+  </div>
+
+  <!-- Map View -->
+  <main id="map-container" class="view-content active">
+    <div id="map-viewport">
+      <svg id="map-svg"></svg>
+    </div>
+  </main>
+
+  <!-- Services View -->
+  <section id="services-view" class="view-content">
+    <div id="services-grid" class="item-grid"></div>
+    <nav id="services-section-nav" class="section-nav hidden"></nav>
+    <div id="services-content" class="content-area"></div>
+  </section>
+
+  <!-- Features View -->
+  <section id="features-view" class="view-content">
+    <div id="features-grid" class="item-grid"></div>
+    <nav id="features-section-nav" class="section-nav hidden"></nav>
+    <div id="features-content" class="content-area"></div>
+  </section>
+
+  <div id="zoom-controls">
+    <button id="zoom-in" title="Zoom in">+</button>
+    <button id="zoom-fit" title="Fit all">⊡</button>
+    <button id="zoom-out" title="Zoom out">−</button>
+  </div>
+
+  <div id="detail-panel" class="hidden">
+    <button id="panel-close" title="Close">&times;</button>
+    <div id="panel-header">
+      <div id="panel-icon"></div>
+      <div>
+        <h2 id="panel-title"></h2>
+        <p id="panel-subtitle"></p>
+      </div>
+    </div>
+    <nav id="panel-tabs">
+      <button class="tab active" data-tab="job">Job Description</button>
+      <button class="tab" data-tab="interfaces">Interfaces</button>
+      <button class="tab" data-tab="architecture">Architecture</button>
+      <button class="tab" data-tab="scheme">Interactions</button>
+    </nav>
+    <div id="panel-body">
+      <div id="tab-job" class="tab-content active"></div>
+      <div id="tab-interfaces" class="tab-content"></div>
+      <div id="tab-architecture" class="tab-content"></div>
+      <div id="tab-scheme" class="tab-content"></div>
+    </div>
+  </div>
+
+  <div id="tooltip" class="hidden"></div>
+
+  <!-- Data layer: registry + per-service + edges + features -->
+  <script src="js/data/_registry.js?v=15"></script>
+  <script src="js/data/services/browser.js?v=15"></script>
+  <script src="js/data/services/ui.js?v=15"></script>
+  <script src="js/data/services/rag.js?v=15"></script>
+  <script src="js/data/services/mas.js?v=15"></script>
+  <script src="js/data/services/identity.js?v=15"></script>
+  <script src="js/data/services/platform.js?v=15"></script>
+  <script src="js/data/services/celery.js?v=15"></script>
+  <script src="js/data/services/temporal_worker.js?v=15"></script>
+  <script src="js/data/services/mongodb.js?v=15"></script>
+  <script src="js/data/services/qdrant.js?v=15"></script>
+  <script src="js/data/services/rabbitmq.js?v=15"></script>
+  <script src="js/data/services/redis.js?v=15"></script>
+  <script src="js/data/services/temporal.js?v=15"></script>
+  <script src="js/data/services/keycloak.js?v=15"></script>
+  <script src="js/data/services/slack.js?v=15"></script>
+  <script src="js/data/services/global_utils.js?v=15"></script>
+  <script src="js/data/_edges.js?v=15"></script>
+  <script src="js/data/features/feat_inventory.js?v=15"></script>
+  <script src="js/data/features/feat_workflows.js?v=15"></script>
+  <script src="js/data/features/feat_chats.js?v=15"></script>
+  <script src="js/data/features/feat_rag.js?v=15"></script>
+  <script src="js/data/features/feat_overview.js?v=15"></script>
+  <script src="js/data/features/feat_team_workspace.js?v=15"></script>
+
+  <!-- Class-level architecture data -->
+  <script src="js/data-classes/_registry.js?v=15"></script>
+  <script src="js/data-classes/rag.js?v=15"></script>
+  <script src="js/data-classes/mas.js?v=15"></script>
+  <script src="js/data-classes/identity.js?v=15"></script>
+  <script src="js/data-classes/platform.js?v=15"></script>
+  <script src="js/data-classes/global_utils.js?v=15"></script>
+  <script src="js/data-classes/celery.js?v=15"></script>
+  <script src="js/data-classes/temporal_worker.js?v=15"></script>
+  <script src="js/data-classes/ui.js?v=15"></script>
+
+  <!-- Rendering + interactions -->
+  <script src="js/lib/marked.min.js?v=15"></script>
+  <script src="js/map.js?v=15"></script>
+  <script src="js/views.js?v=15"></script>
+  <script src="js/interactions.js?v=15"></script>
+</body>
+</html>
