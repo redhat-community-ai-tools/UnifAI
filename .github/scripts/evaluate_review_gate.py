@@ -13,7 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-from _scoring import compute_deterministic_score, require_int
+from _scoring import compute_deterministic_score, require_int, validate_findings
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 MARKDOWN_BOLD_RE = re.compile(r"[*`]{1,2}")
@@ -68,21 +68,7 @@ def try_json_scoring(json_path: Path) -> dict | None:
     if not isinstance(code_findings, dict):
         print(f"::warning::{json_path}: code_findings is not an object. Falling back to text parsing.")
         return None
-    _SCORING_KEYS = ("critical", "major", "minor")
-    parsed_findings: dict[str, int] = {}
-    for key in _SCORING_KEYS:
-        value = code_findings.get(key)
-        if value is None:
-            continue
-        count = require_int(value, default_if_empty=0, min_value=0)
-        if count is None:
-            print(
-                f"::warning::{json_path}: code_findings[{key!r}] has non-numeric value "
-                f"{value!r}. Falling back to text parsing."
-            )
-            return None
-        parsed_findings[key] = count
-    code_findings = parsed_findings
+    code_findings = validate_findings(code_findings, label=f"{json_path}: code_findings")
 
     if files_changed is None or files_changed == "":
         files_changed = 1

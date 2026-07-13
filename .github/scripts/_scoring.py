@@ -35,6 +35,29 @@ def require_int(value, *, default_if_empty: int, min_value: int = 0) -> int | No
     return number
 
 
+def validate_findings(raw: dict, *, label: str = "findings") -> dict[str, int]:
+    """Validate severity counts consistently across all CI consumers.
+
+    Uses require_int for each key. Non-numeric values are coerced to 0
+    with a CI warning so that gate, training-data, and Langfuse scripts
+    all agree on the same counts.
+    """
+    result: dict[str, int] = {}
+    for key in ("critical", "major", "minor", "info"):
+        value = raw.get(key)
+        if value is None:
+            continue
+        count = require_int(value, default_if_empty=0, min_value=0)
+        if count is None:
+            print(
+                f"::warning::{label}[{key!r}] has non-numeric value "
+                f"{value!r}. Using 0."
+            )
+            count = 0
+        result[key] = count
+    return result
+
+
 def _non_negative_count(value, default: int = 0) -> int:
     return to_int(value, default=default, min_value=0)
 

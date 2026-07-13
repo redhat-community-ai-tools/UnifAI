@@ -20,7 +20,7 @@ import os
 import sys
 from pathlib import Path
 
-from _scoring import to_int
+from _scoring import to_int, validate_findings
 
 
 def _load_json(path: Path) -> dict | None:
@@ -78,11 +78,12 @@ def _attach_scores(langfuse, trace_id: str, pipeline_results: dict) -> None:
                 comment="Code review health score (0-10)",
             )
 
-    code_findings = pipeline_results.get("code_findings", {})
+    raw_code = pipeline_results.get("code_findings", {})
     files_changed = to_int(pipeline_results.get("files_changed", 1)) or 1
-    if isinstance(code_findings, dict):
+    if isinstance(raw_code, dict):
         from _scoring import compute_deterministic_score
-        computed = compute_deterministic_score(code_findings, files_changed)
+        validated_code = validate_findings(raw_code, label="langfuse: code_findings")
+        computed = compute_deterministic_score(validated_code, files_changed)
         langfuse.create_score(
             name="computed_score",
             value=float(computed),
@@ -95,21 +96,20 @@ def _attach_scores(langfuse, trace_id: str, pipeline_results: dict) -> None:
         ("code_findings", "code"),
         ("arch_findings", "arch"),
     ]:
-        findings = pipeline_results.get(domain, {})
-        if not isinstance(findings, dict):
+        raw = pipeline_results.get(domain, {})
+        if not isinstance(raw, dict):
             continue
+        findings = validate_findings(raw, label=f"langfuse: {domain}")
         for severity in ("critical", "major", "minor", "info"):
             count = findings.get(severity)
             if count is None:
                 continue
-            count_val = _as_float(count, default=-1)
-            if count_val >= 0:
-                langfuse.create_score(
-                    name=f"{key_prefix}_{severity}_count",
-                    value=count_val,
-                    trace_id=trace_id,
-                    data_type="NUMERIC",
-                )
+            langfuse.create_score(
+                name=f"{key_prefix}_{severity}_count",
+                value=float(count),
+                trace_id=trace_id,
+                data_type="NUMERIC",
+            )
 
 
 DATASET_NAME = "pipeline-training-data"
@@ -132,12 +132,14 @@ def _add_dataset_item(
     run_id = os.environ.get("GITHUB_RUN_ID", "local")
 
     pr = pipeline_results or {}
-    code_findings = pr.get("code_findings", {})
-    arch_findings = pr.get("arch_findings", {})
-    if not isinstance(code_findings, dict):
-        code_findings = {}
-    if not isinstance(arch_findings, dict):
-        arch_findings = {}
+    raw_code_ds = pr.get("code_findings", {})
+    raw_arch_ds = pr.get("arch_findings", {})
+    if not isinstance(raw_code_ds, dict):
+        raw_code_ds = {}
+    if not isinstance(raw_arch_ds, dict):
+        raw_arch_ds = {}
+    code_findings_ds = validate_findings(raw_code_ds, label="langfuse-dataset: code_findings")
+    arch_findings_ds = validate_findings(raw_arch_ds, label="langfuse-dataset: arch_findings")
 
     item_input = {
         "pr_number": pr_number,
@@ -149,14 +151,8 @@ def _add_dataset_item(
         "arch_verdict": pr.get("arch_verdict", ""),
         "code_verdict": pr.get("code_verdict", ""),
         "model_score": to_int(pr.get("code_health_score"), default=0),
-        "code_findings": {
-            sev: to_int(code_findings.get(sev), default=0)
-            for sev in ("critical", "major", "minor", "info")
-        },
-        "arch_findings": {
-            sev: to_int(arch_findings.get(sev), default=0)
-            for sev in ("critical", "major", "minor", "info")
-        },
+        "code_findings": code_findings_ds,
+        "arch_findings": arch_findings_ds,
     }
 
     telem = telemetry_data or {}

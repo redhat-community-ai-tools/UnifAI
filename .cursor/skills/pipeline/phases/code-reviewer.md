@@ -253,7 +253,7 @@ For each finding: show file path and line number, explain which service/layer th
 - Business logic in wrong service = **MAJOR**
 - Cross-service repository access = **CRITICAL**
 - Unrelated orchestration in a domain service = **MAJOR**
-- Minor helper in slightly wrong place = **MINOR**
+- Minor helper in slightly wrong place = **WARNING**
 
 ### 12. Security Assessment
 
@@ -337,7 +337,7 @@ Wrap the entire output inside a `## CODE REVIEW` header (or `## PHASE 4: CODE RE
 2. **One finding = one self-contained block.** Each finding must contain the file path and line number, the problem description, the severity justification, and the fix — all in one place.
 3. **Inline the fix.** Use a bold **Fix →** prefix within each finding block. There is no separate recommendations section.
 3a. **Justify the severity.** Use a bold **Why {Severity} →** line (e.g. **Why Major →**) in each finding block. Cite which rubric criteria from `.cursor/skills/pipeline/modes/_severity-rubric.md` the finding meets. This is mandatory — a finding without severity justification is incomplete.
-4. **Use severity badges.** Prefix finding sections with: 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Info.
+4. **Use severity badges.** Prefix finding sections with: 🔴 Critical, 🟠 Major, 🟡 Warning, 🔵 Info.
 5. **Tag the review dimension.** Each finding must include a category tag showing which Review Area (§1–§13) it came from — e.g. `Hex Architecture`, `Duplication`, `Dead Code`, `Endpoint Thinness`, `Coupling`, `Security`, `Alignment`. Place it on the title line after the severity badge.
 6. **File paths and line numbers are mandatory.** Every finding MUST include `file:line`. A finding without a line reference is incomplete.
 7. **No conversational filler.** State findings directly.
@@ -421,9 +421,9 @@ Example: `#### 🟠 1. [NEW] [Coupling] Business logic in wrong service — belo
 
 Omit this section entirely if there are zero major findings.
 
-### Section 5: 🟡 Minor / Alignment Issues (only if any exist)
+### Section 5: 🟡 Warning / Alignment Issues (only if any exist)
 
-Number findings sequentially within this section. Same block format. Includes MINOR severity and ALIGNMENT ISSUE findings. For multi-file issues, include a table of affected locations within the block.
+Number findings sequentially within this section. Same block format. Includes WARNING severity and ALIGNMENT ISSUE findings. For multi-file issues, include a table of affected locations within the block.
 
 ```
 #### 🟡 1. [NEW] [{Review Area}] {Concise title}
@@ -504,14 +504,14 @@ Show the derivation explicitly in your output:
 ### Score Derivation
 
 Files in scope: {N}
-Findings (NEW only): 🔴 {N} Critical | 🟠 {N} Major | 🟡 {N} Minor | 🔵 {N} Info (no penalty)
-Penalties: critical={N}×3.0={X} | major={N}×1.5={X} | minor=({N}×0.5)/max(1,{files}/5)={X}
+Findings (NEW only): 🔴 {N} Critical | 🟠 {N} Major | 🟡 {N} Warnings | 🔵 {N} Info (no penalty)
+Penalties: critical={N}×3.0={X} | major={N}×1.5={X} | warning=({N}×0.5)/max(1,{files}/5)={X}
 Total penalty: {X}
 Score: max(1, round(10 - {X})) = {final}
 
 ### Code Health Score: {final}/10
 
-**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Minor | 🔵 [{N}] Info
+**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Warnings | 🔵 [{N}] Info
 
 PIPELINE_CODE_VERDICT: {CLEAN | NEEDS_REFACTORING | MAJOR_CLEANUP}
 ```
