@@ -34,6 +34,7 @@ interface UsePublicChatReturn {
   fetchNextPage: () => void;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
+  error: string | null;
 }
 
 const PAGE_SIZE = 50;
@@ -113,6 +114,8 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     hasNextPage,
     isFetchingNextPage,
     isLoading,
+    isError,
+    error: queryError,
   } = useInfiniteQuery({
     queryKey: ['publicChatSessions', user?.username, blueprintId],
     queryFn: async ({ pageParam = 0 }) => {
@@ -413,6 +416,9 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     fetchNextPage,
     hasNextPage: hasNextPage ?? false,
     isFetchingNextPage,
+    error: isError
+      ? (queryError instanceof Error ? queryError.message : 'Failed to load chat sessions')
+      : null,
   };
 };
 

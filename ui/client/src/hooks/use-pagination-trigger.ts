@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, RefObject } from "react";
 
-type TriggerMode = "scroll" | "manual" | "intersection" | "button";
+type TriggerMode = "scroll" | "manual" | "button";
 
 interface UsePaginationTriggerOptions {
   mode: TriggerMode;
-  scrollRef?: RefObject<HTMLElement | null>;
+  scrollRef?: RefObject<HTMLDivElement | null>;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   fetchNextPage: () => void;
@@ -12,7 +12,7 @@ interface UsePaginationTriggerOptions {
 }
 
 interface UsePaginationTriggerReturn {
-  scrollRef: RefObject<HTMLDivElement>;
+  scrollRef: RefObject<HTMLDivElement | null>;
   next: () => void;
   canFetch: boolean;
   isFetchingNextPage: boolean;
@@ -58,6 +58,8 @@ export function usePaginationTrigger({
   threshold = 200, //early trigger when 200px from bottom for more seamless experience
 }: UsePaginationTriggerOptions): UsePaginationTriggerReturn {
   const canFetch = hasNextPage && !isFetchingNextPage;
+  const canFetchRef = useRef(canFetch);
+  canFetchRef.current = canFetch;
 
   // Create internal ref if none provided (for convenience)
   const internalScrollRef = useRef<HTMLDivElement>(null);
@@ -65,19 +67,19 @@ export function usePaginationTrigger({
 
   // Manual trigger function (for button mode)
   const next = useCallback(() => {
-    if (canFetch) {
+    if (canFetchRef.current) {
       fetchNextPage();
     }
-  }, [canFetch, fetchNextPage]);
+  }, [fetchNextPage]);
 
   const handleScroll = useCallback(() => {
-    if (!scrollRef?.current || !canFetch) return;
+    if (!scrollRef?.current || !canFetchRef.current) return;
 
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     if (scrollHeight - scrollTop - clientHeight < threshold) {
-      fetchNextPage(); // React Query deduplicates internally
+      fetchNextPage();
     }
-  }, [scrollRef, canFetch, fetchNextPage, threshold]);
+  }, [scrollRef, fetchNextPage, threshold]);
 
   useEffect(() => {
     if (mode !== "scroll") return;
@@ -85,12 +87,12 @@ export function usePaginationTrigger({
     const container = scrollRef?.current;
     if (!container) return;
 
-    container.addEventListener("scroll", handleScroll);
+    container.addEventListener("scroll", handleScroll, { passive: true });
     return () => container.removeEventListener("scroll", handleScroll);
   }, [mode, scrollRef, handleScroll]);
 
   return {
-    scrollRef: scrollRef as RefObject<HTMLDivElement>,
+    scrollRef,
     next,
     canFetch,
     isFetchingNextPage,

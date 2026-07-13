@@ -479,18 +479,29 @@ export function useSessionHub({
     [queryClient, sessionsQueryKey],
   );
 
-  // Auto-select first session (or URL-targeted session) when data loads
-  const didAutoSelectRef = useRef(false);
+  // Auto-select first session (or URL-targeted session) when data loads.
+  // activeRunId shadows the runId prop so it can be cleared on new session creation.
+  const activeRunIdRef = useRef(runId);
+  const autoSelectKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (isLoading || !sessionsData || didAutoSelectRef.current) return;
+    const key = `${contextUserId}:${identityType}:${activeRunIdRef.current ?? "first"}`;
+    if (isLoading || !sessionsData || autoSelectKeyRef.current === key) return;
     if (chatSessions.length > 0 && !selectedSession) {
-      didAutoSelectRef.current = true;
-      const target = runId
-        ? chatSessions.find((s) => s.id === runId) ?? chatSessions[0]
+      const target = activeRunIdRef.current
+        ? chatSessions.find((s) => s.id === activeRunIdRef.current)
         : chatSessions[0];
+
+      if (activeRunIdRef.current && !target && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+        return;
+      }
+      if (!target) return;
+
+      autoSelectKeyRef.current = key;
       handleSessionSelectRef.current(target);
     }
-  }, [isLoading, sessionsData, chatSessions, selectedSession, runId]);
+  }, [isLoading, sessionsData, chatSessions, selectedSession, runId,
+      contextUserId, identityType, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // ── Delete ─────────────────────────────────────────────────────────────
   const handleDeleteChat = useCallback(
@@ -543,15 +554,23 @@ export function useSessionHub({
         displayName,
         identityType,
       });
-      refreshSessions();
+      activeRunIdRef.current = null;
+      autoSelectKeyRef.current = null;
+      setSelectedSession(null);
+      await refreshSessions();
       setShowAddFlowModal(false);
       setSelectedFlowForModal(null);
     } catch (err) {
       console.error("Error creating session:", err);
+      toast({
+        title: "Create session failed",
+        description: "Could not start a new session. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsCreatingSession(false);
     }
-  }, [selectedFlowForModal, contextUserId, displayName, identityType, refreshSessions]);
+  }, [selectedFlowForModal, contextUserId, displayName, identityType, refreshSessions, toast]);
 
   const handleCancelAddFlow = useCallback(() => {
     setShowAddFlowModal(false);
@@ -641,7 +660,8 @@ export function useSessionHub({
   // ── Workspace-switch effect ────────────────────────────────────────────
   useEffect(() => {
     sessionSelectRequestId.current += 1;
-    didAutoSelectRef.current = false;
+    autoSelectKeyRef.current = null;
+    activeRunIdRef.current = runId;
     sessionStream.cancelStream();
     clearStream();
     setSelectedSession(null);

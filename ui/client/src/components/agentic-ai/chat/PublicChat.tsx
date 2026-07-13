@@ -72,6 +72,7 @@ export default function PublicChat() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    error: sessionsError,
   } = usePublicChat(blueprintId);
 
   const { scrollRef, isFetchingNextPage: isScrollFetching } = usePaginationTrigger({
@@ -302,6 +303,10 @@ export default function PublicChat() {
               {isLoadingSessions ? (
                 <div className="p-4 text-center">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+                </div>
+              ) : sessionsError ? (
+                <div className="p-4 text-center text-red-400 text-sm">
+                  {sessionsError}
                 </div>
               ) : chatSessions.length === 0 ? (
                 <div className="p-4 text-center text-gray-400 text-sm">
