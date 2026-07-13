@@ -93,7 +93,7 @@ jobs:
           done
 
       - name: Install Langfuse SDK
-        run: pip install -r .cursor/hooks/requirements.txt
+        run: python3 -m pip install -r .cursor/hooks/requirements.txt
 
       # Security: --trust grants the agent full tool access (file read/write, shell).
       # --force skips interactive confirmation. The agent runs in a read-only

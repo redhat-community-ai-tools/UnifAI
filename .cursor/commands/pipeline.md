@@ -283,6 +283,7 @@ To close the pipeline: first update the state tracker with `EXIT_STATUS: SUCCESS
 - If Jira MCP is unavailable, notify user and proceed with available info.
 - Announce each phase transition clearly.
 - If user input needed, stop and ask. Set `EXIT_STATUS: USER_INPUT_REQUIRED`.
+- Do NOT run `.github/scripts/evaluate_review_gate.py` or any CI gate/telemetry scripts. Those are executed by the workflow after your process exits.
 
 ## Context Management
 

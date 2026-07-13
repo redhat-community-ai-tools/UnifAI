@@ -248,7 +248,7 @@ def main() -> int:
             if cost_usd > 0:
                 cost_details["total"] = cost_usd
 
-        output_text = result_text[:50_000] if result_text else ""
+        output_text = str(result_text)[:50_000] if result_text else ""
 
         with propagate_attributes(
             user_id="pipeline-ci",

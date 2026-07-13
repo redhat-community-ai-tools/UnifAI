@@ -109,13 +109,24 @@ For every factory or builder port discovered in Task 2 (e.g. `ApprovalGateFactor
 `SandboxFactory`), find ALL call-sites of its `create()` / `build()` / primary method across the
 codebase — not just in scoped files:
 
-1. Grep for `<factory_variable>.create(` (and similar method names) across the full codebase.
-2. For each call-site, record:
+1. **AST / symbol-aware discovery (primary).**
+   Use symbol search, call-hierarchy, or definition-reference tooling (e.g. Go-to-References,
+   `Grep` for the class/type name, then `Read` each hit) to locate every invocation of the
+   factory's primary method. This must catch:
+   - Direct calls: `factory.create(...)`
+   - Aliased references: `make = factory.create; make(...)`
+   - Multiline invocations where method name and arguments span multiple lines
+   - Expression-based calls: `get_factory().create(...)`
+2. **Textual grep fallback (verification).**
+   Run `Grep` for `\.create(`, `\.build(`, and the factory class name across the full codebase.
+   Cross-check against the symbol-aware results from step 1; investigate any hits that appear
+   only in the grep output (they may indicate dynamic or metaprogramming usage).
+3. For each call-site, record:
    - The file and line number
    - The **actual arguments** passed (not just parameter names — capture the expressions)
    - The execution context (foreground runner, Temporal activity, CLI, test, etc.)
    - Whether a corresponding cleanup call exists (e.g. `factory.remove()`) and where
-3. Compare arguments across call-sites. Flag any divergence where:
+4. Compare arguments across call-sites. Flag any divergence where:
    - One call-site passes `None` or a default for a parameter that another call-site provides a real value
    - Lifecycle is asymmetric (one path calls `remove()` per-item, another calls it per-session)
 

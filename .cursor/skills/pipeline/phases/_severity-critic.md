@@ -73,8 +73,9 @@ Apply the Impact Matrix:
   - Requires API/schema migration → leans Major
   - Irreversible once deployed (data loss, public API contract break) → leans Critical
 
-Scoring: If 2 of 3 dimensions lean toward a DIFFERENT severity than the
-current classification → reclassify to that severity.
+Scoring: Reclassify only when 2+ of 3 dimensions agree on the SAME severity
+that differs from the current classification. When no single severity achieves
+a 2-of-3 majority (three-way split), retain the current classification.
 
 ### Check 4: Context Calibration
 

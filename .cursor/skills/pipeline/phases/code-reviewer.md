@@ -299,8 +299,10 @@ are called consistently across all execution paths:
   foreground passes real metadata, Temporal passes `None`), flag as a potential functional defect.
 - If lifecycle is asymmetric (e.g. `remove()` called per-node in one path but per-session in
   another), flag the divergence.
-- Severity: functional defect (incorrect behavior in specific execution path) = **MAJOR**;
-  lifecycle asymmetry without functional impact = **WARNING**.
+- Severity: apply the shared Major threshold from `_severity-rubric.md` (≥2 of 5 criteria).
+  A functional defect that meets the threshold (e.g. affects 2+ components or blocks
+  extensibility) = **MAJOR**; a contained single-path defect that does not meet the
+  threshold = **WARNING**. Lifecycle asymmetry without functional impact = **WARNING**.
 
 ## Severity Calibration
 
