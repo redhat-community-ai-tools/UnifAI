@@ -543,6 +543,7 @@ export function useSessionHub({
   }, []);
 
   // ── Add flow ───────────────────────────────────────────────────────────
+  // always select newest session
   const handleAddFlow = useCallback(async () => {
     if (!selectedFlowForModal) return;
     setIsCreatingSession(true);
