@@ -2,11 +2,11 @@ multiagent_server:
   replicaCount: 1
   resources: 
     limits:
-      cpu: '4'
-      memory: '8Gi'
+      cpu: '6'
+      memory: '12Gi'
     requests:
-      cpu: '4'
-      memory: '8Gi'
+      cpu: '6'
+      memory: '12Gi'
   image: 
     repository: images.paas.redhat.com/unifai/multiagent
     tag: "latest"
