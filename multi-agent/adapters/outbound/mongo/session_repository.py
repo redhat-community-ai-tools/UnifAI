@@ -143,23 +143,7 @@ class MongoSessionRepository(SessionRepository):
         bp_filter = {"blueprint_id": blueprint_id} if blueprint_id else {}
         pipeline = [
             {"$match": {**identity_q(identity), **bp_filter}},
-            {"$addFields": {"_sort_date": {
-                "$ifNull": [
-                    "$run_context.last_active_at",
-                    {
-                        "$cond": {
-                            "if": {
-                                "$gte": [
-                                    {"$dateFromString": {"dateString": "$run_context.started_at", "onError": None, "onNull": None}},
-                                    {"$subtract": ["$$NOW", 86400000]},
-                                ]
-                            },
-                            "then": "$run_context.started_at",
-                            "else": None,
-                        }
-                    },
-                ]
-            }}},
+            {"$addFields": {"_sort_date": self._ACTIVITY_DATE_EXPR}},
             {"$sort": {"_sort_date": pymongo.DESCENDING}},
             {"$skip": skip},
             {"$limit": limit},
