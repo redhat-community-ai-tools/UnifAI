@@ -58,6 +58,8 @@ import type {
 
 const DROPDOWN_BG = "bg-[#1a1a2e] border-gray-700";
 
+const BUILTIN_DISABLED_CATEGORIES = new Set(["retrievers"]);
+
 const CATEGORY_META: Record<
   string,
   { label: string; icon: React.ReactNode; description: string }
@@ -115,8 +117,8 @@ interface ResourceItem {
   type: string;
   config: any;
   category?: string;
-  builtin_status?: 'public' | 'private' | null;
-  configurable_keys?: string[];
+  ownership?: 'builtin' | 'custom';
+  visibility?: 'draft' | 'public';
 }
 
 type WizardStep = "idle" | "select-category" | "configure" | "configure-builtin";
@@ -168,7 +170,9 @@ export default function RepositoryManagement() {
   const [isTogglingStatus, setIsTogglingStatus] = useState<string | null>(null);
 
   const availableCategories = useMemo(
-    () => categories.filter((c) => c.elements.length > 0),
+    () => categories.filter(
+      (c) => c.elements.length > 0 && !BUILTIN_DISABLED_CATEGORIES.has(c.category)
+    ),
     [categories],
   );
 
@@ -182,9 +186,9 @@ export default function RepositoryManagement() {
 
   const reloadBuiltins = useCallback(async () => {
     try {
-      const axios = (await import("@/http/axiosAgentConfig")).default;
-      const response = await axios.get(`/resources/builtins.list`);
-      const resources = response.data.resources || [];
+      const { listBuiltins } = await import("@/api/resources");
+      const data = await listBuiltins();
+      const resources = data.resources || [];
       const grouped: Record<string, ResourceItem[]> = {};
       const newAvailable: Record<string, boolean> = {};
       for (const r of resources) {
@@ -196,10 +200,10 @@ export default function RepositoryManagement() {
           type: r.type,
           config: r.cfg_dict,
           category: cat,
-          builtin_status: r.builtin_status || null,
-          configurable_keys: r.configurable_keys || [],
+          ownership: r.ownership || 'builtin',
+          visibility: r.visibility || 'draft',
         });
-        newAvailable[r.rid] = r.builtin_status === "public";
+        newAvailable[r.rid] = r.visibility === "public";
       }
       setCategoryResources(grouped);
       setAvailableToAll(newAvailable);
@@ -268,7 +272,7 @@ export default function RepositoryManagement() {
       setSelectedElementType(elType);
       setIsLoadingSchema(true);
       setStep("configure");
-      setNewElementAvailableToAll(resource.builtin_status === "public");
+      setNewElementAvailableToAll(resource.visibility === "public");
 
       try {
         await Promise.all([
@@ -745,16 +749,16 @@ export default function RepositoryManagement() {
                                   <span className="text-sm font-medium truncate">
                                     {resource.name || "Unnamed"}
                                   </span>
-                                  {resource.builtin_status && (
+                                  {resource.ownership === 'builtin' && (
                                     <Badge
                                       variant="outline"
                                       className={`text-[10px] px-1.5 py-0 flex-shrink-0 ${
-                                        resource.builtin_status === "public"
+                                        resource.visibility === "public"
                                           ? "text-blue-400 border-blue-400/30"
                                           : "text-gray-400 border-gray-500/30"
                                       }`}
                                     >
-                                      {resource.builtin_status === "public" ? "Public" : "Private"}
+                                      {resource.visibility === "public" ? "Public" : "Draft"}
                                     </Badge>
                                   )}
                                 </div>
@@ -887,6 +891,7 @@ export default function RepositoryManagement() {
           editingElement={editingElement}
           existingNames={[]}
           onSave={configuringBuiltin ? handleSaveBuiltinConfig : handleSaveElement}
+          builtinOnly
         />
       )}
 

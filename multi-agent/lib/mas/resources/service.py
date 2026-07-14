@@ -10,7 +10,9 @@ from mas.core.identity import Identity, IdentityType
 from mas.resources.registry import ResourcesRegistry
 from mas.catalog.element_registry import ElementRegistry
 from mas.resources.models import Resource, ResourceQuery
-from mas.core.enums import ResourceCategory
+from mas.resources.builtin_models import BuiltinUserConfig
+from mas.resources.repository.builtin_user_config_repository import BuiltinUserConfigRepository
+from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
 from mas.core.ref import RefWalker
 from mas.core.dto import GroupedCount
 from mas.core.element_meta import ElementConfigMeta
@@ -33,6 +35,7 @@ class ResourcesService:
             self,
             resource_registry: ResourcesRegistry,
             element_registry: ElementRegistry,
+            builtin_user_config_repo: BuiltinUserConfigRepository = None,
             validation_service: ElementValidationService = None,
             card_service: ElementCardService = None,
             auth_service=None,
@@ -40,6 +43,7 @@ class ResourcesService:
     ):
         self._store = resource_registry
         self.element_registry = element_registry
+        self._builtin_user_config_repo = builtin_user_config_repo
         self._card_service = card_service
         self._dependency_resolver = DependencyResolver(resource_registry=self._store)
         self._validation_service = validation_service
@@ -109,15 +113,17 @@ class ResourcesService:
         return self._store.get(rid)
 
     def find_resources(self, identity: Identity, category: Optional[str] = None,
-                       type: Optional[str] = None, limit: int = 50,
-                       offset: int = 0) -> Tuple[List[Resource], int]:
+                       type: Optional[str] = None, ownership: Optional[str] = None,
+                       limit: int = 50, offset: int = 0) -> Tuple[List[Resource], int]:
         """Find resources with optional filtering and pagination."""
         category_enum = ResourceCategory(category) if category else None
+        ownership_enum = ResourceOwnership(ownership) if ownership else None
 
         query = ResourceQuery(
             identity=identity,
             category=category_enum,
             type=type,
+            ownership=ownership_enum,
             limit=limit,
             offset=offset,
         )
@@ -128,8 +134,8 @@ class ResourcesService:
         resource = self._store.get(rid)
         config = dict(resource.cfg_dict)
 
-        if resource.builtin_status and identity:
-            overlay = self._resolve_user_overlay(resource, identity)
+        if resource.ownership == ResourceOwnership.BUILTIN and identity:
+            overlay = self._resolve_builtin_overlay(resource, identity)
             if overlay:
                 config.update(overlay)
 
@@ -342,56 +348,32 @@ class ResourcesService:
         category: Optional[str] = None,
         type: Optional[str] = None,
     ) -> List[Resource]:
-        """Return all built-in resources (public and private), for admin listing."""
+        """Return all built-in resources (public and draft), for admin listing."""
         return self._store.find_all_builtins(category=category, type=type)
 
     # ---------- Built-in Resource Operations ----------
 
-    def _get_configurable_keys_from_schema(self, category: str, type_key: str) -> set:
-        """Derive user-configurable field names from the schema's ReadOnlyHint annotations.
-
-        Fields with ``read_only.read_only == false`` are configurable.
-        All other visible fields are read-only for built-in resources.
-        """
-        try:
-            schema = self.element_registry.get_schema_json(
-                ResourceCategory(category), type_key
-            )
-        except KeyError:
-            return set()
-        configurable = set()
-        for field_name, field_schema in schema.get("properties", {}).items():
-            hints = field_schema.get("hints", {})
-            if "hidden" in hints:
-                continue
-            ro_hint = hints.get("read_only", {})
-            if ro_hint.get("read_only") is False:
-                configurable.add(field_name)
-        return configurable
-
     def get_builtin_schema(self, rid: str) -> dict:
         """Return the element JSON schema with readOnly annotations for a built-in resource.
 
-        Reads the ``read_only`` hints baked into the pydantic config schema:
-        - Fields with ``read_only: false`` remain configurable.
-        - All other visible fields get ``read_only: true`` added.
-        - Hidden fields are left untouched.
+        Reads ReadOnlyHint from the Pydantic schema to determine which fields
+        are configurable. Non-configurable visible fields get ``read_only: true`` added.
         """
         resource = self._store.get(rid)
-        if not resource.builtin_status:
+        if resource.ownership != ResourceOwnership.BUILTIN:
             raise ValueError("Resource is not a built-in resource")
 
         schema = self.element_registry.get_schema_json(
             ResourceCategory(resource.category), resource.type
         )
 
+        configurable_names = self._get_configurable_keys(resource.category, resource.type)
+
         for field_name, field_schema in schema.get("properties", {}).items():
             hints = field_schema.get("hints", {})
             if "hidden" in hints:
                 continue
-
-            ro_hint = hints.get("read_only", {})
-            if ro_hint.get("read_only") is not False:
+            if field_name not in configurable_names:
                 hints["read_only"] = {"read_only": True}
                 field_schema["hints"] = hints
 
@@ -403,32 +385,39 @@ class ResourcesService:
         identity_key: str,
         config: Dict[str, Any],
     ) -> Resource:
-        """Save per-user/team configuration overlay for a built-in resource.
+        """Save per-user/team configuration for a built-in resource.
 
-        Allowed fields are derived from the schema's ReadOnlyHint annotations
-        (fields with ``read_only: false``).
-
-        Args:
-            rid: The built-in resource ID.
-            identity_key: Key in format "user:<id>" or "team:<id>".
-            config: Dict of field values to store (only schema-configurable fields allowed).
+        Allowed fields are determined by ReadOnlyHint annotations on the element schema.
         """
         resource = self._store.get(rid)
-        if not resource.builtin_status:
+        if resource.ownership != ResourceOwnership.BUILTIN:
             raise ValueError("Resource is not a built-in resource")
 
-        allowed_keys = self._get_configurable_keys_from_schema(resource.category, resource.type)
-        filtered = {k: v for k, v in config.items() if k in allowed_keys}
+        configurable_keys = self._get_configurable_keys(resource.category, resource.type)
+        if not configurable_keys:
+            raise ValueError("No configurable fields defined for this element type")
+
+        filtered = {k: v for k, v in config.items() if k in configurable_keys}
         if not filtered:
             raise ValueError("No valid configurable fields provided")
 
         sensitive_keys = self._get_sensitive_keys(resource.category, resource.type)
         encrypted = self._encrypt_config_fields(filtered, sensitive_keys)
 
-        self._store.set_user_config(rid, identity_key, encrypted)
-        logger.info("Built-in resource '%s' configured for %s", rid, identity_key)
+        existing = self._builtin_user_config_repo.get(rid, identity_key)
+        if existing:
+            existing.fields.update(encrypted)
+            self._builtin_user_config_repo.save(existing)
+        else:
+            user_config = BuiltinUserConfig(
+                resource_id=rid,
+                identity_key=identity_key,
+                fields=encrypted,
+            )
+            self._builtin_user_config_repo.save(user_config)
 
-        return self._store.get(rid)
+        logger.info("Built-in resource '%s' configured for %s", rid, identity_key)
+        return resource
 
     def duplicate_builtin(
         self,
@@ -437,9 +426,9 @@ class ResourcesService:
         name: str,
         config_overrides: Dict[str, Any] = None,
     ) -> Resource:
-        """Clone a built-in resource into a personal/team resource."""
+        """Clone a built-in resource into a custom resource."""
         source = self._store.get(rid)
-        if not source.builtin_status:
+        if source.ownership != ResourceOwnership.BUILTIN:
             raise ValueError("Resource is not a built-in resource")
 
         merged_config = dict(source.cfg_dict)
@@ -459,6 +448,7 @@ class ResourcesService:
             name=name,
             cfg_dict=cfg_model.model_dump(mode="json"),
             nested_refs=nested_refs,
+            ownership=ResourceOwnership.CUSTOM,
             parent_builtin_id=source.rid,
         )
         return self._store.create(doc)
@@ -474,15 +464,17 @@ class ResourcesService:
     ) -> Resource:
         """Create a resource directly as built-in (admin only).
 
-        Uses system identity and sets builtin_status based on available_to_all flag.
-        Configurable keys are derived automatically from the element schema's
-        ReadOnlyHint annotations.
+        Configurable fields are determined by ReadOnlyHint annotations on the element schema.
         """
+        cat_enum = ResourceCategory(category)
+        if cat_enum in ResourceCategory.builtin_disabled_categories():
+            raise ValueError(
+                f"Category '{category}' is not supported for built-in resources"
+            )
+
         model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
         cfg_model = model_cls(**config)
-
         nested_refs = list(RefWalker.external_rids(cfg_model))
-        derived_keys = list(self._get_configurable_keys_from_schema(category, type))
 
         doc = Resource(
             identity=Identity.system(),
@@ -491,30 +483,30 @@ class ResourcesService:
             name=name,
             cfg_dict=cfg_model.model_dump(mode="json"),
             nested_refs=nested_refs,
-            builtin_status="public" if available_to_all else "private",
-            configurable_keys=derived_keys,
+            ownership=ResourceOwnership.BUILTIN,
+            visibility=ResourceVisibility.PUBLIC if available_to_all else ResourceVisibility.DRAFT,
         )
         return self._store.create(doc)
 
     def promote(self, rid: str) -> Resource:
-        """Promote a resource to public built-in (admin only).
-
-        Configurable keys are derived from the schema's ReadOnlyHint annotations.
-        """
+        """Promote a resource to public built-in (admin only)."""
         resource = self._store.get(rid)
-        resource.builtin_status = "public"
+        cat_enum = ResourceCategory(resource.category)
+        if cat_enum in ResourceCategory.builtin_disabled_categories():
+            raise ValueError(
+                f"Category '{resource.category}' is not supported for built-in resources"
+            )
+        resource.ownership = ResourceOwnership.BUILTIN
+        resource.visibility = ResourceVisibility.PUBLIC
         resource.identity = Identity.system()
-        resource.configurable_keys = list(
-            self._get_configurable_keys_from_schema(resource.category, resource.type)
-        )
         return self._store.update(resource)
 
     def demote(self, rid: str) -> Resource:
-        """Demote a public built-in to private (admin-only visibility)."""
+        """Demote a public built-in to draft (admin-only visibility)."""
         resource = self._store.get(rid)
-        if not resource.builtin_status:
+        if resource.ownership != ResourceOwnership.BUILTIN:
             raise ValueError("Resource is not a built-in resource")
-        resource.builtin_status = "private"
+        resource.visibility = ResourceVisibility.DRAFT
         return self._store.update(resource)
 
     def update_builtin(
@@ -525,10 +517,9 @@ class ResourcesService:
         name: str = None,
         available_to_all: bool = None,
     ) -> Resource:
-        """Update a built-in/admin resource (admin only).
+        """Update a built-in resource (admin only).
 
-        Allows updating config, name, and available_to_all status.
-        Configurable keys are always derived from the schema's ReadOnlyHint annotations.
+        Allows updating config, name, and visibility.
         """
         resource = self._store.get(rid)
 
@@ -543,18 +534,17 @@ class ResourcesService:
             resource.name = name
 
         if available_to_all is not None:
-            resource.builtin_status = "public" if available_to_all else "private"
-
-        resource.configurable_keys = list(
-            self._get_configurable_keys_from_schema(resource.category, resource.type)
-        )
+            resource.visibility = (
+                ResourceVisibility.PUBLIC if available_to_all
+                else ResourceVisibility.DRAFT
+            )
 
         return self._store.update(resource)
 
     def guard_builtin_write(self, rid: str, is_admin: bool) -> None:
         """Raise BuiltInWriteProtectedError if resource is built-in and caller is not admin."""
         resource = self._store.get(rid)
-        if resource.builtin_status and not is_admin:
+        if resource.ownership == ResourceOwnership.BUILTIN and not is_admin:
             raise BuiltInWriteProtectedError()
 
     # ---------- Internal Helpers ----------
@@ -620,23 +610,54 @@ class ResourcesService:
         results = self._validation_service.validate_ordered(ordered_configs, context)
         return results[target_rid]
 
-    def _resolve_user_overlay(self, resource: Resource, identity: Identity) -> Dict[str, Any]:
-        """Resolve the best-matching user_configs overlay for an identity.
+    def _resolve_builtin_overlay(self, resource: Resource, identity: Identity) -> Dict[str, Any]:
+        """Resolve effective config overlay for a built-in resource.
 
-        Priority: user-specific > team-level > empty.
+        Uses ReadOnlyHint from the Pydantic schema to identify configurable fields,
+        then applies user overrides from builtin_user_configs.
+        Priority: user-specific config > team-level config > cfg_dict defaults.
         Decrypts sensitive fields before returning.
+
+        Fields absent from the user config are not included — the caller will
+        keep the resource's ``cfg_dict`` value for those.
         """
+        if not self._builtin_user_config_repo:
+            return {}
+
+        configurable_keys = self._get_configurable_keys(resource.category, resource.type)
+        if not configurable_keys:
+            return {}
+
         user_key = f"user:{identity.id}"
-        overlay = resource.user_configs.get(user_key)
+        user_config = self._builtin_user_config_repo.get(resource.rid, user_key)
 
-        if not overlay and identity.is_team:
+        if not user_config and identity.is_team:
             team_key = f"team:{identity.id}"
-            overlay = resource.user_configs.get(team_key)
+            user_config = self._builtin_user_config_repo.get(resource.rid, team_key)
 
-        if overlay:
-            sensitive_keys = self._get_sensitive_keys(resource.category, resource.type)
-            return self._decrypt_config_fields(overlay, sensitive_keys)
-        return {}
+        if not user_config:
+            return {}
+
+        overlay = {k: v for k, v in user_config.fields.items() if k in configurable_keys}
+
+        sensitive_keys = self._get_sensitive_keys(resource.category, resource.type)
+        return self._decrypt_config_fields(overlay, sensitive_keys)
+
+    def _get_configurable_keys(self, category: str, type_key: str) -> set:
+        """Get field names marked as user-configurable via ReadOnlyHint(read_only=False)."""
+        try:
+            schema = self.element_registry.get_schema_json(
+                ResourceCategory(category), type_key
+            )
+        except KeyError:
+            return set()
+        configurable = set()
+        for field_name, field_schema in schema.get("properties", {}).items():
+            hints = field_schema.get("hints", {})
+            read_only_hint = hints.get("read_only", {})
+            if read_only_hint.get("read_only") is False:
+                configurable.add(field_name)
+        return configurable
 
     def _get_sensitive_keys(self, category: str, type_key: str) -> set:
         """Get field names marked as secret from the element's pydantic schema."""

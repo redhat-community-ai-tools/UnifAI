@@ -102,5 +102,9 @@ class ResourceRepository(ABC):
 
     @abstractmethod
     def set_user_config(self, rid: str, identity_key: str, config: Dict[str, Any]) -> bool:
-        """Atomically set user_configs.<identity_key> on a resource."""
+        """Legacy: atomically set user_configs.<identity_key> on a resource.
+
+        Deprecated — user configs now live in the builtin_user_configs collection.
+        Retained for backward compatibility during migration.
+        """
         ...

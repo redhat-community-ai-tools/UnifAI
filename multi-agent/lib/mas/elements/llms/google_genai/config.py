@@ -1,7 +1,7 @@
 from typing import Literal, Dict, Any, Optional
 from pydantic import Field, Extra
 from pydantic import BaseModel
-from mas.core.field_hints import SecretHint
+from mas.core.field_hints import SecretHint, ReadOnlyHint, combine_hints
 from .identifiers import Identifier
 
 
@@ -17,7 +17,10 @@ class GoogleGenAIConfig(BaseModel):
     api_key: str = Field(
         default="",
         description="Google API key for Generative AI",
-        json_schema_extra=SecretHint(reason="API credentials should be masked").to_hints()
+        json_schema_extra=combine_hints(
+            SecretHint(reason="API credentials should be masked"),
+            ReadOnlyHint(read_only=False),
+        ),
     )
 
     temperature: float = Field(

@@ -3,6 +3,7 @@ import pymongo
 from mas.resources.models import Resource, ResourceQuery
 from mas.resources.repository.base import ResourceRepository
 from mas.core.identity import Identity
+from mas.core.enums import ResourceOwnership, ResourceVisibility
 from mas.core.dto import GroupedCount
 from outbound.mongo.helpers import identity_q
 
@@ -25,8 +26,8 @@ class MongoResourceRepository(ResourceRepository):
             [("identity.type", 1), ("identity.id", 1), ("created", -1)],
             background=True)
         self.col.create_index(
-            "builtin_status",
-            partialFilterExpression={"builtin_status": {"$type": "string"}},
+            "ownership",
+            partialFilterExpression={"ownership": ResourceOwnership.BUILTIN.value},
             background=True,
         )
 
@@ -74,19 +75,10 @@ class MongoResourceRepository(ResourceRepository):
     def find_resources(self, query: ResourceQuery) -> List[Resource]:
         """Find resources based on query criteria with pagination.
 
-        Includes public built-in resources alongside identity-scoped ones via $or.
+        When ownership filter is set, returns only resources with that ownership.
+        Otherwise includes public built-in resources alongside identity-scoped ones via $or.
         """
-        identity_filter = identity_q(query.identity)
-        builtin_filter: Dict[str, Any] = {"builtin_status": "public"}
-
-        if query.category:
-            identity_filter["category"] = query.category.value
-            builtin_filter["category"] = query.category.value
-        if query.type:
-            identity_filter["type"] = query.type
-            builtin_filter["type"] = query.type
-
-        filter_dict = {"$or": [identity_filter, builtin_filter]}
+        filter_dict = self._build_resource_filter(query)
 
         cursor = self.col.find(filter_dict)
 
@@ -101,9 +93,29 @@ class MongoResourceRepository(ResourceRepository):
         return [Resource(**doc) for doc in cursor]
 
     def count_resources(self, query: ResourceQuery) -> int:
-        """Count resources matching query criteria (includes public built-ins)."""
+        """Count resources matching query criteria."""
+        filter_dict = self._build_resource_filter(query)
+        return self.col.count_documents(filter_dict)
+
+    def _build_resource_filter(self, query: ResourceQuery) -> Dict[str, Any]:
+        """Build MongoDB filter from a ResourceQuery.
+
+        When ownership is specified, returns only that ownership type.
+        Otherwise merges identity-scoped + public built-in resources via $or.
+        """
+        if query.ownership == ResourceOwnership.BUILTIN:
+            f: Dict[str, Any] = {"ownership": ResourceOwnership.BUILTIN.value}
+            if query.category:
+                f["category"] = query.category.value
+            if query.type:
+                f["type"] = query.type
+            return f
+
         identity_filter = identity_q(query.identity)
-        builtin_filter: Dict[str, Any] = {"builtin_status": "public"}
+        builtin_filter: Dict[str, Any] = {
+            "ownership": ResourceOwnership.BUILTIN.value,
+            "visibility": ResourceVisibility.PUBLIC.value,
+        }
 
         if query.category:
             identity_filter["category"] = query.category.value
@@ -112,8 +124,10 @@ class MongoResourceRepository(ResourceRepository):
             identity_filter["type"] = query.type
             builtin_filter["type"] = query.type
 
-        filter_dict = {"$or": [identity_filter, builtin_filter]}
-        return self.col.count_documents(filter_dict)
+        if query.ownership == ResourceOwnership.CUSTOM:
+            return identity_filter
+
+        return {"$or": [identity_filter, builtin_filter]}
 
     def count(self, identity: Identity, filter: dict | None = None) -> int:
         # Identity keys must not be overridden by caller-supplied filter.
@@ -185,8 +199,8 @@ class MongoResourceRepository(ResourceRepository):
         category: str | None = None,
         type: str | None = None,
     ) -> List[Resource]:
-        """Return all built-in resources (public and private), optionally filtered."""
-        filter_dict: Dict[str, Any] = {"builtin_status": {"$in": ["public", "private"]}}
+        """Return all built-in resources (public and draft), optionally filtered."""
+        filter_dict: Dict[str, Any] = {"ownership": ResourceOwnership.BUILTIN.value}
         if category:
             filter_dict["category"] = category
         if type:
@@ -196,13 +210,13 @@ class MongoResourceRepository(ResourceRepository):
     def find_builtin_by_url(self, url: str) -> Optional[Resource]:
         """Find a built-in MCP resource matching the given URL."""
         raw = self.col.find_one({
-            "builtin_status": {"$in": ["public", "private"]},
+            "ownership": ResourceOwnership.BUILTIN.value,
             "cfg_dict.mcp_url": url,
         })
         return Resource(**raw) if raw else None
 
     def set_user_config(self, rid: str, identity_key: str, config: Dict[str, Any]) -> bool:
-        """Atomically set user_configs.<identity_key> on a resource."""
+        """Atomically set user_configs.<identity_key> on a resource (legacy)."""
         result = self.col.update_one(
             {"_id": rid},
             {"$set": {f"user_configs.{identity_key}": config}},

@@ -19,6 +19,23 @@ class ResourceCategory(str, Enum):
         """Check if this category is plan-referenced."""
         return self in self.plan_categories()
 
+    @classmethod
+    def builtin_disabled_categories(cls) -> frozenset:
+        """Categories that cannot be created as built-in resources."""
+        return frozenset({cls.RETRIEVER})
+
+
+class ResourceOwnership(str, Enum):
+    """Ownership classification for resources."""
+    BUILTIN = "builtin"
+    CUSTOM = "custom"
+
+
+class ResourceVisibility(str, Enum):
+    """Visibility state for built-in resources."""
+    DRAFT = "draft"
+    PUBLIC = "public"
+
 
 class SchemeType(str, Enum):
     """Authentication scheme discriminators."""

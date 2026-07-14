@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Annotated
 from uuid import uuid4
 from pydantic import BaseModel, Field, field_validator
-from mas.core.enums import ResourceCategory
+from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
 from mas.core.field_hints import HiddenHint
 from mas.core.identity import Identity
 
@@ -10,12 +10,10 @@ from mas.core.identity import Identity
 class Resource(BaseModel):
     """
     One persisted element in the user's Library.
-    
+
     cfg_dict is plain JSON; we do NOT store the Pydantic instance.
-    For built-in resources, user_configs stores per-user/team overlays
-    keyed by identity key (e.g. "user:alice", "team:engineering").
-    configurable_keys lists field names from the element's pydantic schema
-    that users can configure (all other fields are read-only).
+    For built-in resources (ownership=builtin), per-user configuration
+    lives in the separate builtin_user_configs collection.
     """
     rid: str = Field(default_factory=lambda: uuid4().hex, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     identity: Identity = Field(json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
@@ -28,10 +26,9 @@ class Resource(BaseModel):
     contributed_by: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     created: datetime = Field(default_factory=datetime.utcnow, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     updated: datetime = Field(default_factory=datetime.utcnow, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
-    builtin_status: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
+    ownership: ResourceOwnership = Field(default=ResourceOwnership.CUSTOM, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
+    visibility: ResourceVisibility = Field(default=ResourceVisibility.DRAFT, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     parent_builtin_id: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
-    configurable_keys: List[str] = Field(default_factory=list, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
-    user_configs: Dict[str, Dict[str, Any]] = Field(default_factory=dict, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
 
 
 class ResourceQuery(BaseModel):
@@ -39,6 +36,7 @@ class ResourceQuery(BaseModel):
     identity: Identity = Field(..., description="Owner identity to filter resources")
     category: Optional[ResourceCategory] = Field(None, description="Resource category filter")
     type: Optional[str] = Field(None, description="Resource type filter")
+    ownership: Optional[ResourceOwnership] = Field(None, description="Filter by ownership type")
 
     limit: Annotated[int, Field(50, ge=1, le=1000, description="Number of results to return")]
     offset: Annotated[int, Field(0, ge=0, description="Number of results to skip")]

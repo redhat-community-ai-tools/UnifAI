@@ -42,7 +42,7 @@ import axios from "../../../http/axiosAgentConfig";
 type BuiltinCardType = 'sign_in' | 'access_token' | 'api_key' | 'none';
 
 function getBuiltinCardType(element: ElementInstance): BuiltinCardType {
-  if (!element.builtinStatus) return 'none';
+  if (element.ownership !== 'builtin') return 'none';
   const cfg = element.config || {};
   if (cfg.auth_method === 'sign_in') return 'sign_in';
   if (cfg.auth_method === 'access_token') return 'access_token';
@@ -153,7 +153,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   const { user } = useAuth();
   const { viewMode, selectedTeam } = useView();
   const isTeamWorkspace = viewMode === "team" && !!selectedTeam;
-  const nonBuiltInElements = elements.filter(el => !el.builtinStatus);
+  const nonBuiltInElements = elements.filter(el => el.ownership !== 'builtin');
   const resourceEditLocks = useTeamEditLockPoll(
     selectedTeam?.id,
     "resource",
@@ -168,7 +168,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   } = useAgenticAI();
 
   useEffect(() => {
-    const realElements = elements.filter(el => !el.builtinStatus);
+    const realElements = elements.filter(el => el.ownership !== 'builtin');
     if (realElements.length > 0) {
       const rids = realElements.map(el => el.rid);
       validateResources(rids);
@@ -352,7 +352,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {elements.map((element, index) => {
-        const isBuiltIn = !!element.builtinStatus;
+        const isBuiltIn = element.ownership === 'builtin';
         const isFlipped = flippedCards.has(element.rid);
         const builtinCardType = getBuiltinCardType(element);
         const hasConfigurableBack = builtinCardType !== 'none';

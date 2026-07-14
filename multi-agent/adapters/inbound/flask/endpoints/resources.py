@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, current_app
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 from mas.resources.errors import ResourceInUseError, BuiltInWriteProtectedError
+from mas.core.enums import ResourceOwnership
 from inbound.flask.decorators import (
     with_require_identity_authorization,
     with_authenticated_user,
@@ -62,15 +63,17 @@ def get_resource(resource_id):
 @from_query({
     "category": fields.Str(required=False),
     "type": fields.Str(required=False),
+    "ownership": fields.Str(required=False),
     "limit": fields.Int(required=False, load_default=1000),
     "offset": fields.Int(required=False, load_default=0),
 })
-def list_resources(identity, category=None, type=None, limit=1000, offset=0):
+def list_resources(identity, category=None, type=None, ownership=None, limit=1000, offset=0):
     """
     Get resources with flexible filtering and pagination:
     - identity: scopes to user or team workspace
     - category: filter by resource category
     - category + type: filter by specific type
+    - ownership: filter by ownership ('builtin' or 'custom')
     - limit/offset: pagination support
     """
     svc = current_app.container.resources_service
@@ -79,16 +82,18 @@ def list_resources(identity, category=None, type=None, limit=1000, offset=0):
             identity=identity,
             category=category,
             type=type,
+            ownership=ownership,
             limit=limit,
             offset=offset,
         )
         identity_key = f"{identity.type.value}:{identity.id}"
         resources_data = []
+        builtin_config_repo = current_app.container.builtin_user_config_repo
         for doc in resources:
             data = doc.model_dump(mode="json")
-            if doc.builtin_status:
-                data["user_configured"] = identity_key in doc.user_configs
-            data.pop("user_configs", None)
+            if doc.ownership == ResourceOwnership.BUILTIN and builtin_config_repo:
+                user_cfg = builtin_config_repo.get(doc.rid, identity_key)
+                data["user_configured"] = user_cfg is not None
             resources_data.append(data)
         return jsonify({
             "resources": resources_data,
@@ -340,7 +345,7 @@ def validate_config(category, type, config, name=None, timeout_seconds=10.0):
 def list_builtins(category=None, type=None):
     """List all built-in resources (admin only).
 
-    Returns only resources with builtin_status set (public or private),
+    Returns all resources with ownership=builtin (public and draft),
     regardless of the caller's identity. Used by the Repository Management
     admin panel.
     """
@@ -362,9 +367,8 @@ def get_builtin_schema(resource_id):
     """Get the element schema for a built-in resource with readOnly annotations.
 
     Returns the same config_schema as /catalog/element.spec.get but with
-    each field annotated with a readOnly hint based on the resource's
-    configurable_keys. Fields in configurable_keys get readOnly=false,
-    all others get readOnly=true.
+    each field annotated with a readOnly hint based on ReadOnlyHint annotations.
+    Fields with ReadOnlyHint(read_only=False) remain editable, all others get readOnly=true.
     """
     svc = current_app.container.resources_service
     try:
@@ -415,9 +419,9 @@ def configure_builtin(identity, resource_id, config):
     "config_overrides": fields.Dict(data_key="configOverrides", load_default=None),
 })
 def duplicate_resource(identity, resource_id, name, config_overrides=None):
-    """Duplicate a built-in resource into the caller's workspace.
+    """Duplicate a built-in resource into the caller's workspace as a custom resource.
 
-    The clone gets builtin_status=None and parent_builtin_id set to the source.
+    The clone gets ownership=custom and parent_builtin_id set to the source.
     Users can optionally override config fields (e.g. select a subset of tools).
     """
     svc = current_app.container.resources_service
@@ -443,11 +447,9 @@ def duplicate_resource(identity, resource_id, name, config_overrides=None):
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
 def promote_resource(resource_id):
-    """Promote a custom resource to public built-in status (admin only).
+    """Promote a custom resource to public built-in (admin only).
 
-    Sets builtin_status='public' and identity to system.
-    Configurable keys are derived automatically from the element schema's
-    ReadOnlyHint annotations.
+    Sets ownership='builtin', visibility='public', and identity to system.
     """
     svc = current_app.container.resources_service
     try:
@@ -476,9 +478,8 @@ def create_builtin_resource(
 ):
     """Create a resource directly as built-in (admin only).
 
-    Creates with system identity and builtin_status based on availableToAll.
-    Configurable keys are derived automatically from the element schema's
-    ReadOnlyHint annotations.
+    Creates with system identity and visibility based on availableToAll.
+    Configurable fields are derived from ReadOnlyHint annotations on the element schema.
     """
     svc = current_app.container.resources_service
     try:
@@ -536,11 +537,11 @@ def update_builtin_resource(
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "available_to_all": fields.Bool(data_key="availableToAll", required=True),
 })
-def toggle_builtin_status(resource_id, available_to_all):
-    """Toggle the builtin_status between public and private (admin only).
+def toggle_builtin_visibility(resource_id, available_to_all):
+    """Toggle visibility between public and draft (admin only).
 
     When toggled on (public), the resource becomes visible to all users.
-    When toggled off (private), only admins can see it in the configuration panel.
+    When toggled off (draft), only admins can see it in the configuration panel.
     """
     svc = current_app.container.resources_service
     try:
@@ -555,3 +556,5 @@ def toggle_builtin_status(resource_id, available_to_all):
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+

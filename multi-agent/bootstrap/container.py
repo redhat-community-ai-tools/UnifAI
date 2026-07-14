@@ -59,6 +59,7 @@ from outbound.mongo import (
     MongoTemplateRepository,
     MongoAdminConfigReader,
 )
+from outbound.mongo.builtin_user_config_repository import MongoBuiltinUserConfigRepository
 # Auth layer — adapters
 from outbound.mongo.auth_token_repository import MongoCredentialStore
 from outbound.redis.auth_pending_store import RedisFlowStateStore
@@ -187,6 +188,12 @@ class AppContainer(metaclass=SingletonMeta):
             db_name=cfg.admin_config_db,
         )
 
+        self.builtin_user_config_repo = MongoBuiltinUserConfigRepository(
+            mongodb_ip=cfg.mongodb_ip,
+            mongodb_port=cfg.mongodb_port,
+            db_name=cfg.mongo_db,
+        )
+
         resource_registry = ResourcesRegistry(
             repo=self.resource_repo,
             bp_repo=self.blueprint_repo,
@@ -197,6 +204,7 @@ class AppContainer(metaclass=SingletonMeta):
         self.resources_service = ResourcesService(
             resource_registry=resource_registry,
             element_registry=self.element_registry,
+            builtin_user_config_repo=self.builtin_user_config_repo,
             validation_service=self.validation_service,
             card_service=self.card_service,
             auth_service=self.auth_service,

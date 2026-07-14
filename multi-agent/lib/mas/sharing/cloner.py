@@ -13,7 +13,7 @@ from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.ref import RefWalker, RefRemapper
 from mas.core.ref.models import Ref
-from mas.core.enums import ResourceCategory
+from mas.core.enums import ResourceCategory, ResourceOwnership
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +229,7 @@ class ShareCloner:
 
         Returns cached data for all resources in the dependency closure.
         Only includes resources owned by the sender.
+        Built-in resources are never cloned — they are shared by reference.
         """
         visited_rids = set()
         to_visit = set(root_rids)
@@ -241,8 +242,13 @@ class ShareCloner:
             visited_rids.add(rid)
 
             try:
-                # Load and validate resource
                 doc = self.resources.get(rid)
+
+                if doc.ownership == ResourceOwnership.BUILTIN:
+                    logger.debug(
+                        f"Skipping built-in resource {rid} ({doc.name}) — kept by reference"
+                    )
+                    continue
 
                 if not ctx.is_authorized_owner(doc.identity.id):
                     logger.warning(
@@ -251,21 +257,18 @@ class ShareCloner:
                     )
                     continue
 
-                # Create schema model and compute dependencies
                 cfg_model = self.elements.get_schema(
                     ResourceCategory(doc.category), doc.type
                 )(**doc.cfg_dict)
 
                 dependencies = RefWalker.external_rids(cfg_model)
 
-                # Cache all computed data
                 closure_cache[rid] = ResourceCacheData(
                     doc=doc,
                     dependencies=dependencies,
                     cfg_model=cfg_model
                 )
 
-                # Add new dependencies to traversal queue
                 for dep_rid in dependencies:
                     if dep_rid not in visited_rids:
                         to_visit.add(dep_rid)

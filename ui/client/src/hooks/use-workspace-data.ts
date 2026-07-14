@@ -9,36 +9,9 @@ import {
 } from "../types/workspace";
 import { useToast } from "./use-toast";
 import { catalogService } from "@/api/catalog";
+import * as resourcesApi from "@/api/resources";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
-
-// Types for Resources API responses
-interface ResourceInstance {
-  rid: string;
-  user_id: string;
-  category: string;
-  type: string;
-  name: string;
-  version: number;
-  cfg_dict: any;
-  nested_refs: string[];
-  contributed_by?: string;
-  created: string;
-  updated: string;
-  builtin_status?: 'public' | 'private' | null;
-  configurable_keys?: string[];
-  user_configured?: boolean;
-}
-
-interface ResourcesListResponse {
-  resources: ResourceInstance[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    has_more: boolean;
-  };
-}
 
 export const useWorkspaceData = () => {
   const [categories, setCategories] = useState<ElementCategory[]>([]);
@@ -101,13 +74,15 @@ export const useWorkspaceData = () => {
         setError(null);
         setElementInstances([]);
 
-        const response = await axios.get<ResourcesListResponse>(
-          `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}&category=${category}&type=${type}`,
-        );
+        const data = await resourcesApi.listResources({
+          userId: USER_ID,
+          identityType,
+          category,
+          type,
+        });
 
-        // Transform ResourceInstance to ElementInstance format
-        const instances: ElementInstance[] = response.data.resources.map(
-          (resource: ResourceInstance) => ({
+        const instances: ElementInstance[] = data.resources.map(
+          (resource) => ({
             rid: resource.rid,
             name: resource.name,
             config: resource.cfg_dict,
@@ -118,7 +93,8 @@ export const useWorkspaceData = () => {
             updated: resource.updated,
             nested_refs: resource.nested_refs,
             contributed_by: resource.contributed_by,
-            builtinStatus: resource.builtin_status || null,
+            ownership: resource.ownership || 'custom',
+            visibility: resource.visibility || 'draft',
             userConfigured: resource.user_configured ?? false,
           }),
         );
@@ -151,11 +127,7 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        const response = await axios.get<ResourceInstance>(
-          `/resources/resource.get?resourceId=${resourceId}`,
-        );
-
-        return response.data;
+        return await resourcesApi.getResource(resourceId);
       } catch (err: any) {
         const errorMessage =
           err.response?.data?.error || "Failed to fetch resource";
@@ -176,13 +148,16 @@ export const useWorkspaceData = () => {
 
   // Fetch all resources for a category (for $ref dropdowns)
   const fetchResourcesForCategory = useCallback(
-    async (category: string) => {
+    async (category: string, ownership?: string) => {
       try {
-        const response = await axios.get<ResourcesListResponse>(
-          `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}&category=${category}`,
-        );
+        const data = await resourcesApi.listResources({
+          userId: USER_ID,
+          identityType,
+          category,
+          ownership,
+        });
 
-        return response.data.resources.map((resource: ResourceInstance) => ({
+        return data.resources.map((resource) => ({
           rid: resource.rid,
           name: resource.name,
           type: resource.type,
@@ -212,10 +187,7 @@ export const useWorkspaceData = () => {
         setError(null);
 
         // First fetch the resource schema (first-level schema)
-        const resourceSchemaResponse = await axios.get(
-          "/resources/resource.schema",
-        );
-        const resourceSchema = resourceSchemaResponse.data;
+        const resourceSchema = await resourcesApi.getResourceSchema();
 
         // Then fetch the element-specific schema (cfg_dict schema)
         const elementSchemaResponse = await axios.get<ElementSchema>(
@@ -311,65 +283,48 @@ export const useWorkspaceData = () => {
         setError(null);
 
         if (rid) {
-          // Update existing resource
-          const response = await axios.put("/resources/resource.update", {
+          const result = await resourcesApi.updateResource({
             resourceId: rid,
             config: elementData.cfg_dict,
             name: elementData.name,
           });
-          
-          // Update the resource mapping immediately
-          if (response.data) {
+
+          if (result) {
             addOrUpdateResource({
-              rid: response.data.rid || rid,
-              name: response.data.name || elementData.name,
-              category: response.data.category || category,
-              type: response.data.type || type,
+              rid: result.rid || rid,
+              name: result.name || elementData.name,
+              category: result.category || category,
+              type: result.type || type,
             });
-            // Revalidate resource after update
-            revalidateResourceAndAncestors(response.data.rid || rid);
+            revalidateResourceAndAncestors(result.rid || rid);
           }
-          
-          toast({
-            title: "Success",
-            description: "Element updated successfully",
-          });
-          return response.data;
+
+          toast({ title: "Success", description: "Element updated successfully" });
+          return result;
         } else {
-          // Create new resource
           const { cfg_dict, ...firstLevelFields } = elementData;
-          const savePayload = {
+          const result = await resourcesApi.createResource({
             userId: USER_ID,
-            identityType: identityType,
+            identityType,
             displayName: USER_DISPLAY_NAME,
             category,
             type,
             config: cfg_dict,
             ...firstLevelFields,
-          };
-
-          const response = await axios.post(
-            "/resources/resource.save",
-            savePayload,
-          );
-          
-          // Update the resource mapping immediately
-          if (response.data) {
-            addOrUpdateResource({
-              rid: response.data.rid,
-              name: response.data.name || elementData.name,
-              category: response.data.category || category,
-              type: response.data.type || type,
-            });
-            // Validate new resource immediately after creation
-            revalidateResourceAndAncestors(response.data.rid);
-          }
-          
-          toast({
-            title: "Success",
-            description: "Element created successfully",
           });
-          return response.data;
+
+          if (result) {
+            addOrUpdateResource({
+              rid: result.rid,
+              name: result.name || elementData.name,
+              category: result.category || category,
+              type: result.type || type,
+            });
+            revalidateResourceAndAncestors(result.rid);
+          }
+
+          toast({ title: "Success", description: "Element created successfully" });
+          return result;
         }
       } catch (err: any) {
         const errorMessage =
@@ -396,14 +351,11 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        await axios.delete(`/resources/resource.delete?resourceId=${rid}`);
-        
+        await resourcesApi.deleteResource(rid);
+
         removeResource(rid);
-        
-        toast({
-          title: "Success",
-          description: "Element deleted successfully",
-        });
+
+        toast({ title: "Success", description: "Element deleted successfully" });
         return true;
       } catch (err: any) {
         const errorMessage =
@@ -424,18 +376,14 @@ export const useWorkspaceData = () => {
   );
 
   // Fetch the annotated schema for a built-in resource (same schema as inventory,
-  // but each field has a readOnly hint based on the resource's configurable_keys)
+  // but each field has a readOnly hint based on the resource's BuiltinSchema)
   const fetchBuiltinSchema = useCallback(
     async (resourceId: string) => {
       try {
         setIsLoading(true);
         setError(null);
 
-        const response = await axios.get(
-          `/resources/builtin.schema?resourceId=${resourceId}`,
-        );
-
-        const builtinSchema = response.data;
+        const builtinSchema = await resourcesApi.getBuiltinSchema(resourceId);
         setElementSchema({
           category: "",
           name: "",
@@ -470,10 +418,10 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        const response = await axios.patch("/resources/builtin.configure", {
+        const result = await resourcesApi.configureBuiltin({
           resourceId,
           userId: USER_ID,
-          identityType: identityType,
+          identityType,
           config,
         });
 
@@ -481,7 +429,7 @@ export const useWorkspaceData = () => {
           title: "Success",
           description: "Built-in resource configured successfully",
         });
-        return response.data;
+        return result;
       } catch (err: any) {
         const errorMessage =
           err.response?.data?.error || "Failed to configure built-in resource";
@@ -516,31 +464,25 @@ export const useWorkspaceData = () => {
         setError(null);
 
         if (rid) {
-          const response = await axios.put("/resources/builtin.update", {
+          const result = await resourcesApi.updateBuiltin({
             resourceId: rid,
             config: elementData.cfg_dict,
             name: elementData.name,
             availableToAll,
           });
-          toast({
-            title: "Success",
-            description: "Built-in resource updated successfully",
-          });
-          return response.data;
+          toast({ title: "Success", description: "Built-in resource updated successfully" });
+          return result;
         } else {
           const { cfg_dict, name } = elementData;
-          const response = await axios.post("/resources/builtin.create", {
+          const result = await resourcesApi.createBuiltin({
             category,
             type,
             name,
             config: cfg_dict,
             availableToAll,
           });
-          toast({
-            title: "Success",
-            description: "Built-in resource created successfully",
-          });
-          return response.data;
+          toast({ title: "Success", description: "Built-in resource created successfully" });
+          return result;
         }
       } catch (err: any) {
         const errorMessage =
@@ -567,7 +509,7 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        const response = await axios.patch("/resources/builtin.toggle", {
+        const result = await resourcesApi.toggleBuiltinVisibility({
           resourceId,
           availableToAll,
         });
@@ -578,7 +520,7 @@ export const useWorkspaceData = () => {
             ? "Resource is now available to all users"
             : "Resource is no longer available to all users",
         });
-        return response.data;
+        return result;
       } catch (err: any) {
         const errorMessage =
           err.response?.data?.error || "Failed to toggle resource status";
@@ -604,12 +546,9 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        await axios.delete(`/resources/resource.delete?resourceId=${rid}`);
+        await resourcesApi.deleteResource(rid);
 
-        toast({
-          title: "Success",
-          description: "Built-in resource deleted successfully",
-        });
+        toast({ title: "Success", description: "Built-in resource deleted successfully" });
         return true;
       } catch (err: any) {
         const errorMessage =

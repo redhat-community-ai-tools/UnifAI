@@ -6,6 +6,7 @@ from mas.resources.repository.base import ResourceRepository
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.resources.errors import ResourceInUseError
 from mas.core.identity import Identity
+from mas.core.enums import ResourceOwnership
 from mas.core.dto import GroupedCount
 
 
@@ -26,7 +27,7 @@ class ResourcesRegistry:
         if self._repo.find_by_name(doc.identity, doc.category, doc.type, doc.name):
             raise ValueError(f"{doc.category}:{doc.type}:{doc.name} exists for user")
 
-        if not doc.builtin_status:
+        if doc.ownership != ResourceOwnership.BUILTIN:
             self._check_builtin_url_collision(doc)
 
         self._repo.save(doc)
@@ -118,7 +119,11 @@ class ResourcesRegistry:
         return self._repo.find_builtin_by_url(url)
 
     def set_user_config(self, rid: str, identity_key: str, config: Dict[str, Any]) -> bool:
-        """Atomically set user_configs.<identity_key> on a resource."""
+        """Legacy: set user_configs.<identity_key> on a resource.
+
+        Deprecated — user configs now live in the builtin_user_configs collection.
+        Retained for backward compatibility during migration.
+        """
         return self._repo.set_user_config(rid, identity_key, config)
 
     def _check_builtin_url_collision(self, doc: Resource) -> None:

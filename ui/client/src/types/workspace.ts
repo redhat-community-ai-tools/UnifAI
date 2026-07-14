@@ -24,7 +24,8 @@ export interface ElementInstance {
   updated?: string;
   nested_refs?: string[];
   contributed_by?: string;
-  builtinStatus?: 'public' | 'private' | null;
+  ownership?: 'builtin' | 'custom';
+  visibility?: 'draft' | 'public';
   userConfigured?: boolean;
 }
 

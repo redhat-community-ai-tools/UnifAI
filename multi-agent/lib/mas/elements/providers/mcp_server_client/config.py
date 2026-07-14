@@ -109,17 +109,20 @@ class McpProviderConfig(ProviderBaseConfig):
     tool_names: Optional[List[str]] = Field(
         default_factory=list,
         description="List of specific tool names to use from the MCP server",
-        json_schema_extra=ActionHint(
-            action_uid="mcp.get_tools_names",
-            hint_type=HintType.POPULATE,
-            selection_type=SelectionType.MANUAL,
-            field_mapping="tool_names",
-            multi_select=True,
-            dependencies={
-                "mcp_url": "mcp_url",
-                "server_identifier": "server_identifier",
-                "transport_type": "transport_type",
-                "additional_headers": "additional_headers",
-            }
-        ).to_hints()
+        json_schema_extra=combine_hints(
+            ActionHint(
+                action_uid="mcp.get_tools_names",
+                hint_type=HintType.POPULATE,
+                selection_type=SelectionType.MANUAL,
+                field_mapping="tool_names",
+                multi_select=True,
+                dependencies={
+                    "mcp_url": "mcp_url",
+                    "server_identifier": "server_identifier",
+                    "transport_type": "transport_type",
+                    "additional_headers": "additional_headers",
+                }
+            ),
+            ReadOnlyHint(read_only=False),
+        ),
     )

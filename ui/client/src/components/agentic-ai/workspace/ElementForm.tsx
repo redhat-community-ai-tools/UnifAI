@@ -43,6 +43,8 @@ interface ElementFormProps {
   /** Names of other instances of this element type (used for duplicate name checks). */
   existingNames?: string[];
   onSave: (data: any) => Promise<unknown>;
+  /** When true, $ref dropdowns only show built-in resources. */
+  builtinOnly?: boolean;
 }
 
 export const ElementForm: React.FC<ElementFormProps> = ({
@@ -54,6 +56,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
   editingElement,
   existingNames = [],
   onSave,
+  builtinOnly = false,
 }) => {
   const [formData, setFormData] = useState<any>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -581,10 +584,11 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       // Fetch actual reference options from Resources API
       const loadRefOptions = async () => {
         const options: { [category: string]: any[] } = {};
+        const ownershipFilter = builtinOnly ? "builtin" : undefined;
 
         for (const category of Array.from(refCategories)) {
           try {
-            const resources = await fetchResourcesForCategory(category);
+            const resources = await fetchResourcesForCategory(category, ownershipFilter);
             options[category] = resources;
           } catch (error) {
             console.error(
@@ -602,7 +606,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         loadRefOptions();
       }
     }
-  }, [elementSchema, isOpen, fetchResourcesForCategory]);
+  }, [elementSchema, isOpen, fetchResourcesForCategory, builtinOnly]);
 
   const handleInputChange = (field: string, value: any) => {
     setFormData((prev: any) => {

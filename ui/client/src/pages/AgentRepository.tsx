@@ -44,14 +44,14 @@ export default function UserWorkspace() {
 
   const filteredInstances = useMemo(() => {
     if (resourceFilter === "all") return elementInstances;
-    if (resourceFilter === "built-in") return elementInstances.filter(el => !!el.builtinStatus);
-    return elementInstances.filter(el => !el.builtinStatus);
+    if (resourceFilter === "built-in") return elementInstances.filter(el => el.ownership === 'builtin');
+    return elementInstances.filter(el => el.ownership !== 'builtin');
   }, [elementInstances, resourceFilter]);
 
   const filterCounts = useMemo(() => ({
     all: elementInstances.length,
-    "built-in": elementInstances.filter(el => !!el.builtinStatus).length,
-    personal: elementInstances.filter(el => !el.builtinStatus).length,
+    "built-in": elementInstances.filter(el => el.ownership === 'builtin').length,
+    personal: elementInstances.filter(el => el.ownership !== 'builtin').length,
   }), [elementInstances]);
 
   useEffect(() => {
