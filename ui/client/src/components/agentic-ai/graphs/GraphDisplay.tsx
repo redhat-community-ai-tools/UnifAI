@@ -42,31 +42,45 @@ function ActiveNodesStatusBar({
             <div
               key={nodeId}
               className={`flex items-center gap-1 px-2 py-1 rounded ${
-                status === "PROGRESS"
-                  ? "bg-blue-500 bg-opacity-50"
-                  : status === "CANCELLED"
-                    ? "bg-gray-500 bg-opacity-50"
-                    : "bg-green-500 bg-opacity-50"
+                status === "PENDING_APPROVAL"
+                  ? "bg-yellow-600 bg-opacity-40"
+                  : status === "PROGRESS"
+                    ? "bg-blue-500 bg-opacity-50"
+                    : status === "CANCELLED"
+                      ? "bg-gray-500 bg-opacity-50"
+                      : "bg-green-500 bg-opacity-50"
               }`}
             >
               <motion.div
                 className={`w-2 h-2 rounded-full ${
-                  status === "PROGRESS" ? "bg-blue-400" : status === "CANCELLED" ? "bg-gray-400" : "bg-green-400"
+                  status === "PENDING_APPROVAL"
+                    ? "bg-yellow-400"
+                    : status === "PROGRESS"
+                      ? "bg-blue-400"
+                      : status === "CANCELLED"
+                        ? "bg-gray-400"
+                        : "bg-green-400"
                 }`}
                 animate={
-                  status === "PROGRESS"
+                  status === "PROGRESS" || status === "PENDING_APPROVAL"
                     ? { scale: [1, 1.2, 1], opacity: [1, 0.7, 1] }
                     : undefined
                 }
                 transition={
-                  status === "PROGRESS"
+                  status === "PROGRESS" || status === "PENDING_APPROVAL"
                     ? { duration: 1, repeat: Infinity }
                     : undefined
                 }
               />
               <span className="truncate max-w-20">{nodeName}</span>
               <span className="text-xs opacity-75">
-                {status === "PROGRESS" ? "Running" : status === "CANCELLED" ? "Stopped" : "Done"}
+                {status === "PENDING_APPROVAL"
+                  ? "Awaiting Approval"
+                  : status === "PROGRESS"
+                    ? "Running"
+                    : status === "CANCELLED"
+                      ? "Stopped"
+                      : "Done"}
               </span>
             </div>
           );
@@ -104,6 +118,8 @@ export type GraphDisplayProps = {
    *  width by carousel mode). Drives re-application of node visuals after
    *  the panel becomes visible again. Defaults to `true`. */
   isGraphVisible?: boolean;
+  /** When true, nodes with hitl_mode "dynamic" show the HITL tag. */
+  hitlEnabled?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -123,6 +139,7 @@ export default function GraphDisplay({
   isLiveRequest = false,
   isCancelled = false,
   isGraphVisible = true,
+  hitlEnabled = false,
 }: GraphDisplayProps): React.ReactElement {
   // ── JointJS graph hook (imperative init, layout, SVG injection) ─────
   const { primaryHex } = useTheme();
@@ -204,7 +221,10 @@ export default function GraphDisplay({
     const newStatusMap: Record<string, NodeStatus> = {};
 
     currentNodeList.forEach((nodeEntry, nodeId) => {
-      if (nodeEntry.stream === "PROGRESS") newStatusMap[nodeId] = "PROGRESS";
+      const hasPendingApproval = nodeEntry.approvals?.some((a) => a.status === "pending");
+
+      if (hasPendingApproval) newStatusMap[nodeId] = "PENDING_APPROVAL";
+      else if (nodeEntry.stream === "PROGRESS") newStatusMap[nodeId] = "PROGRESS";
       else if (nodeEntry.stream === "DONE") newStatusMap[nodeId] = "DONE";
       else newStatusMap[nodeId] = "IDLE";
     });
@@ -279,11 +299,11 @@ export default function GraphDisplay({
           const id = el.id as string;
           const prev = prevMap[id];
           let finalStatus: NodeStatus;
-          if (isCancelled && prev === "PROGRESS") {
+          if (isCancelled && (prev === "PROGRESS" || prev === "PENDING_APPROVAL")) {
             finalStatus = "CANCELLED";
           } else if (prev === "DONE") {
             finalStatus = "DONE";
-          } else if (!isCancelled && prev === "PROGRESS") {
+          } else if (!isCancelled && (prev === "PROGRESS" || prev === "PENDING_APPROVAL")) {
             finalStatus = "DONE";
           } else {
             finalStatus = "IDLE";
@@ -542,6 +562,7 @@ export default function GraphDisplay({
                     }
                     isValidating={isValidating}
                     interactive={interactive}
+                    hitlEnabled={hitlEnabled}
                     onValidationClick={(result) => {
                       setSelectedValidationResult(result);
                       setIsValidationModalOpen(true);

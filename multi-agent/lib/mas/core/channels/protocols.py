@@ -13,8 +13,6 @@ from typing import Any, Dict, Iterator, List, Optional
 class SessionChannel(ABC):
     """
     Write side of a session channel — used by nodes to emit events.
-
-    Future: add request_input() for HITL.
     """
 
     @property
@@ -39,6 +37,40 @@ class SessionChannel(ABC):
 
     def supports_input(self) -> bool:
         return False
+
+
+class InputCapableChannel(SessionChannel, ABC):
+    """Extends SessionChannel with bidirectional I/O for HITL.
+
+    ``wait_for`` blocks the calling thread until a response for the
+    given *request_id* arrives (via ``submit``) or *timeout* expires.
+
+    ``submit`` delivers a response and unblocks the waiting thread.
+    Called by the inbound API layer when a human responds.
+
+    Existing code that only needs ``emit()`` keeps using the
+    ``SessionChannel`` interface — interface segregation.
+    """
+
+    @abstractmethod
+    def wait_for(self, request_id: str, timeout: float) -> Optional[dict]:
+        """Block until a response for *request_id* arrives.
+
+        Returns the response dict, or ``None`` on timeout.
+        Must not raise on timeout.
+        """
+        ...
+
+    @abstractmethod
+    def submit(self, request_id: str, data: dict) -> None:
+        """Deliver a response for a pending *request_id*.
+
+        Unblocks the corresponding ``wait_for`` call.
+        """
+        ...
+
+    def supports_input(self) -> bool:
+        return True
 
 
 class SessionChannelReader(ABC):
@@ -106,6 +138,26 @@ class ChannelFactory(ABC):
     def create(self, session_id: str) -> SessionChannel:
         """Create a write channel for the given session."""
         ...
+
+    def create_input_capable(self, session_id: str) -> Optional[InputCapableChannel]:
+        """Create a bidirectional channel for HITL.
+
+        Returns ``None`` when the backend does not support inbound
+        input.  Override in subclasses that provide HITL support.
+        """
+        return None
+
+    def get_input_channel(self, session_id: str) -> Optional[Any]:
+        """Retrieve a submittable channel for a running session.
+
+        Used by the API layer to push HITL approval responses into a
+        session that is currently blocking on ``channel.wait_for()``.
+
+        The returned object must expose ``submit(request_id, data)``.
+        Returns ``None`` when the backend has no active channel for
+        *session_id* or does not support HITL input.
+        """
+        return None
 
     def create_reader(self, session_id: str) -> Optional[SessionChannelReader]:
         """

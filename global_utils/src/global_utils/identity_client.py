@@ -55,10 +55,7 @@ class IdentityClient:
 
     def _get_cached_teams(self, username: str) -> Optional[list[dict]]:
         if self._team_cache is not None:
-            ids = self._team_cache.get_team_ids(username)
-            if ids is not None:
-                return [{"team_id": tid} for tid in ids]
-            return None
+            return self._team_cache.get_teams(username)
         now = time.monotonic()
         with self._cache_lock:
             entry = self._mem_cache.get(username)
@@ -68,8 +65,11 @@ class IdentityClient:
 
     def _set_cached_teams(self, username: str, teams: list[dict]) -> None:
         if self._team_cache is not None:
-            ids = [str(t.get("team_id")) for t in teams if t.get("team_id") is not None]
-            self._team_cache.set_team_ids(username, ids)
+            entries = [
+                {"team_id": str(t["team_id"]), "name": t.get("name", "")}
+                for t in teams if t.get("team_id") is not None
+            ]
+            self._team_cache.set_teams(username, entries)
             return
         with self._cache_lock:
             self._mem_cache[username] = (time.monotonic(), teams)

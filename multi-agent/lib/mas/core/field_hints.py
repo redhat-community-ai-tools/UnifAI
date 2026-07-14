@@ -9,6 +9,7 @@ class HintType(Enum):
     VALIDATE = "validate" 
     HIDDEN = "hidden"
     SECRET = "secret"
+    FILE_UPLOAD = "file_upload"
 
 
 class SelectionType(Enum):
@@ -247,6 +248,50 @@ class AuthHint(BaseModel):
         }
 
 
+class FileUploadHint(BaseModel):
+    """Hint that tells the UI to render a file-picker for this field.
+
+    The user selects a file via the OS picker, the UI uploads it to
+    ``upload_endpoint`` for format validation, and the returned content
+    string is stored in the form field. Combine with ``SecretHint`` to
+    also mask the stored value.
+
+    Example::
+
+        json_schema_extra=combine_hints(
+            FileUploadHint(accept=".pem,.crt,.key"),
+            SecretHint(reason="Certificate content"),
+        )
+    """
+    hint_type: HintType = Field(default=HintType.FILE_UPLOAD)
+    accept: str = Field(
+        default=".pem,.crt,.key",
+        description="Comma-separated file extensions for the OS picker",
+    )
+    max_size_bytes: int = Field(
+        default=16384,
+        description="Maximum file size in bytes",
+    )
+    upload_endpoint: str = Field(
+        default="/resources/resource.upload-file",
+        description="Backend endpoint for upload and format validation",
+    )
+    validate_format: str = Field(
+        default="pem",
+        description="Format to validate on the backend (e.g. 'pem')",
+    )
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        return super().model_dump(**kwargs)
+
+    def to_hints(self) -> Dict[str, Any]:
+        return {
+            "hints": {
+                "file_upload": self.model_dump()
+            }
+        }
+
+
 class ConditionalHint(BaseModel):
     """
     Hint for conditional field visibility.
@@ -339,7 +384,7 @@ class ReadOnlyHint(BaseModel):
         }
 
 
-def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, PropagateHint, ReadOnlyHint]) -> Dict[str, Any]:
+def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, PropagateHint, FileUploadHint, ReadOnlyHint]) -> Dict[str, Any]:
     """
     Combine multiple hints into a single json_schema_extra structure.
     

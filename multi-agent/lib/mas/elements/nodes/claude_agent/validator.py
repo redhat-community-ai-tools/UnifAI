@@ -25,8 +25,8 @@ class ClaudeAgentNodeValidator(BaseElementValidator):
     - Vertex AI project ID is present
     - Model string is valid
     - Effort level is valid
-    - Permission mode is recognized
     - Max turns bounds
+    - Skills repos
     - Retriever dependency (if configured)
 
     Note: Vertex AI credential reachability is validated in real-time
@@ -50,7 +50,6 @@ class ClaudeAgentNodeValidator(BaseElementValidator):
         self._check_vertex_project(config, messages)
         self._check_model(config, messages)
         self._check_effort(config, messages)
-        self._check_permission_mode(config, messages)
         self._check_max_turns(config, messages)
         self._check_skills_repos(config, messages)
 
@@ -113,19 +112,6 @@ class ClaudeAgentNodeValidator(BaseElementValidator):
                 f"Unknown effort level: {config.effort}. "
                 f"Valid: {sorted(self.VALID_EFFORT_LEVELS)}",
                 field="effort",
-            ))
-
-    def _check_permission_mode(
-        self,
-        config: ClaudeAgentNodeConfig,
-        messages: List[ValidationMessage],
-    ) -> None:
-        if config.permission_mode not in self.VALID_PERMISSION_MODES:
-            messages.append(self._error(
-                "INVALID_PERMISSION_MODE",
-                f"Unknown permission mode: {config.permission_mode}. "
-                f"Valid: {sorted(self.VALID_PERMISSION_MODES)}",
-                field="permission_mode",
             ))
 
     def _check_max_turns(

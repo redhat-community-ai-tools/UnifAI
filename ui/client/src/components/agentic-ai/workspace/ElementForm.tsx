@@ -28,6 +28,7 @@ import {
   releaseTeamEditLock,
 } from "@/api/collaborationEditLock";
 import { LoaderCircle } from "lucide-react";
+import OpenShellSandboxGuidelines from "./OpenShellSandboxGuidelines";
 
 function normalizeElementName(v: string): string {
   return v.trim().toLowerCase();
@@ -68,8 +69,21 @@ export const ElementForm: React.FC<ElementFormProps> = ({
   const [validatingFields, setValidatingFields] = useState<Set<string>>(new Set());
   const [populateResults, setPopulateResults] = useState<{ [fieldName: string]: string[] | any }>({});
   const [actionOutputs, setActionOutputs] = useState<Record<string, any>>({});
+  const [refEditState, setRefEditState] = useState<{
+    element: ElementInstance;
+    schema: ElementSchema;
+    actions: any[];
+    elementType: ElementType;
+    existingNames: string[];
+  } | null>(null);
 
-  const { fetchResourcesForCategory } = useWorkspaceData();
+  const {
+    fetchResourcesForCategory,
+    fetchResourceById,
+    fetchElementSchema: fetchSchemaForRef,
+    fetchElementActions: fetchActionsForRef,
+    saveElement: saveRefElement,
+  } = useWorkspaceData();
   const { user } = useAuth();
   const { isTeam: isTeamWorkspace, userId: teamId } = useWorkspaceIdentity();
   const { toast } = useToast();
@@ -652,6 +666,85 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     setActionOutputs(prev => ({ ...prev, [fieldName]: output }));
   };
 
+  const handleEditRefElement = useCallback(async (rid: string) => {
+    let foundCategory: string | null = null;
+    let foundOption: any = null;
+
+    for (const [category, options] of Object.entries(refOptions)) {
+      const option = options.find((opt: any) => opt.rid === rid);
+      if (option) {
+        foundCategory = category;
+        foundOption = option;
+        break;
+      }
+    }
+
+    if (!foundCategory || !foundOption) return;
+
+    try {
+      const [resource, schema, actions] = await Promise.all([
+        fetchResourceById(rid),
+        fetchSchemaForRef(foundCategory, foundOption.type),
+        fetchActionsForRef(foundCategory, foundOption.type),
+      ]);
+
+      if (!resource || !schema) return;
+
+      setRefEditState({
+        element: {
+          rid: resource.rid,
+          name: resource.name,
+          config: resource.cfg_dict,
+          category: resource.category,
+          type: resource.type,
+          version: resource.version,
+          created: resource.created,
+          updated: resource.updated,
+          nested_refs: resource.nested_refs,
+        },
+        schema,
+        actions: actions || [],
+        elementType: {
+          category: foundCategory,
+          name: schema.name,
+          type: foundOption.type,
+        },
+        existingNames: (refOptions[foundCategory] || [])
+          .filter((opt: any) => opt.rid !== rid)
+          .map((opt: any) => opt.name)
+          .filter(Boolean),
+      });
+    } catch (error) {
+      console.error('Error loading ref element for editing:', error);
+    }
+  }, [refOptions, fetchResourceById, fetchSchemaForRef, fetchActionsForRef]);
+
+  const handleSaveRefElement = useCallback(async (elementData: any) => {
+    if (!refEditState) return null;
+
+    const { element, elementType: refElementType } = refEditState;
+    const result = await saveRefElement(
+      refElementType.category,
+      refElementType.type,
+      elementData,
+      element.rid,
+    );
+
+    if (result) {
+      try {
+        const updatedOptions = await fetchResourcesForCategory(refElementType.category);
+        setRefOptions(prev => ({
+          ...prev,
+          [refElementType.category]: updatedOptions,
+        }));
+      } catch (error) {
+        console.error('Error refreshing ref options:', error);
+      }
+    }
+
+    return result;
+  }, [refEditState, saveRefElement, fetchResourcesForCategory]);
+
   const handleArrayChange = (field: string, index: number, value: any) => {
     setFormData((prev: any) => ({
       ...prev,
@@ -909,13 +1002,24 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         onValidationChange={handleValidationChange}
         onPopulateResult={handlePopulateResult}
         onActionOutput={handleActionOutput}
+        onEditRefElement={handleEditRefElement}
       />
     );
+  };
+
+  const renderFormGuidelines = (): React.ReactNode => {
+    switch (elementType.type) {
+      case "openshell_sandbox":
+        return <OpenShellSandboxGuidelines />;
+      default:
+        return null;
+    }
   };
 
   if (!elementSchema) return null;
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
         className="bg-background-card border-gray-800 text-foreground max-w-3xl max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0"
@@ -927,6 +1031,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
             {editingElement ? "Edit" : "Create"} {elementType.name}
           </DialogTitle>
           <DialogDescription>{elementSchema.description}</DialogDescription>
+          {renderFormGuidelines()}
         </DialogHeader>
 
         {needsResourceEditLock && !resourceEditLockReady ? (
@@ -1030,5 +1135,18 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         ) : null}
       </DialogContent>
     </Dialog>
+    {refEditState && (
+      <ElementForm
+        isOpen={!!refEditState}
+        onClose={() => setRefEditState(null)}
+        elementType={refEditState.elementType}
+        elementSchema={refEditState.schema}
+        elementActions={refEditState.actions}
+        editingElement={refEditState.element}
+        existingNames={refEditState.existingNames}
+        onSave={handleSaveRefElement}
+      />
+    )}
+    </>
   );
 };

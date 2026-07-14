@@ -11,8 +11,6 @@ The Deep Agent graph is compiled lazily on first ``run()`` because MCP tools
 require network initialization that isn't available at ``__init__`` time.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 import tempfile
@@ -25,18 +23,22 @@ from langchain_core.tools import BaseTool as LangChainBaseTool
 
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
+from deepagents.backends.protocol import BackendProtocol
 
-from mas.core.execution_context import ExecutionContextHolder
+from mas.core.hitl.models import HITLMode, RequestOrigin
 from mas.elements.llms.common.base_llm import BaseLLM
 from mas.elements.llms.common.chat.converter import LangChainConverter, normalise_content
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.elements.llms.common.langchain_adapter import BaseLLMChatModelAdapter
 from mas.elements.nodes.common.base_node import BaseNode
+from mas.elements.sandboxes.common.base_sandbox import BaseSandbox
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.retriever_capable import RetrieverCapableMixin
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
+from mas.elements.nodes.common.capabilities.hitl_capable import HITLCapableMixin
 from mas.elements.nodes.common.workload import AgentResult, Task
 from mas.elements.providers.mcp_server_client.mcp_provider import McpProvider
+from mas.elements.nodes.deep_agent.hitl_middleware import HITLMiddleware
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.converter import LangChainToolsConverter
 
@@ -67,6 +69,7 @@ class DeepAgentNode(
     WorkloadCapableMixin,
     IEMCapableMixin,
     RetrieverCapableMixin,
+    HITLCapableMixin,
     BaseNode,
 ):
     """Agent node that delegates to a LangChain Deep Agent for execution.
@@ -89,40 +92,33 @@ class DeepAgentNode(
         llm: BaseLLM,
         tools: Optional[List[BaseTool]] = None,
         mcp_providers: Optional[List[McpProvider]] = None,
+        sandbox: Optional[BaseSandbox] = None,
         system_message: str = "",
         retriever: Any = None,
         cwd: Optional[str] = None,
         env_vars: Optional[Dict[str, str]] = None,
-        execution_holder: Optional[ExecutionContextHolder] = None,
+        execution_holder=None,
         shared_storage: str = "/app/shared",
+        hitl_mode: HITLMode = HITLMode.SKIP,
         **kwargs: Any,
     ) -> None:
-        super().__init__(retriever=retriever, **kwargs)
+        super().__init__(
+            retriever=retriever,
+            hitl_mode=hitl_mode,
+            execution_holder=execution_holder,
+            **kwargs,
+        )
 
         self._llm = llm
         self._domain_tools: List[BaseTool] = tools or []
         self._mcp_providers: List[McpProvider] = mcp_providers or []
+        self._sandbox = sandbox
         self._system_message = system_message
         self._cwd = cwd
         self._env_vars: Dict[str, str] = env_vars or {}
-        self._execution_holder = execution_holder
         self._shared_storage = shared_storage
 
         self._compiled_agent: Any = None
-
-    # ==================================================================
-    # Session context
-    # ==================================================================
-
-    @property
-    def session_id(self) -> str:
-        """Get session_id from execution context (filled at runtime by the runner)."""
-        if self._execution_holder is None:
-            return ""
-        try:
-            return self._execution_holder.context.session_id
-        except (RuntimeError, AttributeError):
-            return ""
 
     # ==================================================================
     # Graph lifecycle
@@ -130,8 +126,18 @@ class DeepAgentNode(
 
     def run(self, state: Any) -> Any:
         """Main entry point — build the Deep Agent (if needed), then process packets."""
+        from mas.elements.nodes.common.context_binder import close_tools
+
         self._ensure_compiled()
-        self.process_packets(state)
+        try:
+            self.process_packets(state)
+        finally:
+            close_tools(self._domain_tools)
+            if self._sandbox is not None:
+                try:
+                    self._sandbox.close()
+                except Exception:
+                    pass
         return state
 
     def _ensure_compiled(self) -> None:
@@ -139,37 +145,113 @@ class DeepAgentNode(
         if self._compiled_agent is not None:
             return
 
+        from mas.elements.nodes.common.context_binder import bind_tool_context
+
+        bind_tool_context(
+            self._domain_tools,
+            session_id=self.hitl_session_id,
+            agent_id=self.uid,
+        )
+
+        if self._sandbox is not None:
+            self._sandbox.bind_context(
+                session_id=self.hitl_session_id,
+                agent_id=self.uid,
+            )
+
         langchain_tools = self._collect_langchain_tools()
         self._compiled_agent = self._build_deep_agent(langchain_tools)
         logger.info("DeepAgent %s: compiled graph with %d tools", self.uid, len(langchain_tools))
 
     def _collect_langchain_tools(self) -> List[LangChainBaseTool]:
-        """Gather all tools (domain + MCP) and convert to LangChain format."""
+        """Gather all tools (domain + MCP) and convert to LangChain format.
+
+        When sandbox routing is active, MCP tools are wrapped in
+        SandboxToolProxy. Otherwise originals are used.
+        """
+        from mas.elements.nodes.common.context_binder import get_sandbox_wrapped_mcp_tools
+
         all_domain_tools: List[BaseTool] = list(self._domain_tools)
-
-        for provider in self._mcp_providers:
-            all_domain_tools.extend(provider.get_tools())
-
+        wrapped = get_sandbox_wrapped_mcp_tools(self._sandbox, self._mcp_providers)
+        if wrapped is not None:
+            all_domain_tools.extend(wrapped)
+        else:
+            for provider in self._mcp_providers:
+                all_domain_tools.extend(provider.get_tools())
         return LangChainToolsConverter.to_lc(all_domain_tools)
 
     def _build_deep_agent(self, tools: List[LangChainBaseTool]) -> Any:
-        """Compile a Deep Agent graph with LocalShellBackend for filesystem access."""
+        """Compile a Deep Agent graph with LocalShellBackend for filesystem access.
+
+        When HITL is active (gate + policy injected), a ``HITLMiddleware``
+        is added to the Deep Agent's middleware stack.  The middleware
+        intercepts tool calls inside LangGraph's tool node, using the
+        same ``ApprovalGate`` / ``ToolApprovalPolicy`` as the native
+        ``HITLExecutionHandler``.
+        """
         adapter = BaseLLMChatModelAdapter(llm=self._llm)
         backend = self._build_backend()
+        middleware = self._build_middleware()
 
         return create_deep_agent(
             model=adapter,
             tools=tools or None,
             system_prompt=self._system_message or None,
             backend=backend,
+            middleware=middleware,
         )
+
+    # ==================================================================
+    # HITL middleware
+    # ==================================================================
+
+    def _build_middleware(self) -> list:
+        """Assemble the middleware stack for Deep Agent compilation."""
+        middleware: list = []
+
+        if self._should_activate_hitl():
+            origin = RequestOrigin(
+                node_uid=self.uid,
+                node_display_name=self.display_name,
+                session_id=self.hitl_session_id,
+            )
+            tool_registry = {t.name: t for t in self._domain_tools}
+            for provider in self._mcp_providers:
+                for tool in provider.get_tools():
+                    tool_registry[tool.name] = tool
+
+            middleware.append(HITLMiddleware(
+                gate=self._approval_gate,
+                policy=self._approval_policy,
+                tool_registry=tool_registry,
+                origin=origin,
+            ))
+            logger.info(
+                "DeepAgent %s: HITL middleware enabled with %d registered tools",
+                self.uid,
+                len(tool_registry),
+            )
+
+        return middleware
 
     # ==================================================================
     # Backend / working directory
     # ==================================================================
 
-    def _build_backend(self) -> LocalShellBackend:
-        """Create a LocalShellBackend rooted at the session working directory."""
+    def _build_backend(self) -> BackendProtocol:
+        """Create the appropriate backend for the Deep Agent.
+
+        Returns an OpenShellSandboxBackend when a sandbox is attached,
+        otherwise falls back to LocalShellBackend.
+        """
+        if self._sandbox is not None:
+            from mas.elements.nodes.deep_agent.openshell_backend import (
+                OpenShellSandboxBackend,
+            )
+
+            logger.info("DeepAgent %s: using OpenShell sandbox backend", self.uid)
+            return OpenShellSandboxBackend(self._sandbox)
+
         root_dir = self._prepare_working_directory()
         env = self._build_env()
         return LocalShellBackend(root_dir=root_dir, virtual_mode=True, env=env)
@@ -184,8 +266,8 @@ class DeepAgentNode(
         """
         if self._cwd:
             work_dir = self._cwd
-        elif self.session_id:
-            work_dir = os.path.join(self._shared_storage, self.session_id, self.uid)
+        elif self.hitl_session_id:
+            work_dir = os.path.join(self._shared_storage, self.hitl_session_id, self.uid)
         else:
             work_dir = tempfile.mkdtemp(prefix="deep_agent_")
 

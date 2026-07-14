@@ -35,6 +35,15 @@ app.add_typer(api_app, name="api")
 
 def _build_container():
     """Shared bootstrap: config → container."""
+    import logging
+    import os
+
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.INFO),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
     from config.app_config import AppConfig
     from bootstrap.container import AppContainer
 
