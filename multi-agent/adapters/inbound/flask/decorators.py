@@ -23,6 +23,7 @@ from typing import Any, Callable
 
 from flask import current_app, g, jsonify, request, session
 
+from global_utils.constants import INTERNAL_AUTH_HEADER
 from global_utils.flask.decorators import validate_session, G_IDENTITY_SESSION
 from mas.core.identity import resolve_identity
 from mas.core.identity.ports import IdentityProvider
@@ -49,7 +50,7 @@ def _get_redis_store():
 # Session callbacks
 # ──────────────────────────────────────────────────────────────────────────────
 
-_AUTH_HEADER = "X-Authenticated-User"
+_AUTH_HEADER = INTERNAL_AUTH_HEADER
 
 
 def _get_fallback_user() -> str | None:

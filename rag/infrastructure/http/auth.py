@@ -10,11 +10,12 @@ import logging
 
 from flask import current_app, request
 
+from global_utils.constants import INTERNAL_AUTH_HEADER
 from global_utils.flask.decorators import require_team_session
 
 logger = logging.getLogger(__name__)
 
-_AUTH_HEADER = "X-Authenticated-User"
+_AUTH_HEADER = INTERNAL_AUTH_HEADER
 
 
 def _get_internal_user() -> str | None:

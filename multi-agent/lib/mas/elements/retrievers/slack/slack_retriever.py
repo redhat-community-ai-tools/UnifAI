@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 from mas.elements.retrievers.common.base_retriever import BaseRetriever
 from mas.elements.retrievers.common.protocols import RetrievalIdentity
+from global_utils.constants import INTERNAL_AUTH_HEADER
 from pydantic import HttpUrl
 
 
@@ -28,7 +29,7 @@ class SlackRetriever(BaseRetriever):
         self.timeout = timeout
         self._identity = identity
 
-    _AUTH_HEADER = "X-Authenticated-User"
+    _AUTH_HEADER = INTERNAL_AUTH_HEADER
 
     def retrieve(self, query: str) -> Any:
         scope = self._identity.scope if self._identity else "public"

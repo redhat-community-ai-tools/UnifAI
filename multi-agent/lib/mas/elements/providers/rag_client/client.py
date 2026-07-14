@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 
 import httpx
 from pydantic import HttpUrl
+from global_utils.constants import INTERNAL_AUTH_HEADER
 
 from .models import (
     AvailableTagsResponse,
@@ -43,7 +44,7 @@ class RagClient:
     DOCS_ENDPOINT = "/api/docs/available.docs.get"
     QUERY_ENDPOINT = "/api/docs/query.match"
 
-    _AUTH_HEADER = "X-Authenticated-User"
+    _AUTH_HEADER = INTERNAL_AUTH_HEADER
 
     def __init__(
             self,
