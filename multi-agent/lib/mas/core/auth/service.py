@@ -82,8 +82,14 @@ class AuthHandle:
             return ""
 
     async def get_headers(self) -> Dict[str, str]:
+        uid = self._user_id
+        # DIAG: remove once A2A auth flow is validated
+        logger.debug(
+            "AuthHandle.get_headers: user_id=%r server=%r scheme=%r",
+            uid, self._server_id, self._scheme_type,
+        )
         return await self._svc.get_headers(
-            self._user_id, self._server_id, self._config,
+            uid, self._server_id, self._config,
             scheme_type=self._scheme_type,
         )
 

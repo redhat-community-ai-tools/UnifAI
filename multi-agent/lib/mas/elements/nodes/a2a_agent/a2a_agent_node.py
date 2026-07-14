@@ -2,6 +2,7 @@
 A2A Agent Node - Delegates work to remote agent via A2A protocol
 """
 
+import logging
 from typing import Optional, Any, List, ClassVar, Dict
 from copy import deepcopy
 from pydantic import HttpUrl
@@ -16,6 +17,8 @@ from mas.elements.nodes.common.workload import Task, AgentResult
 from mas.elements.providers.a2a_client import A2AProvider
 from mas.core.auth.credentials.credential import AuthCredential
 from global_utils.utils.async_bridge import get_async_bridge
+
+logger = logging.getLogger(__name__)
 
 
 class A2AAgentNode(
@@ -242,8 +245,13 @@ class A2AAgentNode(
                 headers = bridge.run(self._auth_credential.get_headers())
             if headers:
                 self.a2a_provider.update_headers(headers)
-        except Exception:
-            pass
+            else:
+                logger.warning("A2AAgentNode[%s]: get_headers() returned empty", self.name)
+        except Exception as exc:
+            logger.error(
+                "A2AAgentNode[%s]: auth header refresh failed: %s: %s",
+                self.name, type(exc).__name__, exc,
+            )
 
     def _delegate_to_remote_agent(
             self,
