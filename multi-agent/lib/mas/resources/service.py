@@ -456,6 +456,7 @@ class ResourcesService:
     def create_builtin(
         self,
         *,
+        identity: Identity,
         category: str,
         type: str,
         name: str,
@@ -463,6 +464,11 @@ class ResourcesService:
         available_to_all: bool = False,
     ) -> Resource:
         """Create a resource directly as built-in (admin only).
+
+        The identity of the creating admin is preserved so that every
+        built-in resource document is owned by the admin who created it,
+        keeping the identity consistent across all documents in the
+        resources collection.
 
         Configurable fields are determined by ReadOnlyHint annotations on the element schema.
         """
@@ -477,7 +483,7 @@ class ResourcesService:
         nested_refs = list(RefWalker.external_rids(cfg_model))
 
         doc = Resource(
-            identity=Identity.system(),
+            identity=identity,
             category=category,
             type=type,
             name=name,
@@ -489,7 +495,11 @@ class ResourcesService:
         return self._store.create(doc)
 
     def promote(self, rid: str) -> Resource:
-        """Promote a resource to public built-in (admin only)."""
+        """Promote a resource to public built-in (admin only).
+
+        The original identity (the admin who created it) is preserved so
+        that all resource documents share a consistent owner.
+        """
         resource = self._store.get(rid)
         cat_enum = ResourceCategory(resource.category)
         if cat_enum in ResourceCategory.builtin_disabled_categories():
@@ -498,7 +508,6 @@ class ResourcesService:
             )
         resource.ownership = ResourceOwnership.BUILTIN
         resource.visibility = ResourceVisibility.PUBLIC
-        resource.identity = Identity.system()
         return self._store.update(resource)
 
     def demote(self, rid: str) -> Resource:

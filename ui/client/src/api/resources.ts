@@ -153,6 +153,8 @@ export async function configureBuiltin(payload: {
 }
 
 export async function createBuiltin(payload: {
+  userId: string;
+  identityType: string;
   category: string;
   type: string;
   name: string;

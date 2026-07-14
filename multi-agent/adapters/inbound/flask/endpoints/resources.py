@@ -465,6 +465,7 @@ def promote_resource(resource_id):
 
 @resources_bp.route("/builtin.create", methods=["POST"])
 @require_admin_access
+@with_require_identity_authorization
 @from_body({
     "category": fields.Str(required=True),
     "type": fields.Str(required=True),
@@ -473,17 +474,19 @@ def promote_resource(resource_id):
     "available_to_all": fields.Bool(data_key="availableToAll", load_default=False),
 })
 def create_builtin_resource(
-    category, type, name, config,
+    identity, category, type, name, config,
     available_to_all=False,
 ):
     """Create a resource directly as built-in (admin only).
 
-    Creates with system identity and visibility based on availableToAll.
+    The creating admin's identity is preserved on the resource document
+    so that all built-in resources share a consistent owner identity.
     Configurable fields are derived from ReadOnlyHint annotations on the element schema.
     """
     svc = current_app.container.resources_service
     try:
         doc = svc.create_builtin(
+            identity=identity,
             category=category,
             type=type,
             name=name,

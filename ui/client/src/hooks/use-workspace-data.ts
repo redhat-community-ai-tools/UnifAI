@@ -475,6 +475,8 @@ export const useWorkspaceData = () => {
         } else {
           const { cfg_dict, name } = elementData;
           const result = await resourcesApi.createBuiltin({
+            userId: USER_ID,
+            identityType,
             category,
             type,
             name,
@@ -499,7 +501,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast],
+    [toast, USER_ID, identityType],
   );
 
   // Toggle available_to_all status for a resource (admin only)
