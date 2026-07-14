@@ -99,6 +99,28 @@ class McpProviderConfig(ProviderBaseConfig):
             ConditionalHint(visible_when={"auth_method": "access_token"}),
             PropagateHint(to="credential_token"),
             ReadOnlyHint(read_only=False),
+            ActionHint(
+                action_uid="mcp.validate_connection",
+                hint_type=HintType.VALIDATE,
+                field_mapping="is_reachable",
+                dependencies={
+                    "mcp_url": "mcp_url",
+                    "bearer_token": "credential_token",
+                    "server_identifier": "server_identifier",
+                    "auth_method": "auth_method",
+                    "transport_type": "transport_type",
+                    "additional_headers": "additional_headers",
+                },
+                on_success=ActionHint(
+                    action_uid="auth.store_credential",
+                    hint_type=HintType.VALIDATE,
+                    field_mapping="authenticated",
+                    dependencies={
+                        "mcp_url": "server_url",
+                        "bearer_token": "credential",
+                    },
+                ),
+            ),
         ),
     )
     additional_headers: Dict[str, Any] = Field(

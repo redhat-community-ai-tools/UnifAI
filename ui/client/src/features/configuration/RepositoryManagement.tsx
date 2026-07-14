@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +49,13 @@ import {
 } from "lucide-react";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
+import { useAuth } from "@/contexts/AuthContext";
+import { useBuiltinEditLockPoll } from "@/hooks/use-builtin-edit-lock-poll";
+import {
+  acquireBuiltinEditLock,
+  releaseBuiltinEditLock,
+  heartbeatBuiltinEditLock,
+} from "@/api/resources";
 import { ElementForm } from "@/components/agentic-ai/workspace/ElementForm";
 import { ElementData } from "@/components/agentic-ai/workspace/ElementData";
 import type {
@@ -169,6 +176,41 @@ export default function RepositoryManagement() {
   const [newElementAvailableToAll, setNewElementAvailableToAll] = useState(false);
   const [isTogglingStatus, setIsTogglingStatus] = useState<string | null>(null);
 
+  const { user } = useAuth();
+  const currentUsername = user?.username ?? "";
+
+  const allBuiltinRids = useMemo(
+    () => Object.values(categoryResources).flat().map((r) => r.rid),
+    [categoryResources],
+  );
+  const editLocks = useBuiltinEditLockPoll(allBuiltinRids, allBuiltinRids.length > 0);
+
+  const editLockRidRef = useRef<string | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startLockHeartbeat = useCallback((rid: string) => {
+    stopLockHeartbeat();
+    editLockRidRef.current = rid;
+    heartbeatRef.current = setInterval(() => {
+      heartbeatBuiltinEditLock(rid).catch(() => {});
+    }, 60_000);
+  }, []);
+
+  const stopLockHeartbeat = useCallback(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+    if (editLockRidRef.current) {
+      releaseBuiltinEditLock(editLockRidRef.current).catch(() => {});
+      editLockRidRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => { stopLockHeartbeat(); };
+  }, [stopLockHeartbeat]);
+
   const availableCategories = useMemo(
     () => categories.filter(
       (c) => c.elements.length > 0 && !BUILTIN_DISABLED_CATEGORIES.has(c.category)
@@ -268,6 +310,14 @@ export default function RepositoryManagement() {
       const elType = resolveElementType(categoryKey, resource.type);
       if (!elType) return;
 
+      const lockResult = await acquireBuiltinEditLock(resource.rid);
+      if (!lockResult.acquired) {
+        const who = (lockResult as any).lockedBy?.displayName || "Another admin";
+        alert(`Cannot edit — currently locked by ${who}`);
+        return;
+      }
+      startLockHeartbeat(resource.rid);
+
       setSelectedCategoryKey(categoryKey);
       setSelectedElementType(elType);
       setIsLoadingSchema(true);
@@ -291,7 +341,7 @@ export default function RepositoryManagement() {
         setIsLoadingSchema(false);
       }
     },
-    [availableCategories, fetchElementSchema, fetchElementActions],
+    [availableCategories, fetchElementSchema, fetchElementActions, startLockHeartbeat],
   );
 
   const handleSaveBuiltinConfig = async (elementData: any) => {
@@ -333,6 +383,7 @@ export default function RepositoryManagement() {
   };
 
   const handleFormClose = () => {
+    stopLockHeartbeat();
     setIsFormOpen(false);
     setEditingElement(null);
     setConfiguringBuiltin(null);
@@ -735,7 +786,21 @@ export default function RepositoryManagement() {
                                 </div>
                               );
                             }
-                            return filtered.map((resource, idx) => (
+                            return filtered.map((resource, idx) => {
+                              const lockHolder = editLocks[resource.rid];
+                              const lockUnknown = lockHolder === "unknown";
+                              const lockedByOther =
+                                !lockUnknown &&
+                                !!lockHolder &&
+                                !!currentUsername &&
+                                lockHolder.userId !== currentUsername;
+                              const lockedByLabel = lockUnknown
+                                ? "unknown"
+                                : (lockHolder as any)?.displayName?.trim() ||
+                                  (lockHolder as any)?.userId ||
+                                  "another admin";
+
+                              return (
                               <motion.div
                                 key={resource.rid}
                                 initial={{ opacity: 0 }}
@@ -760,6 +825,11 @@ export default function RepositoryManagement() {
                                     >
                                       {resource.visibility === "public" ? "Public" : "Draft"}
                                     </Badge>
+                                  )}
+                                  {lockedByOther && (
+                                    <SimpleTooltip content={<p>Being edited by {lockedByLabel}</p>}>
+                                      <Lock className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+                                    </SimpleTooltip>
                                   )}
                                 </div>
                                 {/* Type */}
@@ -822,7 +892,13 @@ export default function RepositoryManagement() {
                                     </Button>
                                   </SimpleTooltip>
                                   <SimpleTooltip
-                                    content={<p>Edit configuration</p>}
+                                    content={
+                                      lockedByOther
+                                        ? <p>Locked by {lockedByLabel}</p>
+                                        : lockUnknown
+                                          ? <p>Lock status unknown — try again shortly</p>
+                                          : <p>Edit configuration</p>
+                                    }
                                   >
                                     <Button
                                       variant="ghost"
@@ -831,8 +907,13 @@ export default function RepositoryManagement() {
                                       onClick={() =>
                                         handleEditResource(resource)
                                       }
+                                      disabled={lockedByOther || lockUnknown}
                                     >
-                                      <Settings className="h-4 w-4" />
+                                      {lockedByOther ? (
+                                        <Lock className="h-4 w-4 text-amber-400" />
+                                      ) : (
+                                        <Settings className="h-4 w-4" />
+                                      )}
                                     </Button>
                                   </SimpleTooltip>
                                   <SimpleTooltip
@@ -845,13 +926,15 @@ export default function RepositoryManagement() {
                                       onClick={() =>
                                         handleDeleteClick(resource)
                                       }
+                                      disabled={lockedByOther || lockUnknown}
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </Button>
                                   </SimpleTooltip>
                                 </div>
                               </motion.div>
-                            ));
+                              );
+                            });
                           })()}
                           {/* Add more link */}
                           <div className="px-4 py-2">

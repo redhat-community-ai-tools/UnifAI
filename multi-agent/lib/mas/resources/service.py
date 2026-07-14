@@ -10,7 +10,7 @@ from mas.core.identity import Identity, IdentityType
 from mas.resources.registry import ResourcesRegistry
 from mas.catalog.element_registry import ElementRegistry
 from mas.resources.models import Resource, ResourceQuery
-from mas.resources.builtin_models import BuiltinUserConfig
+from mas.resources.builtin_models import BuiltinUserConfig, identity_to_key
 from mas.resources.repository.builtin_user_config_repository import BuiltinUserConfigRepository
 from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
 from mas.core.ref import RefWalker
@@ -386,7 +386,7 @@ class ResourcesService:
     def get_user_config(
         self,
         rid: str,
-        identity_key: str,
+        identity: Identity,
     ) -> Dict[str, Any] | None:
         """Return the user's current overlay for a built-in resource, or None.
 
@@ -400,7 +400,8 @@ class ResourcesService:
         if not self._builtin_user_config_repo:
             return None
 
-        user_config = self._builtin_user_config_repo.get(rid, identity_key)
+        key = identity_to_key(identity)
+        user_config = self._builtin_user_config_repo.get(rid, key)
         if not user_config:
             return None
 
@@ -413,7 +414,7 @@ class ResourcesService:
     def configure_builtin(
         self,
         rid: str,
-        identity_key: str,
+        identity: Identity,
         config: Dict[str, Any],
     ) -> Resource:
         """Save per-user/team configuration for a built-in resource.
@@ -435,19 +436,20 @@ class ResourcesService:
         sensitive_keys = self._get_sensitive_keys(resource.category, resource.type)
         encrypted = self._encrypt_config_fields(filtered, sensitive_keys)
 
-        existing = self._builtin_user_config_repo.get(rid, identity_key)
+        key = identity_to_key(identity)
+        existing = self._builtin_user_config_repo.get(rid, key)
         if existing:
             existing.fields.update(encrypted)
             self._builtin_user_config_repo.save(existing)
         else:
             user_config = BuiltinUserConfig(
                 resource_id=rid,
-                identity_key=identity_key,
+                identity_key=key,
                 fields=encrypted,
             )
             self._builtin_user_config_repo.save(user_config)
 
-        logger.info("Built-in resource '%s' configured for %s", rid, identity_key)
+        logger.info("Built-in resource '%s' configured for %s", rid, key)
         return resource
 
     def duplicate_builtin(
@@ -677,13 +679,8 @@ class ResourcesService:
         if not configurable_keys:
             return {}
 
-        user_key = f"user:{identity.id}"
-        user_config = self._builtin_user_config_repo.get(resource.rid, user_key)
-
-        if not user_config and identity.is_team:
-            team_key = f"team:{identity.id}"
-            user_config = self._builtin_user_config_repo.get(resource.rid, team_key)
-
+        key = identity_to_key(identity)
+        user_config = self._builtin_user_config_repo.get(resource.rid, key)
         if not user_config:
             return {}
 

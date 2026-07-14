@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, current_app, request
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 from mas.resources.errors import ResourceInUseError, BuiltInWriteProtectedError
+from mas.resources.builtin_models import identity_to_key
 from mas.core.enums import ResourceOwnership
 from inbound.flask.decorators import (
     with_require_identity_authorization,
@@ -141,13 +142,13 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=100
             limit=limit,
             offset=offset,
         )
-        identity_key = f"{identity.type.value}:{identity.id}"
+        key = identity_to_key(identity)
         resources_data = []
         builtin_config_repo = current_app.container.builtin_user_config_repo
         for doc in resources:
             data = doc.model_dump(mode="json")
             if doc.ownership == ResourceOwnership.BUILTIN and builtin_config_repo:
-                user_cfg = builtin_config_repo.get(doc.rid, identity_key)
+                user_cfg = builtin_config_repo.get(doc.rid, key)
                 data["user_configured"] = user_cfg is not None
             resources_data.append(data)
         return jsonify({
@@ -450,10 +451,9 @@ def get_builtin_user_config(identity, resource_id):
     """
     svc = current_app.container.resources_service
     try:
-        identity_key = f"{identity.type.value}:{identity.id}"
         config = svc.get_user_config(
             rid=resource_id,
-            identity_key=identity_key,
+            identity=identity,
         )
         return jsonify({"config": config}), 200
     except KeyError as e:
@@ -473,15 +473,13 @@ def get_builtin_user_config(identity, resource_id):
 def configure_builtin(identity, resource_id, config):
     """Save per-user/team configuration overlay for a built-in resource.
 
-    The identity_key is derived from the caller's resolved identity:
-    "user:<id>" or "team:<id>".
+    The identity is the caller's resolved Identity object (user or team).
     """
     svc = current_app.container.resources_service
     try:
-        identity_key = f"{identity.type.value}:{identity.id}"
         doc = svc.configure_builtin(
             rid=resource_id,
-            identity_key=identity_key,
+            identity=identity,
             config=config,
         )
         return jsonify(doc.model_dump(mode="json")), 200
@@ -641,5 +639,112 @@ def toggle_builtin_visibility(resource_id, available_to_all):
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Admin edit locks (built-in resources)
+#
+#  Reuses the collaboration lock infrastructure with a fixed admin namespace.
+#  Authorization is handled by @require_admin_access; no team membership
+#  checks are needed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _collab_service():
+    svc = current_app.container.collaboration_service
+    if svc is None:
+        return None, (jsonify(
+            {"error": "Collaboration service not available - Redis is not configured"}
+        ), 501)
+    return svc, None
+
+
+def _holder_to_json(holder):
+    if holder is None:
+        return None
+    return {
+        "userId": holder.user_id,
+        "displayName": holder.display_name or holder.user_id,
+    }
+
+
+@resources_bp.route("/builtin.edit_lock.acquire", methods=["POST"])
+@require_admin_access
+@with_authenticated_user
+@from_body({
+    "entity_id": fields.Str(data_key="entityId", required=True),
+})
+def builtin_edit_lock_acquire(authenticated_user, entity_id):
+    """Acquire an admin edit lock on a built-in resource."""
+    svc, err = _collab_service()
+    if err:
+        return err
+    try:
+        acquired, holder = svc.acquire_admin_edit_lock(
+            entity_id=entity_id,
+            user_id=authenticated_user,
+        )
+        body = {"acquired": acquired}
+        if not acquired and holder is not None:
+            body["lockedBy"] = _holder_to_json(holder)
+        return jsonify(body), 200
+    except Exception:
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@resources_bp.route("/builtin.edit_lock.release", methods=["POST"])
+@require_admin_access
+@with_authenticated_user
+@from_body({
+    "entity_id": fields.Str(data_key="entityId", required=True),
+})
+def builtin_edit_lock_release(authenticated_user, entity_id):
+    """Release an admin edit lock on a built-in resource."""
+    svc, err = _collab_service()
+    if err:
+        return err
+    try:
+        svc.release_admin_edit_lock(entity_id, authenticated_user)
+        return jsonify({"success": True}), 200
+    except Exception:
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@resources_bp.route("/builtin.edit_lock.heartbeat", methods=["POST"])
+@require_admin_access
+@with_authenticated_user
+@from_body({
+    "entity_id": fields.Str(data_key="entityId", required=True),
+})
+def builtin_edit_lock_heartbeat(authenticated_user, entity_id):
+    """Renew an admin edit lock TTL on a built-in resource."""
+    svc, err = _collab_service()
+    if err:
+        return err
+    try:
+        renewed = svc.renew_admin_edit_lock(entity_id, authenticated_user)
+        return jsonify({"renewed": renewed}), 200
+    except Exception:
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@resources_bp.route("/builtin.edit_lock.statuses", methods=["POST"])
+@require_admin_access
+@from_body({
+    "entity_ids": fields.List(fields.Str(), data_key="entityIds", required=True),
+})
+def builtin_edit_lock_statuses(entity_ids):
+    """Get lock holders for multiple built-in resources (admin only)."""
+    svc, err = _collab_service()
+    if err:
+        return err
+    try:
+        batch = svc.get_admin_edit_locks_batch(entity_ids)
+        locks = {
+            entity_id: _holder_to_json(holder) if holder is not None else None
+            for entity_id, holder in batch.items()
+        }
+        return jsonify({"locks": locks}), 200
+    except Exception:
+        return jsonify({"error": "Internal server error"}), 500
 
 

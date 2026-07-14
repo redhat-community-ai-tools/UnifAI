@@ -228,3 +228,70 @@ export async function promoteResource(resourceId: string): Promise<ResourceInsta
   );
   return data;
 }
+
+// --- Admin edit lock endpoints (built-in resources) ---
+
+export interface BuiltinEditLockHolder {
+  userId: string;
+  displayName: string;
+}
+
+export type BuiltinEditLockResolved = BuiltinEditLockHolder | null | "unknown";
+
+export async function acquireBuiltinEditLock(entityId: string): Promise<
+  { acquired: true } | { acquired: false; lockedBy: BuiltinEditLockHolder }
+> {
+  try {
+    const { data } = await axios.post<{
+      acquired: boolean;
+      lockedBy?: BuiltinEditLockHolder;
+    }>("/resources/builtin.edit_lock.acquire", { entityId });
+    if (data.acquired) return { acquired: true };
+    return {
+      acquired: false,
+      lockedBy: data.lockedBy ?? { userId: "?", displayName: "Another admin" },
+    };
+  } catch (e: unknown) {
+    const status = (e as { response?: { status?: number } })?.response?.status;
+    if (status === 501) return { acquired: true };
+    throw e;
+  }
+}
+
+export async function releaseBuiltinEditLock(entityId: string): Promise<void> {
+  try {
+    await axios.post("/resources/builtin.edit_lock.release", { entityId });
+  } catch (e: unknown) {
+    const status = (e as { response?: { status?: number } })?.response?.status;
+    if (status === 501) return;
+    throw e;
+  }
+}
+
+export async function heartbeatBuiltinEditLock(entityId: string): Promise<void> {
+  try {
+    await axios.post("/resources/builtin.edit_lock.heartbeat", { entityId });
+  } catch (e: unknown) {
+    const status = (e as { response?: { status?: number } })?.response?.status;
+    if (status === 501) return;
+    throw e;
+  }
+}
+
+export async function fetchBuiltinEditLockStatuses(
+  entityIds: string[],
+): Promise<Record<string, BuiltinEditLockResolved>> {
+  if (entityIds.length === 0) return {};
+  const unknownMap = (): Record<string, BuiltinEditLockResolved> =>
+    Object.fromEntries(entityIds.map((id) => [id, "unknown" as const]));
+  try {
+    const { data } = await axios.post<{
+      locks: Record<string, BuiltinEditLockHolder | null>;
+    }>("/resources/builtin.edit_lock.statuses", { entityIds });
+    return (data.locks ?? {}) as Record<string, BuiltinEditLockResolved>;
+  } catch (e: unknown) {
+    const status = (e as { response?: { status?: number } })?.response?.status;
+    if (status === 501) return {};
+    return unknownMap();
+  }
+}

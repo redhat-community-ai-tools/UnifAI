@@ -23,7 +23,9 @@ from .ports import CollaborationStore
 
 logger = logging.getLogger(__name__)
 
-EDIT_LOCK_KINDS: frozenset[str] = frozenset({"resource", "blueprint"})
+EDIT_LOCK_KINDS: frozenset[str] = frozenset({"resource", "blueprint", "builtin"})
+
+ADMIN_LOCK_NAMESPACE = "__admin__"
 
 
 class CollaborationService:
@@ -275,4 +277,55 @@ class CollaborationService:
         self.validate_edit_lock_kind(entity_kind)
         return self._store.get_team_edit_locks_batch(
             team_id, entity_kind, entity_ids
+        )
+
+    # ── Admin edit locks (built-in resources) ─────────────────────────
+    #
+    # These mirror the team lock methods but skip team-membership checks.
+    # Authorization is enforced at the endpoint layer via @require_admin_access.
+    # All admin locks share a fixed namespace so they're globally visible.
+
+    def acquire_admin_edit_lock(
+        self,
+        entity_id: str,
+        user_id: str,
+    ) -> Tuple[bool, Optional[TeamEditLockHolder]]:
+        return self._store.acquire_team_edit_lock(
+            ADMIN_LOCK_NAMESPACE, "builtin", entity_id,
+            user_id, user_id, ttl=self._edit_lock_ttl,
+        )
+
+    def release_admin_edit_lock(
+        self,
+        entity_id: str,
+        user_id: str,
+    ) -> None:
+        self._store.release_team_edit_lock(
+            ADMIN_LOCK_NAMESPACE, "builtin", entity_id, user_id,
+        )
+
+    def renew_admin_edit_lock(
+        self,
+        entity_id: str,
+        user_id: str,
+    ) -> bool:
+        return self._store.renew_team_edit_lock(
+            ADMIN_LOCK_NAMESPACE, "builtin", entity_id,
+            user_id, user_id, ttl=self._edit_lock_ttl,
+        )
+
+    def get_admin_edit_lock(
+        self,
+        entity_id: str,
+    ) -> Optional[TeamEditLockHolder]:
+        return self._store.get_team_edit_lock(
+            ADMIN_LOCK_NAMESPACE, "builtin", entity_id,
+        )
+
+    def get_admin_edit_locks_batch(
+        self,
+        entity_ids: list[str],
+    ) -> Dict[str, Optional[TeamEditLockHolder]]:
+        return self._store.get_team_edit_locks_batch(
+            ADMIN_LOCK_NAMESPACE, "builtin", entity_ids,
         )

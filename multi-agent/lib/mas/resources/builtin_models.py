@@ -3,6 +3,13 @@ from typing import Dict, Any
 from uuid import uuid4
 from pydantic import BaseModel, Field
 
+from mas.core.identity import Identity
+
+
+def identity_to_key(identity: Identity) -> str:
+    """Derive the storage key from an Identity object."""
+    return f"{identity.type.value}:{identity.id}"
+
 
 class BuiltinUserConfig(BaseModel):
     """

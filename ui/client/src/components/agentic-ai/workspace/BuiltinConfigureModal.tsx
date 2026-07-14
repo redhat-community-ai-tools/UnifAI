@@ -244,7 +244,22 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
   }, [builtinSchema, isOpen, configurableFields, fetchResourcesForCategory]);
 
   const handleInputChange = (field: string, value: any) => {
-    setFormData((prev: any) => ({ ...prev, [field]: value }));
+    setFormData((prev: any) => {
+      const updated = { ...prev, [field]: value };
+
+      const fieldSchema =
+        configurableFields[field] ||
+        builtinSchema?.config_schema?.properties?.[field];
+      const propagateHint = (fieldSchema as any)?.hints?.propagate;
+      if (propagateHint?.to) {
+        updated[propagateHint.to] =
+          propagateHint.value !== undefined && propagateHint.value !== null
+            ? propagateHint.value
+            : value;
+      }
+
+      return updated;
+    });
   };
 
   const handleArrayChange = (field: string, index: number, value: any) => {
@@ -380,6 +395,18 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     ([, schema]) => isFieldConditionallyVisible(schema as any)
   );
 
+  const allValidationsPassed = useMemo(() => {
+    for (const [fieldName, fieldSchema] of fieldEntries) {
+      const s = fieldSchema as any;
+      const hasValidation =
+        s.hints?.action?.hint_type === "validate" ||
+        s.hints?.api?.hint_type === "validate";
+      if (!hasValidation) continue;
+      if (fieldValidationStates[fieldName] !== true) return false;
+    }
+    return true;
+  }, [fieldEntries, fieldValidationStates]);
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
@@ -425,7 +452,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
               <Button
                 type="submit"
                 className="bg-primary hover:bg-opacity-80"
-                disabled={isSaving}
+                disabled={isSaving || !allValidationsPassed}
               >
                 {isSaving ? (
                   <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Saving...</>
