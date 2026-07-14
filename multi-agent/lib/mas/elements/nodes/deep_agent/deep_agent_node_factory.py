@@ -6,7 +6,12 @@ from .identifiers import Identifier
 
 
 class DeepAgentNodeFactory(BaseFactory[DeepAgentNodeConfig, DeepAgentNode]):
-    """Factory for creating ``DeepAgentNode`` instances from configuration."""
+    """Factory for creating ``DeepAgentNode`` instances from configuration.
+
+    HITL gate/policy are NOT passed at construction time — they
+    are injected at execution time via ``NodeRuntimeBinder`` using
+    the ``SupportsHITL`` protocol setters on the node.
+    """
 
     def accepts(self, cfg: DeepAgentNodeConfig, element_type: str) -> bool:
         return element_type == Identifier.TYPE
@@ -23,12 +28,14 @@ class DeepAgentNodeFactory(BaseFactory[DeepAgentNodeConfig, DeepAgentNode]):
                 retriever=deps.pop("retriever"),
                 tools=deps.pop("tools"),
                 mcp_providers=deps.pop("providers"),
+                sandbox=deps.pop("sandbox", None),
                 system_message=cfg.system_message,
                 cwd=cfg.cwd,
                 env_vars=cfg.env_vars,
                 execution_holder=execution_holder,
                 shared_storage=shared_storage,
                 retries=cfg.retries,
+                hitl_mode=cfg.hitl_mode,
             )
         except Exception as e:
             raise PluginConfigurationError(

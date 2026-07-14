@@ -89,6 +89,7 @@ class SessionMeta(BaseModel):
     tags: Dict[str, str] = Field(default_factory=dict)
     source: Optional[str] = None
     status_message: Optional[str] = None
+    hitl_enabled: bool = False
     # Live/presence fields — forwarded to the collaboration store when present.
     participants: Optional[List[str]] = None  # user ids currently in the session
     typing_users: Optional[List[str]] = None  # user ids currently typing

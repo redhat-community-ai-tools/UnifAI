@@ -57,7 +57,6 @@ export function AddFlowModal({
             <WorkflowsPanel
               selectedFlow={selectedFlow}
               onFlowSelect={(flow: FlowObject | null) => onFlowSelect(flow)}
-              showActiveStatus={false}
               showDeleteButton={false}
               height="100%"
               graphProps={{ showBackground: true, interactive: true }}

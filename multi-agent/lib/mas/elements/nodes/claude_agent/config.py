@@ -2,20 +2,25 @@
 Claude Agent Node Configuration
 """
 
-from mas.elements.nodes.common.base_config import NodeBaseConfig
-from pydantic import Field
 from typing import Optional, Literal, List, Dict
+
+from pydantic import Field
+
+from mas.core.field_hints import ActionHint, HiddenHint, HintType
+from mas.core.hitl.models import HITLMode
 from .identifiers import Identifier, EffortLevel
-from mas.core.ref.models import RetrieverRef, ProviderRef, ToolRef
-from mas.core.field_hints import ActionHint, HintType, HiddenHint
+from mas.elements.nodes.common.base_config import NodeBaseConfig
+from mas.core.ref.models import RetrieverRef, ProviderRef, SandboxRef, ToolRef
 
 
 class ClaudeAgentNodeConfig(NodeBaseConfig):
     """
     Claude Agent Node - runs autonomous Claude Agent SDK sessions.
 
-    Configures the Claude Agent SDK with model, permissions,
-    tools, skills, and Vertex AI authentication.
+    Configures the Claude Agent SDK with model, tools, skills,
+    and Vertex AI authentication.  Tool-call permissions are
+    managed by HITL (``hitl_mode``) instead of the SDK's built-in
+    permission system.
     """
     type: Literal[Identifier.TYPE] = Identifier.TYPE
 
@@ -58,6 +63,11 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
         default=200,
         description="Maximum agentic turns (tool-use round trips). Prevents runaway execution."
     )
+      
+    hitl_mode: HITLMode = Field(
+        default=HITLMode.SKIP,
+        description="HITL approval mode: ask (always), skip (never), dynamic (runtime flag)",
+    )
 
     effort: EffortLevel = Field(
         default=EffortLevel.MEDIUM,
@@ -96,7 +106,6 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
                     '(e.g., {"skills/docx": "https://github.com/org/repo"})'
     )
 
-
     # --- Advanced ---
 
     cwd: Optional[str] = Field(
@@ -130,4 +139,9 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
     retriever: Optional[RetrieverRef] = Field(
         None,
         description="Retriever for context augmentation (optional)"
+    )
+
+    sandbox: Optional[SandboxRef] = Field(
+        None,
+        description="Sandbox execution environment (optional)"
     )

@@ -17,9 +17,10 @@ import { FieldValidation, ItemValidationResult } from "./FieldValidation";
 import { FieldPopulation } from "./FieldPopulation";
 import { AuthFieldRenderer } from "./AuthFieldRenderer";
 import { AgentCardVisualization } from "./AgentCardVisualization";
+import { FileUpload } from "@/components/ui/file-upload";
 import { ElementType } from "../../../types/workspace";
 import { maskSecretValue } from "../../../utils/maskSecretFields";
-import { XCircle } from "lucide-react";
+import { XCircle, Settings } from "lucide-react";
 import {getArrayDisplayText, getArrayFieldMode, getValidRefOptions,} from "./arrayFieldHelpers";
 
 /** Resolved string enum definition from $defs */
@@ -57,6 +58,7 @@ interface FieldRendererProps {
   onValidationChange: (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => void;
   onPopulateResult: (fieldName: string, results: string[] | any, multiSelect: boolean) => void;
   onActionOutput?: (fieldName: string, output: any) => void;
+  onEditRefElement?: (rid: string) => void;
 }
 
 // Controlled number input with local state buffer to handle intermediate typing (e.g., "0.")
@@ -190,6 +192,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   onValidationChange,
   onPopulateResult,
   onActionOutput,
+  onEditRefElement,
 }) => {
   // Check if this field has validation errors based on validation action result
   // Use useMemo to recalculate when fieldValidationStates changes after validation action
@@ -385,6 +388,19 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
                           {selectedOption
                             ? `${selectedOption.name} (${selectedOption.type})`
                             : selectedRid}
+                          {onEditRefElement && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEditRefElement(selectedRid);
+                              }}
+                              className="ml-1 hover:text-primary"
+                              title="Configure this element"
+                            >
+                              <Settings className="h-3 w-3" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => {
@@ -620,6 +636,64 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
     );
   }
 
+  // Handle fields with file_upload hint — render file picker
+  const fileUploadHint = fieldSchema?.hints?.file_upload;
+  if (fileUploadHint) {
+    return (
+      <div key={fieldName} className="space-y-2">
+        <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
+          {fieldName} {isRequired && <span className="text-red-400">*</span>}
+          {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
+        </Label>
+        {fieldSchema.description && (
+          <p className="text-xs text-gray-400">{fieldSchema.description}</p>
+        )}
+        <FileUpload
+          accept={fileUploadHint.accept || ".pem,.crt,.key"}
+          formatType={fileUploadHint.validate_format || "pem"}
+          maxSizeBytes={fileUploadHint.max_size_bytes || 16384}
+          value={value}
+          hasError={hasFieldError}
+          onUploadSuccess={(content, filename) => onInputChange(fieldName, content)}
+          onClear={() => onInputChange(fieldName, "")}
+        />
+        {validationHint && (
+          <FieldValidation
+            fieldName={fieldName}
+            fieldValue={value}
+            validationHint={validationHint}
+            elementActions={elementActions}
+            selectedElementType={elementType}
+            isRequired={isRequired}
+            configValues={formData}
+            onValidationChange={onValidationChange}
+            onInputChange={onInputChange}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Handle auth category fields with dedicated AuthSelector component
+  if (fieldSchema.category === 'auths') {
+    const authOptions = (refOptions['auths'] || [])
+      .filter((option: any) => option.rid && option.rid.trim() !== "");
+
+    const authActionUid = validationHint?.action_uid || fieldSchema.action_uid || 'auth.authenticate';
+
+    return (
+      <AuthSelector
+        fieldName={fieldName}
+        value={value}
+        refOptions={authOptions}
+        actionUid={authActionUid}
+        onInputChange={onInputChange}
+        isRequired={isRequired}
+        description={fieldSchema.description}
+      />
+    );
+  }
+
   // Handle $ref fields (dropdown selection) - including anyOf with $ref
   const hasRefField =
     fieldSchema.$ref ||
@@ -685,6 +759,18 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
                 )}
               </SelectContent>
             </Select>
+            {value && onEditRefElement && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 shrink-0"
+                onClick={() => onEditRefElement(value)}
+                title="Configure this element"
+              >
+                <Settings className="h-4 w-4 text-muted-foreground hover:text-primary" />
+              </Button>
+            )}
             {!isRequired && value && (
               <Button
                 type="button"

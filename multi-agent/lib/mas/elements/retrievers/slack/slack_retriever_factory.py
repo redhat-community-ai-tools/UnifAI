@@ -1,7 +1,7 @@
 from typing import Any
 from mas.elements.common.base_factory import BaseFactory
 from mas.elements.common.exceptions import PluginConfigurationError
-from mas.core.element_deps import ElementDeps
+from mas.core.element_deps import ElementBuildContext
 from .config import SlackRetrieverConfig
 from .slack_retriever import SlackRetriever
 from .identifiers import Identifier
@@ -12,7 +12,7 @@ class SlackRetrieverFactory(BaseFactory[SlackRetrieverConfig, SlackRetriever]):
         return element_type == Identifier.TYPE
 
     def create(self, cfg: SlackRetrieverConfig, **kwargs: Any) -> SlackRetriever:
-        deps: ElementDeps | None = kwargs.get("deps")
+        deps: ElementBuildContext | None = kwargs.get("deps")
         try:
             return SlackRetriever(
                 api_url=cfg.api_url,
