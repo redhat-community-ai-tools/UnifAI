@@ -233,8 +233,8 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
     sessionListPollCounterRef.current += 1;
     if (sessionListPollCounterRef.current % 5 === 0) {
-      await hub.refreshSessions();
-      await Promise.allSettled(hub.chatSessions.map(s => fetchParticipants(s.id)));
+      const freshSessions = await hub.refreshSessions();
+      await Promise.allSettled(freshSessions.map(s => fetchParticipants(s.id)));
     }
 
     if (!isLiveRequestRef.current) {

@@ -54,7 +54,7 @@ export interface UseSessionHubReturn {
   // ── Session list ────────────────────────────────────────────────────────
   chatSessions: ChatSession[];
   updateSessionInCache: (sessionId: string, updater: (s: ChatSession) => ChatSession) => void;
-  refreshSessions: () => Promise<void>;
+  refreshSessions: () => Promise<ChatSession[]>;
   selectedSession: ChatSession | null;
   setSelectedSession: React.Dispatch<React.SetStateAction<ChatSession | null>>;
   currentSessionMessages: ChatMessage[];
@@ -456,8 +456,10 @@ export function useSessionHub({
   handleSessionSelectRef.current = handleSessionSelect;
 
   // ── refreshSessions ────────────────────────────────────────────────────
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (): Promise<ChatSession[]> => {
     await queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
+    const data = queryClient.getQueryData(sessionsQueryKey) as any;
+    return data?.pages.flatMap((p: any) => p.sessions) ?? [];
   }, [queryClient, sessionsQueryKey]);
 
   // Update a single session inside the paged query cache without refetching.
