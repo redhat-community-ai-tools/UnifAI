@@ -6,7 +6,7 @@ backend/ @sfiresht @yhabushi79 @odaiodeh @nirsisr @Lina-AbuYousef @MayaCrmi
 rag/ @odaiodeh @nirsisr @Lina-AbuYousef
 ui/ @nirsisr @Lina-AbuYousef @MayaCrmi
 shared-resources/ @yhabushi79 @nirsisr @sfiresht
-multi-agent/ @odaiodeh @nirsisr @Lina-AbuYousef
+multi-agent/ @odaiodeh @nirsisr @Lina-AbuYousef @shanitzvii 
 
 # CI/CD & Testing locations
 ci/ @sfiresht @yhabushi79 @MayaCrmi @shanitzvii 
