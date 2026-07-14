@@ -246,11 +246,11 @@ class A2AAgentNode(
             if headers:
                 self.a2a_provider.update_headers(headers)
             else:
-                print(f"[WARNING] A2AAgentNode[{self.name}]: get_headers() returned empty")
+                logger.warning("A2AAgentNode[%s]: get_headers() returned empty", self.name)
         except Exception as exc:
-            print(
-                f"[ERROR] A2AAgentNode[{self.name}]: auth header refresh failed: "
-                f"{type(exc).__name__}: {exc}"
+            logger.error(
+                "A2AAgentNode[%s]: auth header refresh failed: %s: %s",
+                self.name, type(exc).__name__, exc,
             )
 
     def _delegate_to_remote_agent(
