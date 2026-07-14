@@ -437,6 +437,33 @@ def get_builtin_schema(resource_id):
         return jsonify({"error": str(e)}), 500
 
 
+@resources_bp.route("/builtin.user-config", methods=["GET"])
+@with_require_identity_authorization
+@from_query({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+})
+def get_builtin_user_config(identity, resource_id):
+    """Get the current user's overlay config for a built-in resource.
+
+    Returns the user's saved configurable-field overrides (decrypted),
+    or null if the user has not configured this resource.
+    """
+    svc = current_app.container.resources_service
+    try:
+        identity_key = f"{identity.type.value}:{identity.id}"
+        config = svc.get_user_config(
+            rid=resource_id,
+            identity_key=identity_key,
+        )
+        return jsonify({"config": config}), 200
+    except KeyError as e:
+        return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @resources_bp.route("/builtin.configure", methods=["PATCH"])
 @with_require_identity_authorization
 @from_body({

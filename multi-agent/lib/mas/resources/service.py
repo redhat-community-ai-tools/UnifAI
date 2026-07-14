@@ -383,6 +383,33 @@ class ResourcesService:
 
         return schema
 
+    def get_user_config(
+        self,
+        rid: str,
+        identity_key: str,
+    ) -> Dict[str, Any] | None:
+        """Return the user's current overlay for a built-in resource, or None.
+
+        Decrypts sensitive fields so the UI can display masked values.
+        Only returns fields that are marked as user-configurable.
+        """
+        resource = self._store.get(rid)
+        if resource.ownership != ResourceOwnership.BUILTIN:
+            raise ValueError("Resource is not a built-in resource")
+
+        if not self._builtin_user_config_repo:
+            return None
+
+        user_config = self._builtin_user_config_repo.get(rid, identity_key)
+        if not user_config:
+            return None
+
+        configurable_keys = self._get_configurable_keys(resource.category, resource.type)
+        filtered = {k: v for k, v in user_config.fields.items() if k in configurable_keys}
+
+        sensitive_keys = self._get_sensitive_keys(resource.category, resource.type)
+        return self._decrypt_config_fields(filtered, sensitive_keys)
+
     def configure_builtin(
         self,
         rid: str,

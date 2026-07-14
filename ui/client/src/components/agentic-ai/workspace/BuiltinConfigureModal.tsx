@@ -17,7 +17,7 @@ import { FieldRenderer, getStringEnumFromRef } from "./FieldRenderer";
 import { ItemValidationResult } from "./FieldValidation";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
 import { useAuth } from "@/contexts/AuthContext";
-import { LoaderCircle, Check } from "lucide-react";
+import { LoaderCircle, Check, Loader2 } from "lucide-react";
 
 interface BuiltinConfigureModalProps {
   isOpen: boolean;
@@ -45,20 +45,27 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
   const [itemValidationStates, setItemValidationStates] = useState<{ [fieldName: string]: ItemValidationResult[] }>({});
   const [actionOutputs, setActionOutputs] = useState<Record<string, any>>({});
 
-  const { fetchBuiltinSchema, fetchResourcesForCategory, fetchElementActions } = useWorkspaceData();
+  const { fetchBuiltinSchema, fetchBuiltinUserConfig, fetchResourcesForCategory, fetchElementActions } = useWorkspaceData();
   const { user } = useAuth();
   const [elementActions, setElementActions] = useState<any[]>([]);
+  const [userOverlay, setUserOverlay] = useState<Record<string, any> | null>(null);
 
   useEffect(() => {
     if (!isOpen || !element) return;
 
     let cancelled = false;
     setIsLoadingSchema(true);
+    setUserOverlay(null);
 
     (async () => {
       try {
-        const schema = await fetchBuiltinSchema(element.rid);
+        const [schema, overlay] = await Promise.all([
+          fetchBuiltinSchema(element.rid),
+          fetchBuiltinUserConfig(element.rid),
+        ]);
         if (cancelled) return;
+
+        setUserOverlay(overlay);
 
         if (schema) {
           const combined: ElementSchema = {
@@ -114,23 +121,30 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
       }
     }
 
+    // For configurable fields, prefer the user's own overlay over the base
+    // config.  When no overlay exists the field starts at its schema default
+    // so that users never see the admin's base values (e.g. bearer tokens)
+    // leaking through.
     for (const [key, property] of Object.entries(configurableFields) as [string, any][]) {
-      const existingValue = element.config?.[key];
-      if (existingValue !== undefined) {
-        if (typeof existingValue === "string" && existingValue.startsWith("$ref:")) {
-          initialData[key] = existingValue.substring(5);
-        } else if (Array.isArray(existingValue)) {
-          initialData[key] = existingValue.map((item: any) =>
+      const overlayValue = userOverlay?.[key];
+      const hasOverlay = overlayValue !== undefined && overlayValue !== null;
+
+      if (hasOverlay) {
+        if (typeof overlayValue === "string" && overlayValue.startsWith("$ref:")) {
+          initialData[key] = overlayValue.substring(5);
+        } else if (Array.isArray(overlayValue)) {
+          initialData[key] = overlayValue.map((item: any) =>
             typeof item === "string" && item.startsWith("$ref:")
               ? item.substring(5)
               : item,
           );
         } else {
-          initialData[key] = existingValue;
+          initialData[key] = overlayValue;
         }
       } else if (property.default !== undefined) {
         initialData[key] = property.default;
-      } else if (property.type === "array") {
+      } else if (property.type === "array" ||
+                 (property.anyOf && property.anyOf.some((o: any) => o.type === "array"))) {
         initialData[key] = [];
       } else if (property.type === "boolean") {
         initialData[key] = false;
@@ -139,7 +153,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
       }
     }
     setFormData(initialData);
-  }, [configurableFields, isOpen, element?.config]);
+  }, [configurableFields, isOpen, element?.config, userOverlay]);
 
   const isFieldConditionallyVisible = useCallback((fieldSchema: any): boolean => {
     const conditions = fieldSchema?.hints?.conditional?.visible_when;
@@ -296,8 +310,11 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
           processedValue = `$ref:${value}`;
         }
 
-        if (processedValue !== "" && processedValue !== null && processedValue !== undefined &&
-            !(Array.isArray(processedValue) && processedValue.length === 0)) {
+        const isEmpty = processedValue === "" || processedValue === null || processedValue === undefined ||
+            (Array.isArray(processedValue) && processedValue.length === 0) ||
+            (typeof processedValue === "object" && !Array.isArray(processedValue) && Object.keys(processedValue).length === 0);
+
+        if (!isEmpty) {
           config[fieldName] = processedValue;
         }
       }

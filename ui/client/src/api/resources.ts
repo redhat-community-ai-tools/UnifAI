@@ -132,6 +132,21 @@ export async function uploadResourceFile(
 
 // --- Built-in resource endpoints ---
 
+export async function getBuiltinUserConfig(params: {
+  resourceId: string;
+  userId: string;
+  identityType: string;
+}): Promise<Record<string, any> | null> {
+  const query = new URLSearchParams();
+  query.set('resourceId', params.resourceId);
+  query.set('userId', params.userId);
+  query.set('identityType', params.identityType);
+  const { data } = await axios.get<{ config: Record<string, any> | null }>(
+    `/resources/builtin.user-config?${query.toString()}`,
+  );
+  return data.config;
+}
+
 export async function listBuiltins(params?: {
   category?: string;
   type?: string;

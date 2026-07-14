@@ -411,6 +411,22 @@ export const useWorkspaceData = () => {
     [toast],
   );
 
+  const fetchBuiltinUserConfig = useCallback(
+    async (resourceId: string): Promise<Record<string, any> | null> => {
+      try {
+        return await resourcesApi.getBuiltinUserConfig({
+          resourceId,
+          userId: USER_ID,
+          identityType,
+        });
+      } catch (err: any) {
+        console.error("Error fetching built-in user config:", err);
+        return null;
+      }
+    },
+    [USER_ID, identityType],
+  );
+
   // Save per-user configuration for a built-in resource (only non-readOnly fields)
   const configureBuiltin = useCallback(
     async (resourceId: string, config: Record<string, any>) => {
@@ -590,6 +606,7 @@ export const useWorkspaceData = () => {
     fetchResourcesForCategory,
     fetchResourceById,
     fetchBuiltinSchema,
+    fetchBuiltinUserConfig,
     configureBuiltin,
     saveElement,
     deleteElement,
