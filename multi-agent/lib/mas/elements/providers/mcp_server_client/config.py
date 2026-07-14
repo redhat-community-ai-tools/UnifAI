@@ -93,7 +93,7 @@ class McpProviderConfig(ProviderBaseConfig):
     )
     bearer_token: Optional[str] = Field(
         default=None,
-        description="API key or bearer token (leave empty if already configured)",
+        description="",
         json_schema_extra=combine_hints(
             SecretHint(allow_reveal=True),
             ConditionalHint(visible_when={"auth_method": "access_token"}),
@@ -103,8 +103,11 @@ class McpProviderConfig(ProviderBaseConfig):
     )
     additional_headers: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Additional HTTP headers to include in MCP server requests",
-        json_schema_extra=ReadOnlyHint(read_only=False).to_hints(),
+        description="",
+        json_schema_extra=combine_hints(
+            ConditionalHint(visible_when={"auth_method": "access_token"}),
+            ReadOnlyHint(read_only=False),
+        ),
     )
     tool_names: Optional[List[str]] = Field(
         default_factory=list,

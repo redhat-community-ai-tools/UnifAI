@@ -739,6 +739,11 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
 
   // Handle object fields (like 'extra')
   if (fieldSchema.type === "object") {
+    const isEmptyObject = typeof value === "object" && value !== null && Object.keys(value).length === 0;
+    const displayValue = isEmptyObject
+      ? ""
+      : typeof value === "object" ? JSON.stringify(value, null, 2) : value;
+
     return (
       <div key={fieldName} className="space-y-2">
         <Label htmlFor={fieldName} className="flex items-center">
@@ -747,15 +752,12 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         </Label>
         <Textarea
           id={fieldName}
-          value={
-            typeof value === "object" ? JSON.stringify(value, null, 2) : value
-          }
+          value={displayValue}
           onChange={(e) => {
             try {
               const parsed = JSON.parse(e.target.value);
               onInputChange(fieldName, parsed);
             } catch (error) {
-              // If invalid JSON, store as string for now
               onInputChange(fieldName, e.target.value);
             }
           }}

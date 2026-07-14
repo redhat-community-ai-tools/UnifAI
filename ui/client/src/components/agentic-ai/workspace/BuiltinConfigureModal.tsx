@@ -101,6 +101,19 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     if (!isOpen || Object.keys(configurableFields).length === 0) return;
 
     const initialData: any = {};
+
+    // Seed formData with ALL config values from the element so that
+    // read-only fields (mcp_url, auth_method, transport_type, etc.) are
+    // available for conditional-visibility checks and populate-action
+    // dependency mappings, even though they aren't rendered as editable.
+    if (element.config) {
+      for (const [key, value] of Object.entries(element.config)) {
+        if (value !== undefined && value !== null) {
+          initialData[key] = value;
+        }
+      }
+    }
+
     for (const [key, property] of Object.entries(configurableFields) as [string, any][]) {
       const existingValue = element.config?.[key];
       if (existingValue !== undefined) {
