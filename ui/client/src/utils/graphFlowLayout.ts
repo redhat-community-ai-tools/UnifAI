@@ -11,7 +11,7 @@ import type {
 
 /** Resolved reference: display name + id for modal/details. */
 export interface ResolvedElement {
-  type: "llm" | "tool" | "retriever" | "provider";
+  type: "llm" | "tool" | "retriever" | "provider" | "sandbox";
   name: string;
   id: string;
 }
@@ -128,6 +128,7 @@ function buildDefinitionLookup(
   register(graphFlow.tools as unknown[] | undefined, "tool");
   register(graphFlow.retrievers as unknown[] | undefined, "retriever");
   register(graphFlow.providers as unknown[] | undefined, "provider");
+  register(graphFlow.sandboxes as unknown[] | undefined, "sandbox");
   return lookup;
 }
 

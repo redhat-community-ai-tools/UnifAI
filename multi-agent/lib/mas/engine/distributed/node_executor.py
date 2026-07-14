@@ -5,15 +5,17 @@ Rebuilds a single node (or condition) from its mini-blueprint,
 injects the real StepContext, runs it, and discards it.
 Like a Flask handler — any worker can execute any node.
 
-If a pre-built SessionChannel is provided, it is injected into
-streaming-capable nodes so background workers can emit events.
+Runtime capabilities (streaming channel, HITL gate/policy) are
+injected via ``NodeRuntimeBinder`` using capability protocols —
+no ``hasattr`` duck-typing.
 """
 from typing import Any, Dict, Optional
 
 from mas.blueprints.models.blueprint import BlueprintSpec
-from mas.core.channels import SessionChannel
+from mas.core.contracts import SupportsStepContext
 from mas.core.enums import ResourceCategory
 from mas.core.execution_context import ExecutionContext, ExecutionContextHolder
+from mas.core.runtime_binder import NodeRuntimeBinder, NodeRuntimeBindings
 from mas.graph.models.step_context import StepContext
 from mas.graph.state.graph_state import GraphState
 from mas.session.building.workflow_session_factory import WorkflowSessionFactory
@@ -23,16 +25,21 @@ class NodeExecutor:
     """
     Stateless executor for individual graph nodes and conditions.
 
-    Created once at worker startup with a shared session factory.
-    Each call builds a fresh node from the mini-blueprint, injects
-    context, runs it, and returns the result.
+    Created once at worker startup with a shared session factory
+    and a ``NodeRuntimeBinder``.  Each call builds a fresh node from
+    the mini-blueprint, injects context, runs it, and returns the result.
 
-    Channel creation is NOT this class's concern — callers provide
-    a ready-to-use SessionChannel when streaming is needed.
+    Channel/HITL creation is NOT this class's concern — callers
+    provide a ``NodeRuntimeBindings`` value object.
     """
 
-    def __init__(self, session_factory: WorkflowSessionFactory) -> None:
+    def __init__(
+        self,
+        session_factory: WorkflowSessionFactory,
+        binder: Optional[NodeRuntimeBinder] = None,
+    ) -> None:
         self._factory = session_factory
+        self._binder = binder or NodeRuntimeBinder.default()
 
     def execute_node(
         self,
@@ -40,14 +47,14 @@ class NodeExecutor:
         node_blueprint: Dict[str, Any],
         step_context: Optional[StepContext],
         state: GraphState,
-        channel: Optional[SessionChannel] = None,
+        bindings: Optional[NodeRuntimeBindings] = None,
         execution_context: Optional[ExecutionContext] = None,
     ) -> GraphState:
         """
         Build ONE node from its mini-blueprint, inject context, run it.
 
-        If a channel is provided, it is injected into the node so that
-        streaming-capable nodes can emit events during execution.
+        Runtime capabilities (channel, HITL) are applied from the
+        ``bindings`` value object via the binder's protocol checks.
         """
         mini_bp = BlueprintSpec.model_validate(node_blueprint)
 
@@ -62,8 +69,8 @@ class NodeExecutor:
         if step_context:
             step.func.set_context(step_context)
 
-        if channel and hasattr(step.func, "set_streaming_channel"):
-            step.func.set_streaming_channel(channel)
+        if bindings is not None:
+            self._binder.bind(step.func, bindings)
 
         return step.func(state, config={})
 
@@ -81,7 +88,7 @@ class NodeExecutor:
         registry = self._factory.build_session_registry(mini_bp)
         condition = registry.get_instance(ResourceCategory.CONDITION, condition_rid)
 
-        if step_context and hasattr(condition, 'set_context'):
+        if step_context and isinstance(condition, SupportsStepContext):
             condition.set_context(step_context)
 
         return condition(state)

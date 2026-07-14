@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
-import { Trash2, Users, Pencil, Search, X, MoreHorizontal, MessageSquare } from "lucide-react";
+import { Trash2, Users, Pencil, Search, X, MoreVertical, MessageSquare } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useView } from "@/contexts/ViewContext";
 import { useShared } from "@/contexts/SharedContext";
@@ -14,7 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,11 +21,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import SimpleTooltip from "@/components/shared/SimpleTooltip";
+import { Switch } from "@/components/ui/switch";
+import { ShieldCheck } from "lucide-react";
 import { FlowObject } from "./graphs/interfaces";
 import GraphDisplay from "./graphs/GraphDisplay";
-import { fetchActiveSessions } from "@/api/agentic";
 import { fetchBlueprintSummaries, deleteBlueprint, fetchResolvedBlueprint, setPromptShortcuts, PromptShortcutInput } from "@/api/blueprints";
 import { convertGraphFlowToFlowObject } from "@/utils/blueprintHelpers";
+import { hasHitlDynamicNodes } from "@/utils/hitlUtils";
 import ShareWorkflow from "./ShareWorkflow";
 import EditPromptShortcutsModal from "./EditPromptShortcutsModal";
 import { BlueprintValidationResult } from "@/types/validation";
@@ -40,7 +42,10 @@ export interface WorkflowsPanelProps {
   onFlowDelete?: (flow: FlowObject) => void;
   onFlowEdit?: (flow: FlowObject) => void;
   onValidationChange?: (isValid: boolean, validationResult: BlueprintValidationResult | null, isValidating: boolean) => void;
-  showActiveStatus?: boolean;
+  /** HITL toggle state for dynamic nodes. */
+  hitlEnabled?: boolean;
+  /** Callback when the user toggles HITL for dynamic nodes. */
+  onHitlToggle?: (enabled: boolean) => void;
   showDeleteButton?: boolean;
   showEditButton?: boolean;
   className?: string;
@@ -57,7 +62,8 @@ export default function WorkflowsPanel({
   onFlowDelete,
   onFlowEdit,
   onValidationChange,
-  showActiveStatus = false,
+  hitlEnabled = false,
+  onHitlToggle,
   showDeleteButton = false,
   showEditButton = false,
   className = "",
@@ -68,7 +74,6 @@ export default function WorkflowsPanel({
   },
 }: WorkflowsPanelProps): React.ReactElement {
   const [graphFlows, setGraphFlows] = useState<FlowObject[]>([]);
-  const [activeFlowIds, setActiveFlowIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [showDeleteModal, setShowDeleteModal] = useState<boolean>(false);
   const [flowToDelete, setFlowToDelete] = useState<FlowObject | null>(null);
@@ -106,6 +111,11 @@ export default function WorkflowsPanel({
     "blueprint",
     graphFlows.map((f) => f.id),
     isTeam && graphFlows.length > 0,
+  );
+
+  const hasDynamicNodes = useMemo(
+    () => hasHitlDynamicNodes(selectedBlueprintData?.specDict),
+    [selectedBlueprintData?.specDict],
   );
 
   const filteredFlows = useMemo(() => {
@@ -166,40 +176,12 @@ export default function WorkflowsPanel({
     }
   };
 
-  // Fetch active flows (only if showActiveStatus is true)
-  const fetchActiveFlows = async (): Promise<void> => {
-    if (!showActiveStatus) return;
-
-    const scopeAtStart = { contextUserId, identityType };
-    try {
-      const activeSessions = await fetchActiveSessions(contextUserId, identityType);
-      if (
-        workspaceScopeRef.current.contextUserId !== scopeAtStart.contextUserId ||
-        workspaceScopeRef.current.identityType !== scopeAtStart.identityType
-      ) {
-        return;
-      }
-      setActiveFlowIds(activeSessions || []);
-    } catch (error) {
-      console.error("Error fetching active flows:", error);
-      if (
-        workspaceScopeRef.current.contextUserId === scopeAtStart.contextUserId &&
-        workspaceScopeRef.current.identityType === scopeAtStart.identityType
-      ) {
-        setActiveFlowIds([]);
-      }
-    }
-  };
-
   useEffect(() => {
     onFlowSelect(null);
     setSelectedBlueprintData(null);
     setGraphFlows([]);
     setIsLoading(true);
-    Promise.all([
-      fetchAvailableFlows(true),
-      fetchActiveFlows(),
-    ]).finally(() => {
+    fetchAvailableFlows(true).finally(() => {
       setIsLoading(false);
     });
   }, [contextUserId, identityType]);
@@ -257,10 +239,6 @@ export default function WorkflowsPanel({
 
   const handleFlowSelect = (flow: FlowObject): void => {
     onFlowSelect(flow);
-  };
-
-  const isFlowActive = (flowId: string): boolean => {
-    return activeFlowIds.includes(flowId);
   };
 
   const handleDeleteClick = (flow: FlowObject, event: React.MouseEvent) => {
@@ -405,8 +383,8 @@ export default function WorkflowsPanel({
                   isTeam &&
                   !bpLockUnknown &&
                   !!bpLock &&
-                  !!user?.username &&
-                  bpLock.userId !== user.username;
+                  !!contextUserId &&
+                  bpLock.userId !== contextUserId;
                 const bpLockedByLabel = bpLockUnknown
                   ? "unknown"
                   : bpLock?.displayName?.trim() || bpLock?.userId || "another teammate";
@@ -428,58 +406,87 @@ export default function WorkflowsPanel({
                       {flow.icon}
                       <span className="text-sm font-medium truncate">{flow.name}</span>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {showActiveStatus && isFlowActive(flow.id) && (
-                        <span className="text-xs bg-primary text-white px-2 py-1 rounded-full">
-                          Active
-                        </span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {selectedFlow?.id === flow.id && hasDynamicNodes && onHitlToggle && (
+                        <SimpleTooltip content={<p>{hitlEnabled ? "Disable" : "Enable"} Human-in-the-Loop for dynamic nodes</p>}>
+                          <div
+                            className="flex items-center gap-1 cursor-pointer"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <ShieldCheck className={cn(
+                              "h-3 w-3 transition-colors",
+                              hitlEnabled ? "text-yellow-500" : "text-gray-500",
+                            )} />
+                            <Switch
+                              aria-label={`${hitlEnabled ? "Disable" : "Enable"} Human-in-the-Loop for dynamic nodes`}
+                              checked={hitlEnabled}
+                              onCheckedChange={onHitlToggle}
+                              className="h-4 w-7 data-[state=checked]:bg-yellow-600 data-[state=unchecked]:bg-gray-600 [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+                            />
+                          </div>
+                        </SimpleTooltip>
                       )}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-6 w-6 p-0 hover:bg-primary/20 hover:text-primary"
+                            aria-label={`Open actions for ${flow.name}`}
+                            className="h-6 w-6 p-0 hover:bg-background-surface"
                             onClick={(e) => e.stopPropagation()}
-                            aria-label="Row actions"
                           >
-                            <MoreHorizontal className="h-3.5 w-3.5" />
+                            <MoreVertical className="h-3.5 w-3.5" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="bg-popover border-gray-700">
+                        <DropdownMenuContent align="end" className="bg-background-card border-gray-800 min-w-[160px]">
                           {showEditButton && (
                             <DropdownMenuItem
+                              className={cn(
+                                "cursor-pointer",
+                                (bpLockedByOther || bpLockUnknown) && "opacity-50 pointer-events-none",
+                              )}
                               disabled={bpLockedByOther || bpLockUnknown}
-                              onClick={(e) => handleEditClick(flow, e)}
+                              onClick={(e) => handleEditClick(flow, e as unknown as React.MouseEvent)}
                             >
-                              <Pencil className="h-4 w-4 mr-2" />
-                              Edit Workflow
+                              <Pencil className="h-3.5 w-3.5" />
+                              <span>
+                                {bpLockUnknown
+                                  ? "Edit (lock unknown)"
+                                  : bpLockedByOther
+                                    ? `Locked by ${bpLockedByLabel}`
+                                    : "Edit workflow"}
+                              </span>
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem
-                            onClick={(e) => handleShareClick(flow, e)}
+                            className="cursor-pointer"
+                            onClick={(e) => handleShareClick(flow, e as unknown as React.MouseEvent)}
                           >
-                            <Users className="h-4 w-4 mr-2" />
-                            Share
+                            <Users className="h-3.5 w-3.5" />
+                            <span>Share workflow</span>
                           </DropdownMenuItem>
                           {showEditButton && (
                             <DropdownMenuItem
+                              className={cn(
+                                "cursor-pointer",
+                                (bpLockedByOther || bpLockUnknown) && "opacity-50 pointer-events-none",
+                              )}
                               disabled={bpLockedByOther || bpLockUnknown}
-                              onClick={(e) => handlePromptShortcutsClick(flow, e)}
+                              onClick={(e) => handlePromptShortcutsClick(flow, e as unknown as React.MouseEvent)}
                             >
-                              <MessageSquare className="h-4 w-4 mr-2" />
-                              Prompt Shortcuts
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              <span>Prompt Shortcuts</span>
                             </DropdownMenuItem>
                           )}
                           {showDeleteButton && (
                             <>
-                              <DropdownMenuSeparator />
+                              <DropdownMenuSeparator className="bg-gray-800" />
                               <DropdownMenuItem
-                                className="text-red-400 focus:text-red-400 focus:bg-red-500/10"
-                                onClick={(e) => handleDeleteClick(flow, e)}
+                                className="cursor-pointer text-red-400 focus:text-red-400 focus:bg-red-500/10"
+                                onClick={(e) => handleDeleteClick(flow, e as unknown as React.MouseEvent)}
                               >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete
+                                <Trash2 className="h-3.5 w-3.5" />
+                                <span>Delete workflow</span>
                               </DropdownMenuItem>
                             </>
                           )}
@@ -529,6 +536,7 @@ export default function WorkflowsPanel({
                 animated={true}
                 validationResults={validationResults}
                 isValidating={isValidating}
+                hitlEnabled={hitlEnabled}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-gray-400">

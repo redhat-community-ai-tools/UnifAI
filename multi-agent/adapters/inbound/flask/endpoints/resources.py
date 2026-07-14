@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, jsonify, current_app, request
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
@@ -6,6 +6,61 @@ from mas.resources.errors import ResourceInUseError
 from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
 
 resources_bp = Blueprint("resources", __name__)
+
+MAX_UPLOAD_SIZE_BYTES = 16384
+
+
+@resources_bp.route("/resource.upload-file", methods=["POST"])
+@with_authenticated_user
+def upload_resource_file(authenticated_user):
+    """Upload a file, validate its format, and return content as a string.
+
+    Accepts multipart/form-data with:
+      - file: the uploaded file
+      - format: validation format (default "pem")
+
+    Returns 200 with {content, filename, size_bytes, format_valid}
+    or 400 with {error, format_valid: false}.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided", "format_valid": False}), 400
+
+    uploaded = request.files["file"]
+    if not uploaded.filename:
+        return jsonify({"error": "Empty filename", "format_valid": False}), 400
+
+    fmt = request.form.get("format", "pem")
+    raw_bytes = uploaded.read()
+
+    if len(raw_bytes) > MAX_UPLOAD_SIZE_BYTES:
+        return jsonify({
+            "error": f"File too large ({len(raw_bytes)} bytes). Maximum is {MAX_UPLOAD_SIZE_BYTES} bytes.",
+            "format_valid": False,
+        }), 400
+
+    try:
+        content = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return jsonify({
+            "error": "File is not valid UTF-8 text. Binary files are not supported.",
+            "format_valid": False,
+        }), 400
+
+    content = content.replace("\r\n", "\n").rstrip()
+
+    if fmt == "pem":
+        if "-----BEGIN" not in content or "-----END" not in content:
+            return jsonify({
+                "error": "File does not contain valid PEM markers (-----BEGIN / -----END).",
+                "format_valid": False,
+            }), 400
+
+    return jsonify({
+        "content": content,
+        "filename": uploaded.filename,
+        "size_bytes": len(raw_bytes),
+        "format_valid": True,
+    }), 200
 
 
 @resources_bp.route("/resource.save", methods=["POST"])

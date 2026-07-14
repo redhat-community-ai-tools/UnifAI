@@ -12,7 +12,7 @@ from mas.graph.state.graph_state import GraphState
 from mas.graph.plan_builder import PlanBuilder
 from mas.graph.rt_graph_plan import RTGraphPlan
 from mas.core.execution_context import ExecutionContextHolder
-from mas.core.element_deps import ElementDeps
+from mas.core.element_deps import ElementBuildContext
 from mas.blueprints.models.blueprint import BlueprintSpec
 from mas.core.auth.service import AuthService
 
@@ -59,7 +59,7 @@ class WorkflowSessionFactory:
         The caller owns the ExecutionContextHolder and passes it in.
         """
         holder = ctx_holder if ctx_holder is not None else ExecutionContextHolder()
-        deps = ElementDeps(
+        deps = ElementBuildContext(
             execution_ctx=holder,
             auth_service=self._auth_service,
             platform_config=self._platform_config,

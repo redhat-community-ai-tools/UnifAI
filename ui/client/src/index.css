@@ -120,7 +120,7 @@
   }
 
   .dark-mode input,
-  .dark-mode textarea {
+  .dark-mode textarea:not(.dark-textarea) {
     color: #111827 !important;
     border-color: var(--border) !important;
   }
@@ -142,14 +142,15 @@
   }
 
   /* Ensure placeholder text has proper contrast */
-  .light-mode input::placeholder, 
+  .light-mode input::placeholder,
   .light-mode textarea::placeholder {
     color: rgba(0, 0, 0, 0.5) !important;
   }
 
-  .dark-mode input::placeholder, 
-  .dark-mode textarea::placeholder {
-    color: rgba(0, 0, 0, 0.5) !important;
+  /* Dark mode inputs have light/white backgrounds, so placeholders need dark color */
+  .dark-mode input::placeholder,
+  .dark-mode textarea:not(.dark-textarea)::placeholder {
+    color: rgba(0, 0, 0, 0.4) !important;
   }
 
   /* Ensure text is visible in all form components */

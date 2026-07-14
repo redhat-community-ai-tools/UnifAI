@@ -17,6 +17,7 @@ import { FieldValidation, ItemValidationResult } from "./FieldValidation";
 import { FieldPopulation } from "./FieldPopulation";
 import { AuthFieldRenderer } from "./AuthFieldRenderer";
 import { AgentCardVisualization } from "./AgentCardVisualization";
+import { FileUpload } from "@/components/ui/file-upload";
 import { ElementType } from "../../../types/workspace";
 import { maskSecretValue } from "../../../utils/maskSecretFields";
 import { XCircle } from "lucide-react";
@@ -616,6 +617,64 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         onValidationChange={onValidationChange}
         onInputChange={onInputChange}
         onActionOutput={onActionOutput}
+      />
+    );
+  }
+
+  // Handle fields with file_upload hint — render file picker
+  const fileUploadHint = fieldSchema?.hints?.file_upload;
+  if (fileUploadHint) {
+    return (
+      <div key={fieldName} className="space-y-2">
+        <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
+          {fieldName} {isRequired && <span className="text-red-400">*</span>}
+          {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
+        </Label>
+        {fieldSchema.description && (
+          <p className="text-xs text-gray-400">{fieldSchema.description}</p>
+        )}
+        <FileUpload
+          accept={fileUploadHint.accept || ".pem,.crt,.key"}
+          formatType={fileUploadHint.validate_format || "pem"}
+          maxSizeBytes={fileUploadHint.max_size_bytes || 16384}
+          value={value}
+          hasError={hasFieldError}
+          onUploadSuccess={(content, filename) => onInputChange(fieldName, content)}
+          onClear={() => onInputChange(fieldName, "")}
+        />
+        {validationHint && (
+          <FieldValidation
+            fieldName={fieldName}
+            fieldValue={value}
+            validationHint={validationHint}
+            elementActions={elementActions}
+            selectedElementType={elementType}
+            isRequired={isRequired}
+            configValues={formData}
+            onValidationChange={onValidationChange}
+            onInputChange={onInputChange}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Handle auth category fields with dedicated AuthSelector component
+  if (fieldSchema.category === 'auths') {
+    const authOptions = (refOptions['auths'] || [])
+      .filter((option: any) => option.rid && option.rid.trim() !== "");
+
+    const authActionUid = validationHint?.action_uid || fieldSchema.action_uid || 'auth.authenticate';
+
+    return (
+      <AuthSelector
+        fieldName={fieldName}
+        value={value}
+        refOptions={authOptions}
+        actionUid={authActionUid}
+        onInputChange={onInputChange}
+        isRequired={isRequired}
+        description={fieldSchema.description}
       />
     );
   }

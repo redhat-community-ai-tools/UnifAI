@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Type
 from abc import ABC, abstractmethod
 from pydantic import BaseModel
 
+from mas.core.hitl.models import ToolAccessMode
 from .tool_definition import ToolDefinition
 
 _EMPTY_PARAMS: Dict[str, Any] = {"type": "object", "properties": {}}
@@ -16,11 +17,16 @@ class BaseTool(ABC):
     Provide ``name``, ``description``, and an optional Pydantic
     ``args_schema`` whose JSON Schema is used by LLM providers
     for function-calling.
+
+    ``access_mode`` declares the tool's side-effect profile and is
+    inspected by the HITL ToolApprovalPolicy to decide whether human
+    approval is required before execution.  Defaults to READ (safe).
     """
 
     name: str
     description: str
     args_schema: Optional[Type[BaseModel]] = None
+    access_mode: ToolAccessMode = ToolAccessMode.READ
 
     @abstractmethod
     def run(self, *args: Any, **kwargs: Any) -> Any:

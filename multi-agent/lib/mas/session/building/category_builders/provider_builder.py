@@ -3,7 +3,7 @@ from typing import Any, Iterable, Optional
 from .category_builder import CategoryBuilder, BlueprintSpec
 from mas.core.enums import ResourceCategory
 from mas.core.contracts import SessionRegistry
-from mas.core.element_deps import ElementDeps
+from mas.core.element_deps import ElementBuildContext
 
 
 class ProviderBuilder(CategoryBuilder):
@@ -13,7 +13,7 @@ class ProviderBuilder(CategoryBuilder):
         return blueprint.providers
 
     def _extra_kwargs(
-        self, cfg: Any, session_registry: SessionRegistry, deps: Optional[ElementDeps] = None,
+        self, cfg: Any, session_registry: SessionRegistry, deps: Optional[ElementBuildContext] = None,
     ) -> dict[str, Any]:
         server_id = getattr(cfg, "server_identifier", "")
         scheme_type = getattr(cfg, "scheme_type", "")
