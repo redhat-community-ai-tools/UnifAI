@@ -233,6 +233,10 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
     sessionListPollCounterRef.current += 1;
     if (sessionListPollCounterRef.current % 5 === 0) {
+      // Presence polling is scoped to loaded pages only. Teams with >50
+      // sessions won't get participant updates for sessions beyond the
+      // current scroll position. Acceptable tradeoff — presence indicators
+      // are only visible for on-screen sessions.
       const freshSessions = await hub.refreshSessions();
       await Promise.allSettled(freshSessions.map(s => fetchParticipants(s.id)));
     }

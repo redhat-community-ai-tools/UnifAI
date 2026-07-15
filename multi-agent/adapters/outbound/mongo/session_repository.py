@@ -129,7 +129,12 @@ class MongoSessionRepository(SessionRepository):
         return [d[self._RUN_ID_FIELD] for d in cursor]
 
     def list_docs(self, identity: Identity) -> List[Mapping[str, Any]]:
-        """Return all session documents for a user in a single query."""
+        """Return all session documents for a user in a single query.
+
+        Intentionally unsorted — callers that need ordering use
+        list_docs_paginated instead. The only consumer is the legacy
+        (non-paginated) API path where order is not guaranteed.
+        """
         return list(self._col.find(identity_q(identity), {"_id": 0}))
 
     def list_docs_paginated(
