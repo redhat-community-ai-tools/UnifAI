@@ -1,14 +1,15 @@
-from flask import Blueprint, jsonify, current_app, request
+from flask import Blueprint, jsonify, current_app, request, g
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 from mas.resources.errors import ResourceInUseError, BuiltInWriteProtectedError
-from mas.resources.builtin_models import identity_to_key
-from mas.core.enums import ResourceOwnership
 from inbound.flask.decorators import (
     with_require_identity_authorization,
     with_authenticated_user,
     require_admin_access,
+    _is_admin,
+    G_IDENTITY,
+    G_IDENTITY_USERNAME,
 )
 
 resources_bp = Blueprint("resources", __name__)
@@ -67,12 +68,6 @@ def upload_resource_file(authenticated_user):
         "size_bytes": len(raw_bytes),
         "format_valid": True,
     }), 200
-
-
-def _is_admin_user(username: str) -> bool:
-    """Check if the authenticated user is in the admin_allowed_users list."""
-    admin_users = current_app.config.get("admin_allowed_users", [])
-    return username in admin_users
 
 
 @resources_bp.route("/resource.save", methods=["POST"])
@@ -134,7 +129,7 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=100
     """
     svc = current_app.container.resources_service
     try:
-        resources, total_count = svc.find_resources(
+        resources_data, total_count = svc.find_resources(
             identity=identity,
             category=category,
             type=type,
@@ -142,22 +137,13 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=100
             limit=limit,
             offset=offset,
         )
-        key = identity_to_key(identity)
-        resources_data = []
-        builtin_config_repo = current_app.container.builtin_user_config_repo
-        for doc in resources:
-            data = doc.model_dump(mode="json")
-            if doc.ownership == ResourceOwnership.BUILTIN and builtin_config_repo:
-                user_cfg = builtin_config_repo.get(doc.rid, key)
-                data["user_configured"] = user_cfg is not None
-            resources_data.append(data)
         return jsonify({
             "resources": resources_data,
             "pagination": {
                 "total": total_count,
                 "limit": limit,
                 "offset": offset,
-                "has_more": offset + len(resources) < total_count
+                "has_more": offset + len(resources_data) < total_count
             }
         }), 200
     except ValueError as e:  # Invalid category enum
@@ -176,7 +162,7 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=100
 def update_resource(authenticated_user, resource_id, config, name=None):
     svc = current_app.container.resources_service
     try:
-        svc.guard_builtin_write(resource_id, _is_admin_user(authenticated_user))
+        svc.guard_builtin_write(resource_id, _is_admin(authenticated_user))
         doc = svc.update(resource_id, config=config, name=name)
         return jsonify(doc.model_dump(mode="json")), 200
     except BuiltInWriteProtectedError as e:
@@ -197,7 +183,7 @@ def update_resource(authenticated_user, resource_id, config, name=None):
 def delete_resource(authenticated_user, resource_id):
     svc = current_app.container.resources_service
     try:
-        svc.guard_builtin_write(resource_id, _is_admin_user(authenticated_user))
+        svc.guard_builtin_write(resource_id, _is_admin(authenticated_user))
         svc.delete(resource_id)
         return jsonify({"status": "deleted"}), 200
     except BuiltInWriteProtectedError as e:
@@ -416,19 +402,22 @@ def list_builtins(category=None, type=None):
 
 
 @resources_bp.route("/builtin.schema", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def get_builtin_schema(resource_id):
+def get_builtin_schema(identity, resource_id):
     """Get the element schema for a built-in resource with readOnly annotations.
 
     Returns the same config_schema as /catalog/element.spec.get but with
     each field annotated with a readOnly hint based on ReadOnlyHint annotations.
     Fields with ReadOnlyHint(read_only=False) remain editable, all others get readOnly=true.
+    Draft built-ins are only visible to admins.
     """
     svc = current_app.container.resources_service
     try:
-        schema = svc.get_builtin_schema(resource_id)
+        username = getattr(g, G_IDENTITY_USERNAME, "")
+        schema = svc.get_builtin_schema(resource_id, is_admin=_is_admin(username))
         return jsonify(schema), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
@@ -545,7 +534,6 @@ def promote_resource(resource_id):
 
 @resources_bp.route("/builtin.create", methods=["POST"])
 @require_admin_access
-@with_require_identity_authorization
 @from_body({
     "category": fields.Str(required=True),
     "type": fields.Str(required=True),
@@ -554,7 +542,7 @@ def promote_resource(resource_id):
     "available_to_all": fields.Bool(data_key="availableToAll", load_default=False),
 })
 def create_builtin_resource(
-    identity, category, type, name, config,
+    category, type, name, config,
     available_to_all=False,
 ):
     """Create a resource directly as built-in (admin only).
@@ -562,7 +550,11 @@ def create_builtin_resource(
     The creating admin's identity is preserved on the resource document
     so that all built-in resources share a consistent owner identity.
     Configurable fields are derived from ReadOnlyHint annotations on the element schema.
+
+    Identity is read from ``g`` because ``@require_admin_access`` strips the
+    ``identity`` kwarg before invoking the handler.
     """
+    identity = getattr(g, G_IDENTITY)
     svc = current_app.container.resources_service
     try:
         doc = svc.create_builtin(

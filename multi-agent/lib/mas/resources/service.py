@@ -3,10 +3,10 @@ from typing import List, Optional, Tuple, Dict, Any
 from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from cryptography.fernet import Fernet
 from pydantic import BaseModel
 
-from mas.core.identity import Identity, IdentityType
+from global_utils.utils.crypto import FieldCipher
+from mas.core.identity import Identity
 from mas.resources.registry import ResourcesRegistry
 from mas.catalog.element_registry import ElementRegistry
 from mas.resources.models import Resource, ResourceQuery
@@ -48,9 +48,6 @@ class ResourcesService:
         self._dependency_resolver = DependencyResolver(resource_registry=self._store)
         self._validation_service = validation_service
         self._auth_service = auth_service
-        self._fernet = Fernet(encryption_key.encode()) if encryption_key else None
-
-        from global_utils.utils.crypto import FieldCipher
         self._cipher = FieldCipher(encryption_key) if encryption_key else None
 
     # ---------- CRUD ----------
@@ -107,6 +104,11 @@ class ResourcesService:
     def delete(self, rid: str) -> None:
         doc = self._store.get(rid)
         self._store.delete(rid)
+        if (
+            doc.ownership == ResourceOwnership.BUILTIN
+            and self._builtin_user_config_repo
+        ):
+            self._builtin_user_config_repo.delete_all_for_resource(rid)
         server_id = doc.cfg_dict.get("server_identifier", "")
         if server_id:
             self._cleanup_orphaned_credential(doc.identity, server_id)
@@ -118,8 +120,12 @@ class ResourcesService:
 
     def find_resources(self, identity: Identity, category: Optional[str] = None,
                        type: Optional[str] = None, ownership: Optional[str] = None,
-                       limit: int = 50, offset: int = 0) -> Tuple[List[Resource], int]:
-        """Find resources with optional filtering and pagination."""
+                       limit: int = 50, offset: int = 0) -> Tuple[List[dict], int]:
+        """Find resources with optional filtering and pagination.
+
+        Returns serialized resource dicts. Built-ins include a
+        ``user_configured`` flag indicating whether the caller has an overlay.
+        """
         category_enum = ResourceCategory(category) if category else None
         ownership_enum = ResourceOwnership(ownership) if ownership else None
 
@@ -131,7 +137,8 @@ class ResourcesService:
             limit=limit,
             offset=offset,
         )
-        return self._store.find_resources(query)
+        resources, total = self._store.find_resources(query)
+        return self._serialize_with_user_configured(resources, identity), total
 
     # ---------- resolve ----------
     def resolve(self, rid: str, identity: Identity = None) -> BaseModel:
@@ -357,15 +364,21 @@ class ResourcesService:
 
     # ---------- Built-in Resource Operations ----------
 
-    def get_builtin_schema(self, rid: str) -> dict:
+    def get_builtin_schema(self, rid: str, *, is_admin: bool = False) -> dict:
         """Return the element JSON schema with readOnly annotations for a built-in resource.
 
         Reads ReadOnlyHint from the Pydantic schema to determine which fields
         are configurable. Non-configurable visible fields get ``read_only: true`` added.
+        Draft built-ins are only accessible to admins.
         """
         resource = self._store.get(rid)
         if resource.ownership != ResourceOwnership.BUILTIN:
             raise ValueError("Resource is not a built-in resource")
+        if (
+            resource.visibility != ResourceVisibility.PUBLIC
+            and not is_admin
+        ):
+            raise KeyError(rid)
 
         schema = self.element_registry.get_schema_json(
             ResourceCategory(resource.category), resource.type
@@ -392,10 +405,13 @@ class ResourcesService:
 
         Decrypts sensitive fields so the UI can display masked values.
         Only returns fields that are marked as user-configurable.
+        Draft built-ins are not configurable by end users.
         """
         resource = self._store.get(rid)
         if resource.ownership != ResourceOwnership.BUILTIN:
             raise ValueError("Resource is not a built-in resource")
+        if resource.visibility != ResourceVisibility.PUBLIC:
+            raise KeyError(rid)
 
         if not self._builtin_user_config_repo:
             return None
@@ -420,10 +436,13 @@ class ResourcesService:
         """Save per-user/team configuration for a built-in resource.
 
         Allowed fields are determined by ReadOnlyHint annotations on the element schema.
+        Draft built-ins are not configurable by end users.
         """
         resource = self._store.get(rid)
         if resource.ownership != ResourceOwnership.BUILTIN:
             raise ValueError("Resource is not a built-in resource")
+        if resource.visibility != ResourceVisibility.PUBLIC:
+            raise KeyError(rid)
 
         configurable_keys = self._get_configurable_keys(resource.category, resource.type)
         if not configurable_keys:
@@ -463,6 +482,8 @@ class ResourcesService:
         source = self._store.get(rid)
         if source.ownership != ResourceOwnership.BUILTIN:
             raise ValueError("Resource is not a built-in resource")
+        if source.visibility != ResourceVisibility.PUBLIC:
+            raise KeyError(rid)
 
         merged_config = dict(source.cfg_dict)
         if config_overrides:
@@ -528,12 +549,20 @@ class ResourcesService:
         return self._store.create(doc)
 
     def promote(self, rid: str) -> Resource:
-        """Promote a resource to public built-in (admin only).
+        """Make a resource a public built-in (admin only).
 
-        The original identity (the admin who created it) is preserved so
-        that all resource documents share a consistent owner.
+        Accepts a custom resource (promotes to builtin + public) or an
+        existing draft built-in (sets visibility to public). The original
+        identity is preserved so API-created resources keep their admin owner.
         """
         resource = self._store.get(rid)
+        if resource.ownership not in (
+            ResourceOwnership.CUSTOM,
+            ResourceOwnership.BUILTIN,
+        ):
+            raise ValueError(
+                f"Cannot promote resource with ownership '{resource.ownership}'"
+            )
         cat_enum = ResourceCategory(resource.category)
         if cat_enum in ResourceCategory.builtin_disabled_categories():
             raise ValueError(
@@ -564,6 +593,8 @@ class ResourcesService:
         Allows updating config, name, and visibility.
         """
         resource = self._store.get(rid)
+        if resource.ownership != ResourceOwnership.BUILTIN:
+            raise ValueError("Resource is not a built-in resource")
 
         if config is not None:
             model_cls = self.element_registry.get_schema(
@@ -602,6 +633,26 @@ class ResourcesService:
             self._auth_service.delete_credential(identity.id, server_id)
 
     # ---------- Helpers ----------
+    def _serialize_with_user_configured(
+        self,
+        resources: List[Resource],
+        identity: Identity,
+    ) -> List[dict]:
+        """Serialize resources and attach ``user_configured`` for built-ins."""
+        configured_rids: set = set()
+        if self._builtin_user_config_repo:
+            key = identity_to_key(identity)
+            for cfg in self._builtin_user_config_repo.find_by_identity(key):
+                configured_rids.add(cfg.resource_id)
+
+        result = []
+        for doc in resources:
+            data = doc.model_dump(mode="json")
+            if doc.ownership == ResourceOwnership.BUILTIN:
+                data["user_configured"] = doc.rid in configured_rids
+            result.append(data)
+        return result
+
     def _encrypt_fields(self, cfg_dict: dict, model_cls: type) -> dict:
         """Encrypt fields declared in the config's ENCRYPTED_FIELDS before storage."""
         if not self._cipher:
@@ -726,12 +777,12 @@ class ResourcesService:
         sensitive_keys: set,
     ) -> Dict[str, Any]:
         """Encrypt values of fields identified as sensitive by schema hints."""
-        if not self._fernet:
+        if not self._cipher:
             return config
         result = {}
         for k, v in config.items():
             if k in sensitive_keys and v:
-                result[k] = self._fernet.encrypt(str(v).encode()).decode()
+                result[k] = self._cipher.encrypt(str(v))
             else:
                 result[k] = v
         return result
@@ -742,15 +793,12 @@ class ResourcesService:
         sensitive_keys: set,
     ) -> Dict[str, Any]:
         """Decrypt values of fields identified as sensitive by schema hints."""
-        if not self._fernet:
+        if not self._cipher:
             return config
         result = {}
         for k, v in config.items():
             if k in sensitive_keys and v and isinstance(v, str):
-                try:
-                    result[k] = self._fernet.decrypt(v.encode()).decode()
-                except Exception:
-                    result[k] = v
+                result[k] = self._cipher.decrypt(v)
             else:
                 result[k] = v
         return result
