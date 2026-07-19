@@ -223,11 +223,15 @@ def with_identity(f: Callable) -> Callable:
 # Admin access (unchanged)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _is_admin(username: str) -> bool:
+def is_admin_user(username: str) -> bool:
     """Check admin status via the container's admin config reader,
     falling back to the static ``admin_allowed_users`` Flask config.
 
-    Mirrors the backend pattern where ``_is_admin`` delegates to
+    Public accessor other endpoint modules should use (e.g. to build
+    ``is_admin`` flags for service calls) instead of reaching into this
+    module's private implementation detail.
+
+    Mirrors the backend pattern where this delegates to
     ``current_app.container.admin_config_service.is_admin()``.
     """
     container = getattr(current_app, "container", None)
@@ -236,6 +240,10 @@ def _is_admin(username: str) -> bool:
         return True
     admin_allowed_users = current_app.config.get("admin_allowed_users", [])
     return username.lower() in [u.lower() for u in admin_allowed_users]
+
+
+# Backward-compat alias for any remaining internal call sites within this module.
+_is_admin = is_admin_user
 
 
 def require_admin_access(f):

@@ -8,14 +8,11 @@ from mas.resources.errors import (
     ResourceInUseError,
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
-    BuiltinConfigUnavailableError,
 )
 from inbound.flask.decorators import (
     with_require_identity_authorization,
     with_authenticated_user,
-    require_admin_access,
-    _is_admin,
-    G_IDENTITY,
+    is_admin_user,
     G_IDENTITY_USERNAME,
 )
 
@@ -112,7 +109,7 @@ def get_resource(identity, resource_id):
     svc = current_app.container.resources_service
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
-        doc = svc.get_visible(resource_id, is_admin=_is_admin(username))
+        doc = svc.get_visible(resource_id, is_admin=is_admin_user(username))
         return jsonify(doc.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
@@ -148,7 +145,7 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=100
             ownership=ownership,
             limit=limit,
             offset=offset,
-            is_admin=_is_admin(username),
+            is_admin=is_admin_user(username),
         )
         return jsonify({
             "resources": resources_data,
@@ -176,7 +173,7 @@ def update_resource(identity, resource_id, config, name=None):
     svc = current_app.container.resources_service
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
-        svc.guard_write_access(resource_id, identity=identity, is_admin=_is_admin(username))
+        svc.guard_write_access(resource_id, identity=identity, is_admin=is_admin_user(username))
         doc = svc.update(resource_id, config=config, name=name)
         return jsonify(doc.model_dump(mode="json")), 200
     except BuiltInWriteProtectedError as e:
@@ -200,7 +197,7 @@ def delete_resource(identity, resource_id):
     svc = current_app.container.resources_service
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
-        svc.guard_write_access(resource_id, identity=identity, is_admin=_is_admin(username))
+        svc.guard_write_access(resource_id, identity=identity, is_admin=is_admin_user(username))
         svc.delete(resource_id)
         return jsonify({"status": "deleted"}), 200
     except BuiltInWriteProtectedError as e:
@@ -246,7 +243,7 @@ def validate_resource(identity, resource_id, user_id, timeout_seconds):
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,
-            is_admin=_is_admin(authenticated_user),
+            is_admin=is_admin_user(authenticated_user),
         )
         return jsonify(result.model_dump()), 200
     except KeyError as e:
@@ -302,7 +299,7 @@ def validate_resources(identity, resource_ids, user_id, timeout_seconds, max_wor
             timeout_seconds=timeout_seconds,
             max_workers=max_workers,
             credential_user_id=authenticated_user,
-            is_admin=_is_admin(authenticated_user),
+            is_admin=is_admin_user(authenticated_user),
         )
         return jsonify([r.model_dump() for r in results]), 200
     except RuntimeError as e:
@@ -326,7 +323,7 @@ def get_resource_card(identity, resource_id):
     svc = current_app.container.resources_service
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
-        card = svc.get_card(rid=resource_id, identity=identity, is_admin=_is_admin(username))
+        card = svc.get_card(rid=resource_id, identity=identity, is_admin=is_admin_user(username))
         return jsonify(card.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
@@ -357,7 +354,7 @@ def get_resource_cards(identity, resource_ids):
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
         cards = svc.get_cards(
-            rids=resource_ids, identity=identity, is_admin=_is_admin(username),
+            rids=resource_ids, identity=identity, is_admin=is_admin_user(username),
         )
         return jsonify({
             rid: card.model_dump(mode="json")
@@ -404,374 +401,7 @@ def validate_config(category, type, config, name=None, timeout_seconds=10.0):
         return jsonify({"error": str(e)}), 500
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Built-in resource endpoints
-# ─────────────────────────────────────────────────────────────────────────────
-
-@resources_bp.route("/builtins.list", methods=["GET"])
-@require_admin_access
-@from_query({
-    "category": fields.Str(required=False),
-    "type": fields.Str(required=False),
-})
-def list_builtins(category=None, type=None):
-    """List all built-in resources (admin only).
-
-    Returns all resources with ownership=builtin (public and draft),
-    regardless of the caller's identity. Used by the Repository Management
-    admin panel.
-    """
-    svc = current_app.container.resources_service
-    try:
-        resources = svc.find_all_builtins(category=category, type=type)
-        return jsonify({
-            "resources": [doc.model_dump(mode="json") for doc in resources],
-        }), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@resources_bp.route("/builtin.schema", methods=["GET"])
-@with_require_identity_authorization
-@from_query({
-    "resource_id": fields.Str(data_key="resourceId", required=True),
-})
-def get_builtin_schema(identity, resource_id):
-    """Get the element schema for a built-in resource with readOnly annotations.
-
-    Returns the same config_schema as /catalog/element.spec.get but with
-    each field annotated with a readOnly hint based on ReadOnlyHint annotations.
-    Fields with ReadOnlyHint(read_only=False) remain editable, all others get readOnly=true.
-    Draft built-ins are only visible to admins.
-    """
-    svc = current_app.container.resources_service
-    try:
-        username = getattr(g, G_IDENTITY_USERNAME, "")
-        schema = svc.get_builtin_schema(resource_id, is_admin=_is_admin(username))
-        return jsonify(schema), 200
-    except KeyError as e:
-        return jsonify({"error": f"Resource not found: {e}"}), 404
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@resources_bp.route("/builtin.user-config", methods=["GET"])
-@with_require_identity_authorization
-@from_query({
-    "resource_id": fields.Str(data_key="resourceId", required=True),
-})
-def get_builtin_user_config(identity, resource_id):
-    """Get the current user's overlay config for a built-in resource.
-
-    Returns the user's saved configurable-field overrides (decrypted),
-    or null if the user has not configured this resource.
-    """
-    svc = current_app.container.resources_service
-    try:
-        config = svc.get_user_config(
-            rid=resource_id,
-            identity=identity,
-        )
-        return jsonify({"config": config}), 200
-    except KeyError as e:
-        return jsonify({"error": f"Resource not found: {e}"}), 404
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@resources_bp.route("/builtin.configure", methods=["PATCH"])
-@with_require_identity_authorization
-@from_body({
-    "resource_id": fields.Str(data_key="resourceId", required=True),
-    "config": fields.Dict(required=True),
-})
-def configure_builtin(identity, resource_id, config):
-    """Save per-user/team configuration overlay for a built-in resource.
-
-    The identity is the caller's resolved Identity object (user or team).
-    """
-    svc = current_app.container.resources_service
-    try:
-        doc = svc.configure_builtin(
-            rid=resource_id,
-            identity=identity,
-            config=config,
-        )
-        return jsonify(doc.model_dump(mode="json")), 200
-    except KeyError as e:
-        return jsonify({"error": f"Resource not found: {e}"}), 404
-    except BuiltinConfigUnavailableError as e:
-        return jsonify({"error": str(e)}), 503
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@resources_bp.route("/resource.duplicate", methods=["POST"])
-@with_require_identity_authorization
-@from_body({
-    "resource_id": fields.Str(data_key="resourceId", required=True),
-    "name": fields.Str(required=True),
-    "config_overrides": fields.Dict(data_key="configOverrides", load_default=None),
-})
-def duplicate_resource(identity, resource_id, name, config_overrides=None):
-    """Duplicate a built-in resource into the caller's workspace as a custom resource.
-
-    The clone gets ownership=custom and parent_builtin_id set to the source.
-    Users can optionally override config fields (e.g. select a subset of tools).
-    """
-    svc = current_app.container.resources_service
-    try:
-        doc = svc.duplicate_builtin(
-            rid=resource_id,
-            identity=identity,
-            name=name,
-            config_overrides=config_overrides,
-        )
-        return jsonify(doc.model_dump(mode="json")), 201
-    except KeyError as e:
-        return jsonify({"error": f"Resource not found: {e}"}), 404
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@resources_bp.route("/resource.promote", methods=["PATCH"])
-@require_admin_access
-@from_body({
-    "resource_id": fields.Str(data_key="resourceId", required=True),
-})
-def promote_resource(resource_id):
-    """Promote a custom resource to public built-in (admin only).
-
-    Sets ownership='builtin' and visibility='public'. The resource's
-    original owner identity is preserved (not reset to system) so all
-    built-in documents keep a consistent, auditable owner.
-    """
-    svc = current_app.container.resources_service
-    try:
-        doc = svc.promote(resource_id)
-        return jsonify(doc.model_dump(mode="json")), 200
-    except KeyError as e:
-        return jsonify({"error": f"Resource not found: {e}"}), 404
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@resources_bp.route("/builtin.create", methods=["POST"])
-@require_admin_access
-@from_body({
-    "category": fields.Str(required=True),
-    "type": fields.Str(required=True),
-    "name": fields.Str(required=True),
-    "config": fields.Dict(required=True),
-    "available_to_all": fields.Bool(data_key="availableToAll", load_default=False),
-})
-def create_builtin_resource(
-    category, type, name, config,
-    available_to_all=False,
-):
-    """Create a resource directly as built-in (admin only).
-
-    The creating admin's identity is preserved on the resource document
-    so that all built-in resources share a consistent owner identity.
-    Configurable fields are derived from ReadOnlyHint annotations on the element schema.
-
-    Identity is read from ``g`` because ``@require_admin_access`` strips the
-    ``identity`` kwarg before invoking the handler.
-    """
-    identity = getattr(g, G_IDENTITY)
-    svc = current_app.container.resources_service
-    try:
-        doc = svc.create_builtin(
-            identity=identity,
-            category=category,
-            type=type,
-            name=name,
-            config=config,
-            available_to_all=available_to_all,
-        )
-        return jsonify(doc.model_dump(mode="json")), 201
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@resources_bp.route("/builtin.update", methods=["PUT"])
-@require_admin_access
-@from_body({
-    "resource_id": fields.Str(data_key="resourceId", required=True),
-    "config": fields.Dict(required=False, load_default=None),
-    "name": fields.Str(required=False, load_default=None),
-    "available_to_all": fields.Bool(data_key="availableToAll", load_default=None),
-})
-def update_builtin_resource(
-    resource_id, config=None, name=None,
-    available_to_all=None,
-):
-    """Update a built-in/admin resource (admin only).
-
-    Allows updating config, name, and availableToAll status.
-    Configurable keys are derived automatically from the element schema.
-    """
-    svc = current_app.container.resources_service
-    try:
-        doc = svc.update_builtin(
-            resource_id,
-            config=config,
-            name=name,
-            available_to_all=available_to_all,
-        )
-        return jsonify(doc.model_dump(mode="json")), 200
-    except KeyError as e:
-        return jsonify({"error": f"Resource not found: {e}"}), 404
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@resources_bp.route("/builtin.toggle", methods=["PATCH"])
-@require_admin_access
-@from_body({
-    "resource_id": fields.Str(data_key="resourceId", required=True),
-    "available_to_all": fields.Bool(data_key="availableToAll", required=True),
-})
-def toggle_builtin_visibility(resource_id, available_to_all):
-    """Toggle visibility between public and draft (admin only).
-
-    When toggled on (public), the resource becomes visible to all users.
-    When toggled off (draft), only admins can see it in the configuration panel.
-    """
-    svc = current_app.container.resources_service
-    try:
-        doc = svc.toggle_visibility(resource_id, available_to_all=available_to_all)
-        return jsonify(doc.model_dump(mode="json")), 200
-    except KeyError as e:
-        return jsonify({"error": f"Resource not found: {e}"}), 404
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Admin edit locks (built-in resources)
-#
-#  Reuses the collaboration lock infrastructure with a fixed admin namespace.
-#  Authorization is handled by @require_admin_access; no team membership
-#  checks are needed.
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _collab_service():
-    svc = current_app.container.collaboration_service
-    if svc is None:
-        return None, (jsonify(
-            {"error": "Collaboration service not available - Redis is not configured"}
-        ), 501)
-    return svc, None
-
-
-def _holder_to_json(holder):
-    if holder is None:
-        return None
-    return {
-        "userId": holder.user_id,
-        "displayName": holder.display_name or holder.user_id,
-    }
-
-
-@resources_bp.route("/builtin.edit_lock.acquire", methods=["POST"])
-@require_admin_access
-@with_authenticated_user
-@from_body({
-    "entity_id": fields.Str(data_key="entityId", required=True),
-})
-def builtin_edit_lock_acquire(authenticated_user, entity_id):
-    """Acquire an admin edit lock on a built-in resource."""
-    svc, err = _collab_service()
-    if err:
-        return err
-    try:
-        acquired, holder = svc.acquire_admin_edit_lock(
-            entity_id=entity_id,
-            user_id=authenticated_user,
-        )
-        body = {"acquired": acquired}
-        if not acquired and holder is not None:
-            body["lockedBy"] = _holder_to_json(holder)
-        return jsonify(body), 200
-    except Exception:
-        logger.exception("Failed to acquire admin edit lock for entity '%s'", entity_id)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@resources_bp.route("/builtin.edit_lock.release", methods=["POST"])
-@require_admin_access
-@with_authenticated_user
-@from_body({
-    "entity_id": fields.Str(data_key="entityId", required=True),
-})
-def builtin_edit_lock_release(authenticated_user, entity_id):
-    """Release an admin edit lock on a built-in resource."""
-    svc, err = _collab_service()
-    if err:
-        return err
-    try:
-        svc.release_admin_edit_lock(entity_id, authenticated_user)
-        return jsonify({"success": True}), 200
-    except Exception:
-        logger.exception("Failed to release admin edit lock for entity '%s'", entity_id)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@resources_bp.route("/builtin.edit_lock.heartbeat", methods=["POST"])
-@require_admin_access
-@with_authenticated_user
-@from_body({
-    "entity_id": fields.Str(data_key="entityId", required=True),
-})
-def builtin_edit_lock_heartbeat(authenticated_user, entity_id):
-    """Renew an admin edit lock TTL on a built-in resource."""
-    svc, err = _collab_service()
-    if err:
-        return err
-    try:
-        renewed = svc.renew_admin_edit_lock(entity_id, authenticated_user)
-        return jsonify({"renewed": renewed}), 200
-    except Exception:
-        logger.exception("Failed to renew admin edit lock for entity '%s'", entity_id)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@resources_bp.route("/builtin.edit_lock.statuses", methods=["POST"])
-@require_admin_access
-@from_body({
-    "entity_ids": fields.List(fields.Str(), data_key="entityIds", required=True),
-})
-def builtin_edit_lock_statuses(entity_ids):
-    """Get lock holders for multiple built-in resources (admin only)."""
-    svc, err = _collab_service()
-    if err:
-        return err
-    try:
-        batch = svc.get_admin_edit_locks_batch(entity_ids)
-        locks = {
-            entity_id: _holder_to_json(holder) if holder is not None else None
-            for entity_id, holder in batch.items()
-        }
-        return jsonify({"locks": locks}), 200
-    except Exception:
-        logger.exception("Failed to fetch admin edit lock statuses for %s", entity_ids)
-        return jsonify({"error": "Internal server error"}), 500
-
+# Built-in resource endpoints (admin lifecycle, per-identity overlays, admin
+# edit locks) live in ``endpoints/builtins.py`` — registered under the same
+# ``/api/resources`` URL prefix, see ``endpoints/__init__.py``.
 
