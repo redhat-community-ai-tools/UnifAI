@@ -218,8 +218,7 @@ class AppContainer(metaclass=SingletonMeta):
         self._seed_builtin_resources()
 
         self.blueprint_resolver = BlueprintResolver(
-            resource_registry=resource_registry,
-            element_registry=self.element_registry
+            resources_service=self.resources_service,
         )
 
         self.blueprint_service = BlueprintService(

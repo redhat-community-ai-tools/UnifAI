@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, current_app, request
+from flask import Blueprint, jsonify, current_app, request, g
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import yaml
@@ -13,7 +13,11 @@ from mas.blueprints.exceptions import (
     InvalidMetadataKeysError,
     PromptShortcutsValidationError,
 )
-from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
+from inbound.flask.decorators import (
+    with_require_identity_authorization,
+    with_authenticated_user,
+    G_IDENTITY_USERNAME,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +132,7 @@ def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, 
 
         # Single blueprint by ID
         if blueprint_id:
-            resolved = svc.get_resolved_doc(blueprint_id=blueprint_id)
+            resolved = svc.get_resolved_doc(blueprint_id=blueprint_id, identity=identity)
             return jsonify(resolved.model_dump(mode="json")), 200
 
         # Paginated list
@@ -374,18 +378,20 @@ def set_metadata(blueprint_id, metadata):
         return jsonify({"error": str(e)}), 500
 
 @blueprints_bp.route("/blueprint.validate", methods=["POST"])
-@with_authenticated_user
+@with_require_identity_authorization
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
     "user_id": fields.Str(data_key="userId", load_default=""),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_blueprint(authenticated_user, blueprint_id, user_id, timeout_seconds):
+def validate_blueprint(identity, blueprint_id, user_id, timeout_seconds):
     """Validate all elements in a saved blueprint."""
     svc = current_app.container.blueprint_service
+    authenticated_user = getattr(g, G_IDENTITY_USERNAME, "")
     try:
         result = svc.validate_blueprint(
             blueprint_id=blueprint_id,
+            identity=identity,
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,

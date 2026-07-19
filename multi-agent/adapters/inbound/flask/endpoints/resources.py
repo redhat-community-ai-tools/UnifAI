@@ -1,8 +1,15 @@
+import logging
+
 from flask import Blueprint, jsonify, current_app, request, g
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
-from mas.resources.errors import ResourceInUseError, BuiltInWriteProtectedError
+from mas.resources.errors import (
+    ResourceInUseError,
+    BuiltInWriteProtectedError,
+    ResourceAccessDeniedError,
+    BuiltinConfigUnavailableError,
+)
 from inbound.flask.decorators import (
     with_require_identity_authorization,
     with_authenticated_user,
@@ -11,6 +18,8 @@ from inbound.flask.decorators import (
     G_IDENTITY,
     G_IDENTITY_USERNAME,
 )
+
+logger = logging.getLogger(__name__)
 
 resources_bp = Blueprint("resources", __name__)
 
@@ -157,19 +166,22 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=100
 
 
 @resources_bp.route("/resource.update", methods=["PUT"])
-@with_authenticated_user
+@with_require_identity_authorization
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "config": fields.Dict(required=True),
     "name": fields.Str(required=False),
 })
-def update_resource(authenticated_user, resource_id, config, name=None):
+def update_resource(identity, resource_id, config, name=None):
     svc = current_app.container.resources_service
     try:
-        svc.guard_builtin_write(resource_id, _is_admin(authenticated_user))
+        username = getattr(g, G_IDENTITY_USERNAME, "")
+        svc.guard_write_access(resource_id, identity=identity, is_admin=_is_admin(username))
         doc = svc.update(resource_id, config=config, name=name)
         return jsonify(doc.model_dump(mode="json")), 200
     except BuiltInWriteProtectedError as e:
+        return jsonify({"error": str(e)}), 403
+    except ResourceAccessDeniedError as e:
         return jsonify({"error": str(e)}), 403
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
@@ -180,17 +192,20 @@ def update_resource(authenticated_user, resource_id, config, name=None):
 
 
 @resources_bp.route("/resource.delete", methods=["DELETE"])
-@with_authenticated_user
+@with_require_identity_authorization
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def delete_resource(authenticated_user, resource_id):
+def delete_resource(identity, resource_id):
     svc = current_app.container.resources_service
     try:
-        svc.guard_builtin_write(resource_id, _is_admin(authenticated_user))
+        username = getattr(g, G_IDENTITY_USERNAME, "")
+        svc.guard_write_access(resource_id, identity=identity, is_admin=_is_admin(username))
         svc.delete(resource_id)
         return jsonify({"status": "deleted"}), 200
     except BuiltInWriteProtectedError as e:
+        return jsonify({"error": str(e)}), 403
+    except ResourceAccessDeniedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceInUseError as e:
         return jsonify({"error": str(e),
@@ -231,6 +246,7 @@ def validate_resource(identity, resource_id, user_id, timeout_seconds):
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,
+            is_admin=_is_admin(authenticated_user),
         )
         return jsonify(result.model_dump()), 200
     except KeyError as e:
@@ -286,6 +302,7 @@ def validate_resources(identity, resource_ids, user_id, timeout_seconds, max_wor
             timeout_seconds=timeout_seconds,
             max_workers=max_workers,
             credential_user_id=authenticated_user,
+            is_admin=_is_admin(authenticated_user),
         )
         return jsonify([r.model_dump() for r in results]), 200
     except RuntimeError as e:
@@ -309,8 +326,7 @@ def get_resource_card(identity, resource_id):
     svc = current_app.container.resources_service
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
-        svc.get_visible(resource_id, is_admin=_is_admin(username))
-        card = svc.get_card(rid=resource_id)
+        card = svc.get_card(rid=resource_id, identity=identity, is_admin=_is_admin(username))
         return jsonify(card.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
@@ -330,7 +346,8 @@ def get_resource_cards(identity, resource_ids):
     Get element cards for multiple resources.
 
     Returns a dictionary mapping resource IDs to their ElementCards.
-    Also includes cards for any transitive dependencies.
+    Also includes cards for any transitive dependencies. Cards reflect the
+    caller's configured overlay for any built-in resources involved.
     """
     svc = current_app.container.resources_service
 
@@ -339,10 +356,9 @@ def get_resource_cards(identity, resource_ids):
 
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
-        is_admin = _is_admin(username)
-        for rid in resource_ids:
-            svc.get_visible(rid, is_admin=is_admin)
-        cards = svc.get_cards(rids=resource_ids)
+        cards = svc.get_cards(
+            rids=resource_ids, identity=identity, is_admin=_is_admin(username),
+        )
         return jsonify({
             rid: card.model_dump(mode="json")
             for rid, card in cards.items()
@@ -488,6 +504,8 @@ def configure_builtin(identity, resource_id, config):
         return jsonify(doc.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
+    except BuiltinConfigUnavailableError as e:
+        return jsonify({"error": str(e)}), 503
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -693,6 +711,7 @@ def builtin_edit_lock_acquire(authenticated_user, entity_id):
             body["lockedBy"] = _holder_to_json(holder)
         return jsonify(body), 200
     except Exception:
+        logger.exception("Failed to acquire admin edit lock for entity '%s'", entity_id)
         return jsonify({"error": "Internal server error"}), 500
 
 
@@ -711,6 +730,7 @@ def builtin_edit_lock_release(authenticated_user, entity_id):
         svc.release_admin_edit_lock(entity_id, authenticated_user)
         return jsonify({"success": True}), 200
     except Exception:
+        logger.exception("Failed to release admin edit lock for entity '%s'", entity_id)
         return jsonify({"error": "Internal server error"}), 500
 
 
@@ -729,6 +749,7 @@ def builtin_edit_lock_heartbeat(authenticated_user, entity_id):
         renewed = svc.renew_admin_edit_lock(entity_id, authenticated_user)
         return jsonify({"renewed": renewed}), 200
     except Exception:
+        logger.exception("Failed to renew admin edit lock for entity '%s'", entity_id)
         return jsonify({"error": "Internal server error"}), 500
 
 
@@ -750,6 +771,7 @@ def builtin_edit_lock_statuses(entity_ids):
         }
         return jsonify({"locks": locks}), 200
     except Exception:
+        logger.exception("Failed to fetch admin edit lock statuses for %s", entity_ids)
         return jsonify({"error": "Internal server error"}), 500
 
 

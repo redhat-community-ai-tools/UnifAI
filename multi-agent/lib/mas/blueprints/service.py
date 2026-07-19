@@ -91,16 +91,25 @@ class BlueprintService:
             blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs,
         )
 
-    def load_resolved(self, blueprint_id: str) -> BlueprintSpec:
-        return self._resolver.resolve(self.load_draft(blueprint_id))
+    def load_resolved(self, blueprint_id: str, identity: Optional[Identity] = None) -> BlueprintSpec:
+        """Resolve a saved blueprint's refs into an executable spec.
+
+        ``identity`` should be the session/caller owner so built-in
+        resources resolve with that identity's ``builtin_user_configs``
+        overlay applied. Without it, built-ins resolve to their raw
+        defaults.
+        """
+        return self._resolver.resolve(self.load_draft(blueprint_id), identity=identity)
 
     def load_draft_from_dict(self, draft_dict: dict) -> BlueprintDraft:
         """Load a BlueprintDraft from a dictionary without saving to database."""
         return BlueprintDraft(**draft_dict)
 
-    def resolve_draft_dict(self, draft_dict: dict) -> BlueprintSpec:
+    def resolve_draft_dict(
+        self, draft_dict: dict, identity: Optional[Identity] = None
+    ) -> BlueprintSpec:
         """Resolve a draft dictionary directly to BlueprintSpec without saving to database."""
-        return self._resolver.resolve(BlueprintDraft(**draft_dict))
+        return self._resolver.resolve(BlueprintDraft(**draft_dict), identity=identity)
 
     def to_dict(self, blueprint_id: str) -> Dict[str, Any]:
         """Draft -> JSON-serialisable dict (no meta)."""
@@ -143,10 +152,12 @@ class BlueprintService:
         """
         return self._repo.list_docs(identity=identity, **pg)
 
-    def _resolve_doc(self, doc: BlueprintDocument) -> BlueprintDocument:
+    def _resolve_doc(
+        self, doc: BlueprintDocument, identity: Optional[Identity] = None
+    ) -> BlueprintDocument:
         """Resolve a single document's spec_dict from draft to fully resolved form."""
         draft = BlueprintDraft(**doc.spec_dict)
-        resolved_dict = self._resolver.resolve(draft).model_dump(mode="json")
+        resolved_dict = self._resolver.resolve(draft, identity=identity).model_dump(mode="json")
         shortcuts = draft.model_dump(mode="json").get("prompt_shortcuts")
         if shortcuts is not None:
             resolved_dict["prompt_shortcuts"] = shortcuts
@@ -157,20 +168,25 @@ class BlueprintService:
     ) -> List[BlueprintDocument]:
         """
         Return documents with resolved spec_dict instead of draft spec_dict.
+
+        ``identity`` is used both to scope the listing (via the repository)
+        and to resolve each document's built-in overlays.
         """
         docs = self._repo.list_docs(identity=identity, **pg)
         resolved_docs = []
 
         for doc in docs:
             try:
-                resolved_docs.append(self._resolve_doc(doc))
+                resolved_docs.append(self._resolve_doc(doc, identity=identity))
             except Exception as e:
                 print(f"Skipping blueprint '{doc.blueprint_id}': resolution failed — {e}")
                 continue
 
         return resolved_docs
 
-    def get_resolved_doc(self, blueprint_id: str) -> BlueprintDocument:
+    def get_resolved_doc(
+        self, blueprint_id: str, identity: Optional[Identity] = None
+    ) -> BlueprintDocument:
         """
         Return a single document with its spec_dict resolved.
 
@@ -180,7 +196,7 @@ class BlueprintService:
         if not self.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
         doc = self._repo.load(blueprint_id)
-        return self._resolve_doc(doc)
+        return self._resolve_doc(doc, identity=identity)
 
     def count(self, *, identity: Optional[Identity] = None) -> int:
         return self._repo.count(identity=identity)
@@ -238,6 +254,7 @@ class BlueprintService:
     def validate_blueprint(
         self,
         blueprint_id: str,
+        identity: Optional[Identity] = None,
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
@@ -247,6 +264,7 @@ class BlueprintService:
         
         Args:
             blueprint_id: Blueprint ID to validate
+            identity: Caller identity, used to resolve built-in overlays
             user_id: Logged-in user (for auth-aware validators)
             timeout_seconds: Timeout for network checks
             
@@ -258,7 +276,7 @@ class BlueprintService:
             KeyError: If blueprint not found
         """
         self._ensure_validation_service()
-        spec = self.load_resolved(blueprint_id)
+        spec = self.load_resolved(blueprint_id, identity=identity)
         return self._validate_spec(
             spec, blueprint_id, timeout_seconds,
             user_id=user_id, credential_user_id=credential_user_id,
@@ -267,6 +285,7 @@ class BlueprintService:
     def validate_draft(
         self,
         draft_dict: dict,
+        identity: Optional[Identity] = None,
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
@@ -278,7 +297,7 @@ class BlueprintService:
         Useful for UI validation before creating a blueprint.
         """
         self._ensure_validation_service()
-        spec = self.resolve_draft_dict(draft_dict)
+        spec = self.resolve_draft_dict(draft_dict, identity=identity)
         return self._validate_spec(
             spec, "draft", timeout_seconds,
             user_id=user_id, credential_user_id=credential_user_id,
@@ -288,23 +307,25 @@ class BlueprintService:
     def get_blueprint_cards(
         self,
         blueprint_id: str,
+        identity: Optional[Identity] = None,
     ) -> Dict[str, ElementCard]:
         """
         Get element cards for all elements in a saved blueprint.
         """
         self._ensure_card_service()
-        spec = self.load_resolved(blueprint_id)
+        spec = self.load_resolved(blueprint_id, identity=identity)
         return self._build_cards_from_spec(spec)
 
     def get_draft_cards(
         self,
-        draft_dict: dict
+        draft_dict: dict,
+        identity: Optional[Identity] = None,
     ) -> Dict[str, ElementCard]:
         """
         Get element cards for a blueprint draft.
         """
         self._ensure_card_service()
-        spec = self.resolve_draft_dict(draft_dict)
+        spec = self.resolve_draft_dict(draft_dict, identity=identity)
         return self._build_cards_from_spec(spec)
 
     # ────────── Helpers ──────────

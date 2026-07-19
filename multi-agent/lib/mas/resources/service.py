@@ -20,7 +20,11 @@ from mas.elements.common.validator import ElementValidationResult, ValidationCon
 from mas.elements.common.card import ElementCard
 from mas.catalog.card_service import ElementCardService
 from mas.resources.resolver import DependencyResolver
-from mas.resources.errors import BuiltInWriteProtectedError
+from mas.resources.errors import (
+    BuiltInWriteProtectedError,
+    ResourceAccessDeniedError,
+    BuiltinConfigUnavailableError,
+)
 from mas.validation.service import ElementValidationService
 
 logger = logging.getLogger(__name__)
@@ -56,7 +60,9 @@ class ResourcesService:
         cfg_model = model_cls(**config)
 
         nested_refs = list(RefWalker.external_rids(cfg_model))
-        cfg_dict = self._encrypt_fields(cfg_model.model_dump(mode="json"), model_cls)
+        cfg_dict = self._encrypt_fields(
+            cfg_model.model_dump(mode="json"), model_cls, category=category, type_key=type
+        )
 
         doc = Resource(
             identity=identity,
@@ -87,7 +93,10 @@ class ResourcesService:
 
         nested_refs = list(RefWalker.external_rids(cfg_model))
 
-        doc.cfg_dict = self._encrypt_fields(cfg_model.model_dump(mode="json"), model_cls)
+        doc.cfg_dict = self._encrypt_fields(
+            cfg_model.model_dump(mode="json"), model_cls,
+            category=doc.category, type_key=doc.type,
+        )
         doc.nested_refs = nested_refs
 
         if name is not None:
@@ -162,7 +171,10 @@ class ResourcesService:
     # ---------- resolve ----------
     def resolve(self, rid: str, identity: Identity = None) -> BaseModel:
         resource = self._store.get(rid)
-        config = dict(resource.cfg_dict)
+        # raw_config() decrypts ENCRYPTED_FIELDS values so downstream
+        # elements (e.g. sandboxes, MCP clients) receive plaintext secrets
+        # rather than ciphertext.
+        config = self._store.raw_config(rid)
 
         if resource.ownership == ResourceOwnership.BUILTIN and identity:
             overlay = self._resolve_builtin_overlay(resource, identity)
@@ -206,14 +218,20 @@ class ResourcesService:
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
+        is_admin: bool = False,
     ) -> ElementValidationResult:
         """
         Validate a saved resource and all its transitive dependencies.
 
         When ``identity`` is provided, built-in overlay configs are merged
         into the validation context so user-specific settings participate.
+        Draft built-ins are only visible to admins — non-admin callers get
+        a ``KeyError`` (404) rather than being able to probe draft resources
+        through the validation endpoint.
         """
         self._ensure_validation_service()
+
+        self.get_visible(rid, is_admin=is_admin)
 
         ordered_rids = self._dependency_resolver.resolve_with_deps(rid)
         if not ordered_rids:
@@ -234,6 +252,7 @@ class ResourcesService:
         timeout_seconds: float = 10.0,
         max_workers: int = 10,
         credential_user_id: str = "",
+        is_admin: bool = False,
     ) -> List[ElementValidationResult]:
         """
         Validate multiple resources in parallel.
@@ -249,12 +268,12 @@ class ResourcesService:
         if len(rids) == 1:
             return [
                 self._validate_resource_safe(
-                    rids[0], identity, user_id, timeout_seconds, credential_user_id,
+                    rids[0], identity, user_id, timeout_seconds, credential_user_id, is_admin,
                 ),
             ]
 
         return self._validate_in_parallel(
-            rids, identity, user_id, timeout_seconds, max_workers, credential_user_id,
+            rids, identity, user_id, timeout_seconds, max_workers, credential_user_id, is_admin,
         )
 
     def _validate_in_parallel(
@@ -265,6 +284,7 @@ class ResourcesService:
         timeout_seconds: float,
         max_workers: int,
         credential_user_id: str = "",
+        is_admin: bool = False,
     ) -> List[ElementValidationResult]:
         """Execute validations concurrently with order preservation."""
         results: List[Optional[ElementValidationResult]] = [None] * len(rids)
@@ -273,7 +293,7 @@ class ResourcesService:
             future_to_index = {
                 executor.submit(
                     self._validate_resource_safe,
-                    rid, identity, user_id, timeout_seconds, credential_user_id,
+                    rid, identity, user_id, timeout_seconds, credential_user_id, is_admin,
                 ): idx
                 for idx, rid in enumerate(rids)
             }
@@ -291,6 +311,7 @@ class ResourcesService:
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
+        is_admin: bool = False,
     ) -> ElementValidationResult:
         """Validate a single resource with exception handling."""
         try:
@@ -300,6 +321,7 @@ class ResourcesService:
                 user_id=user_id,
                 timeout_seconds=timeout_seconds,
                 credential_user_id=credential_user_id,
+                is_admin=is_admin,
             )
         except KeyError:
             return ElementValidationResult.create_error(
@@ -352,23 +374,34 @@ class ResourcesService:
     def get_cards(
         self,
         rids: List[str],
+        identity: Identity = None,
+        is_admin: bool = False,
     ) -> Dict[str, ElementCard]:
         """
         Get element cards for a list of resources and their dependencies.
 
-        Resolves all transitive dependencies and builds cards for all elements
-        in dependency order.
+        Enforces draft-builtin visibility on each requested rid (raises
+        ``KeyError`` for a non-admin caller requesting a draft built-in).
+        Resolves all transitive dependencies and builds cards for all
+        elements in dependency order. When ``identity`` is provided, each
+        built-in dependency's card reflects the caller's configured overlay
+        rather than always showing the resource's raw defaults.
         """
         self._ensure_card_service()
 
+        for rid in rids:
+            self.get_visible(rid, is_admin=is_admin)
+
         all_rids = self._dependency_resolver.resolve_all_with_deps(rids)
-        configs = self._build_configs_from_rids(all_rids)
+        configs = self._build_configs_from_rids(all_rids, identity=identity)
 
         return self._card_service.build_all_cards(configs)
 
     def get_card(
         self,
         rid: str,
+        identity: Identity = None,
+        is_admin: bool = False,
     ) -> ElementCard:
         """
         Get element card for a single resource.
@@ -376,7 +409,7 @@ class ResourcesService:
         Resolves all transitive dependencies and builds cards,
         returning only the card for the requested resource.
         """
-        cards = self.get_cards([rid])
+        cards = self.get_cards([rid], identity=identity, is_admin=is_admin)
         if rid not in cards:
             raise KeyError(f"Resource not found: {rid}")
         return cards[rid]
@@ -481,6 +514,9 @@ class ResourcesService:
         if not filtered:
             raise ValueError("No valid configurable fields provided")
 
+        if not self._builtin_user_config_repo:
+            raise BuiltinConfigUnavailableError()
+
         encrypted = self._encrypt_config_fields(filtered, sensitive_keys)
 
         key = identity_to_key(identity)
@@ -513,7 +549,11 @@ class ResourcesService:
         if source.visibility != ResourceVisibility.PUBLIC:
             raise KeyError(rid)
 
-        merged_config = dict(source.cfg_dict)
+        # cfg_dict may contain encrypted sensitive fields — decrypt before
+        # merging overrides so the merge operates on plaintext, then
+        # re-encrypt the merged result. Encrypting without decrypting first
+        # would double-encrypt already-ciphertext values and corrupt them.
+        merged_config = self._store.raw_config(rid)
         if config_overrides:
             merged_config.update(config_overrides)
 
@@ -521,6 +561,10 @@ class ResourcesService:
             ResourceCategory(source.category), source.type)
         cfg_model = model_cls(**merged_config)
         nested_refs = list(RefWalker.external_rids(cfg_model))
+        cfg_dict = self._encrypt_fields(
+            cfg_model.model_dump(mode="json"), model_cls,
+            category=source.category, type_key=source.type,
+        )
 
         doc = Resource(
             rid=uuid4().hex,
@@ -528,7 +572,7 @@ class ResourcesService:
             category=source.category,
             type=source.type,
             name=name,
-            cfg_dict=cfg_model.model_dump(mode="json"),
+            cfg_dict=cfg_dict,
             nested_refs=nested_refs,
             ownership=ResourceOwnership.CUSTOM,
             parent_builtin_id=source.rid,
@@ -563,7 +607,9 @@ class ResourcesService:
         model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
         cfg_model = model_cls(**config)
         nested_refs = list(RefWalker.external_rids(cfg_model))
-        cfg_dict = self._encrypt_fields(cfg_model.model_dump(mode="json"), model_cls)
+        cfg_dict = self._encrypt_fields(
+            cfg_model.model_dump(mode="json"), model_cls, category=category, type_key=type
+        )
 
         doc = Resource(
             identity=identity,
@@ -630,7 +676,8 @@ class ResourcesService:
                 ResourceCategory(resource.category), resource.type)
             cfg_model = model_cls(**config)
             resource.cfg_dict = self._encrypt_fields(
-                cfg_model.model_dump(mode="json"), model_cls
+                cfg_model.model_dump(mode="json"), model_cls,
+                category=resource.category, type_key=resource.type,
             )
             resource.nested_refs = list(RefWalker.external_rids(cfg_model))
 
@@ -651,11 +698,30 @@ class ResourcesService:
             return self.promote(rid)
         return self.demote(rid)
 
-    def guard_builtin_write(self, rid: str, is_admin: bool) -> None:
-        """Raise BuiltInWriteProtectedError if resource is built-in and caller is not admin."""
+    def guard_write_access(
+        self, rid: str, identity: Identity, is_admin: bool,
+    ) -> Resource:
+        """Authorize a mutation (update/delete) on a resource.
+
+        Raises:
+            BuiltInWriteProtectedError: resource is built-in and caller is not admin.
+            ResourceAccessDeniedError: resource is a custom resource owned by a
+                different identity (user or team) and caller is not admin.
+
+        Admins bypass both checks. Returns the resource so callers that need
+        it (e.g. ``update``) can avoid a second lookup.
+        """
         resource = self._store.get(rid)
-        if resource.ownership == ResourceOwnership.BUILTIN and not is_admin:
+        if is_admin:
+            return resource
+        if resource.ownership == ResourceOwnership.BUILTIN:
             raise BuiltInWriteProtectedError()
+        if (
+            resource.identity.type != identity.type
+            or resource.identity.id != identity.id
+        ):
+            raise ResourceAccessDeniedError(rid)
+        return resource
 
     # ---------- Internal Helpers ----------
 
@@ -690,11 +756,29 @@ class ResourcesService:
             result.append(data)
         return result
 
-    def _encrypt_fields(self, cfg_dict: dict, model_cls: type) -> dict:
-        """Encrypt fields declared in the config's ENCRYPTED_FIELDS before storage."""
+    def _encrypt_fields(
+        self,
+        cfg_dict: dict,
+        model_cls: type,
+        category: str = None,
+        type_key: str = None,
+    ) -> dict:
+        """Encrypt sensitive fields before storage.
+
+        Combines the config's declared ``ENCRYPTED_FIELDS`` with any fields
+        marked ``secret`` via schema hints (``SecretHint``). Both sources are
+        honored so a field only needs one annotation — a schema-hint-only
+        field (e.g. an MCP ``bearer_token``, which has no ``ENCRYPTED_FIELDS``
+        entry) is still encrypted at rest, keeping base ``cfg_dict`` storage
+        consistent with the encryption applied to per-user overlays.
+        """
         if not self._cipher:
             return cfg_dict
-        for field in getattr(model_cls, "ENCRYPTED_FIELDS", ()):
+        sensitive = set(getattr(model_cls, "ENCRYPTED_FIELDS", ()))
+        if category and type_key:
+            _, hint_sensitive = self._scan_schema_hints(category, type_key)
+            sensitive |= hint_sensitive
+        for field in sensitive:
             if cfg_dict.get(field):
                 cfg_dict[field] = self._cipher.encrypt(cfg_dict[field])
         return cfg_dict
@@ -750,12 +834,15 @@ class ResourcesService:
         return results[target_rid]
 
     def _resolve_builtin_overlay(self, resource: Resource, identity: Identity) -> Dict[str, Any]:
-        """Resolve effective config overlay for a built-in resource.
+        """Resolve the effective config overlay for a built-in resource.
 
-        Uses ReadOnlyHint from the Pydantic schema to identify configurable fields,
-        then applies user overrides from builtin_user_configs.
-        Priority: user-specific config > team-level config > cfg_dict defaults.
-        Decrypts sensitive fields before returning.
+        Uses ReadOnlyHint from the Pydantic schema to identify configurable
+        fields, then looks up the single overlay document keyed by
+        ``identity_to_key(identity)`` — i.e. whichever identity the caller
+        is currently operating as (their own user identity, or a team
+        identity when acting in a team workspace). There is no separate
+        user-over-team fallback chain: each identity has its own
+        independent overlay. Decrypts sensitive fields before returning.
 
         Fields absent from the user config are not included — the caller will
         keep the resource's ``cfg_dict`` value for those.

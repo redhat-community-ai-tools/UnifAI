@@ -33,3 +33,34 @@ class BuiltInWriteProtectedError(RuntimeError):
 
     def __repr__(self) -> str:
         return self.__str__()
+
+
+class ResourceAccessDeniedError(RuntimeError):
+    """Raised when a caller tries to mutate a resource owned by a different identity."""
+
+    def __init__(self, rid: str):
+        self.rid = rid
+        super().__init__(
+            f"You do not have permission to modify resource '{rid}'."
+        )
+
+    def __str__(self) -> str:
+        return self.args[0]
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
+class BuiltinConfigUnavailableError(RuntimeError):
+    """Raised when a built-in overlay write is attempted without a configured repo."""
+
+    def __init__(self):
+        super().__init__(
+            "Built-in user configuration storage is not available."
+        )
+
+    def __str__(self) -> str:
+        return self.args[0]
+
+    def __repr__(self) -> str:
+        return self.__str__()
