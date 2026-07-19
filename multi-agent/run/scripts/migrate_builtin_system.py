@@ -1,12 +1,15 @@
 """
 Migration script: Transition from legacy builtin_status to the new ownership/visibility model.
 
+
 Steps performed:
 1. All existing resources with builtin_status != None get ownership="builtin" + visibility mapped.
 2. All existing resources with builtin_status == None get ownership="custom".
 3. Existing user_configs embedded on resources are migrated to the builtin_user_configs collection.
-4. BuiltinSchema documents are generated from configurable_keys on existing resources.
-5. Legacy fields (builtin_status, configurable_keys, user_configs) are removed from all documents.
+4. Legacy fields (builtin_status, configurable_keys, user_configs) are removed from all documents.
+
+Note: Configurable field schemas are now derived at runtime from ReadOnlyHint annotations
+on element Pydantic models — no separate builtin_schemas collection is needed.
 
 Usage:
     python -m run.scripts.migrate_builtin_system [--dry-run] [--mongodb-ip localhost] [--mongodb-port 27017]
@@ -26,7 +29,6 @@ def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: boo
     client = pymongo.MongoClient(f"mongodb://{mongodb_ip}:{mongodb_port}/")
     db = client[db_name]
     resources_col = db["resources"]
-    schemas_col = db["builtin_schemas"]
     user_configs_col = db["builtin_user_configs"]
 
     now = datetime.now(timezone.utc)
@@ -97,63 +99,8 @@ def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: boo
 
     logger.info("  Done. Migrated %d user config entries.", migrated_configs)
 
-    # --- Step 4: Generate BuiltinSchema documents from configurable_keys (per type) ---
-    logger.info("Step 3: Generating builtin_schemas from configurable_keys (grouped by type)...")
-
-    type_schemas = {}
-    for doc in builtin_docs:
-        configurable_keys = doc.get("configurable_keys", [])
-        if not configurable_keys:
-            continue
-
-        category = doc.get("category")
-        element_type = doc.get("type")
-        type_key = (category, element_type)
-
-        if type_key in type_schemas:
-            continue
-
-        cfg_dict = doc.get("cfg_dict", {})
-
-        configurable_fields = []
-        for key in configurable_keys:
-            default_value = cfg_dict.get(key)
-            field_type = _infer_field_type(default_value)
-            configurable_fields.append({
-                "field_name": key,
-                "field_type": field_type,
-                "required": False,
-                "default": default_value,
-                "description": "",
-                "enum_options": [],
-                "sensitive": field_type == "secret",
-            })
-
-        schema_doc = {
-            "_id": uuid4().hex,
-            "schema_id": uuid4().hex,
-            "category": category,
-            "element_type": element_type,
-            "configurable_fields": configurable_fields,
-            "discriminator_field": None,
-            "variants": [],
-            "created": now,
-            "updated": now,
-        }
-        type_schemas[type_key] = schema_doc
-
-    if not dry_run:
-        for schema_doc in type_schemas.values():
-            schemas_col.replace_one(
-                {"category": schema_doc["category"], "element_type": schema_doc["element_type"]},
-                schema_doc,
-                upsert=True,
-            )
-
-    logger.info("  Done. Created %d builtin_schema documents (one per type).", len(type_schemas))
-
-    # --- Step 5: Remove legacy fields ---
-    logger.info("Step 4: Removing legacy fields (builtin_status, configurable_keys, user_configs)...")
+    # --- Step 4: Remove legacy fields ---
+    logger.info("Step 3: Removing legacy fields (builtin_status, configurable_keys, user_configs)...")
 
     if not dry_run:
         result = resources_col.update_many(
@@ -171,12 +118,7 @@ def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: boo
 
     # --- Create indexes on new collections ---
     if not dry_run:
-        logger.info("Step 5: Ensuring indexes on new collections...")
-        schemas_col.create_index(
-            [("category", 1), ("element_type", 1)],
-            unique=True,
-            name="uq_category_element_type",
-        )
+        logger.info("Step 4: Ensuring indexes on builtin_user_configs...")
         user_configs_col.create_index(
             [("resource_id", 1), ("identity_key", 1)],
             unique=True,
@@ -186,16 +128,6 @@ def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: boo
         logger.info("  Done.")
 
     logger.info("Migration complete%s.", " (DRY RUN)" if dry_run else "")
-
-
-def _infer_field_type(value) -> str:
-    if value is None or value == "":
-        return "secret"
-    if isinstance(value, bool):
-        return "boolean"
-    if isinstance(value, (int, float)):
-        return "number"
-    return "string"
 
 
 if __name__ == "__main__":

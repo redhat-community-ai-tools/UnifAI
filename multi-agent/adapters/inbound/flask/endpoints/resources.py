@@ -94,14 +94,16 @@ def save_resource(identity, category=None, type=None, name=None, config=None):
 
 
 @resources_bp.route("/resource.get", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def get_resource(resource_id):
+def get_resource(identity, resource_id):
     """Get a single resource by ID."""
     svc = current_app.container.resources_service
     try:
-        doc = svc.get(resource_id)
+        username = getattr(g, G_IDENTITY_USERNAME, "")
+        doc = svc.get_visible(resource_id, is_admin=_is_admin(username))
         return jsonify(doc.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
@@ -210,18 +212,20 @@ def get_resource_schema():
 
 
 @resources_bp.route("/resource.validate", methods=["POST"])
-@with_authenticated_user
+@with_require_identity_authorization
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "user_id": fields.Str(data_key="userId", load_default=""),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_resource(authenticated_user, resource_id, user_id, timeout_seconds):
+def validate_resource(identity, resource_id, user_id, timeout_seconds):
     """Validate a saved resource and its dependencies."""
     svc = current_app.container.resources_service
+    authenticated_user = getattr(g, G_IDENTITY_USERNAME, "")
     try:
         result = svc.validate_resource(
             rid=resource_id,
+            identity=identity,
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,
@@ -236,14 +240,14 @@ def validate_resource(authenticated_user, resource_id, user_id, timeout_seconds)
 
 
 @resources_bp.route("/resources.validate", methods=["POST"])
-@with_authenticated_user
+@with_require_identity_authorization
 @from_body({
     "resource_ids": fields.List(fields.Str(), data_key="resourceIds", required=True),
     "user_id": fields.Str(data_key="userId", load_default=""),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
     "max_workers": fields.Int(data_key="maxWorkers", load_default=10),
 })
-def validate_resources(authenticated_user, resource_ids, user_id, timeout_seconds, max_workers):
+def validate_resources(identity, resource_ids, user_id, timeout_seconds, max_workers):
     """
     Validate multiple resources in parallel.
 
@@ -265,17 +269,17 @@ def validate_resources(authenticated_user, resource_ids, user_id, timeout_second
     Results are returned in the same order as the input resourceIds.
     """
     svc = current_app.container.resources_service
+    authenticated_user = getattr(g, G_IDENTITY_USERNAME, "")
 
-    # Validate input
     if not resource_ids:
         return jsonify([]), 200
 
-    # Cap max_workers and ensure a positive value
     max_workers = max(1, min(max_workers, 20))
 
     try:
         results = svc.validate_resources(
             rids=resource_ids,
+            identity=identity,
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             max_workers=max_workers,
@@ -289,10 +293,11 @@ def validate_resources(authenticated_user, resource_ids, user_id, timeout_second
 
 
 @resources_bp.route("/resource.card", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def get_resource_card(resource_id):
+def get_resource_card(identity, resource_id):
     """
     Get the element card for a saved resource.
 
@@ -301,6 +306,8 @@ def get_resource_card(resource_id):
     """
     svc = current_app.container.resources_service
     try:
+        username = getattr(g, G_IDENTITY_USERNAME, "")
+        svc.get_visible(resource_id, is_admin=_is_admin(username))
         card = svc.get_card(rid=resource_id)
         return jsonify(card.model_dump(mode="json")), 200
     except KeyError as e:
@@ -312,10 +319,11 @@ def get_resource_card(resource_id):
 
 
 @resources_bp.route("/resources.cards", methods=["POST"])
+@with_require_identity_authorization
 @from_body({
     "resource_ids": fields.List(fields.Str(), data_key="resourceIds", required=True),
 })
-def get_resource_cards(resource_ids):
+def get_resource_cards(identity, resource_ids):
     """
     Get element cards for multiple resources.
 
@@ -328,6 +336,10 @@ def get_resource_cards(resource_ids):
         return jsonify({}), 200
 
     try:
+        username = getattr(g, G_IDENTITY_USERNAME, "")
+        is_admin = _is_admin(username)
+        for rid in resource_ids:
+            svc.get_visible(rid, is_admin=is_admin)
         cards = svc.get_cards(rids=resource_ids)
         return jsonify({
             rid: card.model_dump(mode="json")
@@ -620,10 +632,7 @@ def toggle_builtin_visibility(resource_id, available_to_all):
     """
     svc = current_app.container.resources_service
     try:
-        if available_to_all:
-            doc = svc.promote(resource_id)
-        else:
-            doc = svc.demote(resource_id)
+        doc = svc.toggle_visibility(resource_id, available_to_all=available_to_all)
         return jsonify(doc.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404

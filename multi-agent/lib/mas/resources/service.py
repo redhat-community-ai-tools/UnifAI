@@ -118,6 +118,21 @@ class ResourcesService:
         """Get a single resource by ID."""
         return self._store.get(rid)
 
+    def get_visible(self, rid: str, *, is_admin: bool = False) -> Resource:
+        """Get a resource by ID, enforcing draft-builtin visibility.
+
+        Draft built-ins are only visible to admins. Non-admin callers
+        receive a KeyError (404) for draft built-ins.
+        """
+        resource = self._store.get(rid)
+        if (
+            resource.ownership == ResourceOwnership.BUILTIN
+            and resource.visibility != ResourceVisibility.PUBLIC
+            and not is_admin
+        ):
+            raise KeyError(rid)
+        return resource
+
     def find_resources(self, identity: Identity, category: Optional[str] = None,
                        type: Optional[str] = None, ownership: Optional[str] = None,
                        limit: int = 50, offset: int = 0) -> Tuple[List[dict], int]:
@@ -183,12 +198,16 @@ class ResourcesService:
     def validate_resource(
         self,
         rid: str,
+        identity: Identity = None,
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
     ) -> ElementValidationResult:
         """
         Validate a saved resource and all its transitive dependencies.
+
+        When ``identity`` is provided, built-in overlay configs are merged
+        into the validation context so user-specific settings participate.
         """
         self._ensure_validation_service()
 
@@ -196,7 +215,7 @@ class ResourcesService:
         if not ordered_rids:
             raise KeyError(f"Resource not found: {rid}")
 
-        ordered_configs = self._build_configs_from_rids(ordered_rids)
+        ordered_configs = self._build_configs_from_rids(ordered_rids, identity=identity)
 
         return self._validate_and_get(
             ordered_configs, rid, timeout_seconds,
@@ -206,6 +225,7 @@ class ResourcesService:
     def validate_resources(
         self,
         rids: List[str],
+        identity: Identity = None,
         user_id: str = "",
         timeout_seconds: float = 10.0,
         max_workers: int = 10,
@@ -225,17 +245,18 @@ class ResourcesService:
         if len(rids) == 1:
             return [
                 self._validate_resource_safe(
-                    rids[0], user_id, timeout_seconds, credential_user_id,
+                    rids[0], identity, user_id, timeout_seconds, credential_user_id,
                 ),
             ]
 
         return self._validate_in_parallel(
-            rids, user_id, timeout_seconds, max_workers, credential_user_id,
+            rids, identity, user_id, timeout_seconds, max_workers, credential_user_id,
         )
 
     def _validate_in_parallel(
         self,
         rids: List[str],
+        identity: Identity,
         user_id: str,
         timeout_seconds: float,
         max_workers: int,
@@ -248,7 +269,7 @@ class ResourcesService:
             future_to_index = {
                 executor.submit(
                     self._validate_resource_safe,
-                    rid, user_id, timeout_seconds, credential_user_id,
+                    rid, identity, user_id, timeout_seconds, credential_user_id,
                 ): idx
                 for idx, rid in enumerate(rids)
             }
@@ -262,14 +283,16 @@ class ResourcesService:
     def _validate_resource_safe(
         self,
         rid: str,
-        user_id: str,
-        timeout_seconds: float,
+        identity: Identity = None,
+        user_id: str = "",
+        timeout_seconds: float = 10.0,
         credential_user_id: str = "",
     ) -> ElementValidationResult:
         """Validate a single resource with exception handling."""
         try:
             return self.validate_resource(
                 rid=rid,
+                identity=identity,
                 user_id=user_id,
                 timeout_seconds=timeout_seconds,
                 credential_user_id=credential_user_id,
@@ -535,13 +558,14 @@ class ResourcesService:
         model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
         cfg_model = model_cls(**config)
         nested_refs = list(RefWalker.external_rids(cfg_model))
+        cfg_dict = self._encrypt_fields(cfg_model.model_dump(mode="json"), model_cls)
 
         doc = Resource(
             identity=identity,
             category=category,
             type=type,
             name=name,
-            cfg_dict=cfg_model.model_dump(mode="json"),
+            cfg_dict=cfg_dict,
             nested_refs=nested_refs,
             ownership=ResourceOwnership.BUILTIN,
             visibility=ResourceVisibility.PUBLIC if available_to_all else ResourceVisibility.DRAFT,
@@ -600,7 +624,9 @@ class ResourcesService:
             model_cls = self.element_registry.get_schema(
                 ResourceCategory(resource.category), resource.type)
             cfg_model = model_cls(**config)
-            resource.cfg_dict = cfg_model.model_dump(mode="json")
+            resource.cfg_dict = self._encrypt_fields(
+                cfg_model.model_dump(mode="json"), model_cls
+            )
             resource.nested_refs = list(RefWalker.external_rids(cfg_model))
 
         if name is not None:
@@ -613,6 +639,12 @@ class ResourcesService:
             )
 
         return self._store.update(resource)
+
+    def toggle_visibility(self, rid: str, *, available_to_all: bool) -> Resource:
+        """Set visibility of a built-in resource (admin only)."""
+        if available_to_all:
+            return self.promote(rid)
+        return self.demote(rid)
 
     def guard_builtin_write(self, rid: str, is_admin: bool) -> None:
         """Raise BuiltInWriteProtectedError if resource is built-in and caller is not admin."""
