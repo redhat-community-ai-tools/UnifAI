@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import openshift_client as oc
 from pydantic import BaseModel, Field
 
+from mas.core.hitl.models import ToolAccessMode
 from mas.elements.tools.common.base_tool import BaseTool
 
 
@@ -23,6 +24,7 @@ class OcExecTool(BaseTool):
     name: str = "oc_exec"
     description: str = "Execute oc commands on an OpenShift cluster"
     args_schema = OcCommandInput
+    access_mode = ToolAccessMode.WRITE
 
     def __init__(self, *, server: str, token: str, skip_tls_verify: bool = False):
         super().__init__()

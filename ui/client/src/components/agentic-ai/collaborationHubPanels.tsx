@@ -310,6 +310,7 @@ export function CollaborationHubRightPanel({
               isLiveRequest={isLiveRequest}
               isCancelled={isCancelled}
               isGraphVisible={carouselMode !== 'chat'}
+              hitlEnabled={selectedSession.hitlEnabled}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-gray-600 text-xs">
