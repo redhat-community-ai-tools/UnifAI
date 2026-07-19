@@ -1,7 +1,7 @@
 from typing import Any, Dict, Iterable, Optional, Union, get_origin, get_args
 from .category_builder import CategoryBuilder, BlueprintSpec
 from mas.core.enums import ResourceCategory
-from mas.core.element_deps import ElementDeps
+from mas.core.element_deps import ElementBuildContext
 from mas.elements.nodes.types import NodeSpec
 from mas.elements.common.exceptions import PluginConfigurationError
 from mas.core.ref.models import Ref
@@ -30,7 +30,7 @@ class NodeBuilder(CategoryBuilder):
         return bp.nodes
 
     def _extra_kwargs(
-        self, cfg: NodeSpec, reg: SessionRegistry, deps: Optional[ElementDeps] = None,
+        self, cfg: NodeSpec, reg: SessionRegistry, deps: Optional[ElementBuildContext] = None,
     ) -> Dict[str, Any]:
         """Resolve all Ref-typed fields and auth credentials."""
         kwargs: Dict[str, Any] = {
