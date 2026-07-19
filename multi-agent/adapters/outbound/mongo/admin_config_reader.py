@@ -12,10 +12,12 @@ import logging
 
 import pymongo
 
+from mas.core.identity.ports import AdminConfigReaderPort
+
 logger = logging.getLogger(__name__)
 
 
-class MongoAdminConfigReader:
+class MongoAdminConfigReader(AdminConfigReaderPort):
     """Read-only reader for the centralized admin config collection.
 
     Args:

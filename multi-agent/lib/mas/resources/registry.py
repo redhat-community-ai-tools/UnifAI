@@ -6,7 +6,7 @@ from mas.resources.repository.base import ResourceRepository
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.resources.errors import ResourceInUseError
 from mas.core.identity import Identity
-from mas.core.enums import ResourceOwnership
+from mas.core.enums import ResourceOwnership, ResourceCategory
 from mas.core.dto import GroupedCount
 
 
@@ -141,7 +141,7 @@ class ResourcesRegistry:
 
     def _check_builtin_url_collision(self, doc: Resource) -> None:
         """Block registration of a custom MCP whose URL matches a built-in."""
-        if doc.category != "providers":
+        if doc.category != ResourceCategory.PROVIDER:
             return
         mcp_url = doc.cfg_dict.get("mcp_url", "")
         if not mcp_url:

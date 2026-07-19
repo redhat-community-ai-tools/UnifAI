@@ -1,8 +1,14 @@
 import axios from '@/http/axiosAgentConfig';
 
+export interface ResourceIdentity {
+  type: 'user' | 'team' | 'system';
+  id: string;
+  display_name: string;
+}
+
 export interface ResourceInstance {
   rid: string;
-  user_id: string;
+  identity: ResourceIdentity;
   category: string;
   type: string;
   name: string;

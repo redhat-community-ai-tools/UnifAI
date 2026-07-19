@@ -131,6 +131,7 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=100
     """
     svc = current_app.container.resources_service
     try:
+        username = getattr(g, G_IDENTITY_USERNAME, "")
         resources_data, total_count = svc.find_resources(
             identity=identity,
             category=category,
@@ -138,6 +139,7 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=100
             ownership=ownership,
             limit=limit,
             offset=offset,
+            is_admin=_is_admin(username),
         )
         return jsonify({
             "resources": resources_data,
@@ -530,7 +532,9 @@ def duplicate_resource(identity, resource_id, name, config_overrides=None):
 def promote_resource(resource_id):
     """Promote a custom resource to public built-in (admin only).
 
-    Sets ownership='builtin', visibility='public', and identity to system.
+    Sets ownership='builtin' and visibility='public'. The resource's
+    original owner identity is preserved (not reset to system) so all
+    built-in documents keep a consistent, auditable owner.
     """
     svc = current_app.container.resources_service
     try:

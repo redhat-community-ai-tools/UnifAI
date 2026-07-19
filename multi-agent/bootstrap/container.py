@@ -65,7 +65,7 @@ from outbound.mongo.auth_token_repository import MongoCredentialStore
 from outbound.redis.auth_pending_store import RedisFlowStateStore
 from outbound.http.httpx_client import HttpxClient
 
-from mas.core.identity.ports import IdentityProvider
+from mas.core.identity.ports import IdentityProvider, AdminConfigReaderPort
 from global_utils.identity_client import IdentityClient
 from global_utils.redis import RedisKVStore, TeamMembershipCache, build_redis_client
 from global_utils.utils.crypto import FieldCipher
@@ -183,7 +183,7 @@ class AppContainer(metaclass=SingletonMeta):
             coll_name=cfg.resources_coll,
         )
 
-        self.admin_config_reader = MongoAdminConfigReader(
+        self.admin_config_reader: AdminConfigReaderPort = MongoAdminConfigReader(
             mongodb_ip=cfg.mongodb_ip,
             mongodb_port=cfg.mongodb_port,
             db_name=cfg.admin_config_db,

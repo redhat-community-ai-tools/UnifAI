@@ -135,11 +135,14 @@ class ResourcesService:
 
     def find_resources(self, identity: Identity, category: Optional[str] = None,
                        type: Optional[str] = None, ownership: Optional[str] = None,
-                       limit: int = 50, offset: int = 0) -> Tuple[List[dict], int]:
+                       limit: int = 50, offset: int = 0,
+                       is_admin: bool = False) -> Tuple[List[dict], int]:
         """Find resources with optional filtering and pagination.
 
         Returns serialized resource dicts. Built-ins include a
         ``user_configured`` flag indicating whether the caller has an overlay.
+        Draft built-ins are only included when ``ownership=builtin`` is
+        requested by an admin caller.
         """
         category_enum = ResourceCategory(category) if category else None
         ownership_enum = ResourceOwnership(ownership) if ownership else None
@@ -151,6 +154,7 @@ class ResourcesService:
             ownership=ownership_enum,
             limit=limit,
             offset=offset,
+            is_admin=is_admin,
         )
         resources, total = self._store.find_resources(query)
         return self._serialize_with_user_configured(resources, identity), total
@@ -407,7 +411,7 @@ class ResourcesService:
             ResourceCategory(resource.category), resource.type
         )
 
-        configurable_names = self._get_configurable_keys(resource.category, resource.type)
+        configurable_names, _ = self._scan_schema_hints(resource.category, resource.type)
 
         for field_name, field_schema in schema.get("properties", {}).items():
             hints = field_schema.get("hints", {})
@@ -444,10 +448,10 @@ class ResourcesService:
         if not user_config:
             return None
 
-        configurable_keys = self._get_configurable_keys(resource.category, resource.type)
+        configurable_keys, sensitive_keys = self._scan_schema_hints(
+            resource.category, resource.type
+        )
         filtered = {k: v for k, v in user_config.fields.items() if k in configurable_keys}
-
-        sensitive_keys = self._get_sensitive_keys(resource.category, resource.type)
         return self._decrypt_config_fields(filtered, sensitive_keys)
 
     def configure_builtin(
@@ -467,7 +471,9 @@ class ResourcesService:
         if resource.visibility != ResourceVisibility.PUBLIC:
             raise KeyError(rid)
 
-        configurable_keys = self._get_configurable_keys(resource.category, resource.type)
+        configurable_keys, sensitive_keys = self._scan_schema_hints(
+            resource.category, resource.type
+        )
         if not configurable_keys:
             raise ValueError("No configurable fields defined for this element type")
 
@@ -475,7 +481,6 @@ class ResourcesService:
         if not filtered:
             raise ValueError("No valid configurable fields provided")
 
-        sensitive_keys = self._get_sensitive_keys(resource.category, resource.type)
         encrypted = self._encrypt_config_fields(filtered, sensitive_keys)
 
         key = identity_to_key(identity)
@@ -758,7 +763,9 @@ class ResourcesService:
         if not self._builtin_user_config_repo:
             return {}
 
-        configurable_keys = self._get_configurable_keys(resource.category, resource.type)
+        configurable_keys, sensitive_keys = self._scan_schema_hints(
+            resource.category, resource.type
+        )
         if not configurable_keys:
             return {}
 
@@ -768,40 +775,31 @@ class ResourcesService:
             return {}
 
         overlay = {k: v for k, v in user_config.fields.items() if k in configurable_keys}
-
-        sensitive_keys = self._get_sensitive_keys(resource.category, resource.type)
         return self._decrypt_config_fields(overlay, sensitive_keys)
 
-    def _get_configurable_keys(self, category: str, type_key: str) -> set:
-        """Get field names marked as user-configurable via ReadOnlyHint(read_only=False)."""
+    def _scan_schema_hints(self, category: str, type_key: str) -> Tuple[set, set]:
+        """Single-pass scan of an element schema's field hints.
+
+        Returns ``(configurable_keys, sensitive_keys)``:
+        - configurable: fields with ``ReadOnlyHint(read_only=False)``
+        - sensitive: fields marked ``secret``
+        """
         try:
             schema = self.element_registry.get_schema_json(
                 ResourceCategory(category), type_key
             )
         except KeyError:
-            return set()
+            return set(), set()
         configurable = set()
+        sensitive = set()
         for field_name, field_schema in schema.get("properties", {}).items():
             hints = field_schema.get("hints", {})
             read_only_hint = hints.get("read_only", {})
             if read_only_hint.get("read_only") is False:
                 configurable.add(field_name)
-        return configurable
-
-    def _get_sensitive_keys(self, category: str, type_key: str) -> set:
-        """Get field names marked as secret from the element's pydantic schema."""
-        try:
-            schema = self.element_registry.get_schema_json(
-                ResourceCategory(category), type_key
-            )
-        except KeyError:
-            return set()
-        sensitive = set()
-        for field_name, field_schema in schema.get("properties", {}).items():
-            hints = field_schema.get("hints", {})
             if "secret" in hints:
                 sensitive.add(field_name)
-        return sensitive
+        return configurable, sensitive
 
     def _encrypt_config_fields(
         self,

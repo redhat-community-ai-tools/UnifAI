@@ -102,9 +102,12 @@ class MongoResourceRepository(ResourceRepository):
 
         When ownership is specified, returns only that ownership type.
         Otherwise merges identity-scoped + public built-in resources via $or.
+        Non-admin callers never see draft built-ins, regardless of filter.
         """
         if query.ownership == ResourceOwnership.BUILTIN:
             f: Dict[str, Any] = {"ownership": ResourceOwnership.BUILTIN.value}
+            if not query.is_admin:
+                f["visibility"] = ResourceVisibility.PUBLIC.value
             if query.category:
                 f["category"] = query.category.value
             if query.type:

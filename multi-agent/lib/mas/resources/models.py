@@ -37,6 +37,10 @@ class ResourceQuery(BaseModel):
     category: Optional[ResourceCategory] = Field(None, description="Resource category filter")
     type: Optional[str] = Field(None, description="Resource type filter")
     ownership: Optional[ResourceOwnership] = Field(None, description="Filter by ownership type")
+    is_admin: bool = Field(
+        False,
+        description="Caller admin status — non-admins never see draft built-ins",
+    )
 
     limit: Annotated[int, Field(50, ge=1, le=1000, description="Number of results to return")]
     offset: Annotated[int, Field(0, ge=0, description="Number of results to skip")]
