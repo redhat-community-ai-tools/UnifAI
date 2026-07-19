@@ -237,21 +237,20 @@ class A2AAgentNode(
         AuthCredential.get_headers() is async (may trigger a token refresh
         over HTTP), so we bridge into async via the same utility the
         A2AProvider uses for send_message_sync.
+
+        Fail closed: empty headers or refresh errors abort delegation so
+        requests never proceed with stale or missing credentials.
         """
         if not self._auth_credential:
             return
-        try:
-            with get_async_bridge() as bridge:
-                headers = bridge.run(self._auth_credential.get_headers())
-            if headers:
-                self.a2a_provider.update_headers(headers)
-            else:
-                logger.warning("A2AAgentNode[%s]: get_headers() returned empty", self.name)
-        except Exception as exc:
-            logger.error(
-                "A2AAgentNode[%s]: auth header refresh failed: %s: %s",
-                self.name, type(exc).__name__, exc,
+        with get_async_bridge() as bridge:
+            headers = bridge.run(self._auth_credential.get_headers())
+        if not headers:
+            raise RuntimeError(
+                f"Cannot refresh auth headers for A2A node {self.name}: "
+                "no headers returned"
             )
+        self.a2a_provider.update_headers(headers)
 
     def _delegate_to_remote_agent(
             self,

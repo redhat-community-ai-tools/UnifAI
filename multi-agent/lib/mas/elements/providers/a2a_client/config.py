@@ -16,6 +16,7 @@ Authentication uses the same hint-driven OAuth flow as MCP providers:
 from typing import Any, Dict, Literal, Optional
 from pydantic import Field, HttpUrl
 from mas.elements.providers.common.base_config import ProviderBaseConfig
+from mas.core.auth.credentials.models import StaticAuthMethod
 from mas.core.field_hints import (
     ActionHint, HintType, SelectionType,
     SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, combine_hints,
@@ -45,8 +46,9 @@ class A2AProviderConfig(ProviderBaseConfig):
         json_schema_extra=HiddenHint(reason="Fetched automatically from base_url").to_hints(),
     )
 
+    # Open set: StaticAuthMethod values plus registry server identifiers.
     auth_method: str = Field(
-        default="none",
+        default=StaticAuthMethod.NONE.value,
         description="Authentication method for this A2A agent",
         json_schema_extra=combine_hints(
             PropagateHint(to="server_identifier"),
@@ -70,7 +72,14 @@ class A2AProviderConfig(ProviderBaseConfig):
         exclude=True,
         description="Sign in to authenticate with this A2A agent",
         json_schema_extra=combine_hints(
-            ConditionalHint(visible_when={"auth_method": {"not_in": ["none", "access_token"]}}),
+            ConditionalHint(visible_when={
+                "auth_method": {
+                    "not_in": [
+                        StaticAuthMethod.NONE.value,
+                        StaticAuthMethod.ACCESS_TOKEN.value,
+                    ],
+                },
+            }),
             AuthHint(
                 action_uid="auth.discovery",
                 dependencies={
@@ -87,7 +96,9 @@ class A2AProviderConfig(ProviderBaseConfig):
         description="Bearer token for authentication",
         json_schema_extra=combine_hints(
             SecretHint(allow_reveal=True),
-            ConditionalHint(visible_when={"auth_method": "access_token"}),
+            ConditionalHint(visible_when={
+                "auth_method": StaticAuthMethod.ACCESS_TOKEN.value,
+            }),
             PropagateHint(to="credential_token"),
         ),
     )

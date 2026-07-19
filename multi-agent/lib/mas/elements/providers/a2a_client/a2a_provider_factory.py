@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from mas.elements.common.base_factory import BaseFactory
 from mas.elements.common.exceptions import PluginConfigurationError
+from mas.core.auth.credentials.models import StaticAuthMethod
 from mas.elements.providers.a2a_client.config import A2AProviderConfig
 from mas.elements.providers.a2a_client.provider import A2AProvider
 from mas.elements.providers.a2a_client.identifiers import Identifier
@@ -27,7 +28,7 @@ class A2AProviderFactory(BaseFactory[A2AProviderConfig, A2AProvider]):
 
         if cfg.credential_token:
             headers["Authorization"] = f"Bearer {cfg.credential_token}"
-        elif cfg.auth_method == "access_token" and cfg.bearer_token:
+        elif cfg.auth_method == StaticAuthMethod.ACCESS_TOKEN and cfg.bearer_token:
             headers["Authorization"] = f"Bearer {cfg.bearer_token}"
 
         return headers or None

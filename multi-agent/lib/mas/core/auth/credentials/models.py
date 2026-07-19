@@ -28,6 +28,12 @@ class TokenStatus(str, Enum):
     REVOKED = "revoked"
 
 
+class StaticAuthMethod(str, Enum):
+    """Built-in auth dropdown options. Registry servers use free-form identifiers."""
+    NONE = "none"
+    ACCESS_TOKEN = "access_token"
+
+
 class TokenSet(BaseModel):
     """Fresh credential set produced by any auth scheme."""
     access_token: str

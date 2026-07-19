@@ -25,6 +25,17 @@ import sys
 
 from pymongo import MongoClient, ASCENDING
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+MULTI_AGENT_ROOT = os.path.dirname(SCRIPT_DIR)
+if MULTI_AGENT_ROOT not in sys.path:
+    sys.path.insert(0, MULTI_AGENT_ROOT)
+
+LIB_DIR = os.path.join(MULTI_AGENT_ROOT, "lib")
+if LIB_DIR not in sys.path:
+    sys.path.insert(0, LIB_DIR)
+
+from mas.core.auth.credentials.models import ClientConfig
+
 MONGODB_IP = os.environ.get("MONGODB_IP", "127.0.0.1")
 MONGODB_PORT = int(os.environ.get("MONGODB_PORT", "27017"))
 MONGO_DB = os.environ.get("MONGO_DB", "UnifAI")
@@ -39,9 +50,9 @@ _STAGE_OIDC = f"{_RH_SSO_STAGE_BASE}/realms/{_RH_SSO_REALM}/protocol/openid-conn
 _PROD_OIDC = f"{_RH_SSO_PROD_BASE}/realms/{_RH_SSO_REALM}/protocol/openid-connect"
 
 
-def _build_server_entries() -> list:
+def _build_server_entries() -> list[ClientConfig]:
     """
-    Build the list of auth server entries from environment variables.
+    Build the list of auth server configs from environment variables.
 
     Each SSO environment needs:
       - *_CLIENT_ID (required — skip entry if missing)
@@ -52,7 +63,7 @@ def _build_server_entries() -> list:
       - *_DISPLAY_NAME (human label for the UI dropdown)
       - *_CATEGORIES (comma-separated, defaults to "a2a")
     """
-    entries = []
+    entries: list[ClientConfig] = []
 
     prefixes = {
         "A2A_SSO_STAGING": {
@@ -76,28 +87,34 @@ def _build_server_entries() -> list:
         if not client_id:
             continue
 
-        entries.append({
-            "server_identifier": defaults["server_identifier"],
-            "display_name": os.environ.get(
-                f"{prefix}_DISPLAY_NAME", defaults["display_name_default"]
-            ),
-            "categories": os.environ.get(
-                f"{prefix}_CATEGORIES", defaults["categories_default"]
-            ).split(","),
-            "client_id": client_id,
-            "client_secret": os.environ.get(f"{prefix}_CLIENT_SECRET"),
-            "authorization_endpoint": os.environ.get(
-                f"{prefix}_AUTH_ENDPOINT", defaults["auth_endpoint_default"]
-            ),
-            "token_endpoint": os.environ.get(
-                f"{prefix}_TOKEN_ENDPOINT", defaults["token_endpoint_default"]
-            ),
-            "token_endpoint_auth_method": os.environ.get(
-                f"{prefix}_TOKEN_AUTH_METHOD", "client_secret_post"
-            ),
-            "scopes": os.environ.get(f"{prefix}_SCOPES", "openid profile email").split(),
-            "protocol_type": "oauth2",
-        })
+        entries.append(
+            ClientConfig(
+                server_identifier=defaults["server_identifier"],
+                display_name=os.environ.get(
+                    f"{prefix}_DISPLAY_NAME", defaults["display_name_default"]
+                ),
+                categories=[
+                    c.strip()
+                    for c in os.environ.get(
+                        f"{prefix}_CATEGORIES", defaults["categories_default"]
+                    ).split(",")
+                    if c.strip()
+                ],
+                client_id=client_id,
+                client_secret=os.environ.get(f"{prefix}_CLIENT_SECRET"),
+                authorization_endpoint=os.environ.get(
+                    f"{prefix}_AUTH_ENDPOINT", defaults["auth_endpoint_default"]
+                ),
+                token_endpoint=os.environ.get(
+                    f"{prefix}_TOKEN_ENDPOINT", defaults["token_endpoint_default"]
+                ),
+                token_endpoint_auth_method=os.environ.get(
+                    f"{prefix}_TOKEN_AUTH_METHOD", "client_secret_post"
+                ),
+                scopes=os.environ.get(f"{prefix}_SCOPES", "openid profile email").split(),
+                protocol_type="oauth2",
+            )
+        )
 
     return entries
 
@@ -124,14 +141,15 @@ def main() -> None:
 
     print(f"Seeding {len(entries)} auth server(s) into {MONGO_DB}.{COLL_NAME}...")
 
-    for entry in entries:
-        sid = entry["server_identifier"]
+    for config in entries:
+        entry = config.model_dump()
+        sid = config.server_identifier
         coll.update_one(
             {"server_identifier": sid},
             {"$set": entry},
             upsert=True,
         )
-        print(f"  ✓ {entry['display_name']} ({sid})")
+        print(f"  ✓ {config.display_name} ({sid})")
 
     print("\nSeed complete.")
 

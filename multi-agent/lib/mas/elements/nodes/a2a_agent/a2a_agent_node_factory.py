@@ -11,6 +11,7 @@ from typing import Any, Optional
 from mas.elements.common.base_factory import BaseFactory
 from mas.elements.common.exceptions import PluginConfigurationError
 from mas.core.auth.credentials.credential import AuthCredential
+from mas.core.auth.credentials.models import StaticAuthMethod
 from .config import A2AAgentNodeConfig
 from .a2a_agent_node import A2AAgentNode
 from .identifiers import Identifier
@@ -35,7 +36,11 @@ class A2AAgentNodeFactory(BaseFactory[A2AAgentNodeConfig, A2AAgentNode]):
             retriever = deps.pop("retriever")
 
             bearer_token = None
-            if not auth_credential and cfg.auth_method == "access_token" and cfg.bearer_token:
+            if (
+                not auth_credential
+                and cfg.auth_method == StaticAuthMethod.ACCESS_TOKEN
+                and cfg.bearer_token
+            ):
                 bearer_token = cfg.bearer_token
 
             return A2AAgentNode(

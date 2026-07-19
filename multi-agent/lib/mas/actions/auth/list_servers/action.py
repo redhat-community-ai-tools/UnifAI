@@ -15,6 +15,7 @@ from pydantic import Field
 
 from mas.actions.common.base_action import BaseAction
 from mas.actions.common.action_models import BaseActionInput, BaseActionOutput, ActionType
+from mas.core.auth.credentials.models import StaticAuthMethod
 from mas.core.auth.credentials.ports import ServerConfigStore
 from mas.core.enums import ResourceCategory
 from mas.elements.nodes.a2a_agent.identifiers import Identifier as A2ANodeIdentifier
@@ -24,8 +25,8 @@ from mas.elements.providers.mcp_server_client.identifiers import Identifier as M
 logger = logging.getLogger(__name__)
 
 _STATIC_OPTIONS: List[Dict[str, str]] = [
-    {"label": "None", "value": "none"},
-    {"label": "Access Token", "value": "access_token"},
+    {"label": "None", "value": StaticAuthMethod.NONE.value},
+    {"label": "Access Token", "value": StaticAuthMethod.ACCESS_TOKEN.value},
 ]
 
 
