@@ -34,6 +34,7 @@ from mas.elements.retrievers.types import RetrieversSpec
 from mas.elements.conditions.types import ConditionSpec
 from mas.elements.tools.types import ToolsSpec
 from mas.elements.providers.types import ProviderSpec
+from mas.elements.sandboxes.types import SandboxSpec
 from mas.core.ref.models import Ref, NodeRef, ConditionRef
 from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 
@@ -115,6 +116,7 @@ class BlueprintDraft(BaseModel):
     tools: List[BlueprintResource[ToolsSpec]] = []
     nodes: List[BlueprintResource[NodeSpec]] = []
     conditions: List[BlueprintResource[ConditionSpec]] = []
+    sandboxes: List[BlueprintResource[SandboxSpec]] = []
 
     plan: List[StepDef]
 
@@ -134,6 +136,7 @@ class BlueprintSpec(BaseModel):
     tools: List[ResourceSpec[ToolsSpec]]
     nodes: List[ResourceSpec[NodeSpec]]
     conditions: List[ResourceSpec[ConditionSpec]] = []
+    sandboxes: List[ResourceSpec[SandboxSpec]] = []
 
     plan: List[StepDef]
 

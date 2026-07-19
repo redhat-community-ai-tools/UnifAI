@@ -10,6 +10,8 @@ type AgentFlowGraphProps = {
   setSelectedFlow: (flow: FlowObject | null) => void;
   onValidationChange?: (isValid: boolean, validationResult: BlueprintValidationResult | null, isValidating: boolean) => void;
   onFlowEdit?: (flow: FlowObject) => void;
+  hitlEnabled?: boolean;
+  onHitlToggle?: (enabled: boolean) => void;
 };
 
 export default function AgentFlowGraph({
@@ -17,6 +19,8 @@ export default function AgentFlowGraph({
   setSelectedFlow,
   onValidationChange,
   onFlowEdit,
+  hitlEnabled,
+  onHitlToggle,
 }: AgentFlowGraphProps): React.ReactElement {
   
   const handleFlowSelect = (flow: FlowObject | null): void => {
@@ -45,7 +49,8 @@ export default function AgentFlowGraph({
             onFlowDelete={handleFlowDelete}
             onFlowEdit={onFlowEdit}
             onValidationChange={onValidationChange}
-            showActiveStatus={true}
+            hitlEnabled={hitlEnabled}
+            onHitlToggle={onHitlToggle}
             showDeleteButton={true}
             showEditButton={true}
             height="100%"

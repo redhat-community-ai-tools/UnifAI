@@ -108,6 +108,78 @@ export async function getSessionStreamStatus(sessionId: string): Promise<StreamS
   }
 }
 
+// ─── HITL Approval ────────────────────────────────────────────────────────────
+
+export interface SubmitApprovalParams {
+  sessionId: string;
+  requestId: string;
+  decision: 'approve' | 'reject' | 'modify' | 'redirect';
+  feedback?: string;
+  modifiedArgs?: Record<string, any>;
+}
+
+export interface SubmitApprovalResponse {
+  status: 'submitted';
+  sessionId: string;
+  requestId: string;
+  decision: string;
+}
+
+/**
+ * Submit a human decision for a pending HITL approval request.
+ *
+ * Unblocks the graph thread that is waiting for a response on the given
+ * request.  Returns the confirmation from the backend.
+ *
+ * @param params - Approval submission parameters
+ */
+export async function submitApproval(params: SubmitApprovalParams): Promise<SubmitApprovalResponse> {
+  const response = await axios.post('/sessions/session.approval', {
+    sessionId: params.sessionId,
+    requestId: params.requestId,
+    decision: params.decision,
+    feedback: params.feedback ?? '',
+    modifiedArgs: params.modifiedArgs ?? {},
+  });
+  return response.data;
+}
+
+// ─── HITL Auto-Approval Rules ─────────────────────────────────────────────────
+
+export type ApprovalRuleAction = 'auto_approve' | 'auto_reject' | 'clear';
+
+export interface SubmitApprovalRuleParams {
+  sessionId: string;
+  nodeUid?: string | null;
+  toolName?: string | null;
+  action: ApprovalRuleAction;
+}
+
+export interface ApprovalRuleResponse {
+  status: 'saved';
+  sessionId: string;
+  overrides: Record<string, any>;
+}
+
+/**
+ * Add or clear an auto-approval rule for this session.
+ *
+ * Scoping is determined by which fields are present:
+ *   nodeUid=null, toolName=null → global approve/reject all
+ *   nodeUid=null, toolName="x"  → global rule for tool "x"
+ *   nodeUid="a",  toolName=null → node "a" approve/reject all
+ *   nodeUid="a",  toolName="x"  → node "a" rule for tool "x"
+ */
+export async function submitApprovalRule(params: SubmitApprovalRuleParams): Promise<ApprovalRuleResponse> {
+  const response = await axios.post('/sessions/session.approval.rule', {
+    sessionId: params.sessionId,
+    nodeUid: params.nodeUid ?? null,
+    toolName: params.toolName ?? null,
+    action: params.action,
+  });
+  return response.data;
+}
+
 /**
  * Subscribe to a session's Redis stream.
  * Returns a Response object for streaming, or null if unavailable.
