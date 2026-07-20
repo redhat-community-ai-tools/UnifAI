@@ -26,7 +26,7 @@ class MongoDataSourceRepository(DataSourceRepository):
     ) -> Optional[DataSource]:
         """Get source by source_id, optionally scoped to owner."""
         query: Dict[str, Any] = {"source_id": source_id}
-        if upload_by:
+        if upload_by is not None:
             query["upload_by"] = upload_by
         doc = self._col.find_one(query)
         return self._to_model(doc) if doc else None
@@ -52,7 +52,7 @@ class MongoDataSourceRepository(DataSourceRepository):
         query: Dict[str, Any] = {}
         if source_type:
             query["source_type"] = source_type.upper()
-        if upload_by:
+        if upload_by is not None:
             query["upload_by"] = upload_by
         
         # Determine projection based on view
@@ -83,7 +83,7 @@ class MongoDataSourceRepository(DataSourceRepository):
         
         if source_type:
             builder.with_filter({"source_type": source_type.upper()})
-        if upload_by:
+        if upload_by is not None:
             builder.with_filter({"upload_by": upload_by})
         
         return builder.documents()

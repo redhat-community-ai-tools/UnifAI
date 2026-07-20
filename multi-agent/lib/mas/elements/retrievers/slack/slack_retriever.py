@@ -3,8 +3,9 @@ from typing import Any, Optional
 
 from mas.elements.retrievers.common.base_retriever import BaseRetriever
 from mas.elements.retrievers.common.protocols import RetrievalIdentity
-from global_utils.constants import INTERNAL_AUTH_HEADER
 from pydantic import HttpUrl
+from global_utils.constants import INTERNAL_AUTH_HEADER
+
 
 
 class SlackRetriever(BaseRetriever):
