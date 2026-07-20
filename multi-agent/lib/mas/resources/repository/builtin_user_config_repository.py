@@ -5,6 +5,8 @@ from mas.resources.builtin_models import BuiltinUserConfig
 
 
 class BuiltinUserConfigRepository(ABC):
+    """Storage port for per-identity configuration overlays on built-in resources."""
+
     @abstractmethod
     def save(self, config: BuiltinUserConfig) -> str:
         """Insert or update a user config document (upsert on resource_id + identity_key)."""

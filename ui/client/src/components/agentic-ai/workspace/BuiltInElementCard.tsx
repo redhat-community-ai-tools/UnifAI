@@ -111,10 +111,13 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.data?.type !== 'credentials_callback') return;
-      if (popupRef.current) {
-        popupRef.current.close();
-        popupRef.current = null;
-      }
+      // Only trust messages from the popup window we actually opened —
+      // the identity service's callback page runs on a different origin
+      // than the frontend (no client-exposed config for that origin today),
+      // so we validate the message source instead of event.origin.
+      if (!popupRef.current || event.source !== popupRef.current) return;
+      popupRef.current.close();
+      popupRef.current = null;
       if (event.data.success) {
         checkedRef.current = false;
         checkAuth();

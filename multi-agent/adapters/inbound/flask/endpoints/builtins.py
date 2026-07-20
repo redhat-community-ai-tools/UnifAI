@@ -58,8 +58,9 @@ def list_builtins(category=None, type=None):
         }), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Failed to list built-in resources")
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @builtins_bp.route("/builtin.schema", methods=["GET"])
@@ -88,8 +89,9 @@ def get_builtin_schema(identity, resource_id):
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Failed to get schema for built-in resource '%s'", resource_id)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @builtins_bp.route("/builtin.user-config", methods=["GET"])
@@ -116,8 +118,9 @@ def get_builtin_user_config(identity, resource_id):
         return jsonify({"error": str(e)}), 503
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Failed to get user config for built-in resource '%s'", resource_id)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @builtins_bp.route("/builtin.configure", methods=["PATCH"])
@@ -147,8 +150,9 @@ def configure_builtin(identity, resource_id, config):
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Failed to configure built-in resource '%s'", resource_id)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @builtins_bp.route("/resource.duplicate", methods=["POST"])
@@ -177,8 +181,9 @@ def duplicate_resource(identity, resource_id, name, config_overrides=None):
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Failed to duplicate resource '%s'", resource_id)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @builtins_bp.route("/resource.promote", methods=["PATCH"])
@@ -201,8 +206,9 @@ def promote_resource(resource_id):
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Failed to promote resource '%s'", resource_id)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @builtins_bp.route("/builtin.create", methods=["POST"])
@@ -241,8 +247,9 @@ def create_builtin_resource(
         return jsonify(doc.model_dump(mode="json")), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Failed to create built-in resource '%s'", name)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @builtins_bp.route("/builtin.update", methods=["PUT"])
@@ -275,8 +282,9 @@ def update_builtin_resource(
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Failed to update built-in resource '%s'", resource_id)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @builtins_bp.route("/builtin.toggle", methods=["PATCH"])
@@ -299,8 +307,9 @@ def toggle_builtin_visibility(resource_id, available_to_all):
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Failed to toggle visibility for built-in resource '%s'", resource_id)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -231,8 +231,7 @@ def is_admin_user(username: str) -> bool:
     ``is_admin`` flags for service calls) instead of reaching into this
     module's private implementation detail.
 
-    Mirrors the backend pattern where this delegates to
-    ``current_app.container.admin_config_service.is_admin()``.
+    Delegates to ``current_app.container.admin_config_reader.is_admin()``.
     """
     container = getattr(current_app, "container", None)
     reader = getattr(container, "admin_config_reader", None) if container else None

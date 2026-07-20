@@ -90,7 +90,7 @@ class ResourceRepository(ABC):
     def find_all_builtins(
         self,
         category: str | None = None,
-        type: str | None = None,
+        resource_type: str | None = None,
     ) -> List[Resource]:
         """Return all built-in resources, optionally filtered by category/type."""
         ...

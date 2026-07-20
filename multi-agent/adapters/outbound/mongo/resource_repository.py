@@ -200,14 +200,14 @@ class MongoResourceRepository(ResourceRepository):
     def find_all_builtins(
         self,
         category: str | None = None,
-        type: str | None = None,
+        resource_type: str | None = None,
     ) -> List[Resource]:
         """Return all built-in resources (public and draft), optionally filtered."""
         filter_dict: Dict[str, Any] = {"ownership": ResourceOwnership.BUILTIN.value}
         if category:
             filter_dict["category"] = category
-        if type:
-            filter_dict["type"] = type
+        if resource_type:
+            filter_dict["type"] = resource_type
         return [Resource(**doc) for doc in self.col.find(filter_dict)]
 
     def find_builtin_by_url(self, url: str) -> Optional[Resource]:

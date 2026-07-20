@@ -123,7 +123,7 @@ class FakeResourceRepository:
     def delete_by_identity(self, identity) -> int:
         return 0
 
-    def find_all_builtins(self, category=None, type=None) -> List[Resource]:
+    def find_all_builtins(self, category=None, resource_type=None) -> List[Resource]:
         return [
             d for d in self._docs.values() if d.ownership == ResourceOwnership.BUILTIN
         ]

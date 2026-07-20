@@ -1,7 +1,6 @@
 """
 Migration script: Transition from legacy builtin_status to the new ownership/visibility model.
 
-
 Steps performed:
 1. All existing resources with builtin_status != None get ownership="builtin" + visibility mapped.
 2. All existing resources with builtin_status == None get ownership="custom".
@@ -27,6 +26,13 @@ logger = logging.getLogger(__name__)
 
 def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool):
     client = pymongo.MongoClient(f"mongodb://{mongodb_ip}:{mongodb_port}/")
+    try:
+        _run_migration_body(client, db_name, dry_run)
+    finally:
+        client.close()
+
+
+def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool):
     db = client[db_name]
     resources_col = db["resources"]
     user_configs_col = db["builtin_user_configs"]
@@ -59,7 +65,10 @@ def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: boo
                 {"$set": {"ownership": "builtin", "visibility": visibility}},
             )
 
-    logger.info("  Done. Set ownership on %d documents.", len(builtin_docs) + custom_count)
+    if not dry_run:
+        logger.info("  Done. Set ownership on %d documents.", len(builtin_docs) + custom_count)
+    else:
+        logger.info("  [DRY RUN] Would set ownership on %d documents.", len(builtin_docs) + custom_count)
 
     # --- Step 3: Migrate user_configs to builtin_user_configs collection ---
     logger.info("Step 2: Migrating embedded user_configs to builtin_user_configs collection...")

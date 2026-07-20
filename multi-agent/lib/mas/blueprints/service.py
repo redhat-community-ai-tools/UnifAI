@@ -178,8 +178,11 @@ class BlueprintService:
         for doc in docs:
             try:
                 resolved_docs.append(self._resolve_doc(doc, identity=identity))
-            except Exception as e:
-                print(f"Skipping blueprint '{doc.blueprint_id}': resolution failed — {e}")
+            except KeyError as e:
+                logger.warning(
+                    "Skipping blueprint '%s': referenced resource not found — %s",
+                    doc.blueprint_id, e,
+                )
                 continue
 
         return resolved_docs

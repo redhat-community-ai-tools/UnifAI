@@ -23,7 +23,7 @@ class ResourceInUseError(RuntimeError):
 
 
 class BuiltInWriteProtectedError(RuntimeError):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             "Built-in system resources cannot be modified or deleted."
         )
@@ -38,7 +38,7 @@ class BuiltInWriteProtectedError(RuntimeError):
 class ResourceAccessDeniedError(RuntimeError):
     """Raised when a caller tries to mutate a resource owned by a different identity."""
 
-    def __init__(self, rid: str):
+    def __init__(self, rid: str) -> None:
         self.rid = rid
         super().__init__(
             f"You do not have permission to modify resource '{rid}'."
@@ -54,7 +54,7 @@ class ResourceAccessDeniedError(RuntimeError):
 class BuiltinConfigUnavailableError(RuntimeError):
     """Raised when a built-in overlay write is attempted without a configured repo."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             "Built-in user configuration storage is not available."
         )

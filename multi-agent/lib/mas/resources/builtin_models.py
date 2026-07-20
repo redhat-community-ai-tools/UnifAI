@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from uuid import uuid4
 from pydantic import BaseModel, Field
@@ -24,5 +24,5 @@ class BuiltinUserConfig(BaseModel):
     resource_id: str
     identity_key: str = Field(description="Format: 'user:<id>' or 'team:<id>'")
     fields: Dict[str, Any] = Field(default_factory=dict)
-    created: datetime = Field(default_factory=datetime.utcnow)
-    updated: datetime = Field(default_factory=datetime.utcnow)
+    created: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

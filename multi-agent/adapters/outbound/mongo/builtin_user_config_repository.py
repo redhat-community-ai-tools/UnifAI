@@ -18,7 +18,11 @@ class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
         coll_name: str = "builtin_user_configs",
     ):
         mongo_uri = f"mongodb://{mongodb_ip}:{mongodb_port}/"
-        self._client = pymongo.MongoClient(mongo_uri)
+        self._client = pymongo.MongoClient(
+            mongo_uri,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=5000,
+        )
         self.col = self._client[db_name][coll_name]
         self.col.create_index(
             [("resource_id", 1), ("identity_key", 1)],

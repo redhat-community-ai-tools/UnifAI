@@ -63,7 +63,7 @@ export async function listResources(params: {
 
 export async function getResource(resourceId: string): Promise<ResourceInstance> {
   const { data } = await axios.get<ResourceInstance>(
-    `/resources/resource.get?resourceId=${resourceId}`,
+    `/resources/resource.get?resourceId=${encodeURIComponent(resourceId)}`,
   );
   return data;
 }
@@ -95,7 +95,7 @@ export async function updateResource(payload: {
 }
 
 export async function deleteResource(resourceId: string): Promise<void> {
-  await axios.delete(`/resources/resource.delete?resourceId=${resourceId}`);
+  await axios.delete(`/resources/resource.delete?resourceId=${encodeURIComponent(resourceId)}`);
 }
 
 export async function getResourceSchema(): Promise<any> {
@@ -169,7 +169,7 @@ export async function listBuiltins(params?: {
 
 export async function getBuiltinSchema(resourceId: string): Promise<any> {
   const { data } = await axios.get(
-    `/resources/builtin.schema?resourceId=${resourceId}`,
+    `/resources/builtin.schema?resourceId=${encodeURIComponent(resourceId)}`,
   );
   return data;
 }

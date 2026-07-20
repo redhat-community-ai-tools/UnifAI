@@ -37,7 +37,7 @@ class BuiltinResourceService:
         element_registry: ElementRegistry,
         field_encryption: ResourceFieldEncryption,
         builtin_user_config_repo: Optional[BuiltinUserConfigRepository] = None,
-    ):
+    ) -> None:
         self._store = resource_registry
         self.element_registry = element_registry
         self._fields = field_encryption
@@ -51,7 +51,7 @@ class BuiltinResourceService:
         type: Optional[str] = None,
     ) -> List[Resource]:
         """Return all built-in resources (public and draft), for admin listing."""
-        return self._store.find_all_builtins(category=category, type=type)
+        return self._store.find_all_builtins(category=category, resource_type=type)
 
     def get_builtin_schema(self, rid: str, *, is_admin: bool = False) -> dict:
         """Return the element JSON schema with readOnly annotations for a built-in resource.

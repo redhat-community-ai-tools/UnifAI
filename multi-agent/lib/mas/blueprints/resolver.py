@@ -16,7 +16,7 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class BlueprintResolver:
-    def __init__(self, resources_service: ResourcesService):
+    def __init__(self, resources_service: ResourcesService) -> None:
         self.resources_service = resources_service
         # Removed instance variables to make thread-safe:
         # _visited and _bucket are now local to each resolve() call
@@ -86,7 +86,7 @@ class BlueprintResolver:
         resource = self.resources_service.get(rid)
         obj = self.resources_service.resolve(rid, identity=identity)
         cat = resource.category.value if hasattr(resource.category, "value") else resource.category
-        name = resource.name
+        name = name if name is not None else resource.name
 
         bucket.setdefault(cat, []).append(
             ResourceSpec[type(obj)](rid=rid, name=name, type=resource.type, config=obj)

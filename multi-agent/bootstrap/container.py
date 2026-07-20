@@ -474,14 +474,25 @@ class AppContainer(metaclass=SingletonMeta):
             timeout=cfg.directory_timeout,
         )
 
-    def _seed_builtin_resources(self):
-        """Idempotently seed built-in resources from static templates."""
+    def _seed_builtin_resources(self) -> None:
+        """Idempotently seed built-in resources from static templates.
+
+        Uses exists() as a fast pre-check, but the actual insert can still
+        race with another worker seeding concurrently at startup — the
+        duplicate-key failure from that race is caught and ignored so
+        seeding remains idempotent regardless of worker count.
+        """
         from mas.resources.builtin_templates import BUILTIN_RESOURCES
+        import pymongo.errors
 
         seeded = 0
         for template in BUILTIN_RESOURCES:
-            if not self.resource_repo.exists(template.rid):
+            if self.resource_repo.exists(template.rid):
+                continue
+            try:
                 self.resource_repo.save(template)
                 seeded += 1
+            except pymongo.errors.DuplicateKeyError:
+                pass
         if seeded:
             logger.info("Seeded %d built-in resource(s)", seeded)

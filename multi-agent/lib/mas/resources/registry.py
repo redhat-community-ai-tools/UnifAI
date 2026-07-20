@@ -40,7 +40,10 @@ class ResourcesRegistry:
         existing_with_name = self._repo.find_by_name(doc.identity, doc.category, doc.type, doc.name)
         if existing_with_name and existing_with_name.rid != doc.rid:
             raise ValueError(f"{doc.category}:{doc.type}:{doc.name} exists for user")
-        
+
+        if doc.ownership != ResourceOwnership.BUILTIN:
+            self._check_builtin_url_collision(doc)
+
         doc.version += 1
         doc.updated = datetime.now(timezone.utc)
         self._repo.update(doc)
@@ -122,10 +125,10 @@ class ResourcesRegistry:
     def find_all_builtins(
         self,
         category: str | None = None,
-        type: str | None = None,
+        resource_type: str | None = None,
     ) -> List[Resource]:
         """Return all built-in resources (public and private)."""
-        return self._repo.find_all_builtins(category=category, type=type)
+        return self._repo.find_all_builtins(category=category, resource_type=resource_type)
 
     def find_builtin_by_url(self, url: str) -> Optional[Resource]:
         """Find a built-in resource whose cfg_dict.mcp_url matches *url*."""

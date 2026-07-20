@@ -23,7 +23,9 @@ from .ports import CollaborationStore
 
 logger = logging.getLogger(__name__)
 
-EDIT_LOCK_KINDS: frozenset[str] = frozenset({"resource", "blueprint", "builtin"})
+BUILTIN_LOCK_KIND = "builtin"
+
+EDIT_LOCK_KINDS: frozenset[str] = frozenset({"resource", "blueprint", BUILTIN_LOCK_KIND})
 
 ADMIN_LOCK_NAMESPACE = "__admin__"
 
@@ -291,7 +293,7 @@ class CollaborationService:
         user_id: str,
     ) -> Tuple[bool, Optional[TeamEditLockHolder]]:
         return self._store.acquire_team_edit_lock(
-            ADMIN_LOCK_NAMESPACE, "builtin", entity_id,
+            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id,
             user_id, user_id, ttl=self._edit_lock_ttl,
         )
 
@@ -301,7 +303,7 @@ class CollaborationService:
         user_id: str,
     ) -> None:
         self._store.release_team_edit_lock(
-            ADMIN_LOCK_NAMESPACE, "builtin", entity_id, user_id,
+            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id, user_id,
         )
 
     def renew_admin_edit_lock(
@@ -310,7 +312,7 @@ class CollaborationService:
         user_id: str,
     ) -> bool:
         return self._store.renew_team_edit_lock(
-            ADMIN_LOCK_NAMESPACE, "builtin", entity_id,
+            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id,
             user_id, user_id, ttl=self._edit_lock_ttl,
         )
 
@@ -319,7 +321,7 @@ class CollaborationService:
         entity_id: str,
     ) -> Optional[TeamEditLockHolder]:
         return self._store.get_team_edit_lock(
-            ADMIN_LOCK_NAMESPACE, "builtin", entity_id,
+            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id,
         )
 
     def get_admin_edit_locks_batch(
@@ -327,5 +329,5 @@ class CollaborationService:
         entity_ids: list[str],
     ) -> Dict[str, Optional[TeamEditLockHolder]]:
         return self._store.get_team_edit_locks_batch(
-            ADMIN_LOCK_NAMESPACE, "builtin", entity_ids,
+            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_ids,
         )

@@ -36,7 +36,11 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
         coll_name: str = "admin_config",
     ):
         mongo_uri = f"mongodb://{mongodb_ip}:{mongodb_port}/"
-        client = pymongo.MongoClient(mongo_uri)
+        client = pymongo.MongoClient(
+            mongo_uri,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=5000,
+        )
         self._col = client[db_name][coll_name]
 
     def is_admin(self, username: str) -> bool:
@@ -46,6 +50,6 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
             if doc and doc.get("value"):
                 admin_usernames = doc["value"].get("admin_usernames", [])
                 return username.lower() in [u.lower() for u in admin_usernames]
-        except Exception:
-            logger.debug("Could not read admin config from DB", exc_info=True)
+        except pymongo.errors.PyMongoError:
+            logger.warning("Could not read admin config from DB", exc_info=True)
         return False

@@ -373,9 +373,6 @@ class ReadOnlyHint(BaseModel):
         description="When True, the field cannot be edited by users on built-in resources"
     )
 
-    def model_dump(self, **kwargs) -> Dict[str, Any]:
-        return super().model_dump(**kwargs)
-
     def to_hints(self) -> Dict[str, Any]:
         return {
             "hints": {

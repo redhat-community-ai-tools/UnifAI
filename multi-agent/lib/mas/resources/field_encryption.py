@@ -24,7 +24,7 @@ class ResourceFieldEncryption:
     via a per-identity built-in overlay (``configure_builtin``).
     """
 
-    def __init__(self, element_registry: ElementRegistry, cipher: Optional[FieldCipher]):
+    def __init__(self, element_registry: ElementRegistry, cipher: Optional[FieldCipher]) -> None:
         self._element_registry = element_registry
         self._cipher = cipher
 
@@ -56,8 +56,8 @@ class ResourceFieldEncryption:
         self,
         cfg_dict: dict,
         model_cls: type,
-        category: str = None,
-        type_key: str = None,
+        category: Optional[str] = None,
+        type_key: Optional[str] = None,
     ) -> dict:
         """Encrypt sensitive fields before storage.
 

@@ -24,7 +24,6 @@ export default function RepositoryManagement() {
     isLoading,
     fetchElementSchema,
     fetchElementActions,
-    configureBuiltin,
     saveBuiltinElement,
     toggleBuiltinStatus,
     deleteBuiltinElement,
@@ -40,8 +39,6 @@ export default function RepositoryManagement() {
   const [editingElement, setEditingElement] = useState<ElementInstance | null>(
     null,
   );
-  const [configuringBuiltin, setConfiguringBuiltin] = useState<ResourceItem | null>(null);
-
   const [categoryResources, setCategoryResources] = useState<
     Record<string, ResourceItem[]>
   >({});
@@ -183,10 +180,23 @@ export default function RepositoryManagement() {
       const elType = resolveElementType(categoryKey, resource.type);
       if (!elType) return;
 
-      const lockResult = await acquireBuiltinEditLock(resource.rid);
+      let lockResult;
+      try {
+        lockResult = await acquireBuiltinEditLock(resource.rid);
+      } catch {
+        toast({
+          title: "Error",
+          description: "Failed to acquire edit lock. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (!lockResult.acquired) {
-        const who = (lockResult as any).lockedBy?.displayName || "Another admin";
-        alert(`Cannot edit — currently locked by ${who}`);
+        toast({
+          title: "Resource locked",
+          description: `Cannot edit — currently locked by ${lockResult.lockedBy?.displayName || "Another admin"}`,
+          variant: "destructive",
+        });
         return;
       }
       startLockHeartbeat(resource.rid);
@@ -198,10 +208,22 @@ export default function RepositoryManagement() {
       setNewElementAvailableToAll(resource.visibility === "public");
 
       try {
-        await Promise.all([
+        const [schema] = await Promise.all([
           fetchElementSchema(categoryKey, resource.type),
           fetchElementActions(categoryKey, resource.type),
         ]);
+        if (!schema) {
+          // fetchElementSchema/fetchElementActions already surface their own
+          // error toast — just unwind the lock + wizard state here.
+          stopLockHeartbeat();
+          setIsFormOpen(false);
+          setEditingElement(null);
+          setStep("idle");
+          setSelectedCategoryKey("");
+          setSelectedElementType(null);
+          setNewElementAvailableToAll(false);
+          return;
+        }
         setEditingElement({
           rid: resource.rid,
           name: resource.name,
@@ -210,21 +232,25 @@ export default function RepositoryManagement() {
           type: resource.type,
         });
         setIsFormOpen(true);
+      } catch {
+        stopLockHeartbeat();
+        setIsFormOpen(false);
+        setEditingElement(null);
+        setStep("idle");
+        setSelectedCategoryKey("");
+        setSelectedElementType(null);
+        setNewElementAvailableToAll(false);
+        toast({
+          title: "Error",
+          description: "Failed to load resource for editing.",
+          variant: "destructive",
+        });
       } finally {
         setIsLoadingSchema(false);
       }
     },
-    [availableCategories, fetchElementSchema, fetchElementActions, startLockHeartbeat],
+    [availableCategories, fetchElementSchema, fetchElementActions, startLockHeartbeat, stopLockHeartbeat, toast],
   );
-
-  const handleSaveBuiltinConfig = async (elementData: any) => {
-    if (!configuringBuiltin) return null;
-    const result = await configureBuiltin(
-      configuringBuiltin.rid,
-      elementData.cfg_dict || elementData,
-    );
-    return result;
-  };
 
   const handleViewDetails = (resource: ResourceItem) => {
     const categoryKey = resource.category!;
@@ -259,7 +285,6 @@ export default function RepositoryManagement() {
     stopLockHeartbeat();
     setIsFormOpen(false);
     setEditingElement(null);
-    setConfiguringBuiltin(null);
     setStep("idle");
     setSelectedCategoryKey("");
     setSelectedElementType(null);
@@ -294,11 +319,16 @@ export default function RepositoryManagement() {
     const currentValue = availableToAll[rid] ?? false;
     const newValue = !currentValue;
     setIsTogglingStatus(rid);
-    const result = await toggleBuiltinStatus(rid, newValue);
-    if (result) {
-      setAvailableToAll((prev) => ({ ...prev, [rid]: newValue }));
+    try {
+      // toggleBuiltinStatus already catches its own failures and surfaces
+      // an error toast internally, returning null rather than rejecting.
+      const result = await toggleBuiltinStatus(rid, newValue);
+      if (result) {
+        setAvailableToAll((prev) => ({ ...prev, [rid]: newValue }));
+      }
+    } finally {
+      setIsTogglingStatus(null);
     }
-    setIsTogglingStatus(null);
   };
 
   const handleTypeFilterChange = (category: string, value: string) => {
@@ -381,7 +411,7 @@ export default function RepositoryManagement() {
           elementActions={elementActions}
           editingElement={editingElement}
           existingNames={[]}
-          onSave={configuringBuiltin ? handleSaveBuiltinConfig : handleSaveElement}
+          onSave={handleSaveElement}
           builtinOnly
         />
       )}
