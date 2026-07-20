@@ -320,11 +320,19 @@ export default function RepositoryManagement() {
     const newValue = !currentValue;
     setIsTogglingStatus(rid);
     try {
-      // toggleBuiltinStatus already catches its own failures and surfaces
-      // an error toast internally, returning null rather than rejecting.
+      // toggleBuiltinStatus already catches its own failures (e.g. blocked
+      // because a public agent still uses this resource) and surfaces an
+      // error toast internally, returning null rather than rejecting.
       const result = await toggleBuiltinStatus(rid, newValue);
       if (result) {
-        setAvailableToAll((prev) => ({ ...prev, [rid]: newValue }));
+        if (result.cascaded_resources?.length) {
+          // Aggregated elements (LLMs, providers, tools, etc.) were swept
+          // along to "available to all" too — refresh everything so their
+          // switches/badges reflect the new state, not just this row's.
+          await reloadBuiltins();
+        } else {
+          setAvailableToAll((prev) => ({ ...prev, [rid]: newValue }));
+        }
       }
     } finally {
       setIsTogglingStatus(null);

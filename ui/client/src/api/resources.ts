@@ -21,6 +21,19 @@ export interface ResourceInstance {
   ownership?: 'builtin' | 'custom';
   visibility?: 'draft' | 'public';
   user_configured?: boolean;
+  /**
+   * Present when toggling/promoting to "available to all" cascaded to
+   * aggregated elements (LLMs, providers, tools, etc.) that weren't
+   * already public built-ins — they were made available to all too.
+   */
+  cascaded_resources?: ResourceDependencySummary[];
+}
+
+/** Minimal info about a related resource surfaced on cascade/blocked responses. */
+export interface ResourceDependencySummary {
+  rid: string;
+  name: string;
+  category: string;
 }
 
 export interface ResourcesListResponse {

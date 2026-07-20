@@ -18,6 +18,7 @@ from mas.resources.errors import (
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
     BuiltinConfigUnavailableError,
+    BuiltinDependentsPublicError,
 )
 from inbound.flask.decorators import (
     with_require_identity_authorization,
@@ -31,6 +32,18 @@ from inbound.flask.decorators import (
 logger = logging.getLogger(__name__)
 
 builtins_bp = Blueprint("builtins", __name__)
+
+
+def _resource_summaries(resources) -> list:
+    """Minimal {rid, name, category} summaries for cascade/dependent lists."""
+    return [
+        {
+            "rid": r.rid,
+            "name": r.name,
+            "category": r.category.value if hasattr(r.category, "value") else r.category,
+        }
+        for r in resources
+    ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -197,11 +210,19 @@ def promote_resource(resource_id):
     Sets ownership='builtin' and visibility='public'. The resource's
     original owner identity is preserved (not reset to system) so all
     built-in documents keep a consistent, auditable owner.
+
+    Any element this resource aggregates (LLMs, providers, tools, etc. via
+    ``nested_refs``) that isn't already a public built-in is promoted
+    alongside it; those are reported back as ``cascaded_resources`` so the
+    UI can disclaim the side effect.
     """
     svc = current_app.container.resources_service
     try:
-        doc = svc.promote(resource_id)
-        return jsonify(doc.model_dump(mode="json")), 200
+        doc, cascaded = svc.promote_with_cascade(resource_id)
+        response = doc.model_dump(mode="json")
+        if cascaded:
+            response["cascaded_resources"] = _resource_summaries(cascaded)
+        return jsonify(response), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except ValueError as e:
@@ -232,11 +253,16 @@ def create_builtin_resource(
 
     Identity is read from ``g`` because ``@require_admin_access`` strips the
     ``identity`` kwarg before invoking the handler.
+
+    If ``availableToAll`` is set and the config references other resources
+    (e.g. an agent's LLM/provider/tool refs) that aren't already public
+    built-ins, those are promoted alongside it and reported back as
+    ``cascaded_resources``.
     """
     identity = getattr(g, G_IDENTITY)
     svc = current_app.container.resources_service
     try:
-        doc = svc.create_builtin(
+        doc, cascaded = svc.create_builtin_with_cascade(
             identity=identity,
             category=category,
             type=type,
@@ -244,7 +270,10 @@ def create_builtin_resource(
             config=config,
             available_to_all=available_to_all,
         )
-        return jsonify(doc.model_dump(mode="json")), 201
+        response = doc.model_dump(mode="json")
+        if cascaded:
+            response["cascaded_resources"] = _resource_summaries(cascaded)
+        return jsonify(response), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception:
@@ -268,18 +297,31 @@ def update_builtin_resource(
 
     Allows updating config, name, and availableToAll status.
     Configurable keys are derived automatically from the element schema.
+
+    Turning ``availableToAll`` on cascades to any not-yet-public aggregated
+    elements (reported as ``cascaded_resources``). Turning it off is
+    rejected with ``BuiltinDependentsPublicError`` if a public built-in
+    still aggregates this resource.
     """
     svc = current_app.container.resources_service
     try:
-        doc = svc.update_builtin(
+        doc, cascaded = svc.update_builtin_with_cascade(
             resource_id,
             config=config,
             name=name,
             available_to_all=available_to_all,
         )
-        return jsonify(doc.model_dump(mode="json")), 200
+        response = doc.model_dump(mode="json")
+        if cascaded:
+            response["cascaded_resources"] = _resource_summaries(cascaded)
+        return jsonify(response), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
+    except BuiltinDependentsPublicError as e:
+        return jsonify({
+            "error": str(e),
+            "dependents": _resource_summaries(e.dependents),
+        }), 400
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception:
@@ -297,14 +339,30 @@ def toggle_builtin_visibility(resource_id, available_to_all):
     """Toggle visibility between public and draft (admin only).
 
     When toggled on (public), the resource becomes visible to all users.
-    When toggled off (draft), only admins can see it in the configuration panel.
+    Any element it aggregates (LLMs, providers, tools, etc.) that isn't
+    already a public built-in is promoted alongside it — reported back as
+    ``cascaded_resources`` so the UI can disclaim the side effect.
+
+    When toggled off (draft), only admins can see it in the configuration
+    panel. This is rejected with a 400 (``BuiltinDependentsPublicError``)
+    if a public built-in (e.g. an "available to all" agent) still
+    aggregates this resource — it must be demoted first, or reconfigured
+    to use a different element.
     """
     svc = current_app.container.resources_service
     try:
-        doc = svc.toggle_visibility(resource_id, available_to_all=available_to_all)
-        return jsonify(doc.model_dump(mode="json")), 200
+        doc, cascaded = svc.toggle_visibility_with_cascade(resource_id, available_to_all=available_to_all)
+        response = doc.model_dump(mode="json")
+        if cascaded:
+            response["cascaded_resources"] = _resource_summaries(cascaded)
+        return jsonify(response), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
+    except BuiltinDependentsPublicError as e:
+        return jsonify({
+            "error": str(e),
+            "dependents": _resource_summaries(e.dependents),
+        }), 400
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception:

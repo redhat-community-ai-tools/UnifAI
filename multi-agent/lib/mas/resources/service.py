@@ -489,9 +489,38 @@ class ResourcesService:
             config=config, available_to_all=available_to_all,
         )
 
+    def create_builtin_with_cascade(
+        self,
+        *,
+        identity: Identity,
+        category: str,
+        type: str,
+        name: str,
+        config: dict,
+        available_to_all: bool = False,
+    ) -> Tuple[Resource, List[Resource]]:
+        """Create a resource directly as built-in (admin only).
+
+        Returns ``(resource, cascaded)`` — ``cascaded`` lists any aggregated
+        elements (LLMs, providers, tools, etc.) that were newly promoted to
+        public alongside it, for the caller to surface a disclaimer.
+        """
+        return self.builtin.create_builtin_with_cascade(
+            identity=identity, category=category, type=type, name=name,
+            config=config, available_to_all=available_to_all,
+        )
+
     def promote(self, rid: str) -> Resource:
         """Make a resource a public built-in (admin only)."""
         return self.builtin.promote(rid)
+
+    def promote_with_cascade(self, rid: str) -> Tuple[Resource, List[Resource]]:
+        """Make a resource a public built-in (admin only).
+
+        Returns ``(resource, cascaded)`` — ``cascaded`` lists any aggregated
+        elements newly promoted to public alongside it.
+        """
+        return self.builtin.promote_with_cascade(rid)
 
     def demote(self, rid: str) -> Resource:
         """Demote a public built-in to draft (admin-only visibility)."""
@@ -510,9 +539,43 @@ class ResourcesService:
             rid, config=config, name=name, available_to_all=available_to_all,
         )
 
+    def update_builtin_with_cascade(
+        self,
+        rid: str,
+        *,
+        config: dict = None,
+        name: str = None,
+        available_to_all: bool = None,
+    ) -> Tuple[Resource, List[Resource]]:
+        """Update a built-in resource (admin only).
+
+        Returns ``(resource, cascaded)`` — ``cascaded`` lists any aggregated
+        elements newly promoted to public alongside it.
+        """
+        return self.builtin.update_builtin_with_cascade(
+            rid, config=config, name=name, available_to_all=available_to_all,
+        )
+
     def toggle_visibility(self, rid: str, *, available_to_all: bool) -> Resource:
         """Set visibility of a built-in resource (admin only)."""
         return self.builtin.toggle_visibility(rid, available_to_all=available_to_all)
+
+    def toggle_visibility_with_cascade(
+        self, rid: str, *, available_to_all: bool,
+    ) -> Tuple[Resource, List[Resource]]:
+        """Set visibility of a built-in resource (admin only).
+
+        Returns ``(resource, cascaded)`` — ``cascaded`` lists any aggregated
+        elements newly promoted to public alongside it (empty when demoting).
+        """
+        return self.builtin.toggle_visibility_with_cascade(rid, available_to_all=available_to_all)
+
+    def preview_cascade_targets(self, rid: str) -> List[Resource]:
+        """Resources that would be newly promoted if *rid* were promoted.
+
+        Read-only preview — does not mutate anything.
+        """
+        return self.builtin.preview_cascade_targets(rid)
 
     def guard_write_access(
         self, rid: str, identity: Identity, is_admin: bool,

@@ -30,7 +30,12 @@ def _auth_headers(username: str) -> dict:
 
 @pytest.fixture
 def resources_service():
-    return Mock()
+    svc = Mock()
+    # Cascade preview defaults to "nothing to cascade" so existing
+    # promote/toggle/update tests that don't care about the nested-ref
+    # cascade disclaimer aren't tripped up by iterating a bare Mock.
+    svc.preview_cascade_targets.return_value = []
+    return svc
 
 
 @pytest.fixture

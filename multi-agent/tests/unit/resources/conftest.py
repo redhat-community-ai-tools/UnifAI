@@ -109,7 +109,7 @@ class FakeResourceRepository:
         return 0
 
     def list_nested_usage(self, rid: str) -> List[str]:
-        return []
+        return [doc.rid for doc in self._docs.values() if rid in doc.nested_refs]
 
     def exists(self, rid: str) -> bool:
         return rid in self._docs

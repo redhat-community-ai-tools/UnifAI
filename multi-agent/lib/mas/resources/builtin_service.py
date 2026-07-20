@@ -20,7 +20,7 @@ from mas.core.ref import RefWalker
 from mas.resources.models import Resource
 from mas.resources.registry import ResourcesRegistry
 from mas.resources.builtin_models import BuiltinUserConfig, identity_to_key
-from mas.resources.errors import BuiltinConfigUnavailableError
+from mas.resources.errors import BuiltinConfigUnavailableError, BuiltinDependentsPublicError
 from mas.resources.field_encryption import ResourceFieldEncryption
 from mas.resources.repository.builtin_user_config_repository import BuiltinUserConfigRepository
 from mas.catalog.element_registry import ElementRegistry
@@ -258,12 +258,36 @@ class BuiltinResourceService:
     ) -> Resource:
         """Create a resource directly as built-in (admin only).
 
+        See ``create_builtin_with_cascade`` for the cascading behavior.
+        """
+        resource, _ = self.create_builtin_with_cascade(
+            identity=identity, category=category, type=type, name=name,
+            config=config, available_to_all=available_to_all,
+        )
+        return resource
+
+    def create_builtin_with_cascade(
+        self,
+        *,
+        identity: Identity,
+        category: str,
+        type: str,
+        name: str,
+        config: dict,
+        available_to_all: bool = False,
+    ) -> "tuple[Resource, List[Resource]]":
+        """Create a resource directly as built-in (admin only).
+
         The identity of the creating admin is preserved so that every
         built-in resource document is owned by the admin who created it,
         keeping the identity consistent across all documents in the
         resources collection.
 
-        Configurable fields are determined by ReadOnlyHint annotations on the element schema.
+        Configurable fields are determined by ReadOnlyHint annotations on
+        the element schema. If ``available_to_all`` is set and the config
+        references other resources (e.g. an agent's LLM/provider/tool refs)
+        that aren't already public built-ins, those are promoted alongside
+        it — the second tuple element lists exactly what got cascaded.
         """
         cat_enum = ResourceCategory(category)
         if cat_enum in ResourceCategory.builtin_disabled_categories():
@@ -288,14 +312,31 @@ class BuiltinResourceService:
             ownership=ResourceOwnership.BUILTIN,
             visibility=ResourceVisibility.PUBLIC if available_to_all else ResourceVisibility.DRAFT,
         )
-        return self._store.create(doc)
+        created = self._store.create(doc)
+        cascaded = self._cascade_promote_dependencies(created.rid) if available_to_all else []
+        return created, cascaded
 
     def promote(self, rid: str) -> Resource:
+        """Make a resource a public built-in (admin only).
+
+        See ``promote_with_cascade`` for the cascading behavior.
+        """
+        resource, _ = self.promote_with_cascade(rid)
+        return resource
+
+    def promote_with_cascade(self, rid: str) -> "tuple[Resource, List[Resource]]":
         """Make a resource a public built-in (admin only).
 
         Accepts a custom resource (promotes to builtin + public) or an
         existing draft built-in (sets visibility to public). The original
         identity is preserved so API-created resources keep their admin owner.
+
+        Cascades: any element this resource aggregates (LLMs, providers,
+        tools, etc. referenced via ``nested_refs``) that isn't already a
+        public built-in gets promoted too, so an "available to all" agent
+        never ends up referencing a building block hidden from end users.
+        Returns ``(resource, cascaded)`` where ``cascaded`` lists exactly
+        what got swept along, for the caller to surface a disclaimer.
         """
         resource = self._store.get(rid)
         if resource.ownership not in (
@@ -312,15 +353,118 @@ class BuiltinResourceService:
             )
         resource.ownership = ResourceOwnership.BUILTIN
         resource.visibility = ResourceVisibility.PUBLIC
-        return self._store.update(resource)
+        updated = self._store.update(resource)
+        cascaded = self._cascade_promote_dependencies(rid)
+        return updated, cascaded
 
     def demote(self, rid: str) -> Resource:
-        """Demote a public built-in to draft (admin-only visibility)."""
+        """Demote a public built-in to draft (admin-only visibility).
+
+        Blocked with ``BuiltinDependentsPublicError`` when another public
+        built-in still aggregates this resource (e.g. an "available to all"
+        agent that uses this LLM/provider/tool) — otherwise that agent would
+        be left referencing a building block end users can no longer see.
+        """
         resource = self._store.get(rid)
         if resource.ownership != ResourceOwnership.BUILTIN:
             raise ValueError("Resource is not a built-in resource")
+        self._ensure_no_public_dependents(resource)
         resource.visibility = ResourceVisibility.DRAFT
         return self._store.update(resource)
+
+    # ---------- Nested-dependency cascade helpers ----------
+
+    def preview_cascade_targets(self, rid: str) -> List[Resource]:
+        """Resources that would be newly promoted if *rid* were promoted.
+
+        Walks ``nested_refs`` transitively (LLMs, providers, tools, etc.
+        aggregated by an agent/node) and returns every dependency that
+        isn't already a public built-in. Read-only — used to build the
+        "these will also be made available to all" disclaimer before/while
+        toggling a resource on.
+        """
+        return [
+            dep for dep in self._iter_transitive_deps(rid)
+            if not (
+                dep.ownership == ResourceOwnership.BUILTIN
+                and dep.visibility == ResourceVisibility.PUBLIC
+            )
+        ]
+
+    def _cascade_promote_dependencies(self, rid: str) -> List[Resource]:
+        """Promote every not-yet-public transitive dependency of *rid*."""
+        promoted: List[Resource] = []
+        for dep in self.preview_cascade_targets(rid):
+            cat_enum = ResourceCategory(dep.category)
+            if cat_enum in ResourceCategory.builtin_disabled_categories():
+                logger.warning(
+                    "Skipping cascade promotion of '%s': category '%s' is "
+                    "not supported for built-in resources", dep.rid, dep.category,
+                )
+                continue
+            dep.ownership = ResourceOwnership.BUILTIN
+            dep.visibility = ResourceVisibility.PUBLIC
+            self._store.update(dep)
+            promoted.append(dep)
+        return promoted
+
+    def _iter_transitive_deps(self, rid: str) -> List[Resource]:
+        """All resources transitively referenced by *rid* via ``nested_refs``
+        (breadth-first, excludes *rid* itself, no duplicates)."""
+        visited = {rid}
+        result: List[Resource] = []
+        queue = [rid]
+        while queue:
+            current = queue.pop(0)
+            try:
+                resource = self._store.get(current)
+            except KeyError:
+                continue
+            for dep_rid in resource.nested_refs:
+                if dep_rid in visited:
+                    continue
+                visited.add(dep_rid)
+                try:
+                    dep = self._store.get(dep_rid)
+                except KeyError:
+                    continue
+                result.append(dep)
+                queue.append(dep_rid)
+        return result
+
+    def _ensure_no_public_dependents(self, resource: Resource) -> None:
+        """Raise if any public built-in still aggregates *resource*."""
+        dependents = self._find_public_dependents(resource.rid)
+        if dependents:
+            raise BuiltinDependentsPublicError(
+                resource_name=resource.name,
+                category=str(resource.category.value if hasattr(resource.category, "value") else resource.category),
+                dependents=dependents,
+            )
+
+    def _find_public_dependents(self, rid: str) -> List[Resource]:
+        """All resources that transitively depend on *rid* (directly or via
+        a chain of ``nested_refs``) and are themselves public built-ins."""
+        visited = {rid}
+        result: List[Resource] = []
+        queue = [rid]
+        while queue:
+            current = queue.pop(0)
+            for parent_rid in self._store.list_nested_usage(current):
+                if parent_rid in visited:
+                    continue
+                visited.add(parent_rid)
+                try:
+                    parent = self._store.get(parent_rid)
+                except KeyError:
+                    continue
+                if (
+                    parent.ownership == ResourceOwnership.BUILTIN
+                    and parent.visibility == ResourceVisibility.PUBLIC
+                ):
+                    result.append(parent)
+                queue.append(parent_rid)
+        return result
 
     def update_builtin(
         self,
@@ -332,7 +476,30 @@ class BuiltinResourceService:
     ) -> Resource:
         """Update a built-in resource (admin only).
 
-        Allows updating config, name, and visibility.
+        See ``update_builtin_with_cascade`` for the cascading behavior.
+        """
+        resource, _ = self.update_builtin_with_cascade(
+            rid, config=config, name=name, available_to_all=available_to_all,
+        )
+        return resource
+
+    def update_builtin_with_cascade(
+        self,
+        rid: str,
+        *,
+        config: dict = None,
+        name: str = None,
+        available_to_all: bool = None,
+    ) -> "tuple[Resource, List[Resource]]":
+        """Update a built-in resource (admin only).
+
+        Allows updating config, name, and visibility. Turning
+        ``available_to_all`` on cascades to any not-yet-public aggregated
+        elements (computed *after* the config update, so it reflects any
+        newly-added refs) — the second tuple element lists what got
+        cascaded. Turning it off is rejected with
+        ``BuiltinDependentsPublicError`` if a public built-in still
+        aggregates this resource.
         """
         resource = self._store.get(rid)
         if resource.ownership != ResourceOwnership.BUILTIN:
@@ -352,15 +519,30 @@ class BuiltinResourceService:
             resource.name = name
 
         if available_to_all is not None:
-            resource.visibility = (
-                ResourceVisibility.PUBLIC if available_to_all
-                else ResourceVisibility.DRAFT
-            )
+            if available_to_all:
+                resource.visibility = ResourceVisibility.PUBLIC
+            else:
+                if resource.visibility == ResourceVisibility.PUBLIC:
+                    self._ensure_no_public_dependents(resource)
+                resource.visibility = ResourceVisibility.DRAFT
 
-        return self._store.update(resource)
+        updated = self._store.update(resource)
+        cascaded = self._cascade_promote_dependencies(rid) if available_to_all else []
+        return updated, cascaded
 
     def toggle_visibility(self, rid: str, *, available_to_all: bool) -> Resource:
         """Set visibility of a built-in resource (admin only)."""
+        resource, _ = self.toggle_visibility_with_cascade(rid, available_to_all=available_to_all)
+        return resource
+
+    def toggle_visibility_with_cascade(
+        self, rid: str, *, available_to_all: bool,
+    ) -> "tuple[Resource, List[Resource]]":
+        """Set visibility of a built-in resource (admin only).
+
+        See ``promote_with_cascade`` / ``demote`` for the cascading and
+        guard behavior. Returns ``(resource, cascaded)``.
+        """
         if available_to_all:
-            return self.promote(rid)
-        return self.demote(rid)
+            return self.promote_with_cascade(rid)
+        return self.demote(rid), []

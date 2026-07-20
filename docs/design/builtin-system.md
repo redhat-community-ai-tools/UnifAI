@@ -323,7 +323,7 @@ Fields without `ReadOnlyHint` default to read-only when served via the built-in 
 | `/builtins.list` | GET | List all built-ins (draft + public) |
 | `/builtin.create` | POST | Create a built-in resource with optional `configurableFields` and `availableToAll` |
 | `/builtin.update` | PUT | Update config, name, or visibility of a built-in |
-| `/builtin.toggle` | PATCH | Promote (`visibility=public`) or demote (`visibility=draft`) |
+| `/builtin.toggle` | PATCH | Promote (`visibility=public`) or demote (`visibility=draft`). Promoting cascades to not-yet-public `nested_refs` (reported as `cascaded_resources` in the response); demoting is rejected with 400 if a public built-in still depends on this resource (see §10.0.1). |
 | `/builtin.schema.set` | PUT | Define/update the `BuiltinFieldSpec` for an element type |
 | `/resource.promote` | PATCH | Promote an existing custom resource to built-in |
 
@@ -509,6 +509,24 @@ All seed resources start as `draft`. Admins must explicitly toggle them to `publ
 | **MCP URL collision** | Creating a custom MCP resource whose `mcp_url` matches an existing built-in → rejected |
 | **Admin access** | All admin endpoints use `require_admin_access` decorator; admin list stored in `config.admin_config` collection |
 | **Field filtering** | `builtin.configure` silently drops any field not in the `BuiltinFieldSpec` — users cannot write to locked fields |
+| **`BuiltinDependentsPublicError`** | Demoting/hiding a built-in that a public agent still aggregates → HTTP 400, listing the blocking dependents |
+
+---
+
+## 10.0.1 Nested-Dependency Visibility Consistency
+
+An "available to all" agent/node aggregates other resources via `nested_refs` (its LLM, providers, tools, etc. — see §2 Resource Model). Since a public built-in can be seen and run by any user, every resource it depends on must also be public — otherwise the agent references a building block hidden from the very users who can see the agent.
+
+Two rules keep this consistent, enforced in `BuiltinResourceService` (`promote_with_cascade` / `update_builtin_with_cascade` / `toggle_visibility_with_cascade` / `create_builtin_with_cascade`, and the read-only `demote`/`_ensure_no_public_dependents` guard):
+
+| Direction | Rule | Mechanism |
+|-----------|------|-----------|
+| **Promoting** (making available to all) | Every resource transitively reachable via `nested_refs` that isn't already a public built-in is promoted alongside it. | `_cascade_promote_dependencies()` walks `nested_refs` breadth-first (skipping categories in `builtin_disabled_categories()`) and promotes each one. The list of newly-promoted resources is returned to the caller (`(resource, cascaded)` tuples) so admin endpoints can report it back as `cascaded_resources` for a UI disclaimer ("X, Y, Z were also made available to all"). |
+| **Demoting** (making unavailable) | Blocked if any public built-in still transitively depends on this resource. | `_find_public_dependents()` walks the *reverse* edge (`ResourceRepository.list_nested_usage`) breadth-first and collects any ancestor that is itself `ownership=builtin, visibility=public`. If any are found, `BuiltinDependentsPublicError` is raised naming them — the admin must first demote those dependents (or reconfigure them to reference a different element) before this resource can be hidden. |
+
+Both walks are transitive (not just direct parent/child) and cycle-safe (visited-set guarded), since a tool can itself reference a provider, which an agent then references.
+
+`preview_cascade_targets(rid)` is the read-only counterpart used by unit tests and available for future "preview before you toggle" UI — it returns what *would* be swept up without mutating anything.
 
 ---
 
@@ -602,3 +620,5 @@ Each built-in in the response includes a `user_configured: bool` flag indicating
 | **Resolution** | The process of merging base config + user overrides into an effective config at runtime |
 | **Visibility** | Whether a built-in is in `draft` (admin-only) or `public` (all users) state |
 | **Ownership** | Whether a resource is `builtin` (platform-managed) or `custom` (user/team-managed) |
+| **Cascade promotion** | Automatically promoting a resource's transitive `nested_refs` (LLMs, providers, tools, etc.) to public alongside it, so a public agent never depends on a hidden building block |
+| **Public dependent** | A public built-in that transitively references a given resource via `nested_refs` — blocks that resource from being demoted until the dependent is demoted or repointed |

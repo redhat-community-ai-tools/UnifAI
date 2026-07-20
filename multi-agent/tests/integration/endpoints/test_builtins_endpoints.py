@@ -11,6 +11,7 @@ from unittest.mock import Mock
 from mas.resources.errors import (
     BuiltInWriteProtectedError,
     BuiltinConfigUnavailableError,
+    BuiltinDependentsPublicError,
 )
 
 
@@ -20,6 +21,20 @@ def _fake_resource_dump(**overrides):
     doc = Mock()
     doc.model_dump.return_value = base
     return doc
+
+
+def _fake_dependency(rid="dep-1", name="Dependency", category="llms"):
+    """A stand-in for a ``Resource`` returned by ``preview_cascade_targets`` /
+    ``BuiltinDependentsPublicError.dependents`` — the endpoint reads plain
+    ``.rid`` / ``.name`` / ``.category`` attributes off these (not
+    ``model_dump()``), so set them directly rather than via the Mock
+    constructor (``name=`` there configures the mock's repr, not an attribute).
+    """
+    dep = Mock()
+    dep.rid = rid
+    dep.name = name
+    dep.category = category
+    return dep
 
 
 class TestAdminGating:
@@ -134,10 +149,10 @@ class TestPromoteResource:
             headers=user_headers,
         )
         assert resp.status_code == 403
-        resources_service.promote.assert_not_called()
+        resources_service.promote_with_cascade.assert_not_called()
 
     def test_admin_success(self, client, admin_headers, resources_service):
-        resources_service.promote.return_value = _fake_resource_dump()
+        resources_service.promote_with_cascade.return_value = (_fake_resource_dump(), [])
 
         resp = client.patch(
             "/api/resources/resource.promote",
@@ -146,6 +161,25 @@ class TestPromoteResource:
         )
 
         assert resp.status_code == 200
+
+    def test_reports_cascaded_dependencies(self, client, admin_headers, resources_service):
+        """The nested LLM/provider/tool an agent aggregates gets swept along
+        when the agent is promoted — surfaced as ``cascaded_resources``."""
+        resources_service.promote_with_cascade.return_value = (
+            _fake_resource_dump(),
+            [_fake_dependency(rid="llm-1", name="My LLM", category="llms")],
+        )
+
+        resp = client.patch(
+            "/api/resources/resource.promote",
+            json={"resourceId": "r1"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.get_json()["cascaded_resources"] == [
+            {"rid": "llm-1", "name": "My LLM", "category": "llms"},
+        ]
 
 
 class TestCreateBuiltinResource:
@@ -156,10 +190,10 @@ class TestCreateBuiltinResource:
             headers=user_headers,
         )
         assert resp.status_code == 403
-        resources_service.create_builtin.assert_not_called()
+        resources_service.create_builtin_with_cascade.assert_not_called()
 
     def test_admin_success(self, client, admin_headers, resources_service):
-        resources_service.create_builtin.return_value = _fake_resource_dump()
+        resources_service.create_builtin_with_cascade.return_value = (_fake_resource_dump(), [])
 
         resp = client.post(
             "/api/resources/builtin.create",
@@ -168,6 +202,26 @@ class TestCreateBuiltinResource:
         )
 
         assert resp.status_code == 201
+
+    def test_available_to_all_reports_cascaded_dependencies(self, client, admin_headers, resources_service):
+        resources_service.create_builtin_with_cascade.return_value = (
+            _fake_resource_dump(),
+            [_fake_dependency(rid="llm-2", name="Backing LLM", category="llms")],
+        )
+
+        resp = client.post(
+            "/api/resources/builtin.create",
+            json={
+                "category": "nodes", "type": "deep_agent_node", "name": "n",
+                "config": {}, "availableToAll": True,
+            },
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 201
+        assert resp.get_json()["cascaded_resources"] == [
+            {"rid": "llm-2", "name": "Backing LLM", "category": "llms"},
+        ]
 
 
 class TestToggleBuiltinVisibility:
@@ -180,7 +234,7 @@ class TestToggleBuiltinVisibility:
         assert resp.status_code == 403
 
     def test_admin_success(self, client, admin_headers, resources_service):
-        resources_service.toggle_visibility.return_value = _fake_resource_dump()
+        resources_service.toggle_visibility_with_cascade.return_value = (_fake_resource_dump(), [])
 
         resp = client.patch(
             "/api/resources/builtin.toggle",
@@ -189,7 +243,59 @@ class TestToggleBuiltinVisibility:
         )
 
         assert resp.status_code == 200
-        resources_service.toggle_visibility.assert_called_once_with("r1", available_to_all=True)
+        resources_service.toggle_visibility_with_cascade.assert_called_once_with("r1", available_to_all=True)
+
+    def test_turning_on_reports_cascaded_dependencies(self, client, admin_headers, resources_service):
+        resources_service.toggle_visibility_with_cascade.return_value = (
+            _fake_resource_dump(),
+            [_fake_dependency(rid="provider-1", name="My MCP Provider", category="providers")],
+        )
+
+        resp = client.patch(
+            "/api/resources/builtin.toggle",
+            json={"resourceId": "r1", "availableToAll": True},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.get_json()["cascaded_resources"] == [
+            {"rid": "provider-1", "name": "My MCP Provider", "category": "providers"},
+        ]
+
+    def test_turning_off_reports_no_cascade(self, client, admin_headers, resources_service):
+        resources_service.toggle_visibility_with_cascade.return_value = (_fake_resource_dump(), [])
+
+        resp = client.patch(
+            "/api/resources/builtin.toggle",
+            json={"resourceId": "r1", "availableToAll": False},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert "cascaded_resources" not in resp.get_json()
+
+    def test_turning_off_blocked_by_public_dependents(self, client, admin_headers, resources_service):
+        """A leaf still used by a public 'available to all' agent can't be
+        demoted — the admin must demote the agent(s) or repoint them first."""
+        error = BuiltinDependentsPublicError(
+            resource_name="My LLM",
+            category="llms",
+            dependents=[_fake_dependency(rid="agent-1", name="Research Assistant", category="nodes")],
+        )
+        resources_service.toggle_visibility_with_cascade.side_effect = error
+
+        resp = client.patch(
+            "/api/resources/builtin.toggle",
+            json={"resourceId": "r1", "availableToAll": False},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert "Research Assistant" in body["error"]
+        assert body["dependents"] == [
+            {"rid": "agent-1", "name": "Research Assistant", "category": "nodes"},
+        ]
 
 
 class TestAdminEditLocks:

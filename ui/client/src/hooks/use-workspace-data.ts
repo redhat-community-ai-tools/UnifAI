@@ -12,6 +12,20 @@ import { catalogService } from "@/api/catalog";
 import * as resourcesApi from "@/api/resources";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
+import type { ResourceInstance } from "@/api/resources";
+
+/**
+ * When a resource is made available to all, any aggregated elements it
+ * references (LLMs, providers, tools, etc.) that weren't already public
+ * built-ins get swept along automatically. Builds the disclaimer text for
+ * the success toast when that happened.
+ */
+function describeCascadedResources(result: ResourceInstance | null): string | null {
+  const cascaded = result?.cascaded_resources;
+  if (!cascaded || cascaded.length === 0) return null;
+  const names = cascaded.map((r) => `"${r.name}"`).join(", ");
+  return `Also made available to all, since this resource uses ${names}.`;
+}
 
 export const useWorkspaceData = () => {
   const [categories, setCategories] = useState<ElementCategory[]>([]);
@@ -486,7 +500,13 @@ export const useWorkspaceData = () => {
             name: elementData.name,
             availableToAll,
           });
-          toast({ title: "Success", description: "Built-in resource updated successfully" });
+          const cascadeNote = describeCascadedResources(result);
+          toast({
+            title: "Success",
+            description: cascadeNote
+              ? `Built-in resource updated successfully. ${cascadeNote}`
+              : "Built-in resource updated successfully",
+          });
           return result;
         } else {
           const { cfg_dict, name } = elementData;
@@ -499,7 +519,13 @@ export const useWorkspaceData = () => {
             config: cfg_dict,
             availableToAll,
           });
-          toast({ title: "Success", description: "Built-in resource created successfully" });
+          const cascadeNote = describeCascadedResources(result);
+          toast({
+            title: "Success",
+            description: cascadeNote
+              ? `Built-in resource created successfully. ${cascadeNote}`
+              : "Built-in resource created successfully",
+          });
           return result;
         }
       } catch (err: any) {
@@ -532,10 +558,13 @@ export const useWorkspaceData = () => {
           availableToAll,
         });
 
+        const cascadeNote = describeCascadedResources(result);
         toast({
           title: "Success",
           description: availableToAll
-            ? "Resource is now available to all users"
+            ? cascadeNote
+              ? `Resource is now available to all users. ${cascadeNote}`
+              : "Resource is now available to all users"
             : "Resource is no longer available to all users",
         });
         return result;

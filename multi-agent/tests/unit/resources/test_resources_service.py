@@ -13,6 +13,7 @@ from mas.resources.errors import (
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
     BuiltinConfigUnavailableError,
+    BuiltinDependentsPublicError,
 )
 from mas.resources.models import Resource
 
@@ -40,6 +41,15 @@ def _make_builtin_resource(service, admin_identity, name="builtin-1", available_
         config={"bearer_token": bearer_token, "endpoint": "https://b.example"},
         available_to_all=available_to_all,
     )
+
+
+def _link_nested(service, parent: Resource, *child_rids: str) -> Resource:
+    """Wire ``parent.nested_refs`` directly, bypassing schema Ref-field
+    extraction, so tests can build an aggregator/leaf graph (e.g. an agent
+    referencing an LLM/provider/tool) without a real Ref-typed fake schema."""
+    doc = service.get(parent.rid)
+    doc.nested_refs = list(child_rids)
+    return service._store.update(doc)
 
 
 # ────────────────────────────── IDOR guard ──────────────────────────────
@@ -229,3 +239,99 @@ class TestPromoteDemote:
 
         toggled_off = service.toggle_visibility(toggled_on.rid, available_to_all=False)
         assert toggled_off.visibility == ResourceVisibility.DRAFT
+
+
+# ────────────────────────────── nested-dependency cascade ──────────────────────────────
+
+class TestNestedDependencyCascade:
+    """An agent/node can aggregate leaf elements (LLMs, providers, tools)
+    via ``nested_refs``. Promoting the agent to "available to all" must
+    cascade to those leaves, and demoting a leaf that a public agent still
+    uses must be blocked."""
+
+    def test_promote_cascades_to_not_yet_public_nested_refs(self, service, alice, admin_identity):
+        llm = _make_custom_resource(service, alice, name="my-llm")
+        agent = _make_custom_resource(service, alice, name="my-agent")
+        _link_nested(service, agent, llm.rid)
+
+        service.promote(agent.rid)
+
+        promoted_llm = service.get(llm.rid)
+        assert promoted_llm.ownership == ResourceOwnership.BUILTIN
+        assert promoted_llm.visibility == ResourceVisibility.PUBLIC
+
+    def test_promote_cascades_transitively_through_a_chain(self, service, alice):
+        provider = _make_custom_resource(service, alice, name="my-provider")
+        tool = _make_custom_resource(service, alice, name="my-tool")
+        agent = _make_custom_resource(service, alice, name="my-agent-2")
+        _link_nested(service, tool, provider.rid)
+        _link_nested(service, agent, tool.rid)
+
+        service.promote(agent.rid)
+
+        assert service.get(tool.rid).visibility == ResourceVisibility.PUBLIC
+        assert service.get(provider.rid).visibility == ResourceVisibility.PUBLIC
+
+    def test_promote_does_not_touch_already_public_nested_refs(self, service, alice, admin_identity):
+        llm = _make_builtin_resource(service, admin_identity, name="shared-llm", available_to_all=True)
+        agent = _make_custom_resource(service, alice, name="agent-using-shared-llm")
+        _link_nested(service, agent, llm.rid)
+
+        service.promote(agent.rid)
+
+        # No-op: still public, version unchanged by the cascade.
+        assert service.get(llm.rid).version == llm.version
+
+    def test_preview_cascade_targets_lists_not_yet_public_deps(self, service, alice):
+        llm = _make_custom_resource(service, alice, name="preview-llm")
+        agent = _make_custom_resource(service, alice, name="preview-agent")
+        _link_nested(service, agent, llm.rid)
+
+        targets = service.preview_cascade_targets(agent.rid)
+
+        assert [t.rid for t in targets] == [llm.rid]
+
+    def test_demote_blocked_when_public_agent_still_uses_it(self, service, alice):
+        llm = _make_custom_resource(service, alice, name="blocked-llm")
+        agent = _make_custom_resource(service, alice, name="blocking-agent")
+        _link_nested(service, agent, llm.rid)
+        service.promote(agent.rid)  # cascades llm to public too
+
+        with pytest.raises(BuiltinDependentsPublicError) as exc_info:
+            service.demote(llm.rid)
+
+        assert "blocking-agent" in str(exc_info.value)
+        assert [d.rid for d in exc_info.value.dependents] == [agent.rid]
+
+    def test_demote_allowed_once_dependent_agent_is_demoted(self, service, alice):
+        llm = _make_custom_resource(service, alice, name="unblocked-llm")
+        agent = _make_custom_resource(service, alice, name="unblocking-agent")
+        _link_nested(service, agent, llm.rid)
+        service.promote(agent.rid)
+
+        service.demote(agent.rid)
+        demoted_llm = service.demote(llm.rid)
+
+        assert demoted_llm.visibility == ResourceVisibility.DRAFT
+
+    def test_demote_blocked_transitively_through_a_chain(self, service, alice):
+        provider = _make_custom_resource(service, alice, name="chain-provider")
+        tool = _make_custom_resource(service, alice, name="chain-tool")
+        agent = _make_custom_resource(service, alice, name="chain-agent")
+        _link_nested(service, tool, provider.rid)
+        _link_nested(service, agent, tool.rid)
+        service.promote(agent.rid)  # cascades tool + provider to public
+
+        with pytest.raises(BuiltinDependentsPublicError) as exc_info:
+            service.demote(provider.rid)
+
+        assert {d.rid for d in exc_info.value.dependents} == {tool.rid, agent.rid}
+
+    def test_demote_not_blocked_by_unrelated_draft_agent(self, service, alice):
+        llm = _make_custom_resource(service, alice, name="free-llm")
+        draft_agent = _make_custom_resource(service, alice, name="draft-agent")
+        _link_nested(service, draft_agent, llm.rid)
+        service.promote(llm.rid)  # llm becomes public on its own; agent stays custom/draft
+
+        demoted = service.demote(llm.rid)
+        assert demoted.visibility == ResourceVisibility.DRAFT

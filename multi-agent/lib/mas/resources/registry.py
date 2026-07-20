@@ -58,6 +58,10 @@ class ResourcesRegistry:
                                      by_resources=nested_res)
         self._repo.delete(rid)
 
+    def list_nested_usage(self, rid: str) -> List[str]:
+        """Return resource IDs whose `nested_refs` array contains *rid*."""
+        return self._repo.list_nested_usage(rid)
+
     # ---------- read ----------
     def get(self, rid: str) -> Resource:
         return self._repo.get(rid)
