@@ -33,6 +33,10 @@ from mas.validation.service import ElementValidationService
 from mas.templates.service import TemplateService
 from mas.collaboration.service import CollaborationService
 
+# Scheduled prompts
+from mas.prompts.service import PromptService
+from outbound.mongo.scheduled_prompt_repository import MongoScheduledPromptRepository
+
 # Auth layer
 from mas.core.auth.service import AuthService, AuthStrategyRegistry
 from mas.core.auth.discovery import AuthDetector
@@ -354,6 +358,18 @@ class AppContainer(metaclass=SingletonMeta):
             cfg, self.session_repo, self.identity_provider
         )
 
+        # ── Scheduled prompts ──────────────────────────────────────────
+        self.prompt_repo = MongoScheduledPromptRepository(
+            db_name=cfg.mongo_db,
+            coll_name=cfg.scheduled_prompts_coll,
+        )
+        schedule_adapter = self._create_schedule_adapter(cfg.engine_name)
+        self.prompt_service = PromptService(
+            prompt_repo=self.prompt_repo,
+            schedule_port=schedule_adapter,
+            blueprint_service=self.blueprint_service,
+        )
+
         self._initialized = True
 
     @staticmethod
@@ -429,6 +445,13 @@ class AppContainer(metaclass=SingletonMeta):
         if engine_name == "temporal":
             from outbound.temporal.session_engine import TemporalSessionEngine
             return TemporalSessionEngine()
+        return None
+
+    @staticmethod
+    def _create_schedule_adapter(engine_name: str):
+        if engine_name == "temporal":
+            from outbound.temporal.schedule_adapter import TemporalScheduleAdapter
+            return TemporalScheduleAdapter()
         return None
 
     @staticmethod

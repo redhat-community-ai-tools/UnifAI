@@ -23,7 +23,8 @@ from mas.session.execution.lifecycle_handler import BackgroundLifecycleHandler
 from mas.session.execution.lifecycle import SessionLifecycle
 from temporal.client import get_temporal_client
 from inbound.temporal.activities import GraphNodeActivities, SessionLifecycleActivities
-from inbound.temporal.workflows import GraphTraversalWorkflow, SessionWorkflow
+from inbound.temporal.activities.schedule_activities import ScheduleActivities
+from inbound.temporal.workflows import GraphTraversalWorkflow, SessionWorkflow, ScheduledSessionWorkflow
 
 
 async def run_worker(
@@ -59,12 +60,19 @@ async def run_worker(
         handler=lifecycle_handler,
     )
 
+    schedule_activities = ScheduleActivities(
+        session_service=container.session_service,
+        input_projector=container.input_projector,
+        session_manager=container.session_manager,
+        prompt_service=container.prompt_service,
+    )
+
     client = await get_temporal_client()
 
     worker = Worker(
         client,
         task_queue=cfg.temporal_task_queue,
-        workflows=[GraphTraversalWorkflow, SessionWorkflow],
+        workflows=[GraphTraversalWorkflow, SessionWorkflow, ScheduledSessionWorkflow],
         activities=[
             graph_activities.execute_node,
             graph_activities.evaluate_condition,
@@ -72,6 +80,10 @@ async def run_worker(
             lifecycle_activities.complete_session,
             lifecycle_activities.fail_session,
             lifecycle_activities.cancel_session,
+            schedule_activities.create_scheduled_session,
+            schedule_activities.stage_scheduled_inputs,
+            schedule_activities.build_session_workflow_params,
+            schedule_activities.mark_schedule_completed,
         ],
         activity_executor=thread_pool,
         max_concurrent_activities=threads,

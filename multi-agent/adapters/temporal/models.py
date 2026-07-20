@@ -17,6 +17,7 @@ from mas.engine.domain.models import GraphDefinition
 from mas.graph.models.step_context import StepContext
 from mas.graph.state.graph_state import GraphState
 from mas.core.execution_context import ExecutionContext
+from mas.core.identity import Identity
 
 
 # ── Workflow params ──────────────────────────────────────────────────
@@ -89,3 +90,32 @@ class FailSessionParams(BaseModel):
 class CancelSessionParams(BaseModel):
     """Input to the cancel_session activity."""
     run_id: str
+
+
+# ── Scheduled session params ─────────────────────────────────────────
+
+class ScheduledSessionParams(BaseModel):
+    """Input to ScheduledSessionWorkflow (triggered by Temporal Schedule)."""
+    prompt_id: str
+    blueprint_id: str
+    identity: Identity
+    text: str = ""
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    source: str = "manual"
+
+
+class StageScheduledInputsParams(BaseModel):
+    """Input to the stage_scheduled_inputs activity."""
+    run_id: str
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    text: str = ""
+
+
+class BuildSessionWorkflowParamsInput(BaseModel):
+    """Input to the build_session_workflow_params activity."""
+    run_id: str
+
+
+class MarkScheduleCompletedParams(BaseModel):
+    """Input to the mark_schedule_completed activity."""
+    prompt_id: str
