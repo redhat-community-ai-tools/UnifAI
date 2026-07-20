@@ -33,7 +33,7 @@ export const CATEGORY_META: Record<
   providers: {
     label: "Providers",
     icon: <Server className="h-4 w-4" />,
-    description: "MCP servers, RAG clients, and external service connectors",
+    description: "MCP servers, and external service connectors",
   },
   tools: {
     label: "Tools",
