@@ -103,6 +103,7 @@ RUN pip install 'grpcio-tools>=1.68.0' && \
     sed -i 's/^import openshell_pb2/from . import openshell_pb2/' "$SITE_PKG"/*.py && \
     sed -i 's/^import sandbox_pb2/from . import sandbox_pb2/' "$SITE_PKG"/*.py && \
     sed -i 's/^import inference_pb2/from . import inference_pb2/' "$SITE_PKG"/*.py && \
+    sed -i 's/^import options_pb2/from . import options_pb2/' "$SITE_PKG"/*.py && \
     rm -rf "$PROTO_DIR" && \
     python3 -c "import openshell; print('openshell SDK OK')"
 
