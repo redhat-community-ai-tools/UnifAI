@@ -40,7 +40,13 @@ def resources_service():
 
 @pytest.fixture
 def collaboration_service():
-    return Mock()
+    svc = Mock()
+    # No admin edit lock held by default, so promote/update/toggle tests
+    # that don't care about lock enforcement aren't spuriously rejected
+    # with 409 by ``_reject_if_locked_by_other`` (a bare Mock return value
+    # would otherwise be treated as a truthy, non-matching lock holder).
+    svc.get_admin_edit_lock.return_value = None
+    return svc
 
 
 @pytest.fixture

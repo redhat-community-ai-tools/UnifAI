@@ -123,10 +123,10 @@ def get_resource(identity, resource_id):
     "category": fields.Str(required=False),
     "type": fields.Str(required=False),
     "ownership": fields.Str(required=False),
-    "limit": fields.Int(required=False, load_default=1000),
+    "limit": fields.Int(required=False, load_default=50),
     "offset": fields.Int(required=False, load_default=0),
 })
-def list_resources(identity, category=None, type=None, ownership=None, limit=1000, offset=0):
+def list_resources(identity, category=None, type=None, ownership=None, limit=50, offset=0):
     """
     Get resources with flexible filtering and pagination:
     - identity: scopes to user or team workspace

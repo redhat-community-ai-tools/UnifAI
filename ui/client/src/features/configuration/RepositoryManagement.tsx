@@ -7,13 +7,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useBuiltinEditLockPoll } from "@/hooks/use-builtin-edit-lock-poll";
 import { useBuiltinEditLockSession } from "@/hooks/use-builtin-edit-lock-session";
-import { acquireBuiltinEditLock } from "@/api/resources";
+import { acquireBuiltinEditLock, previewBuiltinCascade } from "@/api/resources";
+import type { ResourceDependencySummary } from "@/api/resources";
 import { ElementForm } from "@/components/agentic-ai/workspace/ElementForm";
 import { ElementData } from "@/components/agentic-ai/workspace/ElementData";
 import type { ElementType, ElementInstance } from "@/types/workspace";
 import { AddResourceWizardPanel } from "./repository-management/AddResourceWizardPanel";
 import { BuiltinResourceTable } from "./repository-management/BuiltinResourceTable";
 import { DeleteResourceDialog } from "./repository-management/DeleteResourceDialog";
+import { CascadeConfirmDialog } from "./repository-management/CascadeConfirmDialog";
 import { BUILTIN_DISABLED_CATEGORIES, type ResourceItem, type WizardStep } from "./repository-management/types";
 
 export default function RepositoryManagement() {
@@ -59,6 +61,13 @@ export default function RepositoryManagement() {
 
   const [newElementAvailableToAll, setNewElementAvailableToAll] = useState(false);
   const [isTogglingStatus, setIsTogglingStatus] = useState<string | null>(null);
+
+  const [cascadePreview, setCascadePreview] = useState<{
+    rid: string;
+    resourceName: string;
+    cascaded: ResourceDependencySummary[];
+  } | null>(null);
+  const [isApplyingCascade, setIsApplyingCascade] = useState(false);
 
   const { user } = useAuth();
   const currentUsername = user?.username ?? "";
@@ -315,14 +324,13 @@ export default function RepositoryManagement() {
     }
   };
 
-  const toggleAvailableToAll = async (rid: string) => {
-    const currentValue = availableToAll[rid] ?? false;
-    const newValue = !currentValue;
+  const applyToggle = useCallback(async (rid: string, newValue: boolean) => {
     setIsTogglingStatus(rid);
     try {
       // toggleBuiltinStatus already catches its own failures (e.g. blocked
-      // because a public agent still uses this resource) and surfaces an
-      // error toast internally, returning null rather than rejecting.
+      // because a public agent still uses this resource, or a 409 because
+      // another admin holds the edit lock) and surfaces an error toast
+      // internally, returning null rather than rejecting.
       const result = await toggleBuiltinStatus(rid, newValue);
       if (result) {
         if (result.cascaded_resources?.length) {
@@ -337,7 +345,49 @@ export default function RepositoryManagement() {
     } finally {
       setIsTogglingStatus(null);
     }
-  };
+  }, [toggleBuiltinStatus, reloadBuiltins]);
+
+  const toggleAvailableToAll = useCallback(async (rid: string) => {
+    const currentValue = availableToAll[rid] ?? false;
+    const newValue = !currentValue;
+
+    if (newValue) {
+      // Turning "available to all" on can cascade to not-yet-public
+      // dependencies (LLMs, providers, tools, etc.). Preview first so the
+      // admin can confirm *before* the mutation, rather than only being
+      // told about it in the success toast afterward.
+      setIsTogglingStatus(rid);
+      let cascaded: ResourceDependencySummary[] = [];
+      try {
+        cascaded = await previewBuiltinCascade(rid);
+      } catch {
+        // If the preview call itself fails, don't block the toggle on it —
+        // proceed with the mutation and rely on its own error handling /
+        // the post-mutation cascade disclaimer as a fallback.
+        cascaded = [];
+      } finally {
+        setIsTogglingStatus(null);
+      }
+      if (cascaded.length > 0) {
+        const resource = Object.values(categoryResources).flat().find((r) => r.rid === rid);
+        setCascadePreview({ rid, resourceName: resource?.name ?? "This resource", cascaded });
+        return;
+      }
+    }
+
+    await applyToggle(rid, newValue);
+  }, [availableToAll, applyToggle, categoryResources]);
+
+  const confirmCascade = useCallback(async () => {
+    if (!cascadePreview) return;
+    setIsApplyingCascade(true);
+    try {
+      await applyToggle(cascadePreview.rid, true);
+    } finally {
+      setIsApplyingCascade(false);
+      setCascadePreview(null);
+    }
+  }, [cascadePreview, applyToggle]);
 
   const handleTypeFilterChange = (category: string, value: string) => {
     setTypeFilters((prev) => ({ ...prev, [category]: value }));
@@ -440,6 +490,13 @@ export default function RepositoryManagement() {
         isDeleting={isDeleting}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         onConfirm={confirmDelete}
+      />
+
+      <CascadeConfirmDialog
+        target={cascadePreview}
+        isConfirming={isApplyingCascade}
+        onOpenChange={(open) => !open && setCascadePreview(null)}
+        onConfirm={confirmCascade}
       />
     </div>
   );

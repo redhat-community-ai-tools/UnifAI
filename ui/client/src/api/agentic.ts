@@ -44,12 +44,18 @@ export async function fetchBlueprintSessionCounts(userId?: string): Promise<Reco
   return stats.blueprintSessionCounts || {};
 }
 
+// The endpoint's default page size is intentionally small (matches
+// ResourceQuery's default). These helpers want the caller's *complete*
+// resource set (stats, building blocks, etc.), so they request the max
+// page size explicitly rather than relying on the default.
+const BULK_LIST_LIMIT = 1000;
+
 // Fetch all resources for a user
 export async function fetchAllResources(userId?: string, identityType?: string): Promise<any[]> {
   const userIdParam = userId || 'default';
   const idType = identityType || 'user';
   const response = await axios.get(
-    `/resources/resources.list?userId=${userIdParam}&identityType=${idType}`
+    `/resources/resources.list?userId=${userIdParam}&identityType=${idType}&limit=${BULK_LIST_LIMIT}`
   );
   return response.data?.resources || [];
 }
@@ -59,7 +65,7 @@ export async function fetchResourcesByCategory(category: string, userId?: string
   const userIdParam = userId || 'default';
   const idType = identityType || 'user';
   const response = await axios.get(
-    `/resources/resources.list?userId=${userIdParam}&identityType=${idType}&category=${category}`
+    `/resources/resources.list?userId=${userIdParam}&identityType=${idType}&category=${category}&limit=${BULK_LIST_LIMIT}`
   );
   return response.data?.resources || [];
 }

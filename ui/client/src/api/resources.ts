@@ -248,6 +248,21 @@ export async function promoteResource(resourceId: string): Promise<ResourceInsta
   return data;
 }
 
+/**
+ * Preview which resources would be newly made available to all if
+ * `resourceId` were promoted/toggled on — read-only, does not mutate
+ * anything. Lets the UI confirm the cascade with the admin *before* the
+ * mutation, instead of only disclaiming it after the fact.
+ */
+export async function previewBuiltinCascade(
+  resourceId: string,
+): Promise<ResourceDependencySummary[]> {
+  const { data } = await axios.get<{ cascaded_resources: ResourceDependencySummary[] }>(
+    `/resources/builtin.cascade-preview?resourceId=${encodeURIComponent(resourceId)}`,
+  );
+  return data.cascaded_resources || [];
+}
+
 // --- Admin edit lock endpoints (built-in resources) ---
 
 export interface BuiltinEditLockHolder {

@@ -179,6 +179,17 @@ class TestBuiltinOverlay:
                 doc.rid, identity=alice, config={"bearer_token": "mine"},
             )
 
+    def test_configure_builtin_rejects_invalid_field_type(self, service, admin_identity, alice):
+        """An overlay value that fails Pydantic validation against the
+        element's config model must be rejected at configure-time, not
+        silently persisted and only discovered later at resolve()."""
+        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
+        with pytest.raises(ValueError):
+            service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": 12345})
+
+        # Nothing should have been persisted from the rejected attempt.
+        assert service.get_user_config(doc.rid, identity=alice) is None
+
     def test_configure_builtin_round_trips_through_get_user_config(self, service, admin_identity, alice):
         doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
 

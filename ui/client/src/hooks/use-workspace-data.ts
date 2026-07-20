@@ -93,6 +93,10 @@ export const useWorkspaceData = () => {
           identityType,
           category,
           type,
+          // The endpoint's default page size is intentionally small; this
+          // call wants the caller's complete set of instances for the
+          // category/type, so request the max page size explicitly.
+          limit: 1000,
         });
 
         const instances: ElementInstance[] = data.resources.map(
@@ -169,6 +173,9 @@ export const useWorkspaceData = () => {
           identityType,
           category,
           ownership,
+          // $ref dropdowns need the complete set for the category, not
+          // just the endpoint's default page.
+          limit: 1000,
         });
 
         return data.resources.map((resource) => ({

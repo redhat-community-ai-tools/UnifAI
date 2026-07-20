@@ -14,6 +14,8 @@ import logging
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from pydantic import ValidationError as PydanticValidationError
+
 from mas.core.identity import Identity
 from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
 from mas.core.ref import RefWalker
@@ -148,7 +150,26 @@ class BuiltinResourceService:
         if not self._builtin_user_config_repo:
             raise BuiltinConfigUnavailableError()
 
-        encrypted = self._fields.encrypt_config_fields(filtered, sensitive_keys)
+        # Validate the overlay against the element's Pydantic model before
+        # persisting, the same way ResourcesService.create()/update_builtin()
+        # validate cfg_dict. Merge onto the (decrypted) base config first so
+        # cross-field constraints see the complete picture, then re-extract
+        # only the overridden keys from the validated/coerced output — this
+        # ensures invalid values are rejected here instead of silently
+        # persisting and only surfacing later at resolve() time.
+        model_cls = self.element_registry.get_schema(
+            ResourceCategory(resource.category), resource.type
+        )
+        base_config = self._store.raw_config(rid)
+        merged = {**base_config, **filtered}
+        try:
+            cfg_model = model_cls(**merged)
+        except PydanticValidationError as e:
+            raise ValueError(f"Invalid configuration: {e}") from e
+        validated_dump = cfg_model.model_dump(mode="json")
+        validated = {k: validated_dump[k] for k in filtered if k in validated_dump}
+
+        encrypted = self._fields.encrypt_config_fields(validated, sensitive_keys)
 
         key = identity_to_key(identity)
         existing = self._builtin_user_config_repo.get(rid, key)

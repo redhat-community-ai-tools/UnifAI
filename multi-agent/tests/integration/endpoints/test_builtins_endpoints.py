@@ -141,6 +141,44 @@ class TestDuplicateResource:
         assert resp.get_json()["rid"] == "clone-1"
 
 
+class TestCascadePreview:
+    """Read-only preview so the UI can confirm *before* promoting/toggling,
+    instead of only disclaiming the cascade after the mutation happened."""
+
+    def test_requires_admin(self, client, user_headers, resources_service):
+        resp = client.get(
+            "/api/resources/builtin.cascade-preview?resourceId=r1",
+            headers=user_headers,
+        )
+        assert resp.status_code == 403
+        resources_service.preview_cascade_targets.assert_not_called()
+
+    def test_admin_success_lists_cascaded_resources(self, client, admin_headers, resources_service):
+        resources_service.preview_cascade_targets.return_value = [
+            _fake_dependency(rid="llm-1", name="My LLM", category="llms"),
+        ]
+
+        resp = client.get(
+            "/api/resources/builtin.cascade-preview?resourceId=r1",
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.get_json()["cascaded_resources"] == [
+            {"rid": "llm-1", "name": "My LLM", "category": "llms"},
+        ]
+
+    def test_not_found_returns_404(self, client, admin_headers, resources_service):
+        resources_service.preview_cascade_targets.side_effect = KeyError("r1")
+
+        resp = client.get(
+            "/api/resources/builtin.cascade-preview?resourceId=r1",
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 404
+
+
 class TestPromoteResource:
     def test_requires_admin(self, client, user_headers, resources_service):
         resp = client.patch(
@@ -152,6 +190,52 @@ class TestPromoteResource:
         resources_service.promote_with_cascade.assert_not_called()
 
     def test_admin_success(self, client, admin_headers, resources_service):
+        resources_service.promote_with_cascade.return_value = (_fake_resource_dump(), [])
+
+        resp = client.patch(
+            "/api/resources/resource.promote",
+            json={"resourceId": "r1"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+
+    def test_blocked_when_locked_by_another_admin(
+        self, client, admin_headers, resources_service, collaboration_service,
+    ):
+        holder = Mock(user_id="other-admin", display_name="Other Admin")
+        collaboration_service.get_admin_edit_lock.return_value = holder
+
+        resp = client.patch(
+            "/api/resources/resource.promote",
+            json={"resourceId": "r1"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 409
+        resources_service.promote_with_cascade.assert_not_called()
+
+    def test_allowed_when_lock_held_by_self(
+        self, client, admin_headers, resources_service, collaboration_service,
+    ):
+        from tests.integration.endpoints.conftest import ADMIN_USER
+
+        holder = Mock(user_id=ADMIN_USER, display_name="Admin Alice")
+        collaboration_service.get_admin_edit_lock.return_value = holder
+        resources_service.promote_with_cascade.return_value = (_fake_resource_dump(), [])
+
+        resp = client.patch(
+            "/api/resources/resource.promote",
+            json={"resourceId": "r1"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+
+    def test_allowed_when_collaboration_service_unavailable(
+        self, client, admin_headers, resources_service, container,
+    ):
+        container.collaboration_service = None
         resources_service.promote_with_cascade.return_value = (_fake_resource_dump(), [])
 
         resp = client.patch(
@@ -224,6 +308,44 @@ class TestCreateBuiltinResource:
         ]
 
 
+class TestUpdateBuiltinResource:
+    def test_requires_admin(self, client, user_headers, resources_service):
+        resp = client.put(
+            "/api/resources/builtin.update",
+            json={"resourceId": "r1", "name": "renamed"},
+            headers=user_headers,
+        )
+        assert resp.status_code == 403
+        resources_service.update_builtin_with_cascade.assert_not_called()
+
+    def test_admin_success(self, client, admin_headers, resources_service):
+        resources_service.update_builtin_with_cascade.return_value = (_fake_resource_dump(), [])
+
+        resp = client.put(
+            "/api/resources/builtin.update",
+            json={"resourceId": "r1", "name": "renamed"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 200
+
+    def test_blocked_when_locked_by_another_admin(
+        self, client, admin_headers, resources_service, collaboration_service,
+    ):
+        collaboration_service.get_admin_edit_lock.return_value = Mock(
+            user_id="other-admin", display_name="Other Admin",
+        )
+
+        resp = client.put(
+            "/api/resources/builtin.update",
+            json={"resourceId": "r1", "name": "renamed"},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 409
+        resources_service.update_builtin_with_cascade.assert_not_called()
+
+
 class TestToggleBuiltinVisibility:
     def test_requires_admin(self, client, user_headers, resources_service):
         resp = client.patch(
@@ -273,6 +395,22 @@ class TestToggleBuiltinVisibility:
 
         assert resp.status_code == 200
         assert "cascaded_resources" not in resp.get_json()
+
+    def test_blocked_when_locked_by_another_admin(
+        self, client, admin_headers, resources_service, collaboration_service,
+    ):
+        collaboration_service.get_admin_edit_lock.return_value = Mock(
+            user_id="other-admin", display_name="Other Admin",
+        )
+
+        resp = client.patch(
+            "/api/resources/builtin.toggle",
+            json={"resourceId": "r1", "availableToAll": True},
+            headers=admin_headers,
+        )
+
+        assert resp.status_code == 409
+        resources_service.toggle_visibility_with_cascade.assert_not_called()
 
     def test_turning_off_blocked_by_public_dependents(self, client, admin_headers, resources_service):
         """A leaf still used by a public 'available to all' agent can't be

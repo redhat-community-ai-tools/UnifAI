@@ -594,8 +594,11 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     }
     try {
       setIsLoadingBlocks(true);
+      // Building blocks must reflect the workspace's *complete* resource
+      // set, not just the endpoint's default page — request the max page
+      // size explicitly rather than relying on a large default limit.
       const response = await axios.get(
-        `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}`,
+        `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}&limit=1000`,
       );
       const allBlocks = response.data.resources.map(transformResourceToBlock);
 

@@ -199,6 +199,33 @@ def duplicate_resource(identity, resource_id, name, config_overrides=None):
         return jsonify({"error": "Internal server error"}), 500
 
 
+@builtins_bp.route("/builtin.cascade-preview", methods=["GET"])
+@require_admin_access
+@from_query({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+})
+def preview_builtin_cascade(resource_id):
+    """Preview which resources would be newly promoted to public if
+    *resource_id* were made available to all (admin only).
+
+    Read-only — does not mutate anything. Lets the admin UI show a
+    confirmation dialog listing everything that will be swept along
+    *before* the promote/toggle mutation happens, instead of only
+    disclaiming the side effect afterward in a success toast.
+    """
+    svc = current_app.container.resources_service
+    try:
+        cascaded = svc.preview_cascade_targets(resource_id)
+        return jsonify({"cascaded_resources": _resource_summaries(cascaded)}), 200
+    except KeyError as e:
+        return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception:
+        logger.exception("Failed to preview cascade for resource '%s'", resource_id)
+        return jsonify({"error": "Internal server error"}), 500
+
+
 @builtins_bp.route("/resource.promote", methods=["PATCH"])
 @require_admin_access
 @from_body({
@@ -215,7 +242,13 @@ def promote_resource(resource_id):
     ``nested_refs``) that isn't already a public built-in is promoted
     alongside it; those are reported back as ``cascaded_resources`` so the
     UI can disclaim the side effect.
+
+    Rejected with 409 if another admin currently holds the edit lock on
+    this resource.
     """
+    lock_error = _reject_if_locked_by_other(resource_id)
+    if lock_error:
+        return lock_error
     svc = current_app.container.resources_service
     try:
         doc, cascaded = svc.promote_with_cascade(resource_id)
@@ -302,7 +335,13 @@ def update_builtin_resource(
     elements (reported as ``cascaded_resources``). Turning it off is
     rejected with ``BuiltinDependentsPublicError`` if a public built-in
     still aggregates this resource.
+
+    Rejected with 409 if another admin currently holds the edit lock on
+    this resource.
     """
+    lock_error = _reject_if_locked_by_other(resource_id)
+    if lock_error:
+        return lock_error
     svc = current_app.container.resources_service
     try:
         doc, cascaded = svc.update_builtin_with_cascade(
@@ -348,7 +387,13 @@ def toggle_builtin_visibility(resource_id, available_to_all):
     if a public built-in (e.g. an "available to all" agent) still
     aggregates this resource — it must be demoted first, or reconfigured
     to use a different element.
+
+    Rejected with 409 if another admin currently holds the edit lock on
+    this resource.
     """
+    lock_error = _reject_if_locked_by_other(resource_id)
+    if lock_error:
+        return lock_error
     svc = current_app.container.resources_service
     try:
         doc, cascaded = svc.toggle_visibility_with_cascade(resource_id, available_to_all=available_to_all)
@@ -376,6 +421,15 @@ def toggle_builtin_visibility(resource_id, available_to_all):
 #  Reuses the collaboration lock infrastructure with a fixed admin namespace.
 #  Authorization is handled by @require_admin_access; no team membership
 #  checks are needed.
+#
+#  Enforcement: acquiring a lock is cooperative (the UI does it before
+#  opening the edit form), but the mutating endpoints above
+#  (builtin.update, resource.promote, builtin.toggle) call
+#  ``_reject_if_locked_by_other`` and reject with 409 if a *different*
+#  admin currently holds the lock — so the lock is a real, server-enforced
+#  guard against concurrent overwrites, not just a UI hint. There is no
+#  lock check on ``builtin.create`` since a not-yet-created resource has
+#  no entity id to lock.
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _collab_service():
@@ -394,6 +448,34 @@ def _holder_to_json(holder):
         "userId": holder.user_id,
         "displayName": holder.display_name or holder.user_id,
     }
+
+
+def _reject_if_locked_by_other(resource_id: str):
+    """Enforce the admin edit lock on mutating built-in endpoints.
+
+    The lock is acquired cooperatively by the UI when an admin opens the
+    edit form, but until now nothing stopped a second request (a stale
+    tab, a direct API call, a client that skipped the acquire step) from
+    mutating the same resource anyway — the lock was advisory only.
+    Returns a ``(response, 409)`` tuple to short-circuit the caller when
+    another admin currently holds the lock, or ``None`` to proceed.
+    Requests are never blocked when collaboration/Redis isn't configured,
+    matching the acquire/release endpoints' 501 fallback behavior.
+    """
+    collab = current_app.container.collaboration_service
+    if collab is None:
+        return None
+    holder = collab.get_admin_edit_lock(resource_id)
+    if holder is None:
+        return None
+    username = getattr(g, G_IDENTITY_USERNAME, "")
+    if holder.user_id == username:
+        return None
+    return jsonify({
+        "error": f"Resource is currently locked for editing by "
+                 f"{holder.display_name or holder.user_id}.",
+        "lockedBy": _holder_to_json(holder),
+    }), 409
 
 
 @builtins_bp.route("/builtin.edit_lock.acquire", methods=["POST"])
