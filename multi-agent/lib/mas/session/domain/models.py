@@ -88,6 +88,8 @@ class SessionMeta(BaseModel):
     title: Optional[str] = None
     tags: Dict[str, str] = Field(default_factory=dict)
     source: Optional[str] = None
+    schedule_id: Optional[str] = None
+    prompt_text: Optional[str] = None
     status_message: Optional[str] = None
     hitl_enabled: bool = False
     # Live/presence fields — forwarded to the collaboration store when present.

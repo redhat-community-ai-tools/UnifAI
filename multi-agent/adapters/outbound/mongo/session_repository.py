@@ -88,6 +88,15 @@ class MongoSessionRepository(SessionRepository):
             background=True,
         )
 
+        self._col.create_index(
+            [
+                ("metadata.schedule_id", pymongo.ASCENDING),
+                (self._STARTED_AT_FIELD, pymongo.DESCENDING),
+            ],
+            background=True,
+            sparse=True,
+        )
+
     # ---------- Core CRUD Operations ----------
 
     def save(self, record: SessionRecord) -> None:
@@ -136,6 +145,14 @@ class MongoSessionRepository(SessionRepository):
         """Delete a session by run_id. Returns True if deleted, False if not found."""
         result = self._col.delete_one({self._RUN_ID_FIELD: run_id})
         return result.deleted_count > 0
+
+    def find_by_schedule_id(
+        self, schedule_id: str, *, limit: int = 5,
+    ) -> List[Mapping[str, Any]]:
+        return list(self._col.find(
+            {"metadata.schedule_id": schedule_id},
+            {"_id": 0},
+        ).sort(self._STARTED_AT_FIELD, pymongo.DESCENDING).limit(limit))
 
     def delete_by_identity(self, identity: Identity) -> int:
         """Delete all sessions owned by the given identity. Returns count."""

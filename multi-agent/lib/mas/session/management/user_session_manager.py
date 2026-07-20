@@ -67,6 +67,13 @@ class UserSessionManager:
             raise BlueprintNotFoundError(blueprint_id)
 
         session_meta = metadata or SessionMeta()
+        if session_meta.source == "schedule" and not session_meta.title:
+            try:
+                bp_doc = self._bp_service.get_blueprint_draft_doc(blueprint_id)
+                bp_name = bp_doc.spec_dict.get("name", blueprint_id)
+            except (KeyError, Exception):
+                bp_name = blueprint_id
+            session_meta.title = f"{bp_name} — {datetime.utcnow().strftime('%b %d %H:%M UTC')}"
         run_id = str(uuid.uuid4())
         ctx = ExecutionContext(
             session_id=run_id,
