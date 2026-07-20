@@ -152,6 +152,7 @@ class ShareCloner:
                 identity=recipient,
                 draft_dict=new_draft.model_dump(mode="json"),
                 metadata=bp_metadata or None,
+                skip_name_check=True,
             )
 
             logger.info(f"Blueprint clone completed: {new_blueprint_id}, {resources_cloned} resources cloned")
@@ -347,11 +348,22 @@ class ShareCloner:
         # Fallback to UUID if too many conflicts
         return f"{base_name} ({uuid4().hex[:8]})"
 
+    def _resolve_blueprint_name_conflict(
+            self, identity: Identity, preferred_name: str,
+    ) -> str:
+        """Find a unique blueprint name for *identity*, appending a counter if needed."""
+        if not self.blueprints._repo.name_exists_for_identity(identity, preferred_name):
+            return preferred_name
+        for counter in range(2, 101):
+            candidate = f"{preferred_name} ({counter})"
+            if not self.blueprints._repo.name_exists_for_identity(identity, candidate):
+                return candidate
+        return f"{preferred_name} ({uuid4().hex[:8]})"
+
     def _clone_blueprint_draft(self, draft: BlueprintDraft, rid_mapping: Dict[str, str],
                                ctx: CloneContext) -> BlueprintDraft:
         """Clone a BlueprintDraft with proper ref replacement and new step UIDs."""
 
-        # Clone resource categories using ResourceCategory enum
         resource_fields = {
             category.value: [
                 self._clone_resource_with_refs(res, rid_mapping)
@@ -361,9 +373,12 @@ class ShareCloner:
         }
 
         if ctx.is_team_contribution:
-            clone_name = draft.name
+            base_name = draft.name
         else:
-            clone_name = f"{draft.name} (from {ctx.sender_label})"
+            base_name = f"{draft.name} (from {ctx.sender_label})"
+
+        recipient = self._recipient_identity(ctx)
+        clone_name = self._resolve_blueprint_name_conflict(recipient, base_name)
 
         return BlueprintDraft(
             plan=self._clone_plan(draft.plan, rid_mapping),

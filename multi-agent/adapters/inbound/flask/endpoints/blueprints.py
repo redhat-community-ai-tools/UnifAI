@@ -9,6 +9,7 @@ from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
     BlueprintAccessDeniedError,
     BlueprintSaveError,
+    BlueprintDuplicateNameError,
     BlueprintMetadataError,
     InvalidMetadataKeysError,
     PromptShortcutsValidationError,
@@ -182,6 +183,8 @@ def save_blueprint(identity, blueprint_raw=None, metadata=None):
             "blueprint_id": blueprint_id
         }), 201
 
+    except BlueprintDuplicateNameError as e:
+        return jsonify({"status": "error", "error": str(e)}), 409
     except (BadRequest, InvalidMetadataKeysError, PromptShortcutsValidationError) as e:
         return jsonify({"status": "error", "error": str(e)}), 400
     except BlueprintSaveError as e:
@@ -218,6 +221,8 @@ def update_blueprint(identity, blueprint_id, blueprint_raw):
             "blueprint_id": blueprint_id,
         }), 200
 
+    except BlueprintDuplicateNameError as e:
+        return jsonify({"status": "error", "error": str(e)}), 409
     except BlueprintAccessDeniedError:
         return jsonify({"status": "error", "error": "You do not have permission to modify this blueprint"}), 403
     except BlueprintNotFoundError as e:

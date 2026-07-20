@@ -26,6 +26,13 @@ class MongoBlueprintRepository(BlueprintRepository):
              ("updated_at", pymongo.DESCENDING)],
             background=True,
         )
+        self._col.create_index(
+            [("identity.type", pymongo.ASCENDING),
+             ("identity.id", pymongo.ASCENDING),
+             ("spec_dict.name", pymongo.ASCENDING)],
+            unique=True,
+            background=True,
+        )
 
     def save(self, identity: Identity, spec: BlueprintDraft,
              rid_refs: list[str], metadata: Dict[str, Any] = {}) -> str:
@@ -180,6 +187,18 @@ class MongoBlueprintRepository(BlueprintRepository):
                  ]
         ors = [{fld: rid} for fld in fields]
         return self._col.count_documents({"$or": ors})
+
+    def name_exists_for_identity(
+            self, identity: Identity, name: str,
+            *, exclude_blueprint_id: str | None = None,
+    ) -> bool:
+        filt = {
+            **identity_q(identity),
+            "spec_dict.name": name,
+        }
+        if exclude_blueprint_id:
+            filt["blueprint_id"] = {"$ne": exclude_blueprint_id}
+        return self._col.count_documents(filt, limit=1) >= 1
 
     def count(self, identity: Optional[Identity] = None) -> int:
         return self._col.count_documents(identity_q(identity))

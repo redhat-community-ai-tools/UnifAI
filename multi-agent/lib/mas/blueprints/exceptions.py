@@ -50,6 +50,17 @@ class InvalidMetadataKeysError(BlueprintError):
         super().__init__(f"Invalid metadata key(s): {bad_keys}")
 
 
+class BlueprintDuplicateNameError(BlueprintError):
+    """Raised when a blueprint name already exists for the same identity."""
+    def __init__(self, name: str):
+        self.name = name
+        self.message = (
+            f"A workflow named '{name}' already exists. "
+            "Please choose a different name."
+        )
+        super().__init__(self.message)
+
+
 class PromptShortcutsValidationError(BlueprintError):
     """Raised when prompt shortcuts are invalid (save, update, load, or dedicated set)."""
     def __init__(self, message: str, blueprint_id: str | None = None):
