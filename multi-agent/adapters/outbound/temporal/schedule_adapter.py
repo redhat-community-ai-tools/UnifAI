@@ -68,7 +68,6 @@ class TemporalScheduleAdapter(SchedulePort):
             text=prompt.text,
             inputs=prompt.inputs,
             source=prompt.source.value,
-            remaining_actions=prompt.schedule.remaining_actions,
         )
 
         await client.create_schedule(

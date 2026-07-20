@@ -75,12 +75,11 @@ class ScheduledSessionWorkflow:
             result_type=GraphState,
         )
 
-        if params.remaining_actions is not None and params.remaining_actions <= 1:
-            await workflow.execute_activity(
-                "mark_schedule_completed",
-                MarkScheduleCompletedParams(prompt_id=params.prompt_id),
-                start_to_close_timeout=_ACTIVITY_TIMEOUT,
-                retry_policy=_ACTIVITY_RETRY,
-            )
+        await workflow.execute_activity(
+            "mark_schedule_completed",
+            MarkScheduleCompletedParams(prompt_id=params.prompt_id),
+            start_to_close_timeout=_ACTIVITY_TIMEOUT,
+            retry_policy=_ACTIVITY_RETRY,
+        )
 
         return run_id

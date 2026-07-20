@@ -171,10 +171,22 @@ class PromptService:
         return self._load_and_verify(prompt_id, identity)
 
     def mark_completed(self, prompt_id: str) -> None:
+        """Transition a finite schedule to COMPLETED if appropriate.
+
+        Called after every workflow execution. Only transitions if the
+        prompt has a finite remaining_actions count -- infinite schedules
+        (remaining_actions=None) are left as ACTIVE.
+        """
         try:
             prompt = self._repo.load(prompt_id)
         except KeyError:
             logger.warning("mark_completed: prompt %s not found", prompt_id)
+            return
+
+        if prompt.schedule_status != ScheduleStatus.ACTIVE:
+            return
+
+        if prompt.schedule.remaining_actions is None:
             return
 
         prompt = prompt.model_copy(update={
