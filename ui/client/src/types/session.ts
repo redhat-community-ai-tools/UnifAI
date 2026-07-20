@@ -16,6 +16,7 @@ export interface ChatSession {
   messages: ChatMessage[];
   blueprintExists: boolean;
   fromSharedLink?: boolean;
+  fromSchedule?: boolean;
   blueprintName?: string;
   isSharingDisabled?: boolean;
   hitlEnabled?: boolean;

@@ -67,6 +67,11 @@ export function CollaborationHubSessionSidebar({
                 <div className="font-semibold text-xs text-white truncate flex-1">
                   {session.blueprintName || session.title}
                 </div>
+                {session.fromSchedule && (
+                  <span className="mr-1 text-[10px] bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
+                    Scheduled
+                  </span>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"

@@ -282,6 +282,11 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
                           <span className="text-sm font-medium truncate">
                             {session.title}
                           </span>
+                          {session.fromSchedule && (
+                            <span className="ml-2 text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0">
+                              Scheduled
+                            </span>
+                          )}
                         </div>
                         <UmamiTrack event={UmamiEvents.AGENT_CHAT_DELETE_CHAT_BUTTON} includeUserData={false}>
                           <Button
