@@ -2,8 +2,9 @@ from mas.elements.nodes.common.base_config import NodeBaseConfig
 from pydantic import Field
 from typing import Dict, Optional, List, Literal
 from .identifiers import Identifier
-from mas.core.ref.models import LLMRef, RetrieverRef, ToolRef, ProviderRef
+from mas.core.ref.models import LLMRef, RetrieverRef, ToolRef, ProviderRef, SandboxRef
 from mas.core.field_hints import ApiHint, HiddenHint, HintType, SelectionType
+from mas.core.hitl.models import HITLMode
 
 
 class DeepAgentNodeConfig(NodeBaseConfig):
@@ -72,4 +73,13 @@ class DeepAgentNodeConfig(NodeBaseConfig):
         json_schema_extra=HiddenHint(
             reason="Advanced: custom environment variables"
         ).to_hints()
+    )
+
+    hitl_mode: HITLMode = Field(
+        default=HITLMode.SKIP,
+        description="HITL approval mode: ask (always), skip (never), dynamic (runtime flag)",
+    )
+    sandbox: Optional[SandboxRef] = Field(
+        None,
+        description="Sandbox execution environment (optional)"
     )

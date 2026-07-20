@@ -195,3 +195,16 @@ class ConditionRef(Ref):
     }
 
 
+
+
+class SandboxRef(Ref):
+    """Reference to a Sandbox resource (execution environment for agents)."""
+    _category: ClassVar[ResourceCategory] = ResourceCategory.SANDBOX
+
+    model_config = {
+        "json_schema_extra": {
+            "category": ResourceCategory.SANDBOX.value,
+            "description": "Reference to a Sandbox execution environment",
+            "examples": ["$ref:openshell-sandbox-1", "my-sandbox"]
+        }
+    }

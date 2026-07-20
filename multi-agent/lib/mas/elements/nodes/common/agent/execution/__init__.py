@@ -31,13 +31,14 @@ Example:
 
 from .iterator import AgentIterator
 from .executor import AgentActionExecutor
+from .handler_factory import ExecutionHandlerFactory
 from .handlers import (
-    ExecutionHandler, 
-    AutoExecutionHandler, 
+    ExecutionHandler,
+    AutoExecutionHandler,
     GuidedExecutionHandler,
-    ExecutionHandlerFactory,
-    ExecutionMode
+    ExecutionMode,
 )
+from .hitl_handler import HITLExecutionHandler
 
 __all__ = [
     "AgentIterator",
@@ -45,6 +46,7 @@ __all__ = [
     "ExecutionHandler",
     "AutoExecutionHandler", 
     "GuidedExecutionHandler",
+    "HITLExecutionHandler",
     "ExecutionHandlerFactory",
-    "ExecutionMode"
+    "ExecutionMode",
 ]

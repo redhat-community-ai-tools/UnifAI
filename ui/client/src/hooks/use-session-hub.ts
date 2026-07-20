@@ -126,7 +126,8 @@ type ChunkData = {
     | "complete"
     | "tool_calling"
     | "tool_result"
-    | "workplan_snapshot";
+    | "workplan_snapshot"
+    | "approval_required";
   chunk?: string;
   tool?: string;
   output?: string;
@@ -138,6 +139,14 @@ type ChunkData = {
   thread_id?: string;
   owner_uid?: string;
   workplan?: any;
+  // HITL approval fields
+  request_id?: string;
+  approval_type?: string;
+  origin?: { node_uid: string; node_display_name: string; session_id: string };
+  tool_name?: string;
+  tool_args?: Record<string, any>;
+  tool_description?: string;
+  tool_access_mode?: string;
 };
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
@@ -264,6 +273,7 @@ export function useSessionHub({
       const {
         node, display_name, type, chunk, state, tool, output,
         call_id, args, action, plan_id, thread_id, owner_uid, workplan,
+        request_id, origin, tool_name, tool_args, tool_description, tool_access_mode,
       } = chunkData;
       const map = nodeListRef.current;
       let existing = map.get(node);
@@ -276,6 +286,7 @@ export function useSessionHub({
           text: "",
           tools: [],
           workplans: [],
+          approvals: [],
         };
         map.set(node, existing);
       }
@@ -316,6 +327,26 @@ export function useSessionHub({
             );
             if (idx !== -1) existing.workplans[idx] = snap;
             else existing.workplans.push(snap);
+          }
+          break;
+        case "approval_required":
+          if (request_id && tool_name) {
+            if (!existing.approvals) existing.approvals = [];
+            const alreadyExists = existing.approvals.some(
+              (a: any) => a.requestId === request_id,
+            );
+            if (!alreadyExists) {
+              existing.approvals.push({
+                requestId: request_id,
+                toolName: tool_name,
+                toolArgs: tool_args || {},
+                toolDescription: tool_description || "",
+                accessMode: tool_access_mode || "write",
+                originNodeUid: origin?.node_uid || node,
+                originNodeName: origin?.node_display_name || display_name,
+                status: "pending",
+              });
+            }
           }
           break;
         default:

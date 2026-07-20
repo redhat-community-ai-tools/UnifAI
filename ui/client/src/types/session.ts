@@ -16,8 +16,9 @@ export interface ChatSession {
   messages: ChatMessage[];
   blueprintExists: boolean;
   fromSharedLink?: boolean;
-  blueprintName?: string; // The workflow display name from spec_dict.name
-  isSharingDisabled?: boolean; // Track if sharing is disabled for this session
+  blueprintName?: string;
+  isSharingDisabled?: boolean;
+  hitlEnabled?: boolean;
   status?: string;
   statusMessage?: string;
 }

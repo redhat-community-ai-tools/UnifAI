@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -9,12 +7,15 @@ from mas.core.platform_config import PlatformConfig
 
 
 @dataclass
-class ElementDeps:
-    """Cross-cutting dependencies injected into elements at build time.
+class ElementBuildContext:
+    """Cross-cutting dependencies available during element construction.
 
-    Typed replacement for ``**kwargs`` in the build chain.  Adding a new
-    cross-cutting concern means adding one field here — no signature
-    changes anywhere else.
+    Carries stable services and runtime bridges that elements capture
+    at build time.  NOT for per-run concerns (channel, HITL gate) —
+    those flow through ``NodeRuntimeBinder`` at execution time.
+
+    Adding a new build-time concern means adding one field here —
+    no signature changes anywhere else.
     """
 
     execution_ctx: Optional[ExecutionContextHolder] = field(default=None)

@@ -72,6 +72,9 @@ class SessionService:
         When *stream* is True, returns an ``Iterator`` of channel events.
         The execution runs on a background thread; lifecycle transitions
         are handled internally by the runner.
+
+        ``hitl_enabled`` is read from the session's metadata so nodes
+        configured with ``hitl_mode: dynamic`` can check it at runtime.
         """
         self._stage(session_id, inputs, logged_in_user=logged_in_user)
         session = self._manager.get_session(session_id)
@@ -90,6 +93,9 @@ class SessionService:
         The engine handle is persisted atomically with input staging
         (before the workflow starts), eliminating the race window where
         a cancel request could arrive before the handle is in Mongo.
+
+        ``hitl_enabled`` is read from the session's metadata so nodes
+        configured with ``hitl_mode: dynamic`` can check it at runtime.
         """
         if self._engine is None:
             raise TypeError(
@@ -102,7 +108,10 @@ class SessionService:
         self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
 
         session = self._manager.get_session(session_id)
-        execution_ctx = session.run_context.with_scope(scope)
+        hitl = session.record.metadata.hitl_enabled
+        execution_ctx = (session.run_context
+                         .with_scope(scope)
+                         .with_hitl(hitl))
         request = SubmitSessionRequest(execution_context=execution_ctx)
         self._engine.submit(session, request)
 
@@ -156,6 +165,10 @@ class SessionService:
         so that cancel() won't target a dead workflow if this session
         is now being executed via the foreground run() path.
 
+        ``hitl_enabled`` is read from the session's metadata and stamped
+        into the ExecutionContext so nodes configured with
+        ``hitl_mode: dynamic`` can check it at runtime.
+
         Raises ValueError if the session is already executing.
         """
         record = self._manager.get_record(session_id)
@@ -166,6 +179,8 @@ class SessionService:
                 f"wait for it to finish before submitting again."
             )
         self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
+        record.run_context = record.run_context.with_hitl(record.metadata.hitl_enabled)
+        self._manager.save_record(record)
 
     def list_for_user(self, identity: Identity) -> list:
         """
