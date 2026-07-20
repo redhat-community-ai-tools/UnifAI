@@ -1,8 +1,10 @@
 import axios from '@/http/axiosAgentConfig';
+import { ChatSessionData } from '@/types/session';
 
 export interface CreateSessionParams {
   blueprintId: string;
   userId: string;
+  metadata?: Record<string, any>;
 }
 
 export async function createSession(params: CreateSessionParams) {
@@ -106,6 +108,27 @@ export async function getSessionStreamStatus(sessionId: string): Promise<StreamS
     console.error('Error fetching stream status:', err);
     return null;
   }
+}
+
+/**
+ * List sessions for a user.
+ * 
+ * @param params - URLSearchParams containing the list of sessions
+ * @returns List of sessions and pagination information
+ */
+export async function listSessions(params: URLSearchParams): Promise<ListSessionsResponse> {
+  const response = await axios.get('/sessions/session.user.list', { params });
+  return response.data;
+}
+
+export interface ListSessionsResponse {
+  sessions: ChatSessionData[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+  };
 }
 
 /**

@@ -23,6 +23,7 @@ import { useBlueprintValidation } from "@/hooks/use-blueprint-validation";
 import { useSessionManagement } from "@/hooks/use-session-management";
 import { useSessionStream } from "@/hooks/use-session-stream";
 import { createSessionError } from "@/components/agentic-ai/chat/types";
+import { listSessions} from "@/api/sessions";
 import {
   ChatSession,
   ChatMessage,
@@ -235,11 +236,7 @@ export function useSessionHub({
         limit: String(PAGE_SIZE),
         offset: String(pageParam),
       });
-      const response = await axios.get(`/sessions/session.user.list?${params}`);
-      const { sessions, pagination } = response.data as {
-        sessions: ChatSessionData[];
-        pagination: { total: number; limit: number; offset: number; has_more: boolean };
-      };
+      const { sessions, pagination } = await listSessions(params);
       return {
         sessions: sortSessionsByTimestamp(transformApiDataToSessions(sessions)),
         hasMore: pagination.has_more,

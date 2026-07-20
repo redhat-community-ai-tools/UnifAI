@@ -10,6 +10,7 @@ import { useSessionManagement } from '@/hooks/use-session-management';
 import { useSessionStream } from '@/hooks/use-session-stream';
 import { getBlueprintInfo } from '@/api/blueprints';
 import { createSessionError } from '@/components/agentic-ai/chat/types';
+import { createSession as createSessionApi, CreateSessionParams, listSessions } from '@/api/sessions';
 
 interface UsePublicChatReturn {
   sessions: ChatSession[];
@@ -126,11 +127,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
       });
       if (blueprintId) params.set('blueprintId', blueprintId);
 
-      const response = await axios.get(`/sessions/session.user.list?${params}`);
-      const { sessions: allSessions, pagination } = response.data as {
-        sessions: ChatSessionData[];
-        pagination: { total: number; limit: number; offset: number; has_more: boolean };
-      };
+      const { sessions: allSessions, pagination } = await listSessions(params);
 
       const transformedSessions = await transformApiDataToSessions(allSessions);
       const validSessions = transformedSessions.filter(s => s.blueprintExists !== false);
@@ -235,13 +232,13 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
       throw new Error('Blueprint ID and user are required');
     }
 
-    const response = await axios.post('/sessions/user.session.create', {
+    const creationData: CreateSessionParams = {
       blueprintId: blueprintId,
       userId: user.username,
       metadata: { source: 'public_link' },
-    });
+    };
 
-    const newSessionId = response.data;
+    const newSessionId = await createSessionApi(creationData);
 
     if (!newSessionId || typeof newSessionId !== 'string') {
       throw new Error('Invalid session ID received from server');
