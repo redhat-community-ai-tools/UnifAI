@@ -47,7 +47,7 @@ class SessionRepository(ABC):
         identity: Identity,
         skip: int = 0,
         limit: int = 50,
-        blueprint_id: str | None = None,
+        filters: Optional[Dict[str, Any]] = None,
     ) -> List[Mapping[str, Any]]:
         """Return paginated session documents sorted by most recent activity, with newest sessions first."""
         ...

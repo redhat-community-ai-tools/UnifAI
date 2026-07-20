@@ -240,17 +240,16 @@ def get_session_status(session_id):
 @from_query({
     "limit": fields.Int(data_key="limit", load_default=50, validate=validate.Range(min=1, max=100)),
     "offset": fields.Int(data_key="offset", load_default=0, validate=validate.Range(min=0)),
-    "blueprint_id": fields.Str(data_key="blueprintId", required=False, load_default=None),
+    "filters": fields.Str(data_key="filters", required=False, load_default=None),
 })
-def list_user_sessions(identity, limit: int, offset: int, blueprint_id: str | None = None):
+def list_user_sessions(identity, limit: int, offset: int, filters: dict | None = None):
     try:
         svc = current_app.container.session_service
+        items = svc.list_user_sessions(identity, limit=limit, offset=offset, filters=filters)
         paginated = "limit" in request.args or "offset" in request.args
 
         if paginated:
-            count_filter = {"blueprint_id": blueprint_id} if blueprint_id else {}
-            total = svc.count(identity, count_filter)
-            items = svc.list_user_sessions(identity, limit=limit, offset=offset, blueprint_id=blueprint_id)
+            total = svc.count(identity, filters)
             return jsonify({
                 "sessions": items,
                 "pagination": {
@@ -261,7 +260,6 @@ def list_user_sessions(identity, limit: int, offset: int, blueprint_id: str | No
                 },
             }), 200
         else:
-            items = svc.list_user_sessions(identity, blueprint_id=blueprint_id)
             return jsonify(items), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

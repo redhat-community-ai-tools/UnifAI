@@ -128,26 +128,27 @@ class MongoSessionRepository(SessionRepository):
         )
         return [d[self._RUN_ID_FIELD] for d in cursor]
 
-    def list_docs(self, identity: Identity) -> List[Mapping[str, Any]]:
+    def list_docs(self, identity: Identity, filters: Optional[Dict[str, Any]] = None) -> List[Mapping[str, Any]]:
         """Return all session documents for a user in a single query.
 
         Intentionally unsorted — callers that need ordering use
         list_docs_paginated instead. The only consumer is the legacy
         (non-paginated) API path where order is not guaranteed.
         """
-        return list(self._col.find(identity_q(identity), {"_id": 0}))
+        filters = filters or {}
+        return list(self._col.find({**identity_q(identity), **filters}, {"_id": 0}))
 
     def list_docs_paginated(
         self,
         identity: Identity,
         skip: int = 0,
         limit: int = 50,
-        blueprint_id: str | None = None,
+        filters: Optional[Dict[str, Any]] = None,
     ) -> List[Mapping[str, Any]]:
         """Return paginated session documents sorted by most recent activity, with newest sessions first."""
-        bp_filter = {"blueprint_id": blueprint_id} if blueprint_id else {}
+        filters = filters or {}
         pipeline = [
-            {"$match": {**identity_q(identity), **bp_filter}},
+            {"$match": {**identity_q(identity), **filters}},
             {"$addFields": {"_sort_date": self._ACTIVITY_DATE_EXPR}},
             {"$sort": {"_sort_date": pymongo.DESCENDING}},
             {"$skip": skip},
