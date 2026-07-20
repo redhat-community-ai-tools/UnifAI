@@ -52,7 +52,8 @@ class MongoServerConfigStore(ServerConfigStore):
         return self._to_model(doc) if doc else None
 
     def save(self, user_id: str, config: ClientConfig) -> None:
-        doc = config.model_dump()
+        # exclude_none keeps omitted secrets from wiping existing values on update
+        doc = config.model_dump(exclude_none=True)
         doc["server_identifier"] = config.server_identifier.rstrip("/")
         self._coll.update_one(
             {"server_identifier": doc["server_identifier"]},

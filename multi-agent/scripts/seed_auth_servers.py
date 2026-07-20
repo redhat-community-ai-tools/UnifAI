@@ -87,6 +87,16 @@ def _build_server_entries() -> list[ClientConfig]:
         if not client_id:
             continue
 
+        client_secret = os.environ.get(f"{prefix}_CLIENT_SECRET")
+        token_auth_method = os.environ.get(
+            f"{prefix}_TOKEN_AUTH_METHOD", "client_secret_post"
+        )
+        if token_auth_method == "client_secret_post" and not client_secret:
+            raise ValueError(
+                f"Cannot seed {prefix}: {prefix}_CLIENT_SECRET is required "
+                "for client_secret_post"
+            )
+
         entries.append(
             ClientConfig(
                 server_identifier=defaults["server_identifier"],
@@ -101,16 +111,14 @@ def _build_server_entries() -> list[ClientConfig]:
                     if c.strip()
                 ],
                 client_id=client_id,
-                client_secret=os.environ.get(f"{prefix}_CLIENT_SECRET"),
+                client_secret=client_secret,
                 authorization_endpoint=os.environ.get(
                     f"{prefix}_AUTH_ENDPOINT", defaults["auth_endpoint_default"]
                 ),
                 token_endpoint=os.environ.get(
                     f"{prefix}_TOKEN_ENDPOINT", defaults["token_endpoint_default"]
                 ),
-                token_endpoint_auth_method=os.environ.get(
-                    f"{prefix}_TOKEN_AUTH_METHOD", "client_secret_post"
-                ),
+                token_endpoint_auth_method=token_auth_method,
                 scopes=os.environ.get(f"{prefix}_SCOPES", "openid profile email").split(),
                 protocol_type="oauth2",
             )

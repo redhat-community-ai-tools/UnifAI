@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _is_expired(expires_at: Optional[datetime], buffer_seconds: int = 60) -> bool:
@@ -88,6 +88,15 @@ class ClientConfig(BaseModel):
     server_identifier: str = ""
     display_name: str = ""
     categories: List[str] = Field(default_factory=list)
+
+    @field_validator("server_identifier")
+    @classmethod
+    def _reject_reserved_ids(cls, v: str) -> str:
+        if v in {m.value for m in StaticAuthMethod}:
+            raise ValueError(
+                f"server_identifier {v!r} is reserved for static auth methods"
+            )
+        return v
 
 
 class RecoveryResult(BaseModel):
