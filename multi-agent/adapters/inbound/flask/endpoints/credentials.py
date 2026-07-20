@@ -75,12 +75,12 @@ def token_status(user_id, server_identifier):
     "client_secret": fields.Str(data_key="clientSecret", required=False, load_default=None),
     "server_identifier": fields.Str(data_key="serverIdentifier", required=True),
     "display_name": fields.Str(data_key="displayName", required=False, load_default=""),
-    "categories": fields.List(fields.Str(), required=False, load_default=[]),
+    "categories": fields.List(fields.Str(), required=False, load_default=list),
     "authorization_endpoint": fields.Str(data_key="authorizationEndpoint", required=False, load_default=""),
     "token_endpoint": fields.Str(data_key="tokenEndpoint", required=False, load_default=""),
     "token_endpoint_auth_method": fields.Str(data_key="tokenEndpointAuthMethod", required=False, load_default="client_secret_post"),
-    "scopes": fields.List(fields.Str(), required=False, load_default=[]),
-    "extra_authorize_params": fields.Dict(data_key="extraAuthorizeParams", required=False, load_default={}),
+    "scopes": fields.List(fields.Str(), required=False, load_default=list),
+    "extra_authorize_params": fields.Dict(data_key="extraAuthorizeParams", required=False, load_default=dict),
     "protocol_type": fields.Str(data_key="protocolType", required=False, load_default="oauth2"),
 })
 def save_client_config(
