@@ -24,7 +24,7 @@ import { useSessionManagement } from "@/hooks/use-session-management";
 import { useSessionStream } from "@/hooks/use-session-stream";
 import { useSessionHub } from "@/hooks/use-session-hub";
 import { useCarouselLayout } from "@/hooks/use-carousel-layout";
-import { usePaginationTrigger } from "@/hooks/use-pagination-trigger";
+import { useScrollPagination } from "@/hooks/use-scroll-pagination";
 import { useDefaultPrompts } from "@/hooks/use-default-prompts";
 
 import {
@@ -50,12 +50,7 @@ interface CollaborationHubViewProps {
 
 export default function CollaborationHubView({ runId, teamMembers, teamName }: CollaborationHubViewProps) {
   const hub = useSessionHub({ runId, manualStreamControl: true });
-  const { scrollRef, isFetchingNextPage } = usePaginationTrigger({
-    mode: "scroll",
-    hasNextPage: hub.hasNextPage,
-    isFetchingNextPage: hub.isFetchingNextPage,
-    fetchNextPage: hub.fetchNextPage,
-  });
+  const { scrollRef, isFetchingNextPage } = useScrollPagination(hub);
 
   // ── Collab-specific state ──────────────────────────────────────────────
   const [sessionParticipants, setSessionParticipants] = useState<Record<string, string[]>>({});

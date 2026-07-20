@@ -26,7 +26,7 @@ import { getBlueprintInfo, type PromptShortcut } from "@/api/blueprints";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { UmamiTrack } from "@/components/ui/umamitrack";
 import { UmamiEvents } from "@/config/umamiEvents";
-import { usePaginationTrigger } from "@/hooks/use-pagination-trigger";
+import { useScrollPagination } from "@/hooks/use-scroll-pagination";
 
 export default function PublicChat() {
   const [, params] = useRoute("/chat/:token");
@@ -75,12 +75,7 @@ export default function PublicChat() {
     error: sessionsError,
   } = usePublicChat(blueprintId);
 
-  const { scrollRef } = usePaginationTrigger({
-    mode: "scroll",
-    hasNextPage: hasNextPage ?? false,
-    isFetchingNextPage: isFetchingNextPage ?? false,
-    fetchNextPage,
-  });
+  const { scrollRef } = useScrollPagination({ hasNextPage, isFetchingNextPage, fetchNextPage });
 
   // Check sharing status for the blueprint using getBlueprintInfo (usageScope is part of metadata)
   const checkSharingStatus = useCallback(async (blueprintId: string) => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
@@ -14,7 +14,7 @@ import { useDefaultPrompts } from "@/hooks/use-default-prompts";
 import { AnimatedPanelLayout } from "@/components/shared/AnimatedPanelLayout";
 import { AddFlowModal, DeleteSessionModal } from "@/components/shared/SessionModals";
 import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
-import { usePaginationTrigger } from "@/hooks/use-pagination-trigger";
+import { useScrollPagination } from "@/hooks/use-scroll-pagination";
 import type { PromptShortcut } from "@/api/blueprints";
 
 /**
@@ -46,12 +46,7 @@ const SessionMessagesLoader: React.FC = () => (
 
 export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactElement {
   const hub = useSessionHub({ runId });
-  const { scrollRef } = usePaginationTrigger({
-    mode: "scroll",
-    hasNextPage: hub.hasNextPage,
-    isFetchingNextPage: hub.isFetchingNextPage,
-    fetchNextPage: hub.fetchNextPage,
-  });
+  const { scrollRef } = useScrollPagination(hub);
 
   const [showExecutionStream, setShowExecutionStream] = useState(false);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(15);
