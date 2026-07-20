@@ -69,15 +69,17 @@ class AgentIterator:
             execution_handler: ExecutionHandler,
             stream: Optional[Callable[[Dict[str, Any]], None]] = None,
             on_action: Optional[Callable[[AgentAction], bool]] = None,
+            tracing: Any = None,
     ):
         """
         Initialize clean agent iterator.
-        
+
         Args:
             strategy: Agent strategy for decision-making
             execution_handler: Handler for execution policy (auto/guided/etc)
             stream: Optional streaming callback for events
             on_action: Optional callback to approve/reject actions
+            tracing: Optional TracingService for observability
         """
         self.strategy = strategy
         self.execution_handler = execution_handler
@@ -92,6 +94,11 @@ class AgentIterator:
 
         # Queue for steps waiting to be yielded
         self._step_queue: List[AgentStep] = []
+
+        if tracing is None:
+            from mas.core.tracing.noop import NoOpTracingService
+            tracing = NoOpTracingService()
+        self._tracing = tracing
 
     def __iter__(self) -> Iterator[AgentStep]:
         """Return iterator interface."""
@@ -136,6 +143,13 @@ class AgentIterator:
         if not self.strategy.should_continue(self.history):
             self._finished = True
             raise StopIteration
+
+        strategy_name = getattr(self.strategy, "strategy_name", type(self.strategy).__name__)
+        _iter_cm = self._tracing.trace_agent_iteration(
+            iteration=self._iteration_count,
+            strategy=strategy_name,
+        )
+        _iter_cm.__enter__()
 
         try:
             # Get next steps from strategy
@@ -212,6 +226,8 @@ class AgentIterator:
                         )
                         self.messages.append(tool_message)
 
+            _iter_cm.__exit__(None, None, None)
+
             # Return next queued step if available
             if self._step_queue:
                 step = self._step_queue.pop(0)
@@ -221,6 +237,7 @@ class AgentIterator:
             return self.__next__()
 
         except Exception as e:
+            _iter_cm.__exit__(type(e), e, e.__traceback__)
             error_step = AgentStep(
                 StepType.ERROR,
                 e,

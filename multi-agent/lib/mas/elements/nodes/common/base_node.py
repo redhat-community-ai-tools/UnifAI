@@ -29,10 +29,11 @@ class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
     READS: ClassVar[set[str]] = set()
     WRITES: ClassVar[set[str]] = set()
 
-    def __init__(self, *, retries: int = 1, **kwargs: Any):
+    def __init__(self, *, retries: int = 1, tracing_service=None, **kwargs: Any):
         super().__init__(**kwargs)  # MRO
         self.retries = retries
         self._ctx: Optional[StepContext] = None
+        self._tracing = tracing_service
 
     @abstractmethod
     def run(self, state: StateView) -> StateView:
@@ -47,7 +48,16 @@ class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
 
         self._state = wrapped_state
 
-        self.run(wrapped_state)
+        if self._tracing:
+            with self._tracing.trace_node(
+                node_uid=self.uid,
+                node_type=type(self).__name__,
+                display_name=self.display_name,
+            ):
+                self.run(wrapped_state)
+        else:
+            self.run(wrapped_state)
+
         result = wrapped_state.backing_state
 
         self._stream({

@@ -173,7 +173,32 @@ class AgentCapableMixin(Generic[T]):
             self._tool_executor_manager.add_pre_execution_hook(hook)
         for hook in self._custom_post_hooks:
             self._tool_executor_manager.add_post_execution_hook(hook)
-        
+
+        # Tracing hooks for tool execution
+        tracing = getattr(self, "_tracing", None)
+        if tracing and tracing.enabled:
+            _tool_trace_stack: dict = {}
+
+            async def tracing_pre_hook(tool, args, context):
+                call_id = (context or {}).get("tool_call_id", id(args))
+                cm = tracing.trace_tool(tool_name=tool.name, tool_input=args)
+                handle = cm.__enter__()
+                _tool_trace_stack[call_id] = (cm, handle)
+
+            async def tracing_post_hook(response, context):
+                call_id = response.tool_call_id if response else None
+                entry = _tool_trace_stack.pop(call_id, None)
+                if entry:
+                    cm, handle = entry
+                    handle.update(
+                        output=response.result if response.success else str(response.error),
+                        metadata={"success": response.success},
+                    )
+                    cm.__exit__(None, None, None)
+
+            self._tool_executor_manager.add_pre_execution_hook(tracing_pre_hook)
+            self._tool_executor_manager.add_post_execution_hook(tracing_post_hook)
+
         return self._tool_executor_manager
     
     async def _setup_standard_hooks(self: T) -> None:
@@ -312,11 +337,14 @@ class AgentCapableMixin(Generic[T]):
             hitl_config=config.hitl_config,
         )
         
+        tracing = getattr(self, "_tracing", None)
+
         iterator = AgentIterator(
             strategy=strategy,
             execution_handler=execution_handler,
             stream=self._stream if self.is_streaming() else None,
             on_action=on_action,
+            tracing=tracing,
         )
         
         # Set initial messages

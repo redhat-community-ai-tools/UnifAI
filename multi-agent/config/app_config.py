@@ -51,3 +51,9 @@ class AppConfig(SharedConfig):
     identity_provider_mode: str = ""
     credential_encryption_key: str = ""
 
+    # Langfuse tracing (optional — keys come from multiagent-be-secret)
+    langfuse_enabled: bool = False
+    langfuse_secret_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_base_url: str = "https://us.cloud.langfuse.com"
+
