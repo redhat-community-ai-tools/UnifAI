@@ -192,38 +192,23 @@ export function AddResourceWizardPanel({
         </motion.div>
       )}
 
-      {(step === "configure" || step === "configure-builtin") && (
+      {step === "configure" && (
         <motion.div
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: "auto" }}
           exit={{ opacity: 0, height: 0 }}
           transition={{ duration: 0.25 }}
         >
-          <Card
-            className={`bg-background-card shadow-card border-gray-800 ${
-              step === "configure-builtin" ? "border-blue-500/30" : "border-green-500/30"
-            }`}
-          >
+          <Card className="bg-background-card shadow-card border-gray-800 border-green-500/30">
             <CardContent className="p-6">
               <div className="flex items-center justify-center py-4 gap-3">
-                <LoaderCircle
-                  className={`h-5 w-5 animate-spin ${
-                    step === "configure-builtin" ? "text-blue-400" : "text-green-400"
-                  }`}
-                />
+                <LoaderCircle className="h-5 w-5 animate-spin text-green-400" />
                 <p className="text-sm text-gray-300">
-                  {step === "configure-builtin"
-                    ? "Configuring your settings for"
-                    : editingElementName
-                      ? "Editing"
-                      : "Configuring"}{" "}
+                  {editingElementName ? "Editing" : "Configuring"}{" "}
                   <span className="text-white font-medium">
                     {selectedElementType?.name}
                   </span>{" "}
-                  —{" "}
-                  {step === "configure-builtin"
-                    ? "editable fields are unlocked, read-only fields are locked."
-                    : "fill in the form and save."}
+                  — fill in the form and save.
                 </p>
                 <Button
                   variant="ghost"

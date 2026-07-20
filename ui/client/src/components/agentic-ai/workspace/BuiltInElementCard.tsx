@@ -17,6 +17,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
 import { BuiltinConfigureModal } from './BuiltinConfigureModal';
 import axios from "../../../http/axiosAgentConfig";
+import { isTrustedCredentialsCallback } from "@/lib/oauthPopupSecurity";
 
 type SignInStatus = 'idle' | 'checking' | 'authenticated' | 'challenge' | 'not_configured' | 'error';
 
@@ -68,6 +69,7 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
   const popupRef = useRef<Window | null>(null);
+  const popupAuthUrlRef = useRef<string | null>(null);
   const checkedRef = useRef(false);
 
   const checkAuth = useCallback(async () => {
@@ -110,13 +112,8 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type !== 'credentials_callback') return;
-      // Only trust messages from the popup window we actually opened —
-      // the identity service's callback page runs on a different origin
-      // than the frontend (no client-exposed config for that origin today),
-      // so we validate the message source instead of event.origin.
-      if (!popupRef.current || event.source !== popupRef.current) return;
-      popupRef.current.close();
+      if (!isTrustedCredentialsCallback(event, popupRef.current, popupAuthUrlRef.current)) return;
+      popupRef.current?.close();
       popupRef.current = null;
       if (event.data.success) {
         checkedRef.current = false;
@@ -132,6 +129,7 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
 
   const handleSignIn = () => {
     if (signInStatus === 'challenge' && challenge?.authorization_url) {
+      popupAuthUrlRef.current = challenge.authorization_url;
       popupRef.current = window.open(
         challenge.authorization_url,
         'oauth_signin',

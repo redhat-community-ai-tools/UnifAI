@@ -14,6 +14,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Lock, LogIn } from 'lucide-react';
+import { isTrustedCredentialsCallback } from "@/lib/oauthPopupSecurity";
 
 export interface FieldValidationTwoFactorAuthProps {
   authStatus: string;
@@ -33,21 +34,21 @@ export const FieldValidationTwoFactorAuth: React.FC<FieldValidationTwoFactorAuth
   onAuthError,
 }) => {
   const popupRef = useRef<Window | null>(null);
+  const popupAuthUrlRef = useRef<string | null>(null);
 
   const handleSignIn = useCallback(() => {
     if (!authUrl) return;
+    popupAuthUrlRef.current = authUrl;
     popupRef.current = window.open(authUrl, 'oauth_signin', 'width=600,height=700,scrollbars=yes');
   }, [authUrl]);
 
   // Listen for OAuth callback postMessage from popup
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type !== 'credentials_callback') return;
+      if (!isTrustedCredentialsCallback(event, popupRef.current, popupAuthUrlRef.current)) return;
 
-      if (popupRef.current) {
-        popupRef.current.close();
-        popupRef.current = null;
-      }
+      popupRef.current?.close();
+      popupRef.current = null;
 
       if (event.data.success) {
         onRevalidate();

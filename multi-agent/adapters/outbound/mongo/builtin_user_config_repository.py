@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -7,6 +8,8 @@ from mas.resources.builtin_models import BuiltinUserConfig
 from mas.resources.repository.builtin_user_config_repository import (
     BuiltinUserConfigRepository as BuiltinUserConfigRepositoryPort,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
@@ -24,12 +27,23 @@ class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
             connectTimeoutMS=5000,
         )
         self.col = self._client[db_name][coll_name]
-        self.col.create_index(
-            [("resource_id", 1), ("identity_key", 1)],
-            unique=True,
-            name="uq_resource_identity",
-        )
-        self.col.create_index("identity_key")
+        # Bounded by the client timeouts above, so a Mongo outage at startup
+        # fails fast rather than hanging. The index creation is retried on
+        # every process start, so a transient failure here just means the
+        # unique constraint isn't enforced until the next successful start —
+        # not fatal enough to crash the whole app at boot.
+        try:
+            self.col.create_index(
+                [("resource_id", 1), ("identity_key", 1)],
+                unique=True,
+                name="uq_resource_identity",
+            )
+            self.col.create_index("identity_key")
+        except pymongo.errors.PyMongoError:
+            logger.warning(
+                "Could not create indexes on '%s' — MongoDB may be unreachable",
+                coll_name, exc_info=True,
+            )
 
     def save(self, config: BuiltinUserConfig) -> str:
         config.updated = datetime.now(timezone.utc)

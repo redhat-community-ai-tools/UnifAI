@@ -77,4 +77,4 @@ export interface ResourceItem {
   visibility?: "draft" | "public";
 }
 
-export type WizardStep = "idle" | "select-category" | "configure" | "configure-builtin";
+export type WizardStep = "idle" | "select-category" | "configure";
