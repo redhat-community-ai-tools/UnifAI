@@ -82,6 +82,29 @@ Pattern: what was matched (e.g., "hardcoded API key", "unsanitized input to subp
 Group: the namespace/package containing the sibling actions (e.g. `actions/auth/`).
 "Same Concept?" is confirmed when one field's value is assigned to a parameter named like the other.
 
+### Factory Call-Site Analysis
+
+| Factory Port | Method | Call-Site File:Line | Arguments Passed | Cleanup Call | Execution Context | Prov |
+|-------------|--------|--------------------|--------------------|--------------|-------------------|------|
+
+Arguments Passed: the actual expressions, not parameter names (e.g. `channel, session.record.metadata, run_id` vs `channel, None, session_id`).
+Execution Context: one of `foreground`, `background/temporal`, `cli`, `test`, `other`.
+Flag any row where arguments diverge from the majority pattern.
+
+### Committed Artifacts
+
+| File | Type | Prov |
+|------|------|------|
+
+Type: `committed_artifact`. Files that should not be committed (backups, temp files, IDE configs).
+
+### Authorization Pattern Scan
+
+| File:Line | Endpoint | Decorators | Auth TODOs | Sibling Comparison | Prov |
+|-----------|----------|------------|------------|-------------------|------|
+
+Sibling Comparison: "matches siblings" or "weaker than siblings — missing X".
+
 ### Composition Roots
 
 [Relevant excerpts from bootstrap/container files showing how ports are wired to concrete adapters for the scoped domains. Include only bindings relevant to scoped files.]

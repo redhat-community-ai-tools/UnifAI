@@ -41,6 +41,17 @@ If an architecture review (Arch Judge) was already performed in this session on 
 Machine-generated files are excluded by the Scout. If any appear in the evidence pack, skip them:
 - `**/pnpm-lock.yaml`, `**/package-lock.json`, `**/yarn.lock`, `**/*.lock`, `**/*.generated.*`
 
+## Determinism Rules
+
+These rules reduce output variance across runs. Follow them strictly:
+
+- Do NOT include speculative findings ("this might also be an issue", "consider whether...")
+- Only flag what the evidence **proves** — a finding requires a concrete file:line reference
+- If severity is ambiguous between two adjacent levels, choose the LOWER one
+- Do NOT add "nice to have" or "consider" observations as findings — those belong in INFO only if backed by a file:line
+- Each finding MUST cite a specific `file:line` — no finding without evidence
+- Do NOT produce findings that restate the same underlying issue in different dimensions — one finding per root cause
+
 ## Review Areas
 
 ### 1. Hexagonal Architecture Enforcement (CRITICAL)
@@ -208,9 +219,12 @@ Check for violations:
 - Try/catch blocks in controllers that handle domain-specific errors instead of delegating to a global exception handler.
 
 For each finding: show the file path and line number, and explain what logic should be moved and where.
-- Business logic in endpoint = **MAJOR**
-- Orchestration logic in endpoint (multiple service calls) = **MAJOR**
-- Complex data transformation in endpoint = **MAJOR**
+
+Severity floor (apply rubric modifiers from `_severity-rubric.md` — confirm 2+ Major criteria are met before assigning Major; downgrade to Warning if blast radius is 0-1 components and no runtime failure):
+- Business logic in endpoint → floor **MAJOR** (confirm blast radius ≥2 components or failure mode beyond maintenance burden)
+- Orchestration logic in endpoint (multiple service calls) → floor **MAJOR**
+- Complex data transformation in endpoint → floor **MAJOR**
+- Pure helper functions called only from one endpoint, with no side effects → **WARNING** (blast radius 0-1, trivially movable)
 - Trivial mapping in endpoint = **MINOR**
 
 ### 11. Coupling & Responsibility Violations (STRICT)
@@ -239,7 +253,7 @@ For each finding: show file path and line number, explain which service/layer th
 - Business logic in wrong service = **MAJOR**
 - Cross-service repository access = **CRITICAL**
 - Unrelated orchestration in a domain service = **MAJOR**
-- Minor helper in slightly wrong place = **MINOR**
+- Minor helper in slightly wrong place = **WARNING**
 
 ### 12. Security Assessment
 
@@ -253,9 +267,15 @@ The Scout has pre-scanned for security patterns in the evidence pack. For each f
 Additionally check:
 - Insecure deserialization or unsafe use of reflection.
 
+**Authorization Completeness** (use the Authorization Pattern Scan from the evidence pack):
+- For every new endpoint in the diff, compare its decorator stack against sibling endpoints in the same blueprint/router. If siblings perform ownership/permission checks (or have TODO comments indicating the check is needed), the new endpoint must match or exceed their auth level.
+- Search for `TODO.*auth`, `TODO.*permission`, `TODO.*ownership` in the same file — these indicate known authorization gaps. New endpoints MUST NOT replicate these gaps; flag if they do.
+- For security-sensitive operations (approval, payment, deletion, credential management): verify the endpoint checks not just authentication but also **resource ownership** (does the caller own or have access to the target resource?). Authentication alone is insufficient.
+
 For each confirmed finding: show exact file path and line number, explain the attack surface.
 - Hardcoded secrets or injection risk = **CRITICAL**
 - Missing authz check = **MAJOR**
+- Missing ownership verification on security-sensitive endpoint = **MAJOR**
 - Sensitive data in logs/errors = **MAJOR**
 
 ### 13. Component Placement Verification (MANDATORY)
@@ -270,7 +290,23 @@ Using the Boundaries data from the evidence pack's Domain Context:
 
 Evidence required: quote the boundary declaration that supports or contradicts the placement.
 
+### 14. Execution Path Consistency
+
+Using the Factory Call-Site Analysis from the evidence pack, verify that factories and builders
+are called consistently across all execution paths:
+
+- If a factory's `create()` is called with different arguments in different paths (e.g.
+  foreground passes real metadata, Temporal passes `None`), flag as a potential functional defect.
+- If lifecycle is asymmetric (e.g. `remove()` called per-node in one path but per-session in
+  another), flag the divergence.
+- Severity: apply the shared Major threshold from `_severity-rubric.md` (≥2 of 5 criteria).
+  A functional defect that meets the threshold (e.g. affects 2+ components or blocks
+  extensibility) = **MAJOR**; a contained single-path defect that does not meet the
+  threshold = **WARNING**. Lifecycle asymmetry without functional impact = **WARNING**.
+
 ## Severity Calibration
+
+For the authoritative severity thresholds, see `.cursor/skills/pipeline/modes/_severity-rubric.md`.
 
 Before assigning any severity, apply these modifiers:
 
@@ -298,9 +334,10 @@ Wrap the entire output inside a `## CODE REVIEW` header (or `## PHASE 4: CODE RE
 ### Formatting Rules
 
 1. **Never render empty sections.** If a review dimension has zero findings, list it as a single ✅ line under Review Evidence. Do NOT create a heading, table, or "None." declaration for it.
-2. **One finding = one self-contained block.** Each finding must contain the file path and line number, the problem description, and the fix — all in one place.
+2. **One finding = one self-contained block.** Each finding must contain the file path and line number, the problem description, the severity justification, and the fix — all in one place.
 3. **Inline the fix.** Use a bold **Fix →** prefix within each finding block. There is no separate recommendations section.
-4. **Use severity badges.** Prefix finding sections with: 🔴 Critical, 🟠 Major, 🟡 Minor, 🔵 Info.
+3a. **Justify the severity.** Use a bold **Why {Severity} →** line (e.g. **Why Major →**) in each finding block. Cite which rubric criteria from `.cursor/skills/pipeline/modes/_severity-rubric.md` the finding meets. This is mandatory — a finding without severity justification is incomplete.
+4. **Use severity badges.** Prefix finding sections with: 🔴 Critical, 🟠 Major, 🟡 Warning, 🔵 Info.
 5. **Tag the review dimension.** Each finding must include a category tag showing which Review Area (§1–§13) it came from — e.g. `Hex Architecture`, `Duplication`, `Dead Code`, `Endpoint Thinness`, `Coupling`, `Security`, `Alignment`. Place it on the title line after the severity badge.
 6. **File paths and line numbers are mandatory.** Every finding MUST include `file:line`. A finding without a line reference is incomplete.
 7. **No conversational filler.** State findings directly.
@@ -331,7 +368,7 @@ List the specific source files you read and what claims they verified or contrad
 </details>
 ```
 
-Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–7 instead.
+Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 3–6 instead.
 
 ### Section 2: Risks & Follow-ups (only if any exist)
 
@@ -342,96 +379,166 @@ Risks to the existing system, breaking changes, migration concerns. Table format
 
 Omit this section entirely if there are no risks.
 
-### Section 3: Verdict
-
-State your verdict with severity summary and the code health score, then emit the machine-parseable lines:
-
-```
-### Code Health Score: X/10
-
-### Verdict: {CLEAN | NEEDS REFACTORING | MAJOR CLEANUP}
-
-**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Minor | 🔵 [{N}] Info
-
-PIPELINE_VERDICT: {CLEAN | NEEDS_REFACTORING | MAJOR_CLEANUP}
-```
-
-**You MUST replace X with an actual numeric score. The CI evaluator parses this heading to gate the pipeline.**
-
-| Score | Meaning |
-|-------|---------|
-| 9-10 | No issues, or only trivial nits |
-| 7-8 | Minor issues only, no architectural or duplication concerns **introduced by this PR** |
-| 5-6 | At least one MAJOR issue **introduced by this PR**, or several MINORs |
-| 3-4 | Multiple MAJOR issues or one CRITICAL **introduced by this PR** |
-| 1-2 | Fundamental architectural violation or security critical **introduced by this PR** |
-
-The score must be consistent with the verdict: a CLEAN verdict cannot accompany a score below 7.
-Issues classified as **INFO — established pattern** or **INFO — tech debt** do NOT lower the score.
-
-- **CLEAN** — Code is production-ready. Proceed to QA.
-- **NEEDS REFACTORING** — Specific issues must be fixed (list them below the verdict). Loop back to Coder.
-- **MAJOR CLEANUP REQUIRED** — Significant problems found. Loop back to Coder with full issue list.
-
-The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
-
-**Use ONLY the three tokens above (CLEAN, NEEDS_REFACTORING, MAJOR_CLEANUP). Do NOT use tokens from other reviewer phases such as NEEDS_REVISION, APPROVE, REJECT, PASS, or FAIL.**
-
-If the verdict is not CLEAN, clearly list every item the Coder must address in the next iteration.
-
-### Section 4: 🔴 Critical Findings (only if any exist)
+### Section 3: 🔴 Critical Findings (only if any exist)
 
 Number findings sequentially within this section. Render each as a standalone block:
 
 ```
-#### 🔴 1. [{Review Area}] {Concise title}
+#### 🔴 1. [NEW] [{Review Area}] {Concise title}
 
 **`{file:line}`**
 
 {What's wrong — 1-2 sentences max}
 
+**Why Critical →** {1-sentence justification citing which rubric criteria are met: invariant broken, blast radius, failure mode, detection difficulty, reversibility}
+
 **Fix →** {concrete remediation}
 ```
 
-Example: `#### 🔴 1. [Hex Architecture] Service imports concrete repository`
+Tag rules: mark `[NEW]` for findings introduced by this diff, `[PRE]` for pre-existing issues. Only `[NEW]` findings count toward the score; `[PRE]` findings MUST be classified as INFO regardless of severity.
+
+Example: `#### 🔴 1. [NEW] [Hex Architecture] Service imports concrete repository`
 
 Omit this section entirely if there are zero critical findings.
 
-### Section 5: 🟠 Major Findings (only if any exist)
+### Section 4: 🟠 Major Findings (only if any exist)
 
-Number findings sequentially within this section. Same block format as Critical Findings.
+Number findings sequentially within this section. Same block format as Critical Findings, with severity justification:
 
-Example: `#### 🟠 1. [Coupling] Business logic in wrong service — belongs in OrderService`
+```
+#### 🟠 1. [NEW] [{Review Area}] {Concise title}
+
+**`{file:line}`**
+
+{What's wrong — 1-2 sentences max}
+
+**Why Major →** {1-sentence justification citing which 2+ rubric criteria are met: rule violated, blast radius, failure mode, detection, reversibility}
+
+**Fix →** {concrete remediation}
+```
+
+Example: `#### 🟠 1. [NEW] [Coupling] Business logic in wrong service — belongs in OrderService`
 
 Omit this section entirely if there are zero major findings.
 
-### Section 6: 🟡 Minor / Alignment Issues (only if any exist)
+### Section 5: 🟡 Warning / Alignment Issues (only if any exist)
 
-Number findings sequentially within this section. Same block format. Includes MINOR severity and ALIGNMENT ISSUE findings. For multi-file issues, include a table of affected locations within the block.
+Number findings sequentially within this section. Same block format. Includes WARNING severity and ALIGNMENT ISSUE findings. For multi-file issues, include a table of affected locations within the block.
 
-Example: `#### 🟡 1. [Alignment] Inconsistent error response format`
+```
+#### 🟡 1. [NEW] [{Review Area}] {Concise title}
+
+**`{file:line}`**
+
+{What's wrong — 1-2 sentences max}
+
+**Why Warning →** {1-sentence justification: contained blast radius, no runtime failure, trivially reversible, or convention deviation}
+
+**Fix →** {concrete remediation}
+```
+
+Example: `#### 🟡 1. [NEW] [Alignment] Inconsistent error response format`
 
 Omit if zero.
 
-### Section 7: 🔵 Info Items (only if any exist)
+### Section 6: 🔵 Info Items (only if any exist)
 
 Number findings sequentially within this section. Render each INFO item as a collapsible `<details>` block:
 
 ```html
 <details>
-<summary>🔵 1. [{Review Area}] <b>{title}</b> — <code>{file:line}</code></summary>
+<summary>🔵 1. [PRE] [{Review Area}] <b>{title}</b> — <code>{file:line}</code></summary>
 
 {description — 1-3 sentences}
+
+**Why Info →** {reason: pre-existing tech debt, established pattern, cosmetic, or duplicate root cause}
 
 **Fix →** {remediation}
 </details>
 ```
 
+Info items are typically `[PRE]` (pre-existing tech debt) or established-pattern findings. Use `[NEW]` only when the item is genuinely introduced by this diff but does not warrant a higher severity.
+
 Omit this section entirely if there are zero info items.
+
+### Section 7: Severity Self-Check, Score Derivation & Verdict (LAST)
+
+**This section MUST be the last substantive section.** Before deriving the score, re-examine
+every finding at WARNING or above. This is a calibration pass — you are verifying your own
+classifications are correct, not trying to remove findings.
+
+#### Step 1: Severity Self-Check
+
+For each finding at 🟡 WARNING/MINOR, 🟠 MAJOR, or 🔴 CRITICAL, verify it against the rubric
+from `_severity-rubric.md`:
+
+| # | Finding | Assigned | Rubric Check | Confirmed |
+|---|---------|----------|-------------|-----------|
+| 1 | {title} | 🟠 Major | {which 2+ Major criteria are met, or why they aren't} | ✅ Confirmed / ⬆️ Upgraded to {X} / ⬇️ Corrected to {X} |
+
+Rules:
+- If a MAJOR finding meets ALL 5 Critical criteria → upgrade to CRITICAL
+- If a MAJOR finding meets fewer than 2 Major criteria → correct to WARNING
+- If a WARNING finding actually meets 2+ Major criteria → correct to MAJOR
+- If a finding follows an established codebase convention or is `[PRE]` → correct to INFO
+- Do NOT remove findings — every finding stays in the report, only its severity may change
+- After corrections, move findings to their correct sections (3-6) in the report above
+
+#### Step 2: Scoring Formula
+
+Count only findings tagged `[NEW]` (introduced by this PR). INFO and `[PRE]`-tagged findings have zero penalty.
+
+```
+files_changed = <number of files in the PR scope from the evidence pack>
+
+critical_penalty = count_critical_NEW * 3.0        (flat — never diluted)
+major_penalty    = count_major_NEW * 1.5           (flat — never diluted)
+minor_penalty    = (count_minor_NEW * 0.5) / max(1, files_changed / 5)  (density-based)
+
+score = max(1, min(10, round(10 - critical_penalty - major_penalty - minor_penalty)))
+```
+
+Show the derivation explicitly in your output:
+
+```
+### Score Derivation
+
+Files in scope: {N}
+Findings (NEW only): 🔴 {N} Critical | 🟠 {N} Major | 🟡 {N} Warnings | 🔵 {N} Info (no penalty)
+Penalties: critical={N}×3.0={X} | major={N}×1.5={X} | warning=({N}×0.5)/max(1,{files}/5)={X}
+Total penalty: {X}
+Score: max(1, round(10 - {X})) = {final}
+
+### Code Health Score: {final}/10
+
+**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Warnings | 🔵 [{N}] Info
+
+PIPELINE_CODE_VERDICT: {CLEAN | NEEDS_REFACTORING | MAJOR_CLEANUP}
+```
+
+**You MUST replace all placeholders with actual values. The CI evaluator parses the Code Health Score heading and the PIPELINE_CODE_VERDICT line.**
+
+#### Verdict Rules (derived from score)
+
+| Score | Verdict Token |
+|-------|--------------|
+| 8-10 | CLEAN |
+| 4-7 | NEEDS_REFACTORING |
+| 1-3 | MAJOR_CLEANUP |
+
+- **CLEAN** — Code is production-ready. Proceed to QA.
+- **NEEDS_REFACTORING** — Specific issues must be fixed (list them below). Loop back to Coder.
+- **MAJOR_CLEANUP** — Significant problems found. Loop back to Coder with full issue list.
+
+The `PIPELINE_CODE_VERDICT:` line MUST appear on its own line. The orchestrator parses this line to drive revision loops.
+
+**Use ONLY the three tokens above (CLEAN, NEEDS_REFACTORING, MAJOR_CLEANUP). Do NOT use tokens from other reviewer phases such as NEEDS_REVISION, APPROVE, REJECT, PASS, or FAIL.**
+
+If the verdict is not CLEAN, clearly list every item the Coder must address in the next iteration.
 
 ### Previous Issues Resolution (only for revision loops)
 
-When reviewing a revision, add this section after the Verdict:
+When reviewing a revision, add this section between findings and Score Derivation:
 
 | Previous Issue | Status | Evidence |
 |----------------|--------|----------|
