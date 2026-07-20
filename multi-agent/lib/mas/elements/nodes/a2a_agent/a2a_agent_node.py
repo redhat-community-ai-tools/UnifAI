@@ -16,6 +16,7 @@ from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapa
 from mas.elements.nodes.common.workload import Task, AgentResult
 from mas.elements.providers.a2a_client import A2AProvider
 from mas.core.auth.credentials.credential import AuthCredential
+from mas.core.auth.errors import AuthError
 from global_utils.utils.async_bridge import get_async_bridge
 
 logger = logging.getLogger(__name__)
@@ -240,17 +241,38 @@ class A2AAgentNode(
 
         Fail closed: empty headers or refresh errors abort delegation so
         requests never proceed with stale or missing credentials.
+        Logs context before raising; never logs token/header values.
         """
         if not self._auth_credential:
             return
-        with get_async_bridge() as bridge:
-            headers = bridge.run(self._auth_credential.get_headers())
-        if not headers:
-            raise RuntimeError(
-                f"Cannot refresh auth headers for A2A node {self.name}: "
-                "no headers returned"
+        try:
+            with get_async_bridge() as bridge:
+                headers = bridge.run(self._auth_credential.get_headers())
+            if not headers:
+                logger.warning(
+                    "A2AAgentNode[%s]: auth header refresh returned no headers",
+                    self.name,
+                )
+                raise RuntimeError(
+                    f"Cannot refresh auth headers for A2A node {self.name}: "
+                    "no headers returned"
+                )
+            self.a2a_provider.update_headers(headers)
+        except AuthError as exc:
+            logger.warning(
+                "A2AAgentNode[%s]: auth header refresh failed: %s",
+                self.name,
+                type(exc).__name__,
             )
-        self.a2a_provider.update_headers(headers)
+            raise
+        except RuntimeError:
+            raise
+        except Exception:
+            logger.exception(
+                "A2AAgentNode[%s]: unexpected auth header refresh failure",
+                self.name,
+            )
+            raise
 
     def _delegate_to_remote_agent(
             self,

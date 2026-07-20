@@ -296,9 +296,15 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       const singleResult = results.length > 0 ? results[0] : "";
       const fieldSchema = elementSchema?.config_schema?.properties?.[fieldName];
 
-      // For scalar-typed fields (e.g. str), extract just the value so the
-      // backend receives the right type instead of the full option object.
-      if (fieldSchema?.type === 'string' && typeof singleResult === 'object' && singleResult !== null) {
+      // For scalar-typed fields (e.g. str / anyOf string unions), extract just
+      // the value so the backend receives the right type instead of the full
+      // option object. Match the string-typed detection used elsewhere in this file.
+      const isStringTyped =
+        fieldSchema?.type === 'string' ||
+        (fieldSchema?.anyOf &&
+          Array.isArray(fieldSchema.anyOf) &&
+          fieldSchema.anyOf.some((option: any) => option?.type === 'string'));
+      if (isStringTyped && typeof singleResult === 'object' && singleResult !== null) {
         handleInputChange(fieldName, singleResult.value ?? singleResult.id ?? singleResult.name ?? String(singleResult));
       } else {
         handleInputChange(fieldName, singleResult);

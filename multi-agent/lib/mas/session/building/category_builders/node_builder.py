@@ -43,7 +43,8 @@ class NodeBuilder(CategoryBuilder):
         if server_id and deps and deps.auth_service:
             ctx_holder = getattr(deps, "execution_ctx", None)
             if ctx_holder:
-                resolver = lambda _h=ctx_holder: _h.context.credential_user_id()
+                def resolver(_h=ctx_holder) -> str:
+                    return _h.context.credential_user_id()
                 cred = deps.auth_service.bind_lazy(resolver, server_id, scheme_type)
                 if cred:
                     kwargs["auth_credential"] = cred
