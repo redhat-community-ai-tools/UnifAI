@@ -148,7 +148,7 @@ class MongoSessionRepository(SessionRepository):
         """Return paginated session documents sorted by most recent activity, with newest sessions first."""
         filters = filters or {}
         pipeline = [
-            {"$match": {**identity_q(identity), **filters}},
+            {"$match": {**filters, **identity_q(identity)}},
             {"$addFields": {"_sort_date": self._ACTIVITY_DATE_EXPR}},
             {"$sort": {"_sort_date": pymongo.DESCENDING}},
             {"$skip": skip},

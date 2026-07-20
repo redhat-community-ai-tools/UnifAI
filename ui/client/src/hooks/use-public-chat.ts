@@ -125,7 +125,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
         limit: String(PAGE_SIZE),
         offset: String(pageParam),
       });
-      if (blueprintId) params.set('blueprintId', blueprintId);
+      params.set('filters', JSON.stringify({ blueprint_id: blueprintId }));
 
       const { sessions: allSessions, pagination } = await listSessions(params);
 
