@@ -102,6 +102,7 @@ class ScheduledSessionParams(BaseModel):
     text: str = ""
     inputs: Dict[str, Any] = Field(default_factory=dict)
     source: str = "manual"
+    remaining_actions: Optional[int] = None
 
 
 class StageScheduledInputsParams(BaseModel):
