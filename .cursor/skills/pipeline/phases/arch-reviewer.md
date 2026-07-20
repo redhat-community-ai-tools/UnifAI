@@ -41,6 +41,17 @@ error propagation), load `.cursor/skills/architecture/references/investigation-t
 - Established Patterns and Recipe suppressions from the pack are binding — do NOT flag them as violations.
 - The Import Analysis "Direction Issue" column is a mechanical classification. Apply your judgment to determine if flagged items are true violations or acceptable exceptions.
 
+## Determinism Rules
+
+These rules reduce output variance across runs. Follow them strictly:
+
+- Do NOT include speculative findings ("this might also be an issue", "consider whether...")
+- Only flag what the evidence **proves** — a finding requires a concrete file:line reference
+- If severity is ambiguous between two adjacent levels, choose the LOWER one
+- Do NOT add "nice to have" or "consider" observations as findings — those belong in INFO only if backed by a file:line
+- Each finding MUST cite a specific `file:line` — no finding without evidence
+- Do NOT produce findings that restate the same underlying issue in different dimensions — one finding per root cause
+
 ## System Context Analysis (MANDATORY — do this FIRST)
 
 Before checking any rules, understand what this change is trying to accomplish. Use the diff summary and evidence pack to answer:
@@ -139,6 +150,7 @@ You MUST apply at least 3 of the following techniques to actively try to break t
 - **Dependency Inversion Test**: For each new or modified component, ask "what happens if I remove this — does the domain still compile?" If not, the dependency direction is wrong.
 - **Blast Radius Test**: Identify every existing file that depends on the changed files. For each, ask "what else depends on this file?" and flag cascade risks.
 - **Edge Case Injection**: Propose 3 realistic edge cases (empty input, concurrent access, partial failure) and verify the code handles them.
+- **Execution Path Comparison**: Using the Factory Call-Site Analysis from the evidence pack, compare every call-site of each factory/builder port. For each factory, verify: (a) arguments are consistent across all execution paths (foreground, background/Temporal, CLI), (b) lifecycle is symmetric (if one path calls `remove()`, all paths that call `create()` must also call `remove()` — and at the correct granularity), (c) no path passes `None` or a default for a parameter that carries real data in another path. Flag divergences as potential functional defects.
 - **Reuse Audit**: Using the evidence pack's duplication candidates, evaluate whether any new component overlaps >50% with existing implementations. If the overlap is with 2+ existing files that also duplicate each other, this is an established convention — note as INFO consolidation opportunity, not a violation against this diff.
 - **Constructor Dependency Audit**: Using the evidence pack's Port/Adapter Wiring map, verify every dependency parameter in new/changed service/adapter classes is a Port (ABC) not a concrete class, and trace where the concrete is injected.
 - **Import Chain Tracing**: For critical modules, trace the FULL import chain (including transitive imports) and classify each by layer. A service importing a utility that imports an adapter is still a violation. Use tools to read transitive imports if the evidence pack doesn't cover them.
@@ -157,6 +169,8 @@ Before issuing any verdict, you MUST verify at least 3 claims that go beyond wha
 The evidence pack provides a starting point — your verification goes deeper.
 
 ## Severity Calibration
+
+For the authoritative severity thresholds, see `.cursor/skills/pipeline/modes/_severity-rubric.md`.
 
 Before assigning any severity, apply these modifiers:
 
@@ -186,8 +200,9 @@ Wrap the entire output inside a `## ARCHITECTURE REVIEW` header. Structure the o
 ### Formatting Rules
 
 1. **Never render empty sections.** If a review dimension has zero findings, list it as a single ✅ line under Review Evidence. Do NOT create a heading, table, or "None." declaration for it.
-2. **One finding = one self-contained block.** Each finding must contain the file path(s), the problem description, and the fix — all in one place. Do NOT split recommendations into a separate section.
+2. **One finding = one self-contained block.** Each finding must contain the file path(s), the problem description, the severity justification, and the fix — all in one place. Do NOT split recommendations into a separate section.
 3. **Inline the fix.** Use a bold **Fix →** prefix within each finding block. There is no separate "Recommended Improvements" section.
+3a. **Justify the severity.** Use a bold **Why {Severity} →** line (e.g. **Why Major →**) in each finding block. Cite which rubric criteria from `.cursor/skills/pipeline/modes/_severity-rubric.md` the finding meets. This is mandatory — a finding without severity justification is incomplete.
 4. **Use severity badges.** Prefix finding sections with: 🔴 Critical, 🟠 Major, 🟡 Warning, 🔵 Info.
 5. **Tag the review dimension.** Each finding must include a category tag showing which Review Dimension (§1–§10) it came from — e.g. `Hex Compliance`, `Import Rules`, `Duplication`, `Error Handling`, `Efficiency`. Place it on the title line after the severity badge.
 6. **File paths are mandatory.** Every finding at WARNING or above must include at least one `file:line` reference. INFO items should include file references where applicable.
@@ -232,7 +247,7 @@ Wrap in a single `<details>` block. This contains proof-of-work — clean dimens
 </details>
 ```
 
-Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 4–7 instead.
+Only include dimensions that had zero findings in the ✅ list. Dimensions with findings are rendered in Sections 3–6 instead.
 
 ### Section 2: Risks & Follow-ups (only if any exist)
 
@@ -243,27 +258,7 @@ Table format — one row per risk. Include risks to the existing system, migrati
 
 Omit this section entirely if there are no risks.
 
-### Section 3: Verdict
-
-State your verdict with a severity summary line, then emit the machine-parseable line exactly as shown:
-
-```
-### Verdict: {APPROVE | NEEDS REVISION | REJECT}
-
-**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Warnings | 🔵 [{N}] Info
-
-PIPELINE_VERDICT: {APPROVE | NEEDS_REVISION | REJECT}
-```
-
-- **APPROVE** — Architecture is sound, no violations found.
-- **NEEDS REVISION** — Specific items must be fixed (list them below the verdict).
-- **REJECT** — Fundamental architectural violations require significant rework.
-
-The `PIPELINE_VERDICT:` line MUST appear on its own line after the verdict explanation. The orchestrator parses this line to drive revision loops.
-
-If the verdict is not APPROVE, clearly list every item that must be addressed.
-
-### Section 4: 🔴 Critical Findings (only if any exist)
+### Section 3: 🔴 Critical Findings (only if any exist)
 
 Number findings sequentially within this section. Render each as a standalone block:
 
@@ -274,6 +269,8 @@ Number findings sequentially within this section. Render each as a standalone bl
 
 {What's wrong — 1-2 sentences max}
 
+**Why Critical →** {1-sentence justification citing which rubric criteria are met: invariant broken, blast radius, failure mode, detection difficulty, reversibility}
+
 **Fix →** {concrete remediation with code example if helpful}
 ```
 
@@ -281,20 +278,34 @@ Example: `#### 🔴 1. [Hex Compliance] Domain imports infrastructure adapter`
 
 Omit this section entirely if there are zero critical findings.
 
-### Section 5: 🟠 Major Findings (only if any exist)
+### Section 4: 🟠 Major Findings (only if any exist)
 
-Number findings sequentially within this section. Same block format as Critical Findings.
+Number findings sequentially within this section. Same block format as Critical Findings, with severity justification:
+
+```
+#### 🟠 1. [{Review Dimension}] {Concise title}
+
+**`{file:line}`** {— additional files if applicable}
+
+{What's wrong — 1-2 sentences max}
+
+**Why Major →** {1-sentence justification citing which 2+ rubric criteria are met: rule violated, blast radius, failure mode, detection, reversibility}
+
+**Fix →** {concrete remediation}
+```
 
 Example: `#### 🟠 1. [SOLID] Service violates SRP with 12 public methods in two unrelated clusters`
 
 Omit this section entirely if there are zero major findings.
 
-### Section 6: 🟡 Warnings (only if any exist)
+### Section 5: 🟡 Warnings (only if any exist)
 
-Number findings sequentially within this section. Same block format as Critical Findings. For multi-file warnings (e.g., duplication across services), include a table of affected files within the block:
+Number findings sequentially within this section. Same block format. For multi-file warnings (e.g., duplication across services), include a table of affected files within the block:
 
 ```
 #### 🟡 1. [{Review Dimension}] {Concise title}
+
+**`{file:line}`** {— or table of files if multi-file}
 
 | File | Lines |
 |------|-------|
@@ -303,6 +314,8 @@ Number findings sequentially within this section. Same block format as Critical 
 
 {What's wrong — 1-2 sentences}
 
+**Why Warning →** {1-sentence justification: contained blast radius, no runtime failure, trivially reversible, or convention deviation}
+
 **Fix →** {remediation}
 ```
 
@@ -310,7 +323,7 @@ Example: `#### 🟡 1. [Duplication] Session cookie config duplicated across 4 s
 
 Omit this section entirely if there are zero warnings.
 
-### Section 7: 🔵 Info Items (only if any exist)
+### Section 6: 🔵 Info Items (only if any exist)
 
 Number findings sequentially within this section. Render each INFO item as a collapsible `<details>` block:
 
@@ -320,8 +333,56 @@ Number findings sequentially within this section. Render each INFO item as a col
 
 {description — 1-3 sentences}
 
+**Why Info →** {reason: pre-existing tech debt, established pattern, cosmetic, or duplicate root cause}
+
 **Fix →** {remediation}
 </details>
 ```
 
 Omit this section entirely if there are zero info items.
+
+### Section 7: Severity Self-Check & Verdict Derivation (LAST)
+
+**This section MUST be the last substantive section.** Before deriving the verdict, re-examine
+every finding at WARNING or above. This is a calibration pass — you are verifying your own
+classifications are correct, not trying to remove findings.
+
+#### Step 1: Severity Self-Check
+
+For each finding at 🟡 WARNING, 🟠 MAJOR, or 🔴 CRITICAL, verify it against the rubric
+from `_severity-rubric.md`:
+
+| # | Finding | Assigned | Rubric Check | Confirmed |
+|---|---------|----------|-------------|-----------|
+| 1 | {title} | 🟠 Major | {which 2+ Major criteria are met, or why they aren't} | ✅ Confirmed / ⬆️ Upgraded to {X} / ⬇️ Corrected to {X} |
+
+Rules:
+- If a MAJOR finding meets ALL 5 Critical criteria → upgrade to CRITICAL
+- If a MAJOR finding meets fewer than 2 Major criteria → correct to WARNING
+- If a WARNING finding actually meets 2+ Major criteria → correct to MAJOR
+- If a finding follows an established codebase convention or is `[PRE]` → correct to INFO
+- Do NOT remove findings — every finding stays in the report, only its severity may change
+- After corrections, move findings to their correct sections (3-6) in the report above
+
+#### Step 2: Verdict Derivation
+
+Show your derivation explicitly using the post-self-check counts:
+
+```
+### Verdict Derivation
+
+Findings (NEW only): 🔴 {N} Critical | 🟠 {N} Major | 🟡 {N} Warnings | 🔵 {N} Info
+Verdict rule: REJECT if any CRITICAL [NEW]; NEEDS_REVISION if any MAJOR [NEW]; APPROVE otherwise.
+
+**Metrics:** 🔴 [{N}] Critical | 🟠 [{N}] Major | 🟡 [{N}] Warnings | 🔵 [{N}] Info
+
+PIPELINE_ARCH_VERDICT: {APPROVE | NEEDS_REVISION | REJECT}
+```
+
+- **APPROVE** — Zero CRITICAL and zero MAJOR findings tagged `[NEW]`.
+- **NEEDS_REVISION** — At least one MAJOR finding tagged `[NEW]`, zero CRITICAL.
+- **REJECT** — At least one CRITICAL finding tagged `[NEW]`.
+
+The `PIPELINE_ARCH_VERDICT:` line MUST appear on its own line. The orchestrator parses this line to drive revision loops.
+
+If the verdict is not APPROVE, clearly list every item that must be addressed.

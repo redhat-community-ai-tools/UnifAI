@@ -81,7 +81,47 @@ EXIT_STATUS: <SUCCESS | REVISION_LIMIT | USER_INPUT_REQUIRED | ERROR | SKILL_NOT
 
 ## Verdict Parsing
 
-All reviewer skills emit: `PIPELINE_VERDICT: <TOKEN>` on its own line. Locate this line, use the token to drive revision loops.
+Reviewer skills emit verdict tokens on their own line:
+- Architecture Judge emits: `PIPELINE_ARCH_VERDICT: <TOKEN>` (tokens: APPROVE, NEEDS_REVISION, REJECT)
+- Code Judge emits: `PIPELINE_CODE_VERDICT: <TOKEN>` (tokens: CLEAN, NEEDS_REFACTORING, MAJOR_CLEANUP)
+
+Locate these lines to drive revision loops.
+
+## Structured Results Output (CI Integration)
+
+**Only when `$CI` environment variable is set to `true`:** After all review phases complete (but BEFORE emitting the Pipeline Summary), write a structured JSON results file for the CI gate evaluator. Use the Shell tool to write to `/tmp/pipeline_results.json`. Skip this section entirely when running locally (IDE).
+
+**Data extraction rules:**
+1. Parse `PIPELINE_ARCH_VERDICT:` and/or `PIPELINE_CODE_VERDICT:` from each judge's output.
+2. Parse `Code Health Score: X/10` from the code judge's output.
+3. Parse finding counts from each judge's `Findings (NEW only):` line (regex: `🔴 (\d+) Critical \| 🟠 (\d+) Major \| 🟡 (\d+) (?:Minor|Warnings) \| 🔵 (\d+) Info`). Do NOT count badge headers (`#### 🔴`, `#### 🟠`, etc.) — those include `[PRE]` findings that judges exclude from scoring. The `Findings (NEW only):` line is the authoritative source because it reflects post-self-check counts.
+4. Get `files_changed` from the scout's file scope list (count of files in scope).
+5. Get `lines_added` and `lines_removed` from the diff summary (approximate from `+`/`-` line counts).
+
+**Write this exact JSON structure** (replace values with actuals):
+
+```json
+{
+  "arch_verdict": "APPROVE",
+  "arch_findings": {"critical": 0, "major": 0, "minor": 1, "info": 3},
+  "code_verdict": "CLEAN",
+  "code_health_score": 8,
+  "code_findings": {"critical": 0, "major": 1, "minor": 2, "info": 5},
+  "files_changed": 12,
+  "lines_added": 340,
+  "lines_removed": 45,
+  "pipeline_pass": true
+}
+```
+
+- `pipeline_pass` rules (one rule per mode):
+  - `review` (dual-judge): `true` only if arch_verdict is "APPROVE" AND code_verdict is "CLEAN".
+  - `arch-review` (single-judge): `true` only if arch_verdict is "APPROVE".
+  - `code-review-only` (single-judge): `true` only if code_verdict is "CLEAN".
+- If only one judge ran, omit the non-running judge's fields entirely so the CI gate can rely on `pipeline_pass` as a consistent boolean in all modes.
+- Use the Shell tool: `echo '<json>' > /tmp/pipeline_results.json`
+
+This file is consumed by the CI gate script for deterministic score computation. Writing it is mandatory in CI (`$CI=true`) for `review`, `arch-review`, `code-review-only` modes.
 
 ## Phase Execution
 
@@ -89,7 +129,7 @@ For each phase in the mode's sequence:
 1. Read the skill file using the Read tool.
 2. Apply its instructions. Orchestrator rules in THIS document remain in effect at all times.
 3. Present output under the phase header (`## PHASE <N>: <NAME>`).
-4. If the phase is a review phase (2, 4, 5, 9), locate the `PIPELINE_VERDICT:` line.
+4. If the phase is a review phase (2, 4, 5, 9), locate the `PIPELINE_ARCH_VERDICT:` or `PIPELINE_CODE_VERDICT:` line.
 
 ### Review phases with revision loops (Phases 2, 4, 5)
 
@@ -119,7 +159,7 @@ When the verdict is NOT approval, read `.cursor/skills/pipeline/modes/_revision-
 Review phases follow an Inline Scout + Judge pattern. The orchestrator **executes Scout logic directly** (no subagent spawn) to gather evidence, then spawns Judge subagent(s) for reasoning. This minimizes agent spawn overhead — only judges are spawned.
 
 **Model defaults** (override via environment variables `ARCH_JUDGE_MODEL`, `CODE_JUDGE_MODEL`):
-- Arch Judge: `claude-4.6-opus-high-thinking`
+- Arch Judge: `claude-4.6-opus-max-thinking`
 - Code Judge: `claude-4.6-sonnet-medium-thinking`
 
 **Inline Scout execution (applies to all review modes):**
@@ -134,27 +174,28 @@ Review phases follow an Inline Scout + Judge pattern. The orchestrator **execute
 3. Spawn BOTH judges in parallel (single message, two Task calls with `run_in_background: true`):
    - Arch Judge: `Task(model=$ARCH_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<arch-reviewer skill + evidence pack>")`
    - Code Judge: `Task(model=$CODE_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<code-reviewer skill + evidence pack>")`
-4. Wait for both to complete. Parse `PIPELINE_VERDICT:` from each judge's output.
+4. Wait for both to complete. Parse `PIPELINE_ARCH_VERDICT:` from arch judge and `PIPELINE_CODE_VERDICT:` from code judge. Do NOT emit per-judge checkpoints — wait silently until both finish, then emit ONE combined checkpoint (see below).
 5. Present both reviews in this exact order: `## ARCHITECTURE REVIEW` first, then `## CODE REVIEW`. The CI workflow's output splitting depends on this ordering.
 6. The overall pipeline passes only if BOTH verdicts pass (arch=APPROVE AND code=CLEAN).
+7. Emit a single post-judge checkpoint (one paragraph max): state both verdicts, the overall pass/fail, the health score, and any blocking items. Do NOT repeat this information — the Pipeline Summary at the end covers the rest.
 
 **For `arch-review` (Phase 9, standalone):**
 1. Run Inline Scout. Scope = user's file/folder arguments.
 2. Read `.cursor/skills/pipeline/phases/arch-reviewer.md`
 3. Spawn Arch Judge: `Task(model=$ARCH_JUDGE_MODEL, ...)` with evidence pack.
-4. Parse `PIPELINE_VERDICT:` from Judge output.
+4. Parse `PIPELINE_ARCH_VERDICT:` from Judge output.
 
 **For `code-review-only` (Phase 4, standalone):**
 1. Run Inline Scout. Scope = user's file/folder arguments.
 2. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
 3. Spawn Code Judge: `Task(model=$CODE_JUDGE_MODEL, ...)` with evidence pack.
-4. Parse `PIPELINE_VERDICT:` from Judge output.
+4. Parse `PIPELINE_CODE_VERDICT:` from Judge output.
 
 **For `full` pipeline Phase 4 (after Phase 3):**
 1. Run Inline Scout. Scope = changed files from Phase 3.
 2. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
 3. Spawn Code Judge with evidence pack + approved design from Phase 2.
-4. Parse `PIPELINE_VERDICT:`.
+4. Parse `PIPELINE_CODE_VERDICT:`.
 
 **Model fallback:** If the specified model is unavailable (Task tool returns an error), retry with `claude-4.6-sonnet-medium-thinking` and log: "Model fallback: <original> unavailable, using sonnet-medium-thinking."
 
@@ -242,10 +283,11 @@ To close the pipeline: first update the state tracker with `EXIT_STATUS: SUCCESS
 - If Jira MCP is unavailable, notify user and proceed with available info.
 - Announce each phase transition clearly.
 - If user input needed, stop and ask. Set `EXIT_STATUS: USER_INPUT_REQUIRED`.
+- Do NOT run `.github/scripts/evaluate_review_gate.py` or any CI gate/telemetry scripts. Those are executed by the workflow after your process exits.
 
 ## Context Management
 
-- After each phase, emit a one-paragraph checkpoint: verdict, key decisions, files changed, and skills used (list every skill file the agent read via the Read tool during the phase, by short name — e.g. "designer.md, codebase/SKILL.md").
+- After each phase, emit a one-paragraph checkpoint: verdict, key decisions, files changed, and skills used (list every skill file the agent read via the Read tool during the phase, by short name — e.g. "designer.md, codebase/SKILL.md"). For parallel-judge phases (`review` mode), emit ONE checkpoint after both judges complete — do not narrate each judge's arrival separately.
 - If >15 tool calls within a single phase, summarize intermediate results before continuing.
 - In code revision loops, produce only changed files + summary of unchanged (not full re-emit).
 - In design revision loops, produce the complete revised design.

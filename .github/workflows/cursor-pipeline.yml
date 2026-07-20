@@ -2,7 +2,7 @@ name: Cursor Pipeline Review
 
 env:
   ORCHESTRATOR_MODEL: composer-2.5-fast
-  ARCH_JUDGE_MODEL: claude-4.6-opus-high-thinking
+  ARCH_JUDGE_MODEL: claude-4.6-opus-max-thinking
   CODE_JUDGE_MODEL: claude-4.6-sonnet-medium-thinking
 
 on:
@@ -92,6 +92,9 @@ jobs:
             fi
           done
 
+      - name: Install Langfuse SDK
+        run: python3 -m pip install -r .cursor/hooks/requirements.txt
+
       # Security: --trust grants the agent full tool access (file read/write, shell).
       # --force skips interactive confirmation. The agent runs in a read-only
       # checkout (contents: read permission) so it cannot push changes. The
@@ -105,6 +108,11 @@ jobs:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
           CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
         run: |
           AGENT_EXIT=0
           agent --trust --force -p "/pipeline review" \
@@ -155,8 +163,8 @@ jobs:
             if [ ! -s "$f" ]; then
               echo "::error::${f} is empty. Agent output must contain '## ARCHITECTURE REVIEW' and '## CODE REVIEW' headers (optionally prefixed with 'PHASE N: ')."
               SPLIT_OK=false
-            elif ! grep -q 'PIPELINE_VERDICT' "$f"; then
-              echo "::warning::${f} missing PIPELINE_VERDICT — judge output may be incomplete."
+            elif ! grep -qE 'PIPELINE_(ARCH_|CODE_)?VERDICT' "$f"; then
+              echo "::warning::${f} missing PIPELINE_*_VERDICT — judge output may be incomplete."
             fi
           done
           if [ "$AGENT_EXIT" -ne 0 ]; then
@@ -173,22 +181,16 @@ jobs:
 
       - name: Publish results to Job Summary
         if: always()
-        run: |
-          # Only publish files that have actual review content (awk-extracted sections).
-          # Guard against empty files from failed extraction — don't pollute the summary.
-          if [ -s arch_review_output.txt ]; then
-            cat arch_review_output.txt >> $GITHUB_STEP_SUMMARY
-            printf '\n' >> $GITHUB_STEP_SUMMARY
-          else
-            printf '## Architecture Review\n\n_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
-          fi
-          printf -- '---\n\n' >> $GITHUB_STEP_SUMMARY
-          if [ -s code_review_output.txt ]; then
-            cat code_review_output.txt >> $GITHUB_STEP_SUMMARY
-            printf '\n' >> $GITHUB_STEP_SUMMARY
-          else
-            printf '## Code Review\n\n_No output produced._\n\n' >> $GITHUB_STEP_SUMMARY
-          fi
+        run: python3 .github/scripts/publish_review_summary.py
+
+      - name: Upload Review Summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pipeline-review-summary-${{ github.run_id }}
+          path: review_output.txt
+          retention-days: 90
+          if-no-files-found: warn
 
       - name: Extract Pipeline Telemetry
         if: always()
@@ -200,19 +202,42 @@ jobs:
           BRANCH_REF: ${{ steps.branch.outputs.ref }}
         run: python3 .github/scripts/extract_pipeline_telemetry.py
 
-      - name: Upload Telemetry Data
+      - name: Send Langfuse Trace
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: pipeline-telemetry-${{ github.run_id }}
-          path: telemetry.json
-          retention-days: 90
-          if-no-files-found: warn
+        env:
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
+          PIPELINE_RESULTS_JSON: /tmp/pipeline_results.json
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
+        run: python3 .github/scripts/send_langfuse_trace.py
 
       - name: Evaluate Review Scores
         id: gate
         if: always()
+        env:
+          PIPELINE_RESULTS_JSON: /tmp/pipeline_results.json
         run: python3 .github/scripts/evaluate_review_gate.py
+
+      - name: Collect Training Data
+        if: always()
+        env:
+          PIPELINE_RESULTS_JSON: /tmp/pipeline_results.json
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
+        run: python3 .github/scripts/collect_training_data.py
+
+      - name: Upload Telemetry & Training Data
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pipeline-telemetry-${{ github.run_id }}
+          path: |
+            telemetry.json
+            training_data.csv
+          retention-days: 90
+          if-no-files-found: warn
 
       - name: Publish Commit Status
         if: always() && github.event_name == 'pull_request'
