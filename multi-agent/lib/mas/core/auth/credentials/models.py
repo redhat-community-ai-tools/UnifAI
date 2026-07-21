@@ -91,12 +91,15 @@ class ClientConfig(BaseModel):
 
     @field_validator("server_identifier")
     @classmethod
-    def _reject_reserved_ids(cls, v: str) -> str:
-        if v in {m.value for m in StaticAuthMethod}:
+    def _normalize_and_reject_reserved_ids(cls, v: str) -> str:
+        # Match store normalization (rstrip("/")) before reserved-id checks so
+        # values like "none/" cannot bypass and later collide with StaticAuthMethod.
+        normalized = (v or "").rstrip("/")
+        if normalized in {m.value for m in StaticAuthMethod}:
             raise ValueError(
                 f"server_identifier {v!r} is reserved for static auth methods"
             )
-        return v
+        return normalized
 
 
 class RecoveryResult(BaseModel):

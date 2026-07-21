@@ -251,17 +251,17 @@ class A2AAgentNode(
             if not headers:
                 logger.warning(
                     "A2AAgentNode[%s]: auth header refresh returned no headers",
-                    self.name,
+                    self.uid,
                 )
                 raise RuntimeError(
-                    f"Cannot refresh auth headers for A2A node {self.name}: "
+                    f"Cannot refresh auth headers for A2A node {self.uid}: "
                     "no headers returned"
                 )
             self.a2a_provider.update_headers(headers)
         except AuthError as exc:
             logger.warning(
                 "A2AAgentNode[%s]: auth header refresh failed: %s",
-                self.name,
+                self.uid,
                 type(exc).__name__,
             )
             raise
@@ -270,7 +270,7 @@ class A2AAgentNode(
         except Exception:
             logger.exception(
                 "A2AAgentNode[%s]: unexpected auth header refresh failure",
-                self.name,
+                self.uid,
             )
             raise
 
