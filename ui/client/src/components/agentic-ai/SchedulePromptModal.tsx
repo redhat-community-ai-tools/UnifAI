@@ -65,7 +65,7 @@ interface CustomRecurrenceConfig {
 
 interface SchedulePromptModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (saved?: boolean) => void;
   blueprintId: string;
   blueprintName: string;
   userId?: string;
@@ -662,7 +662,7 @@ export default function SchedulePromptModal({
           identityType,
         );
       }
-      onClose();
+      onClose(true);
     } catch (err: any) {
       const message = err?.response?.data?.error || err?.message || "Failed to save schedule";
       setError(message);
@@ -775,7 +775,8 @@ export default function SchedulePromptModal({
                   type="time"
                   value={time}
                   onChange={(e) => setTime(e.target.value)}
-                  className="w-[120px] bg-background-dark border-gray-700"
+                  className="w-[120px] bg-background-dark border-gray-700 text-gray-200"
+                  style={{ colorScheme: "dark" }}
                 />
               </div>
             </div>
@@ -834,7 +835,7 @@ export default function SchedulePromptModal({
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={onClose}
+              onClick={() => onClose()}
               disabled={isSaving}
               className="bg-background-dark border-gray-700 hover:bg-background-surface"
             >

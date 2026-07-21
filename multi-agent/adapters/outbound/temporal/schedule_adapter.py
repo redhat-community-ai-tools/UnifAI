@@ -48,6 +48,9 @@ class TemporalScheduleAdapter(SchedulePort):
     def delete(self, temporal_schedule_id: str) -> None:
         asyncio.run(self._delete(temporal_schedule_id))
 
+    def trigger_now(self, temporal_schedule_id: str) -> None:
+        asyncio.run(self._trigger(temporal_schedule_id))
+
     async def _create(self, prompt: ScheduledPrompt) -> str:
         from temporal.models import ScheduledSessionParams
 
@@ -104,6 +107,11 @@ class TemporalScheduleAdapter(SchedulePort):
         client = await get_temporal_client()
         handle = client.get_schedule_handle(temporal_schedule_id)
         await handle.delete()
+
+    async def _trigger(self, temporal_schedule_id: str) -> None:
+        client = await get_temporal_client()
+        handle = client.get_schedule_handle(temporal_schedule_id)
+        await handle.trigger()
 
     @staticmethod
     def _build_spec(prompt: ScheduledPrompt) -> ScheduleSpec:

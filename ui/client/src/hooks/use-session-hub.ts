@@ -47,6 +47,11 @@ export interface UseSessionHubOptions {
    * CollaborationHubView which has its own submit path + remote-stream logic).
    */
   manualStreamControl?: boolean;
+  /**
+   * Called whenever the active session changes (sidebar click, initial load).
+   * The parent component can use this to update the browser URL for deep-linking.
+   */
+  onSessionChange?: (sessionId: string) => void;
 }
 
 export interface UseSessionHubReturn {
@@ -147,6 +152,7 @@ type ChunkData = {
 export function useSessionHub({
   runId,
   manualStreamControl = false,
+  onSessionChange,
 }: UseSessionHubOptions): UseSessionHubReturn {
   // ── Session state ──────────────────────────────────────────────────────
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
@@ -254,6 +260,7 @@ export function useSessionHub({
               node,
               display_name,
               workplan,
+              isExpanded: false,
             };
             const idx = existing.workplans.findIndex(
               (wp: any) => wp.plan_id === plan_id || wp.owner_uid === snap.owner_uid,
@@ -326,6 +333,9 @@ export function useSessionHub({
   // Stable ref so fetchChatSessions can call it without a circular dep
   const handleSessionSelectRef = useRef<(session: ChatSession) => Promise<void>>(null!);
 
+  const onSessionChangeRef = useRef(onSessionChange);
+  onSessionChangeRef.current = onSessionChange;
+
   const handleSessionSelect = useCallback(
     async (session: ChatSession) => {
       const requestId = ++sessionSelectRequestId.current;
@@ -335,6 +345,8 @@ export function useSessionHub({
       setIsLoadingSessionMessages(true);
       setCurrentSessionMessages([]);
       setIsSharingDisabled(false);
+
+      onSessionChangeRef.current?.(session.id);
 
       // Cancel any existing stream subscription before switching
       sessionStream.cancelStream();
@@ -452,10 +464,17 @@ export function useSessionHub({
       setChatSessions(sorted);
 
       if (sorted.length > 0) {
-        const target = runId
-          ? sorted.find((s) => s.id === runId) ?? sorted[0]
-          : sorted[0];
-        await handleSessionSelectRef.current(target);
+        if (runId) {
+          const target = sorted.find((s) => s.id === runId);
+          if (target) {
+            await handleSessionSelectRef.current(target);
+          } else {
+            setError(`Session "${runId}" not found`);
+            await handleSessionSelectRef.current(sorted[0]);
+          }
+        } else {
+          await handleSessionSelectRef.current(sorted[0]);
+        }
       }
     } catch (err) {
       console.error("Error fetching chat sessions:", err);

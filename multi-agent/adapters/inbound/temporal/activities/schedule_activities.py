@@ -14,7 +14,7 @@ from mas.session.domain.models import SessionMeta
 from temporal.models import (
     BuildSessionWorkflowParamsInput,
     GraphExecutionParams,
-    MarkScheduleCompletedParams,
+    PostExecutionParams,
     ScheduledSessionParams,
     SessionWorkflowParams,
     StageScheduledInputsParams,
@@ -90,6 +90,15 @@ class ScheduleActivities:
             graph_execution_params=graph_params,
         )
 
-    @activity.defn(name="mark_schedule_completed")
-    def mark_schedule_completed(self, params: MarkScheduleCompletedParams) -> None:
+    @activity.defn(name="post_execution")
+    def post_execution(self, params: PostExecutionParams) -> None:
+        from datetime import datetime, timezone
+        try:
+            started = datetime.fromisoformat(params.started_at)
+        except (ValueError, TypeError):
+            started = datetime.now(timezone.utc)
+
+        self._prompt_service.record_run(
+            params.prompt_id, params.run_id, params.status, started,
+        )
         self._prompt_service.mark_completed(params.prompt_id)

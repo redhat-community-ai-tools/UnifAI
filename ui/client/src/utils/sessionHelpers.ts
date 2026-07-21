@@ -47,6 +47,7 @@ export const transformSessionData = (
   const fromSharedLink = sessionData.metadata?.source === 'public_link';
   const hitlEnabled = sessionData.metadata?.hitl_enabled === true;
   const fromSchedule = sessionData.metadata?.source === 'schedule';
+  const status = sessionData.status;
   const activityTimestamp = sessionData.last_active_at || sessionData.started_at;
   const timestamp = new Date(activityTimestamp);
   const lastActive = formatRelativeTimestamp(activityTimestamp);
@@ -64,6 +65,7 @@ export const transformSessionData = (
     fromSharedLink,
     hitlEnabled,
     fromSchedule,
+    status,
   };
 };
 

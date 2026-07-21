@@ -4,6 +4,7 @@ Scheduled prompt repository port (ABC).
 Defines the persistence contract for the ScheduledPrompt aggregate.
 """
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import List
 
 from mas.core.identity import Identity
@@ -47,4 +48,15 @@ class ScheduledPromptRepository(ABC):
     @abstractmethod
     def count_active_by_blueprint(self, blueprint_id: str) -> int:
         """Count prompts with status ACTIVE or PAUSED for a blueprint."""
+        ...
+
+    @abstractmethod
+    def record_run(
+        self,
+        prompt_id: str,
+        session_id: str,
+        status: str,
+        started_at: datetime,
+    ) -> None:
+        """Atomically increment run count and push to recent_statuses ring buffer."""
         ...

@@ -537,6 +537,31 @@ def subscribe_session(session_id):
     return resp
 
 
+# ---------- Session detail (deep-link) ----------
+
+@sessions_bp.route("/session.get", methods=["GET"])
+@with_require_identity_authorization
+@from_query({
+    "session_id": fields.Str(data_key="sessionId", required=True),
+})
+def get_session_detail(identity, session_id):
+    """Return a combined session payload (status + meta + chat + blueprint name).
+
+    Used by the ``/agentic-chats/:sessionId`` deep-link route so the
+    frontend can render a session in a single API call.
+    """
+    try:
+        svc = current_app.container.session_service
+        detail = svc.get_session_detail(session_id=session_id, identity=identity)
+        return jsonify(detail), 200
+    except PermissionError as e:
+        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
+    except KeyError:
+        return jsonify({"error": f"Session {session_id} not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ---------- Session meta ----------
 
 @sessions_bp.route("/session.meta", methods=["GET"])

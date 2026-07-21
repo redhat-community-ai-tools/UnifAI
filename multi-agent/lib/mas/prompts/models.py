@@ -6,7 +6,7 @@ and supporting enums for the prompt scheduling domain.
 """
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -56,6 +56,24 @@ class ScheduleDefinition(BaseModel):
         return self
 
 
+class RunStatusEntry(BaseModel):
+    """Single entry in the recent-runs ring buffer."""
+
+    model_config = ConfigDict(frozen=True)
+
+    session_id: str
+    status: str
+    started_at: Optional[datetime] = None
+
+
+class RunStats(BaseModel):
+    """Lightweight run-history summary embedded in the prompt aggregate."""
+
+    total_runs: int = 0
+    last_run_at: Optional[datetime] = None
+    recent_statuses: List[RunStatusEntry] = Field(default_factory=list)
+
+
 class ScheduledPrompt(BasePrompt):
     """Standalone scheduled prompt -- identity-owned, tied to a blueprint."""
 
@@ -67,3 +85,4 @@ class ScheduledPrompt(BasePrompt):
     schedule_status: ScheduleStatus = ScheduleStatus.ACTIVE
     temporal_schedule_id: Optional[str] = None
     completed_at: Optional[datetime] = None
+    run_stats: RunStats = Field(default_factory=RunStats)

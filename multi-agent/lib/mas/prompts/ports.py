@@ -30,3 +30,8 @@ class SchedulePort(ABC):
     def delete(self, temporal_schedule_id: str) -> None:
         """Delete a schedule permanently."""
         ...
+
+    @abstractmethod
+    def trigger_now(self, temporal_schedule_id: str) -> None:
+        """Trigger an immediate execution of the schedule (one-off)."""
+        ...

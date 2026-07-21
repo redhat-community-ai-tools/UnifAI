@@ -237,6 +237,44 @@ class SessionService:
         """
         return self._manager.get_chat(run_id)
 
+    def get_session_detail(self, session_id: str, identity: Identity) -> dict:
+        """Combined session retrieval: status + meta + chat + blueprint name.
+
+        Used by the ``session.get`` endpoint to serve deep-link navigation
+        in a single round-trip.
+        """
+        record = self._manager.get_record(session_id)
+        if record.identity != identity:
+            raise PermissionError(
+                f"Session {session_id} not owned by {identity.id}"
+            )
+
+        status = record.status.name
+        meta = record.metadata
+        chat = self._manager.get_chat(session_id)
+
+        try:
+            bp_doc = self._manager._bp_service.get_blueprint_draft_doc(
+                record.blueprint_id,
+            )
+            blueprint_name = bp_doc.spec_dict.get("name", record.blueprint_id)
+        except (KeyError, Exception):
+            blueprint_name = record.blueprint_id
+
+        created_at = getattr(record, "created_at", None)
+        completed_at = getattr(record, "completed_at", None)
+
+        return {
+            "sessionId": session_id,
+            "blueprintId": record.blueprint_id,
+            "blueprintName": blueprint_name,
+            "status": status,
+            "meta": meta.model_dump(mode="json"),
+            "createdAt": created_at.isoformat() if created_at else None,
+            "completedAt": completed_at.isoformat() if completed_at else None,
+            "chat": chat.model_dump(mode="json"),
+        }
+
     def list_user_sessions(self, identity: Identity) -> list:
         """
         List all sessions created by a user (metadata only, no messages).

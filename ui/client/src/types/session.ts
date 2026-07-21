@@ -32,6 +32,7 @@ export interface ChatSessionData {
   started_at: string;
   last_active_at?: string;
   blueprint_exists: boolean;
+  status?: string;
 }
 
 export interface SessionStateData {

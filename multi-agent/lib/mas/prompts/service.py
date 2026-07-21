@@ -148,6 +148,18 @@ class PromptService:
         self._repo.update(prompt)
         return prompt
 
+    def trigger(self, prompt_id: str, *, identity: Identity) -> ScheduledPrompt:
+        """Trigger an immediate one-off execution of the schedule."""
+        prompt = self._load_and_verify(prompt_id, identity)
+
+        if not self._schedule_port or not prompt.temporal_schedule_id:
+            raise ValueError(
+                f"Prompt {prompt_id} has no active Temporal schedule to trigger"
+            )
+
+        self._schedule_port.trigger_now(prompt.temporal_schedule_id)
+        return prompt
+
     def delete(self, prompt_id: str, *, identity: Identity) -> None:
         prompt = self._load_and_verify(prompt_id, identity)
 
@@ -166,6 +178,47 @@ class PromptService:
 
     def list(self, *, identity: Identity) -> List[ScheduledPrompt]:
         return self._repo.list_by_identity(identity)
+
+    def list_enriched(
+        self,
+        *,
+        identity: Identity,
+        blueprint_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return prompt dicts enriched with ``blueprint_name``.
+
+        Accepts an optional *blueprint_id* filter; when provided the lookup
+        bypasses identity scoping (same as the existing endpoint behaviour).
+        """
+        if blueprint_id:
+            prompts = self._repo.find_by_blueprint(blueprint_id)
+        else:
+            prompts = self._repo.list_by_identity(identity)
+
+        name_cache: Dict[str, str] = {}
+        result: List[Dict[str, Any]] = []
+        for p in prompts:
+            d = p.model_dump(mode="json")
+            bid = p.blueprint_id
+            if bid not in name_cache:
+                try:
+                    doc = self._blueprint_service.get_blueprint_draft_doc(bid)
+                    name_cache[bid] = doc.spec_dict.get("name", bid)
+                except Exception:
+                    name_cache[bid] = bid
+            d["blueprint_name"] = name_cache[bid]
+            result.append(d)
+        return result
+
+    def record_run(
+        self,
+        prompt_id: str,
+        session_id: str,
+        status: str,
+        started_at: datetime,
+    ) -> None:
+        """Record a completed run in the prompt's embedded run_stats."""
+        self._repo.record_run(prompt_id, session_id, status, started_at)
 
     def get(self, prompt_id: str, *, identity: Identity) -> ScheduledPrompt:
         return self._load_and_verify(prompt_id, identity)

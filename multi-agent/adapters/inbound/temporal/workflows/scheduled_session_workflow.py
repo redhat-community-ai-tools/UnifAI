@@ -3,6 +3,8 @@ Scheduled session workflow -- triggered by Temporal Schedule on each tick.
 
 Creates a fresh session, stages inputs, builds workflow params via activity
 (blueprint resolution), then delegates to SessionWorkflow as a child.
+After the child completes (or fails), a post_execution activity records the
+run outcome in the prompt aggregate and handles finite-schedule completion.
 """
 from datetime import timedelta
 
@@ -12,7 +14,8 @@ from temporalio.common import RetryPolicy
 from mas.graph.state.graph_state import GraphState
 from temporal.models import (
     BuildSessionWorkflowParamsInput,
-    MarkScheduleCompletedParams,
+    PostExecutionParams,
+    RunOutcome,
     ScheduledSessionParams,
     SessionWorkflowParams,
     StageScheduledInputsParams,
@@ -37,6 +40,7 @@ class ScheduledSessionWorkflow:
     2. stage_scheduled_inputs -- apply inputs + prompt text (QUEUED)
     3. build_session_workflow_params -- resolve blueprint, compile graph
     4. SessionWorkflow (child) -- full lifecycle (begin -> execute -> complete/fail)
+    5. post_execution -- record run stats, conditionally complete finite schedules
     """
 
     @workflow.run
@@ -47,6 +51,8 @@ class ScheduledSessionWorkflow:
             start_to_close_timeout=_ACTIVITY_TIMEOUT,
             retry_policy=_ACTIVITY_RETRY,
         )
+
+        started_at = workflow.now().isoformat()
 
         await workflow.execute_activity(
             "stage_scheduled_inputs",
@@ -67,17 +73,26 @@ class ScheduledSessionWorkflow:
             result_type=SessionWorkflowParams,
         )
 
-        await workflow.execute_child_workflow(
-            SessionWorkflow.run,
-            session_params,
-            id=f"sched-session-{run_id}",
-            execution_timeout=_CHILD_EXECUTION_TIMEOUT,
-            result_type=GraphState,
-        )
+        outcome = RunOutcome.COMPLETED
+        try:
+            await workflow.execute_child_workflow(
+                SessionWorkflow.run,
+                session_params,
+                id=f"sched-session-{run_id}",
+                execution_timeout=_CHILD_EXECUTION_TIMEOUT,
+                result_type=GraphState,
+            )
+        except Exception:
+            outcome = RunOutcome.FAILED
 
         await workflow.execute_activity(
-            "mark_schedule_completed",
-            MarkScheduleCompletedParams(prompt_id=params.prompt_id),
+            "post_execution",
+            PostExecutionParams(
+                prompt_id=params.prompt_id,
+                run_id=run_id,
+                status=outcome,
+                started_at=started_at,
+            ),
             start_to_close_timeout=_ACTIVITY_TIMEOUT,
             retry_policy=_ACTIVITY_RETRY,
         )

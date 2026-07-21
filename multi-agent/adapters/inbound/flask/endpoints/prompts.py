@@ -87,12 +87,8 @@ def update_prompt(identity, prompt_id, text, inputs, schedule):
 def list_prompts(identity, blueprint_id):
     try:
         svc = current_app.container.prompt_service
-        if blueprint_id:
-            repo = current_app.container.prompt_repo
-            prompts = repo.find_by_blueprint(blueprint_id)
-        else:
-            prompts = svc.list(identity=identity)
-        return jsonify([p.model_dump(mode="json") for p in prompts]), 200
+        result = svc.list_enriched(identity=identity, blueprint_id=blueprint_id)
+        return jsonify(result), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -151,6 +147,26 @@ def resume_prompt(identity, prompt_id):
         return jsonify({"error": str(e)}), 500
 
 
+@prompts_bp.route("/prompt.schedule.trigger", methods=["POST"])
+@with_require_identity_authorization
+@from_body({
+    "prompt_id": fields.Str(data_key="promptId", required=True),
+})
+def trigger_prompt(identity, prompt_id):
+    try:
+        svc = current_app.container.prompt_service
+        prompt = svc.trigger(prompt_id, identity=identity)
+        return jsonify(prompt.model_dump(mode="json")), 200
+    except PromptNotFoundError as e:
+        return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
+    except PromptPermissionError as e:
+        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
+    except ValueError as e:
+        return jsonify({"error": str(e), "error_type": "VALIDATION_ERROR"}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @prompts_bp.route("/prompt.delete", methods=["DELETE"])
 @with_require_identity_authorization
 @from_body({
@@ -173,25 +189,24 @@ def delete_prompt(identity, prompt_id):
 @with_require_identity_authorization
 @from_query({
     "prompt_id": fields.Str(data_key="promptId", required=True),
-    "limit": fields.Int(data_key="limit", load_default=5),
+    "limit": fields.Int(data_key="limit", load_default=20),
 })
 def get_prompt_runs(identity, prompt_id, limit):
     try:
         svc = current_app.container.prompt_service
         svc.get(prompt_id, identity=identity)
 
-        session_svc = current_app.container.session_service
-        docs = session_svc.list_for_user(identity)
+        session_repo = current_app.container.session_repo
+        docs = session_repo.find_by_schedule_id(prompt_id, limit=limit)
         runs = [
             {
-                "session_id": d.get("session_id"),
-                "status": d.get("status"),
-                "started_at": d.get("started_at"),
+                "session_id": d.get("run_id"),
+                "status": d.get("status", "UNKNOWN"),
+                "started_at": d.get("run_context", {}).get("started_at"),
                 "metadata": d.get("metadata", {}),
             }
             for d in docs
-            if d.get("metadata", {}).get("schedule_id") == prompt_id
-        ][:limit]
+        ]
         return jsonify(runs), 200
     except PromptNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404

@@ -29,9 +29,22 @@ export interface UpdatePromptInput {
   schedule?: ScheduleDefinitionInput;
 }
 
+export interface RunStatusEntry {
+  session_id: string;
+  status: string;
+  started_at?: string;
+}
+
+export interface RunStats {
+  total_runs: number;
+  last_run_at?: string | null;
+  recent_statuses: RunStatusEntry[];
+}
+
 export interface ScheduledPromptResponse {
   id: string;
   blueprint_id: string;
+  blueprint_name?: string;
   identity: { type: string; id: string; display_name: string };
   text: string;
   inputs: Record<string, any>;
@@ -40,6 +53,7 @@ export interface ScheduledPromptResponse {
   schedule_status: string;
   temporal_schedule_id?: string;
   completed_at?: string;
+  run_stats: RunStats;
 }
 
 export interface PromptRunResponse {
@@ -131,6 +145,19 @@ export async function resumePromptSchedule(
   identityType?: string,
 ): Promise<ScheduledPromptResponse> {
   const { data } = await axios.post('/prompts/prompt.schedule.resume', {
+    promptId,
+    userId: userId || 'default',
+    identityType: identityType || 'user',
+  });
+  return data;
+}
+
+export async function triggerPromptSchedule(
+  promptId: string,
+  userId?: string,
+  identityType?: string,
+): Promise<ScheduledPromptResponse> {
+  const { data } = await axios.post('/prompts/prompt.schedule.trigger', {
     promptId,
     userId: userId || 'default',
     identityType: identityType || 'user',

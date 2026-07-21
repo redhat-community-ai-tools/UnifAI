@@ -83,7 +83,7 @@ async def run_worker(
             schedule_activities.create_scheduled_session,
             schedule_activities.stage_scheduled_inputs,
             schedule_activities.build_session_workflow_params,
-            schedule_activities.mark_schedule_completed,
+            schedule_activities.post_execution,
         ],
         activity_executor=thread_pool,
         max_concurrent_activities=threads,

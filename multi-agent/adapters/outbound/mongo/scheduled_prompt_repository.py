@@ -104,6 +104,26 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
             "schedule_status": {"$in": ["active", "paused"]},
         })
 
+    def record_run(self, prompt_id: str, session_id: str, status: str, started_at: datetime) -> None:
+        entry = {
+            "session_id": session_id,
+            "status": status,
+            "started_at": started_at,
+        }
+        self._col.update_one(
+            {"id": prompt_id},
+            {
+                "$inc": {"run_stats.total_runs": 1},
+                "$set": {"run_stats.last_run_at": started_at},
+                "$push": {
+                    "run_stats.recent_statuses": {
+                        "$each": [entry],
+                        "$slice": -8,
+                    }
+                },
+            },
+        )
+
     @staticmethod
     def _deserialize(doc: dict) -> ScheduledPrompt:
         doc.pop("_id", None)

@@ -1,9 +1,10 @@
 
-import React, { useMemo } from "react";
+import React, { useMemo, useCallback } from "react";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
 import { motion } from "framer-motion";
 import { useView } from "@/contexts/ViewContext";
+import { useRoute, useLocation } from "wouter";
 
 import ExecutionTab from "@/components/agentic-ai/ExecutionTab";
 import CollaborationHubView from "@/components/agentic-ai/CollaborationHubView";
@@ -13,11 +14,22 @@ import { StreamingDataProvider } from "@/components/agentic-ai/StreamingDataCont
 export default function AgenticChats() {
   const { viewMode, selectedTeam } = useView();
   const isTeam = viewMode === "team";
+  const [, navigate] = useLocation();
+
+  const [, routeParams] = useRoute("/agentic-chats/:sessionId");
 
   const urlRunId = useMemo(() => {
+    if (routeParams?.sessionId) return routeParams.sessionId;
     const params = new URLSearchParams(window.location.search);
     return params.get("runId");
-  }, []);
+  }, [routeParams]);
+
+  const handleSessionChange = useCallback(
+    (sessionId: string) => {
+      navigate(`/agentic-chats/${sessionId}`, { replace: true });
+    },
+    [navigate],
+  );
 
   const teamMembers = useTeamMembers();
 
@@ -46,7 +58,10 @@ export default function AgenticChats() {
                 transition={{ duration: 0.3 }}
               >
                 <StreamingDataProvider>
-                  <ExecutionTab runId={urlRunId} />
+                  <ExecutionTab
+                    runId={urlRunId}
+                    onSessionChange={handleSessionChange}
+                  />
                 </StreamingDataProvider>
               </motion.div>
             </div>

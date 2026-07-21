@@ -10,6 +10,7 @@ natively handles model_dump/model_validate for all Pydantic fields.
 Shared by both inbound (worker/activities/workflows) and outbound
 (executor/submitter) Temporal adapters.
 """
+from enum import Enum
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
@@ -116,6 +117,14 @@ class BuildSessionWorkflowParamsInput(BaseModel):
     run_id: str
 
 
-class MarkScheduleCompletedParams(BaseModel):
-    """Input to the mark_schedule_completed activity."""
+class RunOutcome(str, Enum):
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class PostExecutionParams(BaseModel):
+    """Input to the post_execution activity (record run + conditional completion)."""
     prompt_id: str
+    run_id: str
+    status: RunOutcome
+    started_at: str

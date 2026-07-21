@@ -1,0 +1,690 @@
+import React, { useState, useCallback, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import Header from "@/components/layout/Header";
+import StatusBar from "@/components/layout/StatusBar";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { motion } from "framer-motion";
+import {
+  Play,
+  Pause,
+  Pencil,
+  Trash2,
+  Eye,
+  RotateCw,
+  Clock,
+  Search,
+  Plus,
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import SimpleTooltip from "@/components/shared/SimpleTooltip";
+import { DataTable, DataTableColumn } from "@/components/shared/DataTable";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
+import { useToast } from "@/hooks/use-toast";
+import {
+  listScheduledPrompts,
+  pausePromptSchedule,
+  resumePromptSchedule,
+  deleteScheduledPrompt,
+  triggerPromptSchedule,
+  ScheduledPromptResponse,
+  ScheduleDefinitionInput,
+} from "@/api/prompts";
+import { fetchBlueprintSummaries, fetchResolvedBlueprint, BlueprintSummary } from "@/api/blueprints";
+import SchedulePromptModal from "@/components/agentic-ai/SchedulePromptModal";
+import GraphDisplay from "@/components/agentic-ai/graphs/GraphDisplay";
+import RunSparkline from "@/components/agentic-ai/RunSparkline";
+import RunHistoryPanel from "@/components/agentic-ai/RunHistoryPanel";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+
+// ---------------------------------------------------------------------------
+// Schedule label derivation
+// ---------------------------------------------------------------------------
+
+const DAY_CRON_NAMES = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+function describeSchedule(schedule: ScheduleDefinitionInput): string {
+  if (schedule.remaining_actions === 1 && schedule.start_at) {
+    const d = new Date(schedule.start_at);
+    return d.toLocaleString("en-GB", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  }
+
+  if (schedule.interval) {
+    const m = schedule.interval.match(/^PT(\d+)([MH])$/);
+    if (m) {
+      const v = parseInt(m[1], 10);
+      const u = m[2];
+      if (u === "M") {
+        if (v === 15) return "Every 15 minutes";
+        return v === 1 ? "Every minute" : `Every ${v} minutes`;
+      }
+      if (u === "H") {
+        if (v === 1) return "Hourly";
+        if (v % 24 === 0) {
+          const d = v / 24;
+          if (d % 7 === 0) {
+            const w = d / 7;
+            return w === 1 ? "Weekly" : `Every ${w} weeks`;
+          }
+          return d === 1 ? "Daily" : `Every ${d} days`;
+        }
+        return `Every ${v} hours`;
+      }
+    }
+  }
+
+  if (schedule.cron_expression) {
+    const parts = schedule.cron_expression.split(" ");
+    if (parts.length === 5) {
+      const [min, hour, dom, , dow] = parts;
+      const timeStr = `${hour.padStart(2, "0")}:${min.padStart(2, "0")}`;
+      if (dom === "*" && dow === "*") return `Daily at ${timeStr}`;
+      if (dom === "*" && dow !== "*") {
+        const dayTokens = dow.split(",");
+        const labels = dayTokens.map((t) => {
+          const num = parseInt(t, 10);
+          if (!isNaN(num)) return DAY_CRON_NAMES[num]?.slice(0, 3) ?? t;
+          return t.slice(0, 3);
+        });
+        if (labels.length === 1) return `Weekly on ${labels[0]} at ${timeStr}`;
+        return `Weekly on ${labels.join(", ")} at ${timeStr}`;
+      }
+      if (dom !== "*" && dow === "*") return `Monthly on the ${dom} at ${timeStr}`;
+    }
+    return schedule.cron_expression;
+  }
+
+  return "Custom";
+}
+
+// ---------------------------------------------------------------------------
+// Status badge
+// ---------------------------------------------------------------------------
+
+type ScheduleStatusType = "active" | "paused" | "completed";
+
+function statusColor(s: ScheduleStatusType): string {
+  switch (s) {
+    case "active":
+      return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
+    case "paused":
+      return "bg-amber-500/15 text-amber-400 border-amber-500/30";
+    case "completed":
+      return "bg-gray-500/15 text-gray-400 border-gray-500/30";
+  }
+}
+
+function StatusBadge({ status }: { status: ScheduleStatusType }) {
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full border ${statusColor(status)}`}
+    >
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Prompt cell — single-line truncated preview; full text in expanded row
+// ---------------------------------------------------------------------------
+
+function PromptCell({ text }: { text: string }) {
+  return (
+    <span className="text-gray-300 text-sm truncate block max-w-[10rem]" title={text}>
+      {text}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Extracted actions cell (Fix #1 — avoids expandedPrompt in column useMemo)
+// ---------------------------------------------------------------------------
+
+interface ActionsCellProps {
+  prompt: ScheduledPromptResponse;
+  expandedPromptId: string | null;
+  onToggleExpand: (id: string) => void;
+  onTrigger: (id: string) => void;
+  onPause: (id: string) => void;
+  onResume: (id: string) => void;
+  onEdit: (prompt: ScheduledPromptResponse) => void;
+  onDelete: (id: string) => void;
+}
+
+function ActionsCell({
+  prompt,
+  expandedPromptId,
+  onToggleExpand,
+  onTrigger,
+  onPause,
+  onResume,
+  onEdit,
+  onDelete,
+}: ActionsCellProps) {
+  const status = prompt.schedule_status as ScheduleStatusType;
+  const isExpanded = expandedPromptId === prompt.id;
+  const name = prompt.blueprint_name ?? prompt.blueprint_id;
+
+  return (
+    <div className="flex items-center gap-1 justify-end">
+      <SimpleTooltip content={<p>View details</p>}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-gray-400 hover:text-white"
+          onClick={() => onToggleExpand(prompt.id)}
+          aria-label={`${isExpanded ? "Collapse" : "Expand"} details for ${name}`}
+        >
+          <Eye className={`w-3.5 h-3.5 ${isExpanded ? "text-primary" : ""}`} />
+        </Button>
+      </SimpleTooltip>
+
+      {status === "active" && (
+        <SimpleTooltip content={<p>Run now</p>}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-gray-400 hover:text-emerald-400"
+            onClick={() => onTrigger(prompt.id)}
+            aria-label={`Trigger immediate run for ${name}`}
+          >
+            <Play className="w-3.5 h-3.5" />
+          </Button>
+        </SimpleTooltip>
+      )}
+
+      {status === "active" && (
+        <SimpleTooltip content={<p>Pause</p>}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-gray-400 hover:text-amber-400"
+            onClick={() => onPause(prompt.id)}
+            aria-label={`Pause schedule for ${name}`}
+          >
+            <Pause className="w-3.5 h-3.5" />
+          </Button>
+        </SimpleTooltip>
+      )}
+
+      {status === "paused" && (
+        <SimpleTooltip content={<p>Resume</p>}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-gray-400 hover:text-emerald-400"
+            onClick={() => onResume(prompt.id)}
+            aria-label={`Resume schedule for ${name}`}
+          >
+            <Play className="w-3.5 h-3.5" />
+          </Button>
+        </SimpleTooltip>
+      )}
+
+      <SimpleTooltip content={<p>Edit</p>}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-gray-400 hover:text-white"
+          onClick={() => onEdit(prompt)}
+          aria-label={`Edit schedule for ${name}`}
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </Button>
+      </SimpleTooltip>
+
+      <SimpleTooltip content={<p>Delete</p>}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-gray-400 hover:text-red-400"
+          onClick={() => onDelete(prompt.id)}
+          aria-label={`Delete schedule for ${name}`}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
+      </SimpleTooltip>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Blueprint picker dialog (for "Create Schedule" flow)
+// ---------------------------------------------------------------------------
+
+function BlueprintPickerDialog({
+  open,
+  onClose,
+  onSelect,
+  userId,
+  identityType,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSelect: (bp: BlueprintSummary) => void;
+  userId: string;
+  identityType: string;
+}) {
+  const [search, setSearch] = useState("");
+
+  const { data: blueprints = [], isLoading } = useQuery<BlueprintSummary[]>({
+    queryKey: ["blueprint-summaries", userId, identityType],
+    queryFn: () => fetchBlueprintSummaries(userId, identityType),
+    enabled: open,
+  });
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return blueprints;
+    const q = search.toLowerCase();
+    return blueprints.filter(
+      (bp) =>
+        bp.name.toLowerCase().includes(q) ||
+        (bp.description ?? "").toLowerCase().includes(q),
+    );
+  }, [blueprints, search]);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Select a Workflow</DialogTitle>
+        </DialogHeader>
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <Input
+            placeholder="Search workflows…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <div className="max-h-72 overflow-y-auto space-y-1">
+          {isLoading && (
+            <p className="text-center text-gray-500 py-6 text-sm">Loading…</p>
+          )}
+          {!isLoading && filtered.length === 0 && (
+            <p className="text-center text-gray-500 py-6 text-sm">No workflows found.</p>
+          )}
+          {filtered.map((bp) => (
+            <button
+              key={bp.blueprint_id}
+              onClick={() => onSelect(bp)}
+              className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors"
+            >
+              <div className="text-sm font-medium text-white">{bp.name}</div>
+              {bp.description && (
+                <div className="text-xs text-gray-500 truncate mt-0.5">{bp.description}</div>
+              )}
+            </button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+const QUERY_KEY_PREFIX = "scheduled-prompts" as const;
+
+export default function ScheduledWorkflows() {
+  const { userId, identityType } = useWorkspaceIdentity();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  // Edit / create modal state
+  const [editPrompt, setEditPrompt] = useState<ScheduledPromptResponse | null>(null);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [selectedBlueprint, setSelectedBlueprint] = useState<{ id: string; name: string } | null>(null);
+
+  // Blueprint picker state
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+  // Track expanded row by ID only (Fix #1 — avoids object ref in deps)
+  const [expandedPromptId, setExpandedPromptId] = useState<string | null>(null);
+
+  // Stable query key (Fix #10)
+  const queryKey = useMemo(
+    () => [QUERY_KEY_PREFIX, userId, identityType] as const,
+    [userId, identityType],
+  );
+
+  const { data: prompts = [], isLoading } = useQuery<ScheduledPromptResponse[]>({
+    queryKey,
+    queryFn: () => listScheduledPrompts(userId, identityType),
+    refetchInterval: 30_000,
+  });
+
+  const expandedPrompt = useMemo(
+    () => prompts.find((p) => p.id === expandedPromptId) ?? null,
+    [prompts, expandedPromptId],
+  );
+
+  const { data: resolvedSpec } = useQuery({
+    queryKey: ["resolved-blueprint", expandedPrompt?.blueprint_id],
+    queryFn: () => fetchResolvedBlueprint(expandedPrompt!.blueprint_id, userId, identityType),
+    enabled: !!expandedPrompt,
+    staleTime: 5 * 60_000,
+  });
+
+  const invalidate = useCallback(
+    () => qc.invalidateQueries({ queryKey }),
+    [qc, queryKey],
+  );
+
+  // ---- Optimistic helper (Fix #6) ----
+
+  const optimisticUpdate = useCallback(
+    (id: string, patch: Partial<ScheduledPromptResponse>) => {
+      qc.setQueryData<ScheduledPromptResponse[]>(queryKey, (old) =>
+        old?.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+      );
+    },
+    [qc, queryKey],
+  );
+
+  // ---- Actions with optimistic updates (Fix #6) ----
+
+  const handleTrigger = useCallback(
+    async (id: string) => {
+      try {
+        await triggerPromptSchedule(id, userId, identityType);
+        toast({ title: "Triggered", description: "Schedule run started" });
+        invalidate();
+      } catch {
+        toast({ title: "Error", description: "Failed to trigger schedule", variant: "destructive" });
+      }
+    },
+    [userId, identityType, toast, invalidate],
+  );
+
+  const handlePause = useCallback(
+    async (id: string) => {
+      optimisticUpdate(id, { schedule_status: "paused" });
+      try {
+        await pausePromptSchedule(id, userId, identityType);
+        toast({ title: "Paused", description: "Schedule paused" });
+        invalidate();
+      } catch {
+        toast({ title: "Error", description: "Failed to pause schedule", variant: "destructive" });
+        invalidate();
+      }
+    },
+    [userId, identityType, toast, invalidate, optimisticUpdate],
+  );
+
+  const handleResume = useCallback(
+    async (id: string) => {
+      optimisticUpdate(id, { schedule_status: "active" });
+      try {
+        await resumePromptSchedule(id, userId, identityType);
+        toast({ title: "Resumed", description: "Schedule resumed" });
+        invalidate();
+      } catch {
+        toast({ title: "Error", description: "Failed to resume schedule", variant: "destructive" });
+        invalidate();
+      }
+    },
+    [userId, identityType, toast, invalidate, optimisticUpdate],
+  );
+
+  const handleDeleteConfirmed = useCallback(
+    async () => {
+      if (!deleteTarget) return;
+      optimisticUpdate(deleteTarget, { schedule_status: "completed" });
+      try {
+        await deleteScheduledPrompt(deleteTarget, userId, identityType);
+        toast({ title: "Deleted", description: "Scheduled prompt removed" });
+        invalidate();
+      } catch {
+        toast({ title: "Error", description: "Failed to delete schedule", variant: "destructive" });
+        invalidate();
+      } finally {
+        setDeleteTarget(null);
+      }
+    },
+    [deleteTarget, userId, identityType, toast, invalidate, optimisticUpdate],
+  );
+
+  const handleEdit = useCallback((prompt: ScheduledPromptResponse) => {
+    setEditPrompt(prompt);
+    setSelectedBlueprint({ id: prompt.blueprint_id, name: prompt.blueprint_name ?? prompt.blueprint_id });
+    setScheduleModalOpen(true);
+  }, []);
+
+  const handleCreate = useCallback(() => {
+    setPickerOpen(true);
+  }, []);
+
+  const handleBlueprintPicked = useCallback((bp: BlueprintSummary) => {
+    setPickerOpen(false);
+    setEditPrompt(null);
+    setSelectedBlueprint({ id: bp.blueprint_id, name: bp.name });
+    setScheduleModalOpen(true);
+  }, []);
+
+  const handleToggleExpand = useCallback((id: string) => {
+    setExpandedPromptId((prev) => (prev === id ? null : id));
+  }, []);
+
+  // Fix #10: only invalidate when the modal reports a successful save
+  const closeScheduleModal = useCallback((saved?: boolean) => {
+    setScheduleModalOpen(false);
+    setEditPrompt(null);
+    setSelectedBlueprint(null);
+    if (saved) invalidate();
+  }, [invalidate]);
+
+  // ---- DataTable column definitions (Fix #1 — no expandedPrompt dep) ----
+
+  const columns: DataTableColumn<ScheduledPromptResponse>[] = useMemo(() => [
+    {
+      accessorFn: (row) => row.blueprint_name ?? row.blueprint_id,
+      id: "workflow",
+      header: "Workflow",
+      cell: ({ getValue }) => (
+        <span className="font-medium text-white">{getValue() as string}</span>
+      ),
+      meta: { align: "left" as const, filterType: "text" as const },
+    },
+    {
+      accessorKey: "text",
+      header: "Prompt",
+      cell: ({ row }) => <PromptCell text={row.original.text} />,
+      meta: { align: "left" as const, filterType: "text" as const },
+    },
+    {
+      accessorFn: (row) => describeSchedule(row.schedule),
+      id: "schedule",
+      header: "Schedule",
+      cell: ({ row }) => (
+        <div className="leading-tight">
+          <div className="text-sm">{describeSchedule(row.original.schedule)}</div>
+          <div className="text-xs text-gray-500">{row.original.schedule.timezone || "UTC"}</div>
+        </div>
+      ),
+      meta: { align: "left" as const },
+      enableColumnFilter: false,
+    },
+    {
+      accessorKey: "schedule_status",
+      header: "Status",
+      cell: ({ getValue }) => (
+        <StatusBadge status={getValue() as ScheduleStatusType} />
+      ),
+      meta: {
+        align: "center" as const,
+        filterType: "select" as const,
+        filterOptions: ["active", "paused", "completed"],
+      },
+    },
+    {
+      id: "runs",
+      header: "Runs",
+      enableColumnFilter: false,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <RunSparkline
+          summary={row.original.run_stats}
+          onExpand={() => handleToggleExpand(row.original.id)}
+        />
+      ),
+      meta: { align: "left" as const },
+    },
+    {
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableColumnFilter: false,
+      cell: ({ row }) => (
+        <ActionsCell
+          prompt={row.original}
+          expandedPromptId={expandedPromptId}
+          onToggleExpand={handleToggleExpand}
+          onTrigger={handleTrigger}
+          onPause={handlePause}
+          onResume={handleResume}
+          onEdit={handleEdit}
+          onDelete={setDeleteTarget}
+        />
+      ),
+      meta: { align: "right" as const },
+    },
+  ], [handleTrigger, handlePause, handleResume, handleEdit, handleToggleExpand, expandedPromptId]);
+
+  return (
+    <>
+      <Header title="Scheduled Workflows" onToggleSidebar={() => {}} />
+      <main className="flex-1 overflow-y-auto bg-background-dark">
+        <div className="flex-1 overflow-auto px-6 pb-6">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            {/* Top toolbar */}
+            <div className="flex items-center justify-between mt-6 mb-4">
+              <div />
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={invalidate}
+                  className="text-gray-400 hover:text-white"
+                  aria-label="Refresh scheduled workflows"
+                >
+                  <RotateCw className="w-4 h-4" />
+                </Button>
+                <Button onClick={handleCreate} aria-label="Create a new schedule">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Schedule
+                </Button>
+              </div>
+            </div>
+
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+                <Clock className="w-6 h-6 mb-3 animate-spin" />
+                Loading scheduled workflows…
+              </div>
+            ) : (
+              <DataTable
+                columns={columns}
+                data={prompts}
+                enableGlobalFilter={false}
+                enableColumnFilters={true}
+                enablePagination={true}
+                enableRowSelection={false}
+                getRowId={(row) => row.id}
+                initialState={{
+                  pagination: { pageIndex: 0, pageSize: 15 },
+                }}
+                expendedRow={expandedPrompt}
+                renderExpandedRow={(prompt) => (
+                  <div className="py-4 space-y-4">
+                    {/* Full prompt text */}
+                    <div>
+                      <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Prompt</h4>
+                      <p className="text-sm text-gray-300 whitespace-pre-wrap">{prompt.text}</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Run History</h4>
+                        <RunHistoryPanel
+                          promptId={prompt.id}
+                          userId={userId}
+                          identityType={identityType}
+                        />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Workflow Graph</h4>
+                        <div className="rounded-lg border border-gray-800 overflow-hidden" style={{ height: 300 }}>
+                          <GraphDisplay
+                            blueprintId={prompt.blueprint_id}
+                            specDict={resolvedSpec?.spec_dict}
+                            height="100%"
+                            showBackground={false}
+                            interactive={false}
+                            centerInView
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              />
+            )}
+          </motion.div>
+        </div>
+      </main>
+      <StatusBar />
+
+      {/* Blueprint picker for create flow */}
+      <BlueprintPickerDialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={handleBlueprintPicked}
+        userId={userId}
+        identityType={identityType}
+      />
+
+      {/* Schedule prompt modal (create + edit) */}
+      {scheduleModalOpen && selectedBlueprint && (
+        <SchedulePromptModal
+          isOpen={scheduleModalOpen}
+          onClose={closeScheduleModal}
+          blueprintId={selectedBlueprint.id}
+          blueprintName={selectedBlueprint.name}
+          userId={userId}
+          identityType={identityType}
+          editPrompt={editPrompt}
+        />
+      )}
+
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete Scheduled Workflow"
+        message="Are you sure you want to delete this scheduled workflow? This action cannot be undone."
+        confirmLabel="Yes, Delete"
+        cancelLabel="Cancel"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteConfirmed}
+      />
+    </>
+  );
+}
