@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import { Trash2, Users, Pencil, Search, X, MoreVertical, MessageSquare, Clock } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { useView } from "@/contexts/ViewContext";
 import { useShared } from "@/contexts/SharedContext";
@@ -94,6 +95,7 @@ export default function WorkflowsPanel({
   const { selectedTeam } = useView();
   const { openShareForItem } = useShared();
   const { isTeam, userId: contextUserId, identityType } = useWorkspaceIdentity();
+  const queryClient = useQueryClient();
   const workspaceScopeRef = useRef({ contextUserId, identityType });
   workspaceScopeRef.current = { contextUserId, identityType };
   
@@ -622,7 +624,12 @@ export default function WorkflowsPanel({
       {/* Schedule Prompt Modal */}
       <SchedulePromptModal
         isOpen={scheduleModalOpen}
-        onClose={() => setScheduleModalOpen(false)}
+        onClose={(saved) => {
+          setScheduleModalOpen(false);
+          if (saved) {
+            queryClient.invalidateQueries({ queryKey: ["scheduled-prompts"] });
+          }
+        }}
         blueprintId={scheduleModalFlow?.id || ""}
         blueprintName={scheduleModalFlow?.name || ""}
         userId={contextUserId}

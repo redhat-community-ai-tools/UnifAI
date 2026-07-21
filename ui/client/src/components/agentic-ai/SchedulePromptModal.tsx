@@ -642,6 +642,10 @@ export default function SchedulePromptModal({
       setError("Prompt text is required");
       return;
     }
+    if (combinedDateTime < new Date()) {
+      setError("Start date and time must be in the future");
+      return;
+    }
     setIsSaving(true);
     setError(null);
     try {
@@ -767,17 +771,36 @@ export default function SchedulePromptModal({
                       mode="single"
                       selected={startDate}
                       onSelect={(day) => { if (day) setStartDate(day); }}
+                      disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
                       initialFocus
                     />
                   </PopoverContent>
                 </Popover>
-                <Input
-                  type="time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  className="w-[120px] bg-background-dark border-gray-700 text-gray-200"
-                  style={{ colorScheme: "dark" }}
-                />
+                <div className="flex items-center gap-0.5 w-[120px]">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={time.split(":")[0]}
+                    onChange={(e) => {
+                      const h = Math.min(23, Math.max(0, parseInt(e.target.value) || 0));
+                      setTime(`${String(h).padStart(2, "0")}:${time.split(":")[1]}`);
+                    }}
+                    className="w-[52px] h-10 bg-background-dark border-gray-700 text-gray-200 text-center px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <span className="text-gray-400 font-medium select-none">:</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={time.split(":")[1]}
+                    onChange={(e) => {
+                      const m = Math.min(59, Math.max(0, parseInt(e.target.value) || 0));
+                      setTime(`${time.split(":")[0]}:${String(m).padStart(2, "0")}`);
+                    }}
+                    className="w-[52px] h-10 bg-background-dark border-gray-700 text-gray-200 text-center px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
               </div>
             </div>
 

@@ -3,12 +3,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { motion } from "framer-motion";
 import {
   Play,
@@ -18,10 +12,8 @@ import {
   Eye,
   RotateCw,
   Clock,
-  Search,
   Plus,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import { DataTable, DataTableColumn } from "@/components/shared/DataTable";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
@@ -35,12 +27,17 @@ import {
   ScheduledPromptResponse,
   ScheduleDefinitionInput,
 } from "@/api/prompts";
-import { fetchBlueprintSummaries, fetchResolvedBlueprint, BlueprintSummary } from "@/api/blueprints";
+import { fetchResolvedBlueprint } from "@/api/blueprints";
 import SchedulePromptModal from "@/components/agentic-ai/SchedulePromptModal";
 import GraphDisplay from "@/components/agentic-ai/graphs/GraphDisplay";
 import RunSparkline from "@/components/agentic-ai/RunSparkline";
 import RunHistoryPanel from "@/components/agentic-ai/RunHistoryPanel";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { AddFlowModal } from "@/components/shared/SessionModals";
+import type { FlowObject } from "@/components/agentic-ai/graphs/interfaces";
+import { useScheduledBlueprintCounts } from "@/hooks/use-scheduled-blueprints";
+
+const MAX_ACTIVE_SCHEDULES_PER_WORKFLOW = 10;
 
 // ---------------------------------------------------------------------------
 // Schedule label derivation
@@ -145,7 +142,7 @@ function PromptCell({ text }: { text: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Extracted actions cell (Fix #1 — avoids expandedPrompt in column useMemo)
+// Extracted actions cell
 // ---------------------------------------------------------------------------
 
 interface ActionsCellProps {
@@ -257,81 +254,6 @@ function ActionsCell({
 }
 
 // ---------------------------------------------------------------------------
-// Blueprint picker dialog (for "Create Schedule" flow)
-// ---------------------------------------------------------------------------
-
-function BlueprintPickerDialog({
-  open,
-  onClose,
-  onSelect,
-  userId,
-  identityType,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSelect: (bp: BlueprintSummary) => void;
-  userId: string;
-  identityType: string;
-}) {
-  const [search, setSearch] = useState("");
-
-  const { data: blueprints = [], isLoading } = useQuery<BlueprintSummary[]>({
-    queryKey: ["blueprint-summaries", userId, identityType],
-    queryFn: () => fetchBlueprintSummaries(userId, identityType),
-    enabled: open,
-  });
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return blueprints;
-    const q = search.toLowerCase();
-    return blueprints.filter(
-      (bp) =>
-        bp.name.toLowerCase().includes(q) ||
-        (bp.description ?? "").toLowerCase().includes(q),
-    );
-  }, [blueprints, search]);
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Select a Workflow</DialogTitle>
-        </DialogHeader>
-        <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-          <Input
-            placeholder="Search workflows…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <div className="max-h-72 overflow-y-auto space-y-1">
-          {isLoading && (
-            <p className="text-center text-gray-500 py-6 text-sm">Loading…</p>
-          )}
-          {!isLoading && filtered.length === 0 && (
-            <p className="text-center text-gray-500 py-6 text-sm">No workflows found.</p>
-          )}
-          {filtered.map((bp) => (
-            <button
-              key={bp.blueprint_id}
-              onClick={() => onSelect(bp)}
-              className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors"
-            >
-              <div className="text-sm font-medium text-white">{bp.name}</div>
-              {bp.description && (
-                <div className="text-xs text-gray-500 truncate mt-0.5">{bp.description}</div>
-              )}
-            </button>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -347,16 +269,20 @@ export default function ScheduledWorkflows() {
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [selectedBlueprint, setSelectedBlueprint] = useState<{ id: string; name: string } | null>(null);
 
-  // Blueprint picker state
+  // Workflow picker state (AddFlowModal)
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedFlowForPicker, setSelectedFlowForPicker] = useState<FlowObject | null>(null);
+  const scheduleCounts = useScheduledBlueprintCounts(userId, identityType);
+  const isPickerFlowAtLimit = selectedFlowForPicker
+    ? (scheduleCounts.get(selectedFlowForPicker.id) ?? 0) >= MAX_ACTIVE_SCHEDULES_PER_WORKFLOW
+    : false;
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
-  // Track expanded row by ID only (Fix #1 — avoids object ref in deps)
   const [expandedPromptId, setExpandedPromptId] = useState<string | null>(null);
 
-  // Stable query key (Fix #10)
+
   const queryKey = useMemo(
     () => [QUERY_KEY_PREFIX, userId, identityType] as const,
     [userId, identityType],
@@ -366,6 +292,7 @@ export default function ScheduledWorkflows() {
     queryKey,
     queryFn: () => listScheduledPrompts(userId, identityType),
     refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   const expandedPrompt = useMemo(
@@ -385,7 +312,7 @@ export default function ScheduledWorkflows() {
     [qc, queryKey],
   );
 
-  // ---- Optimistic helper (Fix #6) ----
+  // ---- Optimistic helper ----
 
   const optimisticUpdate = useCallback(
     (id: string, patch: Partial<ScheduledPromptResponse>) => {
@@ -396,7 +323,7 @@ export default function ScheduledWorkflows() {
     [qc, queryKey],
   );
 
-  // ---- Actions with optimistic updates (Fix #6) ----
+  // ---- Actions with optimistic updates ----
 
   const handleTrigger = useCallback(
     async (id: string) => {
@@ -469,18 +396,24 @@ export default function ScheduledWorkflows() {
     setPickerOpen(true);
   }, []);
 
-  const handleBlueprintPicked = useCallback((bp: BlueprintSummary) => {
+  const handleFlowConfirm = useCallback(() => {
+    if (!selectedFlowForPicker) return;
     setPickerOpen(false);
     setEditPrompt(null);
-    setSelectedBlueprint({ id: bp.blueprint_id, name: bp.name });
+    setSelectedBlueprint({ id: selectedFlowForPicker.id, name: selectedFlowForPicker.name });
+    setSelectedFlowForPicker(null);
     setScheduleModalOpen(true);
+  }, [selectedFlowForPicker]);
+
+  const handleFlowCancel = useCallback(() => {
+    setPickerOpen(false);
+    setSelectedFlowForPicker(null);
   }, []);
 
   const handleToggleExpand = useCallback((id: string) => {
     setExpandedPromptId((prev) => (prev === id ? null : id));
   }, []);
 
-  // Fix #10: only invalidate when the modal reports a successful save
   const closeScheduleModal = useCallback((saved?: boolean) => {
     setScheduleModalOpen(false);
     setEditPrompt(null);
@@ -488,7 +421,7 @@ export default function ScheduledWorkflows() {
     if (saved) invalidate();
   }, [invalidate]);
 
-  // ---- DataTable column definitions (Fix #1 — no expandedPrompt dep) ----
+  // ---- DataTable column definitions ----
 
   const columns: DataTableColumn<ScheduledPromptResponse>[] = useMemo(() => [
     {
@@ -653,13 +586,19 @@ export default function ScheduledWorkflows() {
       </main>
       <StatusBar />
 
-      {/* Blueprint picker for create flow */}
-      <BlueprintPickerDialog
+      {/* Workflow picker for create flow */}
+      <AddFlowModal
         open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onSelect={handleBlueprintPicked}
-        userId={userId}
-        identityType={identityType}
+        onOpenChange={setPickerOpen}
+        selectedFlow={selectedFlowForPicker}
+        onFlowSelect={setSelectedFlowForPicker}
+        isCreating={false}
+        onConfirm={handleFlowConfirm}
+        onCancel={handleFlowCancel}
+        title="Select Workflow for Schedule"
+        confirmLabel="Select"
+        confirmDisabled={isPickerFlowAtLimit}
+        confirmDisabledReason="This workflow has reached the maximum of 10 active schedules."
       />
 
       {/* Schedule prompt modal (create + edit) */}

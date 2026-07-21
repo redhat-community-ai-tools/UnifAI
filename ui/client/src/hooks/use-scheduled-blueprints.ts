@@ -1,40 +1,50 @@
-import { useEffect, useState, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { listScheduledPrompts } from "@/api/prompts";
 
 /**
  * Returns the set of blueprint IDs that have at least one active scheduled prompt
- * for the given identity. Refetches when identity context changes.
+ * for the given identity. Shares the "scheduled-prompts" query cache with
+ * ScheduledWorkflows so cross-component invalidation works automatically.
  */
 export function useScheduledBlueprints(
   userId: string,
   identityType: string,
 ): Set<string> {
-  const [scheduledIds, setScheduledIds] = useState<Set<string>>(new Set());
-  const scopeRef = useRef({ userId, identityType });
-  scopeRef.current = { userId, identityType };
+  const { data = new Set<string>() } = useQuery({
+    queryKey: ["scheduled-prompts", userId, identityType],
+    queryFn: () => listScheduledPrompts(userId, identityType),
+    select: (prompts) =>
+      new Set(
+        prompts
+          .filter((p) => p.schedule_status === "active")
+          .map((p) => p.blueprint_id),
+      ),
+    staleTime: 30_000,
+  });
+  return data;
+}
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchScheduled = async () => {
-      try {
-        const prompts = await listScheduledPrompts(userId, identityType);
-        if (cancelled) return;
-        setScheduledIds(
-          new Set(
-            prompts
-              .filter((p) => p.schedule_status === "active")
-              .map((p) => p.blueprint_id),
-          ),
-        );
-      } catch {
-        if (!cancelled) setScheduledIds(new Set());
+/**
+ * Returns a map of blueprint ID -> active schedule count.
+ * Shares the same query cache as useScheduledBlueprints / ScheduledWorkflows.
+ */
+export function useScheduledBlueprintCounts(
+  userId: string,
+  identityType: string,
+): Map<string, number> {
+  const { data = new Map<string, number>() } = useQuery({
+    queryKey: ["scheduled-prompts", userId, identityType],
+    queryFn: () => listScheduledPrompts(userId, identityType),
+    select: (prompts) => {
+      const counts = new Map<string, number>();
+      for (const p of prompts) {
+        if (p.schedule_status === "active") {
+          counts.set(p.blueprint_id, (counts.get(p.blueprint_id) ?? 0) + 1);
+        }
       }
-    };
-
-    void fetchScheduled();
-    return () => { cancelled = true; };
-  }, [userId, identityType]);
-
-  return scheduledIds;
+      return counts;
+    },
+    staleTime: 30_000,
+  });
+  return data;
 }

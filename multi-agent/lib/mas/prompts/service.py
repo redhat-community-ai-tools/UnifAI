@@ -1,9 +1,14 @@
 """
 Prompt service -- application layer orchestrating prompt CRUD and schedule lifecycle.
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from mas.session.service import SessionService
 
 from mas.core.identity import Identity
 from mas.prompts.models import (
@@ -50,7 +55,7 @@ class PromptService:
         prompt_repo: ScheduledPromptRepository,
         schedule_port: Optional[SchedulePort],
         blueprint_service,
-        session_service=None,
+        session_service: SessionService | None = None,
     ):
         self._repo = prompt_repo
         self._schedule_port = schedule_port
@@ -119,6 +124,15 @@ class PromptService:
                 updates["schedule"] = new_schedule
                 schedule_changed = True
 
+        if schedule_changed:
+            new_sched: ScheduleDefinition = updates["schedule"]
+            if self._is_schedule_already_exhausted(new_sched, prompt.run_stats.total_runs):
+                updates["schedule_status"] = ScheduleStatus.COMPLETED
+                updates["completed_at"] = datetime.now(timezone.utc)
+            else:
+                updates["schedule_status"] = ScheduleStatus.ACTIVE
+                updates["completed_at"] = None
+
         if updates:
             prompt = prompt.model_copy(update=updates)
 
@@ -129,6 +143,20 @@ class PromptService:
 
         self._repo.update(prompt)
         return prompt
+
+    @staticmethod
+    def _is_schedule_already_exhausted(
+        schedule: ScheduleDefinition, total_runs: int,
+    ) -> bool:
+        """Return True if the schedule has no future actions left."""
+        if (
+            schedule.remaining_actions is not None
+            and total_runs >= schedule.remaining_actions
+        ):
+            return True
+        if schedule.end_at is not None and schedule.end_at <= datetime.now(timezone.utc):
+            return True
+        return False
 
     def pause(self, prompt_id: str, *, identity: Identity) -> ScheduledPrompt:
         prompt = self._load_and_verify(prompt_id, identity)
@@ -237,9 +265,10 @@ class PromptService:
     def mark_completed(self, prompt_id: str) -> None:
         """Transition a finite schedule to COMPLETED if appropriate.
 
-        Called after every workflow execution. Only transitions if the
-        prompt has a finite remaining_actions count -- infinite schedules
-        (remaining_actions=None) are left as ACTIVE.
+        Called after every workflow execution. Transitions when:
+        - remaining_actions is set (finite count), or
+        - end_at has passed.
+        Infinite schedules without end_at are left as ACTIVE.
         """
         try:
             prompt = self._repo.load(prompt_id)
@@ -250,7 +279,16 @@ class PromptService:
         if prompt.schedule_status != ScheduleStatus.ACTIVE:
             return
 
-        if prompt.schedule.remaining_actions is None:
+        should_complete = False
+        if prompt.schedule.remaining_actions is not None:
+            should_complete = True
+        elif (
+            prompt.schedule.end_at is not None
+            and prompt.schedule.end_at <= datetime.now(timezone.utc)
+        ):
+            should_complete = True
+
+        if not should_complete:
             return
 
         prompt = prompt.model_copy(update={

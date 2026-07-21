@@ -76,11 +76,7 @@ class UserSessionManager:
 
         session_meta = metadata or SessionMeta()
         if session_meta.source == "schedule" and not session_meta.title:
-            try:
-                bp_doc = self._bp_service.get_blueprint_draft_doc(blueprint_id)
-                bp_name = bp_doc.spec_dict.get("name", blueprint_id)
-            except (KeyError, Exception):
-                bp_name = blueprint_id
+            bp_name = self.get_blueprint_name(blueprint_id)
             session_meta.title = f"{bp_name} — {datetime.utcnow().strftime('%b %d %H:%M UTC')}"
         run_id = str(uuid.uuid4())
         ctx = ExecutionContext(
@@ -133,7 +129,7 @@ class UserSessionManager:
         """Raw documents for bulk listing (chat history, etc.)."""
         return self._repo.list_docs(identity)
 
-    def find_by_schedule_id(self, schedule_id: str, *, limit: int = 5) -> List[Mapping[str, Any]]:
+    def find_by_schedule_id(self, schedule_id: str, *, limit: int = 20) -> List[Mapping[str, Any]]:
         """Return recent session documents triggered by a given schedule/prompt ID."""
         return self._repo.find_by_schedule_id(schedule_id, limit=limit)
 
