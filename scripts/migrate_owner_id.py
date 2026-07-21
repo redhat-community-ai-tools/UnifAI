@@ -5,7 +5,8 @@ Migration Script: Backfill metadata.owner_id on existing Qdrant vectors.
 Reads upload_by from MongoDB data_sources.sources, maps source_id -> upload_by,
 then scrolls Qdrant collections and sets metadata.owner_id on each point.
 
-Points with unmapped source_id get owner_id="unknown".
+Points with unmapped source_id are SKIPPED (no owner_id set) — they remain
+invisible to user queries until properly mapped.
 
 The script is **idempotent** — safe to re-run. set_payload uses dot-notation
 to update only the owner_id field (preserves other metadata fields), and
@@ -24,7 +25,7 @@ Usage:
     # Custom batch size
     python scripts/migrate_owner_id.py --apply --batch-size 200
 
-    # Audit: list unmapped source_ids that would get owner_id="unknown"
+    # Audit: list unmapped source_ids that would be skipped
     python scripts/migrate_owner_id.py --audit-unknowns
 
 Environment:

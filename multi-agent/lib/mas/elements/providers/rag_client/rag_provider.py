@@ -60,8 +60,6 @@ class RagProvider:
             self,
             query: str,
             top_k: Optional[int] = None,
-            scope: Optional[str] = None,
-            logged_in_user: Optional[str] = None,
             doc_ids: Optional[List[str]] = None,
             tags: Optional[List[str]] = None,
             authenticated_user: str = "",
@@ -72,8 +70,6 @@ class RagProvider:
         Args:
             query: Search query
             top_k: Override default top_k results
-            scope: Optional scope filter
-            logged_in_user: Optional user context
             doc_ids: Optional list of document IDs to filter by
             tags: Optional list of tags to filter by
             authenticated_user: User ID for internal auth header
@@ -85,8 +81,6 @@ class RagProvider:
             return client.query_match(
                 query=query,
                 top_k_results=top_k or self.top_k,
-                scope=scope,
-                logged_in_user=logged_in_user,
                 doc_ids=doc_ids,
                 tags=tags,
             )

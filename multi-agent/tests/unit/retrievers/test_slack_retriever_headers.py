@@ -7,13 +7,8 @@ from mas.elements.retrievers.slack.slack_retriever import SlackRetriever
 class _FakeIdentity:
     """Minimal RetrievalIdentity for testing."""
 
-    def __init__(self, scope="private", identity_id="alice"):
-        self._scope = scope
+    def __init__(self, identity_id="alice"):
         self._identity_id = identity_id
-
-    @property
-    def scope(self) -> str:
-        return self._scope
 
     @property
     def identity_id(self) -> str:
