@@ -181,20 +181,23 @@ def migrate_collection(
         stats["scrolled"] += len(points)
         batch_num += 1
 
-        # Group point IDs by resolved owner_id for batch updates
+        # Group point IDs by resolved owner_id for batch updates.
+        # Points with no mapping are skipped (fail closed) — they remain
+        # without owner_id and are therefore invisible to all user queries.
         owner_groups: dict[str, list] = {}
         for point in points:
             source_id = point.payload.get("metadata", {}).get("source_id", "")
-            owner_id = owner_map.get(source_id, "unknown")
-            if owner_id == "unknown":
+            owner_id = owner_map.get(source_id)
+            if owner_id is None:
                 stats["unknown"] += 1
+                continue
             owner_groups.setdefault(owner_id, []).append(point.id)
 
         if dry_run:
             for owner_id, point_ids in owner_groups.items():
                 print(f"    [DRY RUN] Batch {batch_num}: "
                       f"would set owner_id={owner_id!r} on {len(point_ids)} points")
-            stats["updated"] += len(points)
+            stats["updated"] += sum(len(ids) for ids in owner_groups.values())
         else:
             for owner_id, point_ids in owner_groups.items():
                 try:
@@ -237,7 +240,7 @@ def main():
     parser.add_argument("--apply", action="store_true",
                         help="Apply changes (default is dry-run)")
     parser.add_argument("--audit-unknowns", action="store_true",
-                        help="List unmapped source_ids that would get owner_id='unknown'")
+                        help="List unmapped source_ids that would be skipped (no owner_id set)")
     parser.add_argument("--collections", nargs="*", default=None,
                         help=f"Collections to migrate (default: {DEFAULT_COLLECTIONS})")
     parser.add_argument("--batch-size", type=int, default=100,
@@ -300,7 +303,7 @@ def main():
             else:
                 pct = (unknown_points / total_points * 100) if total_points else 0
                 print(f"    {unknown_points}/{total_points} points ({pct:.1f}%) "
-                      f"would be flagged as 'unknown'")
+                      f"would be SKIPPED (no owner_id set, invisible to queries)")
                 print(f"    Unmapped source_ids ({len(unmapped)} distinct):")
                 for sid, count in sorted(unmapped.items(), key=lambda x: -x[1]):
                     print(f"      {sid or '(empty)':<40} → {count} points")
@@ -324,7 +327,7 @@ def main():
         total["errors"].extend(stats["errors"])
 
         print(f"\n  {coll}: {stats['scrolled']} scrolled, "
-              f"{stats['updated']} updated, {stats['unknown']} unknown")
+              f"{stats['updated']} updated, {stats['unknown']} skipped (unmapped)")
 
     # Summary
     print(f"\n{'=' * 60}")
@@ -332,7 +335,7 @@ def main():
     print(f"{'=' * 60}")
     print(f"  Points scrolled:    {total['scrolled']}")
     print(f"  {'Would update' if dry_run else 'Updated'}:       {total['updated']}")
-    print(f"  Unknown owner:      {total['unknown']}")
+    print(f"  Skipped (unmapped): {total['unknown']}")
     if total["errors"]:
         print(f"  Errors:             {len(total['errors'])}")
         for err in total["errors"]:
