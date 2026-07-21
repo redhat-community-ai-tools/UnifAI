@@ -368,6 +368,7 @@ class AppContainer(metaclass=SingletonMeta):
             prompt_repo=self.prompt_repo,
             schedule_port=schedule_adapter,
             blueprint_service=self.blueprint_service,
+            session_service=self.session_service,
         )
 
         self._initialized = True

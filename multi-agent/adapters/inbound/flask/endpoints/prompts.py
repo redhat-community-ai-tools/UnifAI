@@ -13,7 +13,7 @@ from mas.prompts.service import (
     PromptNotFoundError,
     PromptPermissionError,
 )
-from mas.session.domain.exceptions import BlueprintNotFoundError
+from mas.blueprints.exceptions import BlueprintNotFoundError
 from inbound.flask.decorators import with_require_identity_authorization
 
 prompts_bp = Blueprint("prompts", __name__)
@@ -194,19 +194,7 @@ def delete_prompt(identity, prompt_id):
 def get_prompt_runs(identity, prompt_id, limit):
     try:
         svc = current_app.container.prompt_service
-        svc.get(prompt_id, identity=identity)
-
-        session_repo = current_app.container.session_repo
-        docs = session_repo.find_by_schedule_id(prompt_id, limit=limit)
-        runs = [
-            {
-                "session_id": d.get("run_id"),
-                "status": d.get("status", "UNKNOWN"),
-                "started_at": d.get("run_context", {}).get("started_at"),
-                "metadata": d.get("metadata", {}),
-            }
-            for d in docs
-        ]
+        runs = svc.get_runs(prompt_id, identity=identity, limit=limit)
         return jsonify(runs), 200
     except PromptNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404

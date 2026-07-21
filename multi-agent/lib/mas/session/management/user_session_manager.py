@@ -54,6 +54,14 @@ class UserSessionManager:
         except KeyError:
             return {}
 
+    def get_blueprint_name(self, blueprint_id: str) -> str:
+        """Get blueprint display name, falling back to blueprint_id if not found."""
+        try:
+            doc = self._bp_service.get_blueprint_draft_doc(blueprint_id)
+            return doc.spec_dict.get("name", blueprint_id)
+        except (KeyError, Exception):
+            return blueprint_id
+
     # ---- Create (lightweight — no graph compilation) ----
 
     def create_session(
@@ -124,6 +132,10 @@ class UserSessionManager:
     def list_docs(self, identity: Identity) -> List[Mapping[str, Any]]:
         """Raw documents for bulk listing (chat history, etc.)."""
         return self._repo.list_docs(identity)
+
+    def find_by_schedule_id(self, schedule_id: str, *, limit: int = 5) -> List[Mapping[str, Any]]:
+        """Return recent session documents triggered by a given schedule/prompt ID."""
+        return self._repo.find_by_schedule_id(schedule_id, limit=limit)
 
     def delete_session(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""

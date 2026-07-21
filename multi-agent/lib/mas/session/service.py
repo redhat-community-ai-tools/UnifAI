@@ -237,6 +237,19 @@ class SessionService:
         """
         return self._manager.get_chat(run_id)
 
+    def get_runs_by_schedule(self, schedule_id: str, *, limit: int = 20) -> List[Dict[str, Any]]:
+        """Return formatted run history for a given schedule/prompt ID."""
+        docs = self._manager.find_by_schedule_id(schedule_id, limit=limit)
+        return [
+            {
+                "session_id": d.get("run_id"),
+                "status": d.get("status", "UNKNOWN"),
+                "started_at": d.get("run_context", {}).get("started_at"),
+                "metadata": d.get("metadata", {}),
+            }
+            for d in docs
+        ]
+
     def get_session_detail(self, session_id: str, identity: Identity) -> dict:
         """Combined session retrieval: status + meta + chat + blueprint name.
 
@@ -252,14 +265,7 @@ class SessionService:
         status = record.status.name
         meta = record.metadata
         chat = self._manager.get_chat(session_id)
-
-        try:
-            bp_doc = self._manager._bp_service.get_blueprint_draft_doc(
-                record.blueprint_id,
-            )
-            blueprint_name = bp_doc.spec_dict.get("name", record.blueprint_id)
-        except (KeyError, Exception):
-            blueprint_name = record.blueprint_id
+        blueprint_name = self._manager.get_blueprint_name(record.blueprint_id)
 
         created_at = getattr(record, "created_at", None)
         completed_at = getattr(record, "completed_at", None)

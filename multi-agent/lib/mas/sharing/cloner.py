@@ -352,11 +352,11 @@ class ShareCloner:
             self, identity: Identity, preferred_name: str,
     ) -> str:
         """Find a unique blueprint name for *identity*, appending a counter if needed."""
-        if not self.blueprints._repo.name_exists_for_identity(identity, preferred_name):
+        if not self.blueprints.name_exists_for_identity(identity, preferred_name):
             return preferred_name
         for counter in range(2, 101):
             candidate = f"{preferred_name} ({counter})"
-            if not self.blueprints._repo.name_exists_for_identity(identity, candidate):
+            if not self.blueprints.name_exists_for_identity(identity, candidate):
                 return candidate
         return f"{preferred_name} ({uuid4().hex[:8]})"
 

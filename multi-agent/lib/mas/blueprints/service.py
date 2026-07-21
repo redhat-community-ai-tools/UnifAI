@@ -120,6 +120,14 @@ class BlueprintService:
     def exists(self, blueprint_id: str) -> bool:
         return self._repo.exists(blueprint_id)
 
+    def name_exists_for_identity(
+        self, identity: Identity, name: str,
+        *, exclude_blueprint_id: str | None = None,
+    ) -> bool:
+        return self._repo.name_exists_for_identity(
+            identity, name, exclude_blueprint_id=exclude_blueprint_id,
+        )
+
     def delete(self, blueprint_id: str) -> bool:
         return self._repo.delete(blueprint_id)
 

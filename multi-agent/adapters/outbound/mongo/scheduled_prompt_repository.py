@@ -82,7 +82,6 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
         self, identity: Identity, *, skip: int = 0, limit: int = 100,
     ) -> List[ScheduledPrompt]:
         query = identity_q(identity)
-        query["schedule_status"] = {"$ne": "deleted"}
         cursor = (
             self._col.find(query)
             .sort("updated_at", pymongo.DESCENDING)
@@ -94,7 +93,6 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
     def find_by_blueprint(self, blueprint_id: str) -> List[ScheduledPrompt]:
         cursor = self._col.find({
             "blueprint_id": blueprint_id,
-            "schedule_status": {"$ne": "deleted"},
         }).sort("updated_at", pymongo.DESCENDING)
         return [self._deserialize(doc) for doc in cursor]
 

@@ -50,10 +50,12 @@ class PromptService:
         prompt_repo: ScheduledPromptRepository,
         schedule_port: Optional[SchedulePort],
         blueprint_service,
+        session_service=None,
     ):
         self._repo = prompt_repo
         self._schedule_port = schedule_port
         self._blueprint_service = blueprint_service
+        self._session_service = session_service
 
     def create(
         self,
@@ -66,7 +68,7 @@ class PromptService:
         schedule: Dict[str, Any],
     ) -> ScheduledPrompt:
         if not self._blueprint_service.exists(blueprint_id):
-            from mas.session.domain.exceptions import BlueprintNotFoundError
+            from mas.blueprints.exceptions import BlueprintNotFoundError
             raise BlueprintNotFoundError(blueprint_id)
 
         active_count = self._repo.count_active_by_blueprint(blueprint_id)
@@ -222,6 +224,15 @@ class PromptService:
 
     def get(self, prompt_id: str, *, identity: Identity) -> ScheduledPrompt:
         return self._load_and_verify(prompt_id, identity)
+
+    def get_runs(
+        self, prompt_id: str, *, identity: Identity, limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        """Return run history for a scheduled prompt, with ownership verification."""
+        self._load_and_verify(prompt_id, identity)
+        if not self._session_service:
+            return []
+        return self._session_service.get_runs_by_schedule(prompt_id, limit=limit)
 
     def mark_completed(self, prompt_id: str) -> None:
         """Transition a finite schedule to COMPLETED if appropriate.
