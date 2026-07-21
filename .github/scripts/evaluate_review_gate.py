@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Evaluate code-review and architecture-review output files and gate the CI pipeline."""
+"""Evaluate code-review and architecture-review output files and gate the CI pipeline.
 
+Supports two scoring paths:
+1. PRIMARY: Read /tmp/pipeline_results.json (structured output from orchestrator) and compute
+   a deterministic score using the Severity Floor hybrid formula.
+2. FALLBACK: Parse review text files for score/verdict patterns (legacy behavior).
+"""
+
+import json
 import os
 import re
 import sys
 from pathlib import Path
+
+from _scoring import compute_deterministic_score, require_int, validate_findings
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 MARKDOWN_BOLD_RE = re.compile(r"[*`]{1,2}")
@@ -14,9 +23,103 @@ CODE_SCORE_PATTERNS = [
     re.compile(r"(?:verdict|review|code)[^\n]{0,40}(\d{1,2})\s*/\s*10", re.IGNORECASE),
 ]
 ARCH_VERDICT_RE = re.compile(r"(APPROVE|NEEDS[_ ]REVISION|REJECT)")
-PIPELINE_VERDICT_RE = re.compile(r"^`?PIPELINE_VERDICT:\s*(APPROVE|NEEDS_REVISION|REJECT|CLEAN|NEEDS_REFACTORING|MAJOR_CLEANUP|PASS|FAIL)\b", re.MULTILINE)
+PIPELINE_ARCH_VERDICT_RE = re.compile(r"^`?PIPELINE_ARCH_VERDICT:\s*(APPROVE|NEEDS_REVISION|REJECT)\b", re.MULTILINE)
+PIPELINE_CODE_VERDICT_RE = re.compile(r"^`?PIPELINE_CODE_VERDICT:\s*(CLEAN|NEEDS_REFACTORING|MAJOR_CLEANUP)\b", re.MULTILINE)
 EXIT_STATUS_RE = re.compile(r"^EXIT_STATUS:\s*(SUCCESS|REVISION_LIMIT|USER_INPUT_REQUIRED|ERROR|SKILL_NOT_FOUND)", re.MULTILINE)
 
+
+# ---------------------------------------------------------------------------
+# JSON-based scoring (primary path)
+# ---------------------------------------------------------------------------
+
+def try_json_scoring(json_path: Path) -> dict | None:
+    """Attempt to read pipeline_results.json and compute deterministic scores.
+
+    Returns a dict with arch_verdict, code_score, computed_score, model_score, source
+    or None if the JSON file is unavailable.
+    """
+    if not json_path.exists():
+        return None
+
+    try:
+        data = json.loads(json_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"::warning::Could not parse {json_path}: {e}. Falling back to text parsing.")
+        return None
+
+    if not isinstance(data, dict):
+        print(f"::warning::{json_path} is not a JSON object. Falling back to text parsing.")
+        return None
+
+    raw_arch = data.get("arch_verdict")
+    arch_verdict_in_json = raw_arch is not None
+    if raw_arch is None:
+        arch_verdict = "UNKNOWN"
+    elif isinstance(raw_arch, str) and raw_arch.strip().upper().replace(" ", "_") in {"APPROVE", "NEEDS_REVISION", "REJECT"}:
+        arch_verdict = raw_arch.strip().upper().replace(" ", "_")
+    else:
+        print(f"::warning::{json_path}: unrecognized arch_verdict {raw_arch!r}. Treating as UNKNOWN.")
+        arch_verdict = "UNKNOWN"
+
+    code_findings = data.get("code_findings", {})
+    files_changed = data.get("files_changed", 1)
+    model_score = data.get("code_health_score", 0)
+
+    if not isinstance(code_findings, dict):
+        print(f"::warning::{json_path}: code_findings is not an object. Falling back to text parsing.")
+        return None
+    code_findings = validate_findings(code_findings, label=f"{json_path}: code_findings")
+
+    if files_changed is None or files_changed == "":
+        files_changed = 1
+    else:
+        parsed_files_changed = require_int(files_changed, default_if_empty=1, min_value=0)
+        if parsed_files_changed is None:
+            print(f"::warning::{json_path}: files_changed is not numeric ({files_changed!r}). Falling back to text parsing.")
+            return None
+        files_changed = parsed_files_changed or 1
+
+    if model_score is None or model_score == "":
+        model_score = 0
+    else:
+        parsed_model_score = require_int(model_score, default_if_empty=0, min_value=0)
+        if parsed_model_score is None:
+            print(
+                f"::warning::{json_path}: code_health_score has non-numeric value "
+                f"{model_score!r}. Falling back to text parsing."
+            )
+            return None
+        model_score = parsed_model_score
+
+    pipeline_pass = data.get("pipeline_pass")
+    code_verdict = data.get("code_verdict")
+
+    computed_score = compute_deterministic_score(code_findings, files_changed)
+
+    if model_score and abs(computed_score - model_score) >= 2:
+        print(
+            f"::warning::Score divergence: model reported {model_score}/10, "
+            f"formula computed {computed_score}/10 (delta={computed_score - model_score}). "
+            f"Using computed score for gate decision."
+        )
+
+    return {
+        "arch_verdict": arch_verdict,
+        "arch_verdict_in_json": arch_verdict_in_json,
+        "code_score": computed_score,
+        "model_score": model_score,
+        "computed_score": computed_score,
+        "code_findings": code_findings,
+        "code_verdict": code_verdict,
+        "files_changed": files_changed,
+        "pipeline_pass": pipeline_pass,
+        "source": "json",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Text-based scoring (fallback path)
+# ---------------------------------------------------------------------------
 
 def strip_ansi(text: str) -> str:
     return ANSI_RE.sub("", text)
@@ -40,7 +143,7 @@ def parse_code_score(path: Path) -> tuple[int, str]:
             source = "ok" if i == 0 else f"ok_fallback_{i}"
             return int(matches[-1]), source
 
-    pv_matches = PIPELINE_VERDICT_RE.findall(clean)
+    pv_matches = PIPELINE_CODE_VERDICT_RE.findall(clean)
     if pv_matches:
         token = pv_matches[-1]
         if token == "CLEAN":
@@ -49,14 +152,6 @@ def parse_code_score(path: Path) -> tuple[int, str]:
             return 5, "ok_pipeline_verdict"
         elif token == "MAJOR_CLEANUP":
             return 3, "ok_pipeline_verdict"
-        elif token in ("APPROVE", "PASS"):
-            return 8, "ok_pipeline_verdict_mapped"
-        elif token == "NEEDS_REVISION":
-            return 5, "ok_pipeline_verdict_mapped"
-        elif token in ("REJECT", "FAIL"):
-            return 3, "ok_pipeline_verdict_mapped"
-        else:
-            return 0, f"verdict_not_code_review_{token.lower()}"
 
     return 0, "pattern_not_found"
 
@@ -70,12 +165,10 @@ def parse_arch_verdict(path: Path) -> tuple[str, str]:
 
     clean = strip_markdown(strip_ansi(content))
 
-    pv_matches = PIPELINE_VERDICT_RE.findall(clean)
+    pv_matches = PIPELINE_ARCH_VERDICT_RE.findall(clean)
     if pv_matches:
         token = pv_matches[-1]
         verdict_map = {"APPROVE": "APPROVE", "NEEDS_REVISION": "NEEDS REVISION", "REJECT": "REJECT"}
-        if token not in verdict_map:
-            return "UNKNOWN", f"unexpected_arch_verdict_{token.lower()}"
         return verdict_map[token], "ok"
 
     matches = ARCH_VERDICT_RE.findall(clean)
@@ -101,6 +194,10 @@ def parse_exit_status(path: Path) -> tuple[str, str]:
     return matches[-1], "ok"
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
 def main() -> int:
     threshold = os.environ.get("CODE_REVIEW_THRESHOLD", "8")
     if not threshold.isdigit():
@@ -108,26 +205,44 @@ def main() -> int:
         return 1
     threshold = int(threshold)
 
+    json_path = Path(os.environ.get("PIPELINE_RESULTS_JSON", "/tmp/pipeline_results.json"))
     code_file = Path(os.environ.get("CODE_REVIEW_FILE", "code_review_output.txt"))
     arch_file = Path(os.environ.get("ARCH_REVIEW_FILE", "arch_review_output.txt"))
 
-    code_score, code_status = parse_code_score(code_file)
-    if code_status == "pattern_not_found" or code_status.startswith("file_") or code_status.startswith("verdict_not_code_review"):
-        print(f"::warning::Could not extract code review score (reason: {code_status}). Check {code_file}.")
-    elif code_status == "ok_pipeline_verdict":
-        print(f"::notice::Code review score ({code_score}/10) derived from PIPELINE_VERDICT, "
-              f"not an explicit score in the output. Check {code_file}.")
-    elif code_status == "ok_pipeline_verdict_mapped":
-        print(f"::warning::Code review score ({code_score}/10) derived from non-code-review "
-              f"PIPELINE_VERDICT token (agent used wrong token set). Check {code_file}.")
-    elif code_status.startswith("ok_fallback"):
-        print(f"::warning::Code review score extracted via fallback pattern ({code_status}). "
-              f"The output may not follow the expected format. Check {code_file}.")
+    # Try JSON-based deterministic scoring first
+    json_result = try_json_scoring(json_path)
 
-    arch_verdict, arch_status = parse_arch_verdict(arch_file)
-    if arch_status != "ok":
-        print(f"::warning::Could not extract architecture verdict (reason: {arch_status}). Check {arch_file}.")
+    if json_result:
+        code_score = json_result["code_score"]
+        arch_verdict = json_result["arch_verdict"]
+        scoring_source = "deterministic_json"
+        model_score = json_result["model_score"]
+        print(
+            f"::notice::Using deterministic scoring from {json_path}. "
+            f"Computed={code_score}/10, Model={model_score}/10, "
+            f"Files={json_result['files_changed']}, "
+            f"Findings={json_result['code_findings']}"
+        )
+    else:
+        # Fallback to text-based parsing
+        scoring_source = "text_fallback"
+        model_score = None
 
+        code_score, code_status = parse_code_score(code_file)
+        if code_status == "pattern_not_found" or code_status.startswith("file_"):
+            print(f"::warning::Could not extract code review score (reason: {code_status}). Check {code_file}.")
+        elif code_status == "ok_pipeline_verdict":
+            print(f"::notice::Code review score ({code_score}/10) derived from PIPELINE_CODE_VERDICT, "
+                  f"not an explicit score in the output. Check {code_file}.")
+        elif code_status.startswith("ok_fallback"):
+            print(f"::warning::Code review score extracted via fallback pattern ({code_status}). "
+                  f"The output may not follow the expected format. Check {code_file}.")
+
+        arch_verdict, arch_status = parse_arch_verdict(arch_file)
+        if arch_status != "ok":
+            print(f"::warning::Could not extract architecture verdict (reason: {arch_status}). Check {arch_file}.")
+
+    # Check for pipeline errors from text output (always, regardless of scoring source)
     code_exit, _ = parse_exit_status(code_file)
     arch_exit, _ = parse_exit_status(arch_file)
 
@@ -139,30 +254,88 @@ def main() -> int:
         print(f"::error::Architecture review pipeline errored (EXIT_STATUS: {arch_exit}). Check {arch_file}.")
         pipeline_error = True
 
-    arch_pass = arch_verdict == "APPROVE"
+    # Determine gate pass/fail.
+    # Primary: pipeline_pass from JSON (handles single-judge modes correctly).
+    # Fallback: reconstruct from individual verdicts (text path, or legacy JSON without pipeline_pass).
+    pipeline_pass = json_result.get("pipeline_pass") if json_result else None
+    use_pipeline_pass = json_result and isinstance(pipeline_pass, bool)
+
+    code_ran = code_score > 0 or (json_result and "code_findings" in json_result)
     code_pass = code_score >= threshold
 
-    arch_display = "✅ PASS" if arch_pass else f"❌ FAIL ({arch_verdict})"
+    # Dual-review mode: both judges ran (arch_verdict and code_verdict in JSON).
+    # Single-judge modes (code-review-only, arch-review) omit the non-running
+    # judge's fields, so code_verdict alone does NOT imply dual-review.
+    dual_review_mode = (
+        json_result
+        and json_result.get("arch_verdict_in_json", False)
+        and json_result.get("code_verdict") is not None
+    )
+    if dual_review_mode and arch_verdict == "UNKNOWN":
+        text_arch_verdict, text_arch_status = parse_arch_verdict(arch_file)
+        if text_arch_verdict != "UNKNOWN":
+            print(
+                f"::warning::arch_verdict missing from JSON but found in {arch_file} "
+                f"via text parsing: {text_arch_verdict}. Using text value."
+            )
+            arch_verdict = text_arch_verdict
+        else:
+            print(
+                f"::error::Dual-review mode (code_verdict present) but arch_verdict "
+                f"missing from both JSON and {arch_file}. Treating as gate failure."
+            )
+
+    arch_ran = arch_verdict != "UNKNOWN" or bool(dual_review_mode)
+    arch_pass = arch_verdict == "APPROVE"
+
+    reconstructed_pass = (arch_pass or not arch_ran) and (code_pass or not code_ran)
+
+    if use_pipeline_pass:
+        gate_pass = pipeline_pass and reconstructed_pass
+        if pipeline_pass != reconstructed_pass:
+            print(
+                f"::warning::Gate signal conflict: pipeline_pass={pipeline_pass}, "
+                f"reconstructed={reconstructed_pass} (arch={arch_verdict}, "
+                f"code_score={code_score}, threshold={threshold}). "
+                f"Using stricter of the two."
+            )
+    else:
+        gate_pass = reconstructed_pass
+
+    if arch_ran:
+        arch_display = "✅ PASS" if arch_pass else f"❌ FAIL ({arch_verdict})"
+    else:
+        arch_display = "⏭️ N/A"
     code_display = "✅ PASS" if code_pass else "❌ FAIL"
 
     summary_path = Path(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"))
     with summary_path.open("a") as summary:
         summary.write("\n---\n\n## Review Gate Results\n\n")
+        summary.write(f"**Scoring method:** {scoring_source}\n\n")
+        if use_pipeline_pass:
+            summary.write(f"**Gate signal:** `pipeline_pass={pipeline_pass}` from JSON\n\n")
         summary.write("| Review | Result | Threshold | Exit Status | Status |\n")
         summary.write("|--------|--------|-----------|-------------|--------|\n")
-        summary.write(f"| Architecture Review | {arch_verdict} | APPROVE | {arch_exit} | {arch_display} |\n")
+        arch_result = arch_verdict if arch_ran else "N/A"
+        arch_thresh = "APPROVE" if arch_ran else "—"
+        summary.write(f"| Architecture Review | {arch_result} | {arch_thresh} | {arch_exit} | {arch_display} |\n")
         summary.write(f"| Code Review | {code_score}/10 | ≥{threshold}/10 | {code_exit} | {code_display} |\n\n")
+        if model_score is not None and model_score != code_score:
+            summary.write(f"_Model self-reported score: {model_score}/10 | Deterministic computed score: {code_score}/10_\n\n")
 
     output_path = os.environ.get("GITHUB_OUTPUT", "")
     if output_path:
         with Path(output_path).open("a") as out:
             out.write(f"arch_verdict={arch_verdict}\n")
             out.write(f"code_score={code_score}\n")
+            out.write(f"scoring_source={scoring_source}\n")
+            if use_pipeline_pass:
+                out.write(f"pipeline_pass={str(pipeline_pass).lower()}\n")
 
     if pipeline_error:
         return 1
 
-    if not (arch_pass and code_pass):
+    if not gate_pass:
         print(f"::error::Review gate failed. Architecture: {arch_verdict}, Code: {code_score}/10 (threshold: {threshold})")
         return 1
 

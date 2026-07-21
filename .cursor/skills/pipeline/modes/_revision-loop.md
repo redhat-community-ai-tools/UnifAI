@@ -13,7 +13,7 @@ This is a parameterized protocol. The mode file sets the following variables bef
 
 ## Execution
 
-After the reviewer produces output, locate the `PIPELINE_VERDICT:` line. The token after the colon is the verdict.
+After the reviewer produces output, locate the verdict line (`PIPELINE_ARCH_VERDICT:`, `PIPELINE_CODE_VERDICT:`, or `PIPELINE_VERDICT:`). The token after the colon is the verdict.
 
 ```
 IF verdict == VERDICT_APPROVE:
@@ -53,7 +53,7 @@ IF verdict matches any VERDICT_BLOCK token:
         Step G-alt: Read the REVIEWER_SKILL file using the Read tool.
         Step H: Apply the instructions from that skill file. Orchestrator rules remain in effect.
         Step I: Re-review the revised artifact. Present under REVIEW_HEADER.
-        Step J: Locate the new PIPELINE_VERDICT: line. Return to the top of this protocol.
+        Step J: Locate the new verdict line (PIPELINE_ARCH_VERDICT: or PIPELINE_CODE_VERDICT: or PIPELINE_VERDICT:). Return to the top of this protocol.
 ```
 
 ## Inline Scout + Judge Re-Review Extension
@@ -65,7 +65,7 @@ When the REVIEWER_SKILL is `arch-reviewer.md` or `code-reviewer.md`, Steps G–I
 3. Include the previous review's findings in the Judge prompt so it can perform Revision Loop Verification (§8 in code-reviewer).
 4. Spawn the appropriate Judge with the fresh evidence pack + previous findings + the approved design from Phase 2 (if available). This matches the initial dispatch inputs so the Judge can perform Design Compliance (§6 in code-reviewer).
 5. Present the Judge's output under REVIEW_HEADER.
-6. Locate the new `PIPELINE_VERDICT:` line and return to the top of this protocol.
+6. Locate the new verdict line (`PIPELINE_ARCH_VERDICT:` or `PIPELINE_CODE_VERDICT:`) and return to the top of this protocol.
 
 The Scout must re-run because the code has changed — the previous evidence pack is stale.
 
@@ -88,4 +88,4 @@ THEN (whether or not there were code bugs):
 1. Read `.cursor/skills/pipeline/phases/qa.md`. Apply its instructions.
 2. Fix any TEST BUGS, re-run all tests.
 3. Present results under: `## PHASE 5: QA (Revision <N>)`
-4. Locate the new `PIPELINE_VERDICT:` line and return to the top of this protocol.
+4. Locate the new verdict line (`PIPELINE_VERDICT:` / `PIPELINE_CODE_VERDICT:` / `PIPELINE_ARCH_VERDICT:`) and return to the top of this protocol.

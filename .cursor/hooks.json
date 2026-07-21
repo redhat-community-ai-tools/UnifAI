@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "command": "python3 .cursor/hooks/langfuse_tracer.py" }
+    ],
+    "postToolUse": [
+      { "command": "python3 .cursor/hooks/langfuse_tracer.py" }
+    ],
+    "subagentStop": [
+      { "command": "python3 .cursor/hooks/langfuse_tracer.py" }
+    ],
+    "stop": [
+      { "command": "python3 .cursor/hooks/langfuse_tracer.py" }
+    ],
+    "sessionEnd": [
+      { "command": "python3 .cursor/hooks/langfuse_tracer.py" }
+    ]
+  }
+}
