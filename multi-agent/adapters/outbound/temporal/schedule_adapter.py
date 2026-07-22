@@ -24,7 +24,7 @@ from config.app_config import AppConfig
 from temporalio.service import RPCError, RPCStatusCode
 
 from mas.prompts.models import ScheduleOverlapPolicy, ScheduledPrompt
-from mas.prompts.ports import ScheduleNotFoundError, SchedulePort
+from mas.prompts.ports import ScheduleInfo, ScheduleNotFoundError, SchedulePort
 from temporal.client import get_temporal_client
 from temporal.models import ScheduledSessionParams
 
@@ -64,6 +64,14 @@ class TemporalScheduleAdapter(SchedulePort):
 
     def trigger_now(self, temporal_schedule_id: str) -> None:
         asyncio.run(self._trigger(temporal_schedule_id))
+
+    def describe(self, temporal_schedule_id: str) -> ScheduleInfo:
+        try:
+            return asyncio.run(self._describe(temporal_schedule_id))
+        except RPCError as exc:
+            if exc.status == RPCStatusCode.NOT_FOUND:
+                raise ScheduleNotFoundError(temporal_schedule_id) from exc
+            raise
 
     async def _create(self, prompt: ScheduledPrompt) -> str:
         cfg = AppConfig.get_instance()
@@ -163,6 +171,18 @@ class TemporalScheduleAdapter(SchedulePort):
         client = await get_temporal_client()
         handle = client.get_schedule_handle(temporal_schedule_id)
         await handle.trigger()
+
+    async def _describe(self, temporal_schedule_id: str) -> ScheduleInfo:
+        client = await get_temporal_client()
+        handle = client.get_schedule_handle(temporal_schedule_id)
+        desc = await handle.describe()
+        state = desc.schedule.state
+        exhausted = state.limited_actions and state.remaining_actions == 0
+        return ScheduleInfo(
+            paused=state.paused,
+            remaining_actions=state.remaining_actions if state.limited_actions else None,
+            running=not exhausted,
+        )
 
     @staticmethod
     def _build_spec(prompt: ScheduledPrompt) -> ScheduleSpec:

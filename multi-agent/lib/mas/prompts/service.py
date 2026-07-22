@@ -14,7 +14,7 @@ from mas.prompts.models import (
     ScheduleStatus,
     ScheduledPrompt,
 )
-from mas.prompts.ports import ScheduleNotFoundError, SchedulePort
+from mas.prompts.ports import ScheduleInfo, ScheduleNotFoundError, SchedulePort
 from mas.prompts.repository import ScheduledPromptRepository
 from mas.session.service import SessionService
 
@@ -241,6 +241,7 @@ class PromptService:
         name_cache: Dict[str, str] = {}
         result: List[Dict[str, Any]] = []
         for p in prompts:
+            p = self._reconcile_if_needed(p)
             d = p.model_dump(mode="json")
             bid = p.blueprint_id
             if bid not in name_cache:
@@ -268,7 +269,8 @@ class PromptService:
         self._repo.record_run(prompt_id, session_id, status, started_at)
 
     def get(self, prompt_id: str, *, identity: Identity) -> ScheduledPrompt:
-        return self._load_and_verify(prompt_id, identity)
+        prompt = self._load_and_verify(prompt_id, identity)
+        return self._reconcile_if_needed(prompt)
 
     def get_runs(
         self, prompt_id: str, *, identity: Identity, limit: int = 20,
@@ -305,6 +307,44 @@ class PromptService:
             "completed_at": datetime.now(timezone.utc),
         })
         self._persist_best_effort(prompt)
+
+    def _reconcile_if_needed(self, prompt: ScheduledPrompt) -> ScheduledPrompt:
+        """Check Temporal's actual state for finite schedules and correct Mongo
+        if Temporal has already exhausted the schedule but Mongo still shows ACTIVE."""
+        if prompt.schedule_status != ScheduleStatus.ACTIVE:
+            return prompt
+        if not self._schedule_port or not prompt.temporal_schedule_id:
+            return prompt
+
+        is_finite = (
+            prompt.schedule.remaining_actions is not None
+            or prompt.schedule.end_at is not None
+        )
+        if not is_finite:
+            return prompt
+
+        try:
+            info = self._schedule_port.describe(prompt.temporal_schedule_id)
+        except ScheduleNotFoundError:
+            info = None
+        except Exception:
+            logger.debug(
+                "reconcile: describe failed for prompt %s, skipping", prompt.id,
+            )
+            return prompt
+
+        if info is None or not info.running:
+            logger.info(
+                "reconcile: marking prompt %s COMPLETED — Temporal schedule exhausted",
+                prompt.id,
+            )
+            prompt = prompt.model_copy(update={
+                "schedule_status": ScheduleStatus.COMPLETED,
+                "completed_at": datetime.now(timezone.utc),
+            })
+            self._persist_best_effort(prompt)
+
+        return prompt
 
     def _persist_after_external_mutation(self, prompt: ScheduledPrompt) -> None:
         """Persist prompt after Temporal side effects.  Raises on failure."""

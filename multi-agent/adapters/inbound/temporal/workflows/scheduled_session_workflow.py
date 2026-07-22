@@ -51,66 +51,82 @@ class ScheduledSessionWorkflow:
             update={"idempotency_key": str(workflow.uuid4())}
         )
 
-        run_id = await workflow.execute_activity(
-            "create_scheduled_session",
-            idempotent_params,
-            start_to_close_timeout=_ACTIVITY_TIMEOUT,
-            retry_policy=_ACTIVITY_RETRY,
-        )
+        run_id: str | None = None
+        started_at: str = workflow.now().isoformat()
+        outcome = RunOutcome.FAILED
+        failure_reason: str | None = None
 
-        started_at = workflow.now().isoformat()
-
-        # stage_scheduled_inputs and build_session_workflow_params are
-        # naturally idempotent (overwrite-style writes / pure reads).
-        await workflow.execute_activity(
-            "stage_scheduled_inputs",
-            StageScheduledInputsParams(
-                run_id=run_id,
-                inputs=params.inputs,
-                text=params.text,
-            ),
-            start_to_close_timeout=_ACTIVITY_TIMEOUT,
-            retry_policy=_ACTIVITY_RETRY,
-        )
-
-        session_params = await workflow.execute_activity(
-            "build_session_workflow_params",
-            BuildSessionWorkflowParamsInput(run_id=run_id),
-            start_to_close_timeout=_BUILD_PARAMS_TIMEOUT,
-            retry_policy=_ACTIVITY_RETRY,
-            result_type=SessionWorkflowParams,
-        )
-
-        outcome = RunOutcome.COMPLETED
-        failure_reason = None
         try:
-            await workflow.execute_child_workflow(
-                SessionWorkflow.run,
-                session_params,
-                id=f"sched-session-{run_id}",
-                execution_timeout=_CHILD_EXECUTION_TIMEOUT,
-                result_type=GraphState,
+            run_id = await workflow.execute_activity(
+                "create_scheduled_session",
+                idempotent_params,
+                start_to_close_timeout=_ACTIVITY_TIMEOUT,
+                retry_policy=_ACTIVITY_RETRY,
             )
+
+            started_at = workflow.now().isoformat()
+
+            # stage_scheduled_inputs and build_session_workflow_params are
+            # naturally idempotent (overwrite-style writes / pure reads).
+            await workflow.execute_activity(
+                "stage_scheduled_inputs",
+                StageScheduledInputsParams(
+                    run_id=run_id,
+                    inputs=params.inputs,
+                    text=params.text,
+                ),
+                start_to_close_timeout=_ACTIVITY_TIMEOUT,
+                retry_policy=_ACTIVITY_RETRY,
+            )
+
+            session_params = await workflow.execute_activity(
+                "build_session_workflow_params",
+                BuildSessionWorkflowParamsInput(run_id=run_id),
+                start_to_close_timeout=_BUILD_PARAMS_TIMEOUT,
+                retry_policy=_ACTIVITY_RETRY,
+                result_type=SessionWorkflowParams,
+            )
+
+            try:
+                await workflow.execute_child_workflow(
+                    SessionWorkflow.run,
+                    session_params,
+                    id=f"sched-session-{run_id}",
+                    execution_timeout=_CHILD_EXECUTION_TIMEOUT,
+                    result_type=GraphState,
+                )
+                outcome = RunOutcome.COMPLETED
+            except Exception as exc:
+                workflow.logger.error(
+                    "Child workflow sched-session-%s failed: %s", run_id, exc,
+                )
+                failure_reason = f"{type(exc).__name__}: {exc}"
         except Exception as exc:
             workflow.logger.error(
-                "Child workflow sched-session-%s failed: %s", run_id, exc,
+                "ScheduledSessionWorkflow setup failed for prompt %s: %s",
+                params.prompt_id, exc,
             )
-            outcome = RunOutcome.FAILED
             failure_reason = f"{type(exc).__name__}: {exc}"
+        finally:
+            if run_id is not None:
+                # post_execution is idempotent — record_run uses a $ne guard
+                # on session_id so retries neither double-count nor duplicate.
+                await workflow.execute_activity(
+                    "post_execution",
+                    PostExecutionParams(
+                        prompt_id=params.prompt_id,
+                        run_id=run_id,
+                        status=outcome,
+                        started_at=started_at,
+                        failure_reason=failure_reason,
+                    ),
+                    start_to_close_timeout=_ACTIVITY_TIMEOUT,
+                    retry_policy=_ACTIVITY_RETRY,
+                )
 
-        # post_execution is idempotent — record_run uses a $ne guard on
-        # session_id so retries neither double-count nor duplicate entries.
-        await workflow.execute_activity(
-            "post_execution",
-            PostExecutionParams(
-                prompt_id=params.prompt_id,
-                run_id=run_id,
-                status=outcome,
-                started_at=started_at,
-                failure_reason=failure_reason,
-            ),
-            start_to_close_timeout=_ACTIVITY_TIMEOUT,
-            retry_policy=_ACTIVITY_RETRY,
-        )
+        if run_id is None:
+            raise RuntimeError(
+                f"Failed to create session for prompt {params.prompt_id}"
+            )
 
         return run_id
