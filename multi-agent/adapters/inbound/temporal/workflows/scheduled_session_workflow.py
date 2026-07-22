@@ -48,7 +48,7 @@ class ScheduledSessionWorkflow:
         # Deterministic session key — same value on activity retries,
         # preventing duplicate session creation.
         idempotent_params = params.model_copy(
-            update={"idempotency_key": str(workflow.uuid())}
+            update={"idempotency_key": str(workflow.uuid4())}
         )
 
         run_id = await workflow.execute_activity(
@@ -82,6 +82,7 @@ class ScheduledSessionWorkflow:
         )
 
         outcome = RunOutcome.COMPLETED
+        failure_reason = None
         try:
             await workflow.execute_child_workflow(
                 SessionWorkflow.run,
@@ -90,8 +91,12 @@ class ScheduledSessionWorkflow:
                 execution_timeout=_CHILD_EXECUTION_TIMEOUT,
                 result_type=GraphState,
             )
-        except Exception:
+        except Exception as exc:
+            workflow.logger.error(
+                "Child workflow sched-session-%s failed: %s", run_id, exc,
+            )
             outcome = RunOutcome.FAILED
+            failure_reason = f"{type(exc).__name__}: {exc}"
 
         # post_execution is idempotent — record_run uses a $ne guard on
         # session_id so retries neither double-count nor duplicate entries.
@@ -102,6 +107,7 @@ class ScheduledSessionWorkflow:
                 run_id=run_id,
                 status=outcome,
                 started_at=started_at,
+                failure_reason=failure_reason,
             ),
             start_to_close_timeout=_ACTIVITY_TIMEOUT,
             retry_policy=_ACTIVITY_RETRY,

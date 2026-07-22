@@ -130,3 +130,4 @@ class PostExecutionParams(BaseModel):
     run_id: str
     status: RunOutcome
     started_at: str
+    failure_reason: Optional[str] = None

@@ -1,16 +1,19 @@
+from datetime import datetime, timezone
+from typing import Any, Optional
+from uuid import uuid4
+
 import pymongo
 from pymongo.errors import DuplicateKeyError
-from uuid import uuid4
-from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
-from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintSummary
+
 from mas.blueprints.exceptions import BlueprintDuplicateNameError
+from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintSummary
 from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.core.enums import ResourceCategory
 from mas.core.identity import Identity
-from outbound.mongo.helpers import identity_q
+
 from global_utils.utils.util import get_mongo_url
+from outbound.mongo.helpers import identity_q
 
 
 class MongoBlueprintRepository(BlueprintRepository):
@@ -37,7 +40,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         )
 
     def save(self, identity: Identity, spec: BlueprintDraft,
-             rid_refs: list[str], metadata: Dict[str, Any] = {}) -> str:
+             rid_refs: list[str], metadata: dict[str, Any] = {}) -> str:
         new_id = str(uuid4())
         doc = {
             "blueprint_id": new_id,
@@ -51,7 +54,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         try:
             self._col.insert_one(doc)
         except DuplicateKeyError:
-            raise BlueprintDuplicateNameError(spec.name)
+            raise BlueprintDuplicateNameError(spec.name) from None
         return new_id
 
     def update(self, *, blueprint_id: str, spec: BlueprintDraft,
@@ -66,10 +69,10 @@ class MongoBlueprintRepository(BlueprintRepository):
                 }}
             )
         except DuplicateKeyError:
-            raise BlueprintDuplicateNameError(spec.name)
+            raise BlueprintDuplicateNameError(spec.name) from None
         return res.modified_count == 1
     
-    def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
+    def set_metadata(self, *, blueprint_id: str, metadata: dict[str, Any]) -> bool:
         """Set individual metadata keys using dot-notation (key-level merge)."""
         if not isinstance(metadata, dict):
             raise ValueError(f"metadata must be a dictionary, got: {type(metadata)}")
@@ -106,7 +109,7 @@ class MongoBlueprintRepository(BlueprintRepository):
         result = self._col.delete_many(identity_q(identity))
         return result.deleted_count
 
-    def load_many(self, blueprint_ids: List[str]) -> List[BlueprintDocument]:
+    def load_many(self, blueprint_ids: list[str]) -> list[BlueprintDocument]:
         """Load multiple blueprint documents by their IDs in a single $in query."""
         if not blueprint_ids:
             return []
@@ -123,7 +126,7 @@ class MongoBlueprintRepository(BlueprintRepository):
     def list_ids(
             self, *, identity: Optional[Identity] = None,
             skip=0, limit=100, sort_desc=True
-    ) -> List[str]:
+    ) -> list[str]:
         cur = (
             self._col.find(identity_q(identity), {"blueprint_id": 1})
             .sort("updated_at", pymongo.DESCENDING if sort_desc else pymongo.ASCENDING)
@@ -136,7 +139,7 @@ class MongoBlueprintRepository(BlueprintRepository):
             self, *,
             identity: Optional[Identity] = None,
             skip: int = 0, limit: int = 100, sort_desc: bool = True,
-    ) -> List[BlueprintDocument]:
+    ) -> list[BlueprintDocument]:
         """Return BlueprintDocument objects for bulk operations."""
         cursor = (
             self._col.find(identity_q(identity))
@@ -150,7 +153,7 @@ class MongoBlueprintRepository(BlueprintRepository):
             self, *,
             identity: Optional[Identity] = None,
             skip: int = 0, limit: int = 100, sort_desc: bool = True,
-    ) -> List[BlueprintSummary]:
+    ) -> list[BlueprintSummary]:
         projection = {
             "_id": 0,
             "blueprint_id": 1,
@@ -181,7 +184,7 @@ class MongoBlueprintRepository(BlueprintRepository):
             ))
         return summaries
 
-    def list_direct_usage(self, rid: str) -> List[str]:
+    def list_direct_usage(self, rid: str) -> list[str]:
         cur = self._col.find({"rid_refs": rid}, {"blueprint_id": 1})
         return [doc["blueprint_id"] for doc in cur]
 

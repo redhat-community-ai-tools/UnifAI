@@ -39,11 +39,11 @@ class PromptLimitExceededError(Exception):
 
 
 class PromptPermissionError(Exception):
-    def __init__(self, prompt_id: str, identity: Identity) -> None:
-        self.prompt_id = prompt_id
+    def __init__(self, resource_id: str, identity: Identity) -> None:
+        self.resource_id = resource_id
         self.identity = identity
         super().__init__(
-            f"Identity {identity.id} does not own prompt {prompt_id}"
+            f"Identity {identity.id} does not have permission on resource {resource_id}"
         )
 
 
@@ -95,9 +95,21 @@ class PromptService:
         self._repo.save(prompt)
 
         if self._schedule_port:
-            temporal_id = self._schedule_port.create_schedule(prompt)
+            try:
+                temporal_id = self._schedule_port.create_schedule(prompt)
+            except Exception:
+                self._repo.delete(prompt.id)
+                raise
             prompt = prompt.model_copy(update={"temporal_schedule_id": temporal_id})
-            self._update_or_warn(prompt)
+            if not self._repo.update(prompt):
+                try:
+                    self._schedule_port.delete(temporal_id)
+                except Exception:
+                    logger.error(
+                        "Leaked Temporal schedule %s after Mongo update failure for prompt %s",
+                        temporal_id, prompt.id,
+                    )
+                raise PromptNotFoundError(prompt.id)
 
         return prompt
 
@@ -137,10 +149,10 @@ class PromptService:
         if updates:
             prompt = prompt.model_copy(update=updates)
 
-        if schedule_changed and self._schedule_port and prompt.temporal_schedule_id:
+        if updates and self._schedule_port and prompt.temporal_schedule_id:
             self._schedule_port.update_schedule(prompt.temporal_schedule_id, prompt)
 
-        self._update_or_warn(prompt)
+        self._persist_after_external_mutation(prompt)
         return prompt
 
     @staticmethod
@@ -164,7 +176,7 @@ class PromptService:
             self._schedule_port.pause(prompt.temporal_schedule_id)
 
         prompt = prompt.model_copy(update={"schedule_status": ScheduleStatus.PAUSED})
-        self._update_or_warn(prompt)
+        self._persist_after_external_mutation(prompt)
         return prompt
 
     def resume(self, prompt_id: str, *, identity: Identity) -> ScheduledPrompt:
@@ -174,7 +186,7 @@ class PromptService:
             self._schedule_port.resume(prompt.temporal_schedule_id)
 
         prompt = prompt.model_copy(update={"schedule_status": ScheduleStatus.ACTIVE})
-        self._update_or_warn(prompt)
+        self._persist_after_external_mutation(prompt)
         return prompt
 
     def trigger(self, prompt_id: str, *, identity: Identity) -> ScheduledPrompt:
@@ -292,10 +304,15 @@ class PromptService:
             "schedule_status": ScheduleStatus.COMPLETED,
             "completed_at": datetime.now(timezone.utc),
         })
-        self._update_or_warn(prompt)
+        self._persist_best_effort(prompt)
 
-    def _update_or_warn(self, prompt: ScheduledPrompt) -> None:
-        """Persist prompt and log a warning if the document was not modified."""
+    def _persist_after_external_mutation(self, prompt: ScheduledPrompt) -> None:
+        """Persist prompt after Temporal side effects.  Raises on failure."""
+        if not self._repo.update(prompt):
+            raise PromptNotFoundError(prompt.id)
+
+    def _persist_best_effort(self, prompt: ScheduledPrompt) -> None:
+        """Persist prompt state change; log a warning if the document vanished."""
         if not self._repo.update(prompt):
             logger.warning(
                 "repo.update returned False for prompt %s — document may have been deleted concurrently",
