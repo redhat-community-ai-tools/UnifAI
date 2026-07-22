@@ -128,8 +128,14 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
   // Helper: Cache a validation result and update status
   // Automatically triggers ancestor revalidation if status changed
   const cacheValidationResult = useCallback((rid: string, result: ElementValidationResult) => {
-    // Get previous status before updating (use ref to get latest)
-    const previousStatus = validationCacheRef.current.get(rid)?.result.is_valid ? 'valid' : 'invalid';
+    // Get previous status before updating (use ref to get latest). Must stay
+    // `undefined` when there is no prior cache entry — otherwise a resource's
+    // very first validation would be misread as a "change" from invalid to
+    // valid, triggering a needless (and cascading) ancestor revalidation.
+    const previousCached = validationCacheRef.current.get(rid);
+    const previousStatus: ValidationStatus | undefined = previousCached
+      ? (previousCached.result.is_valid ? 'valid' : 'invalid')
+      : undefined;
     const newStatus: ValidationStatus = result.is_valid ? 'valid' : 'invalid';
     
     // Check if status actually changed (not first-time validation, and status differs)

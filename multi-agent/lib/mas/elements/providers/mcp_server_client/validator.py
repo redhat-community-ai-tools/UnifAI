@@ -91,6 +91,24 @@ class McpProviderValidator(BaseElementValidator):
                 auth_cred = context.auth_service.bind(
                     lookup_user, lookup_id, scheme_type=scheme_type,
                 )
+                # The saved `server_identifier` can be empty or stale (e.g. it
+                # was never persisted back to the resource after sign-in, or
+                # fell back to the raw mcp_url) even though the user is
+                # genuinely signed in — OAuth credentials are stored under the
+                # real issuer, not the MCP URL. Rediscover the issuer the same
+                # way the sign-in status widget (auth.discovery) does before
+                # concluding the resource is unauthenticated.
+                if auth_cred is None and is_sign_in:
+                    try:
+                        detection = await context.auth_service.discover(str(config.mcp_url))
+                    except Exception:
+                        detection = None
+                    if detection and detection.server_identifier and detection.server_identifier != lookup_id:
+                        auth_cred = context.auth_service.bind(
+                            lookup_user,
+                            detection.server_identifier,
+                            scheme_type=detection.protocol_type or scheme_type,
+                        )
 
         try:
             await self._factory.create_async(config, auth_credential=auth_cred)

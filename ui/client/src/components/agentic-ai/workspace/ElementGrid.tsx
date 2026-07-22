@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { motion } from 'framer-motion';
 import { 
   Settings, 
@@ -13,18 +12,21 @@ import {
   Users,
   Check,
   AlertTriangle,
+  Clock,
 } from 'lucide-react';
 import SimpleTooltip from '@/components/shared/SimpleTooltip';
 import { useShared } from '@/contexts/SharedContext';
 import { useAgenticAI } from '@/contexts/AgenticAIContext';
 import { useAuth } from "@/contexts/AuthContext";
 import { useView } from "@/contexts/ViewContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useTeamEditLockPoll } from "@/hooks/use-team-edit-lock-poll";
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
 import { ElementValidationResult } from '../../../types/validation';
 import { ElementData } from './ElementData';
 import { ValidationResultModal } from './ValidationResultModal';
 import { BuiltInElementCard } from './BuiltInElementCard';
+import { deriveThemeColors } from '@/lib/colorUtils';
 import { cn } from "@/lib/utils";
 
 interface ElementGridProps {
@@ -35,71 +37,6 @@ interface ElementGridProps {
   onDeleteElement: (rid: string) => void;
   onConfigureBuiltin?: (rid: string, config: Record<string, any>) => Promise<any>;
   elementSchema?: ElementSchema | null;
-}
-
-const FIELD_PRIORITY: Record<string, number> = {
-  mcp_url: 1, model_name: 1, base_url: 2,
-  llm: 2, tools: 3, providers: 3, tool_names: 3,
-  temperature: 4, max_tokens: 4, transport_type: 4,
-  system_message: 5, retries: 6, verify_ssl: 6,
-};
-
-const HIDDEN_CARD_FIELDS = new Set([
-  "type", "server_identifier", "scheme_type", "credential_token",
-  "sign_in", "cwd", "env_vars",
-]);
-
-function sortFieldsByPriority(keys: string[]): string[] {
-  return [...keys].sort((a, b) => {
-    const pa = FIELD_PRIORITY[a] ?? 99;
-    const pb = FIELD_PRIORITY[b] ?? 99;
-    return pa - pb;
-  });
-}
-
-function smartFormatValue(
-  key: string,
-  value: any,
-  getResourceName: (ref: string) => string,
-): string {
-  if (value == null || value === "") return "—";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "number") return String(value);
-
-  if (typeof value === "string") {
-    if (value.startsWith("$ref:")) {
-      const name = getResourceName(value);
-      return name || value.replace("$ref:", "").slice(0, 8) + "…";
-    }
-    if (value.length > 40) return value.slice(0, 37) + "…";
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "None";
-    const items = value.map((v) => {
-      if (typeof v === "string") {
-        if (v.startsWith("$ref:")) return getResourceName(v) || v.replace("$ref:", "").slice(0, 8);
-        return v;
-      }
-      if (v?.$ref) return getResourceName(v) || "ref";
-      if (v?.name) return v.name;
-      return "…";
-    });
-    if (items.length <= 2) return items.join(", ");
-    return `${items[0]}, ${items[1]} +${items.length - 2} more`;
-  }
-
-  if (typeof value === "object") {
-    const keys = Object.keys(value);
-    if (keys.length === 0) return "None";
-    if (value.$ref) return getResourceName(value) || "ref";
-    if (value.name) return value.name;
-    const label = key.includes("header") ? "header" : "entry";
-    return `${keys.length} ${label}${keys.length !== 1 ? "s" : ""}`;
-  }
-
-  return String(value);
 }
 
 export const ElementGrid: React.FC<ElementGridProps> = ({
@@ -118,8 +55,20 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   const { openShareForItem } = useShared();
   const { user } = useAuth();
   const { viewMode, selectedTeam } = useView();
+  const { primaryHex } = useTheme();
+  // `primaryLight` is a lightened tint of the site's selected accent color —
+  // using the raw `primary` color for small icon glyphs/text can be nearly
+  // unreadable on the dark background for darker accent choices (e.g. red).
+  const { primaryLight } = useMemo(() => deriveThemeColors(primaryHex), [primaryHex]);
   const isTeamWorkspace = viewMode === "team" && !!selectedTeam;
-  const nonBuiltInElements = elements.filter(el => el.ownership !== 'builtin');
+  // Memoized on `elements` so this array is only recreated when the element
+  // list itself changes — not on every re-render (e.g. from lock polling or
+  // modal state) — otherwise the validation effect below would re-fire and
+  // re-trigger network calls on every unrelated render.
+  const nonBuiltInElements = useMemo(
+    () => elements.filter(el => el.ownership !== 'builtin'),
+    [elements],
+  );
   const resourceEditLocks = useTeamEditLockPoll(
     selectedTeam?.id,
     "resource",
@@ -127,19 +76,28 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
     isTeamWorkspace,
   );
   const { 
-    getResourceName, 
     getValidationResult, 
     getValidationStatus,
     validateResources 
   } = useAgenticAI();
 
+  // Stable string key of the rid set — used as the effect dependency instead
+  // of the `nonBuiltInElements` array so a re-render that produces an
+  // equivalent-but-new array (or object) doesn't re-trigger validation calls.
+  const nonBuiltInRidsKey = useMemo(
+    () => nonBuiltInElements.map(el => el.rid).join(','),
+    [nonBuiltInElements],
+  );
+
   useEffect(() => {
-    const realElements = elements.filter(el => el.ownership !== 'builtin');
-    if (realElements.length > 0) {
-      const rids = realElements.map(el => el.rid);
-      validateResources(rids);
+    // Built-ins are excluded here: many ship without live credentials/connectivity
+    // configured in a given environment, so probing them by default surfaces
+    // "invalid" for resources that are actually fine, and that failure cascades
+    // to anything depending on them. Only validate real, user-created resources.
+    if (nonBuiltInRidsKey) {
+      validateResources(nonBuiltInRidsKey.split(','));
     }
-  }, [elements, validateResources]);
+  }, [nonBuiltInRidsKey, validateResources]);
 
   const handleViewDetails = (element: ElementInstance) => {
     setSelectedElement(element);
@@ -226,7 +184,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {elements.map((element, index) => {
         const isBuiltIn = element.ownership === 'builtin';
 
@@ -235,8 +193,10 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
             <motion.div
               key={element.rid}
               initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.1 }}
+              animate={{ opacity: 1, y: 0, transition: { duration: 0.3, delay: index * 0.1 } }}
+              whileHover={{ y: -4, scale: 1.02, transition: { duration: 0.15, delay: 0 } }}
+              whileTap={{ scale: 0.98, transition: { duration: 0.1, delay: 0 } }}
+              className="h-full"
             >
               <BuiltInElementCard
                 element={element}
@@ -261,34 +221,37 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
           ? "unknown"
           : (lockHolder as any)?.displayName?.trim() || (lockHolder as any)?.userId || "another teammate";
 
-        const allConfigKeys = element.config ? Object.keys(element.config) : [];
-        const displayableKeys = sortFieldsByPriority(
-          allConfigKeys.filter(k => !HIDDEN_CARD_FIELDS.has(k))
-        );
-
         return (
         <motion.div
           key={element.rid}
           initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: index * 0.1 }}
+          animate={{ opacity: 1, y: 0, transition: { duration: 0.3, delay: index * 0.1 } }}
+          whileHover={{ y: -8, scale: 1.03, transition: { duration: 0.15, delay: 0 } }}
+          whileTap={{ scale: 0.97, transition: { duration: 0.1, delay: 0 } }}
+          className="h-full"
         >
-              <Card className="bg-background-card shadow-card border-gray-800 h-full flex flex-col">
-                <CardHeader className="py-4 px-6 border-b border-gray-800">
-                  <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <FileText className="h-5 w-5 flex-shrink-0 text-primary" />
-                      <CardTitle className="text-lg font-heading truncate">
+              <Card
+                className="group relative bg-background-card border border-white/10 h-full flex flex-col cursor-pointer transition-all duration-300 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10"
+                onClick={() => handleViewDetails(element)}
+              >
+                <CardHeader className="py-3.5 px-4 border-b border-white/5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 transition-colors duration-300 group-hover:bg-primary/20">
+                        <FileText className="h-4 w-4" style={{ color: primaryLight }} />
+                      </div>
+                      <CardTitle className="text-lg font-heading truncate leading-tight min-w-0" title={element.name || undefined}>
                         {element.name || `${elementType.name} Instance`}
                       </CardTitle>
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                    <div className="flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                       {renderValidationStatus(element.rid)}
                       <SimpleTooltip content={<p>Share this resource</p>}>
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          className="text-gray-400 hover:text-blue-400 hover:bg-blue-500/10"
+                          className="h-8 w-8 p-0 text-gray-400 hover:text-[var(--share-icon-accent)] hover:bg-primary/10"
+                          style={{ '--share-icon-accent': primaryLight } as React.CSSProperties}
                           onClick={() => handleShareElement(element)}
                         >
                           <Users className="h-4 w-4" />
@@ -298,7 +261,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          className="text-gray-400 hover:text-red-400"
+                          className="h-8 w-8 p-0 text-gray-400 hover:text-red-400"
                           onClick={() => onDeleteElement(element.rid)}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -308,78 +271,29 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
                   </div>
                 </CardHeader>
                 
-                <CardContent className="p-4 flex-grow">
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-xs text-gray-500">ID:</span>
-                      <span className="text-xs font-mono text-gray-300">
-                        {element.rid.slice(0, 8)}...
+                <CardContent className="p-4 flex-grow flex flex-col justify-center gap-2">
+                  {(element.version || element.updated) && (
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                      <Clock className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">
+                        {element.version && `v${element.version}`}
+                        {element.version && element.updated && " · "}
+                        {element.updated && new Date(element.updated).toLocaleDateString()}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-xs text-gray-500">Type:</span>
-                      <Badge variant="outline" className="text-xs">
-                        {elementType.type}
-                      </Badge>
-                    </div>
-                    {element.version && (
-                      <div className="flex justify-between">
-                        <span className="text-xs text-gray-500">Version:</span>
-                        <span className="text-xs text-gray-300">v{element.version}</span>
-                      </div>
-                    )}
-                    {element.updated && (
-                      <div className="flex justify-between">
-                        <span className="text-xs text-gray-500">Last Updated:</span>
-                        <span className="text-xs text-gray-300">
-                          {new Date(element.updated).toLocaleDateString()}
-                        </span>
-                      </div>
-                    )}
-                    {element.contributed_by && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500">Contributed by:</span>
-                        <span className="inline-flex items-center gap-1 text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
-                          <Users className="h-2.5 w-2.5" />
-                          {element.contributed_by}
-                        </span>
-                      </div>
-                    )}
-
-                    {element.config && displayableKeys.length > 0 && (
-                      <div className="mt-3">
-                        <span className="text-xs text-gray-500">Configuration:</span>
-                        <div className="text-xs text-gray-300 mt-1 space-y-1">
-                          {displayableKeys
-                            .slice(0, 4)
-                            .map((key) => {
-                              const fieldSchema = elementSchema?.config_schema?.properties?.[key];
-                              const rawValue = element.config[key];
-                              const isSecret = fieldSchema?.hints?.secret?.hint_type === "secret";
-                              const display = isSecret
-                                ? "••••••••"
-                                : smartFormatValue(key, rawValue, getResourceName);
-                              return (
-                                <div key={key} className="flex justify-between gap-2">
-                                  <span className="text-gray-500 flex-shrink-0">{key}:</span>
-                                  <span className="text-gray-300 truncate text-right" title={display}>
-                                    {display}
-                                  </span>
-                                </div>
-                              );
-                          })}
-                          {displayableKeys.length > 4 && (
-                            <div className="text-gray-500 text-center">
-                              +{displayableKeys.length - 4} more...
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  )}
+                  {element.contributed_by && (
+                    <span className="inline-flex items-center gap-1 text-xs text-primary bg-primary/10 px-2 py-0.5 rounded-full w-fit">
+                      <Users className="h-3 w-3" />
+                      {element.contributed_by}
+                    </span>
+                  )}
+                  {!element.version && !element.updated && !element.contributed_by && (
+                    <p className="text-xs text-gray-600 italic">Click to view full details</p>
+                  )}
                 </CardContent>
 
-                <CardFooter className="px-6 py-3 border-t border-gray-800 bg-background-dark">
+                <CardFooter className="px-4 py-3 border-t border-white/5" onClick={(e) => e.stopPropagation()}>
                     <div className="flex gap-2 w-full">
                       <SimpleTooltip
                         collisionPadding={12}
@@ -403,26 +317,27 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
                             variant="outline"
                             size="sm"
                             className={cn(
-                              "flex flex-1 items-center justify-center gap-2",
+                              "flex flex-1 items-center justify-center gap-1.5 h-9 text-sm border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50",
                               (lockedByOther || lockUnknown) && "pointer-events-none",
                             )}
                             onClick={() => onEditElement(element)}
                             disabled={lockedByOther || lockUnknown}
                           >
-                            <Settings className="h-3 w-3" />
+                            <Settings className="h-3.5 w-3.5" />
                             Configure
                           </Button>
                         </span>
                       </SimpleTooltip>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="flex-1 flex items-center justify-center gap-2"
-                        onClick={() => handleViewDetails(element)}
-                      >
-                        <Eye className="h-3 w-3" />
-                        Details
-                      </Button>
+                      <SimpleTooltip content={<p>View details</p>}>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-9 w-9 p-0 flex-shrink-0 flex items-center justify-center border-white/10 text-gray-400 hover:text-gray-200 hover:bg-white/5 hover:border-white/20"
+                          onClick={() => handleViewDetails(element)}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </SimpleTooltip>
                     </div>
                 </CardFooter>
               </Card>

@@ -462,6 +462,11 @@ export const useWorkspaceData = () => {
           config,
         });
 
+        // The resource's validation status may have flipped (e.g. a
+        // previously-missing token is now set) — the cached badge on the
+        // card would otherwise keep showing the pre-save status forever.
+        revalidateResourceAndAncestors(resourceId);
+
         toast({
           title: "Success",
           description: "Built-in resource configured successfully",
@@ -485,7 +490,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, USER_ID, identityType, revalidateResourceAndAncestors],
   );
 
   // Create a built-in resource directly (admin only).

@@ -56,6 +56,14 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     let cancelled = false;
     setIsLoadingSchema(true);
     setUserOverlay(null);
+    // This component stays mounted across dialog open/close (Radix only
+    // toggles visibility), so without this, stale per-field validation
+    // results from a previous session would leak in and could let Save
+    // stay enabled — or stay wrongly disabled — before anything in the
+    // freshly-opened form has actually been (re)validated.
+    setFieldValidationStates({});
+    setItemValidationStates({});
+    setActionOutputs({});
 
     (async () => {
       try {
@@ -303,6 +311,11 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
   };
 
   const handleSave = async () => {
+    // Guard against native form submission (e.g. pressing Enter in a text
+    // field) bypassing the disabled Save button — same invariant enforced
+    // by the button's `disabled` prop below.
+    if (!allValidationsPassed) return;
+
     setIsSaving(true);
     try {
       const config: Record<string, any> = {};
