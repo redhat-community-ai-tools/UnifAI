@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { ExternalLink, Loader2 } from "lucide-react";
 import { getPromptRuns, PromptRunResponse } from "@/api/prompts";
+import { parseUtcDate } from "@/utils/dateUtils";
 
 const STATUS_BADGE: Record<string, string> = {
   COMPLETED: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
@@ -15,7 +16,7 @@ function badgeClass(status: string): string {
 }
 
 function formatTime(iso: string): string {
-  const d = new Date(iso);
+  const d = parseUtcDate(iso);
   const now = new Date();
   const isToday =
     d.getFullYear() === now.getFullYear() &&

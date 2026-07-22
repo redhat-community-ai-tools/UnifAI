@@ -36,19 +36,20 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { AddFlowModal } from "@/components/shared/SessionModals";
 import type { FlowObject } from "@/components/agentic-ai/graphs/interfaces";
 import { useScheduledBlueprintCounts } from "@/hooks/use-scheduled-blueprints";
+import { parseUtcDate, cronTimeToLocal } from "@/utils/dateUtils";
 
 const MAX_ACTIVE_SCHEDULES_PER_WORKFLOW = 10;
 
 // ---------------------------------------------------------------------------
-// Schedule label derivation
+// Schedule label derivation – times are converted to the user's local timezone
 // ---------------------------------------------------------------------------
 
 const DAY_CRON_NAMES = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 function describeSchedule(schedule: ScheduleDefinitionInput): string {
   if (schedule.remaining_actions === 1 && schedule.start_at) {
-    const d = new Date(schedule.start_at);
-    return d.toLocaleString("en-GB", {
+    const d = parseUtcDate(schedule.start_at);
+    return d.toLocaleString(undefined, {
       day: "2-digit", month: "2-digit", year: "numeric",
       hour: "2-digit", minute: "2-digit",
     });
@@ -79,11 +80,12 @@ function describeSchedule(schedule: ScheduleDefinitionInput): string {
   }
 
   if (schedule.cron_expression) {
+    const tz = schedule.timezone || "UTC";
     const parts = schedule.cron_expression.split(" ");
     if (parts.length === 5) {
       const [min, hour, dom, , dow] = parts;
-      const timeStr = `${hour.padStart(2, "0")}:${min.padStart(2, "0")}`;
-      if (dom === "*" && dow === "*") return `Daily at ${timeStr}`;
+      const localTime = cronTimeToLocal(parseInt(hour, 10), parseInt(min, 10), tz);
+      if (dom === "*" && dow === "*") return `Daily at ${localTime}`;
       if (dom === "*" && dow !== "*") {
         const dayTokens = dow.split(",");
         const labels = dayTokens.map((t) => {
@@ -91,10 +93,10 @@ function describeSchedule(schedule: ScheduleDefinitionInput): string {
           if (!isNaN(num)) return DAY_CRON_NAMES[num]?.slice(0, 3) ?? t;
           return t.slice(0, 3);
         });
-        if (labels.length === 1) return `Weekly on ${labels[0]} at ${timeStr}`;
-        return `Weekly on ${labels.join(", ")} at ${timeStr}`;
+        if (labels.length === 1) return `Weekly on ${labels[0]} at ${localTime}`;
+        return `Weekly on ${labels.join(", ")} at ${localTime}`;
       }
-      if (dom !== "*" && dow === "*") return `Monthly on the ${dom} at ${timeStr}`;
+      if (dom !== "*" && dow === "*") return `Monthly on the ${dom} at ${localTime}`;
     }
     return schedule.cron_expression;
   }
@@ -443,12 +445,15 @@ export default function ScheduledWorkflows() {
       accessorFn: (row) => describeSchedule(row.schedule),
       id: "schedule",
       header: "Schedule",
-      cell: ({ row }) => (
-        <div className="leading-tight">
-          <div className="text-sm">{describeSchedule(row.original.schedule)}</div>
-          <div className="text-xs text-gray-500">{row.original.schedule.timezone || "UTC"}</div>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        return (
+          <div className="leading-tight">
+            <div className="text-sm">{describeSchedule(row.original.schedule)}</div>
+            <div className="text-xs text-gray-500">{tz}</div>
+          </div>
+        );
+      },
       meta: { align: "left" as const },
       enableColumnFilter: false,
     },

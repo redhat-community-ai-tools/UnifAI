@@ -2,6 +2,7 @@ import React from "react";
 import { useLocation } from "wouter";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import { RunStats } from "@/api/prompts";
+import { parseUtcDate } from "@/utils/dateUtils";
 
 const STATUS_COLORS: Record<string, string> = {
   COMPLETED: "bg-emerald-400",
@@ -14,7 +15,7 @@ function dotColor(status: string): string {
 }
 
 function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+  const diff = Date.now() - parseUtcDate(iso).getTime();
   const mins = Math.floor(diff / 60_000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
