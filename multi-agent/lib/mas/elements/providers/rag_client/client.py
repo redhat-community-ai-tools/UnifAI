@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 
 import httpx
 from pydantic import HttpUrl
+from global_utils.constants import INTERNAL_AUTH_HEADER
 
 from .models import (
     AvailableTagsResponse,
@@ -43,11 +44,14 @@ class RagClient:
     DOCS_ENDPOINT = "/api/docs/available.docs.get"
     QUERY_ENDPOINT = "/api/docs/query.match"
 
+    _AUTH_HEADER = INTERNAL_AUTH_HEADER
+
     def __init__(
             self,
             base_url: HttpUrl,
             timeout: float = 30.0,
             headers: Optional[Dict[str, str]] = None,
+            authenticated_user: str = "",
     ):
         """
         Initialize RAG client.
@@ -56,10 +60,13 @@ class RagClient:
             base_url: RAG server base URL
             timeout: Request timeout in seconds
             headers: Optional HTTP headers
+            authenticated_user: User ID for internal auth header
         """
         self._base_url = str(base_url).rstrip("/")
         self._timeout = timeout
-        self._headers = headers or {}
+        self._headers = dict(headers or {})
+        if authenticated_user:
+            self._headers[self._AUTH_HEADER] = authenticated_user
         self._client: Optional[httpx.Client] = None
 
     def __enter__(self) -> "RagClient":
@@ -174,8 +181,6 @@ class RagClient:
             self,
             query: str,
             top_k_results: int = 10,
-            scope: Optional[str] = None,
-            logged_in_user: Optional[str] = None,
             doc_ids: Optional[List[str]] = None,
             tags: Optional[List[str]] = None,
     ) -> QueryMatchResponse:
@@ -185,8 +190,6 @@ class RagClient:
         Args:
             query: Search query string
             top_k_results: Number of top results to return
-            scope: Optional scope filter
-            logged_in_user: Optional logged-in user context
             doc_ids: Optional list of document IDs to filter by
             tags: Optional list of tags to filter by
 
@@ -199,10 +202,6 @@ class RagClient:
             "query": query,
             "top_k_results": top_k_results,
         }
-        if scope:
-            params["scope"] = scope
-        if logged_in_user:
-            params["loggedInUser"] = logged_in_user
         if doc_ids:
             params["docIds"] = doc_ids
         if tags:

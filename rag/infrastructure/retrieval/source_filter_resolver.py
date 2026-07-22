@@ -42,6 +42,7 @@ class SourceFilterResolver:
     def resolve(
         self,
         source_type: str,
+        owner_id: str,
         doc_ids: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
     ) -> Optional[Set[str]]:
@@ -69,6 +70,7 @@ class SourceFilterResolver:
         
         query: Dict[str, Any] = {
             "source_type": source_type.upper(),
+            "upload_by": owner_id,
             "$or": conditions,
         }
         
