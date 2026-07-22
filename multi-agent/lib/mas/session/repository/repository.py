@@ -165,11 +165,6 @@ class SessionRepository(ABC):
         ...
 
     @abstractmethod
-    def count_by_schedule_id(self, schedule_id: str) -> int:
-        """Return the total number of sessions triggered by a given schedule/prompt ID."""
-        ...
-
-    @abstractmethod
     def delete_by_identity(self, identity: Identity) -> int:
         """Delete all sessions owned by *identity*.  Returns the count of deleted documents."""
         ...

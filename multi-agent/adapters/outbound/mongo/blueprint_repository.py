@@ -1,8 +1,10 @@
 import pymongo
+from pymongo.errors import DuplicateKeyError
 from uuid import uuid4
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintSummary
+from mas.blueprints.exceptions import BlueprintDuplicateNameError
 from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.core.enums import ResourceCategory
@@ -46,19 +48,25 @@ class MongoBlueprintRepository(BlueprintRepository):
             "rid_refs": rid_refs,
             "metadata": metadata,
         }
-        self._col.insert_one(doc)
+        try:
+            self._col.insert_one(doc)
+        except DuplicateKeyError:
+            raise BlueprintDuplicateNameError(spec.name)
         return new_id
 
     def update(self, *, blueprint_id: str, spec: BlueprintDraft,
                rid_refs: list[str]) -> bool:
-        res = self._col.update_one(
-            {"blueprint_id": blueprint_id},
-            {"$set": {
-                "spec_dict": spec.model_dump(mode="json"),
-                "rid_refs": rid_refs,
-                "updated_at": datetime.now(timezone.utc),
-            }}
-        )
+        try:
+            res = self._col.update_one(
+                {"blueprint_id": blueprint_id},
+                {"$set": {
+                    "spec_dict": spec.model_dump(mode="json"),
+                    "rid_refs": rid_refs,
+                    "updated_at": datetime.now(timezone.utc),
+                }}
+            )
+        except DuplicateKeyError:
+            raise BlueprintDuplicateNameError(spec.name)
         return res.modified_count == 1
     
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:

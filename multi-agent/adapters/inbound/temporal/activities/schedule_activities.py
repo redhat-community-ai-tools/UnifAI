@@ -40,6 +40,13 @@ class ScheduleActivities:
 
     @activity.defn(name="create_scheduled_session")
     def create_scheduled_session(self, params: ScheduledSessionParams) -> str:
+        if params.idempotency_key:
+            try:
+                self._session_manager.get_record(params.idempotency_key)
+                return params.idempotency_key
+            except KeyError:
+                pass
+
         metadata = SessionMeta(
             source="schedule",
             schedule_id=params.prompt_id,
@@ -49,6 +56,7 @@ class ScheduleActivities:
             identity=params.identity,
             blueprint_id=params.blueprint_id,
             metadata=metadata,
+            run_id=params.idempotency_key,
         )
 
     @activity.defn(name="stage_scheduled_inputs")

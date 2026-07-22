@@ -52,7 +52,7 @@ class InvalidMetadataKeysError(BlueprintError):
 
 class BlueprintDuplicateNameError(BlueprintError):
     """Raised when a blueprint name already exists for the same identity."""
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
         self.message = (
             f"A workflow named '{name}' already exists. "

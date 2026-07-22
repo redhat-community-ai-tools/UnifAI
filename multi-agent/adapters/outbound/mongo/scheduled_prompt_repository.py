@@ -54,6 +54,8 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
         doc = prompt.model_dump(mode="json")
         doc["created_at"] = now
         doc["updated_at"] = now
+        if prompt.completed_at is not None:
+            doc["completed_at"] = prompt.completed_at
         self._col.insert_one(doc)
         return prompt.id
 
@@ -68,6 +70,8 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
         doc = prompt.model_dump(mode="json")
         doc["updated_at"] = now
         doc.pop("created_at", None)
+        if prompt.completed_at is not None:
+            doc["completed_at"] = prompt.completed_at
         res = self._col.update_one(
             {"id": prompt.id},
             {"$set": doc},
@@ -108,8 +112,13 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
             "status": status,
             "started_at": started_at,
         }
-        self._col.update_one(
-            {"id": prompt_id},
+        # Idempotent: the $ne guard ensures that a retry of the same
+        # session_id is a no-op — no double $inc, no duplicate $push.
+        result = self._col.update_one(
+            {
+                "id": prompt_id,
+                "run_stats.recent_statuses.session_id": {"$ne": session_id},
+            },
             {
                 "$inc": {"run_stats.total_runs": 1},
                 "$set": {"run_stats.last_run_at": started_at},
@@ -121,6 +130,20 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
                 },
             },
         )
+        if result.matched_count == 0:
+            # Already recorded — update status in case it changed on retry
+            self._col.update_one(
+                {
+                    "id": prompt_id,
+                    "run_stats.recent_statuses.session_id": session_id,
+                },
+                {
+                    "$set": {
+                        "run_stats.last_run_at": started_at,
+                        "run_stats.recent_statuses.$.status": status,
+                    },
+                },
+            )
 
     @staticmethod
     def _deserialize(doc: dict) -> ScheduledPrompt:

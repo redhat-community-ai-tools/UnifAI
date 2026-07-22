@@ -52,6 +52,12 @@ class ScheduleDefinition(BaseModel):
             raise ValueError("Either interval or cron_expression is required")
         if self.interval and self.cron_expression:
             raise ValueError("Specify interval or cron_expression, not both")
+        if self.interval is not None and self.interval <= timedelta(0):
+            raise ValueError("interval must be strictly positive")
+        if self.remaining_actions is not None and self.remaining_actions < 0:
+            raise ValueError("remaining_actions must be non-negative")
+        if self.start_at and self.end_at and self.start_at >= self.end_at:
+            raise ValueError("start_at must be before end_at")
         return self
 
 

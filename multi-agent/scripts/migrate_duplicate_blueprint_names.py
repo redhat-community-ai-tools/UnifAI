@@ -32,7 +32,7 @@ import pymongo
 from global_utils.utils.util import get_mongo_url
 
 
-def run(apply: bool):
+def run(apply: bool) -> None:
     client = pymongo.MongoClient(get_mongo_url())
     db_name = os.environ.get("MONGO_DB", "UnifAI")
     col = client[db_name]["blueprints"]
@@ -72,14 +72,14 @@ def run(apply: bool):
 
         # Collect all existing names for this identity so we don't collide
         # with names that already exist outside this duplicate group.
-        existing_names = set(
+        existing_names = {
             doc["spec_dict"]["name"]
             for doc in col.find(
                 {"identity.type": g["_id"]["identity_type"],
                  "identity.id": identity_id},
                 {"spec_dict.name": 1},
             )
-        )
+        }
 
         for dup in duplicates:
             counter = 2

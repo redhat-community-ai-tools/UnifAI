@@ -154,9 +154,6 @@ class MongoSessionRepository(SessionRepository):
             {"_id": 0},
         ).sort(self._STARTED_AT_FIELD, pymongo.DESCENDING).limit(limit))
 
-    def count_by_schedule_id(self, schedule_id: str) -> int:
-        return self._col.count_documents({"metadata.schedule_id": schedule_id})
-
     def delete_by_identity(self, identity: Identity) -> int:
         """Delete all sessions owned by the given identity. Returns count."""
         result = self._col.delete_many(identity_q(identity))

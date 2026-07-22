@@ -9,6 +9,14 @@ from abc import ABC, abstractmethod
 from mas.prompts.models import ScheduledPrompt
 
 
+class ScheduleNotFoundError(Exception):
+    """Raised when a schedule does not exist in the external orchestrator."""
+
+    def __init__(self, schedule_id: str) -> None:
+        self.schedule_id = schedule_id
+        super().__init__(f"Schedule not found: {schedule_id}")
+
+
 class SchedulePort(ABC):
 
     @abstractmethod
@@ -29,6 +37,11 @@ class SchedulePort(ABC):
     @abstractmethod
     def delete(self, temporal_schedule_id: str) -> None:
         """Delete a schedule permanently."""
+        ...
+
+    @abstractmethod
+    def update_schedule(self, temporal_schedule_id: str, prompt: ScheduledPrompt) -> None:
+        """Atomically update an existing schedule in-place."""
         ...
 
     @abstractmethod

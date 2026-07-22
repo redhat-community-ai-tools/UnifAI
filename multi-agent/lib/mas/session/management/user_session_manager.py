@@ -59,7 +59,7 @@ class UserSessionManager:
         try:
             doc = self._bp_service.get_blueprint_draft_doc(blueprint_id)
             return doc.spec_dict.get("name", blueprint_id)
-        except (KeyError, Exception):
+        except KeyError:
             return blueprint_id
 
     # ---- Create (lightweight — no graph compilation) ----
@@ -69,8 +69,16 @@ class UserSessionManager:
             identity: Identity,
             blueprint_id: str,
             metadata: SessionMeta = None,
+            *,
+            run_id: str | None = None,
     ) -> str:
-        """Create a session record and return its run_id."""
+        """Create a session record and return its run_id.
+
+        When *run_id* is supplied the caller is requesting idempotent
+        creation (e.g. a Temporal activity retry).  The session repo
+        uses ``upsert=True`` so a duplicate write for the same
+        ``run_id`` harmlessly replaces the existing document.
+        """
         if not self.blueprint_exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
 
@@ -78,7 +86,7 @@ class UserSessionManager:
         if session_meta.source == "schedule" and not session_meta.title:
             bp_name = self.get_blueprint_name(blueprint_id)
             session_meta.title = f"{bp_name} — {datetime.utcnow().strftime('%b %d %H:%M UTC')}"
-        run_id = str(uuid.uuid4())
+        run_id = run_id or str(uuid.uuid4())
         ctx = ExecutionContext(
             session_id=run_id,
             identity=identity,

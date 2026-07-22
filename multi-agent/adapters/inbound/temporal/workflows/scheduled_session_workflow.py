@@ -45,15 +45,23 @@ class ScheduledSessionWorkflow:
 
     @workflow.run
     async def run(self, params: ScheduledSessionParams) -> str:
+        # Deterministic session key — same value on activity retries,
+        # preventing duplicate session creation.
+        idempotent_params = params.model_copy(
+            update={"idempotency_key": str(workflow.uuid())}
+        )
+
         run_id = await workflow.execute_activity(
             "create_scheduled_session",
-            params,
+            idempotent_params,
             start_to_close_timeout=_ACTIVITY_TIMEOUT,
             retry_policy=_ACTIVITY_RETRY,
         )
 
         started_at = workflow.now().isoformat()
 
+        # stage_scheduled_inputs and build_session_workflow_params are
+        # naturally idempotent (overwrite-style writes / pure reads).
         await workflow.execute_activity(
             "stage_scheduled_inputs",
             StageScheduledInputsParams(
@@ -85,6 +93,8 @@ class ScheduledSessionWorkflow:
         except Exception:
             outcome = RunOutcome.FAILED
 
+        # post_execution is idempotent — record_run uses a $ne guard on
+        # session_id so retries neither double-count nor duplicate entries.
         await workflow.execute_activity(
             "post_execution",
             PostExecutionParams(

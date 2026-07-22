@@ -6,6 +6,7 @@ using asyncio.run(), same pattern as TemporalSessionEngine.
 """
 import asyncio
 import logging
+from datetime import timedelta, timezone
 
 from temporalio.client import (
     Schedule,
@@ -15,12 +16,17 @@ from temporalio.client import (
     SchedulePolicy,
     ScheduleSpec,
     ScheduleState,
+    ScheduleUpdate,
+    ScheduleUpdateInput,
 )
 
 from config.app_config import AppConfig
+from temporalio.service import RPCError, RPCStatusCode
+
 from mas.prompts.models import ScheduleOverlapPolicy, ScheduledPrompt
-from mas.prompts.ports import SchedulePort
+from mas.prompts.ports import ScheduleNotFoundError, SchedulePort
 from temporal.client import get_temporal_client
+from temporal.models import ScheduledSessionParams
 
 logger = logging.getLogger(__name__)
 
@@ -46,14 +52,20 @@ class TemporalScheduleAdapter(SchedulePort):
         asyncio.run(self._resume(temporal_schedule_id))
 
     def delete(self, temporal_schedule_id: str) -> None:
-        asyncio.run(self._delete(temporal_schedule_id))
+        try:
+            asyncio.run(self._delete(temporal_schedule_id))
+        except RPCError as exc:
+            if exc.status == RPCStatusCode.NOT_FOUND:
+                raise ScheduleNotFoundError(temporal_schedule_id) from exc
+            raise
+
+    def update_schedule(self, temporal_schedule_id: str, prompt: ScheduledPrompt) -> None:
+        asyncio.run(self._update(temporal_schedule_id, prompt))
 
     def trigger_now(self, temporal_schedule_id: str) -> None:
         asyncio.run(self._trigger(temporal_schedule_id))
 
     async def _create(self, prompt: ScheduledPrompt) -> str:
-        from temporal.models import ScheduledSessionParams
-
         cfg = AppConfig.get_instance()
         client = await get_temporal_client()
 
@@ -108,6 +120,45 @@ class TemporalScheduleAdapter(SchedulePort):
         handle = client.get_schedule_handle(temporal_schedule_id)
         await handle.delete()
 
+    async def _update(self, temporal_schedule_id: str, prompt: ScheduledPrompt) -> None:
+        cfg = AppConfig.get_instance()
+        client = await get_temporal_client()
+        handle = client.get_schedule_handle(temporal_schedule_id)
+
+        spec = self._build_spec(prompt)
+        overlap = _OVERLAP_MAP.get(
+            prompt.schedule.overlap_policy, TemporalOverlapPolicy.SKIP
+        )
+        params = ScheduledSessionParams(
+            prompt_id=prompt.id,
+            blueprint_id=prompt.blueprint_id,
+            identity=prompt.identity,
+            text=prompt.text,
+            inputs=prompt.inputs,
+            source=prompt.source.value,
+        )
+
+        async def _updater(_input: ScheduleUpdateInput) -> ScheduleUpdate:
+            return ScheduleUpdate(
+                schedule=Schedule(
+                    action=ScheduleActionStartWorkflow(
+                        _WORKFLOW_NAME,
+                        params,
+                        id=f"sched-wf-{prompt.id}",
+                        task_queue=cfg.temporal_task_queue,
+                    ),
+                    spec=spec,
+                    policy=SchedulePolicy(overlap=overlap),
+                    state=ScheduleState(
+                        limited_actions=prompt.schedule.remaining_actions is not None,
+                        remaining_actions=prompt.schedule.remaining_actions or 0,
+                        paused=not prompt.schedule.enabled,
+                    ),
+                )
+            )
+
+        await handle.update(_updater)
+
     async def _trigger(self, temporal_schedule_id: str) -> None:
         client = await get_temporal_client()
         handle = client.get_schedule_handle(temporal_schedule_id)
@@ -123,8 +174,7 @@ class TemporalScheduleAdapter(SchedulePort):
             if sched.start_at:
                 total_seconds = int(sched.interval.total_seconds())
                 if total_seconds > 0:
-                    from datetime import timedelta, timezone as tz
-                    epoch_seconds = int(sched.start_at.replace(tzinfo=tz.utc).timestamp()
+                    epoch_seconds = int(sched.start_at.replace(tzinfo=timezone.utc).timestamp()
                                         if sched.start_at.tzinfo is None
                                         else sched.start_at.timestamp())
                     offset = timedelta(seconds=epoch_seconds % total_seconds)

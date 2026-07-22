@@ -126,10 +126,13 @@ function buildScheduleDefinition(
   customConfig?: CustomRecurrenceConfig | null,
   overlapPolicy?: string,
 ): ScheduleDefinitionInput {
-  const tz = timezone === "UTC" ? "UTC" : Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const isUTC = timezone === "UTC";
+  const tz = isUTC ? "UTC" : Intl.DateTimeFormat().resolvedOptions().timeZone;
   const startAt = startDate.toISOString();
-  const M = startDate.getMinutes();
-  const H = startDate.getHours();
+  const M = isUTC ? startDate.getUTCMinutes() : startDate.getMinutes();
+  const H = isUTC ? startDate.getUTCHours() : startDate.getHours();
+  const dayOfMonth = isUTC ? startDate.getUTCDate() : startDate.getDate();
+  const dayOfWeek = isUTC ? startDate.getUTCDay() : startDate.getDay();
 
   const base: ScheduleDefinitionInput = {
     timezone: tz,
@@ -166,7 +169,7 @@ function buildScheduleDefinition(
         }
         break;
       case "month":
-        result.cron_expression = `${M} ${H} ${startDate.getDate()} * *`;
+        result.cron_expression = `${M} ${H} ${dayOfMonth} * *`;
         break;
     }
 
@@ -192,9 +195,9 @@ function buildScheduleDefinition(
     case "every_day":
       return { ...base, cron_expression: `${M} ${H} * * *` };
     case "every_week":
-      return { ...base, cron_expression: `${M} ${H} * * ${startDate.getDay()}` };
+      return { ...base, cron_expression: `${M} ${H} * * ${dayOfWeek}` };
     case "every_month":
-      return { ...base, cron_expression: `${M} ${H} ${startDate.getDate()} * *` };
+      return { ...base, cron_expression: `${M} ${H} ${dayOfMonth} * *` };
     default:
       return { ...base, interval: "PT1H", remaining_actions: 1 };
   }
@@ -604,9 +607,13 @@ export default function SchedulePromptModal({
   const combinedDateTime = useMemo(() => {
     const [hours, minutes] = time.split(":").map(Number);
     const d = new Date(startDate);
-    d.setHours(hours, minutes, 0, 0);
+    if (timezone === "UTC") {
+      d.setUTCHours(hours, minutes, 0, 0);
+    } else {
+      d.setHours(hours, minutes, 0, 0);
+    }
     return d;
-  }, [startDate, time]);
+  }, [startDate, time, timezone]);
 
   const handleRecurrenceChange = useCallback((value: string) => {
     const v = value as RecurrenceOption;

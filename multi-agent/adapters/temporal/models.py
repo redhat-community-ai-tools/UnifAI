@@ -19,6 +19,7 @@ from mas.graph.models.step_context import StepContext
 from mas.graph.state.graph_state import GraphState
 from mas.core.execution_context import ExecutionContext
 from mas.core.identity import Identity
+from mas.prompts.models import PromptSource
 
 
 # ── Workflow params ──────────────────────────────────────────────────
@@ -102,7 +103,8 @@ class ScheduledSessionParams(BaseModel):
     identity: Identity
     text: str = ""
     inputs: Dict[str, Any] = Field(default_factory=dict)
-    source: str = "manual"
+    source: PromptSource = PromptSource.MANUAL
+    idempotency_key: Optional[str] = None
 
 
 class StageScheduledInputsParams(BaseModel):

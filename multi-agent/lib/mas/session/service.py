@@ -42,15 +42,21 @@ class SessionService:
         identity: Identity,
         blueprint_id: str,
         metadata: Dict[str, Any] | SessionMeta | None = None,
+        *,
+        run_id: str | None = None,
     ) -> str:
         """
         Create a new session record and return its run_id.
         Lightweight — no graph compilation or blueprint resolution.
+
+        When *run_id* is supplied the session is created with that
+        deterministic key, making the call safe under activity retries.
         """
         return self._manager.create_session(
             identity=identity,
             blueprint_id=blueprint_id,
             metadata=SessionMeta.model_validate(metadata or {}),
+            run_id=run_id,
         )
 
     # ---- Two-phase execution entry points ----
@@ -257,7 +263,7 @@ class SessionService:
         in a single round-trip.
         """
         record = self._manager.get_record(session_id)
-        if record.identity != identity:
+        if not record.identity.owns(identity):
             raise PermissionError(
                 f"Session {session_id} not owned by {identity.id}"
             )
