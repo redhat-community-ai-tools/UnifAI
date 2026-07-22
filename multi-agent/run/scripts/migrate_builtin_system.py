@@ -1,7 +1,6 @@
 """
 Migration script: Transition from legacy builtin_status to the new ownership/visibility model.
 
-
 Steps performed:
 1. All existing resources with builtin_status != None get ownership="builtin" + visibility mapped.
 2. All existing resources with builtin_status == None get ownership="custom".
@@ -95,17 +94,30 @@ def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool
             continue
 
         resource_id = doc["_id"]
-        configurable_keys = doc.get("configurable_keys", [])
+        # Legacy per-resource allow-list of overridable field names. Only
+        # migrate values for fields still on this list — carrying over
+        # stale/no-longer-configurable keys would let them silently
+        # override the current cfg_dict at resolve() time.
+        configurable_keys = set(doc.get("configurable_keys") or [])
 
         for identity_key, config_values in user_configs.items():
             fields = {}
             for field_name, value in config_values.items():
-                if value is not None:
-                    fields[field_name] = value
+                if value is None:
+                    continue
+                if configurable_keys and field_name not in configurable_keys:
+                    continue
+                fields[field_name] = value
 
+            # ``_id`` must match ``config_id`` — MongoBuiltinUserConfigRepository
+            # stores/looks up documents by ``_id`` = ``config_id`` (see
+            # ``save``/``get_by_id``); using two independently generated
+            # UUIDs here would make migrated overlays permanently
+            # unreachable via ``get_by_id()``.
+            config_id = uuid4().hex
             user_config_doc = {
-                "_id": uuid4().hex,
-                "config_id": uuid4().hex,
+                "_id": config_id,
+                "config_id": config_id,
                 "resource_id": resource_id,
                 "identity_key": identity_key,
                 "fields": fields,

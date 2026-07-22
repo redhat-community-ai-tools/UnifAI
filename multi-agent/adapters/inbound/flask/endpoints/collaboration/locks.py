@@ -3,33 +3,19 @@ Flask collaboration endpoints — team-scoped workspace edit locks.
 """
 import logging
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, jsonify
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 
 from inbound.flask.decorators import with_authenticated_user
+from inbound.flask.endpoints._collaboration_shared import (
+    collaboration_service_or_error as _collab_service,
+    holder_to_json as _holder_to_json,
+)
 
 logger = logging.getLogger(__name__)
 
 collaboration_locks_bp = Blueprint("collaboration_locks", __name__)
-
-
-def _collab_service():
-    svc = current_app.container.collaboration_service
-    if svc is None:
-        return None, (jsonify(
-            {"error": "Collaboration service not available - Redis is not configured"}
-        ), 501)
-    return svc, None
-
-
-def _holder_to_json(holder):
-    if holder is None:
-        return None
-    return {
-        "userId": holder.user_id,
-        "displayName": holder.display_name or holder.user_id,
-    }
 
 
 @collaboration_locks_bp.route("/edit_lock.acquire", methods=["POST"])

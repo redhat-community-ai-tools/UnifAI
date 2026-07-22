@@ -6,7 +6,7 @@ schema hints) instead of the full element catalog, so these tests exercise
 the actual encryption/overlay/visibility logic in ``ResourcesService``
 without any infrastructure dependencies.
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional, Tuple
 from unittest.mock import Mock
 
 import pytest
@@ -30,12 +30,23 @@ FAKE_TYPE = "fake_provider"
 class FakeProviderConfig(BaseModel):
     """Mimics a real element config: one secret+configurable field via
     schema hints only (no ``ENCRYPTED_FIELDS``, like the real MCP
-    ``bearer_token`` field), one read-only field, one plain field."""
+    ``bearer_token`` field), one configurable field that is sensitive only
+    via ``ENCRYPTED_FIELDS`` (no ``SecretHint``, like the real ``api_key``
+    field on some LLM/provider configs), one read-only field, one plain
+    field."""
+
+    ENCRYPTED_FIELDS: ClassVar[Tuple[str, ...]] = ("api_key",)
 
     bearer_token: Optional[str] = Field(
         default=None,
         json_schema_extra=combine_hints(
             SecretHint(),
+            ReadOnlyHint(read_only=False),
+        ),
+    )
+    api_key: Optional[str] = Field(
+        default=None,
+        json_schema_extra=combine_hints(
             ReadOnlyHint(read_only=False),
         ),
     )

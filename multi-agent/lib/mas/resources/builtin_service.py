@@ -117,8 +117,11 @@ class BuiltinResourceService:
         configurable_keys, sensitive_keys = self._fields.scan_schema_hints(
             resource.category, resource.type
         )
+        model_cls = self.element_registry.get_schema(
+            ResourceCategory(resource.category), resource.type
+        )
         filtered = {k: v for k, v in user_config.fields.items() if k in configurable_keys}
-        return self._fields.decrypt_config_fields(filtered, sensitive_keys)
+        return self._fields.decrypt_config_fields(filtered, sensitive_keys, model_cls)
 
     def configure_builtin(
         self,
@@ -169,7 +172,7 @@ class BuiltinResourceService:
         validated_dump = cfg_model.model_dump(mode="json")
         validated = {k: validated_dump[k] for k in filtered if k in validated_dump}
 
-        encrypted = self._fields.encrypt_config_fields(validated, sensitive_keys)
+        encrypted = self._fields.encrypt_config_fields(validated, sensitive_keys, model_cls)
 
         key = identity_to_key(identity)
         existing = self._builtin_user_config_repo.get(rid, key)
@@ -218,8 +221,11 @@ class BuiltinResourceService:
         if not user_config:
             return {}
 
+        model_cls = self.element_registry.get_schema(
+            ResourceCategory(resource.category), resource.type
+        )
         overlay = {k: v for k, v in user_config.fields.items() if k in configurable_keys}
-        return self._fields.decrypt_config_fields(overlay, sensitive_keys)
+        return self._fields.decrypt_config_fields(overlay, sensitive_keys, model_cls)
 
     # ---------- Admin lifecycle ----------
 

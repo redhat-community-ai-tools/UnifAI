@@ -83,10 +83,19 @@ class ResourceFieldEncryption:
         self,
         config: Dict[str, Any],
         sensitive_keys: set,
+        model_cls: Optional[type] = None,
     ) -> Dict[str, Any]:
-        """Encrypt values of fields identified as sensitive by schema hints."""
+        """Encrypt values of fields identified as sensitive.
+
+        Unions schema-hint-derived ``sensitive_keys`` with the config model's
+        declared ``ENCRYPTED_FIELDS`` (when ``model_cls`` is provided), the
+        same two sources honored by ``encrypt_fields`` — keeping per-identity
+        overlay encryption consistent with base ``cfg_dict`` encryption.
+        """
         if not self._cipher:
             return config
+        if model_cls is not None:
+            sensitive_keys = sensitive_keys | set(getattr(model_cls, "ENCRYPTED_FIELDS", ()))
         result = {}
         for k, v in config.items():
             if k in sensitive_keys and v:
@@ -99,10 +108,17 @@ class ResourceFieldEncryption:
         self,
         config: Dict[str, Any],
         sensitive_keys: set,
+        model_cls: Optional[type] = None,
     ) -> Dict[str, Any]:
-        """Decrypt values of fields identified as sensitive by schema hints."""
+        """Decrypt values of fields identified as sensitive.
+
+        See ``encrypt_config_fields`` for why ``model_cls`` is unioned in —
+        decryption must recognize the same field set that encryption used.
+        """
         if not self._cipher:
             return config
+        if model_cls is not None:
+            sensitive_keys = sensitive_keys | set(getattr(model_cls, "ENCRYPTED_FIELDS", ()))
         result = {}
         for k, v in config.items():
             if k in sensitive_keys and v and isinstance(v, str):

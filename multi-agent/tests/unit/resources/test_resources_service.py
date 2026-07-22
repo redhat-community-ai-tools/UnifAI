@@ -16,6 +16,7 @@ from mas.resources.errors import (
     BuiltinDependentsPublicError,
 )
 from mas.resources.models import Resource
+from mas.resources.builtin_models import identity_to_key
 
 from tests.unit.resources.conftest import FAKE_CATEGORY, FAKE_TYPE
 
@@ -209,6 +210,23 @@ class TestBuiltinOverlay:
         assert resolved_for_alice.bearer_token == "alices-secret"
         assert resolved_for_bob.bearer_token == "default-secret"
         assert resolved_no_identity.bearer_token == "default-secret"
+
+    def test_configure_builtin_encrypts_encrypted_fields_only_secret(self, service, admin_identity, alice):
+        """``api_key`` is sensitive only via ``ENCRYPTED_FIELDS`` (no
+        ``SecretHint``, like some real element configs). Regression test:
+        the per-identity overlay must encrypt it at rest just like the base
+        ``cfg_dict`` does via ``encrypt_fields``, not silently store it in
+        plaintext because schema-hint scanning alone doesn't see it."""
+        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
+
+        service.configure_builtin(doc.rid, identity=alice, config={"api_key": "alices-api-key"})
+
+        stored = service._builtin_user_config_repo.get(doc.rid, identity_to_key(alice))
+        assert stored.fields["api_key"] != "alices-api-key"
+        assert stored.fields["api_key"].startswith("gAAAAAB")
+
+        user_config = service.get_user_config(doc.rid, identity=alice)
+        assert user_config["api_key"] == "alices-api-key"
 
     def test_get_cards_passes_identity_through_for_overlay(self, service, admin_identity, alice):
         doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")

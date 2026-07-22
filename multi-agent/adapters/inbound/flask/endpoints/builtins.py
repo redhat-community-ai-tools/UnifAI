@@ -28,6 +28,11 @@ from inbound.flask.decorators import (
     G_IDENTITY,
     G_IDENTITY_USERNAME,
 )
+from inbound.flask.endpoints._collaboration_shared import (
+    collaboration_service_or_error as _collab_service,
+    holder_to_json as _holder_to_json,
+    reject_if_locked_by_other as _reject_if_locked_by_other,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -424,59 +429,15 @@ def toggle_builtin_visibility(resource_id, available_to_all):
 #
 #  Enforcement: acquiring a lock is cooperative (the UI does it before
 #  opening the edit form), but the mutating endpoints above
-#  (builtin.update, resource.promote, builtin.toggle) call
-#  ``_reject_if_locked_by_other`` and reject with 409 if a *different*
-#  admin currently holds the lock — so the lock is a real, server-enforced
-#  guard against concurrent overwrites, not just a UI hint. There is no
-#  lock check on ``builtin.create`` since a not-yet-created resource has
-#  no entity id to lock.
+#  (builtin.update, resource.promote, builtin.toggle) as well as the
+#  generic resource.update/resource.delete routes in resources.py (which
+#  admins also use to mutate built-in resources) call
+#  ``reject_if_locked_by_other`` (see ``_collaboration_shared.py``) and reject with
+#  409 if a *different* admin currently holds the lock — so the lock is a
+#  real, server-enforced guard against concurrent overwrites, not just a
+#  UI hint. There is no lock check on ``builtin.create`` since a
+#  not-yet-created resource has no entity id to lock.
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _collab_service():
-    svc = current_app.container.collaboration_service
-    if svc is None:
-        return None, (jsonify(
-            {"error": "Collaboration service not available - Redis is not configured"}
-        ), 501)
-    return svc, None
-
-
-def _holder_to_json(holder):
-    if holder is None:
-        return None
-    return {
-        "userId": holder.user_id,
-        "displayName": holder.display_name or holder.user_id,
-    }
-
-
-def _reject_if_locked_by_other(resource_id: str):
-    """Enforce the admin edit lock on mutating built-in endpoints.
-
-    The lock is acquired cooperatively by the UI when an admin opens the
-    edit form, but until now nothing stopped a second request (a stale
-    tab, a direct API call, a client that skipped the acquire step) from
-    mutating the same resource anyway — the lock was advisory only.
-    Returns a ``(response, 409)`` tuple to short-circuit the caller when
-    another admin currently holds the lock, or ``None`` to proceed.
-    Requests are never blocked when collaboration/Redis isn't configured,
-    matching the acquire/release endpoints' 501 fallback behavior.
-    """
-    collab = current_app.container.collaboration_service
-    if collab is None:
-        return None
-    holder = collab.get_admin_edit_lock(resource_id)
-    if holder is None:
-        return None
-    username = getattr(g, G_IDENTITY_USERNAME, "")
-    if holder.user_id == username:
-        return None
-    return jsonify({
-        "error": f"Resource is currently locked for editing by "
-                 f"{holder.display_name or holder.user_id}.",
-        "lockedBy": _holder_to_json(holder),
-    }), 409
-
 
 @builtins_bp.route("/builtin.edit_lock.acquire", methods=["POST"])
 @require_admin_access

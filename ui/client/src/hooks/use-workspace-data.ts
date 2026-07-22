@@ -477,7 +477,10 @@ export const useWorkspaceData = () => {
           variant: "destructive",
         });
         console.error("Error configuring built-in:", err);
-        return null;
+        // Rethrow (rather than returning null) so callers - notably
+        // BuiltinConfigureModal's handleSave - know the save failed and
+        // don't dismiss the modal as if it had succeeded.
+        throw err;
       } finally {
         setIsLoading(false);
       }
