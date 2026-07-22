@@ -103,6 +103,36 @@ For each port (ABC/interface) referenced by scoped files:
 2. Find concrete adapter(s) that implement it
 3. Locate the injection site (composition root / bootstrap / container.py)
 
+### Task 2b: Factory / Builder Call-Site Analysis
+
+For every factory or builder port discovered in Task 2 (e.g. `ApprovalGateFactory`, `ChannelFactory`,
+`SandboxFactory`), find ALL call-sites of its `create()` / `build()` / primary method across the
+codebase — not just in scoped files:
+
+1. **AST / symbol-aware discovery (primary).**
+   Use symbol search, call-hierarchy, or definition-reference tooling (e.g. Go-to-References,
+   `Grep` for the class/type name, then `Read` each hit) to locate every invocation of the
+   factory's primary method. This must catch:
+   - Direct calls: `factory.create(...)`
+   - Aliased references: `make = factory.create; make(...)`
+   - Multiline invocations where method name and arguments span multiple lines
+   - Expression-based calls: `get_factory().create(...)`
+2. **Textual grep fallback (verification).**
+   Run `Grep` for `\.create(`, `\.build(`, and the factory class name across the full codebase.
+   Cross-check against the symbol-aware results from step 1; investigate any hits that appear
+   only in the grep output (they may indicate dynamic or metaprogramming usage).
+3. For each call-site, record:
+   - The file and line number
+   - The **actual arguments** passed (not just parameter names — capture the expressions)
+   - The execution context (foreground runner, Temporal activity, CLI, test, etc.)
+   - Whether a corresponding cleanup call exists (e.g. `factory.remove()`) and where
+4. Compare arguments across call-sites. Flag any divergence where:
+   - One call-site passes `None` or a default for a parameter that another call-site provides a real value
+   - Lifecycle is asymmetric (one path calls `remove()` per-item, another calls it per-session)
+
+This task is critical for detecting cross-execution-path bugs where the same factory is wired
+differently in foreground vs. background (Temporal) vs. test paths.
+
 ### Task 3: Dead Code Scan
 
 Check scoped files for:
@@ -143,6 +173,27 @@ Report: file pairs, divergent field names, majority convention, and provenance.
 ### Task 6: Composition Root Extraction
 
 Read the composition root files relevant to the scoped domains (e.g. `bootstrap/`, `container.py`). Include the relevant bindings/wiring in the evidence pack so judges can verify injection correctness.
+
+### Task 7: Committed Artifacts Scan
+
+Scan scoped files for artifacts that should not be committed:
+- Backup files: `*.bkp`, `*.backup`, `*.orig`, `*.swp`, `*.sav`
+- IDE / editor configs: `.idea/`, `.vscode/settings.json` (unless project-wide)
+- Temporary or debug files: `*.tmp`, `*.log`, `__pycache__/`, `.DS_Store`
+- Docker backup files: `Dockerfile.bkp`, `docker-compose.*.bkp`
+
+Report file path, type (`committed_artifact`), and provenance.
+
+### Task 8: Authorization Pattern Scan
+
+For every new or modified endpoint/controller in scoped files:
+1. Extract the decorator stack (e.g. `@require_session_identity`, `@with_authenticated_user`)
+2. Search the same file for `TODO` comments mentioning auth, permission, or ownership
+3. Compare the decorator stack against sibling endpoints in the same blueprint/router — flag if
+   new endpoints have weaker auth than siblings
+
+Report: file:line, endpoint name, decorators applied, any TODO auth comments found, and sibling
+comparison result.
 
 ## Output Rules
 
