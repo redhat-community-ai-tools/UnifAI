@@ -2,10 +2,13 @@ from typing import Any, Dict, Iterable, Optional, Union, get_origin, get_args
 from .category_builder import CategoryBuilder, BlueprintSpec
 from mas.core.enums import ResourceCategory
 from mas.core.element_deps import ElementBuildContext
+from mas.core.auth.credentials.models import StaticAuthMethod
 from mas.elements.nodes.types import NodeSpec
 from mas.elements.common.exceptions import PluginConfigurationError
 from mas.core.ref.models import Ref
 from mas.core.contracts import SessionRegistry
+
+_STATIC_AUTH_IDS = {m.value for m in StaticAuthMethod}
 
 
 class NodeBuilder(CategoryBuilder):
@@ -38,9 +41,16 @@ class NodeBuilder(CategoryBuilder):
             for name in self._get_ref_field_names(cfg)
         }
 
-        server_id = getattr(cfg, "server_identifier", "")
+        server_id = (getattr(cfg, "server_identifier", "") or "").rstrip("/")
         scheme_type = getattr(cfg, "scheme_type", "")
-        if server_id and deps and deps.auth_service:
+        # Static dropdown values (none/access_token) are propagated into
+        # server_identifier but must not bind OAuth credentials.
+        if (
+            server_id
+            and server_id not in _STATIC_AUTH_IDS
+            and deps
+            and deps.auth_service
+        ):
             ctx_holder = getattr(deps, "execution_ctx", None)
             if ctx_holder:
                 def resolver(_h=ctx_holder) -> str:
