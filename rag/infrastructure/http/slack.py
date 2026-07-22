@@ -114,17 +114,15 @@ def get_user_info(user_id, include_locale):
 @from_query({
     "query": fields.Str(required=True),
     "top_k_results": fields.Int(required=False, load_default=5),
-    "scope": fields.Str(required=False, load_default="public"),
 })
-def query_match(query, top_k_results, scope):
+def query_match(query, top_k_results):
     """Search Slack messages using semantic similarity."""
     try:
         svc = retrieval_service("SLACK")
         results = svc.search(
             query=query,
             limit=top_k_results,
-            scope=scope,
-            user=g.user_id,
+            owner_id=g.user_id,
         )
         
         return jsonify({"search_results": results}), 200

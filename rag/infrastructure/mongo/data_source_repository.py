@@ -21,9 +21,14 @@ class MongoDataSourceRepository(DataSourceRepository):
     def __init__(self, collection: Collection):
         self._col = collection
 
-    def find_by_id(self, source_id: str) -> Optional[DataSource]:
-        """Get source by source_id."""
-        doc = self._col.find_one({"source_id": source_id})
+    def find_by_id(
+        self, source_id: str, upload_by: Optional[str] = None
+    ) -> Optional[DataSource]:
+        """Get source by source_id, optionally scoped to owner."""
+        query: Dict[str, Any] = {"source_id": source_id}
+        if upload_by is not None:
+            query["upload_by"] = upload_by
+        doc = self._col.find_one(query)
         return self._to_model(doc) if doc else None
 
     def find_by_pipeline_id(self, pipeline_id: str) -> Optional[DataSource]:
@@ -35,14 +40,20 @@ class MongoDataSourceRepository(DataSourceRepository):
         self,
         source_type: Optional[str] = None,
         view: DataSourceView = DataSourceView.SUMMARY,
+        upload_by: Optional[str] = None,
     ) -> List[DataSource]:
-        """Get all sources, optionally filtered by type.
+        """Get all sources, optionally filtered by type and owner.
         
         Args:
             source_type: Filter by source type
             view: SUMMARY excludes heavy fields, FULL returns everything
+            upload_by: Filter by owner username
         """
-        query = {"source_type": source_type.upper()} if source_type else {}
+        query: Dict[str, Any] = {}
+        if source_type:
+            query["source_type"] = source_type.upper()
+        if upload_by is not None:
+            query["upload_by"] = upload_by
         
         # Determine projection based on view
         projection = None
@@ -58,6 +69,7 @@ class MongoDataSourceRepository(DataSourceRepository):
         limit: int = 50,
         source_type: Optional[str] = None,
         search: Optional[str] = None,
+        upload_by: Optional[str] = None,
     ) -> PaginatedResult[Dict[str, Any]]:
         """
         Paginated query for sources using the builder.
@@ -71,6 +83,8 @@ class MongoDataSourceRepository(DataSourceRepository):
         
         if source_type:
             builder.with_filter({"source_type": source_type.upper()})
+        if upload_by is not None:
+            builder.with_filter({"upload_by": upload_by})
         
         return builder.documents()
 

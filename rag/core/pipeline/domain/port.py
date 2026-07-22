@@ -18,6 +18,7 @@ class PipelineContext:
     source_type: str
     source_id: str
     source_name: str
+    owner_id: str
     metadata: Dict[str, Any]
 
 
