@@ -23,7 +23,7 @@ from mas.core.hitl.ports import ApprovalGateFactory
 from mas.core.runtime_binder import NodeRuntimeBindings
 from mas.engine.distributed.node_executor import NodeExecutor
 from mas.graph.state.graph_state import GraphState
-from mas.core.tracing.tracing_service import TracingService
+from mas.core.tracing.service import TracingService
 from inbound.temporal.activities.heartbeat import heartbeat
 from temporal.models import ExecuteNodeParams, EvaluateConditionParams
 
