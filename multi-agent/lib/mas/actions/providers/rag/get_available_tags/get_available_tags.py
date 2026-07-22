@@ -10,6 +10,7 @@ from mas.core.enums import ResourceCategory
 
 class GetAvailableTagsInput(BaseActionInput):
     """Input for fetching available tags"""
+    user_id: str = ""
     limit: int = 50
     cursor: Optional[str] = None
     search_regex: Optional[str] = None
@@ -54,6 +55,7 @@ class GetAvailableTagsAction(BaseAction):
                 limit=input_data.limit,
                 cursor=input_data.cursor,
                 search_regex=input_data.search_regex,
+                authenticated_user=input_data.user_id,
             )
 
             return GetAvailableTagsOutput(

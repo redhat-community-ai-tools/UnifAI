@@ -294,6 +294,11 @@ class ShareCloner:
         remapped_model = RefRemapper.remap(cache_data.cfg_model, rid_mapping)
         new_cfg_dict = remapped_model.model_dump(mode="json")
 
+        # Strip doc references on docs_rag retrievers — they belong to the
+        # sender and the recipient cannot access them due to owner scoping.
+        if original_doc.type == "docs_rag" and "docs" in new_cfg_dict:
+            new_cfg_dict["docs"] = None
+
         # Map dependencies to new RIDs
         new_nested_refs = [
             rid_mapping.get(dep_rid, dep_rid) for dep_rid in cache_data.dependencies

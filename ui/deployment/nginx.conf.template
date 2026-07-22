@@ -61,7 +61,14 @@ http {
 
         # Add an HSTS header (Highly recommended for security)
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-        
+
+        # Block external requests carrying the internal auth header.
+        # X-Authenticated-User is reserved for pod-to-pod communication
+        # and must never arrive from outside the cluster.
+        if (${DOLLAR}http_x_authenticated_user) {
+            return 403;
+        }
+
         root         /usr/share/nginx/html  ;
         client_max_body_size 75M;
 

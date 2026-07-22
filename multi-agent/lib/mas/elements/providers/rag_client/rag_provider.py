@@ -47,22 +47,22 @@ class RagProvider:
         self.timeout = timeout
         self.headers = headers or {}
 
-    def _create_client(self) -> RagClient:
-        """Create a new client instance."""
+    def _create_client(self, authenticated_user: str = "") -> RagClient:
+        """Create a new client instance with optional per-request identity."""
         return RagClient(
             base_url=self.base_url,
             timeout=self.timeout,
-            headers=self.headers,
+            headers=dict(self.headers),
+            authenticated_user=authenticated_user,
         )
 
     def query(
             self,
             query: str,
             top_k: Optional[int] = None,
-            scope: Optional[str] = None,
-            logged_in_user: Optional[str] = None,
             doc_ids: Optional[List[str]] = None,
             tags: Optional[List[str]] = None,
+            authenticated_user: str = "",
     ) -> QueryMatchResponse:
         """
         Query vector database for matching documents.
@@ -70,20 +70,17 @@ class RagProvider:
         Args:
             query: Search query
             top_k: Override default top_k results
-            scope: Optional scope filter
-            logged_in_user: Optional user context
             doc_ids: Optional list of document IDs to filter by
             tags: Optional list of tags to filter by
+            authenticated_user: User ID for internal auth header
 
         Returns:
             QueryMatchResponse with matches
         """
-        with self._create_client() as client:
+        with self._create_client(authenticated_user) as client:
             return client.query_match(
                 query=query,
                 top_k_results=top_k or self.top_k,
-                scope=scope,
-                logged_in_user=logged_in_user,
                 doc_ids=doc_ids,
                 tags=tags,
             )
@@ -93,6 +90,7 @@ class RagProvider:
             limit: int = 50,
             cursor: Optional[str] = None,
             search_regex: Optional[str] = None,
+            authenticated_user: str = "",
     ) -> AvailableTagsResponse:
         """
         Fetch available tags.
@@ -101,11 +99,12 @@ class RagProvider:
             limit: Number of tags per page
             cursor: Pagination cursor
             search_regex: Filter pattern
+            authenticated_user: User ID for internal auth header
 
         Returns:
             AvailableTagsResponse with tags and pagination
         """
-        with self._create_client() as client:
+        with self._create_client(authenticated_user) as client:
             return client.get_available_tags(
                 limit=limit,
                 cursor=cursor,
@@ -117,6 +116,7 @@ class RagProvider:
             limit: int = 50,
             cursor: Optional[str] = None,
             search_regex: Optional[str] = None,
+            authenticated_user: str = "",
     ) -> AvailableDocsResponse:
         """
         Fetch available documents.
@@ -125,11 +125,12 @@ class RagProvider:
             limit: Number of documents per page
             cursor: Pagination cursor
             search_regex: Filter pattern
+            authenticated_user: User ID for internal auth header
 
         Returns:
             AvailableDocsResponse with documents and pagination
         """
-        with self._create_client() as client:
+        with self._create_client(authenticated_user) as client:
             return client.get_available_docs(
                 limit=limit,
                 cursor=cursor,
