@@ -63,7 +63,14 @@ class OpenAILLM(BaseLLM):
             provider="openai",
             input_messages=[{"role": m.role.value, "content": m.content} for m in messages[-5:]],
         ) as gen:
-            response = self._client.chat.completions.create(**request)
+            try:
+                response = self._client.chat.completions.create(**request)
+            except Exception as e:
+                gen.update(
+                    level="ERROR",
+                    status_message=f"OpenAI API error: {type(e).__name__}: {e}",
+                )
+                raise
             result_msg = OpenAIMessageConverter.from_openai(response.choices[0].message)
             usage = {}
             if response.usage:
@@ -90,7 +97,15 @@ class OpenAILLM(BaseLLM):
             input_messages=[{"role": m.role.value, "content": m.content} for m in messages[-5:]],
             metadata={"streaming": True},
         ) as gen:
-            for chunk in self._client.chat.completions.create(**request):
+            try:
+                stream_iter = self._client.chat.completions.create(**request)
+            except Exception as e:
+                gen.update(
+                    level="ERROR",
+                    status_message=f"OpenAI API error: {type(e).__name__}: {e}",
+                )
+                raise
+            for chunk in stream_iter:
                 if not chunk.choices:
                     if hasattr(chunk, "usage") and chunk.usage:
                         gen.update(usage_details={

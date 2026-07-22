@@ -53,8 +53,15 @@ class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
                 node_uid=self.uid,
                 node_type=type(self).__name__,
                 display_name=self.display_name,
-            ):
-                self.run(wrapped_state)
+            ) as node_handle:
+                try:
+                    self.run(wrapped_state)
+                except Exception as e:
+                    node_handle.update(
+                        level="ERROR",
+                        status_message=f"Node '{self.display_name}' failed: {type(e).__name__}: {e}",
+                    )
+                    raise
         else:
             self.run(wrapped_state)
 

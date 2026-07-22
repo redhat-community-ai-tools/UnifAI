@@ -149,7 +149,7 @@ class AgentIterator:
             iteration=self._iteration_count,
             strategy=strategy_name,
         )
-        _iter_cm.__enter__()
+        _iter_handle = _iter_cm.__enter__()
 
         try:
             # Get next steps from strategy
@@ -237,6 +237,10 @@ class AgentIterator:
             return self.__next__()
 
         except Exception as e:
+            _iter_handle.update(
+                level="ERROR",
+                status_message=f"Agent iteration {self._iteration_count} failed: {type(e).__name__}: {e}",
+            )
             _iter_cm.__exit__(type(e), e, e.__traceback__)
             error_step = AgentStep(
                 StepType.ERROR,

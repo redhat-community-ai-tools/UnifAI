@@ -68,11 +68,18 @@ class GoogleGenAILLM(BaseLLM):
             provider="google-genai",
             input_messages=[{"role": m.role.value, "content": m.content} for m in messages[-5:]],
         ) as gen:
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=split.contents,
-                config=config,
-            )
+            try:
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=split.contents,
+                    config=config,
+                )
+            except Exception as e:
+                gen.update(
+                    level="ERROR",
+                    status_message=f"Google GenAI API error: {type(e).__name__}: {e}",
+                )
+                raise
             result_msg = GoogleGenAIMessageConverter.from_genai(response)
             usage = {}
             if hasattr(response, "usage_metadata") and response.usage_metadata:
@@ -103,11 +110,19 @@ class GoogleGenAILLM(BaseLLM):
             input_messages=[{"role": m.role.value, "content": m.content} for m in messages[-5:]],
             metadata={"streaming": True},
         ) as gen:
-            for chunk in self._client.models.generate_content_stream(
-                model=self._model,
-                contents=split.contents,
-                config=config,
-            ):
+            try:
+                stream_iter = self._client.models.generate_content_stream(
+                    model=self._model,
+                    contents=split.contents,
+                    config=config,
+                )
+            except Exception as e:
+                gen.update(
+                    level="ERROR",
+                    status_message=f"Google GenAI API error: {type(e).__name__}: {e}",
+                )
+                raise
+            for chunk in stream_iter:
                 if chunk.text:
                     accumulated_text += chunk.text
                     yield chunk.text

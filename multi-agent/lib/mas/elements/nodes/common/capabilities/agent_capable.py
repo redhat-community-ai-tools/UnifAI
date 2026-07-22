@@ -175,6 +175,21 @@ class AgentCapableMixin(Generic[T]):
             self._tool_executor_manager.add_post_execution_hook(hook)
 
         # Tracing hooks for tool execution
+        def _result_looks_like_error(result: Any) -> bool:
+            if result is None:
+                return False
+            text = str(result)
+            if len(text) > 2000:
+                text = text[:2000]
+            lower = text.lower()
+            if '"success": false' in lower or "'success': false" in lower:
+                return True
+            if '"error"' in lower and ('"message"' in lower or "error:" in lower):
+                return True
+            if '"isError": true' in lower or '"is_error": true' in lower:
+                return True
+            return False
+
         tracing = getattr(self, "_tracing", None)
         if tracing and tracing.enabled:
             _tool_trace_stack: dict = {}
@@ -190,10 +205,25 @@ class AgentCapableMixin(Generic[T]):
                 entry = _tool_trace_stack.pop(call_id, None)
                 if entry:
                     cm, handle = entry
-                    handle.update(
-                        output=response.result if response.success else str(response.error),
-                        metadata={"success": response.success},
-                    )
+                    if not response.success:
+                        handle.update(
+                            output=str(response.error),
+                            level="ERROR",
+                            status_message=f"Tool '{response.tool_name}' failed: {response.error}",
+                            metadata={"success": False},
+                        )
+                    elif _result_looks_like_error(response.result):
+                        handle.update(
+                            output=response.result,
+                            level="ERROR",
+                            status_message=f"Tool '{response.tool_name}' returned error response",
+                            metadata={"success": False},
+                        )
+                    else:
+                        handle.update(
+                            output=response.result,
+                            metadata={"success": True},
+                        )
                     cm.__exit__(None, None, None)
 
             self._tool_executor_manager.add_pre_execution_hook(tracing_pre_hook)

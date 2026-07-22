@@ -21,10 +21,12 @@ class ObservationHandle:
         usage_details: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         level: Optional[str] = None,
+        status_message: Optional[str] = None,
     ) -> None:
         self._update_fn(
             output=output,
             usage_details=usage_details,
             metadata=metadata,
             level=level,
+            status_message=status_message,
         )

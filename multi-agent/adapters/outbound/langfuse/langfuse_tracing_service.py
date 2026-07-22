@@ -52,6 +52,7 @@ class LangfuseTracingService:
             usage_details: Optional[Dict[str, Any]] = None,
             metadata: Optional[Dict[str, Any]] = None,
             level: Optional[str] = None,
+            status_message: Optional[str] = None,
         ) -> None:
             kwargs: Dict[str, Any] = {}
             if output is not None:
@@ -62,6 +63,8 @@ class LangfuseTracingService:
                 kwargs["metadata"] = metadata
             if level is not None:
                 kwargs["level"] = level
+            if status_message is not None:
+                kwargs["status_message"] = status_message
             if kwargs:
                 observation.update(**kwargs)
 
