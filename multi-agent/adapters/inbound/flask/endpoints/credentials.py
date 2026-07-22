@@ -19,6 +19,7 @@ from inbound.flask.decorators import (
     G_IDENTITY_USERNAME,
 )
 from mas.core.auth.credentials.models import ClientConfig
+from pydantic import ValidationError
 from webargs import fields
 
 logger = logging.getLogger(__name__)
@@ -125,7 +126,10 @@ def save_client_config(
             data["client_secret"] = "***"
         return jsonify(data), 201
 
-    except Exception as e:
+    except ValidationError as e:
+        logger.warning("Invalid client config: %s", e)
+        return jsonify({"error": "Invalid client config", "details": e.errors()}), 400
+    except Exception:
         logger.exception("Failed to save client config")
         return jsonify({"error": "Failed to save client config"}), 400
 

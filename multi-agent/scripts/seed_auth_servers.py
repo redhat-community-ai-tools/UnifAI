@@ -16,6 +16,10 @@ Usage:
   export A2A_SSO_PROD_CLIENT_ID="unifai-a2a"
   export A2A_SSO_PROD_CLIENT_SECRET="<from vault>"
   python scripts/seed_auth_servers.py
+
+Local/lab IdPs (http or private-IP token URLs), also set:
+  export ALLOW_INSECURE_OAUTH_ENDPOINTS=1
+http://localhost and http://127.0.0.1 are always allowed without that flag.
 """
 
 from __future__ import annotations

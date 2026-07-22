@@ -13,6 +13,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
+from mas.core.auth.credentials.endpoint_validation import validate_oauth_endpoint
+
 
 def _is_expired(expires_at: Optional[datetime], buffer_seconds: int = 60) -> bool:
     """Shared timezone-aware expiry check."""
@@ -100,6 +102,11 @@ class ClientConfig(BaseModel):
                 f"server_identifier {v!r} is reserved for static auth methods"
             )
         return normalized
+
+    @field_validator("authorization_endpoint", "token_endpoint")
+    @classmethod
+    def _validate_oauth_endpoints(cls, v: str, info) -> str:
+        return validate_oauth_endpoint(v or "", field_name=info.field_name)
 
 
 class RecoveryResult(BaseModel):

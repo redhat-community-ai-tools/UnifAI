@@ -76,6 +76,9 @@ services:
     env_entries:
       BASE_URL: "http://127.0.0.1:13457" # RAG_BASE_URL
       secret_key: "<AUTO_GENERATE>"
+      # Allow http / private-IP OAuth endpoints for local/lab IdPs (e.g. Keycloak).
+      # http://localhost is always allowed without this; leave unset in prod Helm.
+      ALLOW_INSECURE_OAUTH_ENDPOINTS: "1"
     venv:
       strategy: "toml"
       pip_extras: "all"
