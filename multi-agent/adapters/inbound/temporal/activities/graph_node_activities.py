@@ -23,6 +23,7 @@ from mas.core.hitl.ports import ApprovalGateFactory
 from mas.core.runtime_binder import NodeRuntimeBindings
 from mas.engine.distributed.node_executor import NodeExecutor
 from mas.graph.state.graph_state import GraphState
+from mas.core.tracing.tracing_service import TracingService
 from inbound.temporal.activities.heartbeat import heartbeat
 from temporal.models import ExecuteNodeParams, EvaluateConditionParams
 
@@ -42,7 +43,7 @@ class GraphNodeActivities:
         node_executor: NodeExecutor,
         channel_factory: Optional[ChannelFactory] = None,
         gate_factory: Optional[ApprovalGateFactory] = None,
-        tracing_service=None,
+        tracing_service: Optional[TracingService] = None,
     ) -> None:
         self._executor = node_executor
         self._channel_factory = channel_factory

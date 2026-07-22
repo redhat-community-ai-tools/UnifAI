@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from mas.catalog.element_registry import ElementRegistry
 from mas.session.building.element_builder import SessionElementBuilder
@@ -18,6 +18,7 @@ from mas.core.auth.service import AuthService
 
 if TYPE_CHECKING:
     from mas.core.platform_config import PlatformConfig
+    from mas.core.tracing import TracingService
 
 
 class WorkflowSessionFactory:
@@ -36,7 +37,7 @@ class WorkflowSessionFactory:
             engine_name: str,
             auth_service: Optional[AuthService] = None,
             platform_config: Optional[PlatformConfig] = None,
-            tracing_service: Optional[Any] = None,
+            tracing_service: Optional[TracingService] = None,
     ):
         self._elements = element_registry
         self._engine_name = engine_name

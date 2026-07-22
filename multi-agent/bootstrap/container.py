@@ -49,6 +49,7 @@ from mas.actions.providers.mcp.get_tools_names.get_tools_names import GetToolsNa
 
 from config.app_config import AppConfig
 from mas.core.platform_config import PlatformConfig
+from mas.core.tracing import TracingService
 from outbound.storage import LocalSessionStorageCleaner
 
 from outbound.mongo import (
@@ -344,7 +345,7 @@ class AppContainer(metaclass=SingletonMeta):
         self._initialized = True
 
     @staticmethod
-    def _create_tracing_service(cfg: AppConfig):
+    def _create_tracing_service(cfg: AppConfig) -> TracingService:
         if not cfg.langfuse_enabled:
             from mas.core.tracing.noop import NoOpTracingService
             return NoOpTracingService()

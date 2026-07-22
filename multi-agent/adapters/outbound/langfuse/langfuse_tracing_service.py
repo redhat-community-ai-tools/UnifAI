@@ -37,10 +37,13 @@ class LangfuseTracingService:
         else:
             self._client = get_client()
 
-        if self._client.auth_check():
-            logger.info("Langfuse tracing enabled (host=%s)", base_url)
-        else:
-            logger.warning("Langfuse auth check failed — traces may not be delivered")
+        try:
+            if self._client.auth_check():
+                logger.info("Langfuse tracing enabled (host=%s)", base_url)
+            else:
+                logger.warning("Langfuse auth check failed — traces may not be delivered")
+        except Exception as e:
+            logger.warning("Langfuse auth check error (%s) — tracing will be attempted but may fail", e)
 
     # ── helpers ──────────────────────────────────────────────────
 

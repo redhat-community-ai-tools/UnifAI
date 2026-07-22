@@ -7,7 +7,7 @@ Supports Gemini models via the Google AI Studio API key.
 from __future__ import annotations
 
 import copy
-from typing import Any, Iterator, List, Optional, Union
+from typing import Any, Iterator, List, Optional, TYPE_CHECKING, Union
 
 from google import genai
 from google.genai import types
@@ -17,6 +17,9 @@ from ..common.chat.message import ChatMessage
 from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import GoogleGenAIMessageConverter
 from .tools_converter import GoogleGenAIToolsConverter
+
+if TYPE_CHECKING:
+    from mas.core.tracing import TracingService
 
 _DISABLE_AUTO_FC = types.AutomaticFunctionCallingConfig(disable=True)
 
@@ -39,7 +42,7 @@ class GoogleGenAILLM(BaseLLM):
         max_tokens: Optional[int] = None,
         top_p: Optional[float] = None,
         top_k: Optional[int] = None,
-        tracing: Any = None,
+        tracing: Optional[TracingService] = None,
         **extra: Any,
     ) -> None:
         self._name = "google-genai"
