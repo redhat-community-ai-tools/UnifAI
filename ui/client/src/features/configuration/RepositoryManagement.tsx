@@ -340,6 +340,16 @@ export default function RepositoryManagement() {
           await reloadBuiltins();
         } else {
           setAvailableToAll((prev) => ({ ...prev, [rid]: newValue }));
+          const nextVisibility = newValue ? "public" : "draft";
+          setCategoryResources((prev) => {
+            const next: Record<string, ResourceItem[]> = {};
+            for (const [cat, items] of Object.entries(prev)) {
+              next[cat] = items.map((item) =>
+                item.rid === rid ? { ...item, visibility: nextVisibility } : item,
+              );
+            }
+            return next;
+          });
         }
       }
     } finally {
