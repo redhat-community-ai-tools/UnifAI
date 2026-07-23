@@ -3,7 +3,7 @@ from pydantic import Field
 from typing import Optional, List, Literal
 from .identifiers import Identifier
 from mas.core.ref.models import LLMRef, ToolRef
-from mas.core.field_hints import ApiHint, HintType, SelectionType
+from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint
 
 
 class OrchestratorNodeConfig(NodeBaseConfig):
@@ -34,7 +34,8 @@ class OrchestratorNodeConfig(NodeBaseConfig):
     )
     system_message: str = Field(
         "",
-        description="Domain specialization message (e.g., 'I specialize in document analysis and Slack integration'). This is separate from orchestrator behavior which is built-in."
+        description="Domain specialization message (e.g., 'I specialize in document analysis and Slack integration'). This is separate from orchestrator behavior which is built-in.",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
     max_rounds: int = Field(
         100,

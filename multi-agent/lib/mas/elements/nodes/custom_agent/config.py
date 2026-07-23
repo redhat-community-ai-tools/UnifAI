@@ -4,7 +4,7 @@ from typing import Optional, List, Literal
 from .identifiers import Identifier
 from mas.core.ref.models import LLMRef, RetrieverRef, ToolRef, ProviderRef
 from mas.elements.nodes.common.agent.constants import StrategyType
-from mas.core.field_hints import ApiHint, HintType, SelectionType
+from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint
 from mas.core.hitl.models import HITLMode
 
 
@@ -38,7 +38,11 @@ class CustomAgentNodeConfig(NodeBaseConfig):
             field_mapping="is_valid"
         ).to_hints()
     )
-    system_message: str = Field("", description="Custom system prompt")
+    system_message: str = Field(
+        "",
+        description="Custom system prompt",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+    )
     strategy_type: str = Field(default=StrategyType.REACT.value, description="Agent strategy type")
     max_rounds: Optional[int] = Field(default=100, description="Maximum number of agent execution rounds")
     hitl_mode: HITLMode = Field(

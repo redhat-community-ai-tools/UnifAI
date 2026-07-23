@@ -6,7 +6,7 @@ from typing import Optional, Literal, List, Dict
 
 from pydantic import Field
 
-from mas.core.field_hints import ActionHint, HiddenHint, HintType
+from mas.core.field_hints import ActionHint, HiddenHint, HintType, CardHint
 from mas.core.hitl.models import HITLMode
 from .identifiers import Identifier, EffortLevel
 from mas.elements.nodes.common.base_config import NodeBaseConfig
@@ -49,7 +49,8 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
 
     model: str = Field(
         default="claude-sonnet-4-6",
-        description="Claude model to use (e.g., claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-5)"
+        description="Claude model to use (e.g., claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-5)",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
 
     # --- Agent Behavior ---

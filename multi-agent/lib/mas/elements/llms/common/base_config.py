@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, Extra, HttpUrl
-from mas.core.field_hints import SecretHint, ReadOnlyHint, combine_hints
+from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, combine_hints
 
 
 class BaseLLMConfig(BaseModel):
@@ -11,7 +11,8 @@ class BaseLLMConfig(BaseModel):
     UI metadata is now handled by ElementSpec classes.
     """
     model_name: str = Field(
-        description="The OpenAI model ID to use for completions"
+        description="The OpenAI model ID to use for completions",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
     api_key: str = Field(
         "EMPTY",
@@ -22,7 +23,8 @@ class BaseLLMConfig(BaseModel):
         ),
     )
     base_url: HttpUrl = Field(
-        description="Base URL for the OpenAI API"
+        description="Base URL for the OpenAI API",
+        json_schema_extra=CardHint(contexts=["custom"]).to_hints(),
     )
     verify_ssl: bool = Field(
         True,

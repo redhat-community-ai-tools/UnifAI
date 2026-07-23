@@ -3,7 +3,7 @@ from mas.elements.nodes.common.base_config import NodeBaseConfig
 from typing import Literal
 from pydantic import Field
 from .identifiers import Identifier
-from mas.core.field_hints import ApiHint, HintType, SelectionType
+from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint
 
 
 class MergerLLMNodeConfig(NodeBaseConfig):
@@ -42,5 +42,6 @@ class MergerLLMNodeConfig(NodeBaseConfig):
         Output:
         - Start with the merged answer using inline agent tags and source mentions.
         - End with the improvement section if needed.
-        - Use a professional, neutral tone that’s easy to follow.""",
-                                description="Unifier/Merger system prompt")
+        -         Use a professional, neutral tone that’s easy to follow.""",
+                                description="Unifier/Merger system prompt",
+                                json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints())

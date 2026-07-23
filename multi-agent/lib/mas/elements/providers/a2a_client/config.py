@@ -5,6 +5,7 @@ A2A Provider Configuration
 from typing import Literal, Optional, Dict
 from pydantic import Field, HttpUrl
 from mas.elements.providers.common.base_config import ProviderBaseConfig
+from mas.core.field_hints import CardHint
 from a2a.types import AgentCard
 from .identifiers import Identifier
 
@@ -19,7 +20,8 @@ class A2AProviderConfig(ProviderBaseConfig):
     type: Literal[Identifier.TYPE] = Identifier.TYPE
     
     base_url: HttpUrl = Field(
-        description="Base URL of the A2A agent (e.g., http://localhost:10000)"
+        description="Base URL of the A2A agent (e.g., http://localhost:10000)",
+        json_schema_extra=CardHint(contexts=["custom"]).to_hints(),
     )
     
     agent_card: Optional[AgentCard] = Field(

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
 from mas.core.identity import Identity
-from mas.core.field_hints import SecretHint, ReadOnlyHint, combine_hints
+from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, combine_hints
 from mas.resources.models import Resource, ResourceQuery
 from mas.resources.registry import ResourcesRegistry
 from mas.resources.service import ResourcesService
@@ -32,8 +32,9 @@ class FakeProviderConfig(BaseModel):
     schema hints only (no ``ENCRYPTED_FIELDS``, like the real MCP
     ``bearer_token`` field), one configurable field that is sensitive only
     via ``ENCRYPTED_FIELDS`` (no ``SecretHint``, like the real ``api_key``
-    field on some LLM/provider configs), one read-only field, one plain
-    field."""
+    field on some LLM/provider configs), one read-only field, and one plain
+    field marked with ``CardHint(contexts=["custom"])`` (like the real MCP
+    ``mcp_url`` field) to exercise card-visibility schema passthrough."""
 
     ENCRYPTED_FIELDS: ClassVar[Tuple[str, ...]] = ("api_key",)
 
@@ -50,7 +51,12 @@ class FakeProviderConfig(BaseModel):
             ReadOnlyHint(read_only=False),
         ),
     )
-    endpoint: str = Field(default="https://example.com")
+    endpoint: str = Field(
+        default="https://example.com",
+        json_schema_extra=combine_hints(
+            CardHint(contexts=["custom"]),
+        ),
+    )
 
 
 class FakeElementRegistry:

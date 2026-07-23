@@ -2,6 +2,7 @@ from typing import Literal, Optional
 from pydantic import Field
 from mas.elements.nodes.common.base_config import NodeBaseConfig
 from mas.core.ref.models import LLMRef
+from mas.core.field_hints import CardHint
 from .identifiers import Identifier
 
 
@@ -13,6 +14,8 @@ class MockAgentNodeConfig(NodeBaseConfig):
     llm: Optional[LLMRef] = Field(None,
                                   description="LLM key to use for the mock agent"
                                   )
-    echo_message: Optional[str] = Field(None,
-                                        description="Optional fixed message to return"
-                                        )
+    echo_message: Optional[str] = Field(
+        None,
+        description="Optional fixed message to return",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+    )

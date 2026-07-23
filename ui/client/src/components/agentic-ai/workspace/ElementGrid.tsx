@@ -26,7 +26,9 @@ import { ElementValidationResult } from '../../../types/validation';
 import { ElementData } from './ElementData';
 import { ValidationResultModal } from './ValidationResultModal';
 import { BuiltInElementCard } from './BuiltInElementCard';
+import { CardFieldList } from './CardFieldList';
 import { deriveThemeColors } from '@/lib/colorUtils';
+import { getCardFields } from '@/lib/cardFields';
 import { cn } from "@/lib/utils";
 
 interface ElementGridProps {
@@ -209,6 +211,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
           );
         }
 
+        const cardFields = getCardFields(elementSchema, element.config, 'custom');
         const lockHolder = resourceEditLocks[element.rid];
         const lockUnknown = lockHolder === "unknown";
         const lockedByOther =
@@ -288,7 +291,8 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
                       {element.contributed_by}
                     </span>
                   )}
-                  {!element.version && !element.updated && !element.contributed_by && (
+                  {cardFields.length > 0 && <CardFieldList fields={cardFields} />}
+                  {!element.version && !element.updated && !element.contributed_by && cardFields.length === 0 && (
                     <p className="text-xs text-gray-600 italic">Click to view full details</p>
                   )}
                 </CardContent>

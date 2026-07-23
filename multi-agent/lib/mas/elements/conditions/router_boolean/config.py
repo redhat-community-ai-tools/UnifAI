@@ -1,6 +1,7 @@
 from typing import Literal
 from pydantic import Field
 from mas.elements.conditions.common.base_config import BaseConditionConfig
+from mas.core.field_hints import CardHint
 from .identifiers import Identifier
 
 
@@ -11,5 +12,6 @@ class RouterBooleanConditionConfig(BaseConditionConfig):
     type: Literal[Identifier.TYPE] = Identifier.TYPE
     boolean_value: bool = Field(
         True,
-        description="The boolean value to return (true or false)"
+        description="The boolean value to return (true or false)",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )

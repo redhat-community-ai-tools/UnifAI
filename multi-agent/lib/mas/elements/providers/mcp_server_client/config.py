@@ -5,7 +5,7 @@ from pydantic import Field, HttpUrl
 from mas.elements.providers.common.base_config import ProviderBaseConfig
 from mas.core.field_hints import (
     ActionHint, HintType, SelectionType,
-    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, ReadOnlyHint, combine_hints,
+    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, ReadOnlyHint, CardHint, combine_hints,
 )
 from .transport.enums import McpTransportType
 
@@ -32,28 +32,31 @@ class McpProviderConfig(ProviderBaseConfig):
     )
     mcp_url: HttpUrl = Field(
         description="MCP server endpoint URL",
-        json_schema_extra=ActionHint(
-            action_uid="mcp.validate_connection",
-            hint_type=HintType.VALIDATE,
-            field_mapping="is_reachable",
-            dependencies={
-                "mcp_url": "mcp_url",
-                "credential_token": "credential_token",
-                "server_identifier": "server_identifier",
-                "auth_method": "auth_method",
-                "transport_type": "transport_type",
-                "additional_headers": "additional_headers",
-            },
-            on_success=ActionHint(
-                action_uid="auth.store_credential",
+        json_schema_extra=combine_hints(
+            ActionHint(
+                action_uid="mcp.validate_connection",
                 hint_type=HintType.VALIDATE,
-                field_mapping="authenticated",
+                field_mapping="is_reachable",
                 dependencies={
-                    "mcp_url": "server_url",
-                    "bearer_token": "credential",
+                    "mcp_url": "mcp_url",
+                    "credential_token": "credential_token",
+                    "server_identifier": "server_identifier",
+                    "auth_method": "auth_method",
+                    "transport_type": "transport_type",
+                    "additional_headers": "additional_headers",
                 },
+                on_success=ActionHint(
+                    action_uid="auth.store_credential",
+                    hint_type=HintType.VALIDATE,
+                    field_mapping="authenticated",
+                    dependencies={
+                        "mcp_url": "server_url",
+                        "bearer_token": "credential",
+                    },
+                ),
             ),
-        ).to_hints()
+            CardHint(contexts=["custom"]),
+        ),
     )
     auth_method: McpAuthMethod = Field(
         default=McpAuthMethod.ACCESS_TOKEN,

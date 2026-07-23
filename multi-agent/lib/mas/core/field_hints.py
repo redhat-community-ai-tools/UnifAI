@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -381,7 +381,41 @@ class ReadOnlyHint(BaseModel):
         }
 
 
-def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, PropagateHint, FileUploadHint, ReadOnlyHint]) -> Dict[str, Any]:
+class CardHint(BaseModel):
+    """
+    Hint marking a field as displayable on an element's inventory card.
+
+    Opt-in only: fields without this hint never appear on a card, regardless
+    of element type. ``contexts`` scopes display to built-in and/or custom
+    (user-created) elements independently, so the same field can be surfaced
+    differently depending on ownership — e.g. an MCP server's ``mcp_url`` is
+    useful to show on a custom (user-configured) card but redundant on a
+    built-in one.
+
+    A field marked ``SecretHint`` is never rendered on a card even if it also
+    carries this hint — that exclusion is enforced by card-rendering
+    consumers, not by this hint itself.
+
+    Example::
+
+        json_schema_extra=combine_hints(
+            CardHint(contexts=["custom"]),
+        )
+    """
+    contexts: List[Literal["builtin", "custom"]] = Field(
+        ...,
+        description="Which card ownership context(s) this field should be shown on.",
+    )
+
+    def to_hints(self) -> Dict[str, Any]:
+        return {
+            "hints": {
+                "card": self.model_dump()
+            }
+        }
+
+
+def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, PropagateHint, FileUploadHint, ReadOnlyHint, CardHint]) -> Dict[str, Any]:
     """
     Combine multiple hints into a single json_schema_extra structure.
     

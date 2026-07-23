@@ -246,6 +246,35 @@ class TestBuiltinOverlay:
         assert built.config.bearer_token == "alices-secret"
 
 
+# ────────────────────────────── card-visibility hint ──────────────────────────────
+
+class TestCardVisibilityHint:
+    """``CardHint`` (``hints.card``) must survive schema serialization
+    end-to-end through ``get_builtin_schema()`` — the same JSON schema
+    consumers use to know which fields to render on inventory cards for
+    built-in vs. custom elements."""
+
+    def test_card_hint_present_on_builtin_schema(self, service, admin_identity):
+        doc = _make_builtin_resource(service, admin_identity)
+        schema = service.get_builtin_schema(doc.rid, is_admin=True)
+
+        endpoint_hints = schema["properties"]["endpoint"]["hints"]
+        assert endpoint_hints["card"] == {"contexts": ["custom"]}
+
+    def test_card_hint_untouched_by_read_only_annotation(self, service, admin_identity):
+        """``get_builtin_schema`` adds ``read_only`` hints to non-configurable
+        fields but must not strip or overwrite any pre-existing ``card`` hint
+        while doing so."""
+        doc = _make_builtin_resource(service, admin_identity)
+        schema = service.get_builtin_schema(doc.rid, is_admin=True)
+
+        endpoint_hints = schema["properties"]["endpoint"]["hints"]
+        # `endpoint` has no ReadOnlyHint(read_only=False), so it becomes
+        # locked for built-ins — but its `card` hint must still be intact.
+        assert endpoint_hints["read_only"] == {"read_only": True}
+        assert endpoint_hints["card"] == {"contexts": ["custom"]}
+
+
 # ────────────────────────────── promote/demote lifecycle ──────────────────────────────
 
 class TestPromoteDemote:

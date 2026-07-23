@@ -8,7 +8,7 @@ from typing import Optional, Literal
 from a2a.types import AgentCard
 from .identifiers import Identifier
 from mas.core.ref.models import RetrieverRef
-from mas.core.field_hints import ActionHint, HintType, SelectionType, SecretHint
+from mas.core.field_hints import ActionHint, HintType, SelectionType, SecretHint, CardHint, combine_hints
 
 
 class A2AAgentNodeConfig(NodeBaseConfig):
@@ -22,11 +22,14 @@ class A2AAgentNodeConfig(NodeBaseConfig):
 
     base_url: HttpUrl = Field(
         description="Base URL of the A2A agent (e.g., http://localhost:10000)",
-        json_schema_extra=ActionHint(
-            action_uid="a2a.validate_connection",
-            hint_type=HintType.VALIDATE,
-            field_mapping="is_reachable"
-        ).to_hints()
+        json_schema_extra=combine_hints(
+            ActionHint(
+                action_uid="a2a.validate_connection",
+                hint_type=HintType.VALIDATE,
+                field_mapping="is_reachable"
+            ),
+            CardHint(contexts=["custom"]),
+        ),
     )
 
     bearer_token: Optional[str] = Field(

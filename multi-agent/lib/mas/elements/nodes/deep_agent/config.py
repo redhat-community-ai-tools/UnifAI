@@ -3,7 +3,7 @@ from pydantic import Field
 from typing import Dict, Optional, List, Literal
 from .identifiers import Identifier
 from mas.core.ref.models import LLMRef, RetrieverRef, ToolRef, ProviderRef, SandboxRef
-from mas.core.field_hints import ApiHint, HiddenHint, HintType, SelectionType
+from mas.core.field_hints import ApiHint, HiddenHint, HintType, SelectionType, CardHint
 from mas.core.hitl.models import HITLMode
 
 
@@ -54,7 +54,8 @@ class DeepAgentNodeConfig(NodeBaseConfig):
 
     system_message: str = Field(
         "",
-        description="System prompt for the Deep Agent"
+        description="System prompt for the Deep Agent",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
 
     # --- Backend / Environment ---

@@ -17,9 +17,11 @@ import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
 import { BuiltinConfigureModal } from './BuiltinConfigureModal';
+import { CardFieldList } from './CardFieldList';
 import axios from "../../../http/axiosAgentConfig";
 import { isTrustedCredentialsCallback } from "@/lib/oauthPopupSecurity";
 import { deriveThemeColors } from "@/lib/colorUtils";
+import { getCardFields } from "@/lib/cardFields";
 import { cn } from "@/lib/utils";
 
 type SignInStatus = 'idle' | 'checking' | 'authenticated' | 'challenge' | 'not_configured' | 'error';
@@ -86,6 +88,10 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
 
   const isSignIn = hasSignInAuth(element);
   const hasConfigFields = hasConfigurableFields(element, elementSchema);
+  const cardFields = useMemo(
+    () => getCardFields(elementSchema, element.config, 'builtin'),
+    [elementSchema, element.config],
+  );
 
   const [signInStatus, setSignInStatus] = useState<SignInStatus>('idle');
   const [challenge, setChallenge] = useState<ChallengeData | null>(null);
@@ -319,18 +325,21 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
           </div>
         </CardHeader>
 
-        <CardContent className="p-4 flex-grow flex flex-col items-center justify-center">
-          {isSignIn ? (
+        <CardContent className="p-4 flex-grow flex flex-col items-center justify-center gap-2">
+          {isSignIn && (
             <div className="flex flex-col items-center gap-1 py-2">
               {renderSignInStatus()}
             </div>
-          ) : (
+          )}
+          {cardFields.length > 0 ? (
+            <CardFieldList fields={cardFields} />
+          ) : !isSignIn ? (
             <div className="py-2 text-center">
               <p className="text-sm text-gray-500">
                 Pre-configured &mdash; ready to use
               </p>
             </div>
-          )}
+          ) : null}
         </CardContent>
 
         <CardFooter className="px-4 py-3 border-t border-white/5" onClick={(e) => e.stopPropagation()}>
