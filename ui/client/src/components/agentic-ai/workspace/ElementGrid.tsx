@@ -10,8 +10,6 @@ import {
   Database,
   Eye,
   Users,
-  Check,
-  AlertTriangle,
   Clock,
 } from 'lucide-react';
 import SimpleTooltip from '@/components/shared/SimpleTooltip';
@@ -27,9 +25,15 @@ import { ElementData } from './ElementData';
 import { ValidationResultModal } from './ValidationResultModal';
 import { BuiltInElementCard } from './BuiltInElementCard';
 import { CardFieldList } from './CardFieldList';
+import { ValidationStatusBadge } from './ValidationStatusBadge';
 import { deriveThemeColors } from '@/lib/colorUtils';
 import { getCardFields } from '@/lib/cardFields';
 import { cn } from "@/lib/utils";
+
+/** Element types whose built-in instances are still worth live-validating —
+ * e.g. an MCP server's reachability is meaningful even on a built-in card,
+ * unlike most other built-ins which ship without live credentials. */
+const BUILTIN_VALIDATED_TYPES = new Set(['mcp_server']);
 
 interface ElementGridProps {
   elements: ElementInstance[];
@@ -63,6 +67,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   // unreadable on the dark background for darker accent choices (e.g. red).
   const { primaryLight } = useMemo(() => deriveThemeColors(primaryHex), [primaryHex]);
   const isTeamWorkspace = viewMode === "team" && !!selectedTeam;
+  const isBuiltinValidatedType = BUILTIN_VALIDATED_TYPES.has(elementType.type);
   // Memoized on `elements` so this array is only recreated when the element
   // list itself changes — not on every re-render (e.g. from lock polling or
   // modal state) — otherwise the validation effect below would re-fire and
@@ -70,6 +75,16 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   const nonBuiltInElements = useMemo(
     () => elements.filter(el => el.ownership !== 'builtin'),
     [elements],
+  );
+  // Elements whose live validity should be probed and surfaced on their card.
+  // Built-ins are excluded by default: many ship without live credentials/
+  // connectivity configured in a given environment, so probing them surfaces
+  // "invalid" for resources that are actually fine, and that failure cascades
+  // to anything depending on them. Built-in MCP servers are the exception —
+  // their reachability is meaningful signal even without user configuration.
+  const elementsNeedingValidation = useMemo(
+    () => isBuiltinValidatedType ? elements : nonBuiltInElements,
+    [elements, nonBuiltInElements, isBuiltinValidatedType],
   );
   const resourceEditLocks = useTeamEditLockPoll(
     selectedTeam?.id,
@@ -80,26 +95,23 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   const { 
     getValidationResult, 
     getValidationStatus,
-    validateResources 
+    validateResources,
+    resolveRefsInConfig,
   } = useAgenticAI();
 
   // Stable string key of the rid set — used as the effect dependency instead
-  // of the `nonBuiltInElements` array so a re-render that produces an
+  // of the `elementsNeedingValidation` array so a re-render that produces an
   // equivalent-but-new array (or object) doesn't re-trigger validation calls.
-  const nonBuiltInRidsKey = useMemo(
-    () => nonBuiltInElements.map(el => el.rid).join(','),
-    [nonBuiltInElements],
+  const validatedRidsKey = useMemo(
+    () => elementsNeedingValidation.map(el => el.rid).join(','),
+    [elementsNeedingValidation],
   );
 
   useEffect(() => {
-    // Built-ins are excluded here: many ship without live credentials/connectivity
-    // configured in a given environment, so probing them by default surfaces
-    // "invalid" for resources that are actually fine, and that failure cascades
-    // to anything depending on them. Only validate real, user-created resources.
-    if (nonBuiltInRidsKey) {
-      validateResources(nonBuiltInRidsKey.split(','));
+    if (validatedRidsKey) {
+      validateResources(validatedRidsKey.split(','));
     }
-  }, [nonBuiltInRidsKey, validateResources]);
+  }, [validatedRidsKey, validateResources]);
 
   const handleViewDetails = (element: ElementInstance) => {
     setSelectedElement(element);
@@ -123,47 +135,9 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   };
 
   // Render validation status icon
-  const renderValidationStatus = (rid: string) => {
-    const status = getValidationStatus(rid);
-
-    if (status === 'loading') {
-      return (
-        <SimpleTooltip content={<p>Validating resource...</p>}>
-          <div className="flex items-center justify-center w-8 h-8">
-            <LoaderCircle className="h-4 w-4 animate-spin text-gray-400" />
-          </div>
-        </SimpleTooltip>
-      );
-    }
-
-    if (status === 'valid') {
-      return (
-        <SimpleTooltip content={<p>Resource is valid - Click for details</p>}>
-          <button 
-            className="flex items-center justify-center w-8 h-8 rounded-md bg-green-500/10 hover:bg-green-500/20 transition-colors cursor-pointer"
-            onClick={() => handleValidationClick(rid)}
-          >
-            <Check className="h-4 w-4 text-green-500" />
-          </button>
-        </SimpleTooltip>
-      );
-    }
-
-    if (status === 'invalid') {
-      return (
-        <SimpleTooltip content={<p>Resource is invalid - Click for details</p>}>
-          <button 
-            className="flex items-center justify-center w-8 h-8 rounded-md bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors cursor-pointer"
-            onClick={() => handleValidationClick(rid)}
-          >
-            <AlertTriangle className="h-4 w-4 text-yellow-500" />
-          </button>
-        </SimpleTooltip>
-      );
-    }
-
-    return null;
-  };
+  const renderValidationStatus = (rid: string) => (
+    <ValidationStatusBadge status={getValidationStatus(rid)} onClick={() => handleValidationClick(rid)} />
+  );
 
   if (isLoading) {
     return (
@@ -206,12 +180,14 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
                 elementSchema={elementSchema}
                 onConfigureBuiltin={onConfigureBuiltin}
                 index={index}
+                validationStatus={isBuiltinValidatedType ? getValidationStatus(element.rid) : undefined}
+                onValidationClick={() => handleValidationClick(element.rid)}
               />
             </motion.div>
           );
         }
 
-        const cardFields = getCardFields(elementSchema, element.config, 'custom');
+        const cardFields = getCardFields(elementSchema, resolveRefsInConfig(element.config), 'custom');
         const lockHolder = resourceEditLocks[element.rid];
         const lockUnknown = lockHolder === "unknown";
         const lockedByOther =

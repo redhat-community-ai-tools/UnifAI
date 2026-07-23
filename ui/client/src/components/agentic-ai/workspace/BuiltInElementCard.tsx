@@ -16,8 +16,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
+import { ValidationStatus } from '@/contexts/AgenticAIContext';
 import { BuiltinConfigureModal } from './BuiltinConfigureModal';
 import { CardFieldList } from './CardFieldList';
+import { ValidationStatusBadge } from './ValidationStatusBadge';
 import axios from "../../../http/axiosAgentConfig";
 import { isTrustedCredentialsCallback } from "@/lib/oauthPopupSecurity";
 import { deriveThemeColors } from "@/lib/colorUtils";
@@ -57,6 +59,11 @@ interface BuiltInElementCardProps {
   elementSchema?: ElementSchema | null;
   onConfigureBuiltin?: (rid: string, config: Record<string, any>) => Promise<any>;
   index: number;
+  /** Live validity status for this built-in resource. Omit to hide the badge
+   * entirely (most built-ins ship without live credentials, so validity
+   * isn't meaningful for them — only opted-in element types pass this). */
+  validationStatus?: ValidationStatus;
+  onValidationClick?: () => void;
 }
 
 function hasSignInAuth(element: ElementInstance): boolean {
@@ -76,10 +83,12 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
   elementSchema,
   onConfigureBuiltin,
   index,
+  validationStatus,
+  onValidationClick,
 }) => {
   const { user } = useAuth();
   const userId = user?.username || '';
-  const { revalidateResourceAndAncestors } = useAgenticAI();
+  const { revalidateResourceAndAncestors, resolveRefsInConfig } = useAgenticAI();
   const { primaryHex } = useTheme();
   // `primaryLight` is a lightened tint of the site's selected accent color —
   // using the raw `primary` color for small icon glyphs/text can be nearly
@@ -89,8 +98,8 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
   const isSignIn = hasSignInAuth(element);
   const hasConfigFields = hasConfigurableFields(element, elementSchema);
   const cardFields = useMemo(
-    () => getCardFields(elementSchema, element.config, 'builtin'),
-    [elementSchema, element.config],
+    () => getCardFields(elementSchema, resolveRefsInConfig(element.config), 'builtin'),
+    [elementSchema, element.config, resolveRefsInConfig],
   );
 
   const [signInStatus, setSignInStatus] = useState<SignInStatus>('idle');
@@ -322,6 +331,11 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
                 </span>
               </div>
             </div>
+            {validationStatus && (
+              <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                <ValidationStatusBadge status={validationStatus} onClick={onValidationClick} />
+              </div>
+            )}
           </div>
         </CardHeader>
 

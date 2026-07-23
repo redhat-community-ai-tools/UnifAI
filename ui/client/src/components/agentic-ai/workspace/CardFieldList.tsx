@@ -13,7 +13,7 @@ interface CardFieldListProps {
  * `ElementGrid`, which each resolve `getCardFields()` for their own
  * ownership context ("builtin" vs "custom") before handing the result here.
  */
-export const CardFieldList: React.FC<CardFieldListProps> = ({ fields, maxRows = 4 }) => {
+export const CardFieldList: React.FC<CardFieldListProps> = ({ fields, maxRows = 6 }) => {
   if (fields.length === 0) return null;
 
   const visibleFields = fields.slice(0, maxRows);

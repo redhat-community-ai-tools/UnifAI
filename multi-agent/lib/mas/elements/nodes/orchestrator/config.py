@@ -3,7 +3,7 @@ from pydantic import Field
 from typing import Optional, List, Literal
 from .identifiers import Identifier
 from mas.core.ref.models import LLMRef, ToolRef
-from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint
+from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint, combine_hints
 
 
 class OrchestratorNodeConfig(NodeBaseConfig):
@@ -19,18 +19,23 @@ class OrchestratorNodeConfig(NodeBaseConfig):
     type: Literal[Identifier.TYPE] = Identifier.TYPE
     llm: LLMRef = Field(
         description="LLM Ref UID to use for planning and coordination",
-        json_schema_extra=ApiHint(
-            endpoint="/resources/resource.validate",
-            method="POST",
-            hint_type=HintType.VALIDATE,
-            selection_type=SelectionType.AUTOMATIC,
-            dependencies={"llm": "resourceId"},
-            field_mapping="is_valid"
-        ).to_hints()
+        title="LLM",
+        json_schema_extra=combine_hints(
+            ApiHint(
+                endpoint="/resources/resource.validate",
+                method="POST",
+                hint_type=HintType.VALIDATE,
+                selection_type=SelectionType.AUTOMATIC,
+                dependencies={"llm": "resourceId"},
+                field_mapping="is_valid"
+            ),
+            CardHint(contexts=["builtin", "custom"]),
+        ),
     )
     tools: Optional[List[ToolRef]] = Field(
         default_factory=list,
-        description="Domain-specific tools (orchestration tools added automatically)"
+        description="Domain-specific tools (orchestration tools added automatically)",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
     system_message: str = Field(
         "",

@@ -3,7 +3,7 @@ from mas.elements.nodes.common.base_config import NodeBaseConfig
 from typing import Literal
 from pydantic import Field
 from .identifiers import Identifier
-from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint
+from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint, combine_hints
 
 
 class MergerLLMNodeConfig(NodeBaseConfig):
@@ -13,14 +13,18 @@ class MergerLLMNodeConfig(NodeBaseConfig):
     type: Literal[Identifier.TYPE] = Identifier.TYPE
     llm: LLMRef = Field(
         description="LLM Ref UID to use",
-        json_schema_extra=ApiHint(
-            endpoint="/resources/resource.validate",
-            method="POST",
-            hint_type=HintType.VALIDATE,
-            selection_type=SelectionType.AUTOMATIC,
-            dependencies={"llm": "resourceId"},
-            field_mapping="is_valid"
-        ).to_hints()
+        title="LLM",
+        json_schema_extra=combine_hints(
+            ApiHint(
+                endpoint="/resources/resource.validate",
+                method="POST",
+                hint_type=HintType.VALIDATE,
+                selection_type=SelectionType.AUTOMATIC,
+                dependencies={"llm": "resourceId"},
+                field_mapping="is_valid"
+            ),
+            CardHint(contexts=["builtin", "custom"]),
+        ),
     )
     system_message: str = Field("""You are the Merger Agent. Your role is to combine answers from specialized agents into one clear, helpful response.
 

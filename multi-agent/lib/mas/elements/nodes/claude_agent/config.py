@@ -129,20 +129,25 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
 
     tools: Optional[List[ToolRef]] = Field(
         default_factory=list,
-        description="List of tool keys"
+        description="List of tool keys",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
 
     providers: Optional[List[ProviderRef]] = Field(
         default_factory=list,
-        description="List of MCP Provider Refs"
+        description="List of MCP Provider Refs",
+        title="MCP Server",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
 
     retriever: Optional[RetrieverRef] = Field(
         None,
-        description="Retriever for context augmentation (optional)"
+        description="Retriever for context augmentation (optional)",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
 
     sandbox: Optional[SandboxRef] = Field(
         None,
-        description="Sandbox execution environment (optional)"
+        description="Sandbox execution environment (optional)",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )

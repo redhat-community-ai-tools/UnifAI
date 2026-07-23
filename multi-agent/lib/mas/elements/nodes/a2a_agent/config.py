@@ -55,5 +55,6 @@ class A2AAgentNodeConfig(NodeBaseConfig):
 
     retriever: Optional[RetrieverRef] = Field(
         None,
-        description="Retriever for context augmentation (optional)"
+        description="Retriever for context augmentation (optional)",
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
