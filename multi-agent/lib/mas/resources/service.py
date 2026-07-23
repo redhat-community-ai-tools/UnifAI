@@ -543,9 +543,9 @@ class ResourcesService:
         self,
         rid: str,
         *,
-        config: dict = None,
-        name: str = None,
-        available_to_all: bool = None,
+        config: Optional[dict] = None,
+        name: Optional[str] = None,
+        available_to_all: Optional[bool] = None,
     ) -> Tuple[Resource, List[Resource]]:
         """Update a built-in resource (admin only).
 

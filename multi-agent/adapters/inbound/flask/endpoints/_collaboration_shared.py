@@ -11,13 +11,29 @@ shared by ``builtins.py`` (admin-only built-in routes) and ``resources.py``
 (the generic resource CRUD routes, which admins also use to mutate
 built-in resources via ``guard_write_access``) so both enforce the same
 cooperative lock instead of only the former.
+
+``guard_write_access_with_lock`` combines the ownership/admin check with
+the cooperative lock check for the generic resource CRUD routes —
+``resources.py``'s ``update_resource`` and ``delete_resource`` both need
+"authorize the mutation, then reject if a built-in is locked by another
+admin" and previously duplicated that combination inline.
 """
-from flask import current_app, g, jsonify
+from typing import Any, Dict, Optional, Tuple
+
+from flask import Response, current_app, g, jsonify
 
 from inbound.flask.decorators import G_IDENTITY_USERNAME
+from mas.collaboration.models import TeamEditLockHolder
+from mas.collaboration.service import CollaborationService
+from mas.core.enums import ResourceOwnership
+from mas.core.identity import Identity
+from mas.resources.models import Resource
+from mas.resources.service import ResourcesService
 
 
-def collaboration_service_or_error():
+def collaboration_service_or_error() -> Tuple[
+    Optional[CollaborationService], Optional[Tuple[Response, int]]
+]:
     """Return ``(service, None)``, or ``(None, (response, 501))`` if the
     collaboration service (Redis) isn't configured.
 
@@ -36,7 +52,7 @@ def collaboration_service_or_error():
     return svc, None
 
 
-def holder_to_json(holder):
+def holder_to_json(holder: Optional[TeamEditLockHolder]) -> Optional[Dict[str, Any]]:
     if holder is None:
         return None
     return {
@@ -45,7 +61,7 @@ def holder_to_json(holder):
     }
 
 
-def reject_if_locked_by_other(resource_id: str):
+def reject_if_locked_by_other(resource_id: str) -> Optional[Tuple[Response, int]]:
     """Enforce the admin edit lock on mutating built-in endpoints.
 
     The lock is acquired cooperatively by the UI when an admin opens the
@@ -71,3 +87,28 @@ def reject_if_locked_by_other(resource_id: str):
                  f"{holder.display_name or holder.user_id}.",
         "lockedBy": holder_to_json(holder),
     }), 409
+
+
+def guard_write_access_with_lock(
+    resources_service: ResourcesService,
+    resource_id: str,
+    *,
+    identity: Identity,
+    is_admin: bool,
+) -> Tuple[Optional[Resource], Optional[Tuple[Response, int]]]:
+    """Authorize a mutation and enforce the admin edit lock in one call.
+
+    Runs ``ResourcesService.guard_write_access`` (ownership/admin checks —
+    raises on failure, same as calling it directly) and, for built-in
+    resources, also rejects the request with ``(response, 409)`` if
+    another admin currently holds the edit lock. Returns
+    ``(resource, None)`` to proceed.
+    """
+    resource = resources_service.guard_write_access(
+        resource_id, identity=identity, is_admin=is_admin,
+    )
+    if resource.ownership == ResourceOwnership.BUILTIN:
+        lock_error = reject_if_locked_by_other(resource_id)
+        if lock_error:
+            return None, lock_error
+    return resource, None

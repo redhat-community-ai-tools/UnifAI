@@ -99,11 +99,16 @@ class McpProviderValidator(BaseElementValidator):
                 # way the sign-in status widget (auth.discovery) does before
                 # concluding the resource is unauthenticated.
                 if auth_cred is None and is_sign_in:
-                    try:
-                        detection = await context.auth_service.discover(str(config.mcp_url))
-                    except Exception:
-                        detection = None
-                    if detection and detection.server_identifier and detection.server_identifier != lookup_id:
+                    detection = await context.auth_service.discover(str(config.mcp_url))
+                    identifier_changed = (
+                        detection and detection.server_identifier
+                        and detection.server_identifier != lookup_id
+                    )
+                    protocol_changed = (
+                        detection and detection.protocol_type
+                        and detection.protocol_type != scheme_type
+                    )
+                    if detection and detection.server_identifier and (identifier_changed or protocol_changed):
                         auth_cred = context.auth_service.bind(
                             lookup_user,
                             detection.server_identifier,

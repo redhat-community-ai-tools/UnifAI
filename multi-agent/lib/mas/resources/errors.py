@@ -57,7 +57,7 @@ class BuiltinDependentsPublicError(RuntimeError):
     provider, or tool that would suddenly become invisible to end users).
     """
 
-    def __init__(self, *, resource_name: str, category: str, dependents: list):
+    def __init__(self, *, resource_name: str, category: str, dependents: list) -> None:
         self.resource_name = resource_name
         self.category = category
         self.dependents = dependents

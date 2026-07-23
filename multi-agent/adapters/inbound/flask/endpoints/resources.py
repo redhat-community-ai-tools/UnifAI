@@ -4,7 +4,6 @@ from flask import Blueprint, jsonify, current_app, request, g
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
-from mas.core.enums import ResourceOwnership
 from mas.resources.errors import (
     ResourceInUseError,
     BuiltInWriteProtectedError,
@@ -16,7 +15,7 @@ from inbound.flask.decorators import (
     is_admin_user,
     G_IDENTITY_USERNAME,
 )
-from inbound.flask.endpoints._collaboration_shared import reject_if_locked_by_other
+from inbound.flask.endpoints._collaboration_shared import guard_write_access_with_lock
 
 logger = logging.getLogger(__name__)
 
@@ -175,11 +174,11 @@ def update_resource(identity, resource_id, config, name=None):
     svc = current_app.container.resources_service
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
-        resource = svc.guard_write_access(resource_id, identity=identity, is_admin=is_admin_user(username))
-        if resource.ownership == ResourceOwnership.BUILTIN:
-            lock_error = reject_if_locked_by_other(resource_id)
-            if lock_error:
-                return lock_error
+        _, lock_error = guard_write_access_with_lock(
+            svc, resource_id, identity=identity, is_admin=is_admin_user(username),
+        )
+        if lock_error:
+            return lock_error
         doc = svc.update(resource_id, config=config, name=name)
         return jsonify(doc.model_dump(mode="json")), 200
     except BuiltInWriteProtectedError as e:
@@ -203,11 +202,11 @@ def delete_resource(identity, resource_id):
     svc = current_app.container.resources_service
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
-        resource = svc.guard_write_access(resource_id, identity=identity, is_admin=is_admin_user(username))
-        if resource.ownership == ResourceOwnership.BUILTIN:
-            lock_error = reject_if_locked_by_other(resource_id)
-            if lock_error:
-                return lock_error
+        _, lock_error = guard_write_access_with_lock(
+            svc, resource_id, identity=identity, is_admin=is_admin_user(username),
+        )
+        if lock_error:
+            return lock_error
         svc.delete(resource_id)
         return jsonify({"status": "deleted"}), 200
     except BuiltInWriteProtectedError as e:
