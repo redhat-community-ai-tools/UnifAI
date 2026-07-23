@@ -1,6 +1,7 @@
 """
 Migration script: Transition from legacy builtin_status to the new ownership/visibility model.
 
+
 Steps performed:
 1. All existing resources with builtin_status != None get ownership="builtin" + visibility mapped.
 2. All existing resources with builtin_status == None get ownership="custom".
@@ -35,7 +36,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool, reverse: bool = False):
+def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool, reverse: bool = False) -> None:
     client = pymongo.MongoClient(f"mongodb://{mongodb_ip}:{mongodb_port}/")
     try:
         if reverse:
@@ -46,7 +47,7 @@ def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: boo
         client.close()
 
 
-def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool):
+def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool) -> None:
     db = client[db_name]
     resources_col = db["resources"]
     user_configs_col = db["builtin_user_configs"]
@@ -166,7 +167,7 @@ def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool
     logger.info("Migration complete%s.", " (DRY RUN)" if dry_run else "")
 
 
-def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool):
+def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool) -> None:
     db = client[db_name]
     resources_col = db["resources"]
     user_configs_col = db["builtin_user_configs"]
