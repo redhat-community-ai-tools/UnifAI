@@ -46,6 +46,7 @@ export default function AgenticChats() {
             runId={urlRunId}
             teamMembers={teamMembers}
             teamName={selectedTeam?.name || "Team"}
+            onSessionChange={handleSessionChange}
           />
         </StreamingDataProvider>
       ) : (

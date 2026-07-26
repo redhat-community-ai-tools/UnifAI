@@ -45,10 +45,11 @@ interface CollaborationHubViewProps {
   runId: string | null;
   teamMembers: MemberDisplay[];
   teamName: string;
+  onSessionChange?: (sessionId: string) => void;
 }
 
-export default function CollaborationHubView({ runId, teamMembers, teamName }: CollaborationHubViewProps) {
-  const hub = useSessionHub({ runId, manualStreamControl: true });
+export default function CollaborationHubView({ runId, teamMembers, teamName, onSessionChange }: CollaborationHubViewProps) {
+  const hub = useSessionHub({ runId, manualStreamControl: true, onSessionChange });
 
   // ── Collab-specific state ──────────────────────────────────────────────
   const [sessionParticipants, setSessionParticipants] = useState<Record<string, string[]>>({});
