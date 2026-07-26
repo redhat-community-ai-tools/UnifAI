@@ -37,7 +37,20 @@ class A2AProviderConfig(ProviderBaseConfig):
     type: Literal[Identifier.TYPE] = Identifier.TYPE
 
     base_url: HttpUrl = Field(
-        description="Base URL of the A2A agent (e.g., http://localhost:10000)"
+        description="Base URL of the A2A agent (e.g., http://localhost:10000)",
+        json_schema_extra=ActionHint(
+            action_uid="a2a.validate_connection",
+            hint_type=HintType.VALIDATE,
+            field_mapping="is_reachable",
+            dependencies={
+                "base_url": "base_url",
+                "credential_token": "credential_token",
+                "bearer_token": "bearer_token",
+                "server_identifier": "server_identifier",
+                "auth_method": "auth_method",
+                "additional_headers": "additional_headers",
+            },
+        ).to_hints(),
     )
 
     agent_card: Optional[AgentCard] = Field(

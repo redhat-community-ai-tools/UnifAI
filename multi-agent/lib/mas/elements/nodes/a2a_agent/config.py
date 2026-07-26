@@ -44,6 +44,13 @@ class A2AAgentNodeConfig(NodeBaseConfig):
             action_uid="a2a.validate_connection",
             hint_type=HintType.VALIDATE,
             field_mapping="is_reachable",
+            dependencies={
+                "base_url": "base_url",
+                "credential_token": "credential_token",
+                "bearer_token": "bearer_token",
+                "server_identifier": "server_identifier",
+                "auth_method": "auth_method",
+            },
         ).to_hints(),
     )
 
