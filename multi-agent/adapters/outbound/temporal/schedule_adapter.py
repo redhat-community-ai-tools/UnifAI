@@ -24,7 +24,7 @@ from config.app_config import AppConfig
 from temporalio.service import RPCError, RPCStatusCode
 
 from mas.prompts.models import ScheduleOverlapPolicy, ScheduledPrompt
-from mas.prompts.ports import BatchDescribeResult, ScheduleInfo, ScheduleNotFoundError, SchedulePort
+from mas.prompts.ports import BatchDescribeResult, ScheduleDescribeError, ScheduleInfo, ScheduleNotFoundError, SchedulePort
 from temporal.client import get_temporal_client
 from temporal.models import ScheduledSessionParams
 
@@ -71,7 +71,7 @@ class TemporalScheduleAdapter(SchedulePort):
         except RPCError as exc:
             if exc.status == RPCStatusCode.NOT_FOUND:
                 raise ScheduleNotFoundError(temporal_schedule_id) from exc
-            raise
+            raise ScheduleDescribeError(temporal_schedule_id) from exc
 
     def describe_batch(self, schedule_ids: list[str]) -> BatchDescribeResult:
         return asyncio.run(self._describe_batch(schedule_ids))
@@ -214,9 +214,6 @@ class TemporalScheduleAdapter(SchedulePort):
                 if exc.status == RPCStatusCode.NOT_FOUND:
                     return sid, None
                 logger.debug("describe_batch: RPC error for %s: %s", sid, exc)
-                return sid, _ERRORED
-            except Exception as exc:
-                logger.debug("describe_batch: unexpected error for %s: %s", sid, exc)
                 return sid, _ERRORED
 
         raw_results = await asyncio.gather(*[_describe_one(sid) for sid in schedule_ids])

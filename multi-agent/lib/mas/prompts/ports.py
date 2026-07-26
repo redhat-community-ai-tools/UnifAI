@@ -7,7 +7,7 @@ domain never imports temporalio.
 from abc import ABC, abstractmethod
 from typing import Dict, FrozenSet, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mas.prompts.models import ScheduledPrompt
 
@@ -18,6 +18,14 @@ class ScheduleNotFoundError(Exception):
     def __init__(self, schedule_id: str) -> None:
         self.schedule_id = schedule_id
         super().__init__(f"Schedule not found: {schedule_id}")
+
+
+class ScheduleDescribeError(Exception):
+    """Transient failure while describing a schedule (e.g. RPC timeout)."""
+
+    def __init__(self, schedule_id: str) -> None:
+        self.schedule_id = schedule_id
+        super().__init__(f"Transient describe failure: {schedule_id}")
 
 
 class ScheduleInfo(BaseModel):
@@ -39,7 +47,7 @@ class BatchDescribeResult(BaseModel):
 
     model_config = {"frozen": True}
 
-    found: Dict[str, Optional[ScheduleInfo]] = {}
+    found: Dict[str, Optional[ScheduleInfo]] = Field(default_factory=dict)
     errored: FrozenSet[str] = frozenset()
 
 
@@ -92,6 +100,6 @@ class SchedulePort(ABC):
                 found[sid] = self.describe(sid)
             except ScheduleNotFoundError:
                 found[sid] = None
-            except Exception:
+            except ScheduleDescribeError:
                 errored.add(sid)
         return BatchDescribeResult(found=found, errored=frozenset(errored))

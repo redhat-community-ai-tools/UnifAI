@@ -116,21 +116,25 @@ class ScheduledSessionWorkflow:
             if run_id is not None:
                 # post_execution is idempotent — record_run uses a $ne guard
                 # on session_id so retries neither double-count nor duplicate.
-                # Shielded scope ensures record_run/mark_completed finish even
-                # when the workflow is being cancelled.
-                async with workflow.CancellationScope(shield=True):
-                    await workflow.execute_activity(
-                        "post_execution",
-                        PostExecutionParams(
-                            prompt_id=params.prompt_id,
-                            run_id=run_id,
-                            status=outcome,
-                            started_at=started_at,
-                            failure_reason=failure_reason,
-                        ),
-                        start_to_close_timeout=_ACTIVITY_TIMEOUT,
-                        retry_policy=_ACTIVITY_RETRY,
+                # asyncio.shield keeps the activity running even when the
+                # workflow is being cancelled
+                try:
+                    await asyncio.shield(
+                        workflow.execute_activity(
+                            "post_execution",
+                            PostExecutionParams(
+                                prompt_id=params.prompt_id,
+                                run_id=run_id,
+                                status=outcome,
+                                started_at=started_at,
+                                failure_reason=failure_reason,
+                            ),
+                            start_to_close_timeout=_ACTIVITY_TIMEOUT,
+                            retry_policy=_ACTIVITY_RETRY,
+                        )
                     )
+                except asyncio.CancelledError:
+                    pass
 
         if run_id is None:
             msg = f"Failed to create session for prompt {params.prompt_id}"
