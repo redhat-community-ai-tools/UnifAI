@@ -65,7 +65,9 @@ class ScheduleActivities:
         inputs = {**params.inputs}
         if params.text:
             inputs["user_prompt"] = params.text
-        self._input_projector.apply(record, inputs)
+        self._input_projector.apply(
+            record, inputs, logged_in_user=params.credential_user_id,
+        )
 
     @activity.defn(name="build_session_workflow_params")
     def build_session_workflow_params(
@@ -84,6 +86,7 @@ class ScheduleActivities:
             identity=session.record.identity,
             scope="public",
             engine_name="temporal",
+            tags=session.record.run_context.tags,
         )
 
         graph_params = GraphExecutionParams(

@@ -105,6 +105,7 @@ class ScheduledSessionParams(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
     source: PromptSource = PromptSource.MANUAL
     idempotency_key: Optional[str] = None
+    credential_user_id: str = ""
 
 
 class StageScheduledInputsParams(BaseModel):
@@ -112,6 +113,7 @@ class StageScheduledInputsParams(BaseModel):
     run_id: str
     inputs: Dict[str, Any] = Field(default_factory=dict)
     text: str = ""
+    credential_user_id: str = ""
 
 
 class BuildSessionWorkflowParamsInput(BaseModel):

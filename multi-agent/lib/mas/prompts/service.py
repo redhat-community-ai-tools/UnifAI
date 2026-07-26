@@ -71,6 +71,7 @@ class PromptService:
         inputs: Optional[Dict[str, Any]] = None,
         source: str = "manual",
         schedule: Dict[str, Any],
+        credential_user_id: str = "",
     ) -> ScheduledPrompt:
         try:
             bp_doc = self._blueprint_service.get_blueprint_draft_doc(blueprint_id)
@@ -93,6 +94,7 @@ class PromptService:
             inputs=inputs or {},
             source=prompt_source,
             schedule=schedule_def,
+            credential_user_id=credential_user_id,
         )
         self._repo.save(prompt)
 

@@ -75,6 +75,7 @@ class ScheduledSessionWorkflow:
                     run_id=run_id,
                     inputs=params.inputs,
                     text=params.text,
+                    credential_user_id=params.credential_user_id,
                 ),
                 start_to_close_timeout=_ACTIVITY_TIMEOUT,
                 retry_policy=_ACTIVITY_RETRY,

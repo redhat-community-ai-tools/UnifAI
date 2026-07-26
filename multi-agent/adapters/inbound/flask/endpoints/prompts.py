@@ -4,7 +4,7 @@ Flask endpoints for scheduled prompts.
 Provides CRUD for ScheduledPrompt entities and schedule lifecycle
 operations (pause, resume, delete). All endpoints are identity-scoped.
 """
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, jsonify, current_app, g
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 
@@ -38,6 +38,7 @@ def create_prompt(identity, blueprint_id, text, inputs, source, schedule):
             inputs=inputs,
             source=source,
             schedule=schedule,
+            credential_user_id=getattr(g, "identity_username", ""),
         )
         return jsonify(prompt.model_dump(mode="json")), 201
     except BlueprintNotFoundError as e:

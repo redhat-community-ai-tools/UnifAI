@@ -94,6 +94,7 @@ class TemporalScheduleAdapter(SchedulePort):
             text=prompt.text,
             inputs=prompt.inputs,
             source=prompt.source.value,
+            credential_user_id=prompt.credential_user_id,
         )
 
         await client.create_schedule(
@@ -147,6 +148,7 @@ class TemporalScheduleAdapter(SchedulePort):
             text=prompt.text,
             inputs=prompt.inputs,
             source=prompt.source.value,
+            credential_user_id=prompt.credential_user_id,
         )
 
         async def _updater(_input: ScheduleUpdateInput) -> ScheduleUpdate:

@@ -97,3 +97,4 @@ class ScheduledPrompt(BasePrompt):
     temporal_schedule_id: Optional[str] = None
     completed_at: Optional[datetime] = None
     run_stats: RunStats = Field(default_factory=RunStats)
+    credential_user_id: str = ""
