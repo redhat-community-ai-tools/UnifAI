@@ -65,9 +65,10 @@ http {
         # Block external requests carrying the internal auth header.
         # X-Authenticated-User is reserved for pod-to-pod communication
         # and must never arrive from outside the cluster.
-        if (${DOLLAR}http_x_authenticated_user) {
-            return 403;
-        }
+        # This will be uncommented once the token authentication is pushed to main.
+        #if (${DOLLAR}http_x_authenticated_user) {
+        #    return 403;
+        #}
 
         root         /usr/share/nginx/html  ;
         client_max_body_size 75M;
