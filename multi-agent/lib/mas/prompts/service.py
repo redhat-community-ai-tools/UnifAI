@@ -15,7 +15,7 @@ from mas.prompts.models import (
     ScheduleStatus,
     ScheduledPrompt,
 )
-from mas.prompts.ports import ScheduleInfo, ScheduleNotFoundError, SchedulePort
+from mas.prompts.ports import BatchDescribeResult, ScheduleInfo, ScheduleNotFoundError, SchedulePort
 from mas.prompts.repository import ScheduledPromptRepository
 from mas.session.domain.models import ScheduleRunSummary
 from mas.session.service import SessionService
@@ -328,11 +328,18 @@ class PromptService:
         if not needs_reconcile:
             return prompts
 
-        info_map = self._schedule_port.describe_batch(list(needs_reconcile.keys()))
+        batch_result = self._schedule_port.describe_batch(list(needs_reconcile.keys()))
 
         result = list(prompts)
         for schedule_id, idx in needs_reconcile.items():
-            info = info_map.get(schedule_id)
+            if schedule_id in batch_result.errored:
+                logger.debug(
+                    "reconcile_batch: lookup failed for schedule %s, skipping",
+                    schedule_id,
+                )
+                continue
+
+            info = batch_result.found.get(schedule_id)
             if info is None or not info.running:
                 prompt = result[idx]
                 logger.info(

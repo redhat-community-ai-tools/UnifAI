@@ -40,7 +40,9 @@ class MongoBlueprintRepository(BlueprintRepository):
         )
 
     def save(self, identity: Identity, spec: BlueprintDraft,
-             rid_refs: list[str], metadata: dict[str, Any] = {}) -> str:
+             rid_refs: list[str], metadata: dict[str, Any] | None = None) -> str:
+        if metadata is None:
+            metadata = {}
         new_id = str(uuid4())
         doc = {
             "blueprint_id": new_id,

@@ -24,7 +24,7 @@ from config.app_config import AppConfig
 from temporalio.service import RPCError, RPCStatusCode
 
 from mas.prompts.models import ScheduleOverlapPolicy, ScheduledPrompt
-from mas.prompts.ports import ScheduleInfo, ScheduleNotFoundError, SchedulePort
+from mas.prompts.ports import BatchDescribeResult, ScheduleInfo, ScheduleNotFoundError, SchedulePort
 from temporal.client import get_temporal_client
 from temporal.models import ScheduledSessionParams
 
@@ -73,7 +73,7 @@ class TemporalScheduleAdapter(SchedulePort):
                 raise ScheduleNotFoundError(temporal_schedule_id) from exc
             raise
 
-    def describe_batch(self, schedule_ids: list[str]) -> dict[str, ScheduleInfo | None]:
+    def describe_batch(self, schedule_ids: list[str]) -> BatchDescribeResult:
         return asyncio.run(self._describe_batch(schedule_ids))
 
     async def _create(self, prompt: ScheduledPrompt) -> str:
@@ -180,23 +180,31 @@ class TemporalScheduleAdapter(SchedulePort):
         handle = client.get_schedule_handle(temporal_schedule_id)
         desc = await handle.describe()
         state = desc.schedule.state
-        exhausted = state.limited_actions and state.remaining_actions == 0
+        exhausted = (
+            (state.limited_actions and state.remaining_actions == 0)
+            or not desc.info.next_action_times
+        )
         return ScheduleInfo(
             paused=state.paused,
             remaining_actions=state.remaining_actions if state.limited_actions else None,
             running=not exhausted,
         )
 
-    async def _describe_batch(self, schedule_ids: list[str]) -> dict[str, ScheduleInfo | None]:
+    async def _describe_batch(self, schedule_ids: list[str]) -> BatchDescribeResult:
         """Concurrently describe multiple schedules in a single event loop."""
         client = await get_temporal_client()
 
-        async def _describe_one(sid: str) -> tuple[str, ScheduleInfo | None]:
+        _ERRORED = object()
+
+        async def _describe_one(sid: str) -> tuple[str, ScheduleInfo | None | object]:
             try:
                 handle = client.get_schedule_handle(sid)
                 desc = await handle.describe()
                 state = desc.schedule.state
-                exhausted = state.limited_actions and state.remaining_actions == 0
+                exhausted = (
+                    (state.limited_actions and state.remaining_actions == 0)
+                    or not desc.info.next_action_times
+                )
                 return sid, ScheduleInfo(
                     paused=state.paused,
                     remaining_actions=state.remaining_actions if state.limited_actions else None,
@@ -206,13 +214,21 @@ class TemporalScheduleAdapter(SchedulePort):
                 if exc.status == RPCStatusCode.NOT_FOUND:
                     return sid, None
                 logger.debug("describe_batch: RPC error for %s: %s", sid, exc)
-                return sid, None
+                return sid, _ERRORED
             except Exception as exc:
                 logger.debug("describe_batch: unexpected error for %s: %s", sid, exc)
-                return sid, None
+                return sid, _ERRORED
 
-        results = await asyncio.gather(*[_describe_one(sid) for sid in schedule_ids])
-        return dict(results)
+        raw_results = await asyncio.gather(*[_describe_one(sid) for sid in schedule_ids])
+
+        found: dict[str, ScheduleInfo | None] = {}
+        errored: set[str] = set()
+        for sid, info in raw_results:
+            if info is _ERRORED:
+                errored.add(sid)
+            else:
+                found[sid] = info  # type: ignore[assignment]
+        return BatchDescribeResult(found=found, errored=frozenset(errored))
 
     @staticmethod
     def _build_spec(prompt: ScheduledPrompt) -> ScheduleSpec:

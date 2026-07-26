@@ -42,6 +42,8 @@ def create_prompt(identity, blueprint_id, text, inputs, source, schedule):
         return jsonify(prompt.model_dump(mode="json")), 201
     except BlueprintNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "BLUEPRINT_NOT_FOUND"}), 404
+    except PromptPermissionError as e:
+        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
     except PromptLimitExceededError as e:
         return jsonify({"error": str(e), "error_type": "LIMIT_EXCEEDED"}), 409
     except ValueError as e:

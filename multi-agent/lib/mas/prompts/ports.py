@@ -5,8 +5,9 @@ Abstracts Temporal's Schedules API behind a domain port so the
 domain never imports temporalio.
 """
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, FrozenSet, List, Optional
+
+from pydantic import BaseModel
 
 from mas.prompts.models import ScheduledPrompt
 
@@ -19,13 +20,27 @@ class ScheduleNotFoundError(Exception):
         super().__init__(f"Schedule not found: {schedule_id}")
 
 
-@dataclass(frozen=True)
-class ScheduleInfo:
+class ScheduleInfo(BaseModel):
     """Read-back snapshot of a schedule's live state in the orchestrator."""
+
+    model_config = {"frozen": True}
 
     paused: bool
     remaining_actions: Optional[int]
     running: bool
+
+
+class BatchDescribeResult(BaseModel):
+    """Result of a batch describe operation.
+
+    ``found`` maps schedule IDs to their info (None = confirmed not found).
+    ``errored`` contains IDs whose lookup failed due to transient errors.
+    """
+
+    model_config = {"frozen": True}
+
+    found: Dict[str, Optional[ScheduleInfo]] = {}
+    errored: FrozenSet[str] = frozenset()
 
 
 class SchedulePort(ABC):
@@ -65,18 +80,18 @@ class SchedulePort(ABC):
         """Read-back the schedule's live state from the orchestrator."""
         ...
 
-    def describe_batch(self, schedule_ids: List[str]) -> Dict[str, Optional[ScheduleInfo]]:
+    def describe_batch(self, schedule_ids: List[str]) -> BatchDescribeResult:
         """Batch read-back of multiple schedules' live state.
 
-        Returns a mapping from schedule_id to ScheduleInfo (or None if not found).
         Default implementation falls back to sequential describe() calls.
         """
-        results: Dict[str, Optional[ScheduleInfo]] = {}
+        found: Dict[str, Optional[ScheduleInfo]] = {}
+        errored: set[str] = set()
         for sid in schedule_ids:
             try:
-                results[sid] = self.describe(sid)
+                found[sid] = self.describe(sid)
             except ScheduleNotFoundError:
-                results[sid] = None
+                found[sid] = None
             except Exception:
-                results[sid] = None
-        return results
+                errored.add(sid)
+        return BatchDescribeResult(found=found, errored=frozenset(errored))

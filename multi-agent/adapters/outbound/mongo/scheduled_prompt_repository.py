@@ -138,10 +138,8 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
                     "run_stats.recent_statuses.session_id": session_id,
                 },
                 {
-                    "$set": {
-                        "run_stats.last_run_at": started_at,
-                        "run_stats.recent_statuses.$.status": status,
-                    },
+                    "$max": {"run_stats.last_run_at": started_at},
+                    "$set": {"run_stats.recent_statuses.$.status": status},
                 },
             )
 

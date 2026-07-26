@@ -6,6 +6,7 @@ Creates a fresh session, stages inputs, builds workflow params via activity
 After the child completes (or fails), a post_execution activity records the
 run outcome in the prompt aggregate and handles finite-schedule completion.
 """
+import asyncio
 from datetime import timedelta
 
 from temporalio import workflow
@@ -101,6 +102,10 @@ class ScheduledSessionWorkflow:
                     "Child workflow sched-session-%s failed: %s", run_id, exc,
                 )
                 failure_reason = f"{type(exc).__name__}: {exc}"
+        except asyncio.CancelledError:
+            outcome = RunOutcome.FAILED
+            failure_reason = "WorkflowCancelled"
+            raise
         except Exception as exc:
             workflow.logger.error(
                 "ScheduledSessionWorkflow setup failed for prompt %s: %s",
@@ -111,22 +116,26 @@ class ScheduledSessionWorkflow:
             if run_id is not None:
                 # post_execution is idempotent — record_run uses a $ne guard
                 # on session_id so retries neither double-count nor duplicate.
-                await workflow.execute_activity(
-                    "post_execution",
-                    PostExecutionParams(
-                        prompt_id=params.prompt_id,
-                        run_id=run_id,
-                        status=outcome,
-                        started_at=started_at,
-                        failure_reason=failure_reason,
-                    ),
-                    start_to_close_timeout=_ACTIVITY_TIMEOUT,
-                    retry_policy=_ACTIVITY_RETRY,
-                )
+                # Shielded scope ensures record_run/mark_completed finish even
+                # when the workflow is being cancelled.
+                async with workflow.CancellationScope(shield=True):
+                    await workflow.execute_activity(
+                        "post_execution",
+                        PostExecutionParams(
+                            prompt_id=params.prompt_id,
+                            run_id=run_id,
+                            status=outcome,
+                            started_at=started_at,
+                            failure_reason=failure_reason,
+                        ),
+                        start_to_close_timeout=_ACTIVITY_TIMEOUT,
+                        retry_policy=_ACTIVITY_RETRY,
+                    )
 
         if run_id is None:
-            raise RuntimeError(
-                f"Failed to create session for prompt {params.prompt_id}"
-            )
+            msg = f"Failed to create session for prompt {params.prompt_id}"
+            if failure_reason:
+                msg = f"{msg}: {failure_reason}"
+            raise RuntimeError(msg)
 
         return run_id
