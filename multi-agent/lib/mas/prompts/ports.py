@@ -6,7 +6,7 @@ domain never imports temporalio.
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, List, Optional
 
 from mas.prompts.models import ScheduledPrompt
 
@@ -64,3 +64,19 @@ class SchedulePort(ABC):
     def describe(self, temporal_schedule_id: str) -> ScheduleInfo:
         """Read-back the schedule's live state from the orchestrator."""
         ...
+
+    def describe_batch(self, schedule_ids: List[str]) -> Dict[str, Optional[ScheduleInfo]]:
+        """Batch read-back of multiple schedules' live state.
+
+        Returns a mapping from schedule_id to ScheduleInfo (or None if not found).
+        Default implementation falls back to sequential describe() calls.
+        """
+        results: Dict[str, Optional[ScheduleInfo]] = {}
+        for sid in schedule_ids:
+            try:
+                results[sid] = self.describe(sid)
+            except ScheduleNotFoundError:
+                results[sid] = None
+            except Exception:
+                results[sid] = None
+        return results

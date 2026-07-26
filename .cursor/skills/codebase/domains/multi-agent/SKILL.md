@@ -167,6 +167,7 @@ No service instantiates its own infrastructure dependencies. No global state, no
 | Collaboration storage | `lib/mas/collaboration/ports.py` |
 
 All use `ABC` + `@abstractmethod`. Implementations live under `adapters/outbound/`.
+Ports are pure interfaces — no logging, no infrastructure imports, no concrete dependencies. Default method bodies (fallback implementations) are permitted but must stay infrastructure-free.
 
 ### 10. ExecutionContext Propagation
 

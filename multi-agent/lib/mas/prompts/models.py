@@ -61,13 +61,19 @@ class ScheduleDefinition(BaseModel):
         return self
 
 
+class RunOutcome(str, Enum):
+    """Fixed outcome set for scheduled workflow runs."""
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class RunStatusEntry(BaseModel):
     """Single entry in the recent-runs ring buffer."""
 
     model_config = ConfigDict(frozen=True)
 
     session_id: str
-    status: str
+    status: RunOutcome
     started_at: Optional[datetime] = None
 
 

@@ -104,6 +104,14 @@ class ScheduleActivities:
         try:
             started = datetime.fromisoformat(params.started_at)
         except (ValueError, TypeError):
+            logger.warning(
+                "Malformed started_at for prompt %s run %s: %r; "
+                "falling back to now()",
+                params.prompt_id,
+                params.run_id,
+                params.started_at,
+                exc_info=True,
+            )
             started = datetime.now(timezone.utc)
 
         self._prompt_service.record_run(

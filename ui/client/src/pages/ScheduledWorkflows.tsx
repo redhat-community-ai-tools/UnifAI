@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
@@ -313,6 +313,14 @@ export default function ScheduledWorkflows() {
     () => qc.invalidateQueries({ queryKey }),
     [qc, queryKey],
   );
+
+  // Invalidate run history when the list poll detects a new run
+  const expandedTotalRuns = expandedPrompt?.run_stats?.total_runs;
+  useEffect(() => {
+    if (expandedPromptId && expandedTotalRuns != null) {
+      qc.invalidateQueries({ queryKey: ["prompt-runs", expandedPromptId] });
+    }
+  }, [expandedTotalRuns, expandedPromptId, qc]);
 
   // ---- Optimistic helper ----
 

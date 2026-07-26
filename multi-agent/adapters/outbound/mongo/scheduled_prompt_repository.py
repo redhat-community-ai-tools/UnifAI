@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from mas.core.identity import Identity
-from mas.prompts.models import ScheduledPrompt
+from mas.prompts.models import RunOutcome, ScheduledPrompt, ScheduleStatus
 from mas.prompts.repository import ScheduledPromptRepository
 from outbound.mongo.helpers import identity_q
 from global_utils.utils.util import get_mongo_url
@@ -103,10 +103,10 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
     def count_active_by_blueprint(self, blueprint_id: str) -> int:
         return self._col.count_documents({
             "blueprint_id": blueprint_id,
-            "schedule_status": {"$in": ["active", "paused"]},
+            "schedule_status": {"$in": [ScheduleStatus.ACTIVE, ScheduleStatus.PAUSED]},
         })
 
-    def record_run(self, prompt_id: str, session_id: str, status: str, started_at: datetime) -> None:
+    def record_run(self, prompt_id: str, session_id: str, status: RunOutcome, started_at: datetime) -> None:
         entry = {
             "session_id": session_id,
             "status": status,

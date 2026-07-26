@@ -195,7 +195,7 @@ def get_prompt_runs(identity, prompt_id, limit):
     try:
         svc = current_app.container.prompt_service
         runs = svc.get_runs(prompt_id, identity=identity, limit=limit)
-        return jsonify(runs), 200
+        return jsonify([r.model_dump(mode="json") for r in runs]), 200
     except PromptNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except PromptPermissionError as e:

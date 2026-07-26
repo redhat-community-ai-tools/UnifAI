@@ -103,3 +103,35 @@ class SessionChat(BaseModel):
     output: str = ""
     status: Optional[str] = None
     status_message: Optional[str] = None
+
+
+class SessionDetail(BaseModel):
+    """Combined session payload for deep-link navigation.
+
+    Constructed by ``SessionService.get_session_detail()`` and served
+    from ``GET /sessions/session.get``.  Serialized with ``by_alias=True``
+    for the frontend.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+
+    session_id: str = Field(..., alias="sessionId")
+    blueprint_id: str = Field(..., alias="blueprintId")
+    blueprint_name: str = Field(..., alias="blueprintName")
+    status: str
+    meta: SessionMeta
+    created_at: Optional[datetime] = Field(None, alias="createdAt")
+    completed_at: Optional[datetime] = Field(None, alias="completedAt")
+    chat: SessionChat
+
+
+class ScheduleRunSummary(BaseModel):
+    """One execution record in a scheduled prompt's run history.
+
+    Lives in the session domain (rather than ``mas.prompts``) because each
+    run is a session — projected from session documents by
+    ``SessionService.get_runs_by_schedule()``.
+    """
+    session_id: str
+    status: str = "UNKNOWN"
+    started_at: Optional[str] = None  # ISO-8601
+    metadata: Dict[str, Any] = Field(default_factory=dict)

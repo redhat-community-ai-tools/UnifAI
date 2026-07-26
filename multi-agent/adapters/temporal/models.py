@@ -10,10 +10,10 @@ natively handles model_dump/model_validate for all Pydantic fields.
 Shared by both inbound (worker/activities/workflows) and outbound
 (executor/submitter) Temporal adapters.
 """
-from enum import Enum
 from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
 
+from mas.prompts.models import RunOutcome as RunOutcome  
 from mas.engine.domain.models import GraphDefinition
 from mas.graph.models.step_context import StepContext
 from mas.graph.state.graph_state import GraphState
@@ -117,11 +117,6 @@ class StageScheduledInputsParams(BaseModel):
 class BuildSessionWorkflowParamsInput(BaseModel):
     """Input to the build_session_workflow_params activity."""
     run_id: str
-
-
-class RunOutcome(str, Enum):
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
 
 
 class PostExecutionParams(BaseModel):

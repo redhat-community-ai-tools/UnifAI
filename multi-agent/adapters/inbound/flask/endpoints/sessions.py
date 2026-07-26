@@ -553,7 +553,7 @@ def get_session_detail(identity, session_id):
     try:
         svc = current_app.container.session_service
         detail = svc.get_session_detail(session_id=session_id, identity=identity)
-        return jsonify(detail), 200
+        return jsonify(detail.model_dump(mode="json", by_alias=True)), 200
     except PermissionError as e:
         return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
     except KeyError:

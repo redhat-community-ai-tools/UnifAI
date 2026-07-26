@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import List
 
 from mas.core.identity import Identity
-from mas.prompts.models import ScheduledPrompt
+from mas.prompts.models import RunOutcome, ScheduledPrompt
 
 
 class ScheduledPromptRepository(ABC):
@@ -55,7 +55,7 @@ class ScheduledPromptRepository(ABC):
         self,
         prompt_id: str,
         session_id: str,
-        status: str,
+        status: RunOutcome,
         started_at: datetime,
     ) -> None:
         """Atomically increment run count and push to recent_statuses ring buffer."""

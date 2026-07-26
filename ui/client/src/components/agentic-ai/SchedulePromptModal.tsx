@@ -555,6 +555,27 @@ export default function SchedulePromptModal({
   const isEditMode = !!editPrompt;
   const localTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
+  const convertTime = useCallback(
+    (currentTime: string, toTimezone: "UTC" | "local") => {
+      const [h, m] = currentTime.split(":").map(Number);
+      const offsetMin = new Date().getTimezoneOffset(); // UTC − local in minutes
+      const totalMin =
+        toTimezone === "local" ? h * 60 + m - offsetMin : h * 60 + m + offsetMin;
+      const wrapped = ((totalMin % 1440) + 1440) % 1440;
+      return `${String(Math.floor(wrapped / 60)).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
+    },
+    []
+  );
+
+  const handleTimezoneChange = useCallback(
+    (newTz: "UTC" | "local") => {
+      if (newTz === timezone) return;
+      setTime((prev) => convertTime(prev, newTz));
+      setTimezone(newTz);
+    },
+    [timezone, convertTime]
+  );
+
   const recurrenceLabels = useMemo(
     () => getRecurrenceLabels(startDate),
     [startDate],
@@ -576,8 +597,11 @@ export default function SchedulePromptModal({
       setCopiedFromShortcut(editPrompt.source === "shortcut_copy");
     } else {
       setPromptText("");
-      setStartDate(new Date());
-      setTime("09:00");
+      const now = new Date();
+      setStartDate(now);
+      setTime(
+        `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`
+      );
       setTimezone("UTC");
       setRecurrence("does_not_repeat");
       setCustomRecurrence(null);
@@ -745,7 +769,7 @@ export default function SchedulePromptModal({
                     variant={timezone === "UTC" ? "secondary" : "ghost"}
                     size="sm"
                     className="h-5 text-[10px] px-1.5"
-                    onClick={() => setTimezone("UTC")}
+                    onClick={() => handleTimezoneChange("UTC")}
                   >
                     UTC
                   </Button>
@@ -753,7 +777,7 @@ export default function SchedulePromptModal({
                     variant={timezone === "local" ? "secondary" : "ghost"}
                     size="sm"
                     className="h-5 text-[10px] px-1.5"
-                    onClick={() => setTimezone("local")}
+                    onClick={() => handleTimezoneChange("local")}
                   >
                     {localTimezone}
                   </Button>

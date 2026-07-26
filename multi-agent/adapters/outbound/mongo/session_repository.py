@@ -151,7 +151,7 @@ class MongoSessionRepository(SessionRepository):
     ) -> List[Mapping[str, Any]]:
         return list(self._col.find(
             {"metadata.schedule_id": schedule_id},
-            {"_id": 0},
+            {"_id": 0, "run_id": 1, "status": 1, "run_context.started_at": 1, "metadata": 1},
         ).sort(self._STARTED_AT_FIELD, pymongo.DESCENDING).limit(limit))
 
     def delete_by_identity(self, identity: Identity) -> int:

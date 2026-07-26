@@ -73,6 +73,9 @@ class TemporalScheduleAdapter(SchedulePort):
                 raise ScheduleNotFoundError(temporal_schedule_id) from exc
             raise
 
+    def describe_batch(self, schedule_ids: list[str]) -> dict[str, ScheduleInfo | None]:
+        return asyncio.run(self._describe_batch(schedule_ids))
+
     async def _create(self, prompt: ScheduledPrompt) -> str:
         cfg = AppConfig.get_instance()
         client = await get_temporal_client()
@@ -183,6 +186,33 @@ class TemporalScheduleAdapter(SchedulePort):
             remaining_actions=state.remaining_actions if state.limited_actions else None,
             running=not exhausted,
         )
+
+    async def _describe_batch(self, schedule_ids: list[str]) -> dict[str, ScheduleInfo | None]:
+        """Concurrently describe multiple schedules in a single event loop."""
+        client = await get_temporal_client()
+
+        async def _describe_one(sid: str) -> tuple[str, ScheduleInfo | None]:
+            try:
+                handle = client.get_schedule_handle(sid)
+                desc = await handle.describe()
+                state = desc.schedule.state
+                exhausted = state.limited_actions and state.remaining_actions == 0
+                return sid, ScheduleInfo(
+                    paused=state.paused,
+                    remaining_actions=state.remaining_actions if state.limited_actions else None,
+                    running=not exhausted,
+                )
+            except RPCError as exc:
+                if exc.status == RPCStatusCode.NOT_FOUND:
+                    return sid, None
+                logger.debug("describe_batch: RPC error for %s: %s", sid, exc)
+                return sid, None
+            except Exception as exc:
+                logger.debug("describe_batch: unexpected error for %s: %s", sid, exc)
+                return sid, None
+
+        results = await asyncio.gather(*[_describe_one(sid) for sid in schedule_ids])
+        return dict(results)
 
     @staticmethod
     def _build_spec(prompt: ScheduledPrompt) -> ScheduleSpec:

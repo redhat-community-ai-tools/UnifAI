@@ -30,16 +30,6 @@ function formatTime(iso: string): string {
     d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function formatDuration(startedAt: string, metadata: Record<string, any>): string {
-  const elapsed = metadata?.duration_ms ?? metadata?.elapsed_ms;
-  if (typeof elapsed === "number") {
-    if (elapsed < 1000) return `${elapsed}ms`;
-    if (elapsed < 60_000) return `${(elapsed / 1000).toFixed(1)}s`;
-    return `${Math.floor(elapsed / 60_000)}m ${Math.round((elapsed % 60_000) / 1000)}s`;
-  }
-  return "—";
-}
-
 interface RunHistoryPanelProps {
   promptId: string;
   userId: string;
@@ -52,7 +42,8 @@ export default function RunHistoryPanel({ promptId, userId, identityType }: RunH
   const { data: runs = [], isLoading } = useQuery<PromptRunResponse[]>({
     queryKey: ["prompt-runs", promptId],
     queryFn: () => getPromptRuns(promptId, userId, identityType, 8),
-    staleTime: 30_000,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
   });
 
   if (isLoading) {
@@ -78,7 +69,6 @@ export default function RunHistoryPanel({ promptId, userId, identityType }: RunH
         <thead>
           <tr className="text-gray-500 text-xs uppercase tracking-wider">
             <th className="text-left pb-2 font-medium">Time</th>
-            <th className="text-left pb-2 font-medium">Duration</th>
             <th className="text-left pb-2 font-medium">Status</th>
             <th className="text-right pb-2 font-medium">Session</th>
           </tr>
@@ -88,9 +78,6 @@ export default function RunHistoryPanel({ promptId, userId, identityType }: RunH
             <tr key={run.session_id} className="hover:bg-white/5 transition-colors">
               <td className="py-2 text-gray-300">
                 {formatTime(run.started_at)}
-              </td>
-              <td className="py-2 text-gray-400">
-                {formatDuration(run.started_at, run.metadata)}
               </td>
               <td className="py-2">
                 <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full border ${badgeClass(run.status)}`}>

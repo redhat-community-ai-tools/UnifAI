@@ -9,7 +9,10 @@ from mas.session.domain.status import SessionStatus
 from mas.session.domain.workflow_session import WorkflowSession
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.dto import SessionListItem
-from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
+from mas.session.domain.models import (
+    SessionChat, SessionMeta, SessionDetail, ScheduleRunSummary,
+    TimeSeriesPoint, SystemAnalyticsData,
+)
 from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
@@ -243,20 +246,20 @@ class SessionService:
         """
         return self._manager.get_chat(run_id)
 
-    def get_runs_by_schedule(self, schedule_id: str, *, limit: int = 20) -> List[Dict[str, Any]]:
+    def get_runs_by_schedule(self, schedule_id: str, *, limit: int = 20) -> List[ScheduleRunSummary]:
         """Return formatted run history for a given schedule/prompt ID."""
         docs = self._manager.find_by_schedule_id(schedule_id, limit=limit)
         return [
-            {
-                "session_id": d.get("run_id"),
-                "status": d.get("status", "UNKNOWN"),
-                "started_at": d.get("run_context", {}).get("started_at"),
-                "metadata": d.get("metadata", {}),
-            }
+            ScheduleRunSummary(
+                session_id=d.get("run_id", ""),
+                status=d.get("status", "UNKNOWN"),
+                started_at=d.get("run_context", {}).get("started_at"),
+                metadata=d.get("metadata", {}),
+            )
             for d in docs
         ]
 
-    def get_session_detail(self, session_id: str, identity: Identity) -> dict:
+    def get_session_detail(self, session_id: str, identity: Identity) -> SessionDetail:
         """Combined session retrieval: status + meta + chat + blueprint name.
 
         Used by the ``session.get`` endpoint to serve deep-link navigation
@@ -268,24 +271,16 @@ class SessionService:
                 f"Session {session_id} not owned by {identity.id}"
             )
 
-        status = record.status.name
-        meta = record.metadata
-        chat = self._manager.get_chat(session_id)
-        blueprint_name = self._manager.get_blueprint_name(record.blueprint_id)
-
-        created_at = getattr(record, "created_at", None)
-        completed_at = getattr(record, "completed_at", None)
-
-        return {
-            "sessionId": session_id,
-            "blueprintId": record.blueprint_id,
-            "blueprintName": blueprint_name,
-            "status": status,
-            "meta": meta.model_dump(mode="json"),
-            "createdAt": created_at.isoformat() if created_at else None,
-            "completedAt": completed_at.isoformat() if completed_at else None,
-            "chat": chat.model_dump(mode="json"),
-        }
+        return SessionDetail(
+            session_id=session_id,
+            blueprint_id=record.blueprint_id,
+            blueprint_name=self._manager.get_blueprint_name(record.blueprint_id),
+            status=record.status.name,
+            meta=record.metadata,
+            created_at=getattr(record, "created_at", None),
+            completed_at=getattr(record, "completed_at", None),
+            chat=self._manager.get_chat(session_id),
+        )
 
     def list_user_sessions(self, identity: Identity) -> list:
         """

@@ -10,12 +10,14 @@ from mas.blueprints.service import BlueprintService
 from mas.core.identity import Identity
 from mas.prompts.models import (
     PromptSource,
+    RunOutcome,
     ScheduleDefinition,
     ScheduleStatus,
     ScheduledPrompt,
 )
 from mas.prompts.ports import ScheduleInfo, ScheduleNotFoundError, SchedulePort
 from mas.prompts.repository import ScheduledPromptRepository
+from mas.session.domain.models import ScheduleRunSummary
 from mas.session.service import SessionService
 
 logger = logging.getLogger(__name__)
@@ -238,10 +240,11 @@ class PromptService:
         else:
             prompts = self._repo.list_by_identity(identity)
 
+        prompts = self._reconcile_batch(prompts)
+
         name_cache: Dict[str, str] = {}
         result: List[Dict[str, Any]] = []
         for p in prompts:
-            p = self._reconcile_if_needed(p)
             d = p.model_dump(mode="json")
             bid = p.blueprint_id
             if bid not in name_cache:
@@ -262,7 +265,7 @@ class PromptService:
         self,
         prompt_id: str,
         session_id: str,
-        status: str,
+        status: RunOutcome,
         started_at: datetime,
     ) -> None:
         """Record a completed run in the prompt's embedded run_stats."""
@@ -274,7 +277,7 @@ class PromptService:
 
     def get_runs(
         self, prompt_id: str, *, identity: Identity, limit: int = 20,
-    ) -> List[Dict[str, Any]]:
+    ) -> List[ScheduleRunSummary]:
         """Return run history for a scheduled prompt, with ownership verification."""
         self._load_and_verify(prompt_id, identity)
         if not self._session_service:
@@ -307,6 +310,43 @@ class PromptService:
             "completed_at": datetime.now(timezone.utc),
         })
         self._persist_best_effort(prompt)
+
+    def _reconcile_batch(self, prompts: List[ScheduledPrompt]) -> List[ScheduledPrompt]:
+        """Batch-reconcile finite active schedules using a single concurrent RPC call."""
+        if not self._schedule_port:
+            return prompts
+
+        needs_reconcile: Dict[str, int] = {}
+        for idx, p in enumerate(prompts):
+            if (
+                p.schedule_status == ScheduleStatus.ACTIVE
+                and p.temporal_schedule_id
+                and (p.schedule.remaining_actions is not None or p.schedule.end_at is not None)
+            ):
+                needs_reconcile[p.temporal_schedule_id] = idx
+
+        if not needs_reconcile:
+            return prompts
+
+        info_map = self._schedule_port.describe_batch(list(needs_reconcile.keys()))
+
+        result = list(prompts)
+        for schedule_id, idx in needs_reconcile.items():
+            info = info_map.get(schedule_id)
+            if info is None or not info.running:
+                prompt = result[idx]
+                logger.info(
+                    "reconcile: marking prompt %s COMPLETED — Temporal schedule exhausted",
+                    prompt.id,
+                )
+                prompt = prompt.model_copy(update={
+                    "schedule_status": ScheduleStatus.COMPLETED,
+                    "completed_at": datetime.now(timezone.utc),
+                })
+                self._persist_best_effort(prompt)
+                result[idx] = prompt
+
+        return result
 
     def _reconcile_if_needed(self, prompt: ScheduledPrompt) -> ScheduledPrompt:
         """Check Temporal's actual state for finite schedules and correct Mongo
