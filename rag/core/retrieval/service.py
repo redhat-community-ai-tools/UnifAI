@@ -14,9 +14,8 @@ class SearchQuery:
     """Value object for search parameters."""
     query_text: str
     source_type: str
+    owner_id: str
     top_k: int = 5
-    scope: str = "public"  # "public" or "private"
-    user: str = "default"
     doc_ids: Optional[List[str]] = None
     tags: Optional[List[str]] = None
 
@@ -54,9 +53,8 @@ class RetrievalService:
     def search(
         self,
         query: str,
+        owner_id: str,
         limit: int = 5,
-        scope: str = "public",
-        user: str = "default",
         doc_ids: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
@@ -66,8 +64,7 @@ class RetrievalService:
         Args:
             query: Search query text
             limit: Number of results to return
-            scope: "public" or "private" - filters by upload_by if private
-            user: User identifier for private scope filtering
+            owner_id: Owner ID to filter by
             doc_ids: Optional list of document IDs to filter by
             tags: Optional list of tags to filter by
             
@@ -77,6 +74,7 @@ class RetrievalService:
         # 1. Resolve source filters (doc_ids/tags -> source_ids)
         allowed_source_ids = self._filter_resolver.resolve(
             source_type=self._source_type,
+            owner_id=owner_id,
             doc_ids=doc_ids,
             tags=tags,
         )
@@ -92,9 +90,8 @@ class RetrievalService:
         if allowed_source_ids:
             filters["metadata.source_id"] = list(allowed_source_ids)
         
-        if scope == "private":
-            filters["metadata.upload_by"] = user
-        
+        filters["metadata.owner_id"] = owner_id
+
         # 3. Generate query embedding
         query_embedding = self._embedder.generate_query_embedding(query)
         
@@ -131,8 +128,7 @@ class RetrievalService:
         return self.search(
             query=query.query_text,
             limit=query.top_k,
-            scope=query.scope,
-            user=query.user,
+            owner_id=query.owner_id,
             doc_ids=query.doc_ids,
             tags=query.tags,
         )

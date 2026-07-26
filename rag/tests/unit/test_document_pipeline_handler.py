@@ -140,8 +140,8 @@ class TestDocumentPipelineHandler:
             {"text": "chunk2", "metadata": {"existing_key": "val"}},
         ]
         mock_embedder.generate_embeddings.return_value = [
-            {"text": "chunk1", "embedding": [0.1, 0.2], "metadata": {"source_id": "src_1", "source_type": "DOCUMENT"}},
-            {"text": "chunk2", "embedding": [0.3, 0.4], "metadata": {"existing_key": "val", "source_id": "src_1", "source_type": "DOCUMENT"}},
+            {"text": "chunk1", "embedding": [0.1, 0.2], "metadata": {"source_id": "src_1", "source_type": "DOCUMENT", "owner_id": "alice"}},
+            {"text": "chunk2", "embedding": [0.3, 0.4], "metadata": {"existing_key": "val", "source_id": "src_1", "source_type": "DOCUMENT", "owner_id": "alice"}},
         ]
 
         ctx = build_context()
@@ -150,6 +150,7 @@ class TestDocumentPipelineHandler:
         for chunk in result:
             assert chunk.metadata["source_id"] == "src_1"
             assert chunk.metadata["source_type"] == "DOCUMENT"
+            assert chunk.metadata["owner_id"] == "alice"
 
     def test_chunk_and_embed_converts_numpy_embedding(self, handler, mock_processor, mock_chunker, mock_embedder, build_context):
         """Numpy array embeddings must be converted to plain Python lists for JSON serialisation.

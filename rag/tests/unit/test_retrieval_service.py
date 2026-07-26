@@ -52,84 +52,83 @@ def service(mock_embedder, mock_vector_repo, mock_resolver):
 @pytest.mark.document
 @pytest.mark.retrieval
 class TestRetrievalService:
-    """Tests the RetrievalService search logic: filter resolution, scope handling,
-    embedding generation, and result mapping."""
+    """Tests the RetrievalService search logic: filter resolution, owner_id
+    enforcement, embedding generation, and result mapping."""
 
-    def test_search_no_filters(self, service, mock_resolver, mock_vector_repo, mock_embedder):
-        """A search with no filters must generate an embedding and search without filter constraints.
+    def test_search_no_doc_filters(self, service, mock_resolver, mock_vector_repo, mock_embedder):
+        """A search with no doc_ids/tags must still enforce metadata.owner_id filter.
 
-        Expected: generate_query_embedding called with the query; filters is None.
-        Logs: INFO 'Search returned 0 results for query: test query...'
+        Expected: generate_query_embedding called; filters contain only owner_id.
         """
         mock_resolver.resolve.return_value = None
 
-        service.search(query="test query", limit=5)
+        service.search(query="test query", owner_id="alice", limit=5)
 
         mock_embedder.generate_query_embedding.assert_called_once_with("test query")
         call_kwargs = mock_vector_repo.search.call_args
-        assert call_kwargs.kwargs.get("filters") is None or call_kwargs[1].get("filters") is None
+        filters = call_kwargs.kwargs.get("filters") or call_kwargs[1].get("filters")
+        assert filters["metadata.owner_id"] == "alice"
 
     def test_search_early_exit_empty_filter(self, service, mock_resolver, mock_vector_repo, mock_embedder):
         """When filters resolve to an empty set, search must return [] without generating embeddings.
 
         Expected: result == [], embedding not generated, vector search not called.
-        Logs: INFO 'Filter resolved to empty set - returning no results'
         """
         mock_resolver.resolve.return_value = set()
 
-        result = service.search(query="test", limit=5)
+        result = service.search(query="test", owner_id="alice", limit=5)
 
         assert result == []
         mock_embedder.generate_query_embedding.assert_not_called()
         mock_vector_repo.search.assert_not_called()
 
     def test_search_with_doc_ids(self, service, mock_resolver, mock_vector_repo):
-        """Passing doc_ids must restrict the search to those specific source IDs.
+        """Passing doc_ids must restrict the search to those specific source IDs plus owner_id.
 
-        Expected: filters['metadata.source_id'] == {'src_1', 'src_2'}.
-        Logs: INFO 'Search returned 0 results for query: test...'
+        Expected: filters contain both metadata.source_id and metadata.owner_id.
         """
         mock_resolver.resolve.return_value = {"src_1", "src_2"}
 
-        service.search(query="test", limit=5, doc_ids=["src_1", "src_2"])
+        service.search(query="test", owner_id="alice", limit=5, doc_ids=["src_1", "src_2"])
 
         call_kwargs = mock_vector_repo.search.call_args
         filters = call_kwargs.kwargs.get("filters") or call_kwargs[1].get("filters")
         assert set(filters["metadata.source_id"]) == {"src_1", "src_2"}
+        assert filters["metadata.owner_id"] == "alice"
 
-    def test_search_private_scope(self, service, mock_resolver, mock_vector_repo):
-        """Private scope must add a metadata.upload_by filter for the requesting user.
+    def test_search_owner_id_always_applied(self, service, mock_resolver, mock_vector_repo):
+        """owner_id filter is mandatory and always present regardless of other filters.
 
-        Expected: filters['metadata.upload_by'] == 'alice'.
-        Logs: INFO 'Search returned 0 results for query: test...'
+        Expected: filters['metadata.owner_id'] == 'bob' even with no doc_ids/tags.
         """
         mock_resolver.resolve.return_value = None
 
-        service.search(query="test", limit=5, scope="private", user="alice")
+        service.search(query="test", owner_id="bob", limit=5)
 
         call_kwargs = mock_vector_repo.search.call_args
         filters = call_kwargs.kwargs.get("filters") or call_kwargs[1].get("filters")
-        assert filters["metadata.upload_by"] == "alice"
+        assert filters["metadata.owner_id"] == "bob"
 
-    def test_search_public_scope(self, service, mock_resolver, mock_vector_repo):
-        """Public scope must not add an upload_by filter, returning results from all users.
+    def test_search_resolver_receives_owner_id(self, service, mock_resolver, mock_vector_repo):
+        """The resolver must receive owner_id alongside source_type, doc_ids, and tags.
 
-        Expected: filters is None or does not contain 'metadata.upload_by'.
-        Logs: INFO 'Search returned 0 results for query: test...'
+        Expected: resolver.resolve called with owner_id='alice'.
         """
         mock_resolver.resolve.return_value = None
 
-        service.search(query="test", limit=5, scope="public", user="alice")
+        service.search(query="test", owner_id="alice", limit=5, doc_ids=["d1"], tags=["t1"])
 
-        call_kwargs = mock_vector_repo.search.call_args
-        filters = call_kwargs.kwargs.get("filters") or call_kwargs[1].get("filters")
-        assert filters is None or "metadata.upload_by" not in (filters or {})
+        mock_resolver.resolve.assert_called_once_with(
+            source_type="DOCUMENT",
+            owner_id="alice",
+            doc_ids=["d1"],
+            tags=["t1"],
+        )
 
     def test_search_result_mapping(self, service, mock_resolver, mock_vector_repo):
         """SearchResult domain objects must be mapped to plain dicts with id, score, content, metadata.
 
         Expected: 2 results, first result matches the full expected dict.
-        Logs: INFO 'Search returned 2 results for query: test...'
         """
         mock_resolver.resolve.return_value = None
         mock_vector_repo.search.return_value = [
@@ -137,7 +136,7 @@ class TestRetrievalService:
             SearchResult(id="r2", score=0.80, content="foo bar", metadata={"source_id": "s2"}),
         ]
 
-        results = service.search(query="test", limit=2)
+        results = service.search(query="test", owner_id="alice", limit=2)
 
         assert len(results) == 2
         assert results[0] == {
@@ -151,17 +150,15 @@ class TestRetrievalService:
     def test_search_with_query_delegates(self, service, mock_resolver, mock_vector_repo):
         """search_with_query must unpack the SearchQuery DTO and delegate to the resolver.
 
-        Expected: resolver.resolve called with source_type, doc_ids, and tags from the query.
-        Logs: INFO 'Search returned 0 results for query: find docs...'
+        Expected: resolver.resolve called with source_type, owner_id, doc_ids, and tags from the query.
         """
         mock_resolver.resolve.return_value = None
 
         query = SearchQuery(
             query_text="find docs",
             source_type="DOCUMENT",
+            owner_id="bob",
             top_k=3,
-            scope="private",
-            user="bob",
             doc_ids=["d1"],
             tags=["tag1"],
         )
@@ -169,6 +166,7 @@ class TestRetrievalService:
 
         mock_resolver.resolve.assert_called_once_with(
             source_type="DOCUMENT",
+            owner_id="bob",
             doc_ids=["d1"],
             tags=["tag1"],
         )

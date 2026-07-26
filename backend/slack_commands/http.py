@@ -3,11 +3,12 @@ import logging
 
 import requests
 
+from global_utils.constants import INTERNAL_AUTH_HEADER
 from slack_commands.models import SlackResponse
 
 logger = logging.getLogger(__name__)
 
-_AUTH_HEADER = "X-Authenticated-User"
+_AUTH_HEADER = INTERNAL_AUTH_HEADER
 
 MAS_TIMEOUT = 10
 
