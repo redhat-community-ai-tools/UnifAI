@@ -12,14 +12,17 @@ from typing import Any, Dict, Iterator, List, Optional
 from langfuse import Langfuse, get_client, propagate_attributes
 
 from mas.core.tracing.models import ObservationHandle
+from mas.core.tracing.service import TracingService
 
 logger = logging.getLogger(__name__)
 
 
-class LangfuseTracingService:
+class LangfuseTracingService(TracingService):
     """Production tracing service backed by the Langfuse Python SDK v4."""
 
-    enabled: bool = True
+    @property
+    def enabled(self) -> bool:
+        return True
 
     def __init__(
         self,

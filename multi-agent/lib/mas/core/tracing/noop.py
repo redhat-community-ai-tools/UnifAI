@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from typing import Any, Dict, Iterator, List, Optional
 
 from mas.core.tracing.models import ObservationHandle
+from mas.core.tracing.service import TracingService
 
 
 def _noop_update(**kwargs: Any) -> None:
@@ -13,10 +14,12 @@ def _noop_update(**kwargs: Any) -> None:
 _NOOP_HANDLE = ObservationHandle(_update_fn=_noop_update)
 
 
-class NoOpTracingService:
+class NoOpTracingService(TracingService):
     """Zero-overhead stand-in when tracing is not configured."""
 
-    enabled: bool = False
+    @property
+    def enabled(self) -> bool:
+        return False
 
     @contextmanager
     def trace_session(

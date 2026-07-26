@@ -8,7 +8,7 @@ the ``base_url`` parameter.
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, Iterator, List, Optional, TYPE_CHECKING, Union
+from typing import Any, Dict, Iterator, List, Optional, Union
 
 from openai import OpenAI
 from openai.types.chat import ChatCompletionToolParam
@@ -19,9 +19,7 @@ from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import OpenAIMessageConverter
 from .tools_converter import OpenAIToolsConverter
 from .stream_aggregator import StreamToolCallAggregator
-
-if TYPE_CHECKING:
-    from mas.core.tracing import TracingService
+from mas.core.tracing import TracingService
 
 
 class OpenAILLM(BaseLLM):
@@ -41,7 +39,7 @@ class OpenAILLM(BaseLLM):
         temperature: float = 0.7,
         max_tokens: int = 1024,
         api_key: str = "EMPTY",
-        tracing: Optional[TracingService] = None,
+        tracing: TracingService = None,
         **extra: Any,
     ) -> None:
         self._name = "openai"
@@ -50,9 +48,6 @@ class OpenAILLM(BaseLLM):
         self._max_tokens = max_tokens
         self._tools: Optional[List[ChatCompletionToolParam]] = None
         self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
-        if tracing is None:
-            from mas.core.tracing.noop import NoOpTracingService
-            tracing = NoOpTracingService()
         self._tracing = tracing
 
     # ------------------------------------------------------------------
