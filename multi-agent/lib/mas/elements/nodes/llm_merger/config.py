@@ -3,7 +3,7 @@ from mas.elements.nodes.common.base_config import NodeBaseConfig
 from typing import Literal
 from pydantic import Field
 from .identifiers import Identifier
-from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint, combine_hints
+from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint, CardContext, combine_hints
 
 
 class MergerLLMNodeConfig(NodeBaseConfig):
@@ -23,7 +23,7 @@ class MergerLLMNodeConfig(NodeBaseConfig):
                 dependencies={"llm": "resourceId"},
                 field_mapping="is_valid"
             ),
-            CardHint(contexts=["builtin", "custom"]),
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]),
         ),
     )
     system_message: str = Field("""You are the Merger Agent. Your role is to combine answers from specialized agents into one clear, helpful response.
@@ -46,5 +46,5 @@ class MergerLLMNodeConfig(NodeBaseConfig):
         Output:
         - Start with the merged answer using inline agent tags and source mentions.
         - End with the improvement section if needed.
-        -         Use a professional, neutral tone that’s easy to follow.""",
+        -         Use a professional, neutral tone that's easy to follow.""",
                                 description="Unifier/Merger system prompt")

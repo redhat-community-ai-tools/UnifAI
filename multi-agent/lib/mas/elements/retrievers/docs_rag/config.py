@@ -1,7 +1,7 @@
 from typing import Dict, List, Literal, Optional
 from pydantic import Field
 from mas.elements.retrievers.common.base_config import BaseRetrieverConfig
-from mas.core.field_hints import ActionHint, HintType, SelectionType, CardHint
+from mas.core.field_hints import ActionHint, HintType, SelectionType, CardHint, CardContext
 from .identifiers import Identifier
 
 
@@ -15,7 +15,7 @@ class DocsRagRetrieverConfig(BaseRetrieverConfig):
         default=3,
         ge=1,
         description="Number of top document passages to return",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
 
     threshold: float = Field(

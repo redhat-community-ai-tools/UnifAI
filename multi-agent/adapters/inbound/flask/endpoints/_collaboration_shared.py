@@ -18,7 +18,7 @@ the cooperative lock check for the generic resource CRUD routes —
 "authorize the mutation, then reject if a built-in is locked by another
 admin" and previously duplicated that combination inline.
 """
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 from flask import Response, current_app, g, jsonify
 
@@ -31,8 +31,8 @@ from mas.resources.models import Resource
 from mas.resources.service import ResourcesService
 
 
-def collaboration_service_or_error() -> Tuple[
-    Optional[CollaborationService], Optional[Tuple[Response, int]]
+def collaboration_service_or_error() -> tuple[
+    Optional[CollaborationService], Optional[tuple[Response, int]]
 ]:
     """Return ``(service, None)``, or ``(None, (response, 501))`` if the
     collaboration service (Redis) isn't configured.
@@ -52,7 +52,7 @@ def collaboration_service_or_error() -> Tuple[
     return svc, None
 
 
-def holder_to_json(holder: Optional[TeamEditLockHolder]) -> Optional[Dict[str, Any]]:
+def holder_to_json(holder: Optional[TeamEditLockHolder]) -> Optional[dict[str, Any]]:
     if holder is None:
         return None
     return {
@@ -61,7 +61,7 @@ def holder_to_json(holder: Optional[TeamEditLockHolder]) -> Optional[Dict[str, A
     }
 
 
-def reject_if_locked_by_other(resource_id: str) -> Optional[Tuple[Response, int]]:
+def reject_if_locked_by_other(resource_id: str) -> Optional[tuple[Response, int]]:
     """Enforce the admin edit lock on mutating built-in endpoints.
 
     The lock is acquired cooperatively by the UI when an admin opens the
@@ -95,7 +95,7 @@ def guard_write_access_with_lock(
     *,
     identity: Identity,
     is_admin: bool,
-) -> Tuple[Optional[Resource], Optional[Tuple[Response, int]]]:
+) -> tuple[Optional[Resource], Optional[tuple[Response, int]]]:
     """Authorize a mutation and enforce the admin edit lock in one call.
 
     Runs ``ResourcesService.guard_write_access`` (ownership/admin checks —

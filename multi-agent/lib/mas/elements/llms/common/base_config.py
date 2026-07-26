@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, Extra, HttpUrl
-from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, combine_hints
+from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, CardContext, combine_hints
 
 
 class BaseLLMConfig(BaseModel):
@@ -12,7 +12,7 @@ class BaseLLMConfig(BaseModel):
     """
     model_name: str = Field(
         description="The OpenAI model ID to use for completions",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
     api_key: str = Field(
         "EMPTY",
@@ -25,7 +25,7 @@ class BaseLLMConfig(BaseModel):
     base_url: HttpUrl = Field(
         description="Base URL for the OpenAI API",
         title="Base URL",
-        json_schema_extra=CardHint(contexts=["custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.CUSTOM]).to_hints(),
     )
     verify_ssl: bool = Field(
         True,

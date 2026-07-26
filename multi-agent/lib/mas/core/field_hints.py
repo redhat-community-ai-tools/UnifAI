@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Literal, Optional, Union
+from typing import Dict, Any, List, Optional, Union
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -16,6 +16,12 @@ class SelectionType(Enum):
     """Selection type for action hints"""
     AUTOMATIC = "automatic"
     MANUAL = "manual"
+
+
+class CardContext(str, Enum):
+    """Card ownership context(s) a field may be scoped to."""
+    BUILTIN = "builtin"
+    CUSTOM = "custom"
 
 
 class ActionHint(BaseModel):
@@ -399,10 +405,10 @@ class CardHint(BaseModel):
     Example::
 
         json_schema_extra=combine_hints(
-            CardHint(contexts=["custom"]),
+            CardHint(contexts=[CardContext.CUSTOM]),
         )
     """
-    contexts: List[Literal["builtin", "custom"]] = Field(
+    contexts: List[CardContext] = Field(
         ...,
         description="Which card ownership context(s) this field should be shown on.",
     )

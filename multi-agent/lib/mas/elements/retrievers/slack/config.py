@@ -2,7 +2,7 @@ from typing import Literal
 from .identifiers import Identifier
 from pydantic import Field, HttpUrl
 from mas.elements.retrievers.common.base_config import BaseRetrieverConfig
-from mas.core.field_hints import HiddenHint, CardHint
+from mas.core.field_hints import HiddenHint, CardHint, CardContext
 
 
 class SlackRetrieverConfig(BaseRetrieverConfig):
@@ -20,7 +20,7 @@ class SlackRetrieverConfig(BaseRetrieverConfig):
     top_k_results: int = Field(
         3, ge=1,
         description="Number of top Slack messages to return",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
     threshold: float = Field(
         0.3, ge=0.0, le=1.0,

@@ -1,6 +1,6 @@
 from typing import Literal
 from pydantic import Field
-from mas.core.field_hints import CardHint
+from mas.core.field_hints import CardHint, CardContext
 from mas.elements.tools.common.base_config import BaseToolConfig
 from .identifiers import Identifier
 
@@ -13,5 +13,5 @@ class McpProxyToolConfig(BaseToolConfig):
     tool_name: str = Field(
         ...,
         description="",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )

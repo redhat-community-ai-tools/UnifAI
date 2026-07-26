@@ -5,7 +5,7 @@ from pydantic import Field, HttpUrl
 from mas.elements.providers.common.base_config import ProviderBaseConfig
 from mas.core.field_hints import (
     ActionHint, HintType, SelectionType,
-    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, ReadOnlyHint, CardHint, combine_hints,
+    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, ReadOnlyHint, CardHint, CardContext, combine_hints,
 )
 from .transport.enums import McpTransportType
 
@@ -56,7 +56,7 @@ class McpProviderConfig(ProviderBaseConfig):
                     },
                 ),
             ),
-            CardHint(contexts=["custom"]),
+            CardHint(contexts=[CardContext.CUSTOM]),
         ),
     )
     auth_method: McpAuthMethod = Field(
@@ -154,6 +154,6 @@ class McpProviderConfig(ProviderBaseConfig):
                 }
             ),
             ReadOnlyHint(read_only=False),
-            CardHint(contexts=["builtin", "custom"]),
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]),
         ),
     )
