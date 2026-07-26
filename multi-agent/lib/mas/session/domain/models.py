@@ -134,4 +134,4 @@ class ScheduleRunSummary(BaseModel):
     session_id: str
     status: str = "UNKNOWN"
     started_at: Optional[str] = None  # ISO-8601
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: SessionMeta = Field(default_factory=SessionMeta)

@@ -252,10 +252,9 @@ class SessionService:
         return [
             ScheduleRunSummary(
                 session_id=d.get("run_id", ""),
-                status=d.get("status", "UNKNOWN"),
+                status=d.get("status") or "UNKNOWN",
                 started_at=d.get("run_context", {}).get("started_at"),
-                metadata=d.get("metadata", {}),
-            )
+                metadata=SessionMeta.model_validate(d.get("metadata") or {}),            )
             for d in docs
         ]
 
@@ -277,8 +276,8 @@ class SessionService:
             blueprint_name=self._manager.get_blueprint_name(record.blueprint_id),
             status=record.status.name,
             meta=record.metadata,
-            created_at=getattr(record, "created_at", None),
-            completed_at=getattr(record, "completed_at", None),
+            created_at=record.run_context.started_at,
+            completed_at=record.run_context.finished_at,
             chat=self._manager.get_chat(session_id),
         )
 

@@ -555,25 +555,34 @@ export default function SchedulePromptModal({
   const isEditMode = !!editPrompt;
   const localTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, []);
 
-  const convertTime = useCallback(
-    (currentTime: string, toTimezone: "UTC" | "local") => {
-      const [h, m] = currentTime.split(":").map(Number);
-      const offsetMin = new Date().getTimezoneOffset(); // UTC − local in minutes
-      const totalMin =
-        toTimezone === "local" ? h * 60 + m - offsetMin : h * 60 + m + offsetMin;
-      const wrapped = ((totalMin % 1440) + 1440) % 1440;
-      return `${String(Math.floor(wrapped / 60)).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
-    },
-    []
-  );
-
   const handleTimezoneChange = useCallback(
     (newTz: "UTC" | "local") => {
       if (newTz === timezone) return;
-      setTime((prev) => convertTime(prev, newTz));
+
+      const [h, m] = time.split(":").map(Number);
+      const d = new Date(startDate);
+
+      if (timezone === "UTC") {
+        d.setUTCHours(h, m, 0, 0);
+      } else {
+        d.setHours(h, m, 0, 0);
+      }
+
+      if (newTz === "UTC") {
+        setTime(
+          `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`
+        );
+        setStartDate(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())));
+      } else {
+        setTime(
+          `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+        );
+        setStartDate(new Date(d.getFullYear(), d.getMonth(), d.getDate()));
+      }
+
       setTimezone(newTz);
     },
-    [timezone, convertTime]
+    [timezone, time, startDate]
   );
 
   const recurrenceLabels = useMemo(

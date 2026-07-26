@@ -39,7 +39,7 @@ interface RunHistoryPanelProps {
 export default function RunHistoryPanel({ promptId, userId, identityType }: RunHistoryPanelProps) {
   const [, navigate] = useLocation();
 
-  const { data: runs = [], isLoading } = useQuery<PromptRunResponse[]>({
+  const { data: runs = [], isLoading, isError } = useQuery<PromptRunResponse[]>({
     queryKey: ["prompt-runs", promptId],
     queryFn: () => getPromptRuns(promptId, userId, identityType, 8),
     staleTime: 5_000,
@@ -51,6 +51,14 @@ export default function RunHistoryPanel({ promptId, userId, identityType }: RunH
       <div className="flex items-center justify-center py-8 text-gray-500">
         <Loader2 className="w-4 h-4 animate-spin mr-2" />
         Loading run history…
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="text-center py-8 text-red-400 text-sm">
+        Failed to load run history.
       </div>
     );
   }

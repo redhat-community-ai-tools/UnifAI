@@ -106,8 +106,10 @@ class PromptService:
             if not self._repo.update(prompt):
                 try:
                     self._schedule_port.delete(temporal_id)
+                except ScheduleNotFoundError:
+                    pass
                 except Exception:
-                    logger.error(
+                    logger.exception(
                         "Leaked Temporal schedule %s after Mongo update failure for prompt %s",
                         temporal_id, prompt.id,
                     )
