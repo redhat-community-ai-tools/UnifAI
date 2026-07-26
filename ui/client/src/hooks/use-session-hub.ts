@@ -65,7 +65,7 @@ export interface UseSessionHubReturn {
   isLoading: boolean;
   error: string | null;
   isLoadingSessionMessages: boolean;
-  fetchChatSessions: () => Promise<void>;
+  fetchChatSessions: (options?: { skipRunId?: boolean }) => Promise<void>;
 
   // ── Session selection ───────────────────────────────────────────────────
   handleSessionSelect: (session: ChatSession) => Promise<void>;
@@ -451,7 +451,7 @@ export function useSessionHub({
   handleSessionSelectRef.current = handleSessionSelect;
 
   // ── fetchChatSessions ──────────────────────────────────────────────────
-  const fetchChatSessions = useCallback(async () => {
+  const fetchChatSessions = useCallback(async (options?: { skipRunId?: boolean }) => {
     try {
       setIsLoading(true);
       setError(null);
@@ -464,8 +464,9 @@ export function useSessionHub({
       setChatSessions(sorted);
 
       if (sorted.length > 0) {
-        if (runId) {
-          const target = sorted.find((s) => s.id === runId);
+        const effectiveRunId = options?.skipRunId ? null : runId;
+        if (effectiveRunId) {
+          const target = sorted.find((s) => s.id === effectiveRunId);
           if (target) {
             await handleSessionSelectRef.current(target);
           } else {
@@ -649,7 +650,7 @@ export function useSessionHub({
     clearStream();
     setSelectedSession(null);
     setCurrentSessionMessages([]);
-    fetchChatSessions();
+    fetchChatSessions({ skipRunId: true });
   }, [contextUserId, identityType]);
 
   // ── Return ─────────────────────────────────────────────────────────────
