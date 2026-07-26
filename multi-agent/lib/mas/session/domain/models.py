@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from mas.core.dto import GroupedCount
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
+from mas.session.domain.status import SessionStatus
 
 
 class TimeSeriesPoint(BaseModel):
@@ -132,6 +133,6 @@ class ScheduleRunSummary(BaseModel):
     ``SessionService.get_runs_by_schedule()``.
     """
     session_id: str
-    status: str = "UNKNOWN"
+    status: SessionStatus = SessionStatus.PENDING
     started_at: Optional[str] = None  # ISO-8601
     metadata: SessionMeta = Field(default_factory=SessionMeta)

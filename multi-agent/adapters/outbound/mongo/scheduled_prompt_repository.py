@@ -4,9 +4,10 @@ MongoDB implementation of ScheduledPromptRepository.
 Manages the `scheduled_prompts` collection with TTL cleanup for
 completed prompts and identity-scoped queries.
 """
-import pymongo
 from datetime import datetime, timezone
 from typing import List
+
+import pymongo
 
 from mas.core.identity import Identity
 from mas.prompts.models import RunOutcome, ScheduledPrompt, ScheduleStatus

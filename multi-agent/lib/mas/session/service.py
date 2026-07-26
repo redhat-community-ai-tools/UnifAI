@@ -252,9 +252,10 @@ class SessionService:
         return [
             ScheduleRunSummary(
                 session_id=d.get("run_id", ""),
-                status=d.get("status") or "UNKNOWN",
+                status=SessionStatus(d["status"]) if d.get("status") in SessionStatus.__members__ else SessionStatus.PENDING,
                 started_at=d.get("run_context", {}).get("started_at"),
-                metadata=SessionMeta.model_validate(d.get("metadata") or {}),            )
+                metadata=SessionMeta.model_validate(d.get("metadata") or {}),
+            )
             for d in docs
         ]
 

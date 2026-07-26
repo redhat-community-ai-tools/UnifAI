@@ -4,6 +4,8 @@ Flask endpoints for scheduled prompts.
 Provides CRUD for ScheduledPrompt entities and schedule lifecycle
 operations (pause, resume, delete). All endpoints are identity-scoped.
 """
+import logging
+
 from flask import Blueprint, jsonify, current_app, g
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
@@ -15,6 +17,10 @@ from mas.prompts.service import (
 )
 from mas.blueprints.exceptions import BlueprintNotFoundError
 from inbound.flask.decorators import with_require_identity_authorization
+
+logger = logging.getLogger(__name__)
+
+_RESPONSE_EXCLUDE = {"credential_user_id"}
 
 prompts_bp = Blueprint("prompts", __name__)
 
@@ -40,7 +46,7 @@ def create_prompt(identity, blueprint_id, text, inputs, source, schedule):
             schedule=schedule,
             credential_user_id=getattr(g, "identity_username", ""),
         )
-        return jsonify(prompt.model_dump(mode="json")), 201
+        return jsonify(prompt.model_dump(mode="json", exclude=_RESPONSE_EXCLUDE)), 201
     except BlueprintNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "BLUEPRINT_NOT_FOUND"}), 404
     except PromptPermissionError as e:
@@ -49,8 +55,9 @@ def create_prompt(identity, blueprint_id, text, inputs, source, schedule):
         return jsonify({"error": str(e), "error_type": "LIMIT_EXCEEDED"}), 409
     except ValueError as e:
         return jsonify({"error": str(e), "error_type": "VALIDATION_ERROR"}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in create_prompt")
+        return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
 
 
 @prompts_bp.route("/prompt.update", methods=["POST"])
@@ -71,15 +78,16 @@ def update_prompt(identity, prompt_id, text, inputs, schedule):
             inputs=inputs,
             schedule=schedule,
         )
-        return jsonify(prompt.model_dump(mode="json")), 200
+        return jsonify(prompt.model_dump(mode="json", exclude=_RESPONSE_EXCLUDE)), 200
     except PromptNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except PromptPermissionError as e:
         return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
     except ValueError as e:
         return jsonify({"error": str(e), "error_type": "VALIDATION_ERROR"}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in update_prompt")
+        return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
 
 
 @prompts_bp.route("/prompt.list", methods=["GET"])
@@ -92,8 +100,9 @@ def list_prompts(identity, blueprint_id):
         svc = current_app.container.prompt_service
         result = svc.list_enriched(identity=identity, blueprint_id=blueprint_id)
         return jsonify(result), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in list_prompts")
+        return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
 
 
 @prompts_bp.route("/prompt.get", methods=["GET"])
@@ -105,13 +114,14 @@ def get_prompt(identity, prompt_id):
     try:
         svc = current_app.container.prompt_service
         prompt = svc.get(prompt_id, identity=identity)
-        return jsonify(prompt.model_dump(mode="json")), 200
+        return jsonify(prompt.model_dump(mode="json", exclude=_RESPONSE_EXCLUDE)), 200
     except PromptNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except PromptPermissionError as e:
         return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in get_prompt")
+        return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
 
 
 @prompts_bp.route("/prompt.schedule.pause", methods=["POST"])
@@ -123,13 +133,14 @@ def pause_prompt(identity, prompt_id):
     try:
         svc = current_app.container.prompt_service
         prompt = svc.pause(prompt_id, identity=identity)
-        return jsonify(prompt.model_dump(mode="json")), 200
+        return jsonify(prompt.model_dump(mode="json", exclude=_RESPONSE_EXCLUDE)), 200
     except PromptNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except PromptPermissionError as e:
         return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in pause_prompt")
+        return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
 
 
 @prompts_bp.route("/prompt.schedule.resume", methods=["POST"])
@@ -141,13 +152,14 @@ def resume_prompt(identity, prompt_id):
     try:
         svc = current_app.container.prompt_service
         prompt = svc.resume(prompt_id, identity=identity)
-        return jsonify(prompt.model_dump(mode="json")), 200
+        return jsonify(prompt.model_dump(mode="json", exclude=_RESPONSE_EXCLUDE)), 200
     except PromptNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except PromptPermissionError as e:
         return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in resume_prompt")
+        return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
 
 
 @prompts_bp.route("/prompt.schedule.trigger", methods=["POST"])
@@ -159,15 +171,16 @@ def trigger_prompt(identity, prompt_id):
     try:
         svc = current_app.container.prompt_service
         prompt = svc.trigger(prompt_id, identity=identity)
-        return jsonify(prompt.model_dump(mode="json")), 200
+        return jsonify(prompt.model_dump(mode="json", exclude=_RESPONSE_EXCLUDE)), 200
     except PromptNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except PromptPermissionError as e:
         return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
     except ValueError as e:
         return jsonify({"error": str(e), "error_type": "VALIDATION_ERROR"}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in trigger_prompt")
+        return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
 
 
 @prompts_bp.route("/prompt.delete", methods=["DELETE"])
@@ -184,8 +197,9 @@ def delete_prompt(identity, prompt_id):
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except PromptPermissionError as e:
         return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in delete_prompt")
+        return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
 
 
 @prompts_bp.route("/prompt.runs", methods=["GET"])
@@ -203,5 +217,6 @@ def get_prompt_runs(identity, prompt_id, limit):
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except PromptPermissionError as e:
         return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Unhandled error in get_prompt_runs")
+        return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500

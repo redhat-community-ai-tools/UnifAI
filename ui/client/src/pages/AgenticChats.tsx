@@ -1,5 +1,5 @@
 
-import React, { useMemo, useCallback } from "react";
+import React, { useMemo, useCallback, useEffect, useRef } from "react";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
 import { motion } from "framer-motion";
@@ -30,6 +30,20 @@ export default function AgenticChats() {
     },
     [navigate],
   );
+
+  // Clear stale session ID from the URL when the workspace changes so
+  // the new workspace doesn't try to look up the previous workspace's session.
+  const prevWorkspaceRef = useRef({ viewMode, teamId: selectedTeam?.id });
+  useEffect(() => {
+    const prev = prevWorkspaceRef.current;
+    const teamId = selectedTeam?.id;
+    if (prev.viewMode !== viewMode || prev.teamId !== teamId) {
+      prevWorkspaceRef.current = { viewMode, teamId };
+      if (routeParams?.sessionId) {
+        navigate("/agentic-chats", { replace: true });
+      }
+    }
+  }, [viewMode, selectedTeam?.id, navigate, routeParams?.sessionId]);
 
   const teamMembers = useTeamMembers();
 

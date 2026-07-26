@@ -469,7 +469,11 @@ export function useSessionHub({
           if (target) {
             await handleSessionSelectRef.current(target);
           } else {
-            setError(`Session "${runId}" not found`);
+            toast({
+              title: "Session not found",
+              description: "The requested session doesn't exist in this workspace. Showing the most recent session instead.",
+              variant: "destructive",
+            });
             await handleSessionSelectRef.current(sorted[0]);
           }
         } else {

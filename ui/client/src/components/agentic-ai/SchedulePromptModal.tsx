@@ -538,8 +538,14 @@ export default function SchedulePromptModal({
   editPrompt,
 }: SchedulePromptModalProps) {
   const [promptText, setPromptText] = useState("");
-  const [startDate, setStartDate] = useState<Date>(new Date());
-  const [time, setTime] = useState("09:00");
+  const [startDate, setStartDate] = useState<Date>(() => {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  });
+  const [time, setTime] = useState(() => {
+    const now = new Date();
+    return `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`;
+  });
   const [timezone, setTimezone] = useState<"UTC" | "local">("UTC");
   const [recurrence, setRecurrence] = useState<RecurrenceOption>("does_not_repeat");
   const [customRecurrence, setCustomRecurrence] = useState<CustomRecurrenceConfig | null>(null);

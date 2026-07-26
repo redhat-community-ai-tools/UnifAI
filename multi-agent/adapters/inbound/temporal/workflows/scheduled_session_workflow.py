@@ -11,6 +11,7 @@ from datetime import timedelta
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
+from temporalio.exceptions import ActivityError, ChildWorkflowError
 
 from mas.graph.state.graph_state import GraphState
 from temporal.models import (
@@ -98,7 +99,7 @@ class ScheduledSessionWorkflow:
                     result_type=GraphState,
                 )
                 outcome = RunOutcome.COMPLETED
-            except Exception as exc:
+            except ChildWorkflowError as exc:
                 workflow.logger.error(
                     "Child workflow sched-session-%s failed: %s", run_id, exc,
                 )
@@ -107,7 +108,7 @@ class ScheduledSessionWorkflow:
             outcome = RunOutcome.FAILED
             failure_reason = "WorkflowCancelled"
             raise
-        except Exception as exc:
+        except ActivityError as exc:
             workflow.logger.error(
                 "ScheduledSessionWorkflow setup failed for prompt %s: %s",
                 params.prompt_id, exc,

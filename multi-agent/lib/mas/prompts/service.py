@@ -109,7 +109,10 @@ class PromptService:
                 try:
                     self._schedule_port.delete(temporal_id)
                 except ScheduleNotFoundError:
-                    pass
+                    logger.info(
+                        "Temporal schedule %s already absent during cleanup for prompt %s; no deletion needed",
+                        temporal_id, prompt.id,
+                    )
                 except Exception:
                     logger.exception(
                         "Leaked Temporal schedule %s after Mongo update failure for prompt %s",
@@ -249,7 +252,7 @@ class PromptService:
         name_cache: Dict[str, str] = {}
         result: List[Dict[str, Any]] = []
         for p in prompts:
-            d = p.model_dump(mode="json")
+            d = p.model_dump(mode="json", exclude={"credential_user_id"})
             bid = p.blueprint_id
             if bid not in name_cache:
                 name_cache[bid] = self._get_blueprint_name(bid)

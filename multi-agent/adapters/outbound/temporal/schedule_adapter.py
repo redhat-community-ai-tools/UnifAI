@@ -182,9 +182,10 @@ class TemporalScheduleAdapter(SchedulePort):
         handle = client.get_schedule_handle(temporal_schedule_id)
         desc = await handle.describe()
         state = desc.schedule.state
+        no_next = not desc.info.next_action_times
         exhausted = (
             (state.limited_actions and state.remaining_actions == 0)
-            or not desc.info.next_action_times
+            or (no_next and not state.paused)
         )
         return ScheduleInfo(
             paused=state.paused,
@@ -203,9 +204,10 @@ class TemporalScheduleAdapter(SchedulePort):
                 handle = client.get_schedule_handle(sid)
                 desc = await handle.describe()
                 state = desc.schedule.state
+                no_next = not desc.info.next_action_times
                 exhausted = (
                     (state.limited_actions and state.remaining_actions == 0)
-                    or not desc.info.next_action_times
+                    or (no_next and not state.paused)
                 )
                 return sid, ScheduleInfo(
                     paused=state.paused,

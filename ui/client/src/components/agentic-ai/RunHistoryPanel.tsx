@@ -40,7 +40,7 @@ export default function RunHistoryPanel({ promptId, userId, identityType }: RunH
   const [, navigate] = useLocation();
 
   const { data: runs = [], isLoading, isError } = useQuery<PromptRunResponse[]>({
-    queryKey: ["prompt-runs", promptId],
+    queryKey: ["prompt-runs", promptId, userId, identityType],
     queryFn: () => getPromptRuns(promptId, userId, identityType, 8),
     staleTime: 5_000,
     refetchInterval: 10_000,
