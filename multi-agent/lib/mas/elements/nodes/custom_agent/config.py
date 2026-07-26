@@ -41,7 +41,7 @@ class CustomAgentNodeConfig(NodeBaseConfig):
     providers: Optional[List[ProviderRef]] = Field(
         default_factory=list,
         description="List of MCP Provider Refs",
-        title="MCP Server",
+        title="MCP Servers",
         json_schema_extra=combine_hints(
             ApiHint(
                 endpoint="/resources/resources.validate",
@@ -57,7 +57,6 @@ class CustomAgentNodeConfig(NodeBaseConfig):
     system_message: str = Field(
         "",
         description="Custom system prompt",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
     strategy_type: str = Field(default=StrategyType.REACT.value, description="Agent strategy type")
     max_rounds: Optional[int] = Field(default=100, description="Maximum number of agent execution rounds")

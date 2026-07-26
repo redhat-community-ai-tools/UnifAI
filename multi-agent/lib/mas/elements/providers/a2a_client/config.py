@@ -21,6 +21,7 @@ class A2AProviderConfig(ProviderBaseConfig):
     
     base_url: HttpUrl = Field(
         description="Base URL of the A2A agent (e.g., http://localhost:10000)",
+        title="Base URL",
         json_schema_extra=CardHint(contexts=["custom"]).to_hints(),
     )
     

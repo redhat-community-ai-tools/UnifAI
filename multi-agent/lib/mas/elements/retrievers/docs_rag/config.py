@@ -15,7 +15,7 @@ class DocsRagRetrieverConfig(BaseRetrieverConfig):
         default=3,
         ge=1,
         description="Number of top document passages to return",
-        json_schema_extra=CardHint(contexts=["custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
 
     threshold: float = Field(

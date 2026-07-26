@@ -47,5 +47,4 @@ class MergerLLMNodeConfig(NodeBaseConfig):
         - Start with the merged answer using inline agent tags and source mentions.
         - End with the improvement section if needed.
         -         Use a professional, neutral tone that’s easy to follow.""",
-                                description="Unifier/Merger system prompt",
-                                json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints())
+                                description="Unifier/Merger system prompt")

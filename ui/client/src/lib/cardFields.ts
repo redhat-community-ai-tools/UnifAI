@@ -6,13 +6,23 @@ import { getStringEnumFromRef } from "@/components/agentic-ai/workspace/FieldRen
 export interface CardField {
   /** Config field name, e.g. "mcp_url" */
   key: string;
-  /** Human-readable label, e.g. "Mcp Url" */
+  /** Human-readable label, e.g. "MCP URL" */
   label: string;
   /** Pre-formatted, display-ready value */
   value: string;
 }
 
 const MAX_CARD_VALUE_LENGTH = 60;
+
+/**
+ * Words that should render fully upper-cased when humanizing a field name
+ * (e.g. `mcp_url` -> "MCP URL" instead of "Mcp Url"). Only used as a
+ * fallback when the schema doesn't provide an explicit `title`.
+ */
+const ACRONYMS = new Set([
+  "url", "api", "id", "llm", "mcp", "tls", "ssl", "hitl", "cwd", "ca",
+  "a2a", "rag", "ip", "dns", "uid", "uuid", "http", "https",
+]);
 
 function isEmptyValue(value: any): boolean {
   if (value === undefined || value === null) return true;
@@ -31,7 +41,10 @@ function humanizeFieldName(fieldName: string): string {
   return fieldName
     .split("_")
     .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .map((word) => {
+      if (ACRONYMS.has(word.toLowerCase())) return word.toUpperCase();
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
     .join(" ");
 }
 

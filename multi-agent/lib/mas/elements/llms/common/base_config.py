@@ -24,6 +24,7 @@ class BaseLLMConfig(BaseModel):
     )
     base_url: HttpUrl = Field(
         description="Base URL for the OpenAI API",
+        title="Base URL",
         json_schema_extra=CardHint(contexts=["custom"]).to_hints(),
     )
     verify_ssl: bool = Field(

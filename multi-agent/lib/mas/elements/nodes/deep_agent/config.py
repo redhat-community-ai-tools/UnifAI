@@ -48,7 +48,7 @@ class DeepAgentNodeConfig(NodeBaseConfig):
     providers: Optional[List[ProviderRef]] = Field(
         default_factory=list,
         description="List of MCP Provider Refs",
-        title="MCP Server",
+        title="MCP Servers",
         json_schema_extra=combine_hints(
             ApiHint(
                 endpoint="/resources/resources.validate",
@@ -65,7 +65,6 @@ class DeepAgentNodeConfig(NodeBaseConfig):
     system_message: str = Field(
         "",
         description="System prompt for the Deep Agent",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
 
     # --- Backend / Environment ---

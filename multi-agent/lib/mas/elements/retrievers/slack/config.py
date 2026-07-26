@@ -20,7 +20,7 @@ class SlackRetrieverConfig(BaseRetrieverConfig):
     top_k_results: int = Field(
         3, ge=1,
         description="Number of top Slack messages to return",
-        json_schema_extra=CardHint(contexts=["custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
     threshold: float = Field(
         0.3, ge=0.0, le=1.0,

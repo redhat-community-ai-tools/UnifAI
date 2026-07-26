@@ -136,7 +136,7 @@ class ClaudeAgentNodeConfig(NodeBaseConfig):
     providers: Optional[List[ProviderRef]] = Field(
         default_factory=list,
         description="List of MCP Provider Refs",
-        title="MCP Server",
+        title="MCP Servers",
         json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
 

@@ -22,6 +22,7 @@ class A2AAgentNodeConfig(NodeBaseConfig):
 
     base_url: HttpUrl = Field(
         description="Base URL of the A2A agent (e.g., http://localhost:10000)",
+        title="Base URL",
         json_schema_extra=combine_hints(
             ActionHint(
                 action_uid="a2a.validate_connection",

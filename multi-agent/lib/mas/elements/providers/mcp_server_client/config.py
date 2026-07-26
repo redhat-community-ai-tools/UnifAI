@@ -32,6 +32,7 @@ class McpProviderConfig(ProviderBaseConfig):
     )
     mcp_url: HttpUrl = Field(
         description="MCP server endpoint URL",
+        title="MCP URL",
         json_schema_extra=combine_hints(
             ActionHint(
                 action_uid="mcp.validate_connection",
@@ -137,6 +138,7 @@ class McpProviderConfig(ProviderBaseConfig):
     tool_names: Optional[List[str]] = Field(
         default_factory=list,
         description="List of specific tool names to use from the MCP server",
+        title="Tool Names",
         json_schema_extra=combine_hints(
             ActionHint(
                 action_uid="mcp.get_tools_names",
@@ -152,5 +154,6 @@ class McpProviderConfig(ProviderBaseConfig):
                 }
             ),
             ReadOnlyHint(read_only=False),
+            CardHint(contexts=["builtin", "custom"]),
         ),
     )

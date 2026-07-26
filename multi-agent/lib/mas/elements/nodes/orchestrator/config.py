@@ -40,7 +40,6 @@ class OrchestratorNodeConfig(NodeBaseConfig):
     system_message: str = Field(
         "",
         description="Domain specialization message (e.g., 'I specialize in document analysis and Slack integration'). This is separate from orchestrator behavior which is built-in.",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
     max_rounds: int = Field(
         100,

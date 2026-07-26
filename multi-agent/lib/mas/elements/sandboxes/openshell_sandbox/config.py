@@ -17,6 +17,7 @@ class OpenShellSandboxConfig(BaseSandboxConfig):
     gateway_url: str = Field(
         ...,
         description="OpenShell gateway endpoint (host:port or https://host:port)",
+        title="Gateway URL",
         json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )
     ca_cert: str = Field(
