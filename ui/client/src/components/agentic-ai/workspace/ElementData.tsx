@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { FileText } from 'lucide-react';
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
 import { maskSecretFieldsInConfig } from '../../../utils/maskSecretFields';
-import { simplifyConfigForDisplay } from '../../../utils/displayUtils';
+import { filterHiddenFieldsInConfig, simplifyConfigForDisplay } from '../../../utils/displayUtils';
 import { useAgenticAI } from '@/contexts/AgenticAIContext';
 
 interface ElementDataProps {
@@ -15,6 +15,13 @@ interface ElementDataProps {
   elementSchema: ElementSchema | null | undefined;
 }
 
+// NOTE: this modal is also used by the admin-only Repository Management
+// panel (`RepositoryManagement.tsx`) to let an admin inspect/edit a
+// built-in's *shared base* config — including locked, non-user-facing
+// fields like an MCP server's `mcp_url` — so it intentionally only drops
+// `hints.hidden` bookkeeping fields here, not the stricter
+// configurable+card-visible allowlist a regular end-user view needs (see
+// `ResourceDetailsModal.tsx`, used from the workflows view, for that).
 export const ElementData: React.FC<ElementDataProps> = ({
   element,
   elementType,
@@ -32,6 +39,17 @@ export const ElementData: React.FC<ElementDataProps> = ({
   // Resolve refs in config for display, then simplify object arrays to just names
   const configWithResolvedRefs = element?.config 
     ? simplifyConfigForDisplay(resolveRefsInConfig(element.config))
+    : null;
+
+  // Only surface fields the schema marks as user-visible (i.e. not
+  // `hints.hidden`) — internal/auth-flow bookkeeping fields like
+  // `server_identifier` or `credential_token` should never show up in this
+  // read-only dump.
+  const visibleConfig = configWithResolvedRefs
+    ? maskSecretFieldsInConfig(
+        filterHiddenFieldsInConfig(configWithResolvedRefs, elementSchema?.config_schema),
+        elementSchema?.config_schema,
+      )
     : null;
 
   return (
@@ -94,12 +112,12 @@ export const ElementData: React.FC<ElementDataProps> = ({
               )}
 
               {/* Configuration */}
-              {configWithResolvedRefs && (
+              {visibleConfig && Object.keys(visibleConfig).length > 0 && (
                 <div>
                   <label className="text-sm font-medium text-gray-400">Full Configuration</label>
                   <div className="mt-2 bg-gray-900 p-4 rounded-md">
                     <pre className="text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto">
-                      {JSON.stringify(maskSecretFieldsInConfig(configWithResolvedRefs, elementSchema?.config_schema), null, 2)}
+                      {JSON.stringify(visibleConfig, null, 2)}
                     </pre>
                   </div>
                 </div>

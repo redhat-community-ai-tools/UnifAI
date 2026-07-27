@@ -6,6 +6,8 @@
 - resolve() decrypting cfg_dict while merging the builtin overlay
 - configure_builtin() failing loudly when no repo is configured
 """
+from unittest.mock import Mock
+
 import pytest
 
 from mas.core.enums import ResourceOwnership, ResourceVisibility
@@ -208,8 +210,27 @@ class TestBuiltinOverlay:
         resolved_no_identity = service.resolve(doc.rid, identity=None)
 
         assert resolved_for_alice.bearer_token == "alices-secret"
-        assert resolved_for_bob.bearer_token == "default-secret"
+        # Bob never configured his own overlay — he must NOT silently inherit
+        # the admin's base-config secret (see `strip_unconfigured_secrets`).
+        assert resolved_for_bob.bearer_token is None
+        # identity=None (schema-only tooling) intentionally skips overlay
+        # resolution entirely and keeps returning raw built-in defaults —
+        # this is the documented, backward-compatible no-caller-identity path.
         assert resolved_no_identity.bearer_token == "default-secret"
+
+    def test_resolve_strips_unconfigured_secret_even_without_any_overlays(
+        self, service, admin_identity, alice,
+    ):
+        """Regression test: a per-user secret field baked into a built-in's
+        shared base config (e.g. an admin's own bearer token, saved while
+        testing connectivity before promoting it) must never leak to a user
+        who has no overlay of their own — even when *nobody* has configured
+        one yet."""
+        doc = _make_builtin_resource(service, admin_identity, bearer_token="admins-own-secret")
+
+        resolved = service.resolve(doc.rid, identity=alice)
+
+        assert resolved.bearer_token is None
 
     def test_configure_builtin_encrypts_encrypted_fields_only_secret(self, service, admin_identity, alice):
         """``api_key`` is sensitive only via ``ENCRYPTED_FIELDS`` (no
@@ -244,6 +265,132 @@ class TestBuiltinOverlay:
 
         built = captured["configs"][0]
         assert built.config.bearer_token == "alices-secret"
+
+
+# ────────────────────────────── required-secret validation gate ──────────────────────────────
+
+class TestBuiltinRequiredSecretValidation:
+    """A built-in resource with a per-user secret field (e.g. an MCP bearer
+    token) must not validate as "working" for a caller who never configured
+    their own overlay — even if the element's real validator would have
+    (perhaps accidentally) succeeded against an unauthenticated value. See
+    ``BuiltinResourceService.find_missing_required_overlay_fields``."""
+
+    @staticmethod
+    def _capture_ordered_configs(service, is_valid: bool):
+        captured = {}
+
+        def fake_validate_ordered(configs, context):
+            captured["configs"] = configs
+            return {c.rid: Mock(is_valid=is_valid) for c in configs}
+
+        service._validation_service.validate_ordered.side_effect = fake_validate_ordered
+        return captured
+
+    def test_validate_resource_flags_missing_secret_for_caller_without_overlay(
+        self, service, admin_identity, bob,
+    ):
+        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
+        captured = self._capture_ordered_configs(service, is_valid=False)
+
+        service.validate_resource(doc.rid, identity=bob)
+
+        built = next(c for c in captured["configs"] if c.rid == doc.rid)
+        assert built.validation_override_error is not None
+        assert "bearer_token" in built.validation_override_error
+
+    def test_validate_resource_does_not_flag_when_caller_has_overlay(
+        self, service, admin_identity, alice,
+    ):
+        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
+        service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
+        captured = self._capture_ordered_configs(service, is_valid=True)
+
+        service.validate_resource(doc.rid, identity=alice)
+
+        built = next(c for c in captured["configs"] if c.rid == doc.rid)
+        assert built.validation_override_error is None
+
+    def test_validate_resource_not_flagged_without_identity(
+        self, service, admin_identity,
+    ):
+        """``identity=None`` (schema-only tooling) skips the overlay concept
+        entirely, same as ``resolve()`` — it must not be flagged either."""
+        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
+        captured = self._capture_ordered_configs(service, is_valid=True)
+
+        service.validate_resource(doc.rid, identity=None)
+
+        built = next(c for c in captured["configs"] if c.rid == doc.rid)
+        assert built.validation_override_error is None
+
+    def test_custom_resource_is_never_flagged(self, service, alice):
+        """The gate only applies to built-ins — a custom resource's own
+        (possibly empty) secret field is the caller's own business, not a
+        missing-overlay situation."""
+        doc = _make_custom_resource(service, alice, bearer_token=None)
+        captured = self._capture_ordered_configs(service, is_valid=True)
+
+        service.validate_resource(doc.rid, identity=alice)
+
+        built = next(c for c in captured["configs"] if c.rid == doc.rid)
+        assert built.validation_override_error is None
+
+
+# ────────────────────────────── built-in URL collision ──────────────────────────────
+
+class TestBuiltinUrlCollision:
+    """A custom provider resource whose ``mcp_url`` matches an existing
+    built-in must be blocked on creation — but re-saving an already-existing
+    custom resource must not be permanently locked out just because a
+    built-in with the same URL showed up later (see ``_mcp_url_changed``)."""
+
+    @staticmethod
+    def _make_provider(resource_registry, identity, url, name, ownership=ResourceOwnership.CUSTOM):
+        doc = Resource(
+            identity=identity,
+            category=FAKE_CATEGORY,
+            type=FAKE_TYPE,
+            name=name,
+            cfg_dict={"mcp_url": url},
+            ownership=ownership,
+        )
+        return resource_registry.create(doc)
+
+    def test_create_blocks_url_matching_an_existing_builtin(self, resource_registry, admin_identity, alice):
+        self._make_provider(
+            resource_registry, admin_identity, "https://mcp.example.com/sse", "admin-builtin",
+            ownership=ResourceOwnership.BUILTIN,
+        )
+        with pytest.raises(ValueError, match="already exists and is ready for use"):
+            self._make_provider(resource_registry, alice, "https://mcp.example.com/sse", "alice-custom")
+
+    def test_resaving_unchanged_url_is_not_blocked_by_a_later_builtin(self, resource_registry, admin_identity, alice):
+        """Regression test: a custom resource created before a built-in with
+        the same URL existed must remain editable afterward — otherwise
+        every future save (even an unrelated field change) fails with a
+        confusing 'duplicate' error."""
+        custom = self._make_provider(resource_registry, alice, "https://mcp.example.com/sse", "alice-custom")
+        # A built-in with the same URL is added/promoted later.
+        self._make_provider(
+            resource_registry, admin_identity, "https://mcp.example.com/sse", "admin-builtin",
+            ownership=ResourceOwnership.BUILTIN,
+        )
+
+        custom.name = "renamed-mcp"
+        updated = resource_registry.update(custom)
+        assert updated.name == "renamed-mcp"
+
+    def test_changing_url_to_match_a_builtin_is_still_blocked(self, resource_registry, admin_identity, alice):
+        self._make_provider(
+            resource_registry, admin_identity, "https://mcp.example.com/sse", "admin-builtin",
+            ownership=ResourceOwnership.BUILTIN,
+        )
+        custom = self._make_provider(resource_registry, alice, "https://other.example.com/sse", "alice-custom")
+
+        custom.cfg_dict = {"mcp_url": "https://mcp.example.com/sse"}
+        with pytest.raises(ValueError, match="already exists and is ready for use"):
+            resource_registry.update(custom)
 
 
 # ────────────────────────────── card-visibility hint ──────────────────────────────

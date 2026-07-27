@@ -52,6 +52,51 @@ class ResourceFieldEncryption:
                 sensitive.add(field_name)
         return configurable, sensitive
 
+    def find_missing_conditionally_required_secrets(
+        self, category: str, type_key: str, resolved_config: Any,
+    ) -> list[str]:
+        """Secret fields that are relevant (per ``ConditionalHint``) but empty.
+
+        Unlike ``scan_schema_hints``'s ``configurable`` set (which is only
+        meaningful for built-in per-identity overlays), this needs no
+        admin/overlay concept at all — it just asks "does this resolved
+        config actually have the secret it claims to need?" — so it works
+        identically for built-in and custom resources.
+
+        Scoped strictly to fields carrying *both* ``SecretHint`` and
+        ``ConditionalHint`` (e.g. an MCP ``bearer_token``, only relevant
+        when ``auth_method == "access_token"``). A secret field with no
+        ``ConditionalHint`` is left alone — "optional and unset" is a
+        legitimate state for it, and we have no schema signal saying
+        otherwise. Without this check, an empty credential just gets
+        handed to the element's validator, which may probe the connection
+        anyway and — if the server happens to tolerate unauthenticated
+        requests — incorrectly report the resource as valid.
+        """
+        try:
+            schema = self._element_registry.get_schema_json(
+                ResourceCategory(category), type_key
+            )
+        except KeyError:
+            return []
+
+        missing = []
+        for key, field_schema in sorted(schema.get("properties", {}).items()):
+            hints = field_schema.get("hints", {})
+            if "secret" not in hints:
+                continue
+            conditional = hints.get("conditional", {}).get("visible_when")
+            if not conditional:
+                continue
+            if not all(
+                getattr(resolved_config, field_name, None) == value
+                for field_name, value in conditional.items()
+            ):
+                continue
+            if not getattr(resolved_config, key, None):
+                missing.append(key)
+        return missing
+
     def encrypt_fields(
         self,
         cfg_dict: dict,

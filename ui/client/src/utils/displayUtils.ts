@@ -106,3 +106,54 @@ export const simplifyConfigForDisplay = (config: any): any => {
   }
   return result;
 };
+
+/**
+ * Strip fields marked `hints.hidden` (see `field_hints.py#HiddenHint`) out of
+ * a config object before it's rendered in a "Full Configuration" details
+ * dump. These are internal/auth-flow bookkeeping fields (e.g.
+ * `server_identifier`, `scheme_type`, `credential_token`) that every other
+ * config-consuming surface (form population, validation, save payloads —
+ * see `ElementForm.tsx`, `BuiltinConfigureModal.tsx`) already treats as
+ * "never shown to the user", so the raw JSON dump must honor the same
+ * contract instead of leaking them back in.
+ */
+export const filterHiddenFieldsInConfig = (
+  config: any,
+  schema?: { properties?: { [key: string]: any } },
+): any => {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return config;
+  }
+
+  const filtered: any = {};
+  for (const [key, value] of Object.entries(config)) {
+    const fieldSchema = schema?.properties?.[key];
+    if (fieldSchema?.hints?.hidden?.hint_type === 'hidden') continue;
+
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      filtered[key] = filterHiddenFieldsInConfig(value, schema);
+    } else {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+};
+
+/**
+ * Keep only the given top-level field names on a config object. Used
+ * alongside `getBuiltinVisibleFieldNames` to reduce a built-in element's
+ * "Full Configuration" dump down to just its configurable + card-visible
+ * fields, dropping locked admin-only setup (e.g. an MCP server's
+ * `mcp_url`) that a regular user was never meant to see.
+ */
+export const filterToFieldNames = (config: any, allowed: Set<string>): any => {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return config;
+  }
+
+  const filtered: any = {};
+  for (const key of Object.keys(config)) {
+    if (allowed.has(key)) filtered[key] = config[key];
+  }
+  return filtered;
+};

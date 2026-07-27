@@ -452,7 +452,12 @@ export const useWorkspaceData = () => {
 
   // Save per-user configuration for a built-in resource (only non-readOnly fields)
   const configureBuiltin = useCallback(
-    async (resourceId: string, config: Record<string, any>) => {
+    async (
+      resourceId: string,
+      config: Record<string, any>,
+      options?: { silent?: boolean },
+    ) => {
+      const silent = options?.silent ?? false;
       try {
         setIsLoading(true);
         setError(null);
@@ -469,20 +474,28 @@ export const useWorkspaceData = () => {
         // card would otherwise keep showing the pre-save status forever.
         revalidateResourceAndAncestors(resourceId);
 
-        toast({
-          title: "Success",
-          description: "Built-in resource configured successfully",
-        });
+        // `silent` is used for background writes (e.g. persisting the
+        // discovered auth identifier right after a sign-in flow completes)
+        // that aren't a user-initiated "Configure" save and shouldn't pop a
+        // toast every time.
+        if (!silent) {
+          toast({
+            title: "Success",
+            description: "Built-in resource configured successfully",
+          });
+        }
         return result;
       } catch (err: any) {
         const errorMessage =
           err.response?.data?.error || "Failed to configure built-in resource";
         setError(errorMessage);
-        toast({
-          title: "Error",
-          description: errorMessage,
-          variant: "destructive",
-        });
+        if (!silent) {
+          toast({
+            title: "Error",
+            description: errorMessage,
+            variant: "destructive",
+          });
+        }
         console.error("Error configuring built-in:", err);
         // Rethrow (rather than returning null) so callers - notably
         // BuiltinConfigureModal's handleSave - know the save failed and

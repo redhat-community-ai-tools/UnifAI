@@ -29,6 +29,19 @@ from mas.catalog.element_registry import ElementRegistry
 
 logger = logging.getLogger(__name__)
 
+# Hidden fields that the auth/validation layer writes automatically (e.g.
+# ``McpProviderConfig.server_identifier`` / ``scheme_type``, populated by
+# ``auth.discovery`` once a sign-in flow resolves the real OAuth issuer).
+# They carry ``HiddenHint`` rather than ``ReadOnlyHint(read_only=False)``, so
+# they're intentionally excluded from ``scan_schema_hints``'s configurable
+# set — but a signed-in built-in resource still needs them persisted onto
+# its per-identity overlay, or every later validation falls back to an
+# unauthenticated probe against a stale/empty identifier. Mirrors the
+# equivalent special case in ``ElementForm.tsx`` for regular (non-builtin)
+# resources, which always includes these two hidden fields in its save
+# payload for the same reason.
+AUTH_METADATA_OVERLAY_FIELDS = frozenset({"server_identifier", "scheme_type"})
+
 
 class BuiltinResourceService:
     """Admin lifecycle + per-identity overlays for built-in resources."""
@@ -44,6 +57,16 @@ class BuiltinResourceService:
         self.element_registry = element_registry
         self._fields = field_encryption
         self._builtin_user_config_repo = builtin_user_config_repo
+
+    def _auth_metadata_keys(self, resource: Resource) -> set:
+        """Auth-metadata fields that actually exist on this element's schema."""
+        try:
+            schema = self.element_registry.get_schema_json(
+                ResourceCategory(resource.category), resource.type
+            )
+        except KeyError:
+            return set()
+        return AUTH_METADATA_OVERLAY_FIELDS & schema.get("properties", {}).keys()
 
     # ---------- Listing / schema ----------
 
@@ -143,10 +166,11 @@ class BuiltinResourceService:
         configurable_keys, sensitive_keys = self._fields.scan_schema_hints(
             resource.category, resource.type
         )
-        if not configurable_keys:
+        allowed_keys = configurable_keys | self._auth_metadata_keys(resource)
+        if not allowed_keys:
             raise ValueError("No configurable fields defined for this element type")
 
-        filtered = {k: v for k, v in config.items() if k in configurable_keys}
+        filtered = {k: v for k, v in config.items() if k in allowed_keys}
         if not filtered:
             raise ValueError("No valid configurable fields provided")
 
@@ -190,6 +214,84 @@ class BuiltinResourceService:
         logger.info("Built-in resource '%s' configured for %s", rid, key)
         return resource
 
+    def strip_unconfigured_secrets(
+        self, resource: Resource, config: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Remove per-user secret values from a built-in's shared base config.
+
+        Fields that are both user-configurable (``ReadOnlyHint(read_only=False)``)
+        and sensitive (``SecretHint``) — e.g. an MCP ``bearer_token`` — are meant
+        to come exclusively from the caller's own overlay (``resolve_overlay``),
+        never from the resource's shared ``cfg_dict``. Without this, a value an
+        admin happened to save on the base config (e.g. while testing
+        connectivity before promoting it) would silently leak to every other
+        user who never configured their own credential, making that user's
+        resource appear "valid" while actually authenticating as the admin.
+
+        Called before merging the overlay in ``ResourcesService.resolve()`` so
+        a caller with their own overlay value still gets it (the overlay merge
+        happens after this), while a caller without one gets the field's
+        schema default (``None``/empty) instead of the admin's value.
+        """
+        configurable_keys, sensitive_keys = self._fields.scan_schema_hints(
+            resource.category, resource.type
+        )
+        secret_configurable_keys = configurable_keys & sensitive_keys
+        if not secret_configurable_keys:
+            return config
+        stripped = dict(config)
+        for key in secret_configurable_keys:
+            stripped.pop(key, None)
+        return stripped
+
+    def find_missing_required_overlay_fields(
+        self, resource: Resource, resolved_config: Any,
+    ) -> list[str]:
+        """Secret+configurable fields still empty after overlay resolution.
+
+        Combined with ``strip_unconfigured_secrets``, an empty value on
+        *resolved_config* for one of these fields means this caller's
+        identity has no overlay of their own providing it — e.g. an MCP
+        ``bearer_token`` when ``auth_method`` is set to access-token auth.
+        Without an explicit check, that empty credential just gets handed
+        to the element's validator, which may probe the connection anyway
+        and — if the server happens to tolerate unauthenticated requests —
+        incorrectly report the resource as valid for a user who never
+        configured anything.
+
+        ``ConditionalHint`` scopes the check to fields actually relevant to
+        *resolved_config* (e.g. a ``sign_in``-mode MCP never requires
+        ``bearer_token``, so it's skipped rather than always demanded).
+        """
+        configurable_keys, sensitive_keys = self._fields.scan_schema_hints(
+            resource.category, resource.type
+        )
+        secret_configurable_keys = configurable_keys & sensitive_keys
+        if not secret_configurable_keys:
+            return []
+
+        try:
+            schema = self.element_registry.get_schema_json(
+                ResourceCategory(resource.category), resource.type
+            )
+        except KeyError:
+            return []
+        properties = schema.get("properties", {})
+
+        missing = []
+        for key in sorted(secret_configurable_keys):
+            conditional = (
+                properties.get(key, {}).get("hints", {}).get("conditional", {}).get("visible_when")
+            )
+            if conditional and not all(
+                getattr(resolved_config, field_name, None) == value
+                for field_name, value in conditional.items()
+            ):
+                continue
+            if not getattr(resolved_config, key, None):
+                missing.append(key)
+        return missing
+
     def resolve_overlay(self, resource: Resource, identity: Identity) -> Dict[str, Any]:
         """Resolve the effective config overlay for a built-in resource.
 
@@ -213,7 +315,8 @@ class BuiltinResourceService:
         configurable_keys, sensitive_keys = self._fields.scan_schema_hints(
             resource.category, resource.type
         )
-        if not configurable_keys:
+        allowed_keys = configurable_keys | self._auth_metadata_keys(resource)
+        if not allowed_keys:
             return {}
 
         key = identity_to_key(identity)
@@ -224,7 +327,7 @@ class BuiltinResourceService:
         model_cls = self.element_registry.get_schema(
             ResourceCategory(resource.category), resource.type
         )
-        overlay = {k: v for k, v in user_config.fields.items() if k in configurable_keys}
+        overlay = {k: v for k, v in user_config.fields.items() if k in allowed_keys}
         return self._fields.decrypt_config_fields(overlay, sensitive_keys, model_cls)
 
     # ---------- Admin lifecycle ----------

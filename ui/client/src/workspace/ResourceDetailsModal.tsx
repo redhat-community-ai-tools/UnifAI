@@ -4,9 +4,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { BuildingBlock } from '@/types/graph';
 import { FileText } from 'lucide-react';
 import { maskSecretFieldsInConfig } from '../utils/maskSecretFields';
-import { simplifyConfigForDisplay } from '../utils/displayUtils';
+import { filterHiddenFieldsInConfig, filterToFieldNames, simplifyConfigForDisplay } from '../utils/displayUtils';
+import { getBuiltinVisibleFieldNames } from '@/lib/cardFields';
 import { ElementSchema } from '../types/workspace';
 import axios from '../http/axiosAgentConfig';
+import { getResource, getBuiltinSchema } from '@/api/resources';
 import { useAgenticAI } from '@/contexts/AgenticAIContext';
 
 interface ResourceDetailsModalProps {
@@ -21,28 +23,84 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
   element
 }) => {
   const [elementSchema, setElementSchema] = useState<ElementSchema | null>(null);
+  // The graph/blueprint spec a `BuildingBlock` is built from (see
+  // `buildElementBlockMap`) carries no ownership info, so it's looked up
+  // directly here — this is what makes the built-in field filtering below
+  // work correctly for elements opened from the workflows view, not just
+  // the Agent Repository grid (which already has `ownership` on hand).
+  const [ownership, setOwnership] = useState<'builtin' | 'custom' | null>(null);
   const { getResourceName, resolveRefsInConfig } = useAgenticAI();
 
-  // Fetch schema when modal opens and element is available
+  // Fetch ownership, then the schema variant that matches it. A built-in's
+  // schema must come from `/resources/builtin.schema` (which annotates
+  // every field the resource's spec doesn't explicitly mark configurable
+  // with `read_only: true`) rather than the plain `/catalog/element.spec.get`
+  // schema — otherwise a field like an MCP provider's `mcp_url` (no
+  // explicit ReadOnlyHint at all) would look "configurable" by omission
+  // and leak into the built-in field allowlist below.
   useEffect(() => {
-    if (isOpen && element?.workspaceData) {
-      const fetchSchema = async () => {
-        try {
-          // Fetch the element-specific schema
-          const response = await axios.get<ElementSchema>(
-            `/catalog/element.spec.get?category=${element.workspaceData?.category}&type=${element.workspaceData?.type}`
-          );
-          setElementSchema(response.data);
-        } catch (error) {
-          console.error('Error fetching element schema:', error);
-          setElementSchema(null);
-        }
-      };
-      fetchSchema();
-    } else {
+    const rid = element?.workspaceData?.rid;
+    const category = element?.workspaceData?.category;
+    const type = element?.workspaceData?.type;
+    if (!isOpen || !rid || !category || !type) {
       setElementSchema(null);
+      setOwnership(null);
+      return;
     }
-  }, [isOpen, element?.workspaceData?.category, element?.workspaceData?.type]);
+
+    let cancelled = false;
+
+    (async () => {
+      // Best-effort — an unresolvable rid (e.g. a synthetic placeholder
+      // node that was never persisted as a resource) just falls back to
+      // the non-builtin (hidden-fields-only) filtering below.
+      let resolvedOwnership: 'builtin' | 'custom' | null = null;
+      try {
+        const resource = await getResource(rid);
+        resolvedOwnership = resource.ownership ?? 'custom';
+      } catch {
+        resolvedOwnership = null;
+      }
+      if (cancelled) return;
+      setOwnership(resolvedOwnership);
+
+      try {
+        if (resolvedOwnership === 'builtin') {
+          const configSchema = await getBuiltinSchema(rid);
+          if (!cancelled) {
+            setElementSchema({ category, name: '', type, description: '', tags: [], config_schema: configSchema });
+          }
+        } else {
+          const response = await axios.get<ElementSchema>(
+            `/catalog/element.spec.get?category=${category}&type=${type}`
+          );
+          if (!cancelled) setElementSchema(response.data);
+        }
+      } catch (error) {
+        console.error('Error fetching element schema:', error);
+        if (!cancelled) setElementSchema(null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isOpen, element?.workspaceData?.rid, element?.workspaceData?.category, element?.workspaceData?.type]);
+
+  // Built-ins only surface configurable + card-visible fields (locked
+  // admin-only setup like an MCP server's `mcp_url` is never shown to a
+  // regular user); other ownerships just drop `hints.hidden` bookkeeping
+  // fields (e.g. `server_identifier`, `credential_token`).
+  const displayableConfig = element?.workspaceData?.config
+    ? (() => {
+        const resolved = simplifyConfigForDisplay(resolveRefsInConfig(element.workspaceData.config));
+        return ownership === 'builtin'
+          ? filterToFieldNames(resolved, getBuiltinVisibleFieldNames(elementSchema, resolved))
+          : filterHiddenFieldsInConfig(resolved, elementSchema?.config_schema);
+      })()
+    : null;
+
+  const visibleConfig = displayableConfig
+    ? maskSecretFieldsInConfig(displayableConfig, elementSchema?.config_schema)
+    : null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -104,19 +162,12 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
               )}
 
               {/* Configuration */}
-              {element.workspaceData.config && (
+              {visibleConfig && Object.keys(visibleConfig).length > 0 && (
                 <div>
                   <label className="text-sm font-medium text-gray-400">Full Configuration</label>
                   <div className="mt-2 bg-gray-900 p-4 rounded-md">
                     <pre className="text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto">
-                      {JSON.stringify(
-                        maskSecretFieldsInConfig(
-                          simplifyConfigForDisplay(resolveRefsInConfig(element.workspaceData.config)), 
-                          elementSchema?.config_schema
-                        ), 
-                        null, 
-                        2
-                      )}
+                      {JSON.stringify(visibleConfig, null, 2)}
                     </pre>
                   </div>
                 </div>

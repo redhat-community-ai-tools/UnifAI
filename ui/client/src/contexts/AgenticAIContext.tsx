@@ -77,6 +77,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
     displayName: WORKSPACE_DISPLAY_NAME,
     identityType: WORKSPACE_IDENTITY_TYPE,
     credentialUserId: CREDENTIAL_USER_ID,
+    isTeam: IS_TEAM_WORKSPACE,
   } = useWorkspaceIdentity();
   
   // Use ref to access latest cache without causing re-renders in callbacks
@@ -216,7 +217,21 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
     try {
       const response = await axios.post<ElementValidationResult>(
         '/resources/resource.validate',
-        { resourceId: rid, userId: CREDENTIAL_USER_ID },
+        {
+          resourceId: rid,
+          userId: CREDENTIAL_USER_ID,
+          // Without `teamId`, the backend's identity decorator always
+          // resolves the *personal* user identity (it only switches to the
+          // team identity when `teamId` is present in the body) — even
+          // while the workspace is in team view. A built-in's per-identity
+          // overlay (e.g. a team's configured bearer token) is saved under
+          // the team identity key, so validating without `teamId` here
+          // looks up the wrong overlay (or none at all) and the resource
+          // incorrectly comes back "Invalid" despite being fully configured
+          // for the team. Must stay in sync with how `configureBuiltin`
+          // (which does send team identity) resolves identity.
+          ...(IS_TEAM_WORKSPACE ? { teamId: USER_ID } : {}),
+        },
       );
       const result = response.data;
       updateDependencyParentMap(rid, result.dependency_results);
@@ -231,7 +246,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
       cacheValidationResult(rid, errorResult);
       return errorResult;
     }
-  }, [CREDENTIAL_USER_ID, cacheValidationResult, createErrorResult, updateDependencyParentMap]);
+  }, [CREDENTIAL_USER_ID, IS_TEAM_WORKSPACE, USER_ID, cacheValidationResult, createErrorResult, updateDependencyParentMap]);
 
   // ==================== Resource Mapping Functions ====================
 

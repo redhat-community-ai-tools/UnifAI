@@ -154,3 +154,54 @@ export function getCardFields(
 
   return fields;
 }
+
+function isUserConfigurable(fieldSchema: any): boolean {
+  const hints = fieldSchema?.hints || {};
+  if (hints.hidden) return false;
+  // `read_only=True` (the default when the hint is omitted) locks a field
+  // for end-users on built-in resources — see `ReadOnlyHint` — so it isn't
+  // something the user configured themselves.
+  if (hints.read_only?.read_only === true) return false;
+  // Auth-trigger fields (e.g. an MCP "Sign In" button) aren't a plain
+  // configurable value either.
+  if (hints.auth) return false;
+  return true;
+}
+
+function isCardVisibleFor(fieldSchema: any, ownership: "builtin" | "custom"): boolean {
+  const hints = fieldSchema?.hints || {};
+  if (hints.hidden) return false;
+  const contexts = hints.card?.contexts;
+  return Array.isArray(contexts) && contexts.includes(ownership);
+}
+
+/**
+ * Field names a regular user is allowed to see on a *built-in* element's
+ * "Full Configuration" details dump: the same user-configurable fields
+ * `BuiltinConfigureModal` lets them edit (`hints.read_only`-locked fields
+ * excluded), unioned with anything explicitly opted into card display for
+ * the `builtin` context (`CardHint.contexts`). Everything else — locked
+ * admin-only setup like an MCP server's `mcp_url` — is implementation
+ * detail a regular user was never meant to see, even read-only.
+ *
+ * Unlike `getCardFields`, this intentionally does *not* exclude
+ * `hints.secret` fields: a configurable secret (e.g. a bearer token) is
+ * still something the user owns and should see was set, just masked —
+ * that's handled downstream by `maskSecretFieldsInConfig`.
+ */
+export function getBuiltinVisibleFieldNames(
+  schema: ElementSchema | null | undefined,
+  config: Record<string, any> | null | undefined,
+): Set<string> {
+  const properties = schema?.config_schema?.properties;
+  const visible = new Set<string>();
+  if (!properties) return visible;
+
+  for (const [fieldName, fieldSchema] of Object.entries<any>(properties)) {
+    if (!isConditionallyVisible(fieldSchema, config || {})) continue;
+    if (isUserConfigurable(fieldSchema) || isCardVisibleFor(fieldSchema, "builtin")) {
+      visible.add(fieldName);
+    }
+  }
+  return visible;
+}

@@ -41,7 +41,11 @@ interface ElementGridProps {
   isLoading: boolean;
   onEditElement: (element: ElementInstance) => void;
   onDeleteElement: (rid: string) => void;
-  onConfigureBuiltin?: (rid: string, config: Record<string, any>) => Promise<any>;
+  onConfigureBuiltin?: (
+    rid: string,
+    config: Record<string, any>,
+    options?: { silent?: boolean },
+  ) => Promise<any>;
   elementSchema?: ElementSchema | null;
 }
 

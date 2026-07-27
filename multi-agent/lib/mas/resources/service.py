@@ -187,6 +187,11 @@ class ResourcesService:
         config = self._store.raw_config(rid)
 
         if resource.ownership == ResourceOwnership.BUILTIN and identity:
+            # A caller-supplied credential (below) must always win over the
+            # resource's shared base value for per-user secret fields — see
+            # `strip_unconfigured_secrets` for why the base value can't be
+            # trusted as a fallback.
+            config = self.builtin.strip_unconfigured_secrets(resource, config)
             overlay = self.builtin.resolve_overlay(resource, identity)
             if overlay:
                 config.update(overlay)
@@ -648,11 +653,47 @@ class ResourcesService:
     def _build_configs_from_rids(
         self, rids: List[str], identity: Identity = None,
     ) -> List[ElementConfigMeta]:
-        """Build ElementConfigMeta list from saved resource rids."""
+        """Build ElementConfigMeta list from saved resource rids.
+
+        For a built-in resource, also checks whether the resolved config is
+        still missing a required per-identity secret (e.g. an MCP bearer
+        token nobody configured for this caller) — see
+        ``BuiltinResourceService.find_missing_required_overlay_fields``.
+        For a custom resource, the equivalent check is scoped to the schema
+        itself rather than an overlay — see
+        ``ResourceFieldEncryption.find_missing_conditionally_required_secrets``
+        — since the caller's own resource simply has the field left empty
+        (e.g. they picked "access token" auth but never filled in a bearer
+        token). Either way, the config is flagged with
+        ``validation_override_error`` so validation fails deterministically
+        instead of letting the element's validator probe a connection it
+        was never meant to make (which could accidentally "succeed"
+        against a server that happens to tolerate unauthenticated
+        requests).
+        """
         configs: List[ElementConfigMeta] = []
         for rid in rids:
             resource = self._store.get(rid)
             config = self.resolve(rid, identity=identity)
+
+            override_error = None
+            if resource.ownership == ResourceOwnership.BUILTIN and identity:
+                missing = self.builtin.find_missing_required_overlay_fields(resource, config)
+                if missing:
+                    override_error = (
+                        f"Requires your own {', '.join(missing)} — configure it for "
+                        f"'{resource.name}' in your inventory before it can be validated."
+                    )
+            elif resource.ownership != ResourceOwnership.BUILTIN:
+                missing = self._fields.find_missing_conditionally_required_secrets(
+                    resource.category, resource.type, config
+                )
+                if missing:
+                    override_error = (
+                        f"{', '.join(missing)} is required for '{resource.name}' — "
+                        f"set it in the resource's configuration before it can be validated."
+                    )
+
             configs.append(ElementConfigMeta(
                 rid=rid,
                 category=resource.category,
@@ -660,6 +701,7 @@ class ResourcesService:
                 name=resource.name,
                 config=config,
                 dependency_rids=list(resource.nested_refs),
+                validation_override_error=override_error,
             ))
         return configs
 

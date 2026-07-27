@@ -76,23 +76,30 @@ class FakeElementRegistry:
 
 
 class FakeResourceRepository:
-    """In-memory stand-in for ``ResourceRepository``."""
+    """In-memory stand-in for ``ResourceRepository``.
+
+    Stores/returns deep copies (like a real Mongo round-trip would) rather
+    than the caller's live object — otherwise mutating a ``Resource`` the
+    caller already holds (e.g. before calling ``update()``) would silently
+    also mutate the "persisted" copy, masking bugs in code that compares
+    a doc's new state against what's actually stored.
+    """
 
     def __init__(self):
         self._docs: Dict[str, Resource] = {}
 
     def save(self, doc: Resource) -> str:
-        self._docs[doc.rid] = doc
+        self._docs[doc.rid] = doc.model_copy(deep=True)
         return doc.rid
 
     def update(self, doc: Resource) -> str:
-        self._docs[doc.rid] = doc
+        self._docs[doc.rid] = doc.model_copy(deep=True)
         return doc.rid
 
     def get(self, rid: str) -> Resource:
         if rid not in self._docs:
             raise KeyError(rid)
-        return self._docs[rid]
+        return self._docs[rid].model_copy(deep=True)
 
     def delete(self, rid: str) -> None:
         self._docs.pop(rid, None)
@@ -146,6 +153,12 @@ class FakeResourceRepository:
         ]
 
     def find_builtin_by_url(self, url: str):
+        for doc in self._docs.values():
+            if (
+                doc.ownership == ResourceOwnership.BUILTIN
+                and doc.cfg_dict.get("mcp_url") == url
+            ):
+                return doc
         return None
 
     def set_user_config(self, rid, identity_key, config) -> bool:

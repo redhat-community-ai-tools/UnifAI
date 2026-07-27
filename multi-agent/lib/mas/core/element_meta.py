@@ -33,5 +33,16 @@ class ElementConfigMeta(BaseModel):
     name: str
     config: Any
     dependency_rids: List[str] = Field(default_factory=list)
+    validation_override_error: str | None = Field(
+        default=None,
+        description=(
+            "When set, ElementValidationService.validate() skips the "
+            "element's real validator entirely and fails immediately with "
+            "this message. Lets a caller (e.g. ResourcesService, for a "
+            "built-in resource missing a required per-identity credential "
+            "overlay) veto validation up front without teaching the "
+            "generic validation service about resource/built-in concepts."
+        ),
+    )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

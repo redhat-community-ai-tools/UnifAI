@@ -57,7 +57,11 @@ interface BuiltInElementCardProps {
   element: ElementInstance;
   elementType: ElementType;
   elementSchema?: ElementSchema | null;
-  onConfigureBuiltin?: (rid: string, config: Record<string, any>) => Promise<any>;
+  onConfigureBuiltin?: (
+    rid: string,
+    config: Record<string, any>,
+    options?: { silent?: boolean },
+  ) => Promise<any>;
   index: number;
   /** Live validity status for this built-in resource. Omit to hide the badge
    * entirely (most built-ins ship without live credentials, so validity
@@ -117,6 +121,44 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
   const popupRef = useRef<Window | null>(null);
   const popupAuthUrlRef = useRef<string | null>(null);
   const checkedRef = useRef(false);
+  // Tracks the server_identifier we've already persisted (or that already
+  // lived on the resource), so a background overlay save only fires once
+  // per newly-discovered issuer instead of on every checkAuth() poll.
+  const persistedIdentifierRef = useRef<string>(String(element.config?.server_identifier || ''));
+
+  // `server_identifier`/`scheme_type` are hidden fields — "set automatically
+  // by connection validation" — but for a built-in resource there is no
+  // wizard Save step to write them back after sign-in (unlike the regular,
+  // non-built-in MCP form). Without this, the resource's persisted
+  // `server_identifier` stays empty forever, so every later validation has
+  // to fall back to a live rediscovery probe instead of a fast credential
+  // lookup — which is slow enough to occasionally time out and flip a
+  // genuinely signed-in MCP to "Invalid". Persisting the discovered issuer
+  // here (the same value `auth.discovery` already resolved to reach
+  // "authenticated") keeps later validations fast and consistent.
+  const persistAuthIdentifier = useCallback((serverIdentifier?: string, schemeType?: string) => {
+    if (!onConfigureBuiltin || !serverIdentifier) return;
+    if (persistedIdentifierRef.current === serverIdentifier) return;
+    const previous = persistedIdentifierRef.current;
+    persistedIdentifierRef.current = serverIdentifier;
+    onConfigureBuiltin(
+      element.rid,
+      { server_identifier: serverIdentifier, scheme_type: schemeType || '' },
+      { silent: true },
+    ).then(() => {
+      // The card's validation badge may already be cached as "Invalid" from
+      // before the identifier was known (e.g. the very first validate call
+      // after sign-in raced ahead of this persist and had to fall back to a
+      // slow/unreliable live rediscovery probe). Now that the fast overlay
+      // lookup path is available, re-run validation so the badge catches up
+      // instead of staying stuck on the earlier result.
+      revalidateResourceAndAncestors(element.rid);
+    }).catch(() => {
+      // Best-effort — a failed background persist just means the next
+      // validation falls back to live rediscovery again, so retry later.
+      persistedIdentifierRef.current = previous;
+    });
+  }, [onConfigureBuiltin, element.rid, revalidateResourceAndAncestors]);
 
   // Mirrors the "action validation" flow used by AuthFieldRenderer for the
   // regular (non-built-in) sign-in MCP configuration: every action returned
@@ -151,6 +193,7 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
         setSignInStatus('authenticated');
         setSignInMessage(data.message || 'Authenticated');
         setSignOutActions(data.actions || []);
+        persistAuthIdentifier(data.server_identifier, data.scheme_type);
       } else if (data.status === 'challenge' && data.challenge) {
         setSignInStatus('challenge');
         setChallenge(data.challenge);
@@ -168,7 +211,7 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
       setSignInMessage('Failed to check authentication status');
       return null;
     }
-  }, [userId, element.config?.mcp_url]);
+  }, [userId, element.config?.mcp_url, persistAuthIdentifier]);
 
   useEffect(() => {
     if (isSignIn && !checkedRef.current) {
