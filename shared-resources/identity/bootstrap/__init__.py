@@ -1,0 +1,1 @@
+"""Bootstrap layer - Composition root for dependency injection and factory wiring."""

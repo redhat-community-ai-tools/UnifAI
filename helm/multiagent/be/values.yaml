@@ -12,15 +12,18 @@ global:
 replicaCount: 1
 #command: ["/bin/bash"]
 globalConfigMapName: shared-config
-
+globalSecretName: shared-secret
 env:
-  MONGODB_IP: mongodb
+  # MONGODB_IP: mongodb
   #MONGO_URI: mongodb  # currently using that var but  we need to change to fit the rag vars to try to merge files.
-  MONGODB_PORT: "27017"
-  RABBITMQ_IP: rabbitmq
-  RABBITMQ_PORT: "5672"
+  # MONGODB_PORT: "27017"
+  # RABBITMQ_IP: rabbitmq
+  # RABBITMQ_PORT: "5672"
   BACKEND_ENV: "production" #options - production development
   ROLE: "flask" #options - flask celery debug
+  SESSION_COOKIE_SAMESITE: "None"
+  SESSION_COOKIE_SECURE: true
+  SESSION_COOKIE_HTTPONLY: true
 
 
 # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
@@ -137,17 +140,22 @@ autoscaling:
   # targetMemoryUtilizationPercentage: 80
 
 # Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
+volumes:
+  - name: unifai-multiagent-shared-storage
+    persistentVolumeClaim:
+      claimName: unifai-multiagent-shared-storage
+  - name: gcp-credentials
+    secret:
+      secretName: gcp-vertex-credentials
+      optional: true
 
 # Additional volumeMounts on the output Deployment definition.
-volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
-#   readOnly: true
+volumeMounts:
+  - name: unifai-multiagent-shared-storage
+    mountPath: /app/shared
+  - name: gcp-credentials
+    mountPath: /opt/app-root/src/config/gcp
+    readOnly: true
 
 nodeSelector: {}
 

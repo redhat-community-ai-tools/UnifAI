@@ -48,7 +48,7 @@ http {
         include /opt/app-root/etc/nginx.default.d/*.conf;
 
         location ~ /api3/(.*)$ {
-           return 307 ${SSO_BACKEND_HOST}/api/${DOLLAR}1${DOLLAR}is_args${DOLLAR}args;
+           return 307 ${IDENTITY_HOST}/api/${DOLLAR}1${DOLLAR}is_args${DOLLAR}args;
         }
 
         location /api1/ {

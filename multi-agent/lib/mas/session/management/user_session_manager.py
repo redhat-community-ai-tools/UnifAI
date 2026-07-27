@@ -1,7 +1,10 @@
+import logging
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Mapping, Optional
+from mas.core.platform_config import PlatformConfig
 from mas.session.repository.repository import SessionRepository
+from mas.session.storage.ports import SessionStorageCleaner
 from mas.session.building.workflow_session_factory import WorkflowSessionFactory
 from mas.session.domain.workflow_session import WorkflowSession
 from mas.session.domain.session_record import SessionRecord
@@ -12,6 +15,9 @@ from mas.session.domain.status import SessionStatus
 from mas.blueprints.service import BlueprintService
 from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
 from mas.session.domain.exceptions import BlueprintNotFoundError
+from mas.core.identity import Identity
+
+logger = logging.getLogger(__name__)
 
 
 class UserSessionManager:
@@ -25,10 +31,14 @@ class UserSessionManager:
             repository: SessionRepository,
             session_factory: WorkflowSessionFactory,
             blueprint_service: BlueprintService,
+            platform_config: Optional[PlatformConfig] = None,
+            storage_cleaner: Optional[SessionStorageCleaner] = None,
     ):
         self._repo = repository
         self._factory = session_factory
         self._bp_service = blueprint_service
+        self._platform_config = platform_config or PlatformConfig()
+        self._storage_cleaner = storage_cleaner
 
     def blueprint_exists(self, blueprint_id: str) -> bool:
         """Check if blueprint exists without loading it."""
@@ -48,7 +58,7 @@ class UserSessionManager:
 
     def create_session(
             self,
-            user_id: str,
+            identity: Identity,
             blueprint_id: str,
             metadata: SessionMeta = None,
     ) -> str:
@@ -59,13 +69,14 @@ class UserSessionManager:
         session_meta = metadata or SessionMeta()
         run_id = str(uuid.uuid4())
         ctx = ExecutionContext(
-            user_id=user_id,
+            session_id=run_id,
+            identity=identity,
             engine_name=self._factory.engine_name,
         )
 
         record = SessionRecord(
             run_id=run_id,
-            user_id=user_id,
+            identity=identity,
             blueprint_id=blueprint_id,
             run_context=ctx,
             metadata=session_meta,
@@ -81,6 +92,10 @@ class UserSessionManager:
         """Lightweight fetch — returns typed SessionRecord, no graph build."""
         return self._repo.fetch(run_id)
 
+    def save_record(self, record: SessionRecord) -> None:
+        """Persist an already-loaded record (e.g. after context updates)."""
+        self._repo.save(record)
+
     def get_chat(self, run_id: str) -> SessionChat:
         """Projected fetch — only messages and output from graph state."""
         return self._repo.fetch_chat(run_id)
@@ -95,26 +110,35 @@ class UserSessionManager:
         blueprint_spec = self._bp_service.load_resolved(record.blueprint_id)
         return self._factory.build_session(record, blueprint_spec)
 
-    def list_sessions_ids(self, user_id: str) -> List[str]:
+    def list_sessions_ids(self, identity: Identity) -> List[str]:
         """All run_ids belonging to this user."""
-        return self._repo.list_runs(user_id)
+        return self._repo.list_runs(identity)
 
-    def list_docs(self, user_id: str) -> List[Mapping[str, Any]]:
+    def list_docs(self, identity: Identity) -> List[Mapping[str, Any]]:
         """Raw documents for bulk listing (chat history, etc.)."""
-        return self._repo.list_docs(user_id)
+        return self._repo.list_docs(identity)
 
     def delete_session(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""
-        return self._repo.delete(run_id)
+        deleted = self._repo.delete(run_id)
+        if deleted:
+            self._cleanup_session_storage(run_id)
+        return deleted
+
+    def _cleanup_session_storage(self, run_id: str) -> None:
+        """Delegate storage cleanup to the injected adapter."""
+        if self._storage_cleaner:
+            self._storage_cleaner.cleanup(run_id)
 
     # ---------- statistics ----------
-    def count(self, user_id: str, filter: Dict[str, Any] = None) -> int:
+
+    def count(self, identity: Identity, filter: Dict[str, Any] = None) -> int:
         """Count sessions matching filter criteria for a user."""
-        return self._repo.count(user_id, filter or {})
+        return self._repo.count(identity, filter or {})
 
     def group_count(
-        self, 
-        user_id: str, 
+        self,
+        identity: Identity,
         group_by: List[str],
         filter: Dict[str, Any] = None
     ) -> List[GroupedCount]:
@@ -130,7 +154,7 @@ class UserSessionManager:
         Returns:
             List of GroupedCount DTOs with grouped field values and count.
         """
-        return self._repo.group_count(user_id, group_by, filter)
+        return self._repo.group_count(identity, group_by, filter)
 
 # ---------- Statistics (system-wide for admin analytics) ----------
 
@@ -138,9 +162,9 @@ class UserSessionManager:
         """Count all sessions system-wide (no user_id constraint)."""
         return self._repo.count_system(since)
 
-    def get_distinct_users(self, since: Optional[datetime] = None) -> List[str]:
-        """Get distinct user IDs from all sessions."""
-        return self._repo.get_distinct_users(since)
+    def get_distinct_identities(self, since: Optional[datetime] = None) -> List[Dict[str, str]]:
+        """Get distinct (type, id) pairs from all sessions."""
+        return self._repo.get_distinct_identities(since)
 
     def group_count_system(
         self,

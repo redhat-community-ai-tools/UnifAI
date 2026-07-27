@@ -6,14 +6,12 @@ properties([
         
         // 🚀 Deployment Parameters
         choice(name: 'deploy_location', choices: ['STAGING', 'PRODUCTION'], description: 'Deployment environment'),
-        choice(name: 'deploy_type', choices: ['FRESH_INSTALL', 'APPLICATION_UPGRADE'], description: 'Deployment type'),
-        string(name: "VERSION", defaultValue: "", description: "DONT SET THIS VALUE!"),
+        choice(name: 'deploy_type', choices: ['FRESH_INSTALL', 'APPLICATION_UPGRADE'], description: 'Deployment Deployment type fresh install - delete everything including shared resources, application upgrade - update only the specified modules'),
         string(name: "BACKEND_VERSION", defaultValue: "", description: "Image tag for backend"),
         string(name: "RAG_VERSION", defaultValue: "", description: "Image tag for rag"),
         string(name: "MA_VERSION", defaultValue: "", description: "Image tag for multi-agent"),
         string(name: "GUI_VERSION", defaultValue: "", description: "Image tag for UI"),
-        string(name: "SSO_VERSION", defaultValue: "", description: "Image tag for SSO"),
-        string(name: "MODULES_TO_DEPLOY", defaultValue: "", description: "Comma-separated list of modules to update (e.g. rag,multiagent,backend,ui,sso)"),
+        string(name: "IDENTITY_VERSION", defaultValue: "", description: "Image tag for Identity"),
         booleanParam(name: 'debug_mode', defaultValue: false, description: 'debug the pods'),
     ])
 ])
@@ -34,7 +32,60 @@ def buildParams = [
     ImageRegistry      : "images.paas.redhat.com",
     ImageRegistryPath  : "unifai",
     ImageRegistryCreds : "images.paas.registry-unifai",
+    VaultBasePath      : "apps/automation-and-tools/unifai",
 ]
+
+def secret_lists = [
+    cluster: ['cluster_address', 'cluster_access_token', 'tenant_name', 'namespace', 'jenkins_credentials_id'],
+    redis: ['redis_username', 'redis_password'],
+    identity: ['client_id', 'client_secret', 'keycloak_realm', 'keycloak_base_url'],
+    rabbitmq: ['rmq_username', 'rmq_password'],
+    umami: ['umami_username', 'umami_password'],
+    // keycloak: ['keycloak_base_url', 'client_id', 'client_secret', 'keycloak_realm'],
+    global_config: ['secret_key', 'vault_role_id', 'vault_secret_id', 'langfuse_base_url', 'langfuse_public_key', 'langfuse_secret_key', 'slack_signing_secret', 'slack_app_token', 'slack_bot_token'],
+    multiagent: ['CREDENTIAL_ENCRYPTION_KEY', 'OAUTH_STATE_SECRET', 'GCP_SA_KEY_JSON_B64'],
+    rag: ['default_slack_bot_token', 'default_slack_user_token'],
+    ]
+
+def generateVaultSecretsEnvFile(String vaultBasePath, Map secretMap ) {
+    def envFilePath = "./vault_secrets.env"
+    echo "🔐 Generating Vault secrets env file: ${envFilePath}"
+    sh "rm -f ${envFilePath}"
+    sh "touch ${envFilePath}"
+
+    secretMap.each { module, secrets ->
+        echo "🔄 Fetching secrets for module: ${module}"
+        withVault(
+            configuration: [
+                vaultUrl: '',
+                vaultCredentialId: ''
+            ],
+            vaultSecrets: [
+                [
+                    path: "${vaultBasePath}/${params.deploy_location.toLowerCase()}/${module}",
+                    engineVersion: 2,
+                    secretValues: secrets.collect { key -> [envVar: key, vaultKey: key] }
+                ]
+            ]
+        ) {
+            secrets.each { secret ->
+                sh "echo '${secret}='\"\$${secret}\" >> ${envFilePath}"
+            }
+        }
+    }
+    echo "✅ Vault secrets env file created: ${envFilePath}"
+    return envFilePath
+}
+
+def buildModulesList() {
+    def modules = []
+    if (params.IDENTITY_VERSION?.trim()) modules.add('identity')
+    if (params.BACKEND_VERSION?.trim()) modules.add('backend')
+    if (params.RAG_VERSION?.trim())     modules.add('rag')
+    if (params.MA_VERSION?.trim())      modules.add('multiagent')
+    if (params.GUI_VERSION?.trim())     modules.add('ui')
+    return modules
+}
 
 def updateChartVersions(rootPath, version) {
 
@@ -60,7 +111,7 @@ def updateGlobalConfigYaml(String filePath) {
 
     if (values?.env) {
         values.env.FRONTEND_URL = "https://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
-        values.env.SSO_BACKEND_HOST = "https://unifai-sso-backend-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
+        values.env.IDENTITY_HOST = "https://unifai-identity-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
     }
     writeYaml file: filePath, data: values, overwrite: true
     echo "📄 successfully Updated routes values in ${filePath}:\n" + writeYaml(returnText: true, data: values)
@@ -117,34 +168,6 @@ def updateValuesYaml(String filePath , String version) {
     echo "✅ Updated ${filePath} successfully"
 }
 
-def updateDeployerEnv() {
-    echo "🔄 updating deployer env with new values"
-    def sso_env_file = null
-    if (params.deploy_location == 'PRODUCTION') {
-        updateEnvFile("./UnifAI-secrets/.env", "umami_website_name", "unifai-production")
-        sso_env_file = "./UnifAI-secrets/production/.env_sso"
-    } else if (params.deploy_location == 'STAGING') {
-        updateEnvFile("./UnifAI-secrets/.env", "umami_website_name", "unifai-staging")
-        sso_env_file = "./UnifAI-secrets/staging/.env_sso"
-    }
-    echo("sso env file: ${sso_env_file}")
-    echo("✅ Deployer env updated successfully")
-    return sso_env_file
-}
-
-
-def updateEnvFile(String filePath, String key, String value) {
-    if (!fileExists(filePath)) {
-        error "❌ File not found: ${filePath}"
-    }
-    
-    echo "🔧 Updating ${key} in ${filePath}..."
-    def content = readFile(filePath)
-    // Safe replacement
-    def newContent = content.replaceFirst(/(?m)^${key}=.*/, "${key}=${value}")
-    writeFile(file: filePath, text: newContent)
-}
-
 def deployModules(module){
     echo "deploying modules: ${module}"
     sh("podman exec -t helmfile bash -lc 'helmfile -f ${module}.yaml.gotmpl apply'")
@@ -154,8 +177,8 @@ def deployModules(module){
 
 def deleteRunningApplication(){
     echo("Removing running UnifAI application")
-    cleanOldDataflow()
-    def charts = ["backend", "rag", "multiagent", "ui", "sso", "shared-resources"]
+    // cleanOldDataflow()
+    def charts = ["backend", "rag", "multiagent", "ui", "identity", "shared-resources"]
 
     charts.each { chart ->
         sh("podman exec -t helmfile bash -c 'helmfile destroy -f ${chart}.yaml.gotmpl --deleteWait'")
@@ -172,45 +195,9 @@ def deleteRunningApplication(){
     sh("sleep 10")
 }
 
-// temporary fix for dataflow deployment deletion, after we move completely to the new rag naming this function is obsolete
-def cleanOldDataflow(){
-    echo("Removing old dataflow application")
-    
-    // Capture the output properly
-    def result = sh(
-        script: "podman exec -t helmfile bash -c 'helm ls | grep 'dataflow' || true'",
-        returnStdout: true
-    ).trim()
-    
-    if(result.length() > 0) {
-        // Split by newlines to get all releases, not just the first one
-        echo("found old dataflow releases: ${result}")
-        def releases = result.split('\n')
-        
-        releases.each { release ->
-            // Extract the release name (first column in helm ls output)
-            def releaseName = release.split(/\s+/)[0]
-            echo("Deleting helm release: ${releaseName}")
-            sh("podman exec -t helmfile bash -c 'helm uninstall ${releaseName}'")
-        }
-        
-        // Wait for all dataflow resources to be deleted
-        sh("""
-            until ! oc get deployment,statefulset,svc 2>/dev/null | grep 'dataflow'; do
-                echo 'Waiting for dataflow deployment deletion...'
-                sleep 5
-            done
-        """)
-        echo("All dataflow applications successfully deleted")
-        sh("sleep 5")
-    } else {
-        echo("No dataflow releases found")
-    }
-}
-
 def cleanWorkspace() {
     sh """
-        podman rm -f helmfile
+        podman rm -f helmfile || true
         sleep 5        
     """
 }
@@ -225,11 +212,14 @@ pipeline {
                 script {
                     echo "================ Deployment Configuration ================="
                     echo "Branch            : ${params.BRANCH}"
-                    echo "Version           : ${params.VERSION}"
                     echo "Deployment Type   : ${params.deploy_type}"
                     echo "Deployment Target : ${params.deploy_location}"
                     echo "Debug mode        : ${params.debug_mode}"
-                    echo "Modules to deploy : ${params.MODULES_TO_DEPLOY}"
+                    echo "Identity Version  : ${params.IDENTITY_VERSION}"
+                    echo "Backend Version   : ${params.BACKEND_VERSION}"
+                    echo "RAG Version       : ${params.RAG_VERSION}"
+                    echo "Multiagent Version: ${params.MA_VERSION}"
+                    echo "UI Version        : ${params.GUI_VERSION}"
                     echo "Workspace Path:    ${buildParams.DevRoot}/${params.BRANCH}/"
                     echo "==========================================================="
                 }
@@ -248,7 +238,6 @@ pipeline {
                     checkout([$class: 'GitSCM',
                         branches: [[name: "${buildParams.CredMainRepoBranch}"]],
                         doGenerateSubmoduleConfigurations: false,
-                        //extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: "${buildParams.DevRoot}/${params.BRANCH}"]],
                         extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: "${buildParams.DevRoot}/${params.BRANCH}/helm/UnifAI-secrets/"]],
                         submoduleCfg: [],
                         userRemoteConfigs: [[
@@ -264,40 +253,40 @@ pipeline {
             steps {
                 dir("${buildParams.DevRoot}/${params.BRANCH}/helm/") {
                     script {
-                        // Declare variables outside the switch statement
-                        def ClusterAddress = ''
-                        def NameSpace = ''
-                        def ClusterAccessToken = ''
-                        
-                        switch(params.deploy_location) {
-                            case 'STAGING':
-                                ClusterAddress = 'https://api.stc-ai-e1-pp.imap.p1.openshiftapps.com:6443'
-                                NameSpace = "tag-ai--pipeline"
-                                ClusterAccessToken = 'tenantaccess-unifai-sa-pp'
-                                break
-                            case 'PRODUCTION':
-                                ClusterAddress = 'https://api.stc-ai-e1-prod.rtc9.p1.openshiftapps.com:6443'
-                                NameSpace = "tag-ai--pipeline"
-                                ClusterAccessToken = 'tenantaccess-unifai-sa-prod'
-                                updateGlobalConfigYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/global-config.yaml")
-                                break
-                            default:
-                                error("Invalid deployment location: ${params.deploy_location}")
+                        if (params.deploy_location == 'PRODUCTION') {
+                            updateGlobalConfigYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/global-config.yaml")
                         }
-                        
-                        def module = "helmfile"
-                        
+
+                        // Fetch ALL secrets from Vault (including cluster)
+                        def vaultEnvFile = generateVaultSecretsEnvFile(buildParams.VaultBasePath, secret_lists)
+
+                        // Parse cluster connection details from the generated vault env file
+                        def vaultEnvMap = [:]
+                        readFile(vaultEnvFile).trim().split('\n').each { line ->
+                            if (line && !line.startsWith('#')) {
+                                def parts = line.split('=', 2)
+                                vaultEnvMap[parts[0].trim()] = parts[1].trim()
+                            }
+                        }
+                        def ClusterAddress = vaultEnvMap.cluster_address
+                        def NameSpace = vaultEnvMap.namespace
+                        def ClusterCredsId = vaultEnvMap.jenkins_credentials_id
+
+                        // Non-secret config still passed from UnifAI-secrets for now (umami_url, admin_allowed_users, etc.)
+                        def configEnvFile = "./UnifAI-secrets/${params.deploy_location.toLowerCase()}/.env"
+
                         withCredentials([
-                            string(credentialsId: "${ClusterAccessToken}", variable: 'token'),
+                            string(credentialsId: "${ClusterCredsId}", variable: 'token'),
                         ]){
                             echo("Creating helm deployment pod")
                             sh("oc login --token=${token} --server=${ClusterAddress}")
                             sh("oc project ${NameSpace}")
-                            def sso_env_file = updateDeployerEnv()
                             echo("Deploy Helm container")
-                            sh("podman run --replace -dt --env-file=${sso_env_file} --env-file=./UnifAI-secrets/.env --workdir /helm/charts -v .:/helm/charts:Z -v ~/.kube/:/helm/.kube:Z --name helmfile ghcr.io/helmfile/helmfile:latest bash")
-                            
-                            def modules = params.MODULES_TO_DEPLOY.tokenize(',')
+                            sh("podman run --replace -dt --env-file=${vaultEnvFile} --env-file=${configEnvFile} --workdir /helm/charts -v .:/helm/charts:Z -v ~/.kube/:/helm/.kube:Z --name helmfile ghcr.io/helmfile/helmfile:latest bash")
+                            def modules = buildModulesList()
+                            if (modules.isEmpty()) {
+                                error("No application modules selected for deployment. Set at least one *_VERSION parameter.")
+                            }
                             if(params.deploy_type == 'FRESH_INSTALL') {
                                 modules.add(0,'shared-resources')
                                 deleteRunningApplication()
@@ -306,52 +295,58 @@ pipeline {
                             for (mod in modules) {
                                 switch(mod.trim()) {
                                     case 'shared-resources':
-                                        updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/shared-resource-values.yaml", version)
+                                        updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/shared-resource-values.yaml", "")
                                         deployModules('shared-resources')
                                         break
 
-                                    case 'sso':
-                                        def version = params.SSO_VERSION?.trim() ?: params.VERSION?.trim()
-                                        updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/shared-resources/sso/", version)
-                                        updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/sso-values.yaml", version)
-                                        deployModules('sso')
+                                    case 'identity':
+                                        def version = params.IDENTITY_VERSION?.trim()
+                                        updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/shared-resources/identity/", version)
+                                        updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/identity-values.yaml", version)
+                                        deployModules('identity')
                                         break
 
                                     case 'backend':
-                                        def version = params.BACKEND_VERSION?.trim() ?: params.VERSION?.trim()
+                                        def version = params.BACKEND_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/backend/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/backend-resource-values.yaml", version)
                                         deployModules('backend')
                                         break
 
                                     case 'rag':
-                                        def version = params.RAG_VERSION?.trim() ?: params.VERSION?.trim()
+                                        def version = params.RAG_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/rag/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/rag-resource-values.yaml", version)
                                         deployModules('rag')
                                         break
 
                                     case 'multiagent':
-                                        def version = params.MA_VERSION?.trim() ?: params.VERSION?.trim()
+                                        def version = params.MA_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/multiagent/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/multiagent-resource-values.yaml", version)
                                         deployModules('multiagent')
                                         break
 
                                     case 'ui':
-                                        def version = params.GUI_VERSION?.trim() ?: params.VERSION?.trim()
+                                        def version = params.GUI_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/ui/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/ui-values.yaml", version)
                                         deployModules('ui')
                                         break
+
                                 }
                             }
                             echo("Deploy successfully completed")
                         }
-                        cleanWorkspace()
                     }
                 }
             }
+        }
+    }
+    post {
+        always {
+            sh "rm -f ${buildParams.DevRoot}/${params.BRANCH}/helm/vault_secrets.env"
+            cleanWorkspace()
         }
     }
 

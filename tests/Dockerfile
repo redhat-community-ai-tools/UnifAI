@@ -12,6 +12,7 @@ WORKDIR $HOME
 # --------------------------------------------------------------------------
 ADD --chown=default:root --chmod=777 ./rag           $HOME/rag
 ADD --chown=default:root --chmod=777 ./multi-agent   $HOME/multi-agent
+ADD --chown=default:root --chmod=777 ./shared-resources/identity $HOME/shared-resources/identity
 ADD --chown=default:root --chmod=777 ./global_utils  $HOME/global_utils
 
 RUN chmod -R g+w rag multi-agent global_utils
@@ -34,8 +35,12 @@ RUN pip install -e ./rag/
 # Multi-agent application dependencies
 RUN pip install -e ./multi-agent/[all]
 
+# Shared resources dependencies
+RUN pip install -e ./shared-resources/identity/
+
 # Stress test dependencies
 RUN pip install -r ./rag/tests/docs/requirements_stress_test.txt
+
 
 # Test framework and utilities
 RUN pip install \

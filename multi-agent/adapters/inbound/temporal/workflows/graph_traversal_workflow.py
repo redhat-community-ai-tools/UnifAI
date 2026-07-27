@@ -24,8 +24,8 @@ from temporal.models import (
     EvaluateConditionParams,
 )
 
-_NODE_TIMEOUT = timedelta(minutes=15)
-_NODE_HEARTBEAT = timedelta(minutes=10)
+_NODE_TIMEOUT = timedelta(minutes=120)
+_NODE_HEARTBEAT = timedelta(seconds=10)
 _NODE_RETRY = RetryPolicy(maximum_attempts=3)
 
 _CONDITION_TIMEOUT = timedelta(seconds=30)

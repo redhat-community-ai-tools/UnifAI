@@ -1,5 +1,5 @@
 """Document endpoints - driving adapter."""
-from flask import Blueprint, jsonify
+from flask import Blueprint, g, jsonify
 from webargs import fields
 
 from bootstrap.app_container import (
@@ -10,6 +10,7 @@ from bootstrap.app_container import (
     retrieval_service,
 )
 from global_utils.helpers.apiargs import from_query, from_body
+from infrastructure.http.auth import rag_require_session
 from infrastructure.sources.document.config import DocConfigManager
 from shared.logger import logger
 
@@ -39,12 +40,12 @@ def upload_docs(files):
 
 
 @docs_bp.route("/validate", methods=["POST"])
+@rag_require_session
 @from_body({
     "files": fields.List(fields.Dict(), required=True),
-    "username": fields.Str(required=True),
     "check_duplicates": fields.Bool(required=False, load_default=True)
 })
-def validate_files(files, username, check_duplicates):
+def validate_files(files, check_duplicates):
     """
     Validate files before upload.
     
@@ -56,7 +57,6 @@ def validate_files(files, username, check_duplicates):
     Request body:
         files: List of file metadata objects with 'name' and 'size' keys
                Example: [{"name": "document.pdf", "size": 1024000}]
-        username: Username of the person uploading files
         check_duplicates: Whether to check for duplicate filenames (default: true)
     
     Response:
@@ -85,7 +85,7 @@ def validate_files(files, username, check_duplicates):
         - Full validation will be performed during registration
     """
     try:
-        service = file_validation_service(username=username)
+        service = file_validation_service(username=g.user_id)
         result = service.validate(files, check_duplicates=check_duplicates)
         return jsonify(result.to_dict()), 200
     except Exception as e:
@@ -106,6 +106,7 @@ def get_supported_extensions():
 
 
 @docs_bp.route("/available.docs.get", methods=["GET"])
+@rag_require_session
 @from_query({
     "cursor": fields.Str(required=False, load_default=""),
     "limit": fields.Int(required=False, load_default=50),
@@ -114,6 +115,7 @@ def get_supported_extensions():
 def get_available_docs(cursor="", limit=50, search_regex=None):
     """
     Get paginated list of available documents (DONE status only).
+    Scoped to the authenticated user's documents.
     Used for dropdown selection in the UI.
     """
     try:
@@ -121,6 +123,7 @@ def get_available_docs(cursor="", limit=50, search_regex=None):
             cursor=cursor,
             limit=limit,
             search=search_regex,
+            upload_by=g.user_id,
         )
         return jsonify(result.to_dict(data_key="documents")), 200
         
@@ -130,6 +133,7 @@ def get_available_docs(cursor="", limit=50, search_regex=None):
 
 
 @docs_bp.route("/available.tags.get", methods=["GET"])
+@rag_require_session
 @from_query({
     "cursor": fields.Str(required=False, load_default=""),
     "limit": fields.Int(required=False, load_default=50),
@@ -138,6 +142,7 @@ def get_available_docs(cursor="", limit=50, search_regex=None):
 def get_available_tags(cursor="", limit=50, search_regex=None):
     """
     Get paginated list of available tags from DONE documents.
+    Scoped to the authenticated user's documents.
     Used for tag dropdown selection in the UI.
     
     Response format matches backend: options array with label/value pairs.
@@ -147,6 +152,7 @@ def get_available_tags(cursor="", limit=50, search_regex=None):
             cursor=cursor,
             limit=limit,
             search=search_regex,
+            upload_by=g.user_id,
         )
         
         # Format response to match backend structure
@@ -163,24 +169,21 @@ def get_available_tags(cursor="", limit=50, search_regex=None):
 
 
 @docs_bp.route("/query.match", methods=["GET"])
+@rag_require_session
 @from_query({
     "query": fields.Str(required=True),
     "top_k_results": fields.Int(required=False, load_default=15),
-    "scope": fields.Str(required=False, load_default="public"),
-    "logged_in_user": fields.Str(required=False, load_default="default", data_key="loggedInUser"),
     "doc_ids": fields.List(fields.Str(), required=False, load_default=None, data_key="docIds"),
     "tags": fields.List(fields.Str(), required=False, load_default=None),
 })
-def query_match(query, top_k_results, scope, logged_in_user, doc_ids, tags):
+def query_match(query, top_k_results, doc_ids, tags):
     """
     Search documents using semantic similarity.
     Optionally filter by document IDs or tags.
     
     Args:
         query: Search query text
-        top_k_results: Number of results to return (default: 5)
-        scope: "public" or "private" - filters by upload_by if private
-        logged_in_user: Username for private scope filtering
+        top_k_results: Number of results to return (default: 15)
         doc_ids: Optional list of document IDs to filter by
         tags: Optional list of tags to filter by
     """
@@ -189,8 +192,7 @@ def query_match(query, top_k_results, scope, logged_in_user, doc_ids, tags):
         results = svc.search(
             query=query,
             limit=top_k_results,
-            scope=scope,
-            user=logged_in_user,
+            owner_id=g.user_id,
             doc_ids=doc_ids,
             tags=tags,
         )

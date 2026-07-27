@@ -16,7 +16,7 @@ from global_utils.utils.util import get_mongo_url
 class MongoTemplateRepository(TemplateRepository):
     """
     MongoDB-backed template storage.
-    
+
     Uses the same patterns as MongoBlueprintRepository for consistency.
     """
 
@@ -68,21 +68,32 @@ class MongoTemplateRepository(TemplateRepository):
         return res.modified_count == 1
 
     def delete(self, template_id: str) -> bool:
-        """Delete a template by ID."""
-        res = self._col.delete_one({"template_id": template_id})
-        return res.deleted_count == 1
+        """Soft-delete a template (set deleted=True so seeder won't re-insert)."""
+        res = self._col.update_one(
+            {"template_id": template_id, "deleted": {"$ne": True}},
+            {"$set": {"deleted": True, "updated_at": datetime.now(timezone.utc)}},
+        )
+        return res.modified_count == 1
 
     # ────────────────────────────── Reads ───────────────────────────────
     def get(self, template_id: str) -> Template:
-        """Load a template by ID."""
-        doc = self._col.find_one({"template_id": template_id})
+        """Load a non-deleted template by ID."""
+        doc = self._col.find_one({"template_id": template_id, "deleted": {"$ne": True}})
         if not doc:
             raise KeyError(f"Template not found: {template_id}")
         return self._doc_to_template(doc)
 
-    def exists(self, template_id: str) -> bool:
-        """Check if a template exists."""
-        return self._col.count_documents({"template_id": template_id}, limit=1) == 1
+    def exists(self, template_id: str, *, include_deleted: bool = False) -> bool:
+        """Check if a template exists.
+
+        By default only active (non-deleted) templates are considered.
+        Pass ``include_deleted=True`` to also match soft-deleted rows
+        (used by the fixture seeder).
+        """
+        query: dict = {"template_id": template_id}
+        if not include_deleted:
+            query["deleted"] = {"$ne": True}
+        return self._col.count_documents(query, limit=1) == 1
 
     # ────────────────────────────── Listings ────────────────────────────
     def list_templates(
@@ -126,7 +137,7 @@ class MongoTemplateRepository(TemplateRepository):
         limit: int = 20,
     ) -> List[Template]:
         """Search templates by name/description using text index."""
-        search_query: dict = {"$text": {"$search": query}}
+        search_query: dict = {"$text": {"$search": query}, "deleted": {"$ne": True}}
         
         if is_public is not None:
             search_query["metadata.is_public"] = is_public
@@ -146,8 +157,8 @@ class MongoTemplateRepository(TemplateRepository):
         category: Optional[str] = None,
         tags: Optional[List[str]] = None,
     ) -> dict:
-        """Build MongoDB filter from criteria."""
-        query: dict = {}
+        """Build MongoDB filter from criteria (always excludes soft-deleted)."""
+        query: dict = {"deleted": {"$ne": True}}
         
         if is_public is not None:
             query["metadata.is_public"] = is_public

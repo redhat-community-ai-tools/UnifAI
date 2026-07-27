@@ -22,9 +22,11 @@ class WebFetchTool(BaseTool):
         url = str(args.url)
 
         try:
-            response = await safehttpx.get(url)
+            response = await safehttpx.get(url, _transport=False)
         except Exception as exc:
+            print(exc)
             return WebFetchResponse(success=False, url=url, error=str(exc)).model_dump()
 
-        content = convert(response.text)
+        result = convert(response.text)
+        content = result if isinstance(result, str) else result.content
         return WebFetchResponse(success=True, url=url, content=content).model_dump()

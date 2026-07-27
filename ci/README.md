@@ -105,6 +105,7 @@ This pipeline takes the images built by the first pipeline and deploys them to a
 - `deploy-bu.groovy` - Build utility functions
 
 ### Related Documentation
+- [GitHub Actions Workflows](../.github/DOC.md)
 - [Helm Deployment Guide](../helm/README.md)
 - [Helm Architecture](../helm/ARCHITECTURE.md)
 
@@ -119,7 +120,7 @@ This pipeline takes the images built by the first pipeline and deploys them to a
 1. Go to [Image Builder](https://jenkins-csb-ant-main.dno.corp.redhat.com/job/UnifAI/job/image-builder/)
 2. Set parameters:
    - `BRANCH`: `main`
-   - `build_sso_image`: ✓
+   - `build_identity_image`: ✓
    - `build_gui`: ✓
    - `build_rag_backend`: ✓
    - `build_multiagent_backend`: ✓
@@ -170,7 +171,7 @@ This pipeline takes the images built by the first pipeline and deploys them to a
 If you need to manually deploy without building:
 1. **Don't set** the `VERSION` parameter in deployment pipeline
 2. **Do set** the component-specific versions (`RAG_VERSION`, `MA_VERSION`, etc.)
-3. Specify `MODULES_TO_DEPLOY` (e.g., `rag,ui,sso`)
+3. Specify `MODULES_TO_DEPLOY` (e.g., `rag,ui,identity`)
 
 ---
 

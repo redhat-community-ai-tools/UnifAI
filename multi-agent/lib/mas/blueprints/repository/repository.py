@@ -1,29 +1,29 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintSummary
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
+from mas.core.identity import Identity
 
 
 class BlueprintRepository(ABC):
     # ────────────────────────────── Writes ──────────────────────────────
     @abstractmethod
-    def save(self, user_id, spec: BlueprintDraft, rid_refs: list[str], metadata: Dict[str, Any]) -> str:
-        """
-        Persist `spec` for the given user and return the generated blueprint_id.
-        """
+    def save(self, identity: Identity, spec: BlueprintDraft,
+             rid_refs: list[str], metadata: Dict[str, Any]) -> str:
+        """Persist *spec* owned by *identity* and return the generated blueprint_id."""
 
     @abstractmethod
     def update(self, *, blueprint_id: str, spec: BlueprintDraft,
                rid_refs: list[str]) -> bool:
-        """
-        Replace an existing draft.  Return True if a document was modified.
-        """
+        """Replace an existing draft.  Return True if a document was modified."""
         
     @abstractmethod
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
-        """
-        Set the metadata dictionary for a blueprint document.
-        Return True if a document was modified.
-        """
+        """Merge keys into the metadata sub-document (key-level upsert, not full replace)."""
+
+    @abstractmethod
+    def set_prompt_shortcuts(self, *, blueprint_id: str, shortcuts: PromptShortcuts) -> bool:
+        """Persist prompt shortcuts for a blueprint. Empty shortcuts clear the stored value."""
 
     # ────────────────────────────── Reads by ID ─────────────────────────
     @abstractmethod
@@ -45,63 +45,40 @@ class BlueprintRepository(ABC):
     # ────────────────────────────── Listings / Stats ────────────────────
     @abstractmethod
     def list_ids(
-            self,
-            *,
-            user_id: Optional[str] = None,
-            skip: int = 0,
-            limit: int = 100,
-            sort_desc: bool = True,
+            self, *,
+            identity: Optional[Identity] = None,
+            skip: int = 0, limit: int = 100, sort_desc: bool = True,
     ) -> List[str]:
-        """
-        Return blueprint IDs, optionally restricted to `user_id`, with pagination.
-        """
+        """Return blueprint IDs, optionally scoped to *identity*, with pagination."""
 
     @abstractmethod
     def list_docs(
-            self,
-            *,
-            user_id: Optional[str] = None,
-            skip: int = 0,
-            limit: int = 100,
-            sort_desc: bool = True,
+            self, *,
+            identity: Optional[Identity] = None,
+            skip: int = 0, limit: int = 100, sort_desc: bool = True,
     ) -> List[BlueprintDocument]:
-        """
-        Return blueprint documents, optionally restricted to `user_id`,
-        with pagination.
-        """
+        """Return blueprint documents, optionally scoped to *identity*."""
 
     @abstractmethod
     def list_summaries(
-            self,
-            *,
-            user_id: Optional[str] = None,
-            skip: int = 0,
-            limit: int = 100,
-            sort_desc: bool = True,
+            self, *,
+            identity: Optional[Identity] = None,
+            skip: int = 0, limit: int = 100, sort_desc: bool = True,
     ) -> List[BlueprintSummary]:
-        """
-        Return lightweight blueprint summaries (id, name, description,
-        timestamps, metadata) without the full spec.
-        """
+        """Return lightweight blueprint summaries (no full spec)."""
 
     @abstractmethod
     def list_direct_usage(self, rid: str) -> List[str]:
-        """
-        Return blueprint IDs whose *catalogue entries* contain `rid`
-        directly.  Nested refs inside resources are not covered here;
-        those are handled by ResourceRepository.list_nested_usage().
-        """
+        """Return blueprint IDs whose catalogue entries contain *rid* directly."""
 
     @abstractmethod
     def count_usage(self, rid: str) -> int:
-        """
-        Count how many blueprints (optionally belonging to `user_id`) reference a
-        given resource ID `rid`.
-        """
+        """Count how many blueprints reference a given resource ID *rid*."""
 
     @abstractmethod
-    def count(self, user_id: Optional[str] = None) -> int:
-        """
-        Return the total number of blueprints, or the number belonging to
-        `user_id` if provided.
-        """
+    def count(self, identity: Optional[Identity] = None) -> int:
+        """Total blueprint count, optionally scoped to *identity*."""
+
+    @abstractmethod
+    def delete_by_identity(self, identity: Identity) -> int:
+        """Delete all blueprints owned by *identity*.  Returns the count of deleted documents."""

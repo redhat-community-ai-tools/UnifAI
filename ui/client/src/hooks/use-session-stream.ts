@@ -16,6 +16,7 @@ import {
   getSessionStreamStatus, 
   subscribeToSessionStream, 
   submitSession,
+  cancelSession,
   SubmitSessionParams,
   StreamStatusResponse 
 } from '@/api/sessions';
@@ -58,8 +59,10 @@ export interface UseSessionStreamReturn {
   checkAndReconnect: (sessionId: string) => Promise<boolean>;
   /** Subscribe to an existing session's stream (replays all events from beginning) */
   subscribeToStream: (sessionId: string) => void;
-  /** Cancel the current stream subscription */
+  /** Cancel the current stream subscription (client-side only) */
   cancelStream: () => void;
+  /** Cancel a session's backend execution via POST /session.cancel */
+  cancelSessionExecution: (sessionId: string) => Promise<void>;
 }
 
 /**
@@ -214,7 +217,7 @@ export function useSessionStream(options: UseSessionStreamOptions): UseSessionSt
    * 1. POST /user.session.submit (fire & forget, returns 202)
    * 2. GET /session.stream.subscribe (real-time events)
    * 
-   * @param params - Session submission parameters (sessionId, inputs, scope, loggedInUser)
+   * @param params - Session submission parameters (sessionId, inputs, scope, userId)
    */
   const submitAndSubscribe = useCallback(async (params: SubmitSessionParams): Promise<void> => {
     // Cancel any existing stream
@@ -273,6 +276,13 @@ export function useSessionStream(options: UseSessionStreamOptions): UseSessionSt
     }
   }, [cancelStream, subscribeToStream]);
   
+  /**
+   * Cancel a session's backend execution via POST /session.cancel.
+   */
+  const cancelSessionExecution = useCallback(async (sessionId: string): Promise<void> => {
+    await cancelSession(sessionId);
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -290,6 +300,7 @@ export function useSessionStream(options: UseSessionStreamOptions): UseSessionSt
     checkAndReconnect,
     subscribeToStream,
     cancelStream,
+    cancelSessionExecution,
   };
 }
 

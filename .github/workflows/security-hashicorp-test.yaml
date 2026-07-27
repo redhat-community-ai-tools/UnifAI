@@ -1,0 +1,41 @@
+name: Security Hashicorp Test
+
+env:
+
+  VAULT_URL: ${{ vars.VAULT_URL }}
+  APPROLE_NAME: ${{ secrets.APPROLE_NAME }}
+  SECRET_ID: ${{ secrets.SECRET_ID }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Which branch do you want to use?'
+        required: true
+        default: 'GENIE-948_hashicorp_integration'
+  # push:
+  #   branches:
+  #     - GENIE-948_hashicorp_integration
+
+jobs:
+  test_hashicorp_vault:
+    runs-on: linux
+    env:
+      BRANCH: ${{ inputs.target_branch }}
+    steps:
+
+      - name: Import Secrets
+        id: import-secrets
+        uses: hashicorp/vault-action@v2
+        with:
+            url: ${{ env.VAULT_URL }}
+            method: approle
+            roleId: ${{ env.APPROLE_NAME }}
+            secretId: ${{ env.SECRET_ID }}
+            tlsSkipVerify: true
+            secrets: |
+                apps/automation-and-tools/password
+                apps/automation-and-tools/test
+
+      - name: Sensitive Operation
+        run: "password1 value '${{ steps.import-secrets.outputs.PASSWORD1 }}'"

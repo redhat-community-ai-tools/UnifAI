@@ -13,6 +13,7 @@ export interface User {
 
 export interface AuthContextType {
   user: User | null;
+  accessToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: () => void;
@@ -28,6 +29,7 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -40,14 +42,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await api.get('/auth/user');
       if (response.data.authenticated && response.data.user) {
         setUser(response.data.user);
+        setAccessToken(response.data.access_token ?? null);
         setIsAuthenticated(true);
       } else {
         setUser(null);
+        setAccessToken(null);
         setIsAuthenticated(false);
       }
     } catch (error) {
       console.error('Auth check failed:', error);
       setUser(null);
+      setAccessToken(null);
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
@@ -56,18 +61,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Initiate login by redirecting to backend auth endpoint
   const login = () => {
-    // Capture the original URL (pathname + search params) to restore after authentication
-    const originalUrl = window.location.pathname + window.location.search;
-    
-    // Encode the original URL in the OAuth state parameter (base64 encoded JSON)
-    const stateData = { originalUrl: originalUrl || '/' };
+    const path = window.location.pathname + window.location.search;
+    // After identity login, return to the app root instead of the login screen
+    const originalUrl =
+      path === '/login' || path.startsWith('/login?') ? '/' : path || '/';
+    const stateData = { originalUrl };
     const encodedState = btoa(JSON.stringify(stateData));
-    
-    // Pass state to backend, which will forward it to Keycloak
     window.location.href = `${api.defaults.baseURL}/auth/login?state=${encodeURIComponent(encodedState)}`;
   };
 
-  // Logout user
   const logout = async () => {
     try {
       await api.post('/auth/logout');
@@ -76,8 +78,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       setUser(null);
       setIsAuthenticated(false);
-      // Redirect to login
-      login();
+      window.location.href = '/login';
     }
   };
 
@@ -137,35 +138,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       checkAuthStatus();
     }
   }, []);
-  
+
   // Set up token refresh and expiration checking
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
     const checkTokenExpiration = () => {
-      const now = Date.now() / 1000; // Current time in seconds
+      const now = Date.now() / 1000;
       const expiresAt = user.token_expires_at;
       const timeUntilExpiry = expiresAt - now;
 
-      // If token expires in less than 1 minutes, try to refresh
       if (timeUntilExpiry < 60) {
-        refreshToken();
+        void refreshToken();
       }
     };
 
-    const refreshToken = async () => {
-      try {
+    async function refreshToken() {
+    try {
         await api.post('/auth/refresh');
-        // Recheck auth status to get updated token info
         await checkAuthStatus();
       } catch (error) {
         console.error('Token refresh failed:', error);
-        // If refresh fails, redirect to login
-        login();
+        setUser(null);
+        setIsAuthenticated(false);
+        window.location.href = '/login';
       }
-    };
+    }
 
-    // Check token expiration every 10 minute
+    // Check token expiration every 10 minutes
     const interval = setInterval(checkTokenExpiration, 600000);
 
     // Initial check
@@ -176,6 +176,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value: AuthContextType = {
     user,
+    accessToken,
     isAuthenticated,
     isLoading,
     login,

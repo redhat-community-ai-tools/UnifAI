@@ -9,6 +9,7 @@ __pycache__/
 # Python Virtual Environments
 # ---------------------
 venv/
+.venv311/
 .venv/
 env/
 ENV/
@@ -74,6 +75,7 @@ htmlcov/
 .envrc
 .conda
 *.sqlite3
+.dev-secret-key
 
 # ---------------------
 # Logs and Temp Files
@@ -98,3 +100,9 @@ Thumbs.db
 # ---------------------
 # Global Python Utils
 *.egg-info/
+
+# ---------------------
+# Local Caches / User-local State
+# ---------------------
+.cache/
+.local/

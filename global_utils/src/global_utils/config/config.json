@@ -7,5 +7,8 @@
   "temporal_port": "${TEMPORAL_PORT}",
   "temporal_namespace": "${TEMPORAL_NAMESPACE}",
   "redis_ip": "${REDIS_IP}",
-  "redis_port": "${REDIS_PORT}"
+  "redis_port": "${REDIS_PORT}",
+  "redis_password": "${REDIS_PASSWORD}",
+  "redis_db": "${REDIS_DB}",
+  "redis_decode_responses": "${REDIS_DECODE_RESPONSES}"
 }

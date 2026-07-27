@@ -4,17 +4,6 @@ from pydantic import BaseModel
 import json
 import os
 from pathlib import Path
-import asyncio
-import threading
-from concurrent.futures import ThreadPoolExecutor
-import anyio
-from jsonschema import validate, ValidationError, Draft202012Validator
-from datamodel_code_generator import (
-    generate,
-    InputFileType,
-    DataModelType,
-    PythonVersion
-)
 import tempfile
 import importlib.util
 import sys
@@ -38,9 +27,13 @@ def get_temporal_url():
 def get_redis_url():
     ip = config.redis_ip
     port = config.redis_port
+    password = config.redis_password
     if not ip:
         return ""
-    return f"redis://{ip}:{port}"
+    if password:
+        return f"redis://:{password}@{ip}:{port}"
+    else:
+        return f"redis://{ip}:{port}"
 
 
 def get_rabbitmq_url(user=None, password=None):
@@ -116,6 +109,13 @@ def json_schema_model(
     Raises:
         AttributeError: If the specified model class is not found.
     """
+    from datamodel_code_generator import (
+        generate,
+        InputFileType,
+        DataModelType,
+        PythonVersion,
+    )
+
     model_name = to_pascal_case(model_name)
     schema_str = json.dumps(schema)
 
@@ -189,10 +189,10 @@ def to_snake_case(s: str) -> str:
 
 
 def validate_arguments(schema: dict, args: dict):
+    from jsonschema import validate, ValidationError
+
     try:
-        # Validate the data against the JSON Schema
         validate(instance=args, schema=schema)
         return True
     except ValidationError as e:
-        # Handle or raise
         raise ValueError(f"Validation error: {e.message}")

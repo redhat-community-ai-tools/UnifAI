@@ -1,20 +1,53 @@
 # Cursor Commands
 
-This folder contains custom Cursor IDE commands that provide specialized workflows for development tasks in the UnifAI project.
+Custom Cursor IDE commands for the UnifAI project. Invoke with `/` in the Cursor chat.
 
-## What are Cursor Commands?
+## Primary Command
 
-Cursor commands are AI-powered workflows that you can invoke by referencing them with the `/` symbol in the Cursor chat. Each command file contains specific instructions that guide the AI through complex, multi-step processes.
+### `/pipeline` — Multi-Phase Development Pipeline
 
-## Available Commands
+The unified development workflow featuring design, review, implementation, code review, QA, and debugging phases with automatic revision loops.
 
-### 📋 review.md - Code Review
+**Modes:**
+
+| Mode | Usage | Phases |
+|------|-------|--------|
+| `full` (default) | `/pipeline <task or Jira ticket>` | Design → Review → Implement → Code Review → QA |
+| `design-only` | `/pipeline design-only <task>` | Design only |
+| `design-and-review` | `/pipeline design-and-review <task>` | Design → Design Review |
+| `implement` | `/pipeline implement <design-file>` | Implement → Code Review → QA |
+| `review-only` | `/pipeline review-only <design-file>` | Design Review only |
+| `code-review-only` | `/pipeline code-review-only [files]` | Code Review only |
+| `qa-only` | `/pipeline qa-only [files]` | QA only |
+| `debug` | `/pipeline debug <error>` | Structured debugging |
+| `arch-review` | `/pipeline arch-review [files]` | Architecture review (CI mode) |
+| `review` | `/pipeline review [files]` | Architecture + Code Review (parallel judges, CI preferred) |
+
+**Options:**
+- `--adr` — Write design to ADR file at `docs/designs/<slug>-adr.md`
+
+> **Note:** When passing a Jira ticket ID, requires Jira MCP server or API credentials (see [Setup Requirements](#setup-requirements)).
+
+**Examples:**
+```
+/pipeline design-only --adr Add caching layer for vector search
+/pipeline full GENIE-1234
+/pipeline code-review-only rag/core/pipeline/
+/pipeline implement docs/designs/caching-adr.md
+/pipeline debug "PipelineExecutor fails with empty source list"
+```
+
+---
+
+## Utility Commands
+
+### `/review` — Quick Branch Review
 
 Performs automated code reviews on your current branch with varying depth levels.
 
 **Usage:**
 ```
-/UnifAI/review [basic|deep] [files/folders]
+/review [basic|deep] [files/folders]
 ```
 
 **Parameters:**
@@ -30,53 +63,22 @@ Creates a review file named `<branch_name>_<review_type>_review.md` containing:
 
 **Example:**
 ```
-/UnifAI/review deep src/components/
+/review deep src/components/
 ```
 
 ---
 
-### 🎨 /design - Design Document Generator
-
-Creates architecture design documents based on Jira ticket requirements.
-
-**Prerequisites:**
-- Jira integration configured (via MCP or other method)
-- Access to `.cursor/files/ADR - Architecture Review Template.md`
-
-**Usage:**
-```
-/UnifAI/design <jira-ticket-id>
-```
-
-**Process:**
-1. Validates Jira connectivity
-2. Fetches ticket information
-3. Generates design document in both Markdown and HTML formats
-4. Follows ADR (Architecture Decision Record) template structure
-
-**Output:**
-Two files with identical content:
-- `<ticket-id>_design.md`
-- `<ticket-id>_design.html`
-
-**Example:**
-```
-/UnifAI/design GENIE-1163
-```
-
----
-
-### 📤 /push - Design Document Uploader
+### `/push` — Design Document Uploader
 
 Uploads design files to specified Jira tickets.
 
 **Prerequisites:**
-- Jira integration configured
+- Jira MCP server configured in Cursor settings (or Jira API credentials in environment)
 - Design file already created
 
 **Usage:**
 ```
-/UnifAI/push <jira-ticket> <file-name>
+/push <jira-ticket> <file-name>
 ```
 
 **Parameters:**
@@ -85,7 +87,7 @@ Uploads design files to specified Jira tickets.
 
 **Example:**
 ```
-/UnifAI/push GENIE-1163 GENIE-1163_design.html
+/push GENIE-1163 GENIE-1163_design.html
 ```
 
 ---
@@ -94,19 +96,31 @@ Uploads design files to specified Jira tickets.
 
 ### Jira Integration
 
-The `design` and `push` commands require Jira connectivity. Ensure you have one of the following configured:
+The `pipeline` (when given a Jira ticket), `design`, and `push` commands require Jira connectivity. Ensure you have one of the following configured:
 
-1. **MCP Server** - Jira MCP server in your Cursor settings
-2. **API Credentials** - Jira API tokens configured in your environment
+1. **MCP Server** — Jira MCP server in your Cursor settings
+2. **API Credentials** — Jira API tokens configured in your environment
 
 If Jira integration is not available, the commands will notify you and stop execution.
 
 ### Template Files
 
-The `design` command requires:
+The `design` phase requires:
 - `.cursor/files/ADR - Architecture Review Template.md`
 
-Ensure this file exists in your project structure.
+---
+
+## Deprecated Commands
+
+These commands are superseded by `/pipeline` modes. They remain functional but will be removed in a future cleanup pass.
+
+| Legacy Command | Replaced By |
+|---------------|-------------|
+| `/Code.Review` | `/pipeline code-review-only` |
+| `/Hexagonal.Gatekeeper` | `/pipeline code-review-only` or `arch-review` |
+| `/Hexagonal.Refactor` | `/pipeline implement <design>` |
+| `/PyTest.GateKeeper` | `/pipeline qa-only` |
+| `/design` | `/pipeline design-only --adr` |
 
 ---
 
@@ -131,23 +145,7 @@ Ensure this file exists in your project structure.
 
 ---
 
-## Creating New Commands
-
-To add a new command:
-
-1. Create a new `.md` file in this folder
-2. Write clear instructions for the AI to follow
-3. Include parameter specifications and expected outputs
-4. Update this README with documentation
-5. Test the command thoroughly before committing
-
----
-
 ## Troubleshooting
-
-**Command not found:**
-- Ensure you're using `@` followed by the command filename (e.g., `@review.md`)
-- Check that the file exists in `.cursor/commands/`
 
 **Jira connection errors:**
 - Verify Jira MCP server is running
@@ -161,16 +159,5 @@ To add a new command:
 
 ---
 
-## Contributing
-
-When modifying commands:
-1. Test changes thoroughly
-2. Update this README if behavior changes
-3. Consider backward compatibility
-4. Document any new parameters or options
-
----
-
-**Last Updated:** February 2026  
-**Project:** UnifAI  
-**Maintained by:** Development Team
+**Last Updated:** June 2026
+**Project:** UnifAI

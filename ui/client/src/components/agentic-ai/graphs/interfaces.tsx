@@ -108,6 +108,7 @@ export interface FlowObject {
   name: string;
   description: string;
   icon: React.ReactNode;
+  contributedBy?: string;
 }
 
 // Additional interfaces for the graph builder

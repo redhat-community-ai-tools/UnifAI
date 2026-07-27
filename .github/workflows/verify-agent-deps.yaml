@@ -19,6 +19,8 @@ jobs:
       - name: Verify Agent python Dependencies
         run: |
           echo "Verifying agent dependencies"
-          pip freeze | grep -E 'qdrant-client'
-          pip freeze | grep -E 'requests'
+          pip freeze | grep -E '^qdrant-client([<>=!~]=|==| @ )'
+          pip freeze | grep -E '^requests([<>=!~]=|==| @ )'
+          pip freeze | grep -E '^kubernetes([<>=!~]=|==| @ )'
+          pip freeze | grep -E '^GitPython([<>=!~]=|==| @ )'
           echo "Agent dependencies verified"

@@ -39,7 +39,7 @@ class LocalSessionChannel(SessionChannel):
     def is_active(self) -> bool:
         return not self._closed
 
-    def close(self) -> None:
+    def close(self, *, cancelled: bool = False) -> None:
         if self._closed:
             return
         self._closed = True

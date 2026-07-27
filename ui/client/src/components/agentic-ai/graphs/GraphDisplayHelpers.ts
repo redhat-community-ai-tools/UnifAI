@@ -79,6 +79,8 @@ export interface OverlayHeader {
   nodeHeight: number;
   /** Node RID from its definition – used for validation result lookups. */
   nodeRid: string | undefined;
+  /** HITL mode from node config ("ask" | "skip" | "dynamic"). */
+  hitlMode: string | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +92,7 @@ export const CATEGORY_TYPE_TO_PLURAL: Record<string, string> = {
   tool: "tools",
   retriever: "retrievers",
   provider: "providers",
+  sandbox: "sandboxes",
 };
 
 // ---------------------------------------------------------------------------
@@ -250,6 +253,24 @@ export const STATUS_STYLES = {
     label: "Complete",
     boxShadow: "0 0 8px rgba(34,197,94,0.4), 0 0 3px rgba(34,197,94,0.25)",
   },
+  CANCELLED: {
+    stroke: "rgba(156, 163, 175, 0.7)",
+    strokeWidth: 2,
+    filter: "url(#cancelledGlow)",
+    dotColor: "rgb(156, 163, 175)",
+    bgColor: "rgba(156, 163, 175, 0.2)",
+    label: "Stopped",
+    boxShadow: "0 0 8px rgba(156,163,175,0.4), 0 0 3px rgba(156,163,175,0.25)",
+  },
+  PENDING_APPROVAL: {
+    stroke: "rgba(234, 179, 8, 0.75)",
+    strokeWidth: 2.5,
+    filter: "url(#pendingApprovalGlow)",
+    dotColor: "rgb(234, 179, 8)",
+    bgColor: "rgba(234, 179, 8, 0.15)",
+    label: "Awaiting Approval",
+    boxShadow: "0 0 10px rgba(234,179,8,0.35), 0 0 4px rgba(234,179,8,0.2)",
+  },
   IDLE: {
     stroke: "rgba(255,255,255,0.12)",
     strokeWidth: 1,
@@ -325,6 +346,24 @@ export function injectStatusGlowFilters(paperEl: HTMLElement): void {
     { x: "-20%", y: "-20%", w: "140%", h: "140%" },
     [
       { dx: "0", dy: "0", stdDeviation: "4", "flood-color": "rgba(34,197,94,0.4)", "flood-opacity": "0.6" },
+      { dx: "0", dy: "2", stdDeviation: "4", "flood-color": "#000", "flood-opacity": "0.25" },
+    ],
+  );
+
+  upsertFilter(
+    "cancelledGlow",
+    { x: "-20%", y: "-20%", w: "140%", h: "140%" },
+    [
+      { dx: "0", dy: "0", stdDeviation: "4", "flood-color": "rgba(156,163,175,0.4)", "flood-opacity": "0.6" },
+      { dx: "0", dy: "2", stdDeviation: "4", "flood-color": "#000", "flood-opacity": "0.25" },
+    ],
+  );
+
+  upsertFilter(
+    "pendingApprovalGlow",
+    { x: "-25%", y: "-25%", w: "150%", h: "150%" },
+    [
+      { dx: "0", dy: "0", stdDeviation: "5", "flood-color": "rgba(234,179,8,0.4)", "flood-opacity": "0.7" },
       { dx: "0", dy: "2", stdDeviation: "4", "flood-color": "#000", "flood-opacity": "0.25" },
     ],
   );

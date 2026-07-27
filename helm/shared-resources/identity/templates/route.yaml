@@ -1,0 +1,18 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    {{- include "identity.labels" . | nindent 4 }}
+  name: {{ include "identity.fullname" . }}
+spec:
+  #host: unifai-sso-backend-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com
+  port:
+    targetPort: {{ .Values.backend.service.port }}
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: None
+  to:
+    kind: Service
+    name: {{ .Values.backend.service.name }}
+    weight: 100
+  wildcardPolicy: None

@@ -40,9 +40,12 @@ async def run_worker(
         session_factory=container.session_factory,
     )
 
+    thread_pool = ThreadPoolExecutor(max_workers=threads)
+
     graph_activities = GraphNodeActivities(
         node_executor=node_executor,
         channel_factory=container.channel_factory,
+        gate_factory=container.gate_factory,
     )
 
     lifecycle = SessionLifecycle(repository=container.session_repo)
@@ -67,8 +70,9 @@ async def run_worker(
             lifecycle_activities.begin_session,
             lifecycle_activities.complete_session,
             lifecycle_activities.fail_session,
+            lifecycle_activities.cancel_session,
         ],
-        activity_executor=ThreadPoolExecutor(max_workers=threads),
+        activity_executor=thread_pool,
         max_concurrent_activities=threads,
         max_concurrent_workflow_tasks=max_workflow_tasks,
         max_concurrent_workflow_task_polls=workflow_pollers,

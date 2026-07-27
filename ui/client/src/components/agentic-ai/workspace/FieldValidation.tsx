@@ -1,8 +1,11 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import axios from "../../../http/axiosAgentConfig";
+import { executeAction } from '@/api/actions';
+import { useAuth } from "@/contexts/AuthContext";
+import { FieldValidationTwoFactorAuth } from './FieldValidationTwoFactorAuth';
 
 
 // Type guard to check if hint is an ApiHint (has endpoint) vs ActionHint (has action_uid)
@@ -26,8 +29,19 @@ interface FieldValidationProps {
   isRequired?: boolean;
   /** All current config field values, used to resolve dependencies for validation actions */
   configValues?: Record<string, any>;
+  /** Cached action outputs from other fields, for cross-field output references (field.key syntax) */
+  actionOutputs?: Record<string, any>;
   onValidationChange: (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => void;
+  onInputChange?: (field: string, value: any) => void;
 }
+
+// Auth-related response statuses
+const AUTH_STATUSES = new Set([
+  'authenticated', 'requires_consent', 'expired',
+  'not_configured', 'needs_client_registration',
+  'auth_required', 'authenticated_but_rejected',
+  'challenge',
+]);
 
 export const FieldValidation: React.FC<FieldValidationProps> = ({
   fieldName,
@@ -37,8 +51,13 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
   selectedElementType,
   isRequired = false,
   configValues = {},
-  onValidationChange
+  actionOutputs = {},
+  onValidationChange,
+  onInputChange,
 }) => {
+  const { user } = useAuth();
+  const userId = user?.username || "";
+
   const [validationState, setValidationState] = useState<{
     isValidating: boolean;
     isValid: boolean | null;
@@ -48,6 +67,11 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
     isValid: null,
     message: ''
   });
+
+  // Auth-specific state
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [authStatus, setAuthStatus] = useState<string | null>(null);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
 
   const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastValidatedKeyRef = useRef<string | null>(null);
@@ -65,13 +89,24 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
    * This key is used to determine if validation should be re-triggered.
    * When either the field value or any dependency changes, this key will change.
    */
+  /**
+   * Resolves a dependency key to its value. Supports dot-notation for
+   * cross-field output references: "field.output_key" reads from actionOutputs.
+   */
+  const resolveDependencyValue = (configField: string): any => {
+    if (configField.includes('.')) {
+      const [sourceField, outputKey] = configField.split('.', 2);
+      return actionOutputs[sourceField]?.[outputKey];
+    }
+    return configValues[configField];
+  };
+
   const validationKey = React.useMemo(() => {
-    // Gather dependency values (excluding the current field)
     const dependencyValues: Record<string, any> = {};
     if (validationHint?.dependencies) {
       Object.keys(validationHint.dependencies).forEach((configField) => {
         if (configField !== fieldName) {
-          dependencyValues[configField] = configValues[configField];
+          dependencyValues[configField] = resolveDependencyValue(configField);
         }
       });
     }
@@ -80,7 +115,7 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
       fieldValue,
       dependencies: dependencyValues
     });
-  }, [fieldValue, validationHint?.dependencies, fieldName, configValues]);
+  }, [fieldValue, validationHint?.dependencies, fieldName, configValues, actionOutputs]);
 
   /**
    * Builds the input data for validation by:
@@ -94,20 +129,16 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
   const buildInputWithDependencies = (value: any, fieldNameMapping?: string): Record<string, any> => {
     const inputData: Record<string, any> = {};
     
-    // Always include the current field's value
     const targetFieldName = fieldNameMapping || fieldName;
     inputData[targetFieldName] = value;
     
-    // Gather dependency values from configValues
     if (validationHint.dependencies && Object.keys(validationHint.dependencies).length > 0) {
       Object.entries(validationHint.dependencies).forEach(([configField, actionField]) => {
-        // Skip if this is the current field (already added above)
         if (configField === fieldName) {
           return;
         }
         
-        // Get the dependency value from configValues
-        const dependencyValue = configValues[configField];
+        const dependencyValue = resolveDependencyValue(configField);
         if (dependencyValue !== undefined) {
           inputData[actionField as string] = dependencyValue;
         }
@@ -115,6 +146,31 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
     }
     
     return inputData;
+  };
+
+  /**
+   * Fires the chained on_success action after the primary action succeeds.
+   * Builds input from the chain hint's own dependencies and skips silently
+   * if any required dependency value is empty.
+   */
+  const executeOnSuccessChain = async (chainHint: any) => {
+    const chainAction = elementActions.find((a: any) => a.uid === chainHint.action_uid);
+    if (!chainAction) return;
+
+    const chainInput: Record<string, any> = {};
+    if (chainHint.dependencies) {
+      for (const [configField, actionField] of Object.entries(chainHint.dependencies)) {
+        const val = configValues[configField];
+        if (val === undefined || val === null || val === '') return;
+        chainInput[actionField as string] = val;
+      }
+    }
+
+    try {
+      await executeAction(chainAction.uid, chainInput, userId);
+    } catch (err) {
+      console.warn('on_success chain action failed:', err);
+    }
   };
 
   // Validate using ActionHint (via action system)
@@ -141,12 +197,7 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
 
     const inputData = buildInputWithDependencies(value, fieldNameMapping);
 
-    const response = await axios.post('/actions/action.execute', {
-      uid: validationAction.uid,
-      inputData
-    });
-
-    return response.data;
+    return executeAction(validationAction.uid, inputData, userId);
   };
 
   // Validate using ApiHint (direct API call)
@@ -156,6 +207,9 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
     
     // Build request body with current field and dependencies
     const requestBody = buildInputWithDependencies(value, fieldNameMapping);
+    if (userId) {
+      requestBody.userId = userId;
+    }
 
     // Determine the HTTP method (default to POST)
     const method = (validationHint.method || 'POST').toUpperCase();
@@ -180,33 +234,23 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
   const performValidation = async (value: any) => {
     // For ActionHint, we need the action to exist
     if (!useApiHint && !validationAction) {
-      setValidationState({
-        isValidating: false,
-        isValid: null,
-        message: ''
-      });
+      setValidationState({ isValidating: false, isValid: null, message: '' });
       onValidationChange(fieldName, false);
       return;
     }
 
     // For ApiHint, we need the endpoint to exist
     if (useApiHint && !validationHint.endpoint) {
-      setValidationState({
-        isValidating: false,
-        isValid: null,
-        message: ''
-      });
+      setValidationState({ isValidating: false, isValid: null, message: '' });
       onValidationChange(fieldName, false);
       return;
     }
 
     // Skip if no value
     if (!value || value === '' || (Array.isArray(value) && value.length === 0)) {
-      setValidationState({
-        isValidating: false,
-        isValid: null,
-        message: ''
-      });
+      setValidationState({ isValidating: false, isValid: null, message: '' });
+      setAuthUrl(null);
+      setAuthStatus(null);
       // For non-required fields, empty value should not block save (report as valid)
       // For required fields, empty value is invalid
       onValidationChange(fieldName, !isRequired);
@@ -218,10 +262,7 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
       return;
     }
 
-    setValidationState(prev => ({
-      ...prev,
-      isValidating: true
-    }));
+    setValidationState(prev => ({ ...prev, isValidating: true }));
 
     try {
       // Use the appropriate validation method based on hint type
@@ -231,7 +272,21 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
 
       // Extract validation result based on field_mapping or default to 'success'
       const fieldMapping = validationHint.field_mapping || 'success';
+
+      if (onInputChange && responseData.form_updates) {
+        for (const [field, value] of Object.entries(responseData.form_updates)) {
+          onInputChange(field, value as any);
+        }
+      }
+
+      // ── Auth-aware response handling ──
+      if (responseData.status && AUTH_STATUSES.has(responseData.status)) {
+        lastValidatedKeyRef.current = validationKey;
+        handleAuthResponse(responseData);
+        return;
+      }
       
+      // ── Standard validation handling ──
       // Handle array responses (for list validation like resources.validate)
       if (Array.isArray(responseData)) {
         const itemResults: ItemValidationResult[] = responseData.map((item: any) => ({
@@ -257,6 +312,10 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
       } else {
         // Single item response (original behavior)
         const isValid = responseData[fieldMapping] === true;
+
+        if (isValid && validationHint.on_success) {
+          await executeOnSuccessChain(validationHint.on_success);
+        }
         
         setValidationState({
           isValidating: false,
@@ -272,25 +331,89 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
       console.error('Validation error:', error);
       const errorMessage = error.response?.data?.message || 'Validation failed';
       
-      setValidationState({
-        isValidating: false,
-        isValid: false,
-        message: errorMessage
-      });
-
+      setValidationState({ isValidating: false, isValid: false, message: errorMessage });
       onValidationChange(fieldName, false);
     }
   };
 
+  /**
+   * Dispatches an auth-aware response to the correct state-update path.
+   * Uses switch/case so each auth status maps to exactly one update.
+   */
+  const handleAuthResponse = useCallback((data: any) => {
+    const status: string = data.status;
+    const message: string = data.message || '';
+
+    switch (status) {
+      case 'authenticated':
+        setAuthUrl(null);
+        setAuthStatus('authenticated');
+        setAuthMessage(message);
+        setValidationState({ isValidating: false, isValid: true, message });
+        onValidationChange(fieldName, true);
+        break;
+
+      case 'requires_consent':
+      case 'expired':
+        setAuthUrl(data.authorization_url || null);
+        setAuthStatus(status);
+        setAuthMessage(message);
+        setValidationState({ isValidating: false, isValid: null, message });
+        onValidationChange(fieldName, false);
+        break;
+
+      case 'needs_client_registration':
+        setAuthUrl(null);
+        setAuthStatus('needs_client_registration');
+        setAuthMessage(message || 'OAuth client registration required');
+        setValidationState({ isValidating: false, isValid: false, message: message || '' });
+        onValidationChange(fieldName, false);
+        break;
+
+      default:
+        setAuthUrl(null);
+        setAuthStatus(status);
+        setAuthMessage(message);
+        setValidationState({ isValidating: false, isValid: false, message });
+        onValidationChange(fieldName, false);
+        break;
+    }
+  }, [fieldName, onValidationChange]);
+
+  /** Called by FieldValidationTwoFactorAuth after a successful OAuth callback */
+  const handleAuthRevalidate = useCallback(() => {
+    lastValidatedKeyRef.current = null;
+    performValidation(fieldValue);
+  }, [fieldValue]);
+
+  /** Called by FieldValidationTwoFactorAuth when the OAuth popup reports failure */
+  const handleAuthError = useCallback((errorMessage: string) => {
+    setAuthStatus('error');
+    setAuthMessage(errorMessage);
+    setValidationState({ isValidating: false, isValid: false, message: errorMessage });
+    onValidationChange(fieldName, false);
+  }, [fieldName, onValidationChange]);
+
   // Debounced validation on field value change OR dependency value change
+  const isInitialRenderRef = useRef(true);
   useEffect(() => {
     if (validationTimeoutRef.current) {
       clearTimeout(validationTimeoutRef.current);
     }
 
+    if (!isInitialRenderRef.current) {
+      lastValidatedKeyRef.current = null;
+      setAuthStatus(null);
+      setAuthUrl(null);
+      setAuthMessage(null);
+      onValidationChange(fieldName, false);
+      setValidationState({ isValidating: true, isValid: null, message: '' });
+    }
+    isInitialRenderRef.current = false;
+
     validationTimeoutRef.current = setTimeout(() => {
       performValidation(fieldValue);
-    }, 1500); // 1.5 second delay
+    }, 1500);
 
     return () => {
       if (validationTimeoutRef.current) {
@@ -316,19 +439,32 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
     return null;
   }
 
+  // ── Auth-aware rendering — delegated to sub-component ──
+
+  if (authStatus) {
+    return (
+      <FieldValidationTwoFactorAuth
+        authStatus={authStatus}
+        authUrl={authUrl}
+        authMessage={authMessage}
+        onRevalidate={handleAuthRevalidate}
+        onAuthError={handleAuthError}
+      />
+    );
+  }
+
+  // ── Standard validation rendering ──
+
   const renderValidationIcon = () => {
     if (validationState.isValidating) {
       return <Loader2 className="h-4 w-4 animate-spin text-blue-400" />;
     }
-    
     if (validationState.isValid === true) {
       return <CheckCircle className="h-4 w-4 text-green-400" />;
     }
-    
     if (validationState.isValid === false) {
       return <XCircle className="h-4 w-4 text-red-400" />;
     }
-    
     return null;
   };
 
@@ -336,15 +472,12 @@ export const FieldValidation: React.FC<FieldValidationProps> = ({
     if (validationState.isValidating) {
       return { color: 'text-blue-400', text: 'Validating...' };
     }
-    
     if (validationState.isValid === true) {
       return { color: 'text-green-400', text: 'Valid' };
     }
-    
     if (validationState.isValid === false) {
       return { color: 'text-red-400', text: 'Invalid' };
     }
-    
     return { color: 'text-gray-400', text: 'Not validated' };
   };
 

@@ -289,3 +289,31 @@ class TestDataSourceServiceUpdate:
 
         assert result is False
         mock_source_repo.save.assert_not_called()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# list_with_stats — upload_by scoping
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestListWithStatsScoping:
+
+    @pytest.mark.unit
+    def test_upload_by_forwarded_to_repository(self, service, mock_source_repo):
+        """upload_by must be passed through to repository find_all."""
+        mock_source_repo.find_all.return_value = []
+
+        service.list_with_stats("DOCUMENT", upload_by="alice")
+
+        mock_source_repo.find_all.assert_called_once()
+        call_kwargs = mock_source_repo.find_all.call_args[1]
+        assert call_kwargs["upload_by"] == "alice"
+
+    @pytest.mark.unit
+    def test_upload_by_none_passes_none(self, service, mock_source_repo):
+        """When upload_by is not provided, None is passed to repository."""
+        mock_source_repo.find_all.return_value = []
+
+        service.list_with_stats("DOCUMENT")
+
+        call_kwargs = mock_source_repo.find_all.call_args[1]
+        assert call_kwargs["upload_by"] is None

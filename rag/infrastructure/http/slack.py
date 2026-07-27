@@ -1,5 +1,5 @@
 """Slack endpoints - driving adapter."""
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 from webargs import fields
 
 from bootstrap.app_container import (
@@ -10,6 +10,7 @@ from bootstrap.app_container import (
     slack_event_dispatch_service,
 )
 from global_utils.helpers.apiargs import from_query
+from infrastructure.http.auth import rag_require_session
 from shared.logger import logger
 
 slack_bp = Blueprint("slack", __name__)
@@ -109,21 +110,19 @@ def get_user_info(user_id, include_locale):
 
 
 @slack_bp.route("/query.match", methods=["GET"])
+@rag_require_session
 @from_query({
     "query": fields.Str(required=True),
     "top_k_results": fields.Int(required=False, load_default=5),
-    "scope": fields.Str(required=False, load_default="public"),
-    "logged_in_user": fields.Str(required=False, load_default="default", data_key="loggedInUser"),
 })
-def query_match(query, top_k_results, scope, logged_in_user):
+def query_match(query, top_k_results):
     """Search Slack messages using semantic similarity."""
     try:
         svc = retrieval_service("SLACK")
         results = svc.search(
             query=query,
             limit=top_k_results,
-            scope=scope,
-            user=logged_in_user,
+            owner_id=g.user_id,
         )
         
         return jsonify({"search_results": results}), 200

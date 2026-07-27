@@ -13,9 +13,19 @@ class ActionsService:
     
     def __init__(self, action_registry: Optional[ActionRegistry] = None):
         self._registry = action_registry or ActionRegistry()
-    
+        self._instance_overrides: Dict[str, BaseAction] = {}
+
+    def register_instance(self, action: BaseAction) -> None:
+        """Register a pre-configured action instance that will be used
+        instead of creating a new one from the class."""
+        self._instance_overrides[action.uid] = action
+
     def get_action_by_uid(self, uid: str) -> Optional[BaseAction]:
-        """Get action instance by UID."""
+        """Get action instance by UID.
+        Returns a pre-configured instance if one was registered,
+        otherwise creates a new one from the discovered class."""
+        if uid in self._instance_overrides:
+            return self._instance_overrides[uid]
         try:
             action_cls = self._registry.get_action(uid)
             return action_cls()

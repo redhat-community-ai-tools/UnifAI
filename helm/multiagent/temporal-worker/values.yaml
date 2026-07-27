@@ -12,7 +12,8 @@ global:
 replicaCount: 1
 #command: ["/bin/bash"]
 globalConfigMapName: shared-config
-
+MultiagentSecretName: multiagent-be-secret
+globalSecretName: shared-secret
 env:
   MONGODB_IP: mongodb
   #MONGO_URI: mongodb  # currently using that var but  we need to change to fit the rag vars to try to merge files.
@@ -137,17 +138,22 @@ autoscaling:
   # targetMemoryUtilizationPercentage: 80
 
 # Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
+volumes:
+  - name: unifai-multiagent-shared-storage
+    persistentVolumeClaim:
+      claimName: unifai-multiagent-shared-storage
+  - name: gcp-credentials
+    secret:
+      secretName: gcp-vertex-credentials
+      optional: true
 
 # Additional volumeMounts on the output Deployment definition.
-volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
-#   readOnly: true
+volumeMounts:
+  - name: unifai-multiagent-shared-storage
+    mountPath: /app/shared
+  - name: gcp-credentials
+    mountPath: /opt/app-root/src/config/gcp
+    readOnly: true
 
 nodeSelector: {}
 

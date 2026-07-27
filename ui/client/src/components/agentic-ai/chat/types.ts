@@ -1,10 +1,26 @@
+export interface SessionError extends Error {
+  sessionStatus?: string;
+}
+
+export function createSessionError(message: string, sessionStatus: string): SessionError {
+  const error = new Error(message) as SessionError;
+  error.sessionStatus = sessionStatus;
+  return error;
+}
+
+export function isSessionCancellation(error: unknown): boolean {
+  return (error as SessionError)?.sessionStatus === 'CANCELLED';
+}
+
 export interface Message {
   id: string;
   content: string;
   sender: 'user' | 'ai';
+  senderName?: string;
   finalAnswer?: string;
+  isCancelled?: boolean;
   streamLogs?: StreamLogEntry[];
-  workPlans?: WorkPlanSnapshot[]; // Add support for workplans
+  workPlans?: WorkPlanSnapshot[];
 }
 
 export interface StreamLogEntry {
@@ -12,6 +28,7 @@ export interface StreamLogEntry {
   nodeName: string;
   message: string;
   tools?: ToolEntry[];
+  approvals?: ApprovalEntry[];
   status: 'processing' | 'complete' | 'error';
   isExpanded: boolean;
 }
@@ -21,6 +38,36 @@ export interface ToolEntry {
   name: string;
   args?: Record<string, any>;
   output?: string;
+}
+
+// ─── HITL Approval Types ────────────────────────────────────────────────────
+
+export type ApprovalDecision = 'approve' | 'reject' | 'modify' | 'redirect';
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'modified' | 'redirected' | 'timed_out';
+export type AutoRuleAction = 'auto_approve' | 'auto_reject';
+
+export interface ApprovalEntry {
+  requestId: string;
+  toolName: string;
+  toolArgs: Record<string, any>;
+  toolDescription: string;
+  accessMode: string;
+  originNodeUid: string;
+  originNodeName: string;
+  status: ApprovalStatus;
+  feedback?: string;
+}
+
+// ─── Node Entry (shape used by StreamingDataContext nodeListRef) ─────────────
+
+export interface NodeEntry {
+  node_name: string;
+  node_uid: string;
+  stream: 'PROGRESS' | 'DONE' | 'ERROR';
+  text: string;
+  tools: ToolEntry[];
+  workplans: WorkPlanSnapshot[];
+  approvals: ApprovalEntry[];
 }
 
 // WorkPlan Types based on the streaming guide

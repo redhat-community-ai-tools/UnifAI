@@ -18,7 +18,7 @@ export interface SubmitSessionParams {
   sessionId: string;
   inputs: Record<string, any>;
   scope?: 'public' | 'private';
-  loggedInUser?: string;
+  userId: string;
 }
 
 /**
@@ -46,11 +46,39 @@ export async function submitSession(params: SubmitSessionParams): Promise<Submit
 }
 
 /**
+ * Cancel Session Response
+ */
+export interface CancelSessionResponse {
+  sessionId: string;
+  status: 'CANCELLED';
+}
+
+/**
+ * Cancel a running session.
+ * Signals the backend to cancel the workflow for this session.
+ * Silently ignores 409 (session already completed/failed/cancelled).
+ *
+ * @param sessionId - The session to cancel
+ * @returns Cancel confirmation, or null if session was not cancellable
+ */
+export async function cancelSession(sessionId: string): Promise<CancelSessionResponse | null> {
+  try {
+    const response = await axios.post('/sessions/session.cancel', { sessionId });
+    return response.data;
+  } catch (err: any) {
+    if (err.response?.status === 409) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
  * Redis Stream Status Response
  */
 export interface StreamStatusResponse {
   session_id: string;
-  status: 'running' | 'completed' | 'failed' | 'unknown';
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'unknown';
   started_at: string | null;
   completed_at: string | null;
   failed_at: string | null;
@@ -78,6 +106,78 @@ export async function getSessionStreamStatus(sessionId: string): Promise<StreamS
     console.error('Error fetching stream status:', err);
     return null;
   }
+}
+
+// ─── HITL Approval ────────────────────────────────────────────────────────────
+
+export interface SubmitApprovalParams {
+  sessionId: string;
+  requestId: string;
+  decision: 'approve' | 'reject' | 'modify' | 'redirect';
+  feedback?: string;
+  modifiedArgs?: Record<string, any>;
+}
+
+export interface SubmitApprovalResponse {
+  status: 'submitted';
+  sessionId: string;
+  requestId: string;
+  decision: string;
+}
+
+/**
+ * Submit a human decision for a pending HITL approval request.
+ *
+ * Unblocks the graph thread that is waiting for a response on the given
+ * request.  Returns the confirmation from the backend.
+ *
+ * @param params - Approval submission parameters
+ */
+export async function submitApproval(params: SubmitApprovalParams): Promise<SubmitApprovalResponse> {
+  const response = await axios.post('/sessions/session.approval', {
+    sessionId: params.sessionId,
+    requestId: params.requestId,
+    decision: params.decision,
+    feedback: params.feedback ?? '',
+    modifiedArgs: params.modifiedArgs ?? {},
+  });
+  return response.data;
+}
+
+// ─── HITL Auto-Approval Rules ─────────────────────────────────────────────────
+
+export type ApprovalRuleAction = 'auto_approve' | 'auto_reject' | 'clear';
+
+export interface SubmitApprovalRuleParams {
+  sessionId: string;
+  nodeUid?: string | null;
+  toolName?: string | null;
+  action: ApprovalRuleAction;
+}
+
+export interface ApprovalRuleResponse {
+  status: 'saved';
+  sessionId: string;
+  overrides: Record<string, any>;
+}
+
+/**
+ * Add or clear an auto-approval rule for this session.
+ *
+ * Scoping is determined by which fields are present:
+ *   nodeUid=null, toolName=null → global approve/reject all
+ *   nodeUid=null, toolName="x"  → global rule for tool "x"
+ *   nodeUid="a",  toolName=null → node "a" approve/reject all
+ *   nodeUid="a",  toolName="x"  → node "a" rule for tool "x"
+ */
+export async function submitApprovalRule(params: SubmitApprovalRuleParams): Promise<ApprovalRuleResponse> {
+  const response = await axios.post('/sessions/session.approval.rule', {
+    sessionId: params.sessionId,
+    nodeUid: params.nodeUid ?? null,
+    toolName: params.toolName ?? null,
+    action: params.action,
+  });
+  return response.data;
 }
 
 /**

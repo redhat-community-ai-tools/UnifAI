@@ -1,0 +1,201 @@
+# guide-index.yaml — Maps code path globs to dev-guide docs, sections, and recipes.
+# Used by: domain skills, pipeline agents, CI validation.
+# All doc paths are relative to unifai-dev-guide/.
+
+routing:
+  # ── MAS: Element Plugin Layer ──
+  "multi-agent/lib/mas/elements/nodes/**":
+    doc: docs/services/mas.md
+    section: elements_plugin_layer
+    recipe: .cursor/skills/codebase/domains/multi-agent/recipes/add-new-node.md
+    examples:
+      - multi-agent/lib/mas/elements/nodes/custom_agent/spec/spec.py
+      - multi-agent/lib/mas/elements/nodes/custom_agent/runtime/custom_agent_node.py
+
+  "multi-agent/lib/mas/elements/llms/**":
+    doc: docs/services/mas.md
+    section: elements_plugin_layer
+    recipe: .cursor/skills/codebase/domains/multi-agent/recipes/add-new-llm.md
+    examples:
+      - multi-agent/lib/mas/elements/llms/openai/spec/spec.py
+
+  "multi-agent/lib/mas/elements/tools/**":
+    doc: docs/services/mas.md
+    section: elements_plugin_layer
+    recipe: .cursor/skills/codebase/domains/multi-agent/recipes/add-new-tool.md
+    examples:
+      - multi-agent/lib/mas/elements/tools/mcp_proxy/spec/spec.py
+
+  "multi-agent/lib/mas/elements/providers/**":
+    doc: docs/services/mas.md
+    section: elements_plugin_layer
+    recipe: .cursor/skills/codebase/domains/multi-agent/recipes/add-new-provider.md
+    examples:
+      - multi-agent/lib/mas/elements/providers/mcp/spec/spec.py
+
+  "multi-agent/lib/mas/elements/retrievers/**":
+    doc: docs/services/mas.md
+    section: elements_plugin_layer
+    recipe: .cursor/skills/codebase/domains/multi-agent/recipes/add-new-node.md
+    examples:
+      - multi-agent/lib/mas/elements/retrievers/docs_rag/spec/spec.py
+
+  "multi-agent/lib/mas/elements/conditions/**":
+    doc: docs/services/mas.md
+    section: graph_planning_validation
+    examples:
+      - multi-agent/lib/mas/elements/conditions/router_direct/spec/spec.py
+
+  "multi-agent/lib/mas/elements/auths/**":
+    doc: docs/services/mas.md
+    section: resources_auth
+    examples:
+      - multi-agent/lib/mas/elements/auths/oauth_client/spec/spec.py
+
+  "multi-agent/lib/mas/elements/nodes/claude_agent/**":
+    doc: docs/services/mas.md
+    section: elements_plugin_layer
+    examples:
+      - multi-agent/lib/mas/elements/nodes/claude_agent/spec/spec.py
+      - multi-agent/lib/mas/elements/nodes/claude_agent/claude_agent_node.py
+
+  "multi-agent/lib/mas/elements/nodes/deep_agent/**":
+    doc: docs/services/mas.md
+    section: elements_plugin_layer
+    examples:
+      - multi-agent/lib/mas/elements/nodes/deep_agent/spec/spec.py
+      - multi-agent/lib/mas/elements/nodes/deep_agent/deep_agent_node.py
+
+  "multi-agent/lib/mas/elements/common/**":
+    doc: docs/services/mas.md
+    section: elements_plugin_layer
+
+  # ── MAS: Core Domain ──
+  "multi-agent/lib/mas/session/**":
+    doc: docs/services/mas.md
+    section: session_management
+
+  "multi-agent/lib/mas/blueprints/**":
+    doc: docs/services/mas.md
+    section: blueprints
+
+  "multi-agent/lib/mas/engine/**":
+    doc: docs/services/mas.md
+    section: execution_engine
+
+  "multi-agent/lib/mas/graph/**":
+    doc: docs/services/mas.md
+    section: graph_planning_validation
+
+  "multi-agent/lib/mas/core/iem/**":
+    doc: docs/services/mas.md
+    section: iem_inter_element_messaging
+
+  "multi-agent/lib/mas/core/auth/**":
+    doc: docs/services/mas.md
+    section: resources_auth
+
+  "multi-agent/lib/mas/core/identity/**":
+    doc: docs/services/mas.md
+    section: identity_collaboration
+
+  "multi-agent/lib/mas/collaboration/**":
+    doc: docs/services/mas.md
+    section: identity_collaboration
+
+  "multi-agent/lib/mas/sharing/**":
+    doc: docs/services/mas.md
+    section: sharing_templates_statistics
+
+  "multi-agent/lib/mas/templates/**":
+    doc: docs/services/mas.md
+    section: sharing_templates_statistics
+
+  "multi-agent/lib/mas/catalog/**":
+    doc: docs/services/mas.md
+    section: catalog_discovery
+
+  "multi-agent/lib/mas/resources/**":
+    doc: docs/services/mas.md
+    section: resources_auth
+
+  "multi-agent/lib/mas/actions/**":
+    doc: docs/services/mas.md
+    section: sharing_templates_statistics
+
+  "multi-agent/lib/mas/validation/**":
+    doc: docs/services/mas.md
+    section: architecture
+
+  "multi-agent/lib/mas/statistics/**":
+    doc: docs/services/mas.md
+    section: sharing_templates_statistics
+
+  # ── MAS: Adapters ──
+  "multi-agent/adapters/inbound/flask/**":
+    doc: docs/services/mas.md
+    section: endpoints
+
+  "multi-agent/adapters/inbound/temporal/**":
+    doc: docs/services/mas.md
+    section: inbound_adapters_temporal
+
+  "multi-agent/adapters/outbound/**":
+    doc: docs/services/mas.md
+    section: outbound_adapters_mongodb
+
+  "multi-agent/bootstrap/**":
+    doc: docs/services/mas.md
+    section: bootstrap
+
+  # ── RAG ──
+  "rag/core/pipeline/**":
+    doc: docs/services/rag.md
+    section: core_pipeline
+
+  "rag/core/data_sources/**":
+    doc: docs/services/rag.md
+    section: core_data_sources_registration
+
+  "rag/core/vector/**":
+    doc: docs/services/rag.md
+    section: core_vector_retrieval
+
+  "rag/core/retrieval/**":
+    doc: docs/services/rag.md
+    section: core_vector_retrieval
+
+  "rag/core/monitoring/**":
+    doc: docs/services/rag.md
+    section: core_monitoring_health
+
+  "rag/infrastructure/**":
+    doc: docs/services/rag.md
+    section: architecture
+
+  "rag/bootstrap/**":
+    doc: docs/services/rag.md
+    section: bootstrap_factories
+
+  # ── Identity ──
+  "shared-resources/identity/**":
+    doc: docs/services/identity.md
+    section: architecture
+
+  # ── Platform ──
+  "backend/**":
+    doc: docs/services/platform.md
+    section: architecture
+
+  # ── UI ──
+  "ui/client/src/**":
+    doc: docs/services/ui.md
+    section: architecture
+
+  # ── global_utils ──
+  "global_utils/src/global_utils/**":
+    doc: docs/services/global_utils.md
+    section: architecture
+
+# Section keys correspond to the `sections:` map in each doc's YAML frontmatter.
+# Recipe paths are relative to the repo root and point to .cursor/skills/codebase/domains/<domain>/recipes/.

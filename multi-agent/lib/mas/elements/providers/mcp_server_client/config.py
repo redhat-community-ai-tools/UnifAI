@@ -1,14 +1,29 @@
 from typing import Any, Dict, Literal, List, Optional
+from enum import Enum
 from .identifiers import Identifier
 from pydantic import Field, HttpUrl
 from mas.elements.providers.common.base_config import ProviderBaseConfig
-from mas.core.field_hints import ActionHint, HintType, SelectionType, SecretHint
+from mas.core.field_hints import (
+    ActionHint, HintType, SelectionType,
+    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, combine_hints,
+)
 from .transport.enums import McpTransportType
+
+
+class McpAuthMethod(str, Enum):
+    """How the user authenticates to the MCP server."""
+    ACCESS_TOKEN = "access_token"
+    SIGN_IN = "sign_in"
 
 
 class McpProviderConfig(ProviderBaseConfig):
     """
     Connects to a Model-Context-Protocol service via SSE or Streamable HTTP transport.
+
+    Authentication uses a single ``credential_token`` hidden field as the
+    credential mailbox.  Both auth paths (bearer token and sign-in) write
+    to it, and ``mcp_url`` validation reads from it.  Switching auth
+    method clears the mailbox so credentials don't leak between paths.
     """
     type: Literal[Identifier.TYPE] = Identifier.TYPE
     transport_type: McpTransportType = Field(
@@ -22,16 +37,67 @@ class McpProviderConfig(ProviderBaseConfig):
             hint_type=HintType.VALIDATE,
             field_mapping="is_reachable",
             dependencies={
-                "bearer_token": "bearer_token",
+                "mcp_url": "mcp_url",
+                "credential_token": "credential_token",
+                "server_identifier": "server_identifier",
+                "auth_method": "auth_method",
                 "transport_type": "transport_type",
                 "additional_headers": "additional_headers",
-            }
+            },
+            on_success=ActionHint(
+                action_uid="auth.store_credential",
+                hint_type=HintType.VALIDATE,
+                field_mapping="authenticated",
+                dependencies={
+                    "mcp_url": "server_url",
+                    "bearer_token": "credential",
+                },
+            ),
         ).to_hints()
+    )
+    auth_method: McpAuthMethod = Field(
+        default=McpAuthMethod.ACCESS_TOKEN,
+        description="Authentication method for this MCP server",
+        json_schema_extra=PropagateHint(to="credential_token", value="").to_hints(),
+    )
+    server_identifier: str = Field(
+        default="",
+        description="Auth server issuer (set automatically by connection validation)",
+        json_schema_extra=HiddenHint(reason="Set automatically by connection validation").to_hints(),
+    )
+    scheme_type: str = Field(
+        default="",
+        description="Auth scheme type (set automatically by connection validation)",
+        json_schema_extra=HiddenHint(reason="Set automatically by auth detection").to_hints(),
+    )
+    credential_token: str = Field(
+        default="",
+        exclude=True,
+        description="Resolved credential for connection validation",
+        json_schema_extra=HiddenHint(reason="Populated by auth fields").to_hints(),
+    )
+    sign_in: Optional[str] = Field(
+        default=None,
+        exclude=True,
+        description="Sign in to authenticate with this MCP server",
+        json_schema_extra=combine_hints(
+            ConditionalHint(visible_when={"auth_method": "sign_in"}),
+            AuthHint(
+                action_uid="auth.discovery",
+                dependencies={
+                    "mcp_url": "mcp_url",
+                },
+            ),
+        ),
     )
     bearer_token: Optional[str] = Field(
         default=None,
-        description="Bearer token for MCP server authentication (sent as 'Authorization: Bearer <token>' header)",
-        json_schema_extra=SecretHint(reason="API credentials should be masked").to_hints()
+        description="API key or bearer token (leave empty if already configured)",
+        json_schema_extra=combine_hints(
+            SecretHint(allow_reveal=True),
+            ConditionalHint(visible_when={"auth_method": "access_token"}),
+            PropagateHint(to="credential_token"),
+        ),
     )
     additional_headers: Dict[str, Any] = Field(
         default_factory=dict,
@@ -48,7 +114,7 @@ class McpProviderConfig(ProviderBaseConfig):
             multi_select=True,
             dependencies={
                 "mcp_url": "mcp_url",
-                "bearer_token": "bearer_token",
+                "server_identifier": "server_identifier",
                 "transport_type": "transport_type",
                 "additional_headers": "additional_headers",
             }

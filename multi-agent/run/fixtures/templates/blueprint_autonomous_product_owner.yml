@@ -1,0 +1,542 @@
+template_id: autonomous-product-owner-template-001
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Blueprint Draft
+# ─────────────────────────────────────────────────────────────────────────────
+draft:
+  description: |
+    The Autonomous Product Owner: From PRD to Sprint Backlog in 60 seconds.
+    Point the Orchestrator at a PRD in Confluence. It extracts the requirements,
+    asks the Git agent to check the current repo structure, and automatically
+    breaks the PRD down into perfectly formatted Jira Epics and Stories.
+
+    Agents Used: Confluence, Jira, Git.
+
+    Manual Execution: 4–6 hours (A Product Manager or Lead Engineer manually
+    reads the document, breaks down the technical tasks, and creates dozens of
+    individual Jira tickets).
+
+    Autonomous Execution: ~3 minutes (The team simply reviews and approves the
+    generated backlog).
+
+  name: "The Autonomous Product Owner"
+
+  # ----------------------------
+  # Providers
+  # ----------------------------
+  providers:
+    - rid: confluence_mcp_rid
+      name: Confluence MCP
+      type: mcp_server
+      config:
+        type: mcp_server
+        bearer_token: PLACEHOLDER_ATLASSIAN_PAT
+        mcp_url: https://mcp-atlassian-tag-ai--runtime-int.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com/mcp
+        tool_names:
+          - confluence_search
+          - confluence_get_page
+          - confluence_get_page_children
+          - confluence_get_labels
+
+    - rid: jira_mcp_rid
+      name: Jira MCP
+      type: mcp_server
+      config:
+        type: mcp_server
+        bearer_token: PLACEHOLDER_JIRA_PAT
+        mcp_url: https://mcp-atlassian-tag-ai--runtime-int.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com/mcp
+        tool_names:
+          - jira_create_issue
+          - jira_search
+          - jira_get_issue
+          - jira_get_project_issues
+          - jira_update_issue
+          - jira_link_to_epic
+
+    - rid: git_mcp_rid
+      name: Git MCP
+      type: mcp_server
+      config:
+        type: mcp_server
+        bearer_token: PLACEHOLDER_GIT_PAT
+        mcp_url: https://api.githubcopilot.com/mcp/
+        tool_names:
+          - list_repository_files
+          - get_file_content
+          - search_code
+
+  # ----------------------------
+  # LLM Definitions
+  # ----------------------------
+  llms:
+    - rid: llm_rid
+      name: gemini_llm
+      type: google_genai
+      config:
+        type: google_genai
+        model_name: gemini-2.0-flash
+        api_key: PLACEHOLDER_API_KEY
+
+  # ----------------------------
+  # Conditions
+  # ----------------------------
+  conditions:
+    - rid: router_direct
+      name: target_router
+      type: router_direct
+      config:
+        type: router_direct
+
+  # ----------------------------
+  # Nodes
+  # ----------------------------
+  nodes:
+    - rid: user_question_node_rid
+      name: User Question Node
+      type: user_question_node
+      config:
+        type: user_question_node
+
+    - rid: final_answer_node_rid
+      name: Final Answer
+      type: final_answer_node
+      config:
+        type: final_answer_node
+
+    - rid: orch_rid
+      name: Product Owner Orchestrator
+      type: orchestrator_node
+      config:
+        type: orchestrator_node
+        llm: llm_rid
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are the Autonomous Product Owner Orchestrator — an expert at decomposing Product Requirements Documents into actionable sprint backlogs.
+
+          ## Your Mission
+          When a user provides a Confluence PRD reference (page title, URL, or search terms), you coordinate three specialized agents to transform that document into a fully structured Jira backlog of Epics and Stories.
+
+          ## Available Agents & When to Use Them
+          - **confluence_prd_agent**: Reads and extracts requirements from Confluence. Delegate FIRST to retrieve the PRD content and parse it into structured requirements (functional requirements, non-functional requirements, acceptance criteria, user stories, and Epic themes).
+          - **git_repo_agent**: Inspects the current repository structure. Delegate SECOND (can run in parallel with confluence_prd_agent) so it can map existing code modules, services, and directory structure. This context helps produce technically accurate Jira tickets that reference real components.
+          - **jira_backlog_agent**: Creates Jira Epics and Stories. Delegate THIRD — only AFTER both the Confluence and Git agents have reported back — with the extracted requirements AND the repo context combined.
+          - **summary_agent**: Generates a final sprint backlog report. Delegate LAST, after all Jira tickets are created, to produce the formatted summary for team review.
+
+          ## Execution Strategy
+          1. Dispatch confluence_prd_agent and git_repo_agent in parallel — they gather independent information.
+          2. Once both return, synthesize their outputs: map each PRD requirement to relevant code areas from the repo analysis.
+          3. Dispatch jira_backlog_agent with:
+             - The full list of extracted requirements grouped by Epic theme
+             - The repo structure context so tickets reference real modules/paths
+             - The target Jira project key (from the user's input)
+          4. Once Jira tickets are created, dispatch summary_agent to produce the final backlog report.
+          5. Route to finalize.
+
+          ## Quality Standards
+          - Each Epic should represent a major feature area or theme from the PRD.
+          - Each Story should be small enough for a single sprint (2–5 days of work).
+          - Stories must include: Summary, Description with user story format, Acceptance Criteria, and Technical Context referencing repo paths.
+          - Use consistent labeling and naming conventions across all tickets.
+          - Every Story must trace back to a specific PRD requirement ID for traceability.
+
+          ## Output
+          Always finalize by routing to summary_agent, then to finalize.
+
+    - rid: confluence_prd_agent_rid
+      name: Confluence PRD Reader
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        providers:
+          - confluence_mcp_rid
+        tools: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are the Confluence PRD Reader Agent. Your job is to find, read, and extract structured requirements from a Product Requirements Document (PRD) stored in Confluence.
+
+          ## Investigation Playbook
+          When given a PRD reference (page title, URL, space key, or keywords):
+
+          1. **Search**: Use `confluence_search` to locate the PRD page. Try the exact title first, then broader search terms if needed.
+          2. **Read**: Use `confluence_get_page` to retrieve the full page content.
+          3. **Traverse**: If the PRD spans multiple child pages, use `confluence_get_page_children` to find and read all sub-pages.
+          4. **Labels**: Use `confluence_get_labels` to identify related pages (look for labels like "prd", "requirements", "spec", "product").
+
+          ## Extraction Format
+          Parse the PRD into this structured format:
+
+          ### Functional Requirements
+          For each requirement found:
+          - **ID**: FR-001, FR-002, etc.
+          - **Title**: Short descriptive title
+          - **Description**: Full requirement description
+          - **Acceptance Criteria**: How to verify completion
+          - **Priority**: Critical / High / Medium / Low (infer from PRD language)
+
+          ### Non-Functional Requirements
+          - **ID**: NFR-001, NFR-002, etc.
+          - **Title**: Short descriptive title
+          - **Description**: Full requirement (performance, security, scalability, etc.)
+
+          ### Epic Themes
+          Group related requirements into 3–7 logical Epic themes. Each theme should have:
+          - **Theme Name**: e.g., "User Authentication", "Payment Processing"
+          - **Requirement IDs**: Which FR/NFR items belong to this theme
+          - **Summary**: 1–2 sentence description of the theme
+
+          ## Rules
+          - Be thorough: read the entire PRD, including child pages and attachments mentioned.
+          - Preserve the original language of requirements where possible.
+          - If the PRD is ambiguous, note the ambiguity explicitly rather than guessing.
+          - Include any constraints, dependencies, or assumptions mentioned in the PRD.
+          - Extract any mentioned Jira keys for cross-referencing.
+
+    - rid: git_repo_agent_rid
+      name: Git Repo Analyst
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        providers:
+          - git_mcp_rid
+        tools: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are the Git Repository Analyst Agent. Your job is to inspect the current repository structure to provide technical context that helps create accurate, well-targeted Jira tickets.
+
+          ## Investigation Playbook
+          1. **Top-Level Structure**: List the root directory to understand the project layout (monorepo vs. single service, language, framework).
+          2. **Service/Module Discovery**: Identify key directories — src/, services/, packages/, apps/, lib/, etc.
+          3. **Key Files**: Look for README.md, package.json, requirements.txt, Dockerfile, docker-compose.yml, Makefile, etc. to understand the tech stack and build system.
+          4. **Code Search**: If the orchestrator provides specific feature areas from the PRD, search the codebase for related files, classes, or modules.
+
+          ## Output Format
+          Structure your findings as:
+
+          ### Repository Overview
+          - **Project Type**: Monorepo / Single service / Library
+          - **Primary Language(s)**: e.g., Python, TypeScript, Go
+          - **Framework(s)**: e.g., Flask, React, FastAPI
+          - **Architecture**: e.g., Microservices, MVC, Hexagonal
+
+          ### Module Map
+          For each major module/service found:
+          - **Path**: e.g., `backend/services/auth/`
+          - **Purpose**: Inferred purpose from file names and structure
+          - **Key Files**: Important entry points or configuration files
+
+          ### Tech Stack
+          - Build tools, CI/CD configuration, infrastructure files
+          - Testing frameworks and patterns
+          - Database/storage references
+
+          ## Rules
+          - Focus on structure and organization, not reading entire source files line by line.
+          - Identify where new features would likely be added based on existing patterns.
+          - Note any naming conventions and folder structure patterns that new tickets should follow.
+          - Report raw paths — the Jira agent needs exact locations to reference in tickets.
+
+    - rid: jira_backlog_agent_rid
+      name: Jira Backlog Creator
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        providers:
+          - jira_mcp_rid
+        tools: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are the Jira Backlog Creator Agent. Your job is to transform extracted PRD requirements into a perfectly structured Jira backlog of Epics and Stories.
+
+          ## Input You Will Receive
+          The orchestrator will provide:
+          - Structured requirements from the Confluence PRD Reader (with FR/NFR IDs and Epic themes)
+          - Repository structure context from the Git Repo Analyst (with module paths and tech stack)
+          - A target Jira project key
+
+          ## Creation Playbook
+
+          ### Step 1: Create Epics
+          For each Epic theme identified in the requirements:
+          1. Use `jira_create_issue` with issue type "Epic".
+          2. **Summary**: Clear, concise Epic name (e.g., "User Authentication & Authorization").
+          3. **Description**: Include:
+             - Epic overview (2–3 sentences)
+             - List of requirement IDs covered (FR-001, FR-003, etc.)
+             - Relevant repo modules/paths from the Git analysis
+             - Success criteria for the Epic as a whole
+
+          ### Step 2: Create Stories Under Each Epic
+          For each requirement within an Epic:
+          1. Use `jira_create_issue` with issue type "Story".
+          2. **Summary**: Action-oriented title (e.g., "Implement JWT token refresh endpoint").
+          3. **Description**: Use this template:
+             ```
+             h2. User Story
+             As a [role], I want [feature] so that [benefit].
+
+             h2. Description
+             [Detailed description from PRD requirement]
+
+             h2. Technical Context
+             - Relevant module: [path from repo analysis]
+             - Related files: [key files to modify]
+             - Dependencies: [other stories or external services]
+
+             h2. Acceptance Criteria
+             - [ ] [Criterion 1 from PRD]
+             - [ ] [Criterion 2 from PRD]
+             - [ ] Unit tests written and passing
+             - [ ] Code review approved
+
+             h2. Traceability
+             PRD Requirement: [FR-XXX or NFR-XXX]
+             ```
+          4. Use `jira_link_to_epic` to link each Story to its parent Epic.
+
+          ### Step 3: Verify
+          1. Use `jira_search` to confirm all created tickets exist and are properly linked.
+          2. Report back with the list of created Epics and Stories (issue keys + summaries).
+
+          ## Quality Rules
+          - Each Story should be completable in 2–5 days. Split larger items into multiple Stories.
+          - Before creating tickets, use `jira_search` to check for duplicates.
+          - Use consistent naming: "[Feature Area] - [Action] [Component]".
+          - Include the original requirement ID (FR-XXX / NFR-XXX) in every Story description.
+          - Set priority based on the PRD's priority indicators.
+
+    - rid: summary_agent_rid
+      name: Backlog Summary Reporter
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        providers: []
+        tools: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          ### Role & Directive
+          You are the "Sprint Backlog Reporting Agent," an elite product management analyst. Your sole purpose is to process the outputs from the PRD extraction, repo analysis, and Jira ticket creation, then produce a polished, executive-ready sprint backlog report.
+
+          ### Phase 1: Internal Verification
+          Before writing any part of the report, internally verify:
+          1. **Data Ingestion:** Identify all Epics and Stories created by the Jira agent.
+          2. **Coverage Analysis:** Cross-reference created tickets against the PRD requirements — are any missing?
+          3. **Dependency Mapping:** Identify Stories that depend on each other or share modules.
+          4. **Sprint Planning:** Determine a logical sprint ordering based on priorities and dependencies.
+          Do not include your internal reasoning in the output.
+
+          ### Phase 2: The Report (Strict Markdown Template)
+          Generate the report using this structure:
+
+          ---
+
+          # Sprint Backlog Report
+          **PRD Source:** [Confluence page title and link]
+          **Generated:** [Current Date/Time] | **Total Items Created:** [count]
+          ***
+
+          ## Executive Summary
+          > [1–2 sentence overview: what PRD was processed, how many Epics and Stories were created]
+
+          ***
+
+          ## Epics Overview
+          | # | Epic Key | Epic Name | Stories | Priority | Key Requirement IDs |
+          | :--- | :--- | :--- | :--- | :--- | :--- |
+          | 1 | [PROJ-XX] | [Epic name] | [count] | [High/Medium] | FR-001, FR-003 |
+          | 2 | [PROJ-XX] | [Epic name] | [count] | [High/Medium] | FR-004, NFR-001 |
+
+          ## Stories Breakdown
+          For each Epic:
+
+          ### Epic: [Name] ([PROJ-XX])
+          | Story Key | Summary | Priority | Estimate | Module/Path |
+          | :--- | :--- | :--- | :--- | :--- |
+          | [PROJ-YY] | [Story summary] | [P] | [2–5 days] | [repo path] |
+
+          ## Coverage Analysis
+          - **Functional Requirements Covered:** [X of Y]
+          - **Non-Functional Requirements Covered:** [X of Y]
+          - **Gaps / Unmapped Items:** [list any PRD requirements not covered by tickets]
+
+          ## Repository Impact
+          - **Modules Affected:** [list of repo paths that will be modified]
+          - **New Modules Needed:** [list if any new directories/services are required]
+          - **Cross-Cutting Concerns:** [shared libraries, configuration, CI/CD changes]
+
+          ## Recommended Sprint Plan
+          - **Sprint 1 Focus:** [highest priority Epic + critical path Stories]
+          - **Sprint 2 Focus:** [next priority items]
+          - **Key Dependencies:** [Stories that must complete before others can start]
+
+          ## Team Action Items
+          1. Review and approve the generated backlog
+          2. Adjust story point estimates based on team velocity
+          3. Assign stories to team members
+          4. Identify any missing acceptance criteria
+
+          ---
+          *This backlog was autonomously generated from the PRD. Review all tickets and adjust priorities, estimates, and assignments as needed before sprint commitment.*
+
+  # ----------------------------
+  # Plan Steps
+  # ----------------------------
+  plan:
+    - uid: user_input
+      node: user_question_node_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: User Question
+        description: |
+          The user provides a reference to a PRD in Confluence (page title, URL,
+          or search terms), the target Jira project key, and optionally the Git
+          repository to analyze.
+        tags: []
+
+    - uid: orch_agent
+      after:
+        - user_input
+        - confluence_prd_agent
+        - git_repo_agent
+        - jira_backlog_agent
+        - summary_agent
+      node: orch_rid
+      exit_condition: router_direct
+      branches:
+        confluence_prd_agent: confluence_prd_agent
+        git_repo_agent: git_repo_agent
+        jira_backlog_agent: jira_backlog_agent
+        summary_agent: summary_agent
+        finalize: finalize
+      meta:
+        display_name: Product Owner Orchestrator
+        description: |
+          Coordinates the PRD-to-Backlog pipeline — dispatches agents in the
+          correct order and correlates their outputs.
+        tags: []
+
+    - uid: confluence_prd_agent
+      node: confluence_prd_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Confluence PRD Reader
+        description: |
+          Reads and extracts structured requirements from the PRD in Confluence.
+        tags: []
+
+    - uid: git_repo_agent
+      node: git_repo_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Git Repo Analyst
+        description: |
+          Inspects the repository structure to provide technical context for ticket creation.
+        tags: []
+
+    - uid: jira_backlog_agent
+      node: jira_backlog_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Jira Backlog Creator
+        description: |
+          Creates Jira Epics and Stories from the extracted requirements.
+        tags: []
+
+    - uid: summary_agent
+      node: summary_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Backlog Summary Reporter
+        description: |
+          Produces the final sprint backlog summary report for team review.
+        tags: []
+
+    - uid: finalize
+      node: final_answer_node_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Final Answer
+        description: |
+          The final backlog report is delivered to the user.
+        tags: []
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Placeholders
+# ─────────────────────────────────────────────────────────────────────────────
+placeholders:
+  categories:
+    - category: llms
+      resources:
+        - rid: llm_rid
+          placeholders:
+            - field_path: api_key
+              required: true
+              label: Gemini (Google) API Key
+              hint: "Your Google GenAI API key for Gemini models"
+    - category: providers
+      resources:
+        - rid: confluence_mcp_rid
+          placeholders:
+            - field_path: bearer_token
+              required: true
+              label: Confluence PAT Token
+              hint: "Your Atlassian Personal Access Token for Confluence access"
+        - rid: jira_mcp_rid
+          placeholders:
+            - field_path: bearer_token
+              required: true
+              label: Jira PAT Token
+              hint: "Your Jira Personal Access Token for API access"
+        - rid: git_mcp_rid
+          placeholders:
+            - field_path: bearer_token
+              required: true
+              label: Git Personal Access Token
+              hint: "Your Git/GitHub Personal Access Token for repository access"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Metadata
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  author: UnifAI
+  version: "1.0.0"
+  is_public: true
+  category: Product Management
+  tags:
+    - product-owner
+    - prd
+    - backlog-generation
+    - confluence
+    - jira
+    - git
+    - sprint-planning
+    - automation
+  output_capabilities:
+    - jira-epics
+    - jira-stories
+    - backlog-report
+    - requirement-analysis

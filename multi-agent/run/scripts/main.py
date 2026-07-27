@@ -136,7 +136,10 @@ def main_resume_session(run_id: str):
 
 
 def save_resources(app):
-    llm_rid = app.resources_service.create(user_id="alice",
+    from mas.core.identity import Identity
+    alice = Identity.user("alice")
+
+    llm_rid = app.resources_service.create(identity=alice,
                                            category="llms",
                                            type="openai",
                                            name="openai_llm",
@@ -147,7 +150,7 @@ def save_resources(app):
                                                "base_url": "https://generativelanguage.googleapis.com/v1beta/openai"
                                            }).rid
 
-    mcp_rid = app.resources_service.create(user_id="alice",
+    mcp_rid = app.resources_service.create(identity=alice,
                                            category="providers",
                                            type="mcp_server",
                                            name="My mcp server Node",
@@ -156,7 +159,7 @@ def save_resources(app):
                                                "mcp_url": "http://localhost:8004"
                                            }).rid
 
-    tool_rid = app.resources_service.create(user_id="alice",
+    tool_rid = app.resources_service.create(identity=alice,
                                             category="tools",
                                             type="mcp_proxy",
                                             name="My mcp addition tool",
@@ -166,7 +169,7 @@ def save_resources(app):
                                                 "provider": f"$ref:{mcp_rid}"
                                             }).rid
 
-    app.resources_service.create(user_id="alice",
+    app.resources_service.create(identity=alice,
                                  category="nodes",
                                  type="custom_agent_node",
                                  name="My Agent Node",
@@ -178,7 +181,8 @@ def save_resources(app):
 
 
 def run_test_new_version(app, blueprint_id):
-    run_id = app.session_service.create(user_id="alice", blueprint_id=blueprint_id)
+    from mas.core.identity import Identity
+    run_id = app.session_service.create(identity=Identity.user("alice"), blueprint_id=blueprint_id)
     print(f"Created session with id: {run_id}")
     print(app.session_service.run(session_id=run_id,
                                   inputs={"user_prompt": "what can you tell me about Redhat?"},

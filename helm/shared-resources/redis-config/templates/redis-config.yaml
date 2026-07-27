@@ -1,0 +1,7 @@
+# shared-resources/shared-config/templates/dummy.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+data:
+  dummy: "true"

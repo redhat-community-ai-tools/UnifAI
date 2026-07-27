@@ -7,7 +7,7 @@ Lightweight Flask service (port 8005, proxied via `/api4` from the UI) for cross
 This is a separate service from:
 - **RAG / Data Pipeline Hub** (port 13457, `/api1`) — document ingestion, Slack pipelines, embeddings
 - **Multi-Agent System** (port 8002, `/api2`) — agentic workflows, sessions, blueprints
-- **SSO Service** (port 13456, `/api3`) — authentication, user management
+- **Identity Service** (port 13456, `/api3`) — authentication, user management
 
 ---
 

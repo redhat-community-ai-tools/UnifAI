@@ -35,16 +35,14 @@ class DocsRagRetriever(BaseRetriever):
         self._provider = factory.create(config)
 
     def retrieve(self, query: str) -> List[dict]:
-        scope = self._identity.scope if self._identity else "public"
-        user_id = self._identity.user_id if self._identity else ""
+        user_id = self._identity.identity_id if self._identity else ""
         doc_ids = [doc['id'] for doc in self.docs] if self.docs else None
 
         response = self._provider.query(
             query=query,
-            scope=scope,
-            logged_in_user=user_id,
             doc_ids=doc_ids,
             tags=self.tags,
+            authenticated_user=user_id,
         )
 
         return [

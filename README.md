@@ -193,51 +193,7 @@ The RAG module feeds the multi-agent system with indexed enterprise knowledge:
 
 ## Quick Start
 
-### Prerequisites
-
-- Python 3.11+
-- Node.js 22+ and PNPM
-- MongoDB
-- Qdrant
-
-Optional: Redis (for distributed streaming), Temporal (for distributed execution), RabbitMQ (for async RAG pipelines), Keycloak (for auth).
-
-### Multi-Agent Backend
-
-```bash
-cd multi-agent
-pip install -e ".[all]"
-
-# Configure
-export ENGINE_NAME=langgraph
-export MONGODB_IP=localhost
-
-# Run
-mas api --dev
-```
-
-### RAG Backend
-
-```bash
-cd rag
-pip install -r requirements.txt
-
-# Run Flask server
-python -m flask run --port 8001
-
-# Run Celery workers (separate terminal)
-celery -A app.celery worker
-```
-
-### UI
-
-```bash
-cd ui
-pnpm install --frozen-lockfile
-pnpm dev
-```
-
-The UI runs at `http://localhost:5173` and proxies API requests to the backends.
+For a complete walkthrough — setting up virtual environments, installing dependencies, and running all services locally — see the **[Local Development Guide](local-development/LOCAL_DEV_GUIDE.md)**.
 
 ### Deployment
 
@@ -262,7 +218,7 @@ unifai/
 │   ├── infrastructure/   # Adapters (MongoDB, Qdrant, Celery)
 │   └── bootstrap/        # Dependency injection & app setup
 ├── ui/                   # React frontend
-├── shared-resources/     # SSO backend (Keycloak integration)
+├── shared-resources/     # Identity service (Keycloak integration)
 ├── global_utils/         # Shared Python utilities
 ├── helm/                 # Helm charts & Helmfile for deployment
 ├── ci/                   # Jenkins CI/CD pipelines
@@ -279,7 +235,7 @@ unifai/
 | RAG Pipeline | [rag/README.md](rag/README.md) |
 | Web UI | [ui/README.md](ui/README.md) |
 | Helm Deployment | [helm/README.md](helm/README.md) |
-| SSO / Auth | [shared-resources/sso-backend/README.md](shared-resources/sso-backend/README.md) |
+| Identity / Auth | [shared-resources/identity/README.md](shared-resources/identity/README.md) |
 | CI/CD | [ci/README.md](ci/README.md) |
 
 ---

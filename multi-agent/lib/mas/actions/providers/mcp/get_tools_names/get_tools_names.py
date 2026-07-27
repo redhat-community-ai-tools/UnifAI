@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, HttpUrl, Field
+from pydantic import HttpUrl, Field
 from mas.actions.common.base_action import BaseAction
 from mas.actions.common.action_models import BaseActionInput, BaseActionOutput, ActionType
 from mas.elements.providers.mcp_server_client.mcp_provider_factory import McpProviderFactory
@@ -7,16 +9,12 @@ from mas.elements.providers.mcp_server_client.config import McpProviderConfig
 from mas.elements.providers.mcp_server_client.identifiers import Identifier
 from mas.elements.providers.mcp_server_client.transport.enums import McpTransportType
 from mas.core.enums import ResourceCategory
-
+from mas.core.auth.service import AuthService
 
 # Input/Output models for this action
 class GetToolsNamesInput(BaseActionInput):
     """Input for MCP tools discovery"""
     mcp_url: HttpUrl
-    bearer_token: Optional[str] = Field(
-        default=None,
-        description="Bearer token for MCP server authentication"
-    )
     transport_type: McpTransportType = Field(
         default=McpTransportType.STREAMABLE_HTTP,
         description="Transport protocol for MCP server communication"
@@ -25,6 +23,8 @@ class GetToolsNamesInput(BaseActionInput):
         default_factory=dict,
         description="Additional HTTP headers to include in MCP server requests"
     )
+    user_id: str = Field(default="")
+    server_identifier: str = Field(default="")
 
 
 class GetToolsNamesOutput(BaseActionOutput):
@@ -34,24 +34,17 @@ class GetToolsNamesOutput(BaseActionOutput):
 
 
 class GetToolsNamesAction(BaseAction):
-    """
-    Discovers available tool names from MCP server.
-    
-    This action can work with any MCP-compatible element or independently.
-    Single Responsibility: Only discovers and returns tool names
-    """
-    
     uid = "mcp.get_tools_names"
     name = "get_tools_names"
     description = "Retrieve the list of available tool names from the MCP server"
     action_type = ActionType.DISCOVERY
     input_schema = GetToolsNamesInput
     output_schema = GetToolsNamesOutput
-    version = "1.0.0"
+    version = "1.1.0"
     tags = {"mcp", "discovery", "tools"}
     elements = {(ResourceCategory.PROVIDER.value, Identifier.TYPE)}
-    
-    def __init__(self, factory: McpProviderFactory = None):
+
+    def __init__(self, factory: McpProviderFactory = None, auth_service: Optional[AuthService] = None):
         """
         Initialize action with optional factory injection.
         
@@ -60,9 +53,13 @@ class GetToolsNamesAction(BaseAction):
         """
         super().__init__()
         self._factory = factory or McpProviderFactory()
-    
-    async def execute(self, input_data: GetToolsNamesInput, 
-                     context: Optional[Dict[str, Any]] = None) -> GetToolsNamesOutput:
+        self._auth_service = auth_service
+
+    async def execute(
+        self,
+        input_data: GetToolsNamesInput,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> GetToolsNamesOutput:
         """
         Execute tools discovery asynchronously.
         
@@ -74,26 +71,27 @@ class GetToolsNamesAction(BaseAction):
             Discovery result with tool names and count
         """
         try:
-            # Create config from input data
             config = McpProviderConfig(
                 mcp_url=input_data.mcp_url,
-                bearer_token=input_data.bearer_token,
                 transport_type=input_data.transport_type,
                 additional_headers=input_data.additional_headers,
             )
-            
-            # Create provider using factory - fetches tools during initialization
-            provider = await self._factory.create_async(config)
+
+            auth = None
+            if self._auth_service and input_data.user_id and input_data.server_identifier:
+                auth = self._auth_service.bind(input_data.user_id, input_data.server_identifier)
+
+            provider = await self._factory.create_async(config, auth_credential=auth)
             tools = provider.get_tools()
             tool_names = [tool.name for tool in tools]
-            
+
             return GetToolsNamesOutput(
                 success=True,
                 message=f"Found {len(tool_names)} tools",
                 tool_names=tool_names,
                 total_count=len(tool_names)
             )
-            
+
         except Exception as e:
             return GetToolsNamesOutput(
                 success=False,

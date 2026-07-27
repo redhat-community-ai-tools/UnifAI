@@ -128,7 +128,7 @@ class SlackPipelineHandler(SourcePipelinePort):
             List of VectorChunk objects ready for storage
         """
         main, threads = processed
-        upload_by = context.metadata.get("upload_by", "default")
+        upload_by = context.owner_id
         
         # Chunk main messages
         chunks = self._chunker.chunk_content(main, upload_by=upload_by)
@@ -143,6 +143,7 @@ class SlackPipelineHandler(SourcePipelinePort):
                 "source_id": context.source_id,
                 "source_type": self.source_type,
                 "chunk_index": idx,
+                "owner_id": context.owner_id,
             })
         
         # Generate embeddings and convert to domain objects

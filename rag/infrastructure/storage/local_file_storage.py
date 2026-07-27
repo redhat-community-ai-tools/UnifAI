@@ -3,7 +3,7 @@ import base64
 import os
 from typing import List, Dict
 
-from global_utils.utils import secure_filename
+from global_utils.utils.file_utils import secure_filename
 from shared.logger import logger
 
 

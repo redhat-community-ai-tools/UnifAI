@@ -84,3 +84,8 @@ class FailSessionParams(BaseModel):
     """Input to the fail_session activity."""
     run_id: str
     error_message: str = ""
+
+
+class CancelSessionParams(BaseModel):
+    """Input to the cancel_session activity."""
+    run_id: str

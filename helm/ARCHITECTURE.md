@@ -29,7 +29,7 @@ The UnifAI Helm infrastructure provides **declarative Kubernetes deployments** u
 - OpenShift Route integration
 
 **Deployment Layers:**
-1. **Shared Resources**: MongoDB, RabbitMQ, Qdrant, SSO
+1. **Shared Resources**: MongoDB, RabbitMQ, Qdrant, Identity
 2. **Application Modules**: RAG, Multi-Agent, UI
 3. **Supporting Services**: Docling, vLLM serving engines
 
@@ -65,7 +65,7 @@ helm/
 │   ├── mongodb/                   # MongoDB StatefulSet (replicated)
 │   ├── rabbitmq/                  # RabbitMQ messaging
 │   ├── qdrant/                    # Vector database
-│   ├── sso/                       # SSO authentication service
+│   ├── identity/                  # Identity authentication service (against RH SSO)
 │   ├── docling/                   # Document processing service
 │   ├── vllm-serving-engine/       # LLM serving infrastructure
 │   ├── shared-config/             # Shared ConfigMap definitions
@@ -92,7 +92,7 @@ helm/
 │   ├── rag-resource-values.yaml   # RAG config
 │   ├── multiagent-resource-values.yaml  # Multi-agent config
 │   ├── ui-values.yaml             # UI config
-│   ├── sso-values.yaml            # SSO config
+│   ├── identity-values.yaml       # Identity config
 │   ├── docling-values-cpu.yaml    # Docling (CPU mode)
 │   ├── docling-values-gpu.yaml    # Docling (GPU mode)
 │   └── vllm-*.yaml                # vLLM model-specific configs
@@ -101,7 +101,7 @@ helm/
 ├── rag.yaml.gotmpl                # 🔗 RAG deployment
 ├── multiagent.yaml.gotmpl         # 🔗 Multi-agent deployment
 ├── ui.yaml.gotmpl                 # 🔗 UI deployment
-├── sso.yaml.gotmpl                # 🔗 SSO deployment
+├── identity.yaml.gotmpl           # 🔗 Identity deployment
 ├── shared-resources.yaml.gotmpl   # 🔗 Extended shared resources
 │
 ├── rag-presync.sh                 # 🪝 RAG pre-deployment hook
@@ -160,10 +160,10 @@ UnifAI uses a **3-tier deployment architecture**:
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                TIER 2: Application Components               │
-│           (rag.yaml, multiagent.yaml, sso.yaml)             │
+│           (rag.yaml, multiagent.yaml, identity.yaml)        │
 │                                                             │
 │  ┌─────────────────┐   ┌──────────────┐   ┌──────────────┐  │
-│  │    RAG Server   │   │ Multi-Agent  │   │     SSO      │  │
+│  │    RAG Server   │   │ Multi-Agent  │   │   Identity   │  │
 │  │   (Deployment)  │   │  (Deployment)│   │ (Deployment) │  │
 │  └────────┬────────┘   └──────┬───────┘   └──────┬───────┘  │
 │           │                   │                  │          │
@@ -182,19 +182,19 @@ UnifAI uses a **3-tier deployment architecture**:
                               │                    │
                               │ proxied by         │
                               ▼                    ▼
-┌──────────────────────────────────────────────────────────────┐
+┌───────────────────────────────────────────────────────────────┐
 │                      TIER 3: Frontend                         │
 │  (ui.yaml)                                                    │
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐  │
-│  │  UI (Deployment) with Nginx                              │ │
-│  │  Routes: /api1 → RAG, /api2 → Multi-Agent                │ │
-│  │          /api3 → SSO                                     │ │
-│  └─────────────────────────────────────────────────────────┘ │
+│  │  UI (Deployment) with Nginx                             │  │
+│  │  Routes: /api1 → RAG, /api2 → Multi-Agent               │  │
+│  │          /api3 → Identity, api4 → Backend               │  │
+│  └─────────────────────────────────────────────────────────┘  │
 │                              │                                │
 │                              ▼                                │
-│  [OpenShift Route: External HTTPS Access]                    │
-└──────────────────────────────────────────────────────────────┘
+│  [OpenShift Route: External HTTPS Access]                     │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Dependencies
@@ -213,7 +213,7 @@ MongoDB, RabbitMQ, Qdrant (parallel)
     │       ├─> Multi-Agent Backend
     │       │       └─> Multi-Agent Config
     │       │
-    │       └─> SSO Backend
+    │       └─> Identity
     │
     └─> UI (waits for backends)
 ```
@@ -594,7 +594,7 @@ env:
   DATAPIPELINEHUB_PORT: "13456"
   MULTIAGENT_HOST: "unifai-multiagent-be"
   MULTIAGENT_PORT: "8003"
-  SSO_BACKEND_HOST: "https://unifai-sso-backend-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
+  IDENTITY_HOST: "https://unifai-identity-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
 ```
 
 **Usage in Helmfile:**
@@ -844,7 +844,7 @@ kubectl wait --for=condition=Ready pods -l app=rabbitmq --timeout=300s
 # 4. Deploy application components
 helmfile -f rag.yaml.gotmpl apply
 helmfile -f multiagent.yaml.gotmpl apply
-helmfile -f sso.yaml.gotmpl apply
+helmfile -f identity.yaml.gotmpl apply
 
 # 5. Deploy UI (waits for backend routes)
 helmfile -f ui.yaml.gotmpl apply

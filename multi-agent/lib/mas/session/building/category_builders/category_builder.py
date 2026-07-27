@@ -4,7 +4,7 @@ from mas.elements.common.exceptions import PluginConfigurationError
 from pydantic import ValidationError
 from mas.core.enums import ResourceCategory
 from mas.core.contracts import SessionRegistry
-from mas.core.element_deps import ElementDeps
+from mas.core.element_deps import ElementBuildContext
 from mas.blueprints.models.blueprint import BlueprintSpec, ResourceSpec
 
 
@@ -22,7 +22,7 @@ class CategoryBuilder(ABC):
         self,
         blueprint: BlueprintSpec,
         registry: SessionRegistry,
-        deps: Optional[ElementDeps] = None,
+        deps: Optional[ElementBuildContext] = None,
     ) -> None:
         for resource in self._iter_specs(blueprint):
             spec = self._registry_elements.get_spec(self.category, resource.type)
@@ -43,7 +43,7 @@ class CategoryBuilder(ABC):
         self,
         resource_spec: ResourceSpec,
         session_registry: SessionRegistry,
-        deps: Optional[ElementDeps] = None,
+        deps: Optional[ElementBuildContext] = None,
     ) -> Any:
         """Lookup factory, validate schema, create instance with extras."""
         try:
@@ -69,7 +69,7 @@ class CategoryBuilder(ABC):
             )
 
         try:
-            extra = self._extra_kwargs(resource_spec.config, session_registry)
+            extra = self._extra_kwargs(resource_spec.config, session_registry, deps=deps)
             return factory.create(validated, deps=deps, **extra)
         except Exception as e:
             raise PluginConfigurationError(
@@ -77,5 +77,7 @@ class CategoryBuilder(ABC):
             ) from e
 
     # subclasses may override
-    def _extra_kwargs(self, cfg, session_registry: SessionRegistry) -> dict[str, Any]:
+    def _extra_kwargs(
+        self, cfg, session_registry: SessionRegistry, deps: Optional[ElementBuildContext] = None,
+    ) -> dict[str, Any]:
         return {}

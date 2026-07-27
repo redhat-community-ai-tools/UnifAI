@@ -31,8 +31,8 @@ jobs:
           - component: multiagentbackend
             dockerfile: multi-agent/Dockerfile
             context: .
-          - component: ssobackend
-            dockerfile: shared-resources/sso-backend/Dockerfile
+          - component: identity
+            dockerfile: shared-resources/identity/Dockerfile
             context: .
           - component: ui
             dockerfile: ui/deployment/Dockerfile

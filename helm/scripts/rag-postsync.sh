@@ -1,5 +1,4 @@
 #!/bin/bash
-set -x
 set +e
 echo "Starting rag postsync hook..."
 

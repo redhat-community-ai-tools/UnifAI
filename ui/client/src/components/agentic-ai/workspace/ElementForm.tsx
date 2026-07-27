@@ -16,8 +16,19 @@ import {
 } from "../../../types/workspace";
 import { FieldRenderer, getStringEnumFromRef } from "./FieldRenderer";
 import { ItemValidationResult } from "./FieldValidation";
+
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
+import { useAuth } from "@/contexts/AuthContext";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
+import { useToast } from "@/hooks/use-toast";
+import {
+  acquireTeamEditLock,
+  heartbeatTeamEditLock,
+  releaseTeamEditLock,
+} from "@/api/collaborationEditLock";
+import { LoaderCircle } from "lucide-react";
+import OpenShellSandboxGuidelines from "./OpenShellSandboxGuidelines";
 
 function normalizeElementName(v: string): string {
   return v.trim().toLowerCase();
@@ -54,8 +65,146 @@ export const ElementForm: React.FC<ElementFormProps> = ({
   const [itemValidationStates, setItemValidationStates] = useState<{ [fieldName: string]: ItemValidationResult[] }>({});
   const [validatingFields, setValidatingFields] = useState<Set<string>>(new Set());
   const [populateResults, setPopulateResults] = useState<{ [fieldName: string]: string[] | any }>({});
+  const [actionOutputs, setActionOutputs] = useState<Record<string, any>>({});
+  const [refEditState, setRefEditState] = useState<{
+    element: ElementInstance;
+    schema: ElementSchema;
+    actions: any[];
+    elementType: ElementType;
+    existingNames: string[];
+  } | null>(null);
 
-  const { fetchResourcesForCategory } = useWorkspaceData();
+  const {
+    fetchResourcesForCategory,
+    fetchResourceById,
+    fetchElementSchema: fetchSchemaForRef,
+    fetchElementActions: fetchActionsForRef,
+    saveElement: saveRefElement,
+  } = useWorkspaceData();
+  const { user } = useAuth();
+  const { isTeam: isTeamWorkspace, userId: teamId } = useWorkspaceIdentity();
+  const { toast } = useToast();
+  const needsResourceEditLock =
+    isOpen && isTeamWorkspace && !!editingElement?.rid && !!user?.username;
+  const [resourceEditLockReady, setResourceEditLockReady] = useState(true);
+  const [resourceLockHeld, setResourceLockHeld] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setResourceEditLockReady(true);
+      setResourceLockHeld(false);
+      return;
+    }
+    if (!needsResourceEditLock || !user?.username) {
+      setResourceEditLockReady(true);
+      setResourceLockHeld(false);
+      return;
+    }
+
+    setResourceEditLockReady(false);
+    setResourceLockHeld(false);
+    let cancelled = false;
+    let lockTaken = false;
+    const rid = editingElement!.rid;
+    const displayName = user.name?.trim() || user.username;
+
+    (async () => {
+      try {
+        const result = await acquireTeamEditLock({
+          teamId,
+          entityKind: "resource",
+          entityId: rid,
+          userId: user.username,
+          displayName,
+        });
+        if (cancelled) return;
+        if (!result.acquired) {
+          toast({
+            title: "Someone else is editing this element",
+            description: `Currently being edited by ${result.lockedBy.displayName || result.lockedBy.userId}.`,
+            variant: "destructive",
+          });
+          onClose();
+          return;
+        }
+        lockTaken = true;
+        setResourceLockHeld(true);
+        setResourceEditLockReady(true);
+      } catch {
+        if (cancelled) return;
+        toast({
+          title: "Could not start editing",
+          description: "Failed to acquire edit lock. Try again.",
+          variant: "destructive",
+        });
+        onClose();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (lockTaken) {
+        void releaseTeamEditLock({
+          teamId,
+          entityKind: "resource",
+          entityId: rid,
+          userId: user.username,
+        });
+        setResourceLockHeld(false);
+      }
+    };
+  }, [
+    isOpen,
+    needsResourceEditLock,
+    teamId,
+    editingElement?.rid,
+    user?.username,
+    user?.name,
+    onClose,
+    toast,
+  ]);
+
+  useEffect(() => {
+    if (!resourceLockHeld || !needsResourceEditLock || !user?.username || !editingElement?.rid) {
+      return;
+    }
+    const rid = editingElement.rid;
+    const displayName = user.name?.trim() || user.username;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    interval = window.setInterval(() => {
+      void heartbeatTeamEditLock({
+        teamId,
+        entityKind: "resource",
+        entityId: rid,
+        userId: user.username,
+        displayName,
+      }).catch((err: unknown) => {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 501) return;
+        if (interval != null) window.clearInterval(interval);
+        interval = undefined;
+        setResourceLockHeld(false);
+        toast({
+          title: "Edit lock lost",
+          description: "We could not renew the team edit lock. The editor will close.",
+          variant: "destructive",
+        });
+        onClose();
+      });
+    }, 45_000);
+    return () => {
+      if (interval != null) window.clearInterval(interval);
+    };
+  }, [
+    resourceLockHeld,
+    needsResourceEditLock,
+    teamId,
+    editingElement?.rid,
+    user?.username,
+    user?.name,
+    toast,
+    onClose,
+  ]);
 
   const existingNamesSet = useMemo(
     () =>
@@ -93,6 +242,14 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     return fieldSchema.hints?.action?.hint_type === 'validate' || 
            fieldSchema.hints?.api?.hint_type === 'validate';
   }, [elementSchema]);
+
+  const isFieldConditionallyVisible = useCallback((fieldSchema: any): boolean => {
+    const conditions = fieldSchema?.hints?.conditional?.visible_when;
+    if (!conditions) return true;
+    return Object.entries(conditions).every(
+      ([field, requiredValue]) => formData[field] === requiredValue,
+    );
+  }, [formData]);
 
   const handleValidationChange = (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => {
     setFieldValidationStates(prev => ({
@@ -142,8 +299,11 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       // Set default values from combined schema, excluding hidden fields
       Object.entries(elementSchema.config_schema.properties).forEach(
         ([key, property]: [string, any]) => {
-          // Skip hidden fields - don't initialize them
+          // Skip hidden fields - don't initialize them (except auth-flow fields)
           if (property?.hints?.hidden?.hint_type === "hidden") {
+            if (key === "server_identifier" || key === "scheme_type" || key === "credential_token") {
+              initialData[key] = property.default ?? "";
+            }
             return;
           }
           
@@ -174,8 +334,11 @@ export const ElementForm: React.FC<ElementFormProps> = ({
           Object.entries(editingElement.config).forEach(([key, value]) => {
             const fieldSchema = elementSchema.config_schema.properties[key];
             
-            // Skip hidden fields - don't populate them in edit mode
+            // Skip hidden fields - don't populate them in edit mode (except auth-flow fields)
             if (fieldSchema?.hints?.hidden?.hint_type === "hidden") {
+              if (key === "server_identifier" || key === "scheme_type" || key === "credential_token") {
+                initialData[key] = value;
+              }
               return;
             }
             
@@ -456,16 +619,127 @@ export const ElementForm: React.FC<ElementFormProps> = ({
   }, [elementSchema, isOpen, fetchResourcesForCategory]);
 
   const handleInputChange = (field: string, value: any) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      [field]: value,
-    }));
+    setFormData((prev: any) => {
+      const next = { ...prev, [field]: value };
+
+      // Direct propagate from the changed field
+      const fieldSchema = elementSchema?.config_schema?.properties?.[field];
+      const propagate = fieldSchema?.hints?.propagate;
+      if (propagate?.to) {
+        next[propagate.to] = propagate.value !== undefined && propagate.value !== null
+          ? propagate.value
+          : value;
+      }
+
+      // Re-propagate from fields that just became visible due to this change
+      const allProps = elementSchema?.config_schema?.properties;
+      if (allProps) {
+        Object.entries(allProps).forEach(([name, schema]: [string, any]) => {
+          const conditional = schema?.hints?.conditional?.visible_when;
+          const prop = schema?.hints?.propagate;
+          if (!conditional || !prop?.to) return;
+          const isVisible = Object.entries(conditional).every(
+            ([f, v]) => next[f] === v,
+          );
+          if (isVisible && next[name]) {
+            next[prop.to] = prop.value !== undefined && prop.value !== null
+              ? prop.value
+              : next[name];
+          }
+        });
+      }
+
+      return next;
+    });
     // If field has validation hint, mark it as validating immediately
     // This prevents the save button from being enabled during the validation delay
     if (fieldHasValidation(field)) {
       setValidatingFields(prev => new Set(prev).add(field));
     }
   };
+
+  const handleActionOutput = (fieldName: string, output: any) => {
+    setActionOutputs(prev => ({ ...prev, [fieldName]: output }));
+  };
+
+  const handleEditRefElement = useCallback(async (rid: string) => {
+    let foundCategory: string | null = null;
+    let foundOption: any = null;
+
+    for (const [category, options] of Object.entries(refOptions)) {
+      const option = options.find((opt: any) => opt.rid === rid);
+      if (option) {
+        foundCategory = category;
+        foundOption = option;
+        break;
+      }
+    }
+
+    if (!foundCategory || !foundOption) return;
+
+    try {
+      const [resource, schema, actions] = await Promise.all([
+        fetchResourceById(rid),
+        fetchSchemaForRef(foundCategory, foundOption.type),
+        fetchActionsForRef(foundCategory, foundOption.type),
+      ]);
+
+      if (!resource || !schema) return;
+
+      setRefEditState({
+        element: {
+          rid: resource.rid,
+          name: resource.name,
+          config: resource.cfg_dict,
+          category: resource.category,
+          type: resource.type,
+          version: resource.version,
+          created: resource.created,
+          updated: resource.updated,
+          nested_refs: resource.nested_refs,
+        },
+        schema,
+        actions: actions || [],
+        elementType: {
+          category: foundCategory,
+          name: schema.name,
+          type: foundOption.type,
+        },
+        existingNames: (refOptions[foundCategory] || [])
+          .filter((opt: any) => opt.rid !== rid)
+          .map((opt: any) => opt.name)
+          .filter(Boolean),
+      });
+    } catch (error) {
+      console.error('Error loading ref element for editing:', error);
+    }
+  }, [refOptions, fetchResourceById, fetchSchemaForRef, fetchActionsForRef]);
+
+  const handleSaveRefElement = useCallback(async (elementData: any) => {
+    if (!refEditState) return null;
+
+    const { element, elementType: refElementType } = refEditState;
+    const result = await saveRefElement(
+      refElementType.category,
+      refElementType.type,
+      elementData,
+      element.rid,
+    );
+
+    if (result) {
+      try {
+        const updatedOptions = await fetchResourcesForCategory(refElementType.category);
+        setRefOptions(prev => ({
+          ...prev,
+          [refElementType.category]: updatedOptions,
+        }));
+      } catch (error) {
+        console.error('Error refreshing ref options:', error);
+      }
+    }
+
+    return result;
+  }, [refEditState, saveRefElement, fetchResourcesForCategory]);
 
   const handleArrayChange = (field: string, index: number, value: any) => {
     setFormData((prev: any) => ({
@@ -504,6 +778,11 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       
       // Skip validation for hidden fields
       if (fieldSchema?.hints?.hidden?.hint_type === "hidden") {
+        return true;
+      }
+
+      // Skip validation for conditionally hidden fields
+      if (!isFieldConditionallyVisible(fieldSchema)) {
         return true;
       }
       
@@ -546,13 +825,18 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         return;
       }
 
-      // Validate all required fields from combined schema, excluding hidden fields
+      // Validate all required fields from combined schema, excluding hidden and conditionally hidden fields
       const required = elementSchema.config_schema.required || [];
       const missing = required.filter((field) => {
         const fieldSchema = elementSchema.config_schema.properties[field];
         
         // Skip validation for hidden fields
         if (fieldSchema?.hints?.hidden?.hint_type === "hidden") {
+          return false;
+        }
+
+        // Skip validation for conditionally hidden fields
+        if (!isFieldConditionallyVisible(fieldSchema)) {
           return false;
         }
         
@@ -577,7 +861,16 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         const fieldSchema = elementSchema.config_schema.properties[fieldName];
 
         // Skip hidden fields - don't include them in save payload
+        // EXCEPT server_identifier and scheme_type which are needed for auth credential lookup
         if (fieldSchema?.hints?.hidden?.hint_type === "hidden") {
+          if (fieldName === "server_identifier" || fieldName === "scheme_type") {
+            configForSave[fieldName] = value ?? "";
+          }
+          return;
+        }
+
+        // Skip conditionally hidden fields
+        if (!isFieldConditionallyVisible(fieldSchema)) {
           return;
         }
 
@@ -686,12 +979,10 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     const isRequired = elementSchema.config_schema.required?.includes(fieldName);
     const value = formData[fieldName] || "";
     
-    // Check for validation hints - supports both ActionHint and ApiHint
     const actionValidationHint = fieldSchema.hints?.action?.hint_type === 'validate' ? fieldSchema.hints.action : null;
     const apiValidationHint = fieldSchema.hints?.api?.hint_type === 'validate' ? fieldSchema.hints.api : null;
     const validationHint = actionValidationHint || apiValidationHint;
 
-    // Check for populate hints - supports both ActionHint and ApiHint
     const actionPopulateHint = fieldSchema.hints?.action?.hint_type === 'populate' ? fieldSchema.hints.action : null;
     const apiPopulateHint = fieldSchema.hints?.api?.hint_type === 'populate' ? fieldSchema.hints.api : null;
     const populateHint = actionPopulateHint || apiPopulateHint;
@@ -714,6 +1005,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         fieldType={isSecret ? "secret" : "public"}
         fieldValidationStates={fieldValidationStates}
         itemValidationStates={itemValidationStates}
+        actionOutputs={actionOutputs}
         isArrayWithRefItems={isArrayWithRefItems}
         getArrayItemsSchema={getArrayItemsSchema}
         extractCategoryFromField={extractCategoryFromField}
@@ -724,13 +1016,25 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         onRemoveArrayItem={removeArrayItem}
         onValidationChange={handleValidationChange}
         onPopulateResult={handlePopulateResult}
+        onActionOutput={handleActionOutput}
+        onEditRefElement={handleEditRefElement}
       />
     );
+  };
+
+  const renderFormGuidelines = (): React.ReactNode => {
+    switch (elementType.type) {
+      case "openshell_sandbox":
+        return <OpenShellSandboxGuidelines />;
+      default:
+        return null;
+    }
   };
 
   if (!elementSchema) return null;
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
         className="bg-background-card border-gray-800 text-foreground max-w-3xl max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0"
@@ -742,8 +1046,17 @@ export const ElementForm: React.FC<ElementFormProps> = ({
             {editingElement ? "Edit" : "Create"} {elementType.name}
           </DialogTitle>
           <DialogDescription>{elementSchema.description}</DialogDescription>
+          {renderFormGuidelines()}
         </DialogHeader>
 
+        {needsResourceEditLock && !resourceEditLockReady ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-2 text-gray-400">
+            <LoaderCircle className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm">Reserving edit access…</p>
+          </div>
+        ) : null}
+
+        {!(needsResourceEditLock && !resourceEditLockReady) ? (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -762,6 +1075,11 @@ export const ElementForm: React.FC<ElementFormProps> = ({
 
                 // Filter out hidden fields - check if field has hints.hidden.hint_type === "hidden"
                 if (fieldSchema?.hints?.hidden?.hint_type === "hidden") {
+                  return false;
+                }
+
+                // Filter out conditionally hidden fields
+                if (!isFieldConditionallyVisible(fieldSchema)) {
                   return false;
                 }
 
@@ -829,7 +1147,21 @@ export const ElementForm: React.FC<ElementFormProps> = ({
             </UmamiTrack>
           </DialogFooter>
         </form>
+        ) : null}
       </DialogContent>
     </Dialog>
+    {refEditState && (
+      <ElementForm
+        isOpen={!!refEditState}
+        onClose={() => setRefEditState(null)}
+        elementType={refEditState.elementType}
+        elementSchema={refEditState.schema}
+        elementActions={refEditState.actions}
+        editingElement={refEditState.element}
+        existingNames={refEditState.existingNames}
+        onSave={handleSaveRefElement}
+      />
+    )}
+    </>
   );
 };

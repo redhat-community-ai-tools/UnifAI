@@ -1,6 +1,12 @@
+import logging
+
 from flask import Blueprint, jsonify, current_app
+
+from inbound.flask.decorators import with_authenticated_user
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
+
+logger = logging.getLogger(__name__)
 
 actions_bp = Blueprint("actions", __name__)
 
@@ -76,39 +82,19 @@ def list_actions(category=None, type=None, action_type=None, tags=None):
 
 
 @actions_bp.route("/action.execute", methods=["POST"])
+@with_authenticated_user
 @from_body({
     "uid": fields.Str(required=True),
     "input_data": fields.Dict(data_key="inputData", required=False, load_default={}),
-    "context": fields.Dict(required=False, load_default={})
+    "context": fields.Dict(required=False, load_default={}),
 })
-def execute_action(uid, input_data, context):
-    """
-    Execute a specific action by UID (synchronously).
-    Input is validated automatically before execution.
-    
-    Request body:
-    {
-        "uid": "mcp.validate_connection",
-        "inputData": {
-            "mcp_url": "http://localhost:3000/sse"
-        },
-        "context": {
-            "element_config": {...}
-        }
-    }
-    
-    Response format:
-    {
-        "success": true,
-        "message": "Connection successful",
-        "is_reachable": true,
-        "response_time_ms": 125.5
-    }
-    """
+def execute_action(authenticated_user, uid, input_data, context):
+    """Execute a specific action by UID (synchronously)."""
     try:
-        svc = current_app.container.actions_service
+        if authenticated_user:
+            input_data["user_id"] = authenticated_user
 
-        # Execute the action (validation happens automatically inside)
+        svc = current_app.container.actions_service
         result = svc.execute_action_sync(uid, input_data, context)
 
         return jsonify(result), 200
@@ -116,4 +102,5 @@ def execute_action(uid, input_data, context):
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.exception("Action execution failed: %s", uid)
+        return jsonify({"error": "Action execution failed"}), 500

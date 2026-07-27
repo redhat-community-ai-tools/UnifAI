@@ -211,7 +211,7 @@ const axiosAgentConfig = axios.create({
   timeout: 300000  // 5 minutes for long-running workflows
 });
 
-// api3 - SSO Service
+// api3 - Identity Service
 const authClient = axios.create({
   baseURL: '/api3',
   timeout: 20000,
@@ -1417,7 +1417,7 @@ location /api2/ {
 }
 
 location /api3/ {
-  proxy_pass http://sso_backend:port/api/;
+  proxy_pass http://identity:port/api/;
 }
 
 location / {

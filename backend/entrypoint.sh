@@ -14,6 +14,12 @@ case "$ROLE" in
     exec gunicorn -w $GUNICORN_WORKERS --threads $GUNICORN_THREADS -b 0.0.0.0:$PORT --timeout $GUNICORN_TIMEOUT --access-logfile - --error-logfile - run.wsgi:application
     ;;
 
+  slack-socket)
+    echo "Starting Slack Socket Mode handler..."
+    . ~/backend/venv/bin/activate
+    exec python -m slack_commands.socket_handler
+    ;;
+
   debug)
     echo "Debug mode activated - container will stay alive."
     tail -f /dev/null
@@ -21,7 +27,7 @@ case "$ROLE" in
 
   *)
     echo "ERROR: Unknown ROLE \"$ROLE\""
-    echo "Valid roles are: flask, debug"
+    echo "Valid roles are: flask, slack-socket, debug"
     exit 1
     ;;
 esac

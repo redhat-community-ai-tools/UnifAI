@@ -66,7 +66,7 @@ class ToolExecutionDefaults:
     """Default values for tool execution."""
     VALIDATE_ARGS = True
     ON_MISSING_TOOL = ToolHandlingPolicy.REFLECT
-    MAX_TOOL_CALLS_PER_MESSAGE = 10
+    MAX_TOOL_CALLS_PER_MESSAGE = 30
     REQUIRE_TOOL_CALL_ID = True
     ALLOW_EMPTY_ARGS = True
 
@@ -111,7 +111,7 @@ class ParserType(Enum):
 class ParserDefaults:
     """Default values for parser configuration."""
     MIN_CONTENT_LENGTH = 1
-    MAX_CONTENT_LENGTH = 50000
+    MAX_CONTENT_LENGTH = 200000
     VALIDATE_SCHEMA = True
     FALLBACK_TO_CONTENT = True
     STRICT_FORMAT = False

@@ -1,151 +1,132 @@
-from typing import Any, Dict, List, Optional, Iterator, Union
+"""
+Google GenAI (Gemini) LLM implementation using the native ``google-genai`` SDK.
+
+Supports Gemini models via the Google AI Studio API key.
+"""
+
+from __future__ import annotations
+
 import copy
-from langchain_google_genai import ChatGoogleGenerativeAI
+from typing import Any, Iterator, List, Optional, Union
+
+from google import genai
+from google.genai import types
+
 from ..common.base_llm import BaseLLM
-from mas.core.contracts import SupportsStreaming
-from ..common.chat.converter import LangChainConverter
 from ..common.chat.message import ChatMessage
-from ...tools.common.base_tool import BaseTool
+from ...tools.common.tool_definition import ToolDefinition
+from .message_converter import GoogleGenAIMessageConverter
 from .tools_converter import GoogleGenAIToolsConverter
 
-
-def _extract_text_content(content: Any) -> str:
-    """
-    Extract text from Google GenAI content which can be:
-    - A simple string
-    - A list of content blocks like [{'type': 'text', 'text': '...'}]
-    """
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        texts = []
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "text":
-                texts.append(block.get("text", ""))
-            elif isinstance(block, str):
-                texts.append(block)
-        return "".join(texts)
-    return str(content)
+_DISABLE_AUTO_FC = types.AutomaticFunctionCallingConfig(disable=True)
 
 
-class GoogleGenAILLM(BaseLLM, SupportsStreaming):
-    """
-    LLM client for Google Generative AI (Gemini) using LangChain's ChatGoogleGenerativeAI wrapper.
+class GoogleGenAILLM(BaseLLM):
+    """LLM client backed by the native Google GenAI Python SDK.
+
+    Responsibilities are split across dedicated collaborators:
+
+    * **GoogleGenAIMessageConverter** – bidirectional ``ChatMessage`` ↔ ``types.Content``
+    * **GoogleGenAIToolsConverter** – ``BaseTool`` → ``types.Tool`` / ``types.FunctionDeclaration``
+    * **SchemaSanitizer** – strips patterns rejected by Google's strict schema validation
     """
 
     def __init__(
-            self,
-            model_name: str,
-            api_key: str,
-            temperature: float = 0.7,
-            max_tokens: Optional[int] = None,
-            top_p: Optional[float] = None,
-            top_k: Optional[int] = None,
-            **extra: Any
-    ):
-        """
-        :param model_name:   Gemini model ID (e.g. "gemini-2.0-flash", "gemini-2.5-pro").
-        :param api_key:      Google API key for Generative AI.
-        :param temperature:  Sampling temperature.
-        :param max_tokens:   Max tokens to generate (None for model default).
-        :param top_p:        Top-p sampling parameter.
-        :param top_k:        Top-k sampling parameter.
-        :param extra:        Extra kwargs passed to ChatGoogleGenerativeAI.
-        """
+        self,
+        model_name: str,
+        api_key: str,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+        top_k: Optional[int] = None,
+        **extra: Any,
+    ) -> None:
         self._name = "google-genai"
+        self._model = model_name
+        self._temperature = temperature
+        self._max_tokens = max_tokens
+        self._top_p = top_p
+        self._top_k = top_k
+        self._tools: Optional[List[types.Tool]] = None
+        self._client = genai.Client(api_key=api_key, **extra)
 
-        client_kwargs: Dict[str, Any] = {
-            "model": model_name,
-            "google_api_key": api_key,
-            "temperature": temperature,
-            **extra
-        }
+    # ------------------------------------------------------------------
+    # BaseLLM interface
+    # ------------------------------------------------------------------
 
-        if max_tokens is not None:
-            client_kwargs["max_output_tokens"] = max_tokens
-        if top_p is not None:
-            client_kwargs["top_p"] = top_p
-        if top_k is not None:
-            client_kwargs["top_k"] = top_k
+    def chat(self, messages: List[ChatMessage]) -> ChatMessage:
+        split = GoogleGenAIMessageConverter.to_genai(messages)
+        config = self._build_config(system_instruction=split.system_instruction)
 
-        self.client = ChatGoogleGenerativeAI(**client_kwargs)
-
-    def chat(
-            self,
-            messages: List[ChatMessage],
-            *,
-            temperature: Optional[float] = None,
-            max_tokens: Optional[int] = None,
-            stream: bool = False,
-            **kwargs: Any
-    ) -> ChatMessage:
-        """
-        Send a chat request to the Gemini model.
-
-        :param messages: List of ChatMessage objects
-        :param temperature: Override sampling temperature
-        :param max_tokens: Override max tokens
-        :param stream: Whether to stream (handled separately)
-        :param kwargs: Additional parameters
-        """
-        call_params: Dict[str, Any] = {}
-        if temperature is not None:
-            call_params["temperature"] = temperature
-        if max_tokens is not None:
-            call_params["max_output_tokens"] = max_tokens
-        call_params.update(kwargs)
-
-        lc_messages = LangChainConverter.to_lc(messages)
-        response = self.client.invoke(lc_messages, **call_params)
-
-        if hasattr(response, 'content') and isinstance(response.content, list):
-            response.content = _extract_text_content(response.content)
-
-        return LangChainConverter.from_lc_message(response)
+        response = self._client.models.generate_content(
+            model=self._model,
+            contents=split.contents,
+            config=config,
+        )
+        return GoogleGenAIMessageConverter.from_genai(response)
 
     def stream(
-            self,
-            messages: List[ChatMessage],
-            **call_params: Any,
+        self,
+        messages: List[ChatMessage],
+        **call_params: Any,
     ) -> Iterator[Union[str, ChatMessage]]:
-        """
-        Provider-level streaming:
+        split = GoogleGenAIMessageConverter.to_genai(messages)
+        config = self._build_config(system_instruction=split.system_instruction)
 
-        • Yields `str` tokens for regular answers.
-        • Aggregates *all* `tool_call_chunks` via the LangChain "+" operator
-          and, at the very end, yields **one** `ChatMessage` representing
-          the full assistant reply with `tool_calls=[…]`.
-        """
-        lc_history = LangChainConverter.to_lc(messages)
-        aggregated: Any | None = None
+        accumulated_text = ""
+        collected_parts: List[types.Part] = []
 
-        for chunk in self.client.stream(lc_history, **call_params):
-            if getattr(chunk, "tool_call_chunks", None):
-                aggregated = chunk if aggregated is None else aggregated + chunk
-                continue
+        for chunk in self._client.models.generate_content_stream(
+            model=self._model,
+            contents=split.contents,
+            config=config,
+        ):
+            if chunk.text:
+                accumulated_text += chunk.text
+                yield chunk.text
 
-            token = _extract_text_content(chunk.content)
-            if token:
-                yield token
+            for part in (chunk.parts or []):
+                if part.function_call is not None:
+                    collected_parts.append(part)
 
-        if aggregated:
-            if hasattr(aggregated, 'content') and isinstance(aggregated.content, list):
-                aggregated.content = _extract_text_content(aggregated.content)
-            yield LangChainConverter.from_lc_message(aggregated)
+        if collected_parts:
+            yield GoogleGenAIMessageConverter.from_genai_parts(
+                collected_parts, accumulated_text,
+            )
 
-    def bind_tools(self, tools: List[BaseTool]) -> "GoogleGenAILLM":
-        """
-        Return a new GoogleGenAILLM instance with tools bound.
-
-        Uses GoogleGenAIToolsConverter which sanitizes schemas to meet
-        Google GenAI's strict validation requirements.
-        """
-        new_llm = copy.copy(self)
-        new_llm.client = self.client.bind_tools(GoogleGenAIToolsConverter.to_lc(tools))
-        return new_llm
+    def bind_tools(self, tools: List[ToolDefinition]) -> GoogleGenAILLM:
+        clone = copy.copy(self)
+        clone._tools = GoogleGenAIToolsConverter.to_genai(tools)
+        return clone
 
     @property
     def name(self) -> str:
         return self._name
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _build_config(
+        self,
+        *,
+        system_instruction: Optional[str] = None,
+    ) -> types.GenerateContentConfig:
+        """Assemble a ``GenerateContentConfig`` from instance state."""
+        config = types.GenerateContentConfig(
+            temperature=self._temperature,
+            top_p=self._top_p,
+            top_k=self._top_k,
+        )
+
+        if self._max_tokens is not None:
+            config.max_output_tokens = self._max_tokens
+
+        if system_instruction:
+            config.system_instruction = system_instruction
+
+        if self._tools:
+            config.tools = self._tools
+            config.automatic_function_calling = _DISABLE_AUTO_FC
+
+        return config

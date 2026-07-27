@@ -7,10 +7,10 @@ import {
   ElementSchema,
   CatalogResponse,
 } from "../types/workspace";
-import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "./use-toast";
 import { catalogService } from "@/api/catalog";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 
 // Types for Resources API responses
 interface ResourceInstance {
@@ -22,6 +22,7 @@ interface ResourceInstance {
   version: number;
   cfg_dict: any;
   nested_refs: string[];
+  contributed_by?: string;
   created: string;
   updated: string;
 }
@@ -50,9 +51,7 @@ export const useWorkspaceData = () => {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const { addOrUpdateResource, removeResource, revalidateResourceAndAncestors } = useAgenticAI();
-
-  const { user } = useAuth();
-  const USER_ID = user?.username || "default";
+  const { userId: USER_ID, displayName: USER_DISPLAY_NAME, identityType } = useWorkspaceIdentity();
 
   // Fetch all available categories and element types
   const fetchCategories = useCallback(async () => {
@@ -100,7 +99,7 @@ export const useWorkspaceData = () => {
         setElementInstances([]);
 
         const response = await axios.get<ResourcesListResponse>(
-          `/resources/resources.list?userId=${USER_ID}&category=${category}&type=${type}`,
+          `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}&category=${category}&type=${type}`,
         );
 
         // Transform ResourceInstance to ElementInstance format
@@ -115,6 +114,7 @@ export const useWorkspaceData = () => {
             created: resource.created,
             updated: resource.updated,
             nested_refs: resource.nested_refs,
+            contributed_by: resource.contributed_by,
           }),
         );
 
@@ -136,7 +136,7 @@ export const useWorkspaceData = () => {
         setIsLoadingInstances(false);
       }
     },
-    [toast],
+    [toast, USER_ID, identityType],
   );
 
   // Fetch single resource by ID
@@ -174,13 +174,14 @@ export const useWorkspaceData = () => {
     async (category: string) => {
       try {
         const response = await axios.get<ResourcesListResponse>(
-          `/resources/resources.list?userId=${USER_ID}&category=${category}`,
+          `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}&category=${category}`,
         );
 
         return response.data.resources.map((resource: ResourceInstance) => ({
           rid: resource.rid,
           name: resource.name,
           type: resource.type,
+          config: resource.cfg_dict,
         }));
       } catch (err: any) {
         const errorMessage =
@@ -195,7 +196,7 @@ export const useWorkspaceData = () => {
         return [];
       }
     },
-    [toast],
+    [toast, USER_ID, identityType],
   );
 
   // Fetch element schema for form generation (combines resource schema + element-specific schema)
@@ -334,6 +335,8 @@ export const useWorkspaceData = () => {
           const { cfg_dict, ...firstLevelFields } = elementData;
           const savePayload = {
             userId: USER_ID,
+            identityType: identityType,
+            displayName: USER_DISPLAY_NAME,
             category,
             type,
             config: cfg_dict,
@@ -378,7 +381,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast, USER_ID],
+    [toast, USER_ID, identityType],
   );
 
   // Delete element using Resources API

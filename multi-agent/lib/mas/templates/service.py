@@ -4,10 +4,12 @@ Template Service - Public facade for template operations.
 Single Responsibility: Orchestrate template CRUD, schema generation, and instantiation.
 Dependency Inversion: Depends on abstractions (repository interface, element registry).
 """
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from uuid import uuid4
 from datetime import datetime, timezone
 
+from mas.core.identity import Identity, IdentityType
 from mas.blueprints.models.blueprint import BlueprintDraft
 from mas.catalog.element_registry import ElementRegistry
 from mas.templates.repository.repository import TemplateRepository
@@ -72,6 +74,19 @@ class TemplateService:
         self._instantiator = TemplateInstantiator()
 
     # ─────────────────────────────────────────────────────────────────────
+    #  Helpers
+    # ─────────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _slug_id(name: str) -> str:
+        """Generate a human-readable template ID from the blueprint name.
+
+        Example: "L1/L2 SRE Auto-Medic" → "l1-l2-sre-auto-medic-a3f7b2c1"
+        """
+        slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+        short = uuid4().hex[:8]
+        return f"{slug}-{short}"
+
+    # ─────────────────────────────────────────────────────────────────────
     #  Template CRUD
     # ─────────────────────────────────────────────────────────────────────
     def create_template(
@@ -91,7 +106,8 @@ class TemplateService:
         Returns:
             Generated template ID
         """
-        template_id = str(uuid4())
+        name = draft.get("name", "")
+        template_id = self._slug_id(name) if name else str(uuid4())
 
         template = Template(
             template_id=template_id,
@@ -135,10 +151,10 @@ class TemplateService:
         Returns True if deleted.
         Raises TemplateNotFoundError if not found.
         """
-        try:
-            return self._repo.delete(template_id)
-        except KeyError:
+        deleted = self._repo.delete(template_id)
+        if not deleted:
             raise TemplateNotFoundError(template_id)
+        return True
 
     def exists(self, template_id: str) -> bool:
         """Check if template exists."""
@@ -273,7 +289,7 @@ class TemplateService:
     def materialize(
             self,
             template_id: str,
-            user_id: str,
+            identity: Identity,
             user_input: Dict[str, Any],
             blueprint_name: Optional[str] = None,
             save_resources: bool = True,
@@ -286,7 +302,7 @@ class TemplateService:
         
         Args:
             template_id: Template to instantiate
-            user_id: User who owns the result
+            identity: Identity who owns the result
             user_input: User-provided values
             blueprint_name: Optional name override
             save_resources: If True, save resources and create $refs (default)
@@ -323,7 +339,7 @@ class TemplateService:
         blueprint_id, resource_ids = self._save_blueprint(
             blueprint=result.blueprint,
             template=template,
-            user_id=user_id,
+            identity=identity,
             save_resources=save_resources,
         )
 
@@ -352,7 +368,7 @@ class TemplateService:
             self,
             blueprint: BlueprintDraft,
             template: Template,
-            user_id: str,
+            identity: Identity,
             save_resources: bool,
     ) -> Tuple[str, List[str]]:
         """Save blueprint (and optionally resources). Returns (blueprint_id, resource_ids)."""
@@ -364,17 +380,17 @@ class TemplateService:
 
         if save_resources and self._resources_service is not None:
             materializer = ResourceMaterializer(self._resources_service)
-            mat_result = materializer.materialize(blueprint, user_id)
+            mat_result = materializer.materialize(blueprint, identity)
 
             blueprint_id = self._blueprint_service.save_draft(
-                user_id=user_id,
+                identity=identity,
                 draft_dict=mat_result.blueprint_draft.model_dump(mode="json"),
                 metadata=metadata,
             )
             return blueprint_id, mat_result.resource_ids
         else:
             blueprint_id = self._blueprint_service.save_draft(
-                user_id=user_id,
+                identity=identity,
                 draft_dict=blueprint.model_dump(mode="json"),
                 metadata=metadata,
             )

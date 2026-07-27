@@ -232,7 +232,7 @@ class ExecutorConfig:
     Provides clean, typed configuration with sensible defaults for production use.
     """
     # Core execution settings
-    max_concurrent: int = 10
+    max_concurrent: int = 30
     execution_mode: ExecutionMode = ExecutionMode.PARALLEL
     default_timeout: Optional[float] = None
     enable_metrics: bool = True
@@ -253,7 +253,7 @@ class ExecutorConfig:
         from .validators import ArgumentValidator
         
         return cls(
-            max_concurrent=10,
+            max_concurrent=30,
             execution_mode=ExecutionMode.PARALLEL,
             enable_metrics=True,
             error_handler=RetryPolicy(max_retries=2, initial_delay=0.5),
@@ -268,7 +268,7 @@ class ExecutorConfig:
         from .validators import ArgumentValidator
         
         return cls(
-            max_concurrent=10,
+            max_concurrent=30,
             execution_mode=ExecutionMode.PARALLEL,
             enable_metrics=True,
             error_handler=RetryPolicy(max_retries=2, initial_delay=0.5),

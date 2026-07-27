@@ -10,7 +10,7 @@ This guide provides instructions for deploying UnifAI components to Kubernetes/O
 
 UnifAI uses **Helmfile** to orchestrate the deployment of multiple Helm charts across different components:
 
-- **Shared Resources**: MongoDB, RabbitMQ, Qdrant, SSO (infrastructure layer)
+- **Shared Resources**: MongoDB, RabbitMQ, Qdrant, Identity (infrastructure layer)
 - **RAG Module**: Data Pipeline Hub backend and Celery workers
 - **Multi-Agent Module**: Multi-Agent System backend
 - **UI Module**: React frontend with Nginx
@@ -93,7 +93,7 @@ kubectl wait --for=condition=Ready pods -l app=rabbitmq --timeout=300s
 # 5. Deploy application components
 helmfile -f rag.yaml.gotmpl apply           # RAG module
 helmfile -f multiagent.yaml.gotmpl apply    # Multi-Agent module
-helmfile -f sso.yaml.gotmpl apply           # SSO module
+helmfile -f identity.yaml.gotmpl apply      # Identity module (SSO)
 helmfile -f ui.yaml.gotmpl apply            # UI frontend
 
 # 6. Verify deployment
@@ -184,7 +184,7 @@ vim values/global-config.yaml
 # Update:
 env:
   FRONTEND_URL: "https://unifai.prod.example.com"
-  SSO_BACKEND_HOST: "https://sso.prod.example.com"
+  IDENTITY_HOST: "https://identity.prod.example.com"
 
 # 4. Login to production cluster
 oc login https://api.prod-cluster.example.com:6443 --token=<prod-token>
@@ -231,7 +231,7 @@ Configuration is managed through values files in the `values/` directory:
 | `rag-resource-values.yaml`    | RAG backend and Celery configuration |
 | `multiagent-resource-values.yaml` | Multi-Agent backend configuration |
 | `ui-values.yaml`              | UI frontend configuration |
-| `sso-values.yaml`             | SSO service configuration |
+| `identity-values.yaml`        | Identity service configuration |
 
 ### Key Configuration Options
 
@@ -442,7 +442,7 @@ helmfile -f rag.yaml.gotmpl destroy
 ```bash
 # Remove in reverse order (UI → Apps → Shared Resources)
 helmfile -f ui.yaml.gotmpl destroy
-helmfile -f sso.yaml.gotmpl destroy
+helmfile -f identity.yaml.gotmpl destroy
 helmfile -f multiagent.yaml.gotmpl destroy
 helmfile -f rag.yaml.gotmpl destroy
 helmfile -f helmfile1.yaml.gotmpl destroy

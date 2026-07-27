@@ -45,7 +45,7 @@ In addition there are some areas where the team is using GitHub actions, with th
 ### Container Registry
 - **Registry**: `images.paas.redhat.com`
 - **Path**: `unifai/`
-- **Components**: `backend`, `multiagentbackend`, `ui`, `ssobackend`
+- **Components**: `backend`, `multiagentbackend`, `ui`, `identity`
 
 ### Jenkins Infrastructure
 - **Jenkins Master**: `jenkins-csb-ant-main.dno.corp.redhat.com`
@@ -88,7 +88,7 @@ ci/
         │  │                                     │
         ▼  ▼                                     ▼
     ┌─────────┐  ┌──────────────┐  ┌───────────────────┐
-    │ Backend │  │ Multi-Agent  │  │ UI + SSO Backend  │
+    │ Backend │  │ Multi-Agent  │  │ UI + Identity     │
     └────┬────┘  └──────┬───────┘  └─────────┬─────────┘
          │              │                    │
          └──────────────┴────────────────────┘
@@ -147,7 +147,7 @@ Builds container images for UnifAI components and optionally triggers deployment
 | `PIPELINE_BRANCH` | String | `main` | Git branch for pipeline scripts (testing purposes) |
 | `BRANCH` | String | `main` | Git branch to build images from |
 | `VERSION` | String | `yyyy.MM.dd` | Image version tag (auto-generated daily) |
-| `build_sso_image` | Boolean | `false` | Build SSO backend image |
+| `build_identity_image` | Boolean | `false` | Build Identity image |
 | `build_gui` | Boolean | `false` | Build UI (frontend) image |
 | `build_rag_backend` | Boolean | `false` | Build Data Pipeline Hub backend |
 | `build_multiagent_backend` | Boolean | `false` | Build Multi-Agent System backend |
@@ -186,7 +186,7 @@ stage("Checkout Main Repo") {
 ```groovy
 stage("Build Images") {
     parallel(
-        "SSO": { if (params.build_sso_image) buildDockerImage("shared-resources/sso-backend") },
+        "Identity": { if (params.build_identity_image) buildDockerImage("shared-resources/identity") },
         "UI": { if (params.build_gui) buildDockerImage("ui") },
         "RAG": { if (params.build_rag_backend) buildDockerImage("backend") },
         "MultiAgent": { if (params.build_multiagent_backend) buildDockerImage("multi-agent") }
@@ -286,7 +286,7 @@ def cleanWorkspace(component) {
 | `backend/` | `backend` | `images.paas.redhat.com/unifai/backend` |
 | `multi-agent/` | `multiagentbackend` | `images.paas.redhat.com/unifai/multiagentbackend` |
 | `ui/` | `ui` | `images.paas.redhat.com/unifai/ui` |
-| `shared-resources/sso-backend/` | `ssobackend` | `images.paas.redhat.com/unifai/ssobackend` |
+| `shared-resources/identity/` | `identity` | `images.paas.redhat.com/unifai/identity` |
 
 **Image Tag Strategy:**
 - **Version Tag**: `YYYY.MM.DD` (e.g., `2024.12.01`)
@@ -314,7 +314,7 @@ Deploys UnifAI application to OpenShift clusters using Helmfile.
 | `RAG_VERSION` | String | _(empty)_ | Override: RAG image tag |
 | `MA_VERSION` | String | _(empty)_ | Override: Multi-Agent image tag |
 | `GUI_VERSION` | String | _(empty)_ | Override: UI image tag |
-| `SSO_VERSION` | String | _(empty)_ | Override: SSO image tag |
+| `IDENTITY_VERSION` | String | _(empty)_ | Override: Identity image tag |
 | `MODULES_TO_DEPLOY` | String | _(empty)_ | Comma-separated list (e.g., `rag,multiagent`) |
 | `debug_mode` | Boolean | `false` | Enable debug settings in pods |
 
@@ -336,7 +336,7 @@ stage("Fresh Install") {
     sh "helmfile -f rag.yaml.gotmpl apply"
     sh "helmfile -f multiagent.yaml.gotmpl apply"
     sh "helmfile -f ui.yaml.gotmpl apply"
-    sh "helmfile -f sso.yaml.gotmpl apply"
+    sh "helmfile -f identity.yaml.gotmpl apply"
 }
 ```
 
@@ -345,7 +345,7 @@ stage("Fresh Install") {
 2. **RAG Module**: Backend server, Celery workers, Config
 3. **Multi-Agent Module**: Backend server
 4. **UI Module**: Frontend application
-5. **SSO Module**: Authentication service
+5. **identity Module**: Authentication service
 
 ##### 2. APPLICATION_UPGRADE
 **Use Case:** Rolling update of specific components
@@ -363,8 +363,8 @@ stage("Application Upgrade") {
     if (modulesToDeploy.contains("ui")) {
         sh "helmfile -f ui.yaml.gotmpl apply"
     }
-    if (modulesToDeploy.contains("sso")) {
-        sh "helmfile -f sso.yaml.gotmpl apply"
+    if (modulesToDeploy.contains("identity")) {
+        sh "helmfile -f identity.yaml.gotmpl apply"
     }
 }
 ```
@@ -410,7 +410,7 @@ stage("Update Chart Versions") {
     updateValuesYaml("${WORKSPACE}/helm/values/rag-resource-values.yaml", params.RAG_VERSION)
     updateValuesYaml("${WORKSPACE}/helm/values/multiagent-resource-values.yaml", params.MA_VERSION)
     updateValuesYaml("${WORKSPACE}/helm/values/ui-values.yaml", params.GUI_VERSION)
-    updateValuesYaml("${WORKSPACE}/helm/values/sso-values.yaml", params.SSO_VERSION)
+    updateValuesYaml("${WORKSPACE}/helm/values/identity-values.yaml", params.IDENTITY_VERSION)
     
     // Update global config with environment-specific values
     updateGlobalConfigYaml("${WORKSPACE}/helm/values/global-config.yaml")
@@ -427,7 +427,7 @@ stage("Deploy Application") {
             sh "helmfile -f rag.yaml.gotmpl apply"   // rag
             sh "helmfile -f multiagent.yaml.gotmpl apply" // Multi-Agent
             sh "helmfile -f ui.yaml.gotmpl apply"         // UI
-            sh "helmfile -f sso.yaml.gotmpl apply"        // SSO
+            sh "helmfile -f identity.yaml.gotmpl apply"        // Identity
         } else {
             // Rolling upgrade
             deployModules(params.MODULES_TO_DEPLOY)
@@ -516,10 +516,10 @@ def updateGlobalConfigYaml(String filePath) {
     
     if (params.deploy_location == 'PRODUCTION') {
         values.env.FRONTEND_URL = "https://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
-        values.env.SSO_BACKEND_HOST = "https://unifai-sso-backend-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
+        values.env.IDENTITY_HOST = "https://unifai-identity-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
     } else {
         values.env.FRONTEND_URL = "https://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
-        values.env.SSO_BACKEND_HOST = "https://unifai-sso-backend-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
+        values.env.IDENTITY_HOST = "https://unifai-identity-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
     }
     
     writeYaml file: filePath, data: values, overwrite: true
@@ -625,9 +625,9 @@ echo "---================================---"
 // ✅ Correct: Named parallel stages
 stage("Build Images") {
     parallel(
-        "SSO Backend": {
-            if (params.build_sso_image) {
-                buildDockerImage("shared-resources/sso-backend")
+        "Identity": {
+            if (params.build_identity_image) {
+                buildDockerImage("shared-resources/identity")
             }
         },
         "UI Frontend": {
@@ -707,7 +707,7 @@ def stagingConfig = [
     apiUrl: "https://api.stc-ai-e1-pp.imap.p1.openshiftapps.com:6443",
     namespace: "tag-ai--pipeline",
     frontendUrl: "https://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com",
-    ssoUrl: "https://unifai-sso-backend-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
+    identityUrl: "https://unifai-identity-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
 ]
 ```
 
@@ -717,7 +717,7 @@ def productionConfig = [
     apiUrl: "https://api.stc-ai-e1-prod.rtc9.p1.openshiftapps.com:6443",
     namespace: "tag-ai--pipeline",
     frontendUrl: "https://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com",
-    ssoUrl: "https://unifai-sso-backend-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
+    identityUrl: "https://unifai-identity-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
 ]
 ```
 
@@ -952,7 +952,7 @@ podman push backend:test images.paas.redhat.com/unifai/backend:test
 ```yaml
 Branch: main
 VERSION: 2024.12.01 (auto-generated)
-build_sso_image: true
+build_identity_image: true
 build_gui: true
 build_rag_backend: true
 build_multiagent_backend: true
@@ -1009,7 +1009,7 @@ debug_mode: false
 deploy_location: STAGING
 deploy_type: FRESH_INSTALL
 VERSION: 2024.12.01
-(RAG_VERSION, MA_VERSION, GUI_VERSION, SSO_VERSION: empty, uses VERSION)
+(RAG_VERSION, MA_VERSION, GUI_VERSION, IDENTITY_VERSION: empty, uses VERSION)
 MODULES_TO_DEPLOY: (empty)
 debug_mode: true  # For testing
 ```

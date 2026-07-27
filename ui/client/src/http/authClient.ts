@@ -30,8 +30,12 @@ export const api = axios.create({
 
       if (error.response?.status === 401) {
         const isAuthEndpoint = error.config?.url?.includes('/auth');
-        
-        if (!isAuthEndpoint) {
+        const onLoginPage =
+          typeof window !== 'undefined' &&
+          (window.location.pathname === '/login' ||
+            window.location.pathname.startsWith('/login/'));
+
+        if (!isAuthEndpoint && !onLoginPage) {
           // Capture the original URL to restore after authentication
           const originalUrl = window.location.pathname + window.location.search;
           const stateData = { originalUrl: originalUrl || '/' };

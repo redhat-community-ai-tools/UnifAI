@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "identity"
+version = "0.1.0"
+description = "Identity service for authentication with SSO and storing in Redis"
+requires-python = ">=3.11"
+license = {text = "Proprietary"}
+readme = "README.md"
+
+dependencies = [
+    "flask",
+    "flask-cors",
+    "PyYAML",
+    "requests",
+    "Authlib",
+    "PyJWT",
+    "python-dotenv",
+    "pydantic",
+    "pydantic-settings",
+    "gunicorn",
+    "pymongo",
+    "ldap3",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bootstrap*", "adapters*", "config*", "utils*", "teams*", "directory*"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+  "pytest-cov>=4.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "../../global_utils/src"]
+markers = [
+  "unit: Isolated unit tests (fast, no external services)",
+  "integration: Tests that exercise multiple components",
+  "smoke: Optional tests against a running service (set IDENTITY_SMOKE_URL)",
+  "fast: Sub-second unit tests",
+]
+
+
+
+

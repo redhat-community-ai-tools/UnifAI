@@ -29,10 +29,13 @@ storage:
   storageClassName: aws-ebs
 
 env:
-  REDISINSIGHT_HOST: "0.0.0.0"
+  RI_APP_HOST: "0.0.0.0"
   #REDISINSIGHT_DB_0_NAME: "workflows"
-  REDISINSIGHT_DB_0_HOST: "redis"
-  REDISINSIGHT_DB_0_PORT: 6379
+  RI_REDIS_HOST: "redis"
+  RI_AUTHENTICATION_ENABLED: "true"
+
+redisConfigMapName: redis-config
+RedisSecretName: redis-secret
 # This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
 serviceAccount:
   # Specifies whether a service account should be created

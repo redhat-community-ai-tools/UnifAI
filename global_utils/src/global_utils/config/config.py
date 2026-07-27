@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Any, Dict, Callable
+from typing import Any, Dict, Callable, Optional
 from .sources import DotEnvSource, YamlSource, JsonSource
 from functools import lru_cache
 
@@ -22,6 +22,9 @@ class SharedConfig(BaseSettings):
 
     redis_ip: str = "localhost"
     redis_port: str = "6379"
+    redis_password: Optional[str] = None
+    redis_db: int = 0
+    redis_decode_responses: bool = True
 
     # shared loading order
     model_config = SettingsConfigDict(

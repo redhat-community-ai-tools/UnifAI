@@ -41,6 +41,7 @@ class BaseElementSpec(ABC):
     version: ClassVar[str] = "1.0.0"
     tags: ClassVar[List[str]] = []
     hints: ClassVar[List[Any]] = []
+    hidden: ClassVar[bool] = False
     
     # ── optional validator ------------------------------------------------
     validator_cls: ClassVar[Optional[Type[ElementValidator]]] = None

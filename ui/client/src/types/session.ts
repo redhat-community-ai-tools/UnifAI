@@ -2,6 +2,7 @@
 export interface ChatMessage {
   content: string;
   role: "user" | "assistant";
+  sender_id?: string;
 }
 
 // Shared ChatSession interface used across components
@@ -15,8 +16,11 @@ export interface ChatSession {
   messages: ChatMessage[];
   blueprintExists: boolean;
   fromSharedLink?: boolean;
-  blueprintName?: string; // The workflow display name from spec_dict.name
-  isSharingDisabled?: boolean; // Track if sharing is disabled for this session
+  blueprintName?: string;
+  isSharingDisabled?: boolean;
+  hitlEnabled?: boolean;
+  status?: string;
+  statusMessage?: string;
 }
 
 // Types for the API response
@@ -25,10 +29,13 @@ export interface ChatSessionData {
   blueprint_id: string;
   session_id: string;
   started_at: string;
+  last_active_at?: string;
   blueprint_exists: boolean;
 }
 
 export interface SessionStateData {
   final_output: string;
   messages: ChatMessage[];
+  status?: string;
+  status_message?: string;
 }

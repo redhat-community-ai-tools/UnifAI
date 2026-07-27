@@ -162,7 +162,6 @@ class ReActStrategy(AgentStrategy):
             import traceback
             traceback.print_exc()
             
-            # Add error feedback to messages
             error_feedback = ChatMessage(
                 role=Role.SYSTEM,
                 content=f"System error: {e}. Try a different approach."

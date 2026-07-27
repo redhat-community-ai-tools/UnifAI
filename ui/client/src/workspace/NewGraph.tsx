@@ -42,7 +42,12 @@ export default function NewGraph({ onBack, editBlueprintId }: NewGraphProps) {
     isLoadingBlueprint,
     editBlueprintName,
     editBlueprintDescription,
-  } = useGraphCreationLogic({ onSaveComplete: onBack, editBlueprintId });
+    currentPromptShortcuts,
+  } = useGraphCreationLogic({
+    onSaveComplete: onBack,
+    editBlueprintId,
+    onEditLockDenied: () => onBack?.(),
+  });
 
   const [saveModalOpen, setSaveModalOpen] = useState(false);
 
@@ -147,6 +152,7 @@ export default function NewGraph({ onBack, editBlueprintId }: NewGraphProps) {
         isEditMode={isEditMode}
         currentName={editBlueprintName}
         currentDescription={editBlueprintDescription}
+        currentPromptShortcuts={currentPromptShortcuts}
       />
     </div>
   );

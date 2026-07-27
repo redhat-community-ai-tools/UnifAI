@@ -84,6 +84,7 @@ export interface ResourceValidationRequest {
  */
 export interface BlueprintValidationRequest {
   blueprintId: string;
+  userId?: string;
   skipNetworkChecks?: boolean;
   timeoutSeconds?: number;
 }

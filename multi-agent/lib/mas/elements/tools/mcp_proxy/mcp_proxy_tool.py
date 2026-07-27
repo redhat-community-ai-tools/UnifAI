@@ -1,12 +1,17 @@
-from typing import Optional, Type, Any, Dict
+from __future__ import annotations
+
+from typing import Awaitable, Callable, Optional, Type, Any, Dict, Union
 from pydantic import BaseModel, HttpUrl
 from global_utils.utils.util import validate_arguments
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.elements.providers.mcp_server_client.mcp_server_client import McpServerClient
 from mas.elements.providers.mcp_server_client.transport.enums import McpTransportType
+from mas.core.hitl.models import ToolAccessMode
 from mas.elements.tools.common.base_tool import BaseTool
-
 from global_utils.utils.util import json_schema_model
+from mas.core.auth.credentials.credential import AuthCredential
+
+AsyncHeaderProvider = Callable[..., Awaitable[Dict[str, str]]]
 
 
 class McpProxyToolError(Exception):
@@ -15,6 +20,7 @@ class McpProxyToolError(Exception):
 
 
 class McpProxyTool(BaseTool):
+    access_mode: ToolAccessMode = ToolAccessMode.WRITE
     """
     A proxy tool that forwards calls to MCP server tools by creating fresh clients per portal.
     This approach eliminates cross-event-loop thread safety issues by avoiding shared state.
@@ -27,16 +33,18 @@ class McpProxyTool(BaseTool):
             mcp_url: HttpUrl,
             headers: Optional[Dict[str, str]] = None,
             transport_type: McpTransportType = McpTransportType.STREAMABLE_HTTP,
+            header_provider: Optional[AsyncHeaderProvider] = None,
+            auth_credential: Optional[AuthCredential] = None,
     ):
         self.name = mcp_tool_name
         self.mcp_tool_name = mcp_tool_name
-        self.mcp_url = mcp_url  # Store endpoint instead of client
-        self.headers = headers or {}  # Store headers for authentication
-        self.transport_type = transport_type  # Store transport protocol
+        self.mcp_url = mcp_url
+        self.headers = headers or {}
+        self.transport_type = transport_type
+        self._header_provider = header_provider
+        self._auth_credential = auth_credential
         self._tool_info = None
         self._schema_initialized = False
-
-        # Note: Use create_async() or create_sync() factory methods for full initialization
 
     async def _ensure_tool_info(self, client: McpServerClient) -> None:
         """
@@ -74,43 +82,66 @@ class McpProxyTool(BaseTool):
                 f"Synchronous execution failed for '{self.mcp_tool_name}': {e}"
             )
 
+    async def _get_current_headers(self) -> Dict[str, str]:
+        """Get headers for the current request.
+
+        Delegates to the provider's async header_provider if available,
+        otherwise falls back to static headers.
+        """
+        if self._header_provider:
+            return await self._header_provider()
+        return dict(self.headers) if self.headers else {}
+
     async def arun(self, *args: Any, **kwargs: Any) -> Any:
         """
         Asynchronous entry point. Steps:
-          1) Create fresh MCP client in current event loop.
-          2) Ensure schema is loaded (only once).
-          3) Validate + prepare arguments via Pydantic model.
-          4) Call tool using fresh client.
-          5) Return the extracted result.
-        
-        This approach eliminates cross-event-loop thread safety issues.
+          1) Resolve current auth headers (may refresh token).
+          2) Create fresh MCP client in current event loop.
+          3) Ensure schema is loaded (only once).
+          4) Validate + prepare arguments via Pydantic model.
+          5) Call tool using fresh client.
+          6) On 401, attempt credential recovery and retry once.
+          7) Return the extracted result.
         """
-        # 1) Create fresh client in current event loop/portal with auth headers
+        current_headers = await self._get_current_headers()
+
         client = McpServerClient(
             mcp_url=self.mcp_url,
-            headers=self.headers,
+            headers=current_headers,
             transport_type=self.transport_type,
         )
-        
-        # 2) Use the fresh client for all operations
+
         async with client:
-            # 3) Fetch schema once if not already
             if not self._schema_initialized:
                 await self._ensure_tool_info(client)
 
-            # 4) Validate + prune arguments
             mcp_args = self._prepare_arguments(kwargs)
-            print(f"Executing tool '{self.mcp_tool_name}' with args: {mcp_args}")
 
-            # 5) Call tool using fresh client
             try:
                 result = await client.call_tool(self.mcp_tool_name, mcp_args)
-                print(f"Tool '{self.mcp_tool_name}' completed successfully")
             except Exception as e:
-                # print(f"Tool '{self.mcp_tool_name}' failed: {e}")
+                if "401" in str(e) and self._header_provider:
+                    return await self._retry_after_recovery(mcp_args)
                 raise McpProxyToolError(f"Failed to call '{self.mcp_tool_name}': {e}")
 
-        # 6) Return the most relevant piece of the result
+        return self._extract_result_content(result)
+
+    async def _retry_after_recovery(self, mcp_args: Dict[str, Any]) -> Any:
+        """Attempt credential recovery and retry the tool call once."""
+        if self._auth_credential:
+            recovery = await self._auth_credential.attempt_recovery()
+            if not recovery.should_retry:
+                raise McpProxyToolError(
+                    f"Auth rejected for '{self.mcp_tool_name}': {recovery.reason}"
+                )
+
+        fresh_headers = await self._header_provider()
+        async with McpServerClient(
+            mcp_url=self.mcp_url,
+            headers=fresh_headers,
+            transport_type=self.transport_type,
+        ) as client:
+            result = await client.call_tool(self.mcp_tool_name, mcp_args)
         return self._extract_result_content(result)
 
     def _prepare_arguments(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
@@ -164,17 +195,30 @@ class McpProxyTool(BaseTool):
         self._tool_info = None
         self._schema_initialized = False
         self.args_schema = None
-        await self._ensure_tool_info()
+        current_headers = await self._get_current_headers()
+        client = McpServerClient(
+            mcp_url=self.mcp_url,
+            headers=current_headers,
+            transport_type=self.transport_type,
+        )
+        async with client:
+            await self._ensure_tool_info(client)
 
     async def health_check(self) -> bool:
         """
         Quickly verify that:
-          1) a new context enter reconnects if needed
+          1) a new connection can be established
           2) the remote tool still exists
         """
         try:
-            async with self.mcp_client:
-                info = await self.mcp_client.get_tool_by_name(self.mcp_tool_name)
+            current_headers = await self._get_current_headers()
+            client = McpServerClient(
+                mcp_url=self.mcp_url,
+                headers=current_headers,
+                transport_type=self.transport_type,
+            )
+            async with client:
+                info = await client.get_tool_by_name(self.mcp_tool_name)
             return info is not None
         except Exception:
             return False
@@ -252,33 +296,43 @@ class McpProxyTool(BaseTool):
         tool_info,
         headers: Optional[Dict[str, str]] = None,
         transport_type: McpTransportType = McpTransportType.STREAMABLE_HTTP,
-    ) -> "McpProxyTool":
+        header_provider: Optional[AsyncHeaderProvider] = None,
+        auth_credential: Optional[AuthCredential] = None,
+    ) -> McpProxyTool:
         """
         Create tool with pre-cached schema (no connection needed).
-        This is the optimization - tool creation without connection.
-        
-        Args:
-            mcp_tool_name: Name of the MCP tool to proxy
-            mcp_url: MCP server HTTP endpoint
-            tool_info: Pre-fetched Tool object with schema information
-            headers: Optional HTTP headers for authentication
-            transport_type: Transport protocol to use (SSE or Streamable HTTP)
-            
-        Returns:
-            Fully initialized McpProxyTool instance
+        This is the optimization — tool creation without connection.
         """
         tool = cls(
             mcp_tool_name, mcp_url,
             headers=headers, transport_type=transport_type,
+            header_provider=header_provider,
+            auth_credential=auth_credential,
         )
-        
-        # Use cached tool info
+
         tool._tool_info = tool_info
         tool.description = tool_info.description or ""
         tool.args_schema = tool_info.inputSchema or {}
         tool._schema_initialized = True
-        
+
         return tool
+
+    def get_sandbox_config(self) -> Dict[str, Any]:
+        """Extract serializable config for sandbox execution.
+
+        Resolves auth headers in the worker (where auth closures are
+        available) and returns a plain dict of strings that can cross
+        the cloudpickle boundary.
+        """
+        with get_async_bridge() as bridge:
+            headers = bridge.run(self._get_current_headers())
+        return {
+            "_tool_type": "mcp_proxy",
+            "mcp_url": str(self.mcp_url),
+            "mcp_tool_name": self.mcp_tool_name,
+            "headers": headers,
+            "transport_type": self.transport_type.value,
+        }
 
     def __repr__(self) -> str:
         desc = (self.description[:50] + "...") if self.description else "No description"

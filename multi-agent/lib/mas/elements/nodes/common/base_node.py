@@ -13,9 +13,10 @@ class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
     Base node for all graph elements.
     
     Streaming is provided via StreamingCapableMixin.
-    Channel is injected via set_streaming_channel() before execution.
     
-    MRO: StreamingCapableMixin → SupportsStateContext → ABC → object
+    Cancellation is handled at the adapter layer (Temporal heartbeat +
+    Redis channel silent drop) — domain nodes do not need cancellation awareness.
+    
     Subclasses should list their mixins BEFORE BaseNode:
         class MyNode(SomeMixin, OtherMixin, BaseNode): ...
     """
@@ -40,19 +41,15 @@ class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
     def __call__(self,
                  state: GraphState,
                  config) -> GraphState:
-        # Create StateView with all channels (base + mixin + node-specific)
         all_reads = self.total_reads()
         all_writes = self.total_writes()
         wrapped_state = StateView(state, reads=all_reads, writes=all_writes)
 
-        # Store state for helper methods
         self._state = wrapped_state
 
-        # Run node logic
         self.run(wrapped_state)
         result = wrapped_state.backing_state
 
-        # Stream completion with only streamable fields
         self._stream({
             "type": "complete",
             "state": result.get_streamable_state(),

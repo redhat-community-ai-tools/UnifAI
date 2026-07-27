@@ -3,12 +3,12 @@ kind: Service
 metadata:
   name: {{ include "redis.fullname" . }}
   labels:
-    app: {{ .Chart.Name }}
+    {{- include "redis.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
     - port: {{ .Values.service.port }}
       name: {{ .Values.service.name }}
   selector:
-    app: {{ .Chart.Name }}
+    {{- include "redis.selectorLabels" . | nindent 4 }}
 

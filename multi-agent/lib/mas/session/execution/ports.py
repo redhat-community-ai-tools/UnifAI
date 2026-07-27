@@ -2,7 +2,7 @@
 Outbound ports for session execution.
 
 Ports are defined by the use-case owner (session layer) and implemented
-by infrastructure adapters (Temporal, Celery, etc.).
+by infrastructure adapters.
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -17,27 +17,39 @@ class SubmitSessionRequest:
 
     Inputs are already staged into the SessionRecord before submission,
     so this only carries the execution context (scope, user, etc.).
+    The engine handle lives in execution_context.engine_handle.
     """
     execution_context: ExecutionContext = field(default_factory=ExecutionContext)
 
 
-class BackgroundSessionSubmitter(ABC):
+class BackgroundSessionEngine(ABC):
     """
-    Outbound port for fire-and-forget session submission.
+    Outbound port for background workflow operations on a session.
 
-    Each adapter (Temporal, Celery, RQ, …) implements this port.
-    The adapter is responsible for the full session lifecycle
-    (prepare → execute → complete/fail) inside its background worker.
-
-    Returns a handle/ID the caller can use for polling.
+    Each infrastructure adapter (Temporal, Celery, …) implements this port.
+    Lifecycle transitions and channel cleanup remain in BackgroundLifecycleHandler —
+    this port only handles workflow-level commands.
     """
 
     @abstractmethod
-    def submit(self, session: WorkflowSession, request: SubmitSessionRequest) -> str:
-        """
-        Submit the session for background execution.
+    def generate_handle(self, session_id: str) -> str:
+        """Pre-generate a unique handle for the background workflow.
 
-        Returns:
-            A workflow/task handle that the caller can use for status polling.
+        Called before submit() so the handle can be persisted atomically
+        with input staging, eliminating the race window between workflow
+        start and handle persistence.
         """
+        ...
+
+    @abstractmethod
+    def submit(self, session: WorkflowSession, request: SubmitSessionRequest) -> None:
+        """Start background execution.
+
+        The engine handle is read from request.execution_context.engine_handle.
+        """
+        ...
+
+    @abstractmethod
+    def cancel(self, handle: str) -> None:
+        """Request cancellation of a running background session."""
         ...

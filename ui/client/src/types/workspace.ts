@@ -23,6 +23,7 @@ export interface ElementInstance {
   created?: string;
   updated?: string;
   nested_refs?: string[];
+  contributed_by?: string;
 }
 
 export interface ElementSchema {

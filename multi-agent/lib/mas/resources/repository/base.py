@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from mas.resources.models import Resource, ResourceQuery
+from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 
 
@@ -26,8 +27,9 @@ class ResourceRepository(ABC):
         ...
 
     @abstractmethod
-    def find_by_name(self, user_id: str, category: str, type: str, name: str) -> Resource | None:
-        """Find a resource document by alias."""
+    def find_by_name(self, identity: Identity, category: str,
+                     type: str, name: str) -> Resource | None:
+        """Find a resource document by owner + category + type + name."""
         ...
 
     @abstractmethod
@@ -41,8 +43,8 @@ class ResourceRepository(ABC):
         ...
 
     @abstractmethod
-    def count(self, user_id: str, filter: dict) -> int:
-        """Count documents matching a filter."""
+    def count(self, identity: Identity, filter: dict | None = None) -> int:
+        """Count documents matching a filter scoped to *identity*."""
         ...
 
     @abstractmethod
@@ -53,32 +55,33 @@ class ResourceRepository(ABC):
 
     @abstractmethod
     def list_nested_usage(self, rid: str) -> List[str]:
-        """
-        Return resource IDs whose `nested_refs` array contains `rid`
-        (i.e. the resource depends on `rid` inside its own config).
-        """
+        """Return resource IDs whose `nested_refs` array contains *rid*."""
 
     @abstractmethod
     def exists(self, rid: str) -> bool: ...
 
     @abstractmethod
+    def count_by_config_field(
+        self,
+        identity: Identity,
+        field: str,
+        value: str,
+        exclude_rid: str = "",
+    ) -> int:
+        """Count resources where cfg_dict.<field> == value for the given owner identity."""
+        ...
+
+    @abstractmethod
     def group_count(
-        self, 
-        user_id: str, 
+        self,
+        identity: Identity,
         group_by: List[str],
-        filter: Dict[str, Any] = None
+        filter: Dict[str, Any] | None = None,
     ) -> List[GroupedCount]:
-        """
-        Group documents by specified fields and return counts.
-        Implementation should perform efficient server-side grouping.
-        
-        Args:
-            user_id: The user ID to filter by
-            group_by: List of field names to group by
-            filter: Optional additional filter criteria
-            
-        Returns:
-            List of GroupedCount DTOs with grouped field values and count.
-            Example: [GroupedCount(fields={"category": "llm"}, count=5), ...]
-        """
+        """Group documents by fields and return counts, scoped to *identity*."""
+        ...
+
+    @abstractmethod
+    def delete_by_identity(self, identity: Identity) -> int:
+        """Delete all resources owned by *identity*.  Returns the count of deleted documents."""
         ...

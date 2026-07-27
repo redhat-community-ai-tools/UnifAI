@@ -21,16 +21,28 @@ export const fetchSessionState = async (sessionId: string): Promise<SessionState
 };
 
 /**
+ * Fetch session chat data including messages and status
+ */
+export const fetchSessionChat = async (sessionId: string): Promise<{ messages: ChatMessage[]; status?: string; statusMessage?: string } | null> => {
+  try {
+    const response = await axios.get(`/sessions/session.chat.get?sessionId=${sessionId}`);
+    return {
+      messages: response.data?.messages ?? [],
+      status: response.data?.status,
+      statusMessage: response.data?.status_message ?? undefined,
+    };
+  } catch (err) {
+    console.error('Error fetching session chat:', err);
+    return null;
+  }
+};
+
+/**
  * Fetch only session messages for a specific session (lightweight)
  */
 export const fetchSessionMessages = async (sessionId: string): Promise<ChatMessage[] | null> => {
-  try {
-    const response = await axios.get(`/sessions/session.chat.get?sessionId=${sessionId}`);
-    return response.data?.messages ?? null;
-  } catch (err) {
-    console.error('Error fetching session messages:', err);
-    return null;
-  }
+  const chat = await fetchSessionChat(sessionId);
+  return chat?.messages ?? null;
 };
 
 /**
@@ -41,16 +53,17 @@ export const useSessionManagement = () => {
 
   const loadSessionMessages = useCallback(
     async (session: ChatSession): Promise<ChatSession | null> => {
-      // Always fetch fresh messages from the backend to ensure we have the latest data
-      const messages = await fetchSessionMessages(session.id);
-      if (messages && messages.length > 0) {
-        setCurrentMessages(messages);
+      // Always fetch fresh data from the backend to ensure we have the latest state
+      const chat = await fetchSessionChat(session.id);
+      if (chat && chat.messages.length > 0) {
+        setCurrentMessages(chat.messages);
 
-        // Update the session with loaded messages and preview
         const updatedSession: ChatSession = {
           ...session,
-          messages: messages,
-          preview: getPreviewText(messages),
+          messages: chat.messages,
+          preview: getPreviewText(chat.messages),
+          status: chat.status,
+          statusMessage: chat.statusMessage,
         };
 
         return updatedSession;

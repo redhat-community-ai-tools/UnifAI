@@ -41,7 +41,7 @@ class ToolExecutorManager:
 
     def __init__(
             self,
-            max_concurrent: int = 10,
+            max_concurrent: int = 30,
             execution_mode: ExecutionMode = ExecutionMode.PARALLEL,
             default_timeout: Optional[float] = None,
             enable_metrics: bool = True,

@@ -13,6 +13,7 @@ SOLID:
 from typing import Dict, List
 from uuid import uuid4
 
+from mas.core.identity import Identity
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintResource, StepDef
 from mas.resources.service import ResourcesService
 from mas.resources.models import Resource
@@ -39,7 +40,7 @@ class ResourceMaterializer:
     def __init__(self, resources_service: ResourcesService):
         self._resources = resources_service
 
-    def materialize(self, draft: BlueprintDraft, user_id: str) -> MaterializationResult:
+    def materialize(self, draft: BlueprintDraft, identity: Identity) -> MaterializationResult:
         """Materialize inline resources and build final blueprint."""
         # Step 1: Collect inline resources
         collected = self._collect_inline_resources(draft)
@@ -56,7 +57,7 @@ class ResourceMaterializer:
         # Step 3 & 4: Save and build (single rollback point)
         saved_rids: List[str] = []
         try:
-            saved_rids = self._save_resources(collected, user_id)
+            saved_rids = self._save_resources(collected, identity)
             final_draft = self._build_final_draft(draft, id_mapping)
         except Exception as e:
             self._rollback(saved_rids)
@@ -106,7 +107,7 @@ class ResourceMaterializer:
     # ─────────────────────────────────────────────────────────────────────
     #  Step 3: Save
     # ─────────────────────────────────────────────────────────────────────
-    def _save_resources(self, collected: List[CollectedResource], user_id: str) -> List[str]:
+    def _save_resources(self, collected: List[CollectedResource], identity: Identity) -> List[str]:
         """Save resources one by one. Returns saved rids. Caller handles rollback."""
         suffix = uuid4().hex[:self.UNIQUE_SUFFIX_LENGTH]
         saved_rids = []
@@ -114,7 +115,7 @@ class ResourceMaterializer:
         for item in collected:
             resource = Resource(
                 rid=item.final_rid,
-                user_id=user_id,
+                identity=identity,
                 category=item.category,
                 type=item.bp_resource.type or "",
                 name=f"{item.bp_resource.name or item.bp_resource.type}_{suffix}",

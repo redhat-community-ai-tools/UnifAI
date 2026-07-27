@@ -7,6 +7,9 @@ mongodb:
     #type: LoadBalancer
     type: ClusterIP
     port: 27017
+  storage:
+    size: 100Gi
+    storageClassName: aws-ebs
 
 qdrant:
   replicaCount: 1
@@ -26,6 +29,9 @@ qdrant:
     requests:
       cpu: 4
       memory: 12Gi
+  storage:
+    requestedSize: 100Gi
+    storageClassName: aws-ebs
 
 rabbitmq:
   image:
@@ -62,7 +68,7 @@ redis-insight:
   image:
     registry: redis
     repository: redisinsight
-    tag: latest
+    tag: 3.4.2
     pullPolicy: IfNotPresent
   service:
     type: ClusterIP

@@ -8,9 +8,11 @@ from mas.session.repository.repository import SessionRepository
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.models import SessionChat, TimeSeriesPoint, SystemAnalyticsData
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
-from mas.session.domain.status import SessionStatus
+from mas.session.domain.status import SessionStatus, NON_RUNNABLE_STATUSES
+from mas.core.identity import Identity, IdentityFieldKey
 from mas.core.dto import GroupedCount
-from global_utils.utils.time_utils import format_utc_iso
+
+from outbound.mongo.helpers import identity_q
 
 logger = logging.getLogger(__name__)
 
@@ -19,18 +21,24 @@ class MongoSessionRepository(SessionRepository):
     """
     MongoDB-backed SessionRepository.
 
-    Handles both user-scoped operations and system-wide analytics queries.
-    Optimized for efficient aggregations with proper indexing.
+    Queries owner-scoped data by both ``identity.type`` and ``identity.id``
+    so that user-owned and team-owned sessions are properly isolated.
     """
 
-    # Field paths (centralized for easy schema changes)
-    _TIME_FIELD = "run_context.started_at"
-    _USER_FIELD = "user_id"
+    _IDENTITY_TYPE_FIELD = "identity.type"
+    _IDENTITY_ID_FIELD = "identity.id"
+    _STARTED_AT_FIELD = "run_context.started_at"
+    _ACTIVITY_FIELD = "run_context.last_active_at"
     _STATUS_FIELD = "status"
     _BLUEPRINT_FIELD = "blueprint_id"
     _RUN_ID_FIELD = "run_id"
-    # Maximum number of data points returned in a time series query
+    _OWNER_ALIAS = "owner_id"
     _MAX_TIME_SERIES_POINTS = 1000
+
+    # Prefer last_active_at; fall back to started_at for older sessions
+    _ACTIVITY_DATE_EXPR: Dict[str, Any] = {
+        "$ifNull": ["$run_context.last_active_at", "$run_context.started_at"]
+    }
 
     def __init__(
             self,
@@ -49,29 +57,35 @@ class MongoSessionRepository(SessionRepository):
 
     def _ensure_indexes(self) -> None:
         """Create indexes for all query patterns. Safe to call multiple times."""
-        # Primary lookup (existing)
         self._col.create_index(
-            [(self._USER_FIELD, pymongo.ASCENDING), (self._RUN_ID_FIELD, pymongo.ASCENDING)],
+            [
+                (self._IDENTITY_TYPE_FIELD, pymongo.ASCENDING),
+                (self._IDENTITY_ID_FIELD, pymongo.ASCENDING),
+                (self._RUN_ID_FIELD, pymongo.ASCENDING),
+            ],
             unique=True,
-            background=True
+            background=True,
         )
 
-        # Fetch by run_id alone (used by fetch() and delete())
         self._col.create_index(
             [(self._RUN_ID_FIELD, pymongo.ASCENDING)],
-            background=True
+            unique=True,
+            background=True,
+            name="uq_session_run_id",
         )
 
-        # Time-based analytics (system-wide queries)
         self._col.create_index(
-            [(self._TIME_FIELD, pymongo.DESCENDING)],
-            background=True
+            [(self._ACTIVITY_FIELD, pymongo.DESCENDING)],
+            background=True,
         )
 
-        # User + time (user activity queries)
         self._col.create_index(
-            [(self._USER_FIELD, pymongo.ASCENDING), (self._TIME_FIELD, pymongo.DESCENDING)],
-            background=True
+            [
+                (self._IDENTITY_TYPE_FIELD, pymongo.ASCENDING),
+                (self._IDENTITY_ID_FIELD, pymongo.ASCENDING),
+                (self._ACTIVITY_FIELD, pymongo.DESCENDING),
+            ],
+            background=True,
         )
 
     # ---------- Core CRUD Operations ----------
@@ -79,7 +93,11 @@ class MongoSessionRepository(SessionRepository):
     def save(self, record: SessionRecord) -> None:
         doc = record.model_dump(mode="json")
         self._col.replace_one(
-            {self._USER_FIELD: record.user_id, self._RUN_ID_FIELD: record.run_id},
+            {
+                self._IDENTITY_TYPE_FIELD: record.identity.type.value,
+                self._IDENTITY_ID_FIELD: record.identity.id,
+                self._RUN_ID_FIELD: record.run_id,
+            },
             doc,
             upsert=True,
         )
@@ -93,42 +111,47 @@ class MongoSessionRepository(SessionRepository):
     def fetch_chat(self, run_id: str) -> SessionChat:
         doc = self._col.find_one(
             {self._RUN_ID_FIELD: run_id},
-            {"_id": 0, "graph_state.messages": 1, "graph_state.output": 1},
+            {"_id": 0, "graph_state.messages": 1, "graph_state.output": 1,
+             "status": 1, "metadata.status_message": 1},
         )
         if not doc:
             raise KeyError(f"No session for {run_id}")
         gs = doc.get("graph_state", {})
+        gs["status"] = doc.get("status")
+        gs["status_message"] = doc.get("metadata", {}).get("status_message")
         return SessionChat.model_validate(gs)
 
-    def list_runs(self, user_id: str) -> List[str]:
+    def list_runs(self, identity: Identity) -> List[str]:
         cursor = self._col.find(
-            {self._USER_FIELD: user_id},
-            {self._RUN_ID_FIELD: 1, "_id": 0}
+            identity_q(identity),
+            {self._RUN_ID_FIELD: 1, "_id": 0},
         )
         return [d[self._RUN_ID_FIELD] for d in cursor]
 
-    def list_docs(self, user_id: str) -> List[Mapping[str, Any]]:
+    def list_docs(self, identity: Identity) -> List[Mapping[str, Any]]:
         """Return all session documents for a user in a single query."""
-        return list(self._col.find(
-            {self._USER_FIELD: user_id},
-            {"_id": 0}
-        ))
+        return list(self._col.find(identity_q(identity), {"_id": 0}))
 
     def delete(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""
         result = self._col.delete_one({self._RUN_ID_FIELD: run_id})
         return result.deleted_count > 0
 
-    # ---------- User-scoped Statistics ----------
+    def delete_by_identity(self, identity: Identity) -> int:
+        """Delete all sessions owned by the given identity. Returns count."""
+        result = self._col.delete_many(identity_q(identity))
+        return result.deleted_count
 
-    def count(self, user_id: str, filter: Dict[str, Any]) -> int:
-        """Count sessions matching filter criteria for a user."""
-        query = {self._USER_FIELD: user_id, **filter}
+    # ---------- Owner-scoped Statistics ----------
+
+    def count(self, identity: Identity, filter: Dict[str, Any]) -> int:
+        # Identity keys must not be overridden by caller-supplied filter.
+        query = {**filter, **identity_q(identity)}
         return self._col.count_documents(query)
 
     def group_count(
         self,
-        user_id: str,
+        identity: Identity,
         group_by: List[str],
         filter: Dict[str, Any] = None
     ) -> List[GroupedCount]:
@@ -144,7 +167,7 @@ class MongoSessionRepository(SessionRepository):
         Returns:
             List of GroupedCount DTOs with grouped field values and count.
         """
-        match = {self._USER_FIELD: user_id, **(filter or {})}
+        match = {**(filter or {}), **identity_q(identity)}
         return self._aggregate_group_count(match, group_by)
 
     # ---------- System-wide Statistics (for admin analytics) ----------
@@ -153,9 +176,18 @@ class MongoSessionRepository(SessionRepository):
         """Count all sessions system-wide, optionally filtered by time."""
         return self._col.count_documents(self._time_match(since))
 
-    def get_distinct_users(self, since: Optional[datetime] = None) -> List[str]:
-        """Get distinct user IDs, optionally filtered by time."""
-        return self._col.distinct(self._USER_FIELD, self._time_match(since))
+    def get_distinct_identities(self, since: Optional[datetime] = None) -> List[Dict[str, str]]:
+        """Get distinct (type, id) pairs, optionally filtered by time."""
+        pipeline = [
+            {"$match": self._time_match(since)},
+            {"$group": {
+                "_id": {
+                    "type": f"${self._IDENTITY_TYPE_FIELD}",
+                    "id": f"${self._IDENTITY_ID_FIELD}",
+                },
+            }},
+        ]
+        return [doc["_id"] for doc in self._col.aggregate(pipeline)]
 
     def group_count_system(
         self,
@@ -185,12 +217,17 @@ class MongoSessionRepository(SessionRepository):
             {"$group": {
                 "_id": {
                     "$dateTrunc": {
-                        "date": {"$dateFromString": {"dateString": f"${self._TIME_FIELD}"}},
+                        "date": {"$dateFromString": {
+                            "dateString": self._ACTIVITY_DATE_EXPR,
+                            "onError": None,
+                            "onNull": None,
+                        }},
                         "unit": truncate_unit
                     }
                 },
                 "count": {"$sum": 1}
             }},
+            {"$match": {"_id": {"$ne": None}}},
             {"$sort": {"_id": 1}},
             {"$limit": self._MAX_TIME_SERIES_POINTS}
         ]
@@ -219,8 +256,8 @@ class MongoSessionRepository(SessionRepository):
         pipeline = [
             {"$match": self._time_match(since)},
             {"$facet": {
-                "user_status": self._user_status_facet(),
-                "user_blueprint": self._user_blueprint_facet(),
+                "user_status": self._owner_status_facet(),
+                "user_blueprint": self._owner_blueprint_facet(),
                 "blueprint_stats": self._blueprint_stats_facet(),
             }}
         ]
@@ -243,24 +280,28 @@ class MongoSessionRepository(SessionRepository):
 
     # ---------- Facet Definitions ----------
 
-    def _user_status_facet(self) -> list:
-        """Group sessions by user and status."""
+    def _owner_status_facet(self) -> list:
+        """Group sessions by identity (type+id) and status."""
         return [
             {"$group": {
                 "_id": {
-                    self._USER_FIELD: f"${self._USER_FIELD}",
+                    IdentityFieldKey.IDENTITY_TYPE: f"${self._IDENTITY_TYPE_FIELD}",
+                    IdentityFieldKey.IDENTITY_ID: f"${self._IDENTITY_ID_FIELD}",
                     self._STATUS_FIELD: f"${self._STATUS_FIELD}"
                 },
-                "count": {"$sum": 1}
+                "count": {"$sum": 1},
+                "display_name": {"$first": "$identity.display_name"}
             }}
         ]
 
-    def _user_blueprint_facet(self) -> list:
-        """Group sessions by user and blueprint."""
+    def _owner_blueprint_facet(self) -> list:
+        """Group sessions by identity (type+id) and blueprint (non-runnable excluded)."""
         return [
+            {"$match": {self._STATUS_FIELD: {"$nin": list(NON_RUNNABLE_STATUSES)}}},
             {"$group": {
                 "_id": {
-                    self._USER_FIELD: f"${self._USER_FIELD}",
+                    IdentityFieldKey.IDENTITY_TYPE: f"${self._IDENTITY_TYPE_FIELD}",
+                    IdentityFieldKey.IDENTITY_ID: f"${self._IDENTITY_ID_FIELD}",
                     self._BLUEPRINT_FIELD: f"${self._BLUEPRINT_FIELD}"
                 },
                 "count": {"$sum": 1}
@@ -268,8 +309,9 @@ class MongoSessionRepository(SessionRepository):
         ]
 
     def _blueprint_stats_facet(self) -> list:
-        """Aggregate execution metrics per blueprint."""
+        """Aggregate execution metrics per blueprint (non-runnable statuses excluded)."""
         return [
+            {"$match": {self._STATUS_FIELD: {"$nin": list(NON_RUNNABLE_STATUSES)}}},
             {"$group": {
                 "_id": f"${self._BLUEPRINT_FIELD}",
                 "total_runs": {"$sum": 1},
@@ -291,25 +333,51 @@ class MongoSessionRepository(SessionRepository):
                         ]
                     }
                 },
-                "last_run": {"$max": f"${self._TIME_FIELD}"},
+                "active_runs": {
+                    "$sum": {
+                        "$cond": [
+                            {"$in": [f"${self._STATUS_FIELD}", [
+                                SessionStatus.RUNNING.value,
+                                SessionStatus.IN_USE.value,
+                            ]]},
+                            1,
+                            0
+                        ]
+                    }
+                },
+                "last_run": {"$max": {"$dateFromString": {
+                    "dateString": self._ACTIVITY_DATE_EXPR,
+                    "onError": None,
+                    "onNull": None,
+                }}},
                 "avg_duration_ms": {
                     "$avg": {
                         "$cond": [
                             {"$and": [
                                 {"$ne": ["$run_context.finished_at", None]},
                                 {"$ne": ["$run_context.finished_at", ""]},
-                                {"$ne": [f"${self._TIME_FIELD}", None]},
-                                {"$ne": [f"${self._TIME_FIELD}", ""]},
+                                {"$ne": [f"${self._STARTED_AT_FIELD}", None]},
+                                {"$ne": [f"${self._STARTED_AT_FIELD}", ""]},
                             ]},
                             {"$subtract": [
                                 {"$dateFromString": {"dateString": "$run_context.finished_at"}},
-                                {"$dateFromString": {"dateString": f"${self._TIME_FIELD}"}}
+                                {"$dateFromString": {"dateString": f"${self._STARTED_AT_FIELD}"}}
                             ]},
                             None
                         ]
                     }
                 },
-                "users": {"$addToSet": f"${self._USER_FIELD}"}
+                "users": {
+                    "$addToSet": {
+                        "$concat": [
+                            f"${self._IDENTITY_TYPE_FIELD}",
+                            ":",
+                            f"${self._IDENTITY_ID_FIELD}",
+                            ":",
+                            {"$ifNull": ["$identity.display_name", ""]},
+                        ]
+                    }
+                }
             }}
         ]
 
@@ -322,6 +390,7 @@ class MongoSessionRepository(SessionRepository):
                 total_runs=doc.get("total_runs", 0),
                 completed_runs=doc.get("completed_runs", 0),
                 failed_runs=doc.get("failed_runs", 0),
+                active_runs=doc.get("active_runs", 0),
                 last_run=doc.get("last_run"),
                 avg_duration_ms=doc.get("avg_duration_ms"),
                 users=doc.get("users", [])
@@ -339,16 +408,38 @@ class MongoSessionRepository(SessionRepository):
         """
         Build a MongoDB match filter for time-based queries.
 
+        Filters on last_active_at (falls back to started_at for older
+        sessions) so that "Today" shows sessions *used* today, not
+        only those *created* today.  Uses $dateFromString so the
+        comparison works regardless of timezone-suffix format.
+
         Args:
             since: Cutoff datetime (None = no time filter)
-            require_exists: If True, also require the time field to exist
-                            (needed for $dateFromString in time series)
+            require_exists: If True, also require at least one time
+                            field to exist (needed for $dateFromString
+                            in time series)
         """
         if since is None:
-            return {self._TIME_FIELD: {"$exists": True}} if require_exists else {}
+            if require_exists:
+                return {"$or": [
+                    {self._ACTIVITY_FIELD: {"$exists": True, "$nin": [None, ""]}},
+                    {self._STARTED_AT_FIELD: {"$exists": True, "$nin": [None, ""]}},
+                ]}
+            return {}
 
-        cutoff = format_utc_iso(since)
-        return {self._TIME_FIELD: {"$gte": cutoff}}
+        match: Dict[str, Any] = {
+            "$expr": {
+                "$gte": [
+                    {"$dateFromString": {
+                        "dateString": self._ACTIVITY_DATE_EXPR,
+                        "onError": None,
+                        "onNull": None,
+                    }},
+                    since,
+                ]
+            }
+        }
+        return match
 
     def _aggregate_group_count(
         self,
@@ -356,7 +447,14 @@ class MongoSessionRepository(SessionRepository):
         group_by: List[str]
     ) -> List[GroupedCount]:
         """Shared aggregation logic for both user-scoped and system-wide grouping."""
-        group_id = {field: f"${field}" for field in group_by}
+        group_id = {}
+        for field in group_by:
+            if field in (self._OWNER_ALIAS, "user_id"):
+                # Disambiguate user vs team when ids collide (same as analytics facets).
+                group_id[self._OWNER_ALIAS] = f"${self._IDENTITY_ID_FIELD}"
+                group_id[self._IDENTITY_TYPE_FIELD] = f"${self._IDENTITY_TYPE_FIELD}"
+            else:
+                group_id[field] = f"${field}"
 
         pipeline = [
             {"$match": match},
@@ -389,5 +487,16 @@ class MongoSessionRepository(SessionRepository):
 
     @staticmethod
     def _to_grouped_counts(docs: List[Dict]) -> List[GroupedCount]:
-        """Transform MongoDB aggregation results to GroupedCount DTOs."""
-        return [GroupedCount(fields=doc["_id"], count=doc["count"]) for doc in docs]
+        """Transform MongoDB aggregation results to GroupedCount DTOs.
+
+        Merges any extra accumulator fields (beyond _id and count) into the
+        fields dict so they are accessible via GroupedCount.get().
+        """
+        results = []
+        for doc in docs:
+            fields = dict(doc["_id"]) if isinstance(doc["_id"], dict) else {"_id": doc["_id"]}
+            for key, val in doc.items():
+                if key not in ("_id", "count"):
+                    fields[key] = val
+            results.append(GroupedCount(fields=fields, count=doc["count"]))
+        return results

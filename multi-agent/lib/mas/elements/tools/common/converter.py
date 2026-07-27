@@ -1,11 +1,22 @@
-from typing import List
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Type, Union
+
 from langchain_core.tools import StructuredTool
 from langchain_core.tools import BaseTool as LangChainBaseTool
+from pydantic import BaseModel
+
 from .base_tool import BaseTool
 
 
 class LangChainToolsConverter:
-    """Base converter for internal tools to LangChain format."""
+    """Converts domain ``BaseTool`` instances to LangChain ``StructuredTool``.
+
+    Handles two categories:
+    1. Domain tools — ``args_schema`` is a Pydantic model class, passed directly.
+    2. MCP proxy tools — ``args_schema`` is a raw JSON schema dict from the
+       MCP server, passed directly (LangChain StructuredTool accepts both).
+    """
 
     @classmethod
     def to_lc(cls, tools: List[BaseTool]) -> List[LangChainBaseTool]:
@@ -15,11 +26,11 @@ class LangChainToolsConverter:
 
     @classmethod
     def _convert_tool(cls, tool: BaseTool) -> LangChainBaseTool:
-        """Convert a single tool. Override to customize conversion."""
-        return StructuredTool.from_function(
-            func=tool.run,
-            args_schema=tool.get_args_schema_json(),
+        """Convert a single domain tool to a LangChain StructuredTool."""
+        return StructuredTool(
             name=tool.name,
-            description=tool.description,
-            coroutine=tool.arun
+            description=tool.description or "",
+            func=tool.run,
+            coroutine=tool.arun,
+            args_schema=tool.args_schema,
         )

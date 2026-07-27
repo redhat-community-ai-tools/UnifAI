@@ -36,6 +36,8 @@ USER root
 #Install debugging tools ( telnet is out-of-ubi9 for nginx ncat instead)
 RUN dnf update -y && dnf install -y vim less iputils && dnf clean all
 
+#set permissions for the nginx log directory
+RUN chmod -R g+rwx /var/log/nginx && chown -R default:root /var/log/nginx
 # Copy and set permissions for entrypoint.sh while still root
 COPY ui/deployment/entrypoint.sh /opt/app-root/src/entrypoint.sh
 RUN chmod +x /opt/app-root/src/entrypoint.sh

@@ -1,0 +1,42 @@
+{
+  "unifaiRepo": "https://github.com/redhat-community-ai-tools/UnifAI.git",
+  "lastSyncCommit": "7e6f8db9e",
+  "lastSyncDate": "2026-05-26T15:00:00Z",
+  "services": {
+    "rag": {
+      "endpointCount": 27,
+      "portCount": 21,
+      "collectionCount": 7,
+      "configFields": 8,
+      "celeryTaskCount": 2
+    },
+    "mas": {
+      "endpointCount": 50,
+      "portCount": 15,
+      "collectionCount": 7,
+      "configFields": 7,
+      "temporalWorkflowCount": 2,
+      "temporalActivityCount": 2,
+      "elementSpecCount": 20
+    },
+    "identity": {
+      "endpointCount": 25,
+      "collectionCount": 1,
+      "redisKeyPatterns": 2
+    },
+    "platform": {
+      "endpointCount": 5,
+      "collectionCount": 1
+    },
+    "ui": {
+      "apiModuleCount": 19,
+      "hookCount": 23,
+      "contextCount": 7,
+      "httpClientCount": 4
+    },
+    "global_utils": {
+      "exportCount": 12,
+      "submoduleCount": 8
+    }
+  }
+}

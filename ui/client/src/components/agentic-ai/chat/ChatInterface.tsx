@@ -10,9 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Send, Trash2, Loader2, Sparkles, Info, Copy, RotateCcw,
-  ThumbsUp, ThumbsDown, Check, Columns3, MessageSquare, Network,
-  Maximize2, Minimize2, Download, FileText, FileJson,
+  Send, Square, Trash2, Loader2, Sparkles, Info, Copy, RotateCcw,
+  ThumbsUp, ThumbsDown, Check,
+  Maximize2, Minimize2, Download, FileText, FileJson, Ban, ChevronDown, ChevronUp,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -20,12 +20,19 @@ import axios from "../../../http/axiosAgentConfig";
 import { MarkdownComponents, preprocessText } from "./helpers/TextComponents";
 import { SessionPayload } from "../ExecutionTab";
 import { useStreamingData } from "../StreamingDataContext";
-import { Message, StreamLogEntry, WorkPlanSnapshot } from "./types";
+import { Message, StreamLogEntry, WorkPlanSnapshot, ApprovalDecision, ApprovalStatus, AutoRuleAction, isSessionCancellation } from "./types";
 import { StreamLogDisplay } from "./StreamLogDisplay";
+import { ApprovalBadge } from "./ApprovalBadge";
+import { submitApproval, submitApprovalRule } from "@/api/sessions";
 import { useToast } from "@/hooks/use-toast";
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
 import WorkflowStatusBanner, { WorkflowBannerMessages } from '@/components/shared/WorkflowStatusBanner';
+import { useAuth } from "@/contexts/AuthContext";
+import type { PromptShortcut } from "@/api/blueprints";
+import { MemberDisplay, buildMemberDisplay } from "@/utils/memberDisplay";
+import { CollabAvatar } from "@/components/shared/CollabAvatar";
+import { ViewModeToggle, type CarouselMode } from "@/components/shared/ViewModeToggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,32 +45,53 @@ import {
   downloadFile,
   buildExportFilename,
 } from "./exportSession";
+import { sendTypingSignal as sendTypingSignalApi } from "@/api/collaboration";
+
+const TERMINAL_STATUSES = ['CANCELLED', 'FAILED', 'COMPLETED'] as const;
+const isTerminalStatus = (status?: string): boolean =>
+  !!status && TERMINAL_STATUSES.includes(status as typeof TERMINAL_STATUSES[number]);
 
 // Backend message format
 interface BackendMessage {
   content: string;
   role: "user" | "assistant";
+  sender_id?: string;
+  metadata?: Record<string, unknown>;
 }
 
 interface ChatInterfaceProps {
   runId?: string;
   triggerExecution: (sessionPayload: SessionPayload) => Promise<string>;
+  onCancelSession?: () => Promise<void>;
   initialMessages?: BackendMessage[];
+  sessionStatus?: string;
+  statusMessage?: string;
   blueprintExists?: boolean;
-  isSharingDisabled?: boolean; // If true, sharing is disabled for this blueprint
+  isSharingDisabled?: boolean;
   blueprintValid?: boolean;
   isValidatingBlueprint?: boolean;
   isBlueprintGraphHidden?: boolean;
-  isChatOnlyMode?: boolean; // If true, hide agent thinking and workflow details
-  onSetCarouselMode?: (mode: 'normal' | 'chat' | 'graph') => void; // Carousel mode setter
-  carouselMode?: 'normal' | 'chat' | 'graph'; // Current carousel mode
-  isLiveRequest?: boolean; // True when session is actively streaming (including reconnection)
+  isChatOnlyMode?: boolean;
+  onSetCarouselMode?: (mode: CarouselMode) => void;
+  carouselMode?: CarouselMode;
+  onQueueMessage?: (message: string) => void;
+  queuedMessageToProcess?: string | null;
+  onQueuedMessageProcessed?: () => void;
+  isLiveRequest?: boolean;
+  isSubmitting?: boolean;
+  collaborationMode?: boolean;
+  teamMembers?: MemberDisplay[];
+  typingUsers?: string[];
+  defaultPrompts?: PromptShortcut[];
 }
 
 export default function ChatInterface({
   runId,
   triggerExecution,
+  onCancelSession,
   initialMessages = [],
+  sessionStatus,
+  statusMessage,
   blueprintExists = true,
   isSharingDisabled = false,
   blueprintValid = true,
@@ -72,7 +100,15 @@ export default function ChatInterface({
   isChatOnlyMode = false,
   onSetCarouselMode,
   carouselMode = 'normal',
+  onQueueMessage,
+  queuedMessageToProcess,
+  onQueuedMessageProcessed,
   isLiveRequest = false,
+  isSubmitting = false,
+  collaborationMode = false,
+  teamMembers = [],
+  typingUsers = [],
+  defaultPrompts,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -83,6 +119,7 @@ export default function ChatInterface({
   const [workPlanData, setWorkPlanData] = useState<Record<string, WorkPlanSnapshot[]>>({});
   const [streamLogData, setStreamLogData] = useState<Record<string, StreamLogEntry[]>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const streamingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const workplanStreamingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -90,8 +127,105 @@ export default function ChatInterface({
   const streamLogDataRef = useRef<Record<string, StreamLogEntry[]>>({});
   const { nodeListRef, clearStream } = useStreamingData();
   const { toast } = useToast();
+  const { user: authUser } = useAuth();
   const [userPromptsMap, setUserPromptsMap] = useState<Record<string, string>>({});
+  const userPromptsMapRef = useRef<Record<string, string>>({});
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelledExpanded, setCancelledExpanded] = useState<Record<string, boolean>>({});
+  const toggleCancelledExpansion = useCallback((messageId: string) => {
+    setCancelledExpanded(prev => ({ ...prev, [messageId]: !prev[messageId] }));
+  }, []);
+  const wasCancelledByUserRef = useRef(false);
+  const activeUserMessageIdRef = useRef<string | null>(null);
+
+  const isInputDisabled = useMemo(
+    () => !blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint || isLiveRequest,
+    [blueprintExists, isSharingDisabled, blueprintValid, isValidatingBlueprint, isLiveRequest]
+  );
+
+  // Prompt chips state — visible only until the first message is sent
+  const hasExistingConversation = initialMessages.length > 0;
+  const [chipsDismissed, setChipsDismissed] = useState(false);
+  const showPromptChips = !chipsDismissed && !hasExistingConversation && !isInputDisabled && (defaultPrompts?.length ?? 0) > 0;
+  const [previewChipId, setPreviewChipId] = useState<string | null>(null);
+
+  const getDisplayTitle = (prompt: { text: string }): string => {
+    const words = prompt.text.split(/\s+/);
+    const preview = words.length <= 3 ? prompt.text : words.slice(0, 3).join(" ") + "...";
+    return preview.length > 40 ? preview.slice(0, 37) + "..." : preview;
+  };
+
+  const updateMessageById = useCallback(
+    (messageId: string, updates: Partial<Message>) => {
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? { ...msg, ...updates } : msg))
+      );
+    },
+    []
+  );
+
+  const markMessageAsCancelled = useCallback((aiMessageId: string) => {
+    const userMsgId = activeUserMessageIdRef.current;
+    setMessages((prev) => {
+      const filtered = prev.filter((m) => m.id !== aiMessageId);
+      const targetUserId = userMsgId
+        || filtered.findLast((m) => m.sender === "user")?.id;
+      if (targetUserId) {
+        return filtered.map((m) =>
+          m.id === targetUserId ? { ...m, isCancelled: true } : m
+        );
+      }
+      return filtered;
+    });
+    activeUserMessageIdRef.current = null;
+  }, []);
+
+  // Typing indicator: debounced POST to collaboration endpoint.
+  // Leading debounce prevents firing on every keystroke; the "start typing"
+  // signal is sent at most once per TYPING_DEBOUNCE_MS window.
+  const TYPING_DEBOUNCE_MS = 2000;
+  const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingSentRef = useRef(0);
+  const sendTypingSignal = useCallback(() => {
+    if (!collaborationMode || !runId) return;
+    const username = authUser?.username || "default";
+    const now = Date.now();
+    if (now - lastTypingSentRef.current >= TYPING_DEBOUNCE_MS) {
+      lastTypingSentRef.current = now;
+      sendTypingSignalApi(runId, username, true).catch(() => {});
+    }
+    // Reset the auto-clear timer on every keystroke
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      sendTypingSignalApi(runId, username, false).catch(() => {});
+    }, 4000);
+  }, [collaborationMode, runId, authUser?.username]);
+
+  const clearTypingSignal = useCallback(() => {
+    if (!collaborationMode || !runId) return;
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    const username = authUser?.username || "default";
+    sendTypingSignalApi(runId, username, false).catch(() => {});
+  }, [collaborationMode, runId, authUser?.username]);
+
+  const memberCache = useRef<Map<string, MemberDisplay>>(new Map());
+  const resolveMember = useCallback((senderName: string): MemberDisplay => {
+    const found = teamMembers.find(m => m.id === senderName);
+    if (found) {
+      memberCache.current.set(senderName, found);
+      return found;
+    }
+    const cached = memberCache.current.get(senderName);
+    if (cached) return cached;
+    const built = buildMemberDisplay(senderName, memberCache.current.size + teamMembers.length);
+    memberCache.current.set(senderName, built);
+    return built;
+  }, [teamMembers]);
+
+  useEffect(() => {
+    userPromptsMapRef.current = userPromptsMap;
+  }, [userPromptsMap]);
 
   // ────────────────────────────────────────────────────────────────────────────────
   // Auto-expanding textarea configuration
@@ -183,33 +317,100 @@ export default function ChatInterface({
     if (!blueprintValid) {
       return "This chat cannot be continued - workflow validation failed";
     }
+    if (isLiveRequest) {
+      return "AI is processing — please wait...";
+    }
     return "Ask a question about your data...";
-  }, [blueprintExists, isSharingDisabled, isValidatingBlueprint, blueprintValid]);
+  }, [blueprintExists, isSharingDisabled, isValidatingBlueprint, blueprintValid, isLiveRequest]);
 
   // Transform backend messages to frontend format (streamLogs/workPlans, managed separately)
   const transformBackendMessagesToFrontend = useCallback(
     (backendMessages: BackendMessage[]): Message[] => {
       return backendMessages.map((msg, index) => ({
-        id: `${Date.now()}-${index}`,
+        id: `msg-${index}`,
         content: msg.content,
         sender: msg.role === "user" ? "user" : "ai",
-        // For AI messages, we might want to add finalAnswer if it's the last assistant message
+        senderName: msg.sender_id || undefined,
         ...(msg.role === "assistant" && {
           finalAnswer: msg.content,
         }),
+        ...(msg.metadata?.is_cancelled && { isCancelled: true }),
       }));
     },
     [],
   );
 
-  // Initialize messages from props or default
+  // Track the last synced message count so polls with no new messages are a no-op
+  const lastSyncedCountRef = useRef(0);
+  const lastRunIdRef = useRef(runId);
+  if (runId !== lastRunIdRef.current) {
+    lastRunIdRef.current = runId;
+    lastSyncedCountRef.current = 0;
+  }
+
+  // Initialize / sync messages from props.
+  // Skip while actively streaming to avoid clobbering in-flight state.
   useEffect(() => {
+    if (isTyping || currentStreamingMessageId) return;
     if (initialMessages && initialMessages.length > 0) {
+      if (initialMessages.length === lastSyncedCountRef.current) return;
+      lastSyncedCountRef.current = initialMessages.length;
       const transformedMessages =
         transformBackendMessagesToFrontend(initialMessages);
+
+      // Preserve stream log / workplan data across message ID changes.
+      // During collaboration polling, messages are re-synced with stable IDs
+      // (msg-0, msg-1, …) that differ from the transient streaming IDs.
+      // Match AI messages from the end so the welcome message is skipped.
+      const oldAiMsgs = messages.filter(m => m.sender === 'ai');
+      const newAiMsgs = transformedMessages.filter(m => m.sender === 'ai');
+      let streamDataChanged = false;
+
+      for (let i = 0; i < Math.min(oldAiMsgs.length, newAiMsgs.length); i++) {
+        const oldMsg = oldAiMsgs[oldAiMsgs.length - 1 - i];
+        const newMsg = newAiMsgs[newAiMsgs.length - 1 - i];
+        if (oldMsg.id === newMsg.id) continue;
+
+        if (streamLogDataRef.current[oldMsg.id]) {
+          streamLogDataRef.current[newMsg.id] = streamLogDataRef.current[oldMsg.id];
+          delete streamLogDataRef.current[oldMsg.id];
+          streamDataChanged = true;
+        }
+        if (workPlanDataRef.current[oldMsg.id]) {
+          workPlanDataRef.current[newMsg.id] = workPlanDataRef.current[oldMsg.id];
+          delete workPlanDataRef.current[oldMsg.id];
+          streamDataChanged = true;
+        }
+        if (userPromptsMapRef.current[oldMsg.id]) {
+          userPromptsMapRef.current[newMsg.id] = userPromptsMapRef.current[oldMsg.id];
+          delete userPromptsMapRef.current[oldMsg.id];
+          streamDataChanged = true;
+        }
+      }
+
+      if (streamDataChanged) {
+        setStreamLogData({ ...streamLogDataRef.current });
+        setWorkPlanData({ ...workPlanDataRef.current });
+        setUserPromptsMap({ ...userPromptsMapRef.current });
+      }
+
+      // Fallback for sessions cancelled before is_cancelled was deployed
+      const hasCancelledFromBackend = transformedMessages.some((m) => m.isCancelled);
+      if (sessionStatus === "CANCELLED" && !hasCancelledFromBackend) {
+        const lastUserIndex = transformedMessages.findLastIndex(
+          (m) => m.sender === "user"
+        );
+        if (lastUserIndex !== -1) {
+          transformedMessages[lastUserIndex] = {
+            ...transformedMessages[lastUserIndex],
+            isCancelled: true,
+          };
+        }
+      }
+
       setMessages(transformedMessages);
-    } else {
-      // Default welcome message when no initial messages
+    } else if (lastSyncedCountRef.current !== 0 || messages.length === 0) {
+      lastSyncedCountRef.current = 0;
       setMessages([
         {
           id: "welcome",
@@ -219,20 +420,28 @@ export default function ChatInterface({
         },
       ]);
     }
-  }, [initialMessages, transformBackendMessagesToFrontend]);
+  }, [initialMessages, sessionStatus, statusMessage, transformBackendMessagesToFrontend]);
 
-  // useEffect(() => {
-  //   scrollToBottom();
-  // }, [messages]);
+  // Auto-scroll when new messages are added
+  const prevMessageCountRef = useRef(0);
+  useEffect(() => {
+    if (messages.length > prevMessageCountRef.current) {
+      scrollToBottom();
+    }
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length]);
 
   // Adjust textarea height when input or expanded state changes
   useEffect(() => {
     adjustTextareaHeight();
   }, [inputMessage, isExpanded, adjustTextareaHeight]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  const scrollToBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (container) {
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    }
+  }, []);
 
   // Map stream type to status
   const mapStreamToStatus = (
@@ -284,39 +493,48 @@ export default function ChatInterface({
           const newStatus = mapStreamToStatus(entry.stream);
           const newMessage = entry.text;
 
+          const currentApprovals = entry?.approvals || [];
+          const hasApprovals = currentApprovals.length > 0;
+
           if (
             !existingLog ||
             existingLog.status !== newStatus ||
-            existingLog.message !== newMessage
+            existingLog.message !== newMessage ||
+            (existingLog.approvals?.length || 0) !== currentApprovals.length ||
+            existingLog.approvals?.some(
+              (a, i) => a.status !== currentApprovals[i]?.status
+            )
           ) {
-            // Show stream log if there's text content OR if there are tool calls
-            if (newMessage || (entry?.tools && entry.tools.length > 0)) {
+            if (newMessage || (entry?.tools && entry.tools.length > 0) || hasApprovals) {
               updatedStreamLogs.push({
                 nodeId: entry.node_name,
                 nodeName: entry.node_name
                   .replace(/_/g, " ")
                   .replace(/\b\w/g, (l: string) => l.toUpperCase()),
-                message: newMessage || "", // Allow empty message when showing tools
-                tools: entry?.tools || [],
+                message: newMessage || "",
+                tools: (entry?.tools || []).map(t => ({ ...t })),
+                approvals: currentApprovals.map(a => ({ ...a })),
                 status: newStatus,
-                isExpanded: existingLog?.isExpanded || false,
+                isExpanded: existingLog?.isExpanded || (hasApprovals && !existingLog),
               });
             }
           } else {
-            // Keep existing log unchanged
             updatedStreamLogs.push(existingLog);
           }
         });
 
-        // Only update if there are actual changes
         const hasLogChanges =
           updatedStreamLogs.length !== currentLogs.length ||
           updatedStreamLogs.some((log, index) => {
             const currentLog = currentLogs[index];
-            return (
-              !currentLog ||
-              log.status !== currentLog.status ||
-              log.message !== currentLog.message
+            if (!currentLog) return true;
+            if (log.status !== currentLog.status) return true;
+            if (log.message !== currentLog.message) return true;
+            const prevA = currentLog.approvals || [];
+            const nextA = log.approvals || [];
+            if (prevA.length !== nextA.length) return true;
+            return prevA.some(
+              (a, i) => a.requestId !== nextA[i]?.requestId || a.status !== nextA[i]?.status,
             );
           });
 
@@ -363,22 +581,34 @@ export default function ChatInterface({
                 const existingPlan = updatedWorkPlans[existingPlanIndex];
                 updatedWorkPlans[existingPlanIndex] = {
                   ...workplanSnapshot,
-                  isExpanded: existingPlan.isExpanded // Preserve expansion state
+                  isExpanded: existingPlan.isExpanded
                 };
               } else {
-                // Add new workplan with default expansion state
+                // Evict stale plan from the same orchestrator before adding the new one
+                const staleIndex = updatedWorkPlans.findIndex(
+                  (wp) => wp.owner_uid === workplanSnapshot.owner_uid
+                );
+                const preserveExpanded = staleIndex !== -1
+                  ? updatedWorkPlans[staleIndex].isExpanded
+                  : false;
+                if (staleIndex !== -1) {
+                  updatedWorkPlans.splice(staleIndex, 1);
+                }
                 updatedWorkPlans.push({
                   ...workplanSnapshot,
-                  isExpanded: false // Default to collapsed
+                  isExpanded: preserveExpanded
                 });
               }
             });
           }
         });
 
-        // Also preserve existing workplans that weren't updated
+        // Preserve existing workplans whose orchestrator hasn't emitted a newer plan
         currentWorkPlans.forEach((existingPlan) => {
-          if (!updatedWorkPlans.find(wp => wp.plan_id === existingPlan.plan_id)) {
+          const alreadyCovered = updatedWorkPlans.find(
+            wp => wp.plan_id === existingPlan.plan_id || wp.owner_uid === existingPlan.owner_uid
+          );
+          if (!alreadyCovered) {
             updatedWorkPlans.push(existingPlan);
           }
         });
@@ -506,6 +736,8 @@ export default function ChatInterface({
     if (currentStreamingMessageId) return;
     // Skip if user is typing (middle of handleSendMessage)
     if (isTyping) return;
+    // Skip reconnection for sessions in terminal states
+    if (isTerminalStatus(sessionStatus)) return;
     
     // Start polling when session is live and messages are loaded
     if (isLiveRequest && messages.length > 0) {
@@ -544,28 +776,38 @@ export default function ChatInterface({
     if (!isLiveRequest && currentStreamingMessageId) {
       const messageId = currentStreamingMessageId;
       const wasReconnection = isReconnectionStreamRef.current;
+      const wasCancelled = wasCancelledByUserRef.current;
       
       // Stop polling
       stopStreamingLogs(messageId);
       setCurrentStreamingMessageId(null);
       isReconnectionStreamRef.current = false;
+      wasCancelledByUserRef.current = false;
       
+      if (wasCancelled) {
+        markMessageAsCancelled(messageId);
+        return;
+      }
+
       // For reconnection streams, fetch the final answer
       if (wasReconnection && runId) {
         (async () => {
           try {
             const response = await axios.get(`/sessions/session.chat.get?sessionId=${runId}`);
-            const finalAnswer = response.data?.output;
-            
+            const { output: finalAnswer, status, status_message } = response.data;
+
+            if (status === 'CANCELLED') {
+              markMessageAsCancelled(messageId);
+              return;
+            }
+
+            if (status === 'FAILED') {
+              updateMessageById(messageId, { finalAnswer: status_message || 'Workflow failed.' });
+              return;
+            }
+
             if (finalAnswer) {
-              setMessages((prev) =>
-                prev.map((msg) => {
-                  if (msg.id === messageId) {
-                    return { ...msg, finalAnswer };
-                  }
-                  return msg;
-                })
-              );
+              updateMessageById(messageId, { finalAnswer });
             }
           } catch (error) {
             console.error('Error fetching final state after reconnection:', error);
@@ -616,6 +858,136 @@ export default function ChatInterface({
   }, []);
 
 
+  // ── HITL approval ──────────────────────────────────────────────────────────
+
+  const handleApprovalDecision = useCallback(
+    async (
+      requestId: string,
+      decision: ApprovalDecision,
+      feedback?: string,
+      modifiedArgs?: Record<string, any>,
+    ) => {
+      if (!runId) return;
+
+      const statusMap: Record<ApprovalDecision, ApprovalStatus> = {
+        approve: 'approved',
+        reject: 'rejected',
+        modify: 'modified',
+        redirect: 'redirected',
+      };
+
+      try {
+        await submitApproval({
+          sessionId: runId,
+          requestId,
+          decision,
+          feedback,
+          modifiedArgs,
+        });
+
+        // Optimistically update the approval status in nodeListRef
+        for (const entry of nodeListRef.current.values()) {
+          const approval = entry.approvals?.find((a) => a.requestId === requestId);
+          if (approval) {
+            approval.status = statusMap[decision];
+            if (feedback) approval.feedback = feedback;
+            break;
+          }
+        }
+
+        // Flush the mutation into React state so the UI re-renders immediately
+        // (the polling interval stores cloned snapshots, so in-place mutations aren't detected)
+        const currentMessageId = currentStreamingMessageId;
+        if (currentMessageId) {
+          const list = Array.from(nodeListRef.current.values());
+          const flushed = list
+            .filter(e => e.text || (e.tools && e.tools.length > 0) || (e.approvals && e.approvals.length > 0))
+            .map(e => {
+              const prev = streamLogDataRef.current[currentMessageId]?.find(l => l.nodeId === e.node_name);
+              return {
+                nodeId: e.node_name,
+                nodeName: e.node_name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+                message: e.text || '',
+                tools: (e.tools || []).map(t => ({ ...t })),
+                approvals: (e.approvals || []).map(a => ({ ...a })),
+                status: mapStreamToStatus(e.stream),
+                isExpanded: prev?.isExpanded ?? ((e.approvals?.length ?? 0) > 0),
+              };
+            });
+
+          streamLogDataRef.current = { ...streamLogDataRef.current, [currentMessageId]: flushed };
+          setStreamLogData(prev => ({ ...prev, [currentMessageId]: flushed }));
+        }
+      } catch (err) {
+        console.error('Error submitting approval:', err);
+        toast({
+          title: 'Approval failed',
+          description: 'Could not submit your decision. Please try again.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [runId, nodeListRef, toast, currentStreamingMessageId],
+  );
+
+  const handleAutoRule = useCallback(
+    async (
+      requestId: string,
+      nodeUid: string | null,
+      toolName: string | null,
+      action: AutoRuleAction,
+    ) => {
+      if (!runId) return;
+
+      const decision: ApprovalDecision = action === 'auto_approve' ? 'approve' : 'reject';
+      const feedback = action === 'auto_approve' ? undefined : 'auto-reject rule applied';
+
+      try {
+        await submitApprovalRule({
+          sessionId: runId,
+          nodeUid,
+          toolName,
+          action,
+        });
+
+        await handleApprovalDecision(requestId, decision, feedback);
+
+        toast({
+          title: action === 'auto_approve' ? 'Auto-approve rule saved' : 'Auto-reject rule saved',
+          description: 'Future matching requests will be resolved automatically.',
+        });
+      } catch (err) {
+        console.error('Failed to save auto-rule:', err);
+        toast({
+          title: 'Rule save failed',
+          description: 'Could not save the rule. The request was not resolved.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [runId, handleApprovalDecision, toast],
+  );
+
+  const pendingApprovalCount = useMemo(() => {
+    let count = 0;
+    const allLogs = Object.values(streamLogData);
+    for (const logs of allLogs) {
+      for (const log of logs) {
+        if (log.approvals) {
+          count += log.approvals.filter((a) => a.status === 'pending').length;
+        }
+      }
+    }
+    return count;
+  }, [streamLogData]);
+
+  const scrollToFirstPendingApproval = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const el = container.querySelector('[data-node-id]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
   // User sends message → Creates an AI message with empty streamLogs
   // Streaming starts → Interval polls for node updates and updates the message
   // Live updates → Each node appears/updates as data becomes available
@@ -626,7 +998,25 @@ export default function ChatInterface({
     const messageContent = messageToSend || inputMessage;
     if (messageContent.trim() === "") return;
 
-    // Check if flow is loaded (runId should not be empty or null)
+    setChipsDismissed(true);
+
+    if (isTyping || isLiveRequest) {
+      if (onQueueMessage) {
+        onQueueMessage(messageContent);
+        setInputMessage("");
+        setTimeout(() => {
+          resetTextareaHeight();
+          textareaRef.current?.focus();
+        }, 0);
+      } else {
+        toast({
+          title: "Please wait",
+          description: "AI is still processing. Your message will be sent once it finishes.",
+        });
+      }
+      return;
+    }
+
     if (!runId || runId.trim() === "") {
       toast({
         title: "No Flow Loaded",
@@ -641,11 +1031,15 @@ export default function ChatInterface({
       id: Date.now().toString(),
       content: messageContent,
       sender: "user",
+      senderName: collaborationMode ? (authUser?.username || "default") : undefined,
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInputMessage("");
     setIsTyping(true);
+    clearTypingSignal();
+    wasCancelledByUserRef.current = false;
+    activeUserMessageIdRef.current = userMessage.id;
 
     // Reset textarea to compact state and focus
     setTimeout(() => {
@@ -682,50 +1076,60 @@ export default function ChatInterface({
         sessionId: runId || "",
         inputs: { user_prompt: messageContent },
         scope: "public",
-        loggedInUser: "default",
+        loggedInUser: authUser?.username || "default",
       };
 
       const response = await triggerExecution(sessionPayload);
 
-      // Update the message with final answer
-      setMessages((prev) =>
-        prev.map((msg) => {
-          if (msg.id === streamingMessageId) {
-            return {
-              ...msg,
-              finalAnswer: response,
-            };
-          }
-          return msg;
-        }),
-      );
+      if (wasCancelledByUserRef.current) {
+        markMessageAsCancelled(streamingMessageId);
+      } else {
+        updateMessageById(streamingMessageId, { finalAnswer: response });
+      }
     } catch (error) {
       console.error("Error in chat interaction:", error);
 
-      // Update with error message
-      setMessages((prev) =>
-        prev.map((msg) => {
-          if (msg.id === streamingMessageId) {
-            return {
-              ...msg,
-              finalAnswer:
-                "I'm sorry, there was an error processing your request.",
-            };
-          }
-          return msg;
-        }),
-      );
+      if (wasCancelledByUserRef.current || isSessionCancellation(error)) {
+        markMessageAsCancelled(streamingMessageId);
+      } else {
+        const errorMessage = error instanceof Error ? error.message : '';
+        updateMessageById(streamingMessageId, {
+          finalAnswer: errorMessage || "I'm sorry, there was an error processing your request.",
+        });
+      }
     } finally {
       setIsTyping(false);
+      wasCancelledByUserRef.current = false;
+      activeUserMessageIdRef.current = null;
       stopStreamingLogs(streamingMessageId);
       setCurrentStreamingMessageId(null);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { // Allow Shift+Enter for new lines
-      e.preventDefault(); // Prevent default Enter behavior (new line)
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
       handleSendMessage();
+    }
+  };
+
+  const handleCancelClick = async () => {
+    if (isCancelling) return;
+    setIsCancelling(true);
+    wasCancelledByUserRef.current = true;
+
+    try {
+      await onCancelSession?.();
+    } catch (error) {
+      console.error('Error cancelling session:', error);
+      wasCancelledByUserRef.current = false; 
+      toast({
+        title: "Cancel Failed",
+        description: "Failed to cancel the session. It may have already completed.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -761,12 +1165,25 @@ export default function ChatInterface({
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
-  // Clean up interval on unmount
+  // Clean up intervals on unmount
   useEffect(() => {
     return () => {
       stopStreamingLogs();
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      void clearTypingSignal();
     };
-  }, []);
+  }, [clearTypingSignal]);
+
+  // Process queued messages when backend becomes available
+  const handleSendMessageRef = useRef<((msg?: string) => Promise<void>) | null>(null);
+  handleSendMessageRef.current = handleSendMessage;
+
+  useEffect(() => {
+    if (queuedMessageToProcess && !isTyping && !isLiveRequest) {
+      handleSendMessageRef.current?.(queuedMessageToProcess);
+      onQueuedMessageProcessed?.();
+    }
+  }, [queuedMessageToProcess, isTyping, isLiveRequest, onQueuedMessageProcessed]);
 
   // Memoized typing indicator
   const TypingIndicator = useMemo(
@@ -964,6 +1381,34 @@ export default function ChatInterface({
     }, [message, streamLogs, workPlans]);
 
     if (message.sender === "user") {
+      if (message.isCancelled) {
+        const isExpanded = cancelledExpanded[message.id];
+        return (
+          <div>
+            <div className="text-sm whitespace-pre-line text-gray-400">
+              <div className={!isExpanded ? "line-clamp-2" : ""}>
+                {message.content}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-3 pt-2 border-t border-gray-700" role="status" aria-live="polite">
+              <Ban className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+              <span className="text-xs text-gray-400 font-medium">Workflow was stopped by user.</span>
+              {message.content.length > 120 && (
+                <button
+                  onClick={() => toggleCancelledExpansion(message.id)}
+                  className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-100 ml-auto transition-colors"
+                >
+                  {isExpanded ? (
+                    <><ChevronUp className="h-3 w-3" /> Show less</>
+                  ) : (
+                    <><ChevronDown className="h-3 w-3" /> Show more</>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      }
       return (
         <div className="text-sm whitespace-pre-line">{message.content}</div>
       );
@@ -979,8 +1424,11 @@ export default function ChatInterface({
           {!isChatOnlyMode && (
             <StreamLogDisplay
               message={messageWithStreamingData}
+              sessionId={runId || ''}
               onToggleExpansion={toggleNodeExpansion}
               onToggleWorkPlanExpansion={toggleWorkPlanExpansion}
+              onApprovalDecision={handleApprovalDecision}
+              onAutoRule={handleAutoRule}
             />
           )}
 
@@ -989,7 +1437,6 @@ export default function ChatInterface({
             <div
               className="mt-3 p-3 rounded-lg"
               style={{
-                // backgroundColor: `hsl(var(--primary) / 0.1)`,
                 border: `1px solid hsl(var(--primary) / 0.3)`,
               }}
             >
@@ -1021,7 +1468,7 @@ export default function ChatInterface({
   };
 
   return (
-    <Card className="bg-background-card shadow-card border-gray-800 flex flex-col h-full max-h-[82.5vh]">
+    <Card className={`bg-background-card shadow-card border-gray-800 flex flex-col h-full ${collaborationMode ? "" : "max-h-[82.5vh]"}`}>
       <CardHeader className="py-4 px-6 flex flex-row justify-between items-center flex-shrink-0">
         <CardTitle className="text-lg font-heading">AI Assistant</CardTitle>
         <div className="flex space-x-1 items-center">
@@ -1059,105 +1506,115 @@ export default function ChatInterface({
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
-              {/* Carousel Mode Switch - 3 icons for Split/Chat/Graph views */}
               {onSetCarouselMode && !isChatOnlyMode && (
-                <div className="flex items-center bg-background-surface border border-gray-700 rounded-lg p-0.5">
-                  {/* Split View */}
-                  <button
-                    onClick={() => onSetCarouselMode('normal')}
-                    className={`p-1.5 rounded-md transition-all duration-200 ${
-                      carouselMode === 'normal'
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                    }`}
-                    title="Split View"
-                  >
-                    <Columns3 className="h-4 w-4" />
-                  </button>
-                  {/* Full Chat View */}
-                  <button
-                    onClick={() => onSetCarouselMode('chat')}
-                    className={`p-1.5 rounded-md transition-all duration-200 ${
-                      carouselMode === 'chat'
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                    }`}
-                    title="Full Chat View"
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                  </button>
-                  {/* Full Graph View */}
-                  <button
-                    onClick={() => onSetCarouselMode('graph')}
-                    className={`p-1.5 rounded-md transition-all duration-200 ${
-                      carouselMode === 'graph'
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                    }`}
-                    title="Full Graph View"
-                  >
-                    <Network className="h-4 w-4" />
-                  </button>
-                </div>
+                <ViewModeToggle
+                  mode={carouselMode ?? 'normal'}
+                  onModeChange={onSetCarouselMode}
+                />
               )}
             </>
           )}
         </div>
       </CardHeader>
       <CardContent className="flex-1 overflow-hidden p-0 flex flex-col min-h-0">
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
           <AnimatePresence>
-            {messages.map((message) => (
-              <motion.div
-                key={message.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-                className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`max-w-[90%] rounded-2xl p-3 ${
-                    message.sender === "user"
-                      ? "bg-primary text-white rounded-tr-none"
-                      : "bg-background-dark border border-gray-800 rounded-tl-none"
-                  }`}
+            {messages.map((message) => {
+              const member = collaborationMode && message.sender === "user" && message.senderName
+                ? resolveMember(message.senderName)
+                : null;
+              return (
+                <motion.div
+                  key={message.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  {/* AI-generated indicator inside message bubble */}
-                  {message.sender === "ai" && (
-                    <div 
-                      className="mb-2.5 pb-2 border-b border-gray-700/30"
-                      role="status"
-                      aria-label="AI-generated content"
-                    >
-                      <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border" style={{ borderColor: `hsl(var(--primary) / 0.3)` }}>
-                        <Sparkles 
-                          className="h-3.5 w-3.5" 
-                          style={{ color: `hsl(var(--primary) / 0.85)` }}
-                          aria-hidden="true" 
-                        />
-                        <span className="text-xs font-medium text-gray-300/90 tracking-wide">
-                          AI Generated
-                        </span>
+                  {/* User avatar + bubble in collab mode */}
+                  {collaborationMode && message.sender === "user" && member ? (
+                    <div className="flex items-end gap-2 max-w-[90%]">
+                      <div className="flex flex-col items-end flex-1 min-w-0">
+                        <span className="text-[10px] text-gray-400 mb-1 mr-1">{member.name}</span>
+                        <div className="bg-primary text-white rounded-2xl rounded-tr-none p-3 w-full">
+                          <MessageContent message={message} />
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0 mb-1">
+                        <CollabAvatar member={member} size="sm" />
                       </div>
                     </div>
+                  ) : (
+                    <div
+                      className={`max-w-[90%] rounded-2xl p-3 ${
+                        message.sender === "user"
+                          ? message.isCancelled
+                            ? "bg-gray-800/50 text-gray-100 rounded-tr-none border border-gray-700"
+                            : "bg-primary text-white rounded-tr-none"
+                          : "bg-background-dark border border-gray-800 rounded-tl-none"
+                      }`}
+                    >
+                      {message.sender === "ai" && (
+                        <div 
+                          className="mb-2.5 pb-2 border-b border-gray-700/30"
+                          role="status"
+                          aria-label="AI-generated content"
+                        >
+                          <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border" style={{ borderColor: `hsl(var(--primary) / 0.3)` }}>
+                            <Sparkles 
+                              className="h-3.5 w-3.5" 
+                              style={{ color: `hsl(var(--primary) / 0.85)` }}
+                              aria-hidden="true" 
+                            />
+                            <span className="text-xs font-medium text-gray-300/90 tracking-wide">
+                              AI Generated
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <MessageContent message={message} />
+                      {message.sender === "ai" && message.finalAnswer && (
+                        <MessageActions message={message} />
+                      )}
+                    </div>
                   )}
-                  <MessageContent message={message} />
-                  {/* Action buttons for AI messages */}
-                  {message.sender === "ai" && message.finalAnswer && (
-                    <MessageActions message={message} />
-                  )}
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
             {/* Show loading indicator when:
                 1. isTyping - user just sent a message
                 2. isLiveRequest && currentStreamingMessageId && !isTyping - reconnection to active stream */}
             {(isTyping || (isLiveRequest && currentStreamingMessageId && !isTyping)) && 
               (isChatOnlyMode ? ChatOnlyLoader : TypingIndicator)}
           </AnimatePresence>
+          {collaborationMode && typingUsers.length > 0 && (
+            <div className="flex items-center gap-2 px-1 py-1">
+              <div className="flex -space-x-1">
+                {typingUsers.slice(0, 3).map((u) => {
+                  const m = resolveMember(u);
+                  return <CollabAvatar key={m.id} member={m} size="xs" />;
+                })}
+              </div>
+              <span className="text-xs text-gray-400 italic">
+                {typingUsers.length === 1
+                  ? `${typingUsers[0]} is typing...`
+                  : `${typingUsers.slice(0, 2).join(", ")}${typingUsers.length > 2 ? ` +${typingUsers.length - 2}` : ""} are typing...`}
+              </span>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </div>
         <div className="p-4 border-t border-gray-800 flex-shrink-0">
+          {/* HITL approval badge */}
+          {pendingApprovalCount > 0 && (
+            <div className="mb-3 flex justify-center">
+              <ApprovalBadge
+                pendingCount={pendingApprovalCount}
+                onClick={scrollToFirstPendingApproval}
+              />
+            </div>
+          )}
+
           {/* Status banners - priority order: deleted > sharing disabled > invalid > validating */}
           {!blueprintExists && (
             <WorkflowStatusBanner {...WorkflowBannerMessages.deleted} />
@@ -1171,63 +1628,161 @@ export default function ChatInterface({
           {blueprintExists && !isSharingDisabled && isValidatingBlueprint && (
             <WorkflowStatusBanner {...WorkflowBannerMessages.validating} />
           )}
+
+          {/* Prompt shortcut chips */}
+          {showPromptChips && defaultPrompts && defaultPrompts.length > 0 && (
+            <div className="mb-3 max-w-[90%]">
+              <div className="flex flex-wrap gap-3">
+                {defaultPrompts.map((prompt) => (
+                  <div key={prompt.id} className="relative flex-1 min-w-[10rem] max-w-[calc(33%-0.5rem)]">
+                    <div
+                      className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium border transition-colors w-full overflow-hidden ${
+                        previewChipId === prompt.id
+                          ? "bg-primary/20 border-primary/50 text-primary"
+                          : "bg-background-surface border-gray-700 text-gray-300 hover:border-primary/50 hover:text-primary"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 min-w-0"
+                        onClick={() => {
+                          setInputMessage(prompt.text);
+                          setPreviewChipId(null);
+                          textareaRef.current?.focus();
+                        }}
+                      >
+                        <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="truncate">{getDisplayTitle(prompt)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="ml-1 p-0.5 rounded hover:bg-gray-700/50"
+                        onClick={() => setPreviewChipId(previewChipId === prompt.id ? null : prompt.id)}
+                        aria-label={previewChipId === prompt.id ? "Collapse prompt preview" : "Expand prompt preview"}
+                      >
+                        <Maximize2 className={`h-3.5 w-3.5 transition-transform ${previewChipId === prompt.id ? "rotate-180" : ""}`} />
+                      </button>
+                    </div>
+                    <AnimatePresence>
+                      {previewChipId === prompt.id && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 4 }}
+                          transition={{ duration: 0.15, ease: "easeOut" }}
+                          className="absolute bottom-full left-0 mb-2 z-10 w-full"
+                        >
+                          <div className="rounded-md bg-gray-900 border border-primary/50 p-3 flex flex-col shadow-lg">
+                            <div className="max-h-[200px] overflow-y-auto mb-2">
+                              <pre className="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">
+                                {prompt.text}
+                              </pre>
+                            </div>
+                            <div className="flex justify-between items-center pt-2 border-t border-gray-700">
+                              <button
+                                type="button"
+                                className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+                                onClick={() => setPreviewChipId(null)}
+                              >
+                                Close
+                              </button>
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setInputMessage(prompt.text);
+                                  setPreviewChipId(null);
+                                  textareaRef.current?.focus();
+                                }}
+                                className="bg-primary hover:bg-primary/80"
+                              >
+                                Use this prompt
+                              </Button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           
           {/* Input area */}
-          <div className="flex space-x-2 items-end">
-            {/* Textarea container with expand/collapse icon */}
-            <div className="relative flex-1">
-              <Textarea
-                ref={textareaRef}
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={getInputPlaceholder()}
-                className={`bg-background-dark resize-none transition-[height] duration-200 ease-out w-full ${
-                  (!blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint) 
-                    ? 'opacity-50 cursor-not-allowed' 
-                    : ''
-                } ${(isAtMaxHeight || isExpanded) ? 'pr-10' : ''}`}
-                style={{ height: `${TEXTAREA_MIN_HEIGHT}px` }}
-                rows={1}
-                disabled={!blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint}
-              />
-              {/* Expand/Collapse icon - shows when textarea is at max height or expanded */}
-              <AnimatePresence>
-                {(isAtMaxHeight || isExpanded) && (
-                  <motion.button
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    transition={{ duration: 0.15 }}
-                    onClick={toggleExpandedHeight}
-                    className={`absolute top-2 right-2 p-1.5 rounded-md transition-colors border ${
-                      isExpanded 
-                        ? 'bg-primary/20 text-primary border-primary/50 hover:bg-primary/30' 
-                        : 'bg-background-surface/90 hover:bg-primary/20 text-gray-400 hover:text-primary border-gray-700 hover:border-primary/50'
-                    }`}
-                    title={isExpanded ? "Collapse input area" : "Expand input area"}
-                    type="button"
+          <div className="relative">
+            <Textarea
+              ref={textareaRef}
+              value={inputMessage}
+              onChange={(e) => {
+                setInputMessage(e.target.value);
+                if (collaborationMode && e.target.value.trim()) sendTypingSignal();
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder={getInputPlaceholder()}
+              className={`bg-background-dark resize-none transition-[height] duration-200 ease-out w-full pr-12 ${
+                isInputDisabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{ height: `${TEXTAREA_MIN_HEIGHT}px` }}
+              rows={1}
+              disabled={isInputDisabled}
+            />
+            {/* Expand/Collapse icon - shows when textarea is at max height or expanded */}
+            <AnimatePresence>
+              {(isAtMaxHeight || isExpanded) && (
+                <motion.button
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.15 }}
+                  onClick={toggleExpandedHeight}
+                  className={`absolute top-2 right-2 p-1.5 rounded-md transition-colors border ${
+                    isExpanded 
+                      ? 'bg-primary/20 text-primary border-primary/50 hover:bg-primary/30' 
+                      : 'bg-background-surface/90 hover:bg-primary/20 text-gray-400 hover:text-primary border-gray-700 hover:border-primary/50'
+                  }`}
+                  title={isExpanded ? "Collapse input area" : "Expand input area"}
+                  type="button"
+                >
+                  {isExpanded ? (
+                    <Minimize2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  )}
+                </motion.button>
+              )}
+            </AnimatePresence>
+            {/* Send/Cancel button inside textarea */}
+            <div className="absolute bottom-2 right-2">
+              {(isTyping || isLiveRequest) ? (
+                <button
+                  onClick={handleCancelClick}
+                  disabled={isCancelling || !onCancelSession || isSubmitting}
+                  className="relative h-7 w-7 flex items-center justify-center rounded-md text-white disabled:opacity-50 disabled:cursor-not-allowed animate-pulse"
+                  style={{ backgroundColor: 'hsl(var(--primary))' }}
+                  title="Stop generation"
+                  aria-label="Stop generation"
+                >
+                  {(isCancelling || isSubmitting) ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span className="h-3 w-3 bg-white" />
+                  )}
+                </button>
+              ) : (
+                <UmamiTrack 
+                  event={UmamiEvents.AGENT_CHAT_SEND_MESSAGE_BUTTON}
+                >
+                  <Button
+                    onClick={() => handleSendMessage()}
+                    disabled={inputMessage.trim() === "" || isInputDisabled}
+                    size="icon"
+                    className="bg-primary hover:bg-primary/80 h-7 w-7"
                   >
-                    {isExpanded ? (
-                      <Minimize2 className="h-3.5 w-3.5" />
-                    ) : (
-                      <Maximize2 className="h-3.5 w-3.5" />
-                    )}
-                  </motion.button>
-                )}
-              </AnimatePresence>
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </UmamiTrack>
+              )}
             </div>
-            <UmamiTrack 
-              event={UmamiEvents.AGENT_CHAT_SEND_MESSAGE_BUTTON}
-            >
-              <Button
-                onClick={() => handleSendMessage()}
-                disabled={inputMessage.trim() === "" || isTyping || !blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint}
-                className="bg-primary hover:bg-[#7525c9] mb-0"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            </UmamiTrack>
           </div>
           <div className="flex items-start gap-2 mt-2 px-1">
             <Info className="h-3.5 w-3.5 text-gray-400 mt-0.5 flex-shrink-0" />

@@ -22,11 +22,23 @@ def create_app(config: AppConfig = None) -> Flask:
     """
     config = config or AppConfig.get_instance()
     app = Flask(__name__)
+
+    # Application config
     app.version = config.get("version", "1.0.0")
+    if not config.secret_key:
+        raise RuntimeError("secret_key is not configured. Set the SECRET_KEY environment variable.")
+    app.secret_key = config.secret_key
+    app.config.update({
+        'SESSION_COOKIE_SECURE': config.session_cookie_secure,
+        'SESSION_COOKIE_HTTPONLY': config.session_cookie_http_only,
+        'SESSION_COOKIE_SAMESITE': config.session_cookie_samesite,
+    })
+    # CORS
     CORS(app, resources={r"/api/*": {
-        "origins": "*",
+        "origins": os.environ.get("FRONTEND_URL", "http://localhost:5000"),
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "X-Username", "X-User-Id"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True,
     }})
 
     container = AppContainer(config)

@@ -24,7 +24,7 @@ spec:
           emptyDir: {}
       containers:
         - name:  {{ include "redis-insight.fullname" . }} 
-          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}"  #:{{ .Values.image.tag }}" - need to think over the latest tag
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}" #- need to think over the latest tag
           imagePullPolicy: {{ .Values.image.pullPolicy }} 
           volumeMounts:
           - name: redis-insight
@@ -35,6 +35,15 @@ spec:
           {{- range $key, $value := .Values.env }}
           - name: "{{ $key }}"
             value: "{{ $value }}"
+          {{- end }}
+          envFrom:
+          {{- if .Values.redisConfigMapName }}
+            - configMapRef:
+                name: {{ .Values.redisConfigMapName | quote }}
+          {{- end }}
+          {{- if .Values.RedisSecretName }}
+            - secretRef:
+                name: {{ .Values.RedisSecretName }}
           {{- end }}
           ports:
           - containerPort: {{ .Values.service.port }} 

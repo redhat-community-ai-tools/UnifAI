@@ -59,6 +59,9 @@ followed by optional pytest arguments.
 | `multi-agent-e2e`        | Multi-Agent e2e tests only           |
 | `multi-agent-unit`       | Multi-Agent unit tests only          |
 | `multi-agent-integration`| Multi-Agent integration tests only   |
+| `identity`               | All Identity tests                   |
+| `identity-unit`          | Identity unit tests only             |
+| `identity-smoke`         | Identity snmoke tests only           |
 
 ### Examples
 

@@ -1,0 +1,75 @@
+[pr_agent]
+response_language = "en-US"
+
+[github_app]
+pr_commands = ["/agentic_describe", "/agentic_review", "/improve"]
+push_commands = ["/agentic_review", "/improve"]
+handle_push_trigger = true
+
+[config]
+enable_auto_approval = true
+auto_approve_for_no_suggestions = true
+
+[auto_best_practices]
+enable_auto_best_practices = true
+utilize_auto_best_practices = true
+
+[review_agent]
+#demand_self_review = true
+#approve_pr_on_self_review = true
+comments_location_policy = "inline"
+inline_comments_severity_threshold = 1
+issues_user_guidelines = """
+SCOPE: Qodo focuses on testing and security guardrails only.
+Architecture review is handled by CodeRabbit — do not duplicate architectural feedback.
+
+TESTING STANDARDS:
+- All new public functions must have corresponding tests.
+- Tests must be independent and reproducible — no shared mutable state, no execution order dependency.
+- Mock at port/interface boundaries, not inside domain logic.
+- Use pytest fixtures and conftest.py for shared setup — no manual setup/teardown.
+- Use @pytest.mark.parametrize for multiple input/output combinations.
+- Assertions must validate behavior and expected outcomes, not implementation details.
+- No assert True, no overly generic checks.
+- Edge cases must be covered: empty input, None, boundary values, error paths.
+- No hardcoded timeouts or arbitrary sleep calls in tests.
+
+SECURITY:
+- Flag hardcoded secrets, API keys, passwords, or tokens in any source file.
+- Flag user-controlled input passed to SQL, shell commands, file paths, or eval without sanitization.
+- Flag missing authorization checks on API entry points.
+- Flag sensitive data (passwords, tokens, PII) logged or included in error responses.
+- Flag insecure deserialization or unsafe use of reflection.
+- Flag overly permissive CORS, missing CSRF protection, or wildcard origins.
+
+ERROR HANDLING:
+- All new error-handling paths must contain appropriate logging statements.
+- Catch blocks that swallow exceptions without logging or rethrowing are violations.
+- No bare except — use specific exceptions only.
+- Generic catch-all (except Exception) where specific handling is possible should be flagged.
+- Flag print() statements in production code — prefer the logging framework.
+"""
+compliance_user_guidelines = """
+HARD RULES (must fail review if violated):
+- No hardcoded secrets, API keys, or credentials in source code.
+- No bare except blocks in production code.
+- No TODO, FIXME, or HACK placeholders in production code.
+- No commented-out legacy code blocks.
+- All functions must have type hints.
+- All test files must follow the naming convention test_*.py.
+"""
+
+[review_agent_ux]
+finding_overflow_count = 5
+expand_description = true
+expand_code = true
+
+[pr_description]
+publish_description_as_comment = false
+publish_labels = true
+add_original_user_description = true
+generate_ai_title = false
+enable_pr_type = true
+enable_pr_diagram = true
+enable_semantic_files_types = true
+use_bullet_points = true

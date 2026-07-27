@@ -38,11 +38,22 @@ def build_context(source_type: str, source_data: dict) -> PipelineContext:
     # Extract (same as backend lines 25-26)
     pipeline_id = source_data.get("pipeline_id")
     metadata_dict = source_data.get("metadata")
-    
+        
     # Validate (same as backend lines 27-28)
     if not pipeline_id or not metadata_dict:
-        raise ValueError("Pipeline ID or metadata not found in source_data")
+        raise ValueError(
+            f"Pipeline ID or metadata not found in source_data "
+            f"(source_type={source_type!r}, pipeline_id={pipeline_id!r})"
+        )
     
+    # Extract owner_id from upload_by field
+    owner_id = source_data.get("upload_by") or metadata_dict.get("upload_by", "")
+    if not owner_id:
+        raise ValueError(
+            f"owner_id (upload_by) is required for pipeline execution "
+            f"(source_type={source_type!r}, pipeline_id={pipeline_id!r})"
+        )
+
     # Clean metadata copy (same as backend lines 30-33)
     metadata = metadata_dict.copy()
     metadata.pop("pipeline_id", None)
@@ -68,6 +79,7 @@ def build_context(source_type: str, source_data: dict) -> PipelineContext:
         source_type=source_type.upper(),
         source_id=source_id,
         source_name=source_name,
+        owner_id=owner_id,
         metadata=metadata,
     )
 

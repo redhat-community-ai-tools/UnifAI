@@ -4,7 +4,7 @@
 
 # Test suite to execute (passed as arg to run_tests.sh).
 # Options: all, rag, rag-unit, rag-e2e, multi-agent, multi-agent-unit,
-#          multi-agent-e2e, multi-agent-integration, debug
+#          multi-agent-e2e, multi-agent-integration, identity, identity-smoke, identity-unit, debug
 testSuite: "rag"
 
 # Extra pytest CLI arguments appended after the suite name

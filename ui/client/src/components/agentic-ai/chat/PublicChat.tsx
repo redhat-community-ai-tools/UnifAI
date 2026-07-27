@@ -9,7 +9,6 @@ import { useRoute } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import ChatInterface from "@/components/agentic-ai/chat/ChatInterface";
-import { SessionPayload } from "@/components/agentic-ai/ExecutionTab";
 import { StreamingDataProvider } from "@/components/agentic-ai/StreamingDataContext";
 import { Loader2, MessageSquare, Clock, Plus, Trash2, LogOut } from "lucide-react";
 import WorkflowStatusBanner, { WorkflowBannerMessages } from "@/components/shared/WorkflowStatusBanner";
@@ -29,7 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { usePublicChat } from "@/hooks/use-public-chat";
-import { getBlueprintInfo } from "@/api/blueprints";
+import { getBlueprintInfo, type PromptShortcut } from "@/api/blueprints";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { UmamiTrack } from "@/components/ui/umamitrack";
 import { UmamiEvents } from "@/config/umamiEvents";
@@ -50,6 +49,7 @@ export default function PublicChat() {
   const [isBlueprintValid, setIsBlueprintValid] = useState<boolean>(true);
   const [isValidatingBlueprint, setIsValidatingBlueprint] = useState<boolean>(false);
   const [isChatSelectionMode, setIsChatSelectionMode] = useState(false);
+  const [defaultPrompts, setDefaultPrompts] = useState<PromptShortcut[]>([]);
 
   // Use the cached blueprint validation from context
   const { validateBlueprintWithCache } = useAgenticAI();
@@ -63,6 +63,7 @@ export default function PublicChat() {
     isDeleting,
     chatHistory,
     runId,
+    isLiveRequest,
     handleNewChat,
     handleSessionSelect,
     handleDeleteChat,
@@ -70,6 +71,8 @@ export default function PublicChat() {
     cancelDeleteChat,
     applySessionsRemoved,
     triggerExecution,
+    handleCancelSession,
+    isSubmitting,
     showDeleteModal,
     setShowDeleteModal,
     chatToDelete,
@@ -175,6 +178,9 @@ export default function PublicChat() {
         setBlueprintId(token);
         setBlueprintName(blueprintInfo.spec_dict?.name || "Unnamed Workflow");
         setBlueprintOwner(blueprintInfo.user_id || "");
+
+        const shortcuts = blueprintInfo.spec_dict?.prompt_shortcuts;
+        setDefaultPrompts(Array.isArray(shortcuts) ? shortcuts : []);
         
         // Check sharing status from the same blueprintInfo response (no extra API call)
         const isPublic = blueprintInfo.metadata?.usageScope === "public";
@@ -459,15 +465,22 @@ export default function PublicChat() {
           ) : (
             <StreamingDataProvider>
               <ChatInterface
+                key={runId}
                 runId={runId}
                 triggerExecution={triggerExecution}
+                onCancelSession={handleCancelSession}
                 initialMessages={chatHistory}
+                sessionStatus={selectedSession?.status}
+                statusMessage={selectedSession?.statusMessage}
                 blueprintExists={true}
                 isSharingDisabled={isSharingDisabled}
                 blueprintValid={isBlueprintValid}
                 isValidatingBlueprint={isValidatingBlueprint}
                 isBlueprintGraphHidden={true}
                 isChatOnlyMode={true}
+                isLiveRequest={isLiveRequest}
+                isSubmitting={isSubmitting}
+                defaultPrompts={defaultPrompts.length > 0 ? defaultPrompts : undefined}
               />
             </StreamingDataProvider>
           )}

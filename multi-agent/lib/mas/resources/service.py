@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pydantic import BaseModel
 
+from mas.core.identity import Identity
 from mas.resources.registry import ResourcesRegistry
 from mas.catalog.element_registry import ElementRegistry
 from mas.resources.models import Resource, ResourceQuery
@@ -16,7 +17,6 @@ from mas.catalog.card_service import ElementCardService
 from mas.resources.resolver import DependencyResolver
 from mas.validation.service import ElementValidationService
 
-
 class ResourcesService:
     """
     Public facade. Performs schema validation via ElementRegistry
@@ -29,26 +29,33 @@ class ResourcesService:
             element_registry: ElementRegistry,
             validation_service: ElementValidationService = None,
             card_service: ElementCardService = None,
+            auth_service=None,
+            encryption_key: str = "",
     ):
         self._store = resource_registry
         self.element_registry = element_registry
         self._card_service = card_service
         self._dependency_resolver = DependencyResolver(resource_registry=self._store)
         self._validation_service = validation_service
+        self._auth_service = auth_service
+
+        from global_utils.utils.crypto import FieldCipher
+        self._cipher = FieldCipher(encryption_key) if encryption_key else None
 
     # ---------- CRUD ----------
-    def create(self, *, user_id, category, type, name, config) -> Resource:
+    def create(self, *, identity: Identity, category, type, name, config) -> Resource:
         model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
         cfg_model = model_cls(**config)
 
         nested_refs = list(RefWalker.external_rids(cfg_model))
+        cfg_dict = self._encrypt_fields(cfg_model.model_dump(mode="json"), model_cls)
 
         doc = Resource(
-            user_id=user_id,
+            identity=identity,
             category=category,
             type=type,
             name=name,
-            cfg_dict=cfg_model.model_dump(mode="json"),
+            cfg_dict=cfg_dict,
             nested_refs=nested_refs,
         )
         return self._store.create(doc)
@@ -64,40 +71,52 @@ class ResourcesService:
 
     def update(self, rid: str, *, config: dict, name: str = None) -> Resource:
         doc = self._store.get(rid)
+        old_server_id = doc.cfg_dict.get("server_identifier", "")
+
         model_cls = self.element_registry.get_schema(
             ResourceCategory(doc.category), doc.type)
         cfg_model = model_cls(**config)
 
         nested_refs = list(RefWalker.external_rids(cfg_model))
 
-        doc.cfg_dict = cfg_model.model_dump(mode="json")
+        doc.cfg_dict = self._encrypt_fields(cfg_model.model_dump(mode="json"), model_cls)
         doc.nested_refs = nested_refs
 
         if name is not None:
             doc.name = name
 
-        return self._store.update(doc)
+        result = self._store.update(doc)
+
+        new_server_id = doc.cfg_dict.get("server_identifier", "")
+        if old_server_id and old_server_id != new_server_id:
+            self._cleanup_orphaned_credential(doc.identity, old_server_id)
+
+        return result
 
     def delete(self, rid: str) -> None:
+        doc = self._store.get(rid)
         self._store.delete(rid)
+        server_id = doc.cfg_dict.get("server_identifier", "")
+        if server_id:
+            self._cleanup_orphaned_credential(doc.identity, server_id)
 
     # ---------- READ ----------
     def get(self, rid: str) -> Resource:
         """Get a single resource by ID."""
         return self._store.get(rid)
 
-    def find_resources(self, user_id: str, category: Optional[str] = None,
+    def find_resources(self, identity: Identity, category: Optional[str] = None,
                        type: Optional[str] = None, limit: int = 50,
                        offset: int = 0) -> Tuple[List[Resource], int]:
         """Find resources with optional filtering and pagination."""
         category_enum = ResourceCategory(category) if category else None
 
         query = ResourceQuery(
-            user_id=user_id,
+            identity=identity,
             category=category_enum,
             type=type,
             limit=limit,
-            offset=offset
+            offset=offset,
         )
         return self._store.find_resources(query)
 
@@ -117,27 +136,28 @@ class ResourcesService:
         return Resource.model_json_schema()
 
     # ---------- Statistics ----------
-    def count(self, user_id: str, filter: Dict[str, Any] = None) -> int:
-        """Count resources matching filter criteria for a user."""
-        return self._store.count(user_id, filter)
+    def count(self, identity: Identity, filter: Dict[str, Any] = None) -> int:
+        return self._store.count(identity, filter)
 
     def group_count(
         self,
-        user_id: str,
+        identity: Identity,
         group_by: List[str],
-        filter: Dict[str, Any] = None
+        filter: Dict[str, Any] = None,
     ) -> List[GroupedCount]:
         """
         Group resources by specified fields and return counts.
         Performs efficient server-side grouping via the registry.
         """
-        return self._store.group_count(user_id, group_by, filter)
+        return self._store.group_count(identity, group_by, filter)
 
     # ---------- Validation ----------
     def validate_resource(
         self,
         rid: str,
+        user_id: str = "",
         timeout_seconds: float = 10.0,
+        credential_user_id: str = "",
     ) -> ElementValidationResult:
         """
         Validate a saved resource and all its transitive dependencies.
@@ -150,13 +170,18 @@ class ResourcesService:
 
         ordered_configs = self._build_configs_from_rids(ordered_rids)
 
-        return self._validate_and_get(ordered_configs, rid, timeout_seconds)
+        return self._validate_and_get(
+            ordered_configs, rid, timeout_seconds,
+            user_id=user_id, credential_user_id=credential_user_id,
+        )
 
     def validate_resources(
         self,
         rids: List[str],
+        user_id: str = "",
         timeout_seconds: float = 10.0,
         max_workers: int = 10,
+        credential_user_id: str = "",
     ) -> List[ElementValidationResult]:
         """
         Validate multiple resources in parallel.
@@ -170,15 +195,23 @@ class ResourcesService:
             return []
 
         if len(rids) == 1:
-            return [self._validate_resource_safe(rids[0], timeout_seconds)]
+            return [
+                self._validate_resource_safe(
+                    rids[0], user_id, timeout_seconds, credential_user_id,
+                ),
+            ]
 
-        return self._validate_in_parallel(rids, timeout_seconds, max_workers)
+        return self._validate_in_parallel(
+            rids, user_id, timeout_seconds, max_workers, credential_user_id,
+        )
 
     def _validate_in_parallel(
         self,
         rids: List[str],
+        user_id: str,
         timeout_seconds: float,
         max_workers: int,
+        credential_user_id: str = "",
     ) -> List[ElementValidationResult]:
         """Execute validations concurrently with order preservation."""
         results: List[Optional[ElementValidationResult]] = [None] * len(rids)
@@ -186,7 +219,8 @@ class ResourcesService:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_index = {
                 executor.submit(
-                    self._validate_resource_safe, rid, timeout_seconds
+                    self._validate_resource_safe,
+                    rid, user_id, timeout_seconds, credential_user_id,
                 ): idx
                 for idx, rid in enumerate(rids)
             }
@@ -200,11 +234,18 @@ class ResourcesService:
     def _validate_resource_safe(
         self,
         rid: str,
+        user_id: str,
         timeout_seconds: float,
+        credential_user_id: str = "",
     ) -> ElementValidationResult:
         """Validate a single resource with exception handling."""
         try:
-            return self.validate_resource(rid=rid, timeout_seconds=timeout_seconds)
+            return self.validate_resource(
+                rid=rid,
+                user_id=user_id,
+                timeout_seconds=timeout_seconds,
+                credential_user_id=credential_user_id,
+            )
         except KeyError:
             return ElementValidationResult.create_error(
                 rid=rid,
@@ -285,7 +326,26 @@ class ResourcesService:
             raise KeyError(f"Resource not found: {rid}")
         return cards[rid]
 
+    def _cleanup_orphaned_credential(self, identity: Identity, server_id: str) -> None:
+        """Delete the stored credential if no other resource uses the same server_identifier."""
+        if not self._auth_service:
+            return
+        remaining = self._store.count_by_config_field(
+            identity, "server_identifier", server_id,
+        )
+        if remaining == 0:
+            self._auth_service.delete_credential(identity.id, server_id)
+
     # ---------- Helpers ----------
+    def _encrypt_fields(self, cfg_dict: dict, model_cls: type) -> dict:
+        """Encrypt fields declared in the config's ENCRYPTED_FIELDS before storage."""
+        if not self._cipher:
+            return cfg_dict
+        for field in getattr(model_cls, "ENCRYPTED_FIELDS", ()):
+            if cfg_dict.get(field):
+                cfg_dict[field] = self._cipher.encrypt(cfg_dict[field])
+        return cfg_dict
+
     def _ensure_validation_service(self) -> None:
         """Raise if validation service not configured."""
         if not self._validation_service:
@@ -321,8 +381,15 @@ class ResourcesService:
         ordered_configs: List[ElementConfigMeta],
         target_rid: str,
         timeout_seconds: float,
+        user_id: str = "",
+        credential_user_id: str = "",
     ) -> ElementValidationResult:
         """Validate configs in order and return result for target rid."""
-        context = ValidationContext(timeout_seconds=timeout_seconds)
+        context = ValidationContext(
+            timeout_seconds=timeout_seconds,
+            user_id=user_id,
+            credential_user_id=credential_user_id,
+            auth_service=self._auth_service,
+        )
         results = self._validation_service.validate_ordered(ordered_configs, context)
         return results[target_rid]
