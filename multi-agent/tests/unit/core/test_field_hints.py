@@ -5,7 +5,7 @@ scoped by ownership context (``builtin`` / ``custom``).
 import pytest
 from pydantic import ValidationError
 
-from mas.core.field_hints import CardHint, SecretHint, ConditionalHint, combine_hints
+from mas.core.field_hints import CardContext, CardHint, SecretHint, ConditionalHint, combine_hints
 
 
 class TestCardHint:
@@ -30,11 +30,11 @@ class TestCardHint:
     def test_empty_text_omitted_by_default(self):
         """`empty_text` is optional and excluded from the serialized hint
         when unset, so existing fields without it keep their exact shape."""
-        hint = CardHint(contexts=["custom"])
+        hint = CardHint(contexts=[CardContext.CUSTOM])
         assert hint.to_hints() == {"hints": {"card": {"contexts": ["custom"]}}}
 
     def test_empty_text_included_when_set(self):
-        hint = CardHint(contexts=["builtin", "custom"], empty_text="All tools")
+        hint = CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM], empty_text="All tools")
         assert hint.to_hints() == {
             "hints": {"card": {"contexts": ["builtin", "custom"], "empty_text": "All tools"}}
         }

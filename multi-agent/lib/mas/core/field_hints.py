@@ -362,7 +362,81 @@ class PropagateHint(BaseModel):
         }
 
 
-def combine_hints(*hints: ActionHint | ApiHint | HiddenHint | SecretHint | AuthHint | ConditionalHint | PropagateHint | FileUploadHint) -> dict[str, Any]:
+class ReadOnlyHint(BaseModel):
+    """
+    Hint marking a field's configurability for built-in resources.
+
+    Baked into the pydantic config schema on each field:
+    - ``read_only=True``  → field is locked for end-users on built-in elements.
+    - ``read_only=False`` → field is user-configurable (per-user overlay).
+
+    Fields without this hint default to read-only when served via
+    ``get_builtin_schema()``.  For non-built-in resources the hint is
+    ignored and all fields remain editable.
+    """
+    read_only: bool = Field(
+        default=True,
+        description="When True, the field cannot be edited by users on built-in resources"
+    )
+
+    def to_hints(self) -> dict[str, Any]:
+        return {
+            "hints": {
+                "read_only": self.model_dump()
+            }
+        }
+
+
+class CardHint(BaseModel):
+    """
+    Hint marking a field as displayable on an element's inventory card.
+
+    Opt-in only: fields without this hint never appear on a card, regardless
+    of element type. ``contexts`` scopes display to built-in and/or custom
+    (user-created) elements independently, so the same field can be surfaced
+    differently depending on ownership — e.g. an MCP server's ``mcp_url`` is
+    useful to show on a custom (user-configured) card but redundant on a
+    built-in one.
+
+    A field marked ``SecretHint`` is never rendered on a card even if it also
+    carries this hint — that exclusion is enforced by card-rendering
+    consumers, not by this hint itself.
+
+    ``empty_text`` covers fields whose "unset" state still has a meaningful
+    display value — e.g. an MCP provider's ``tool_names`` being empty means
+    "all tools from the server", not "nothing to show". Without it, empty
+    values are simply omitted from the card (the default, existing
+    behavior).
+
+    Example::
+
+        json_schema_extra=combine_hints(
+            CardHint(contexts=[CardContext.CUSTOM]),
+        )
+
+        json_schema_extra=combine_hints(
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM], empty_text="All tools"),
+        )
+    """
+    contexts: list[CardContext] = Field(
+        ...,
+        description="Which card ownership context(s) this field should be shown on.",
+    )
+    empty_text: str | None = Field(
+        default=None,
+        description="Fallback text shown on the card when the field's value is empty/unset, "
+                    "instead of omitting the field entirely (e.g. 'All tools', 'All documents').",
+    )
+
+    def to_hints(self) -> dict[str, Any]:
+        return {
+            "hints": {
+                "card": self.model_dump(exclude_none=True)
+            }
+        }
+
+
+def combine_hints(*hints: ActionHint | ApiHint | HiddenHint | SecretHint | AuthHint | ConditionalHint | PropagateHint | FileUploadHint | ReadOnlyHint | CardHint) -> dict[str, Any]:
     """
     Combine multiple hints into a single json_schema_extra structure.
     
