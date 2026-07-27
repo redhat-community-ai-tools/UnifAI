@@ -40,6 +40,8 @@ Orchestration engine: blueprint YAML → executable agent graph → runtime engi
 | `lib/mas/elements/`, `catalog/`, `validation/` | Elements |
 | `lib/mas/engine/`, `graph/` | Engine/Graph |
 | `lib/mas/core/` | Core |
+| `lib/mas/resources/`, `lib/mas/blueprints/` | Resources & Blueprints |
+| `lib/mas/collaboration/`, `lib/mas/sharing/` | Resources & Blueprints (edit locks, cloning) |
 | `adapters/` | Adapters |
 | `bootstrap/`, `config/` | Bootstrap |
 
@@ -53,6 +55,7 @@ For detailed component architecture and cross-component contracts:
 | Elements | `references/elements.md` — plugin system, nodes, tools, LLMs, auto-discovery |
 | Engine/Graph | `references/engine-graph.md` — GraphState channels, plan layers, compilation, executors |
 | Core | `references/core.md` — identity, ExecutionContext, ElementDeps, channels, enums |
+| Resources & Blueprints | `references/resources.md` — registry/service split, built-in resource lifecycle, per-identity overlays, cascade promote/demote, admin edit locks |
 | Adapters | `references/adapters.md` — inbound/outbound structure, conventions |
 | Bootstrap | `references/bootstrap.md` — composition root, config, wiring |
 
@@ -64,6 +67,7 @@ For detailed component architecture and cross-component contracts:
 | Nodes, tools, LLMs, providers, retrievers | `references/elements.md` |
 | Graph state channels, compilation, execution | `references/engine-graph.md` |
 | Identity, auth, streaming, enums, ElementDeps | `references/core.md` |
+| Resources, blueprints, built-in admin lifecycle, per-identity overlays | `references/resources.md` |
 | Flask endpoints, Mongo repos, new integrations | `references/adapters.md` |
 | Wiring, config, startup | `references/bootstrap.md` |
 | Crossing component boundaries | Both relevant `references/` files |
@@ -99,13 +103,17 @@ Never raw `user_id` or `team_id` strings.
 
 ```python
 class Identity(BaseModel):
-    type: IdentityType   # USER | TEAM
+    type: IdentityType   # USER | TEAM | SYSTEM
     id: str
     display_name: str = ""
 ```
 
 Identity flows: Flask decorator resolves Identity → service method(identity=...) → repository scopes by identity.
 All repositories that filter by owner accept `Identity`. `ExecutionContext` carries identity through execution runtime.
+
+`IdentityType` also has a `SYSTEM` value (`Identity.system()`), used as the owner of
+seeded built-in resources (`resources/builtin_templates.py`) so every document in the
+`resources` collection has a consistent, non-null owner — see `references/resources.md`.
 
 ### 3. Two-Phase Session Execution
 
@@ -140,6 +148,11 @@ Required `ClassVar` fields on every spec: `category`, `type_key`, `name`, `descr
 ### 6. Service as Public API
 
 Each domain component exposes one service class. All access from outside the component goes through that service — never through repositories or internal modules directly.
+
+A service can still be split into internal collaborators for SRP as it grows — e.g.
+`ResourcesService` composes `BuiltinResourceService` and `ResourceFieldEncryption` — as
+long as the outward-facing facade class is the only one external callers import. See
+"Established Patterns" in `references/resources.md`.
 
 ### 7. Composition Root Wiring
 
@@ -183,6 +196,7 @@ Immutable — mutations produce new copies via `with_scope()`, `mark_active()`, 
 | Sessions | 15 | `/sessions/` | create, submit, execute, cancel, subscribe, state |
 | Blueprints | 11 | `/blueprints/` | save, update, get, validate, schema |
 | Resources | 11 | `/resources/` | CRUD, validate, cards, schema |
+| Built-ins | 14 | `/resources/` (`builtins_bp`) | admin CRUD, promote/demote/toggle + cascade, schema, per-identity overlays, duplicate, admin edit locks |
 | Catalog | 3 | `/catalog/` | categories, elements, specs |
 | Templates | 11 | `/templates/` | CRUD, instantiate, materialize |
 | Shares | 7 | `/shares/` | create, accept, decline, to_team |
@@ -208,6 +222,8 @@ Immutable — mutations produce new copies via `with_scope()`, `mark_active()`, 
 | `IdentityProvider` | `IdentityPodProvider` / `DevProvider` | HTTP / in-proc |
 | `AuthStrategy` | `OAuth2Strategy` / `ApiKeyStrategy` | httpx / in-proc |
 | `BaseGraphBuilder` | `TemporalBuilder` / `LangGraphBuilder` | Temporal / LangGraph |
+| `BuiltinUserConfigRepository` | `MongoBuiltinUserConfigRepository` | MongoDB |
+| `AdminConfigReaderPort` | `MongoAdminConfigReader` | MongoDB (backend's `config` DB, read-only — see `references/adapters.md` Established Patterns) |
 
 ## MongoDB Collections
 
@@ -215,7 +231,8 @@ Immutable — mutations produce new copies via `with_scope()`, `mark_active()`, 
 |------------|-----------|---------|
 | blueprints | blueprint_id, identity, spec_dict, rid_refs | Unique on blueprint_id |
 | workflow_sessions | run_id, identity, blueprint_id, graph_state, status | Compound identity+time index |
-| resources | rid, identity, category, type, name, cfg_dict | Unique on identity+category+type+name |
+| resources | rid, identity, category, type, name, cfg_dict, ownership, visibility | Unique on identity+category+type+name |
+| builtin_user_configs | config_id, resource_id, identity_key, fields (encrypted) | Unique on resource_id+identity_key — one overlay doc per built-in per identity |
 | shares | share_id, sender/recipient_identity, status | TTL auto-expiry on expires_at |
 | templates | template_id, draft, placeholders, metadata | Text search on name+description |
 | credentials | user_id, server_identifier, tokens (encrypted) | Fernet-encrypted tokens |

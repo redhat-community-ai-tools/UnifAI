@@ -28,13 +28,22 @@ config/app_config.py       AppConfig — all config with defaults
 ### Wiring Order in Container
 
 1. **Discovery** — ElementRegistry, ActionsService auto-discover
-2. **Repositories** — Mongo repos (depend on config only)
+2. **Repositories** — Mongo repos (depend on config only), including
+   `MongoAdminConfigReader` (`cfg.admin_config_db` — backend's DB, read-only) and
+   `MongoBuiltinUserConfigRepository`
 3. **Registries** — ResourcesRegistry, BlueprintResolver
-4. **Services** — Domain services with deps injected
-5. **Auth layer** — Strategies, detector, AuthService
-6. **Session layer** — Factory, manager, lifecycle, projector, runner
-7. **Identity** — Provider selection based on config mode
-8. **Optional features** — Guarded by config value presence
+4. **Services** — Domain services with deps injected — `ResourcesService` takes
+   `builtin_user_config_repo` alongside `resource_registry`/`element_registry`;
+   `BlueprintResolver` now takes `resources_service=self.resources_service`
+   (not the registry/element_registry directly) so blueprint resolution applies
+   per-identity built-in overlays
+5. **Seed built-ins** — `self._seed_builtin_resources()` runs right after
+   `resources_service` is constructed, idempotently upserting `BUILTIN_RESOURCES`
+   templates (`resources/builtin_templates.py`) owned by `Identity.system()`
+6. **Auth layer** — Strategies, detector, AuthService
+7. **Session layer** — Factory, manager, lifecycle, projector, runner
+8. **Identity** — Provider selection based on config mode
+9. **Optional features** — Guarded by config value presence
 
 ### Config Conventions
 

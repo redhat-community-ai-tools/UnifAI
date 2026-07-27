@@ -84,6 +84,13 @@ Admin configuration is a distinct bounded context. It has its own domain models,
 services, and persistence. Other services consume admin config via API calls or
 shared config, never by importing backend internals.
 
+**Documented exception**: MAS's `MongoAdminConfigReader` (`multi-agent/adapters/outbound/mongo/admin_config_reader.py`)
+reads the `config.admin_config` collection directly and read-only, to answer
+`is_admin(username)` without a network round-trip per request. It never writes to
+this collection — writes remain exclusively through `AdminConfigService`
+(`config.section.update`). This is a narrow, intentional exception, not backend-internals
+importing; see the mirrored entry in `domains/multi-agent/references/adapters.md`.
+
 ---
 
 ### 2. Platform-Level Concerns Only
@@ -121,3 +128,4 @@ These patterns are established and reviewers MUST NOT flag them as violations:
 | `current_app.container.admin_config_service` access in endpoints | `api/flask/endpoints/*.py` | Standard Flask composition — no DI framework; container is wired at startup |
 | `SingletonMeta` on `AppContainer` | `core/app_container.py` | Process-wide singleton for Flask entry point; same pattern as MAS |
 | Gateway-trust auth via `X-Username` / `X-User-Id` headers | Flask endpoints | Admin-only service behind gateway; no need for full Identity auth stack |
+| MAS reads `config.admin_config` directly (read-only) instead of calling an API | `multi-agent/adapters/outbound/mongo/admin_config_reader.py` | Avoids a per-request network round-trip for the `is_admin` gate; write path is unaffected — still exclusively `AdminConfigService` |

@@ -66,6 +66,11 @@ class <Name>ToolConfig(BaseModel):
     #   timeout: int = 30
 ```
 
+If a field should stay user-configurable or appear on a card once this tool is promoted
+to a built-in resource, annotate it with `ReadOnlyHint`/`CardHint`/`SecretHint` — see
+"Field Hints on Config Fields" in `../references/elements.md`. (Builtin tools under
+`tools/builtin/` are injected by nodes, not element-registry items, so this does not apply to them.)
+
 ---
 
 ## Step 3: Args Schema

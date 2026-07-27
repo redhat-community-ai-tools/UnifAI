@@ -64,6 +64,8 @@ QueryClientProvider → ThemeProvider → AuthProvider → SharedProvider
 | `useGraphDisplay` | Graph | Read-only JointJS + live status overlays |
 | `useTemplates` | Templates | List, detail, schema, validate, materialize |
 | `useWorkspaceData` | Inventory | Category-based element CRUD |
+| `useBuiltinEditLockSession` | Repository Mgmt | Owns heartbeat/release lifecycle for one held admin edit-lock |
+| `useBuiltinEditLockPoll` | Repository Mgmt | Polls lock-holder status for built-in resources (admin panel) |
 
 ## Nginx Path Routing (production)
 
@@ -156,6 +158,52 @@ Team mode adds edit locks — one editor per blueprint at a time.
 
 ---
 
+### 8. Admin Edit Locks (Repository Management)
+
+The Repository Management panel (built-in resource admin) mirrors the team edit-lock
+pattern from #7, but for admins editing shared built-ins instead of team members
+editing a shared blueprint: `useBuiltinEditLockSession` (heartbeat/release for a held
+lock) + `useBuiltinEditLockPoll` (poll other admins' lock status) against the
+`builtin.edit_lock.*` endpoints. One admin edits a given built-in at a time; acquiring
+is cooperative client-side, but the mutating endpoints reject with 409 if another
+admin holds the lock, so it is a real server-enforced guard.
+
+---
+
+### 9. Built-in vs. Custom Resources (Ownership Model)
+
+Every `ElementInstance` (`types/workspace.ts`) carries `ownership?: 'builtin' | 'custom'`,
+`visibility?: 'draft' | 'public'`, and `userConfigured?: boolean`, mirroring the
+backend's `ResourceOwnership`/`ResourceVisibility` (see
+`domains/multi-agent/references/resources.md`). Two pages consume this:
+
+- **Agent Repository** (`pages/AgentRepository.tsx`) — end-user view, filterable
+  All / Built-in / Personal; configuring a built-in (`BuiltinConfigureModal`) writes
+  a per-identity overlay (`userConfigured=true`), never the shared base.
+- **Configuration → Repository Management** (`features/configuration/RepositoryManagement.tsx`
+  + `repository-management/`) — admin-only: create/edit/delete built-ins, toggle
+  "available to all" (`draft`↔`public`, with `CascadeConfirmDialog` for dependent
+  resources), promote a custom resource to built-in.
+
+`useWorkspaceData` is the shared hook for both — routing built-in-specific calls
+(`configureBuiltin`, `saveBuiltinElement`, `toggleBuiltinStatus`, schema/user-config
+fetch) through `api/resources.ts`'s `builtins.*` methods alongside the plain CRUD
+methods it already had.
+
+---
+
+### 10. OAuth Popup Message Validation
+
+Any UI flow that opens an OAuth "sign in" popup and relays the result back via
+`window.opener.postMessage()` MUST validate the incoming message with
+`isTrustedCredentialsCallback()` (`lib/oauthPopupSecurity.ts`) — checking both
+`event.source === popup` and `event.origin` against the callback origin recovered
+from the authorization URL's `redirect_uri`. Do not add a bare `message` event
+listener for a new OAuth flow without this check (a same-object-different-origin
+popup navigation could otherwise spoof the callback).
+
+---
+
 ### Established Patterns — UI Frontend
 
 These patterns are established and reviewers MUST NOT flag them as violations:
@@ -170,3 +218,4 @@ These patterns are established and reviewers MUST NOT flag them as violations:
 | Some components import `@/api/*` without hook wrappers | `TeamSettingsModal`, `SharedPanel`, etc. | Simple one-off API calls where a hook would be trivial; TanStack React Query adoption is partial |
 | Nested provider tree (7–8 contexts deep) | `App.tsx` | Standard React cross-cutting state; each context has a clear single responsibility |
 | Streaming via native `fetch` (not Axios) | `useSessionStream` | NDJSON streaming requires `ReadableStream` API; Axios doesn't support streaming reads |
+| Card fields driven generically by server-side schema hints (`hints.card`, `hints.secret`, `hints.hidden`, `hints.conditional`) instead of per-element-type switch statements | `lib/cardFields.ts#getCardFields()`, consumed by `BuiltInElementCard`, `ElementGrid` | Mirrors the backend `field_hints.py` contract (see `domains/multi-agent/references/elements.md`) — adding a new element type never requires touching card-rendering code, only its config schema |

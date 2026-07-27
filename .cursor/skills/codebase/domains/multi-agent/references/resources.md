@@ -1,0 +1,294 @@
+# Resources & Blueprints Component
+
+Resources are the persisted, reusable building blocks (LLMs, tools, providers, retrievers,
+nodes, conditions) that blueprints reference by `rid`. Blueprints are the graph
+definitions that combine inline configs and resource refs into an executable spec.
+
+## Architecture
+
+```
+   BLUEPRINTS                          RESOURCES
+   BlueprintService                    ResourcesService (facade)
+      │ resolve(draft, identity) ─────►   │
+      ▼                                   ├─ CRUD, validation, cards  (own methods)
+   BlueprintResolver                      └─ .builtin → BuiltinResourceService
+      │ walks Refs, calls                        (admin lifecycle + per-identity overlays)
+      ▼                                        └─ uses ResourceFieldEncryption
+   resources_service.resolve(rid, identity)         (schema-hint scan + encrypt/decrypt)
+```
+
+`BlueprintResolver` depends on `ResourcesService` (not `ResourcesRegistry` +
+`ElementRegistry` directly) — this lets it pick up built-in overlay resolution
+for free through `ResourcesService.resolve()` without knowing built-ins exist.
+
+### Structure
+
+```
+lib/mas/resources/
+├── models.py                    Resource, ResourceQuery
+├── registry.py                  ResourcesRegistry — thin persistence wrapper (uniqueness, in-use checks)
+├── service.py                   ResourcesService — the public facade (see below)
+├── builtin_service.py           BuiltinResourceService — admin lifecycle + overlays (internal collaborator)
+├── builtin_models.py            BuiltinUserConfig, identity_to_key()
+├── builtin_templates.py         BUILTIN_RESOURCES — static seed data (idempotent startup seeding)
+├── field_encryption.py          ResourceFieldEncryption — schema-hint scan + encrypt/decrypt (internal collaborator)
+├── errors.py                    Resource*Error, BuiltIn*Error, Builtin*Error
+├── resolver.py                  DependencyResolver (nested_refs / cascade helpers used by registry)
+└── repository/
+    ├── base.py                  ResourceRepository (ABC)
+    └── builtin_user_config_repository.py   BuiltinUserConfigRepository (ABC)
+
+lib/mas/blueprints/
+├── resolver.py                  BlueprintResolver — walks Refs, resolves live resources
+├── service.py                   BlueprintService — save/load/resolve/validate blueprints
+└── models/blueprint.py          BlueprintDraft, BlueprintSpec, BlueprintResource
+```
+
+### Key Contracts
+
+| Class | Role |
+|-------|------|
+| `ResourcesService` | Public facade. ALL external access (Flask endpoints, `BlueprintResolver`, `ShareCloner`, tests) goes through this — never through `ResourcesRegistry` or `BuiltinResourceService` directly. |
+| `BuiltinResourceService` (`self.builtin` on `ResourcesService`) | Owns built-in admin CRUD, promote/demote/toggle + cascade, per-identity overlay get/save/resolve, schema exposure. `ResourcesService` delegates its `*_builtin*` methods here as thin one-liners. |
+| `ResourceFieldEncryption` (`self._fields` on both services) | Single owner of schema-hint scanning (`scan_schema_hints`) and encrypt/decrypt, shared by base CRUD and built-in overlays so behavior never drifts between the two paths. |
+| `ResourcesRegistry` | Thin persistence wrapper: uniqueness guard, in-use checks, built-in URL collision check. Not the public API. |
+| `BlueprintResolver` | Walks a `BlueprintDraft`'s Refs, resolves external refs via `ResourcesService.resolve()` (built-in overlay aware when `identity` is passed), builds the executable `BlueprintSpec`. |
+
+## Built-in Resources System
+
+Built-ins let an admin curate a shared library of pre-configured elements
+(LLMs, MCP servers, tools, agent nodes) that end users can use without
+configuring credentials/URLs themselves, while still letting each user
+override the small set of fields the admin marked as user-configurable
+(e.g. their own MCP bearer token).
+
+### Ownership & Visibility
+
+```python
+class ResourceOwnership(str, Enum):   # lib/mas/core/enums.py
+    BUILTIN = "builtin"
+    CUSTOM = "custom"
+
+class ResourceVisibility(str, Enum):  # lib/mas/core/enums.py
+    DRAFT = "draft"     # admin-only visibility
+    PUBLIC = "public"   # visible to all end users
+```
+
+Every `Resource` has both fields (default `CUSTOM` / `DRAFT`). Non-admin callers
+never see `DRAFT` built-ins — enforced at `ResourcesService.get_visible()`,
+`BuiltinResourceService.get_builtin_schema()`/`get_user_config()`/`configure_builtin()`,
+and the `builtins.list`/`get_builtin_schema` endpoints via `is_admin`.
+
+`ResourceCategory.builtin_disabled_categories()` (currently `{RETRIEVER}`) blocks
+retrievers from ever becoming built-ins — `create_builtin_with_cascade`, `promote_with_cascade`,
+and the cascade-promotion helper all check this.
+
+### Field Hints Drive Configurability & Card Display
+
+Which config fields are user-configurable on a built-in, and which fields show
+on an element's inventory card, is declared **once**, on the Pydantic config
+schema, via `mas.core.field_hints` hints — never hardcoded in service/UI logic:
+
+| Hint | Effect |
+|------|--------|
+| `ReadOnlyHint(read_only=False)` | Field is user-configurable on a built-in (per-identity overlay). Fields without this hint default to read-only for built-ins — see `BuiltinResourceService.get_builtin_schema()`. |
+| `SecretHint` | Field is encrypted at rest (unioned with the config model's `ENCRYPTED_FIELDS`) and masked in the UI. Never rendered on a card. |
+| `CardHint(contexts=[...])` | Field opts into inventory-card display, scoped to `CardContext.BUILTIN` and/or `CardContext.CUSTOM` independently — e.g. an MCP `mcp_url` is useful on a custom card, redundant on a built-in one. `empty_text` supplies a fallback when "unset" still means something (e.g. MCP `tool_names` empty ⇒ "All tools"). |
+
+`ResourceFieldEncryption.scan_schema_hints(category, type_key)` does a single
+pass over the JSON schema to return `(configurable_keys, sensitive_keys)` —
+the shared source of truth consumed by `get_builtin_schema()`, `get_user_config()`,
+`configure_builtin()`, and `resolve_overlay()`. On the UI side,
+`lib/cardFields.ts#getCardFields()` interprets the same `hints.card`/`hints.secret`/
+`hints.hidden`/`hints.conditional` structure generically — see `domains/ui/SKILL.md`.
+
+### Per-Identity Overlay Resolution
+
+```
+BlueprintResolver.resolve(draft, identity)
+  → _walk_live(rid, ..., identity)
+  → ResourcesService.resolve(rid, identity=identity)
+      → BuiltinResourceService.resolve_overlay(resource, identity)
+          → identity_to_key(identity) = "<type>:<id>"   e.g. "team:eng-42"
+          → BuiltinUserConfigRepository.get(rid, key)   (one overlay doc per resource+identity)
+          → decrypt configurable+sensitive fields, merge over cfg_dict
+```
+
+There is no user-over-team fallback chain — whichever `Identity` the caller is
+currently operating as (their own, or a team identity in team-workspace mode)
+has its own independent overlay. `identity=None` (e.g. schema-only tooling)
+skips overlay resolution entirely and returns raw built-in defaults — this is
+also the pre-overlay behavior, so it's backward compatible.
+
+`BlueprintService` and `BlueprintResolver` thread `identity` as an **optional**
+keyword through `load_resolved()`, `resolve_draft_dict()`, `_resolve_doc()`,
+`get_resolved_doc()`, `validate_blueprint()`, `validate_draft()`,
+`get_blueprint_cards()`, `get_draft_cards()` — any new resolution/validation
+entrypoint on `BlueprintService` should follow this pattern (accept and thread
+`identity: Optional[Identity] = None`) rather than adding a parallel
+built-in-aware code path.
+
+### Cascade Promote/Demote
+
+An "available to all" built-in (e.g. an agent) can reference other resources
+(LLM, providers, tools) via `nested_refs`. Making the agent public while its
+LLM is still `DRAFT` would leave end users referencing a building block they
+can't see — so promotion/creation/update cascades:
+
+- `preview_cascade_targets(rid)` — read-only BFS over `nested_refs`, returns every
+  transitive dependency not already a public built-in. Used for a "these will
+  also become available to all" confirmation dialog *before* mutating.
+- `_cascade_promote_dependencies(rid)` — same walk, but promotes each dependency
+  (skips any in `builtin_disabled_categories()`, logs and continues rather than failing).
+- Demoting/toggling a built-in **off** is blocked with `BuiltinDependentsPublicError`
+  if a public built-in still depends on it (`_find_public_dependents` — reverse BFS
+  via `ResourcesRegistry.list_nested_usage()`).
+
+Every mutation that can cascade returns a `(resource, cascaded)` tuple (`*_with_cascade`
+methods); the non-cascade variants (`promote`, `create_builtin`, `update_builtin`,
+`toggle_visibility`) are thin wrappers that drop the second element — endpoints
+always call the `*_with_cascade` variants so they can report `cascaded_resources`.
+
+### Authorization
+
+`ResourcesService.guard_write_access(rid, identity, is_admin)` is the single
+authorization gate for resource mutation:
+- Admins bypass all checks.
+- Built-in resources: `BuiltInWriteProtectedError` for non-admins (regular
+  `resource.update`/`resource.delete` endpoints call this before mutating —
+  built-ins are only mutated via the `builtins_bp` admin routes).
+- Custom resources owned by a different identity: `ResourceAccessDeniedError`.
+
+Admin gating itself (`is_admin`) is resolved via `AdminConfigReaderPort` →
+`MongoAdminConfigReader`, which reads the **backend service's** `admin_config`
+Mongo collection read-only (see `references/adapters.md` Established Patterns —
+this is a deliberate, documented exception to normal per-service Mongo ownership,
+not cross-service repository access).
+
+### Admin Edit Locks
+
+Built-in admin editing reuses the existing team-collaboration lock
+infrastructure (`CollaborationService`) with a fixed `__admin__` namespace
+and a new `"builtin"` lock kind (`BUILTIN_LOCK_KIND`), instead of adding a
+parallel locking mechanism:
+
+```
+acquire_admin_edit_lock/release_admin_edit_lock/renew_admin_edit_lock/get_admin_edit_lock(s)_batch
+  → CollaborationService.*_team_edit_lock(ADMIN_LOCK_NAMESPACE, "builtin", entity_id, user_id, ...)
+```
+
+No team-membership checks are needed (`@require_admin_access` at the endpoint
+gates it instead). `builtin.update`, `resource.promote`, and `builtin.toggle`
+(plus the generic `resource.update`/`resource.delete` routes admins also use
+on built-ins) call `reject_if_locked_by_other()` — the lock is a real,
+server-enforced guard, not just a UI hint. `builtin.create` has no lock check
+(no entity id exists yet).
+
+### Seeding
+
+`AppContainer._seed_builtin_resources()` inserts `BUILTIN_RESOURCES` (from
+`builtin_templates.py`) at startup if not already present (checked via
+`ResourceRepository.exists(rid)` — templates use deterministic `rid`s).
+`pymongo.errors.DuplicateKeyError` from a concurrent-worker race is caught
+and ignored, so seeding stays idempotent regardless of worker count. New
+built-in templates default to `visibility=DRAFT` — an admin promotes them
+via the Repository Management panel when ready.
+
+### Sharing Interaction
+
+`ShareCloner` never clones built-in resources into a share — they're
+"shared by reference" (the recipient resolves the same built-in at runtime,
+picking up their own per-identity overlay). Any `docs_rag` retriever's `docs`
+field is stripped when cloning a *non-built-in* resource across identities
+(the recipient can't access the sender's document selection).
+
+## How to Extend
+
+### Adding a New Built-in-Eligible Element
+
+Any element category outside `ResourceCategory.builtin_disabled_categories()`
+is automatically eligible — no extra registration needed. To make new config
+fields behave correctly once an instance is promoted to built-in:
+
+1. Mark user-configurable fields with `ReadOnlyHint(read_only=False)` (all
+   other fields become read-only for end users once built-in).
+2. Mark fields that should show on inventory cards with `CardHint(contexts=[...])`.
+3. Mark sensitive fields with `SecretHint` (encrypted at rest automatically —
+   no extra wiring needed in `ResourceFieldEncryption`).
+4. Add a template to `builtin_templates.py` if it should ship as a seeded default.
+
+See `../recipes/` for the full per-element-type recipe; field hint conventions
+are also summarized in `references/elements.md`.
+
+### Adding a New Built-in Admin Operation
+
+1. Add the method to `BuiltinResourceService` (not `ResourcesService` directly).
+2. Add a thin delegate on `ResourcesService` (`return self.builtin.<method>(...)`).
+3. Add the Flask route in `adapters/inbound/flask/endpoints/builtins.py` (NOT `resources.py`).
+4. If it mutates an existing built-in, call `_reject_if_locked_by_other(resource_id)` first.
+5. If it can affect `nested_refs` visibility, decide whether it needs cascade
+   handling (`*_with_cascade` + `cascaded_resources` in the response).
+
+## Cross-Component Contracts
+
+### Resources → Core (Identity, Enums, Field Hints)
+
+- `Resource.identity: Identity` — `Identity.system()` is used as the owner
+  for seeded built-in templates.
+- `ResourceOwnership`, `ResourceVisibility` live in `mas.core.enums` alongside `ResourceCategory`.
+- Field hints (`ReadOnlyHint`, `CardHint`, `SecretHint`, ...) live in `mas.core.field_hints`.
+
+### Resources → Blueprints (Resolution)
+
+- `BlueprintResolver` depends on `ResourcesService`, not `ResourcesRegistry` — this
+  is what makes built-in overlay resolution transparent to blueprint resolution.
+- `identity` flows: Flask endpoint → `BlueprintService` method → `BlueprintResolver.resolve()`
+  → `ResourcesService.resolve()` → `BuiltinResourceService.resolve_overlay()`.
+
+### Resources → Collaboration (Admin Locks)
+
+- `builtins.py` endpoints reuse `CollaborationService`'s team-lock methods with
+  the `ADMIN_LOCK_NAMESPACE` / `BUILTIN_LOCK_KIND` constants — see `references/session.md`
+  or `CollaborationService` directly for the underlying lock TTL/store mechanics.
+
+### Resources → Sharing (Clone Exclusion)
+
+- `ShareCloner` checks `doc.ownership == ResourceOwnership.BUILTIN` before adding
+  a resource to a share's clone closure — built-ins are excluded, not cloned.
+
+### Machine-Checkable Invariants
+
+| ID | Rule | Violating Pattern | Severity |
+|----|------|--------------------|----------|
+| INV-R01 | All resource mutation goes through `ResourcesService`, never `ResourcesRegistry` directly, from outside `lib/mas/resources/` | `from mas.resources.registry import ResourcesRegistry` in `adapters/`, other domain components, or tests exercising the public API | MAJOR |
+| INV-R02 | Built-in resources are never mutated by non-admin end users | Missing `guard_write_access()` / `@require_admin_access` call on a code path that can write `ownership=BUILTIN` resources | CRITICAL |
+| INV-R03 | Sensitive config fields (`SecretHint` or `ENCRYPTED_FIELDS`) are encrypted before persistence | `cfg_dict`/overlay `fields` assignment bypassing `ResourceFieldEncryption.encrypt_fields()`/`encrypt_config_fields()` | CRITICAL |
+
+## Established Patterns
+
+These patterns are established and reviewers MUST NOT flag them as violations:
+
+| Pattern | Where it exists | Why it's acceptable |
+|---------|-----------------|---------------------|
+| `ResourcesService` composes internal collaborators (`BuiltinResourceService`, `ResourceFieldEncryption`) instead of one large class | `resources/service.py`, `builtin_service.py`, `field_encryption.py` | "Service as Public API" is preserved — external callers only ever see `ResourcesService`; splitting internals by responsibility (base CRUD vs. built-in lifecycle vs. encryption) avoids one service owning too much without breaking the facade rule |
+| `BlueprintResolver` takes `ResourcesService` (not `ResourcesRegistry` + `ElementRegistry`) | `blueprints/resolver.py` | Lets built-in overlay resolution happen transparently through `ResourcesService.resolve()`; resolver doesn't need to know built-ins exist |
+| `identity: Optional[Identity] = None` threaded through blueprint resolve/validate/card methods | `blueprints/service.py`, `blueprints/resolver.py` | Backward compatible — omitting it reproduces pre-overlay behavior (raw built-in defaults); tooling that has no caller identity still works |
+| Admin edit locks reuse `CollaborationService`'s team-lock store with a fixed namespace (`__admin__`) and new lock kind (`"builtin"`) | `collaboration/service.py`, `endpoints/builtins.py` | Avoids a parallel locking mechanism; team-membership checks are skipped because `@require_admin_access` already gates the endpoint |
+
+## Change Impact
+
+| If you change... | Also update... | Why |
+|-----------------|----------------|-----|
+| `ReadOnlyHint`/`CardHint`/`SecretHint` semantics | `ResourceFieldEncryption.scan_schema_hints()`, `BuiltinResourceService.get_builtin_schema()`, UI `lib/cardFields.ts` | Single hint contract consumed by both backend schema exposure and UI rendering |
+| `ResourceOwnership`/`ResourceVisibility` enums | `ResourcesRegistry`/`BuiltinResourceService` visibility checks, `builtin_disabled_categories()`, UI ownership-scoped rendering | Discovery/authorization/UI all branch on these values |
+| `BlueprintResolver`/`BlueprintService` resolution signatures | Every caller (Flask endpoints, `ShareCloner`, tests) must thread `identity` correctly | Built-in overlays silently fall back to raw defaults if `identity` is dropped along the chain |
+| `BuiltinUserConfig` document shape | `MongoBuiltinUserConfigRepository`, `builtin_models.identity_to_key()` | Storage key format (`"<type>:<id>"`) must stay consistent between writer and reader |
+| Cascade promote/demote logic | `preview_cascade_targets`, `_cascade_promote_dependencies`, `_find_public_dependents`, endpoint `cascaded_resources` reporting | All four must agree on what "transitively depends on" means |
+
+## Boundaries
+
+**Owns:** resource CRUD, validation delegation, card building, built-in admin lifecycle
+(create/promote/demote/toggle/cascade), per-identity built-in overlays, field encryption
+for resource configs, blueprint draft/spec resolution.
+**Does NOT own:** element implementations or schemas (elements owns those; resources only
+stores/validates against them), session execution (session), identity resolution (core).
