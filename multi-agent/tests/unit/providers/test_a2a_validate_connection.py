@@ -55,6 +55,10 @@ class TestEndpointLabel:
         url = HttpUrl("https://user:token@a2a.example:8443/v1/agent?key=secret#frag")
         assert _endpoint_label(url) == "a2a.example:8443"
 
+    def test_brackets_ipv6_literal_with_port(self) -> None:
+        url = HttpUrl("http://[::1]:8000/path")
+        assert _endpoint_label(url) == "[::1]:8000"
+
 
 class TestResolveToken:
     """Unit tests for ValidateConnectionAction._resolve_token."""

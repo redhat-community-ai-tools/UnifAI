@@ -8,6 +8,7 @@ Expired / missing SSO sessions return status=auth_required (yellow in UI).
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import time
 from typing import Any, Dict, Optional
@@ -33,11 +34,19 @@ _STATIC_AUTH = {
 
 
 def _endpoint_label(url: HttpUrl) -> str:
-    """Return host[:port] only — drop userinfo/path/query/fragment for logs/IDs."""
+    """Return host[:port] only — drop userinfo/path/query/fragment for logs/IDs.
+
+    IPv6 literals are bracketed when a port is present (e.g. ``[::1]:8000``).
+    """
     host = url.host or ""
-    if url.port is not None:
-        return f"{host}:{url.port}"
-    return host
+    if url.port is None:
+        return host
+    try:
+        if ipaddress.ip_address(host).version == 6:
+            return f"[{host}]:{url.port}"
+    except ValueError:
+        pass
+    return f"{host}:{url.port}"
 
 
 class ValidateConnectionInput(BaseActionInput):
