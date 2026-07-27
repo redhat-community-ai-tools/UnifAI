@@ -98,33 +98,19 @@ class McpProviderConfig(ProviderBaseConfig):
     bearer_token: Optional[str] = Field(
         default=None,
         description="",
+        # No ActionHint(VALIDATE) here — connection validation lives solely
+        # on `mcp_url` (which already depends on `credential_token`, kept in
+        # sync via PropagateHint below). A second, independent VALIDATE hint
+        # on this field used to fire its own `mcp.validate_connection` call
+        # in parallel with `mcp_url`'s — since this field is optional, an
+        # empty value short-circuited to "valid" before any token was set,
+        # and the two concurrent validations could race and disagree,
+        # producing the flickering "Valid"/"Invalid" badge under this field.
         json_schema_extra=combine_hints(
             SecretHint(allow_reveal=True),
             ConditionalHint(visible_when={"auth_method": "access_token"}),
             PropagateHint(to="credential_token"),
             ReadOnlyHint(read_only=False),
-            ActionHint(
-                action_uid="mcp.validate_connection",
-                hint_type=HintType.VALIDATE,
-                field_mapping="is_reachable",
-                dependencies={
-                    "mcp_url": "mcp_url",
-                    "bearer_token": "credential_token",
-                    "server_identifier": "server_identifier",
-                    "auth_method": "auth_method",
-                    "transport_type": "transport_type",
-                    "additional_headers": "additional_headers",
-                },
-                on_success=ActionHint(
-                    action_uid="auth.store_credential",
-                    hint_type=HintType.VALIDATE,
-                    field_mapping="authenticated",
-                    dependencies={
-                        "mcp_url": "server_url",
-                        "bearer_token": "credential",
-                    },
-                ),
-            ),
         ),
     )
     additional_headers: Dict[str, Any] = Field(

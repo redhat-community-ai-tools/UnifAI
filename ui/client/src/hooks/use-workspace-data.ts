@@ -183,6 +183,8 @@ export const useWorkspaceData = () => {
           name: resource.name,
           type: resource.type,
           config: resource.cfg_dict,
+          ownership: resource.ownership || 'custom',
+          visibility: resource.visibility || 'draft',
         }));
       } catch (err: any) {
         const errorMessage =

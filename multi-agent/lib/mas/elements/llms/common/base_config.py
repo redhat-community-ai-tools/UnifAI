@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, Extra, HttpUrl
-from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, CardContext, combine_hints
+from mas.core.field_hints import SecretHint, CardHint, CardContext
 
 
 class BaseLLMConfig(BaseModel):
@@ -17,10 +17,10 @@ class BaseLLMConfig(BaseModel):
     api_key: str = Field(
         "EMPTY",
         description="API key or token for OpenAI",
-        json_schema_extra=combine_hints(
-            SecretHint(reason="API credentials should be masked"),
-            ReadOnlyHint(read_only=False),
-        ),
+        # No ReadOnlyHint(read_only=False) here — the API key is set once by
+        # whoever creates the LLM resource and is never overridden per-user
+        # on built-ins (no "Configure" affordance on the built-in card).
+        json_schema_extra=SecretHint(reason="API credentials should be masked").to_hints(),
     )
     base_url: HttpUrl = Field(
         description="Base URL for the OpenAI API",

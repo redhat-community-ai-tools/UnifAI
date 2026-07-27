@@ -23,6 +23,11 @@ import { maskSecretValue } from "../../../utils/maskSecretFields";
 import { XCircle, Lock, Settings } from "lucide-react";
 import {getArrayDisplayText, getArrayFieldMode, getValidRefOptions,} from "./arrayFieldHelpers";
 
+/** Builds the dropdown label for a ref option, flagging drafts so users can
+ * see (and not select) built-ins that aren't published yet. */
+const getRefOptionLabel = (option: any): string =>
+  `${option.name} (${option.type})${option.visibility === "draft" ? " (Draft)" : ""}`;
+
 /** Resolved string enum definition from $defs */
 interface ResolvedStringEnum {
   type: "string";
@@ -359,8 +364,12 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
                   </SelectTrigger>
                   <SelectContent>
                     {validOptions.map((option: any) => (
-                      <SelectItem key={option.rid} value={option.rid}>
-                        {option.name} ({option.type})
+                      <SelectItem
+                        key={option.rid}
+                        value={option.rid}
+                        disabled={option.visibility === "draft"}
+                      >
+                        {getRefOptionLabel(option)}
                       </SelectItem>
                     ))}
                     {validOptions.length === 0 && (
@@ -748,11 +757,12 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
               </SelectTrigger>
               <SelectContent>
                 {validOptions.map((option: any) => (
-                  <SelectItem 
-                    key={option.rid} 
+                  <SelectItem
+                    key={option.rid}
                     value={option.rid}
+                    disabled={option.visibility === "draft"}
                   >
-                    {option.name} ({option.type})
+                    {getRefOptionLabel(option)}
                   </SelectItem>
                 ))}
                 {validOptions.length === 0 && (
