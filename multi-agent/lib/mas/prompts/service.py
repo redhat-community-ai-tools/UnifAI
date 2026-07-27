@@ -11,6 +11,7 @@ from mas.core.identity import Identity
 from mas.prompts.models import (
     PromptSource,
     RunOutcome,
+    RunStats,
     ScheduleDefinition,
     ScheduleStatus,
     ScheduledPrompt,
@@ -148,12 +149,13 @@ class PromptService:
 
         if schedule_changed:
             new_sched: ScheduleDefinition = updates["schedule"]
-            if self._is_schedule_already_exhausted(new_sched, prompt.run_stats.total_runs):
+            if self._is_schedule_already_exhausted(new_sched, 0):
                 updates["schedule_status"] = ScheduleStatus.COMPLETED
                 updates["completed_at"] = datetime.now(timezone.utc)
             else:
                 updates["schedule_status"] = ScheduleStatus.ACTIVE
                 updates["completed_at"] = None
+                updates["run_stats"] = RunStats()
 
         if updates:
             prompt = prompt.model_copy(update=updates)

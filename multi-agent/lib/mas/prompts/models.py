@@ -4,14 +4,32 @@ Scheduled prompt domain models.
 Defines the ScheduledPrompt aggregate, ScheduleDefinition value object,
 and supporting enums for the prompt scheduling domain.
 """
+import re
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from zoneinfo import available_timezones
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mas.core.identity import Identity
 from mas.core.prompt import BasePrompt
+
+# Minimum recurrence interval -- guards against capacity abuse from
+# extremely frequent schedules (e.g. sub-minute ticks).
+_MIN_INTERVAL = timedelta(minutes=1)
+
+# Basic cron sanity check -- five whitespace-separated fields
+_CRON_FIELD_RE = re.compile(r"^[A-Za-z0-9*/,-]+$")
+
+_VALID_TIMEZONES = frozenset(available_timezones())
+
+
+def _is_valid_cron(expression: str) -> bool:
+    fields = expression.split()
+    if len(fields) != 5:
+        return False
+    return all(_CRON_FIELD_RE.match(field) for field in fields)
 
 
 class PromptSource(str, Enum):
@@ -29,7 +47,6 @@ class ScheduleOverlapPolicy(str, Enum):
     SKIP = "skip"
     BUFFER_ONE = "buffer_one"
     CANCEL_OTHER = "cancel_other"
-    ALLOW_ALL = "allow_all"
 
 
 class ScheduleDefinition(BaseModel):
@@ -52,8 +69,14 @@ class ScheduleDefinition(BaseModel):
             raise ValueError("Either interval or cron_expression is required")
         if self.interval and self.cron_expression:
             raise ValueError("Specify interval or cron_expression, not both")
-        if self.interval is not None and self.interval <= timedelta(0):
-            raise ValueError("interval must be strictly positive")
+        if self.interval is not None and self.interval < _MIN_INTERVAL:
+            raise ValueError(f"interval must be at least {_MIN_INTERVAL}")
+        if self.cron_expression is not None and not _is_valid_cron(self.cron_expression):
+            raise ValueError(
+                "cron_expression must be a 5-field cron string (minute hour day month weekday)"
+            )
+        if self.timezone not in _VALID_TIMEZONES:
+            raise ValueError(f"Unknown timezone: {self.timezone}")
         if self.remaining_actions is not None and self.remaining_actions < 0:
             raise ValueError("remaining_actions must be non-negative")
         if self.start_at and self.end_at and self.start_at >= self.end_at:

@@ -24,7 +24,14 @@ from config.app_config import AppConfig
 from temporalio.service import RPCError, RPCStatusCode
 
 from mas.prompts.models import ScheduleOverlapPolicy, ScheduledPrompt
-from mas.prompts.ports import BatchDescribeResult, ScheduleDescribeError, ScheduleInfo, ScheduleNotFoundError, SchedulePort
+from mas.prompts.ports import (
+    BatchDescribeResult,
+    ScheduleDescribeError,
+    ScheduleInfo,
+    ScheduleNotFoundError,
+    SchedulePort,
+    ScheduleValidationError,
+)
 from temporal.client import get_temporal_client
 from temporal.models import ScheduledSessionParams
 
@@ -36,14 +43,18 @@ _OVERLAP_MAP = {
     ScheduleOverlapPolicy.SKIP: TemporalOverlapPolicy.SKIP,
     ScheduleOverlapPolicy.BUFFER_ONE: TemporalOverlapPolicy.BUFFER_ONE,
     ScheduleOverlapPolicy.CANCEL_OTHER: TemporalOverlapPolicy.CANCEL_OTHER,
-    ScheduleOverlapPolicy.ALLOW_ALL: TemporalOverlapPolicy.ALLOW_ALL,
 }
 
 
 class TemporalScheduleAdapter(SchedulePort):
 
     def create_schedule(self, prompt: ScheduledPrompt) -> str:
-        return asyncio.run(self._create(prompt))
+        try:
+            return asyncio.run(self._create(prompt))
+        except RPCError as exc:
+            if exc.status == RPCStatusCode.INVALID_ARGUMENT:
+                raise ScheduleValidationError(str(exc)) from exc
+            raise
 
     def pause(self, temporal_schedule_id: str) -> None:
         asyncio.run(self._pause(temporal_schedule_id))
@@ -60,7 +71,12 @@ class TemporalScheduleAdapter(SchedulePort):
             raise
 
     def update_schedule(self, temporal_schedule_id: str, prompt: ScheduledPrompt) -> None:
-        asyncio.run(self._update(temporal_schedule_id, prompt))
+        try:
+            asyncio.run(self._update(temporal_schedule_id, prompt))
+        except RPCError as exc:
+            if exc.status == RPCStatusCode.INVALID_ARGUMENT:
+                raise ScheduleValidationError(str(exc)) from exc
+            raise
 
     def trigger_now(self, temporal_schedule_id: str) -> None:
         asyncio.run(self._trigger(temporal_schedule_id))

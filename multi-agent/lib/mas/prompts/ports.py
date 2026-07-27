@@ -28,6 +28,18 @@ class ScheduleDescribeError(Exception):
         super().__init__(f"Transient describe failure: {schedule_id}")
 
 
+class ScheduleValidationError(ValueError):
+    """Raised when the external orchestrator rejects a schedule as malformed.
+
+    Subclasses ValueError so it flows through the same clean 400 handling
+    as domain-level validation errors, rather than surfacing as a raw RPC
+    failure to callers.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
 class ScheduleInfo(BaseModel):
     """Read-back snapshot of a schedule's live state in the orchestrator."""
 
