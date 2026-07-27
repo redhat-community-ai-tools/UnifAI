@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Coroutine
+from contextlib import asynccontextmanager, contextmanager
+from typing import Any, TypeVar
 from unittest.mock import AsyncMock, MagicMock, patch
-
-from contextlib import contextmanager
 
 from pydantic import HttpUrl
 
@@ -16,13 +16,15 @@ from mas.actions.providers.a2a.validate_connection.validate_connection import (
 )
 from mas.core.auth.credentials.models import StaticAuthMethod
 
+T = TypeVar("T")
 
-def _run(coro):
+
+def _run(coro: Coroutine[Any, Any, T]) -> T:
     return asyncio.run(coro)
 
 
-def _input(**overrides) -> ValidateConnectionInput:
-    data = {
+def _input(**overrides: Any) -> ValidateConnectionInput:
+    data: dict[str, Any] = {
         "base_url": HttpUrl("http://a2a.example:8000"),
         "user_id": "user-1",
         "server_identifier": "",
@@ -33,7 +35,11 @@ def _input(**overrides) -> ValidateConnectionInput:
 
 
 @asynccontextmanager
-async def _fake_client(*, agent_card="card", raise_on_enter=None):
+async def _fake_client(
+    *,
+    agent_card: Any = "card",
+    raise_on_enter: BaseException | None = None,
+) -> AsyncIterator[MagicMock]:
     if raise_on_enter is not None:
         raise raise_on_enter
     client = MagicMock()
@@ -42,7 +48,9 @@ async def _fake_client(*, agent_card="card", raise_on_enter=None):
 
 
 class TestResolveToken:
-    def test_none_returns_no_token(self):
+    """Unit tests for ValidateConnectionAction._resolve_token."""
+
+    def test_none_returns_no_token(self) -> None:
         action = ValidateConnectionAction(auth_service=MagicMock())
         token, msg = _run(action._resolve_token(_input()))
         assert token is None
@@ -95,7 +103,7 @@ class TestResolveToken:
             "user-1", "https://sso.example/realms/x"
         )
 
-    def test_sso_expired_ignores_stale_form_token(self):
+    def test_sso_expired_ignores_stale_form_token(self) -> None:
         auth = MagicMock()
         auth.get_valid_token = AsyncMock(return_value=None)
         auth.unseal_token.side_effect = lambda t: t
@@ -117,6 +125,8 @@ class TestResolveToken:
 
 
 class TestValidateConnectionExecute:
+    """Unit tests for ValidateConnectionAction.execute auth/reachability mapping."""
+
     @patch(
         "mas.actions.providers.a2a.validate_connection.validate_connection.A2AClient",
     )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 from unittest.mock import MagicMock
 
 from outbound.mongo.client_config_repository import MongoServerConfigStore
@@ -75,7 +76,7 @@ class TestMongoServerConfigStoreListByCategory:
 
     def test_invalid_doc_log_omits_secret_values(self, monkeypatch, caplog):
         monkeypatch.delenv("ALLOW_INSECURE_OAUTH_ENDPOINTS", raising=False)
-        secret = "super-secret-client-value"
+        secret = f"test-secret-{uuid4()}"
         coll = MagicMock()
         coll.find.return_value = [
             {
