@@ -1,5 +1,5 @@
 
-import React, { useMemo, useCallback, useEffect, useRef } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
 import { motion } from "framer-motion";
@@ -18,11 +18,22 @@ export default function AgenticChats() {
 
   const [, routeParams] = useRoute("/agentic-chats/:sessionId");
 
+  // Detect a workspace switch (personal <-> team, or team A -> team B)
+  // synchronously during render, *before* urlRunId is computed, to ensure the new workspace is loaded with the correct session ID.
+  const workspaceKey = `${viewMode}:${selectedTeam?.id ?? ""}`;
+  const [prevWorkspaceKey, setPrevWorkspaceKey] = useState(workspaceKey);
+  const [suppressRunIdOverride, setSuppressRunIdOverride] = useState(false);
+  if (workspaceKey !== prevWorkspaceKey) {
+    setPrevWorkspaceKey(workspaceKey);
+    setSuppressRunIdOverride(true);
+  }
+
   const urlRunId = useMemo(() => {
+    if (suppressRunIdOverride) return null;
     if (routeParams?.sessionId) return routeParams.sessionId;
     const params = new URLSearchParams(window.location.search);
     return params.get("runId");
-  }, [routeParams]);
+  }, [routeParams, suppressRunIdOverride]);
 
   const handleSessionChange = useCallback(
     (sessionId: string) => {
@@ -31,19 +42,16 @@ export default function AgenticChats() {
     [navigate],
   );
 
-  // Clear stale session ID from the URL when the workspace changes so
-  // the new workspace doesn't try to look up the previous workspace's session.
-  const prevWorkspaceRef = useRef({ viewMode, teamId: selectedTeam?.id });
+  // Once the workspace-switch render has committed (with urlRunId already
+  // suppressed above), clean up the address bar and lift the suppression.
   useEffect(() => {
-    const prev = prevWorkspaceRef.current;
-    const teamId = selectedTeam?.id;
-    if (prev.viewMode !== viewMode || prev.teamId !== teamId) {
-      prevWorkspaceRef.current = { viewMode, teamId };
+    if (suppressRunIdOverride) {
       if (routeParams?.sessionId) {
         navigate("/agentic-chats", { replace: true });
       }
+      setSuppressRunIdOverride(false);
     }
-  }, [viewMode, selectedTeam?.id, navigate, routeParams?.sessionId]);
+  }, [suppressRunIdOverride, routeParams?.sessionId, navigate]);
 
   const teamMembers = useTeamMembers();
 

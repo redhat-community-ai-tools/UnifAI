@@ -2,7 +2,7 @@ import React from "react";
 import { useLocation } from "wouter";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import { RunStats } from "@/api/prompts";
-import { parseUtcDate } from "@/utils/dateUtils";
+import { formatRelativeTime } from "@/utils/dateTimeUtils";
 
 const STATUS_COLORS: Record<string, string> = {
   COMPLETED: "bg-emerald-400",
@@ -12,17 +12,6 @@ const STATUS_COLORS: Record<string, string> = {
 
 function dotColor(status: string): string {
   return STATUS_COLORS[status] ?? "bg-gray-500";
-}
-
-function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - parseUtcDate(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }
 
 interface RunSparklineProps {

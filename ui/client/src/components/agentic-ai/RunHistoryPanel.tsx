@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { ExternalLink, Loader2 } from "lucide-react";
 import { getPromptRuns, PromptRunResponse } from "@/api/prompts";
-import { parseUtcDate } from "@/utils/dateUtils";
+import { formatTime } from "@/utils/dateTimeUtils";
 
 const STATUS_BADGE: Record<string, string> = {
   COMPLETED: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
@@ -13,21 +13,6 @@ const STATUS_BADGE: Record<string, string> = {
 
 function badgeClass(status: string): string {
   return STATUS_BADGE[status] ?? "bg-gray-500/15 text-gray-400 border-gray-500/30";
-}
-
-function formatTime(iso: string): string {
-  const d = parseUtcDate(iso);
-  const now = new Date();
-  const isToday =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  if (isToday) {
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  }
-  return d.toLocaleDateString([], { month: "short", day: "numeric" }) +
-    " " +
-    d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 interface RunHistoryPanelProps {

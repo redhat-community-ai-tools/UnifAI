@@ -644,13 +644,19 @@ export function useSessionHub({
   }, [selectedSession, sessionStream]);
 
   // ── Workspace-switch effect ────────────────────────────────────────────
+  // On the very first mount we still want to honor a deep-linked `runId`
+  // (e.g. a link from RunHistoryPanel). Only skip it on later re-runs, which
+  // happen when the user switches workspace (personal <-> team) and the old
+  // runId no longer applies to the new workspace's session list.
+  const hasMountedRef = useRef(false);
   useEffect(() => {
     sessionSelectRequestId.current += 1;
     sessionStream.cancelStream();
     clearStream();
     setSelectedSession(null);
     setCurrentSessionMessages([]);
-    fetchChatSessions({ skipRunId: true });
+    fetchChatSessions({ skipRunId: hasMountedRef.current });
+    hasMountedRef.current = true;
   }, [contextUserId, identityType]);
 
   // ── Return ─────────────────────────────────────────────────────────────

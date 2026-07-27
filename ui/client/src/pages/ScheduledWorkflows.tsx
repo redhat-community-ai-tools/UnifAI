@@ -36,7 +36,8 @@ import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { AddFlowModal } from "@/components/shared/SessionModals";
 import type { FlowObject } from "@/components/agentic-ai/graphs/interfaces";
 import { useScheduledBlueprintCounts } from "@/hooks/use-scheduled-blueprints";
-import { parseUtcDate, cronTimeToLocal } from "@/utils/dateUtils";
+import { formatDateTime, cronTimeToLocal } from "@/utils/dateTimeUtils";
+import { DAY_CRON_NAMES } from "@/constants/dateConstants";
 
 const MAX_ACTIVE_SCHEDULES_PER_WORKFLOW = 10;
 
@@ -44,15 +45,9 @@ const MAX_ACTIVE_SCHEDULES_PER_WORKFLOW = 10;
 // Schedule label derivation – times are converted to the user's local timezone
 // ---------------------------------------------------------------------------
 
-const DAY_CRON_NAMES = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-
 function describeSchedule(schedule: ScheduleDefinitionInput): string {
   if (schedule.remaining_actions === 1 && schedule.start_at) {
-    const d = parseUtcDate(schedule.start_at);
-    return d.toLocaleString(undefined, {
-      day: "2-digit", month: "2-digit", year: "numeric",
-      hour: "2-digit", minute: "2-digit",
-    });
+    return formatDateTime(schedule.start_at);
   }
 
   if (schedule.interval) {
@@ -454,11 +449,15 @@ export default function ScheduledWorkflows() {
       id: "schedule",
       header: "Schedule",
       cell: ({ row }) => {
+        const schedule = row.original.schedule;
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         return (
           <div className="leading-tight">
-            <div className="text-sm">{describeSchedule(row.original.schedule)}</div>
+            <div className="text-sm">{describeSchedule(schedule)}</div>
             <div className="text-xs text-gray-500">{tz}</div>
+            {schedule.interval && schedule.start_at && schedule.remaining_actions !== 1 && (
+              <div className="text-xs text-gray-500">From {formatDateTime(schedule.start_at)}</div>
+            )}
           </div>
         );
       },
@@ -563,7 +562,14 @@ export default function ScheduledWorkflows() {
                   <div className="py-4 space-y-4">
                     {/* Full prompt text */}
                     <div>
-                      <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Prompt</h4>
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider">Prompt</h4>
+                        {prompt.schedule.start_at && (
+                          <span className="text-xs text-gray-500">
+                            Start: {formatDateTime(prompt.schedule.start_at)}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-300 whitespace-pre-wrap">{prompt.text}</p>
                     </div>
 
