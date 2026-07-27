@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional, Union
+from typing import Any
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -37,7 +37,7 @@ class ActionHint(BaseModel):
         ..., 
         description="Name of the action to invoke"
     )
-    display_name: Optional[str] = Field(
+    display_name: str | None = Field(
         None,
         description="Display name for the field in the UI"
     )
@@ -45,15 +45,15 @@ class ActionHint(BaseModel):
         ..., 
         description="Type of hint (populate, validate)"
     )
-    field_mapping: Optional[str] = Field(
+    field_mapping: str | None = Field(
         None,
         description="Target field in action output for population hints"
     )
-    display_field: Optional[str] = Field(
+    display_field: str | None = Field(
         None,
         description="Dot-notation path to display value (e.g., 'name' or 'name.x'). UI stores full object and uses this to display."
     )
-    value_field: Optional[str] = Field(
+    value_field: str | None = Field(
         None,
         description="Dot-notation path to stored value (e.g., 'documents.id')"
     )
@@ -65,7 +65,7 @@ class ActionHint(BaseModel):
         default=None,
         description="Selection type: automatic (auto-populate) or manual (user triggers)"
     )
-    dependencies: Dict[str, str] = Field(
+    dependencies: dict[str, str] = Field(
         default_factory=dict,
         description="Field dependencies for action input (config_field_name -> action_input_field)"
     )
@@ -77,18 +77,18 @@ class ActionHint(BaseModel):
         default=False,
         description="Whether the action supports search filtering (has search_regex param)"
     )
-    on_success: Optional["ActionHint"] = Field(
+    on_success: "ActionHint | None" = Field(
         default=None,
         description="Action to fire after this action succeeds. "
                     "The chained action receives its own dependencies from the form. "
                     "Skipped when any required dependency value is empty.",
     )
 
-    def model_dump(self, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, **kwargs) -> dict[str, Any]:
         """Override to return clean dict for json_schema_extra"""
         return super().model_dump(**kwargs)
     
-    def to_hints(self) -> Dict[str, Any]:
+    def to_hints(self) -> dict[str, Any]:
         """Return the proper structure for json_schema_extra hints"""
         return {
             "hints": {
@@ -117,15 +117,15 @@ class ApiHint(BaseModel):
         ..., 
         description="Type of hint (populate, validate)"
     )
-    field_mapping: Optional[str] = Field(
+    field_mapping: str | None = Field(
         None,
         description="Target field in response for validation hints"
     )
-    display_field: Optional[str] = Field(
+    display_field: str | None = Field(
         None,
         description="Dot-notation path to display value (e.g., 'name' or 'items.name'). UI stores full object and uses this to display."
     )
-    value_field: Optional[str] = Field(
+    value_field: str | None = Field(
         None,
         description="Dot-notation path to stored value (e.g., 'items.id')"
     )
@@ -137,7 +137,7 @@ class ApiHint(BaseModel):
         default=None,
         description="Selection type: automatic (auto-trigger) or manual (user triggers)"
     )
-    dependencies: Dict[str, str] = Field(
+    dependencies: dict[str, str] = Field(
         default_factory=dict,
         description="Field dependencies (config_field_name -> request_field_name)"
     )
@@ -150,11 +150,11 @@ class ApiHint(BaseModel):
         description="Whether the endpoint supports search filtering"
     )
 
-    def model_dump(self, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, **kwargs) -> dict[str, Any]:
         """Override to return clean dict for json_schema_extra"""
         return super().model_dump(**kwargs)
     
-    def to_hints(self) -> Dict[str, Any]:
+    def to_hints(self) -> dict[str, Any]:
         """Return the proper structure for json_schema_extra hints"""
         return {
             "hints": {
@@ -168,16 +168,16 @@ class HiddenHint(BaseModel):
     Simple hint to hide a field from the UI.
     """
     hint_type: HintType = Field(default=HintType.HIDDEN)
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         None,
         description="Optional reason why field is hidden"
     )
 
-    def model_dump(self, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, **kwargs) -> dict[str, Any]:
         """Override to return clean dict for json_schema_extra"""
         return super().model_dump(**kwargs)
     
-    def to_hints(self) -> Dict[str, Any]:
+    def to_hints(self) -> dict[str, Any]:
         """Return the proper structure for json_schema_extra hints"""
         return {
             "hints": {
@@ -192,7 +192,7 @@ class SecretHint(BaseModel):
     UI should render this as a password field (masked) with show/hide toggle.
     """
     hint_type: HintType = Field(default=HintType.SECRET)
-    reason: Optional[str] = Field(
+    reason: str | None = Field(
         None,
         description="Optional reason why field contains secret data"
     )
@@ -205,11 +205,11 @@ class SecretHint(BaseModel):
         description="Whether to show eye icon to reveal secret temporarily"
     )
 
-    def model_dump(self, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, **kwargs) -> dict[str, Any]:
         """Override to return clean dict for json_schema_extra"""
         return super().model_dump(**kwargs)
     
-    def to_hints(self) -> Dict[str, Any]:
+    def to_hints(self) -> dict[str, Any]:
         """Return the proper structure for json_schema_extra hints"""
         return {
             "hints": {
@@ -238,15 +238,15 @@ class AuthHint(BaseModel):
         ...,
         description="Action to call for auth status check / login initiation",
     )
-    dependencies: Dict[str, str] = Field(
+    dependencies: dict[str, str] = Field(
         default_factory=dict,
         description="Config field → action input field mapping",
     )
 
-    def model_dump(self, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, **kwargs) -> dict[str, Any]:
         return super().model_dump(**kwargs)
 
-    def to_hints(self) -> Dict[str, Any]:
+    def to_hints(self) -> dict[str, Any]:
         return {
             "hints": {
                 "auth": self.model_dump()
@@ -287,10 +287,10 @@ class FileUploadHint(BaseModel):
         description="Format to validate on the backend (e.g. 'pem')",
     )
 
-    def model_dump(self, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, **kwargs) -> dict[str, Any]:
         return super().model_dump(**kwargs)
 
-    def to_hints(self) -> Dict[str, Any]:
+    def to_hints(self) -> dict[str, Any]:
         return {
             "hints": {
                 "file_upload": self.model_dump()
@@ -313,15 +313,15 @@ class ConditionalHint(BaseModel):
             ConditionalHint(visible_when={"auth_method": "access_token"}),
         )
     """
-    visible_when: Dict[str, Any] = Field(
+    visible_when: dict[str, Any] = Field(
         ...,
         description="Map of {field_name: required_value}. All must match for the field to be visible.",
     )
 
-    def model_dump(self, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, **kwargs) -> dict[str, Any]:
         return super().model_dump(**kwargs)
 
-    def to_hints(self) -> Dict[str, Any]:
+    def to_hints(self) -> dict[str, Any]:
         return {
             "hints": {
                 "conditional": self.model_dump()
@@ -346,15 +346,15 @@ class PropagateHint(BaseModel):
         ...,
         description="Target field name to propagate to",
     )
-    value: Optional[Any] = Field(
+    value: Any | None = Field(
         default=None,
         description="Fixed value to write. If None, copies the source field's value.",
     )
 
-    def model_dump(self, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, **kwargs) -> dict[str, Any]:
         return super().model_dump(**kwargs)
 
-    def to_hints(self) -> Dict[str, Any]:
+    def to_hints(self) -> dict[str, Any]:
         return {
             "hints": {
                 "propagate": self.model_dump()
@@ -362,81 +362,7 @@ class PropagateHint(BaseModel):
         }
 
 
-class ReadOnlyHint(BaseModel):
-    """
-    Hint marking a field's configurability for built-in resources.
-
-    Baked into the pydantic config schema on each field:
-    - ``read_only=True``  → field is locked for end-users on built-in elements.
-    - ``read_only=False`` → field is user-configurable (per-user overlay).
-
-    Fields without this hint default to read-only when served via
-    ``get_builtin_schema()``.  For non-built-in resources the hint is
-    ignored and all fields remain editable.
-    """
-    read_only: bool = Field(
-        default=True,
-        description="When True, the field cannot be edited by users on built-in resources"
-    )
-
-    def to_hints(self) -> Dict[str, Any]:
-        return {
-            "hints": {
-                "read_only": self.model_dump()
-            }
-        }
-
-
-class CardHint(BaseModel):
-    """
-    Hint marking a field as displayable on an element's inventory card.
-
-    Opt-in only: fields without this hint never appear on a card, regardless
-    of element type. ``contexts`` scopes display to built-in and/or custom
-    (user-created) elements independently, so the same field can be surfaced
-    differently depending on ownership — e.g. an MCP server's ``mcp_url`` is
-    useful to show on a custom (user-configured) card but redundant on a
-    built-in one.
-
-    A field marked ``SecretHint`` is never rendered on a card even if it also
-    carries this hint — that exclusion is enforced by card-rendering
-    consumers, not by this hint itself.
-
-    ``empty_text`` covers fields whose "unset" state still has a meaningful
-    display value — e.g. an MCP provider's ``tool_names`` being empty means
-    "all tools from the server", not "nothing to show". Without it, empty
-    values are simply omitted from the card (the default, existing
-    behavior).
-
-    Example::
-
-        json_schema_extra=combine_hints(
-            CardHint(contexts=[CardContext.CUSTOM]),
-        )
-
-        json_schema_extra=combine_hints(
-            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM], empty_text="All tools"),
-        )
-    """
-    contexts: List[CardContext] = Field(
-        ...,
-        description="Which card ownership context(s) this field should be shown on.",
-    )
-    empty_text: Optional[str] = Field(
-        default=None,
-        description="Fallback text shown on the card when the field's value is empty/unset, "
-                    "instead of omitting the field entirely (e.g. 'All tools', 'All documents').",
-    )
-
-    def to_hints(self) -> Dict[str, Any]:
-        return {
-            "hints": {
-                "card": self.model_dump(exclude_none=True)
-            }
-        }
-
-
-def combine_hints(*hints: Union[ActionHint, ApiHint, HiddenHint, SecretHint, AuthHint, ConditionalHint, PropagateHint, FileUploadHint, ReadOnlyHint, CardHint]) -> Dict[str, Any]:
+def combine_hints(*hints: ActionHint | ApiHint | HiddenHint | SecretHint | AuthHint | ConditionalHint | PropagateHint | FileUploadHint) -> dict[str, Any]:
     """
     Combine multiple hints into a single json_schema_extra structure.
     
