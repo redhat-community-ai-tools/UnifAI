@@ -95,12 +95,10 @@ class TestResolveToken:
             "user-1", "https://sso.example/realms/x"
         )
 
-    def test_sso_expired_credential_returns_auth_required(self):
+    def test_sso_expired_ignores_stale_form_token(self):
         auth = MagicMock()
         auth.get_valid_token = AsyncMock(return_value=None)
-        cred = MagicMock()
-        cred.is_valid.return_value = False
-        auth.get_credential.return_value = cred
+        auth.unseal_token.side_effect = lambda t: t
         action = ValidateConnectionAction(auth_service=auth)
 
         token, msg = _run(
@@ -108,12 +106,14 @@ class TestResolveToken:
                 _input(
                     auth_method="https://sso.example/realms/x",
                     server_identifier="https://sso.example/realms/x",
+                    credential_token="stale-sealed-token",
                 )
             )
         )
 
         assert token is None
         assert "Session expired" in msg
+        auth.unseal_token.assert_not_called()
 
 
 class TestValidateConnectionExecute:

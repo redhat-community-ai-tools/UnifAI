@@ -105,21 +105,14 @@ class ValidateConnectionAction(BaseAction):
                 return token, None
             return None, "Bearer token required — provide a token or sign in"
 
-        # Registry SSO: prefer AuthService (expiry + refresh), not a stale form token.
+        # Registry SSO: AuthService is the source of truth (expiry + refresh).
+        # Do not fall back to a sealed form credential_token — that can be stale
+        # and make a public agent-card fetch look "green" while the session is dead.
         server_id = input_data.server_identifier or auth_method
         if self._auth and input_data.user_id and server_id:
             token = await self._auth.get_valid_token(input_data.user_id, server_id)
             if token:
                 return token, None
-
-            cred = self._auth.get_credential(input_data.user_id, server_id)
-            if cred is not None and not cred.is_valid():
-                return None, "Session expired — sign in again"
-
-        raw = input_data.credential_token
-        token = self._auth.unseal_token(raw) if (self._auth and raw) else raw
-        if token:
-            return token, None
 
         return None, "Session expired — sign in again"
 
