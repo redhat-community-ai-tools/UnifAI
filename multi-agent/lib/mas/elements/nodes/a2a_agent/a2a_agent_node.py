@@ -120,7 +120,7 @@ class A2AAgentNode(
                     headers = bridge.run(auth_credential.get_headers())
                 if headers:
                     return dict(headers)
-            except Exception as exc:
+            except AuthError as exc:
                 logger.warning(
                     "A2AAgentNode: auth headers unavailable at init (%s); "
                     "will refresh before delegation",

@@ -244,6 +244,22 @@ class TestValidate:
         )
         assert any("not authorized" in m.message.lower() for m in report.messages)
 
+    def test_lowercase_unauthorized_marks_invalid_credentials(self):
+        validator = A2AAgentNodeValidator()
+        with _bridge_that_runs(), patch(
+            "mas.elements.nodes.a2a_agent.validator.A2AClient",
+            side_effect=lambda **kw: _fake_client(
+                raise_on_enter=RuntimeError("request failed: unauthorized")
+            ),
+        ):
+            report = validator.validate(_config(), _context())
+
+        assert not report.is_valid
+        assert any(
+            m.code == ValidationCode.INVALID_CREDENTIALS.value
+            for m in report.messages
+        )
+
     def test_access_token_missing_marks_invalid(self):
         validator = A2AAgentNodeValidator()
         with _bridge_that_runs():

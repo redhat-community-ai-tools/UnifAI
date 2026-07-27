@@ -32,6 +32,14 @@ _STATIC_AUTH = {
 }
 
 
+def _endpoint_label(url: HttpUrl) -> str:
+    """Return host[:port] only — drop userinfo/path/query/fragment for logs/IDs."""
+    host = url.host or ""
+    if url.port is not None:
+        return f"{host}:{url.port}"
+    return host
+
+
 class ValidateConnectionInput(BaseActionInput):
     base_url: HttpUrl
     user_id: str = Field(default="")
@@ -184,12 +192,14 @@ class ValidateConnectionAction(BaseAction):
         except Exception as e:
             elapsed = (time.time() - start) * 1000
             error_msg = str(e)
-            if "401" in error_msg or "Unauthorized" in error_msg:
+            error_l = error_msg.lower()
+            safe_id = server_id or _endpoint_label(input_data.base_url)
+            if "401" in error_l or "unauthorized" in error_l:
                 logger.warning(
                     "a2a.validate_connection auth rejected (401) host=%s "
                     "server_identifier=%r elapsed_ms=%.0f error_type=%s",
                     input_data.base_url.host,
-                    server_id or str(input_data.base_url),
+                    safe_id,
                     elapsed,
                     type(e).__name__,
                 )
@@ -199,15 +209,15 @@ class ValidateConnectionAction(BaseAction):
                     is_reachable=True,
                     authenticated=False,
                     status="auth_required",
-                    server_identifier=server_id or str(input_data.base_url),
+                    server_identifier=safe_id,
                     response_time_ms=elapsed,
                 )
-            if "403" in error_msg or "Forbidden" in error_msg:
+            if "403" in error_l or "forbidden" in error_l:
                 logger.warning(
                     "a2a.validate_connection forbidden (403) host=%s "
                     "server_identifier=%r elapsed_ms=%.0f error_type=%s",
                     input_data.base_url.host,
-                    server_id or str(input_data.base_url),
+                    safe_id,
                     elapsed,
                     type(e).__name__,
                 )
@@ -217,7 +227,7 @@ class ValidateConnectionAction(BaseAction):
                     is_reachable=True,
                     authenticated=False,
                     status="auth_required",
-                    server_identifier=server_id or str(input_data.base_url),
+                    server_identifier=safe_id,
                     response_time_ms=elapsed,
                 )
             logger.exception(

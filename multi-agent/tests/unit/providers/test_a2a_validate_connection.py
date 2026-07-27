@@ -13,6 +13,7 @@ from pydantic import HttpUrl
 from mas.actions.providers.a2a.validate_connection.validate_connection import (
     ValidateConnectionAction,
     ValidateConnectionInput,
+    _endpoint_label,
 )
 from mas.core.auth.credentials.models import StaticAuthMethod
 
@@ -45,6 +46,14 @@ async def _fake_client(
     client = MagicMock()
     client.agent_card = agent_card
     yield client
+
+
+class TestEndpointLabel:
+    """Unit tests for log-safe endpoint labeling."""
+
+    def test_drops_userinfo_path_and_query(self) -> None:
+        url = HttpUrl("https://user:token@a2a.example:8443/v1/agent?key=secret#frag")
+        assert _endpoint_label(url) == "a2a.example:8443"
 
 
 class TestResolveToken:
@@ -217,6 +226,26 @@ class TestValidateConnectionExecute:
         assert out.is_reachable is True
         assert out.status == "auth_required"
         assert "rejected credentials" in out.message
+
+    @patch(
+        "mas.actions.providers.a2a.validate_connection.validate_connection.A2AClient",
+    )
+    def test_401_without_server_id_uses_safe_endpoint_label(
+        self, mock_client_cls, caplog
+    ):
+        mock_client_cls.side_effect = lambda **kw: _fake_client(
+            raise_on_enter=Exception("HTTP 401 Unauthorized")
+        )
+        action = ValidateConnectionAction()
+        dirty = HttpUrl("https://user:tok@a2a.example:8000/path?x=1")
+
+        with caplog.at_level("WARNING"):
+            out = _run(action.execute(_input(base_url=dirty, server_identifier="")))
+
+        assert out.server_identifier == "a2a.example:8000"
+        joined = " ".join(caplog.messages)
+        assert "user:tok" not in joined
+        assert "path?x=1" not in joined
 
     @patch(
         "mas.actions.providers.a2a.validate_connection.validate_connection.A2AClient",

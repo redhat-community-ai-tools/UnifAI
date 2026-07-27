@@ -183,13 +183,14 @@ class A2AAgentNodeValidator(BaseElementValidator):
             ))
         except Exception as e:
             error_msg = str(e)
-            if "401" in error_msg or "Unauthorized" in error_msg:
+            error_l = error_msg.lower()
+            if "401" in error_l or "unauthorized" in error_l:
                 messages.append(self._error(
                     ValidationCode.INVALID_CREDENTIALS.value,
                     "Server rejected the credentials — sign in again or update your access token",
                     field="base_url",
                 ))
-            elif "403" in error_msg or "Forbidden" in error_msg:
+            elif "403" in error_l or "forbidden" in error_l:
                 messages.append(self._error(
                     ValidationCode.INVALID_CREDENTIALS.value,
                     "Authenticated but not authorized — check your scopes or contact the server administrator",
