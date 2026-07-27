@@ -59,7 +59,7 @@ jobs:
       BRANCH: ${{ needs.setup_environment.outputs.BRANCH }}
       CLUSTER: ${{ needs.setup_environment.outputs.CLUSTER }}
       NAMESPACE: ${{ vars.NAMESPACE }}
-      VERIFY_TLS: ${{ vars.VERIFY_TLS }}
+      SKIP_VERIFY_TLS: ${{ vars.SKIP_VERIFY_TLS }}
       API_URL: ${{ vars.API_URL }}
       ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
       MONGO_URI: ${{ vars.MONGO_URI }}

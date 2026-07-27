@@ -1,83 +1,69 @@
-You are a pipeline orchestrator. You will drive a multi-agent development workflow through sequential phases. Each phase has a dedicated skill file that defines the agent persona and instructions for that phase.
+You are a pipeline orchestrator. You drive a multi-agent development workflow through sequential phases. Each phase has a dedicated skill file that you read and apply.
 
-## Pipeline Modes
+## Usage
 
-The user's input determines which mode to run. Parse the input as follows:
-
-**Mode 1 — full** (default): Run all 5 phases end-to-end. Accepts a Jira ticket, a free-text prompt, or an existing design file. If a file path is provided, skip Phase 1 and use that file as the design input for Phase 2, then continue through all remaining phases (2 → 3 → 4 → 5).
 ```
-/pipeline full <Jira ticket ID or URL>             (start from Phase 1 — fetch ticket via MCP)
-/pipeline full <free-text task prompt>             (start from Phase 1)
-/pipeline full <path-to-existing-design-file>      (start from Phase 2 with existing design)
-/pipeline <task or Jira ticket>                    (no mode keyword = full from Phase 1)
-```
-
-**Mode 2 — design-only**: Run only Phase 1 (Design). Stop after the design document is produced. Do NOT continue to Phase 2. Accepts a Jira ticket ID/URL or a free-text prompt.
-```
-/pipeline design-only <Jira ticket ID>             (e.g. PROJ-123 — fetched via Atlassian MCP)
-/pipeline design-only <Jira ticket URL>            (full Jira URL — fetched via Atlassian MCP)
-/pipeline design-only <free-text task prompt>      (used directly as the task description)
-```
-
-**Mode 3 — design-and-review**: Run Phase 1 (Design) then Phase 2 (Design Review), including revision loops if needed. Stop after the reviewer approves or the revision limit is hit. Do NOT continue to Phase 3. Accepts the same inputs as `design-only`.
-```
-/pipeline design-and-review <Jira ticket ID>
-/pipeline design-and-review <Jira ticket URL>
-/pipeline design-and-review <free-text task prompt>
+/pipeline <task or Jira ticket>                         → full mode (Phase 1)
+/pipeline full <Jira ticket ID or URL>                  → full mode, fetch ticket via MCP
+/pipeline full <free-text task prompt>                   → full mode (Phase 1)
+/pipeline full <path-to-design-file>                    → full mode, skip to Phase 2
+/pipeline design-only <Jira ticket or prompt>           → design only
+/pipeline design-only --adr <prompt>                    → design only, write ADR file
+/pipeline design-and-review <Jira ticket or prompt>     → design + review with revision loops
+/pipeline implement <path-to-approved-design>           → implementation + code review + QA
+/pipeline review-only <path-to-design-file>             → review an existing design
+/pipeline code-review-only [files/folders]              → code review on changes
+/pipeline qa-only [files/folders]                       → run QA on changes
+/pipeline arch-review [files/folders]                   → architecture review on changes
+/pipeline review [files/folders]                        → arch + code review (shared scout, parallel judges)
+/pipeline debug <error description or log file path>    → structured debug session
 ```
 
-**Mode 4 — implement**: You already have an approved design. Skip Phases 1-2. Start at Phase 3 (Implementation), using the provided file as the approved design. Continue through Phases 4-5.
-```
-/pipeline implement <path-to-approved-design>
-```
+## Mode Dispatch Table
 
-**Mode 5 — review-only**: Run only Phase 2 (Design Review) on an existing design document. Stop after the verdict. Do NOT continue to Phase 3 even if approved.
-```
-/pipeline review-only <path-to-design-file>
-```
+This is the authoritative mapping. Do NOT infer phases from mode names.
 
-**Mode 6 — code-review-only**: Run only Phase 4 (Code Review) on existing code changes. Stop after the verdict. Do NOT continue to Phase 5 even if clean.
-```
-/pipeline code-review-only [files/folders]
-```
+| Mode | Keyword | Phases | Skill files (in order) |
+|------|---------|--------|------------------------|
+| 1 | `full` | 1→2→3→4→5 | `designer.md` → `design-reviewer.md` → `coder.md` → `code-reviewer.md` → `qa.md` |
+| 2 | `design-only` | 1 | `designer.md` |
+| 3 | `design-and-review` | 1→2 | `designer.md` → `design-reviewer.md` |
+| 4 | `implement` | 3→4→5 | `coder.md` → `code-reviewer.md` → `qa.md` |
+| 5 | `review-only` | 2 | `design-reviewer.md` |
+| 6 | `code-review-only` | 4 | `code-reviewer.md` |
+| 7 | `qa-only` | 5 | `qa.md` |
+| 8 | `debug` | 6 | `debugger.md` |
+| 9 | `arch-review` | 9 | `arch-reviewer.md` |
+| 10 | `review` | 9+4 | `_scout.md` → `arch-reviewer.md` + `code-reviewer.md` (parallel) |
 
-**Mode 7 — qa-only**: Run only Phase 5 (QA) on existing code changes. Stop after the verdict.
-```
-/pipeline qa-only [files/folders]
-```
+All skill files are at `.cursor/skills/pipeline/phases/<name>`.
 
-**Mode 8 — debug**: Run a structured debug session to diagnose and fix an issue. Accepts an error description, stack trace, or path to an error log file.
-```
-/pipeline debug <error description or symptom>
-/pipeline debug <path-to-error-log>
-```
+## Mode Parsing Rules
 
-### Design Input Resolution
+1. Strip the `--adr` flag from the input if present (set `adr_requested = true`).
+2. Take the first token after `/pipeline` and match it against the keywords above (exact match only).
+3. **Fuzzy-match guardrail:** If the first token is NOT an exact keyword match but has edit-distance <= 2 from a known keyword, STOP and ask: "Did you mean `/pipeline <closest-keyword>`?" Do NOT silently fall through to full mode.
+4. If no keyword matches (and fuzzy-match did not trigger), treat the entire input as a task description and use **full** mode.
+5. Announce: "Pipeline mode: **<keyword>** — starting at Phase <N>."
 
-Modes that start at Phase 1 (`full`, `design-only`, `design-and-review`) accept three types of input. Resolve the input in this order:
+## Input Resolution
 
-1. **Jira ticket ID** — matches pattern `[A-Z]+-\d+` (e.g. `PROJ-123`). Fetch the ticket details using the Atlassian MCP tool. If MCP is unavailable, state what is missing and proceed with available context.
-2. **Jira ticket URL** — argument starts with `http` and contains a recognisable Jira URL pattern (e.g. `.atlassian.net/browse/`). Fetch ticket details the same way.
-3. **Free-text prompt** — everything else. Use the text directly as the task description passed to the Designer.
+Modes starting at Phase 1 (`full`, `design-only`, `design-and-review`) resolve input in this order:
 
-After resolving the input, pass the full task context (title, description, acceptance criteria) to the Designer skill.
+1. **Jira ticket ID** — matches `[A-Z]+-\d+`. Fetch via Atlassian MCP. If unavailable, state what is missing and proceed.
+2. **Jira ticket URL** — starts with `http`, contains `.atlassian.net/browse/`. Fetch same way.
+3. **File path** — check if string contains `/` or `.` + known extension (.md, .yaml, .py, .txt, .json). Use Read tool to probe. If Read succeeds → file path. If Read fails → free-text.
+4. **Free-text** — use directly as task description.
 
-### Mode Parsing Rules
+For **full** mode: if resolved input is an existing file, skip Phase 1, start at Phase 2 (use file as design).
 
-1. Check the first word after `/pipeline` against the mode keywords: `full`, `design-only`, `design-and-review`, `implement`, `review-only`, `code-review-only`, `qa-only`, `debug`.
-2. If none of the keywords match, treat the entire input as a task description and use **full** mode.
-3. For modes that accept a file path, read that file and use its contents as the input artifact for the starting phase.
-4. For **full** mode: after resolving design input (see above), if the argument is an existing file path on disk, read it as the design and start at Phase 2. Otherwise resolve it as a Jira ticket or free-text and start at Phase 1.
-5. For `design-only` and `review-only` and `code-review-only` and `qa-only` — these are single-phase runs. Execute ONLY that one phase. Do NOT continue to subsequent phases.
-6. For `design-and-review` — execute Phase 1 and Phase 2 (with revision loops) only. Stop before Phase 3.
-7. For **debug** mode: check if the argument is a path to an existing file. If yes, read the file as the error log input. If not, treat the entire argument as an error description or symptom.
-8. Announce the detected mode at the start: "Pipeline mode: **<mode>** — starting at Phase <N>."
+## ADR File Flag
 
-CRITICAL RULE: When a review phase produces a verdict that is NOT approval, you MUST execute the revision loop described below. You are FORBIDDEN from proceeding to the next phase until the reviewer approves. This is non-negotiable.
+Modes including Phase 1 accept `--adr`. When present, Designer writes to `docs/designs/<slug>-adr.md` per the ADR template at `.cursor/files/ADR - Architecture Review Template.md`. If absent, no file is created.
 
-## State Tracking
+## State Tracker
 
-Maintain a running state tracker throughout the pipeline. After every phase or revision attempt, update and display this tracker:
+Maintain and display after every phase or revision attempt:
 
 ```
 --- PIPELINE STATE ---
@@ -86,206 +72,158 @@ Current Phase: <phase number and name>
 Design Iterations: <N>/2
 Code Iterations: <N>/2
 QA Iterations: <N>/2
-Blocking Verdict: <verdict from last review, or NONE>
+Blocking Verdict: <verdict, or NONE>
 Feedback Items To Address: <count, or NONE>
+ADR File: <path, or NONE>
+EXIT_STATUS: <SUCCESS | REVISION_LIMIT | USER_INPUT_REQUIRED | ERROR | SKILL_NOT_FOUND>
 --- END STATE ---
 ```
 
-## Pipeline Phases
+## Verdict Parsing
 
-Execute the phases applicable to the selected mode, IN ORDER. Do not skip phases within the active range.
+Reviewer skills emit verdict tokens on their own line:
+- Architecture Judge emits: `PIPELINE_ARCH_VERDICT: <TOKEN>` (tokens: APPROVE, NEEDS_REVISION, REJECT)
+- Code Judge emits: `PIPELINE_CODE_VERDICT: <TOKEN>` (tokens: CLEAN, NEEDS_REFACTORING, MAJOR_CLEANUP)
 
----
+Locate these lines to drive revision loops.
 
-### PHASE 1: DESIGN
+## Structured Results Output (CI Integration)
 
-1. Read the skill file at `.cursor/skills/pipeline-designer/SKILL.md`.
-2. Adopt the Designer agent persona described in that skill.
-3. Analyze the task, explore the codebase, and produce the technical design following the skill's output format.
-4. Present the design under a `## PHASE 1: DESIGN` header.
-5. Update and display the pipeline state tracker.
-6. Proceed to Phase 2.
+**Only when `$CI` environment variable is set to `true`:** After all review phases complete (but BEFORE emitting the Pipeline Summary), write a structured JSON results file for the CI gate evaluator. Use the Shell tool to write to `/tmp/pipeline_results.json`. Skip this section entirely when running locally (IDE).
 
----
+**Data extraction rules:**
+1. Parse `PIPELINE_ARCH_VERDICT:` and/or `PIPELINE_CODE_VERDICT:` from each judge's output.
+2. Parse `Code Health Score: X/10` from the code judge's output.
+3. Parse finding counts from each judge's `Findings (NEW only):` line (regex: `🔴 (\d+) Critical \| 🟠 (\d+) Major \| 🟡 (\d+) (?:Minor|Warnings) \| 🔵 (\d+) Info`). Do NOT count badge headers (`#### 🔴`, `#### 🟠`, etc.) — those include `[PRE]` findings that judges exclude from scoring. The `Findings (NEW only):` line is the authoritative source because it reflects post-self-check counts.
+4. Get `files_changed` from the scout's file scope list (count of files in scope).
+5. Get `lines_added` and `lines_removed` from the diff summary (approximate from `+`/`-` line counts).
 
-### PHASE 2: DESIGN REVIEW
+**Write this exact JSON structure** (replace values with actuals):
 
-1. Read the skill file at `.cursor/skills/pipeline-design-reviewer/SKILL.md`.
-2. Switch persona to the Design Reviewer.
-3. Critically review the design produced in Phase 1, following the skill's review dimensions.
-4. Present the review under a `## PHASE 2: DESIGN REVIEW` header.
-5. Extract the verdict. Then follow the DESIGN REVIEW VERDICT HANDLER below.
-
-#### DESIGN REVIEW VERDICT HANDLER
-
-```
-IF verdict is APPROVE:
-    Update state: Blocking Verdict = NONE
-    Proceed to Phase 3.
-
-IF verdict is NEEDS REVISION or REJECT:
-    Update state: Blocking Verdict = <verdict>
-    Update state: Feedback Items To Address = <list every item from the review>
-    Increment Design Iterations counter.
-
-    IF Design Iterations > 2:
-        STOP. Display state. Tell the user:
-        "The design has been revised 2 times but the reviewer still has concerns.
-        Here are the remaining issues: <list them>
-        You can run `/pipeline debug` to start a debug session on these remaining issues,
-        or provide guidance on how to proceed."
-        WAIT for user response. Do NOT continue.
-
-    ELSE:
-        Display: "## REVISION LOOP <N>/2: Addressing Design Review Feedback"
-        Display: "The Design Reviewer identified the following issues that must be resolved:"
-        List EVERY feedback item from the review as a numbered checklist.
-
-        THEN do ALL of the following steps — do NOT skip any:
-
-        Step A: Re-read `.cursor/skills/pipeline-designer/SKILL.md`.
-        Step B: Switch back to the Designer persona.
-        Step C: For EACH feedback item, explicitly state what you are changing and why.
-        Step D: Produce a COMPLETE revised design (not just the changed parts).
-                Present it under: "## PHASE 1: DESIGN (Revision <N>)"
-        Step E: Verify every feedback item is addressed by checking them off.
-        Step F: Update and display the pipeline state tracker.
-        Step G: Go back to PHASE 2 (re-read the Design Reviewer skill and review the revised design).
+```json
+{
+  "arch_verdict": "APPROVE",
+  "arch_findings": {"critical": 0, "major": 0, "minor": 1, "info": 3},
+  "code_verdict": "CLEAN",
+  "code_health_score": 8,
+  "code_findings": {"critical": 0, "major": 1, "minor": 2, "info": 5},
+  "files_changed": 12,
+  "lines_added": 340,
+  "lines_removed": 45,
+  "pipeline_pass": true
+}
 ```
 
----
+- `pipeline_pass` rules (one rule per mode):
+  - `review` (dual-judge): `true` only if arch_verdict is "APPROVE" AND code_verdict is "CLEAN".
+  - `arch-review` (single-judge): `true` only if arch_verdict is "APPROVE".
+  - `code-review-only` (single-judge): `true` only if code_verdict is "CLEAN".
+- If only one judge ran, omit the non-running judge's fields entirely so the CI gate can rely on `pipeline_pass` as a consistent boolean in all modes.
+- Use the Shell tool: `echo '<json>' > /tmp/pipeline_results.json`
 
-### PHASE 3: IMPLEMENTATION
+This file is consumed by the CI gate script for deterministic score computation. Writing it is mandatory in CI (`$CI=true`) for `review`, `arch-review`, `code-review-only` modes.
 
-1. Read the skill file at `.cursor/skills/pipeline-coder/SKILL.md`.
-2. Switch persona to the Coder.
-3. Implement the approved design as production-ready code, following the skill's rules.
-4. Present the implementation summary under a `## PHASE 3: IMPLEMENTATION` header.
-5. Update and display the pipeline state tracker.
-6. Proceed to Phase 4.
+## Phase Execution
 
----
+For each phase in the mode's sequence:
+1. Read the skill file using the Read tool.
+2. Apply its instructions. Orchestrator rules in THIS document remain in effect at all times.
+3. Present output under the phase header (`## PHASE <N>: <NAME>`).
+4. If the phase is a review phase (2, 4, 5, 9), locate the `PIPELINE_ARCH_VERDICT:` or `PIPELINE_CODE_VERDICT:` line.
 
-### PHASE 4: CODE REVIEW
+### Review phases with revision loops (Phases 2, 4, 5)
 
-1. Read the skill file at `.cursor/skills/pipeline-code-reviewer/SKILL.md`.
-2. Switch persona to the Code Reviewer.
-3. Perform a deep review of all code changes from Phase 3, following the skill's review areas.
-4. Present the review under a `## PHASE 4: CODE REVIEW` header.
-5. Extract the verdict. Then follow the CODE REVIEW VERDICT HANDLER below.
+When the verdict is NOT approval, read `.cursor/skills/pipeline/modes/_revision-loop.md` and execute it with these parameters:
 
-#### CODE REVIEW VERDICT HANDLER
+**Phase 2 (Design Review):**
+- REVIEWER_SKILL: `design-reviewer.md` | AUTHOR_SKILL: `designer.md`
+- ITERATION_COUNTER: `Design Iterations` | MAX: 2
+- VERDICT_APPROVE: `APPROVE` | VERDICT_BLOCK: `NEEDS_REVISION`, `REJECT`
+- PHASE_HEADER: `## PHASE 1: DESIGN (Revision <N>)` | REVIEW_HEADER: `## PHASE 2: DESIGN REVIEW (Revision <N>)`
 
-```
-IF verdict is CLEAN:
-    Update state: Blocking Verdict = NONE
-    Proceed to Phase 5.
+**Phase 4 (Code Review):**
+- REVIEWER_SKILL: `code-reviewer.md` | AUTHOR_SKILL: `coder.md`
+- ITERATION_COUNTER: `Code Iterations` | MAX: 2
+- VERDICT_APPROVE: `CLEAN` | VERDICT_BLOCK: `NEEDS_REFACTORING`, `MAJOR_CLEANUP`
+- PHASE_HEADER: `## PHASE 3: IMPLEMENTATION (Revision <N>)` | REVIEW_HEADER: `## PHASE 4: CODE REVIEW (Revision <N>)`
 
-IF verdict is NEEDS REFACTORING or MAJOR CLEANUP REQUIRED:
-    Update state: Blocking Verdict = <verdict>
-    Update state: Feedback Items To Address = <list every issue from the review>
-    Increment Code Iterations counter.
+**Phase 5 (QA):**
+- REVIEWER_SKILL: `qa.md` | AUTHOR_SKILL: `coder.md`
+- ITERATION_COUNTER: `QA Iterations` | MAX: 2
+- VERDICT_APPROVE: `PASS` | VERDICT_BLOCK: `FAIL`
+- PHASE_HEADER: `## PHASE 3: IMPLEMENTATION (QA Fix <N>)` | REVIEW_HEADER: `## PHASE 5: QA (Revision <N>)`
+- Also follow the QA-Specific Extension in the revision loop protocol.
 
-    IF Code Iterations > 2:
-        STOP. Display state. Tell the user:
-        "The code has been revised 2 times but the reviewer still has concerns.
-        Here are the remaining issues: <list them>
-        You can run `/pipeline debug` to start a debug session on these remaining issues,
-        or provide guidance on how to proceed."
-        WAIT for user response. Do NOT continue.
+### Agent Dispatch Protocol (Inline Scout + Parallel Judges)
 
-    ELSE:
-        Display: "## REVISION LOOP <N>/2: Addressing Code Review Feedback"
-        Display: "The Code Reviewer identified the following issues that must be resolved:"
-        List EVERY issue from the review as a numbered checklist.
+Review phases follow an Inline Scout + Judge pattern. The orchestrator **executes Scout logic directly** (no subagent spawn) to gather evidence, then spawns Judge subagent(s) for reasoning. This minimizes agent spawn overhead — only judges are spawned.
 
-        THEN do ALL of the following steps — do NOT skip any:
+**Model defaults** (override via environment variables `ARCH_JUDGE_MODEL`, `CODE_JUDGE_MODEL`):
+- Arch Judge: `claude-4.6-opus-max-thinking`
+- Code Judge: `claude-4.6-sonnet-medium-thinking`
 
-        Step A: Re-read `.cursor/skills/pipeline-coder/SKILL.md`.
-        Step B: Switch back to the Coder persona.
-        Step C: For EACH issue, explicitly state what you are fixing and why.
-        Step D: Apply the actual code fixes to the files.
-                Present a summary under: "## PHASE 3: IMPLEMENTATION (Revision <N>)"
-        Step E: Verify every issue is addressed by checking them off.
-        Step F: Update and display the pipeline state tracker.
-        Step G: Go back to PHASE 4 (re-read the Code Reviewer skill and review the revised code).
-```
+**Inline Scout execution (applies to all review modes):**
+1. Read `.cursor/skills/pipeline/phases/_scout.md`
+2. Execute the Scout instructions **directly** (you ARE the scout). Use Shell/Grep/Read tools to: run `git diff`, enumerate imports, scan for patterns, build the Evidence Pack.
+3. Format output per `.cursor/skills/pipeline/modes/_evidence-format.md`.
+4. The Evidence Pack is now in your context — no inter-agent transfer needed.
 
----
+**For `review` (dual-review mode — preferred for CI):**
+1. Run Inline Scout (steps above). Scope = user's file/folder arguments or git diff.
+2. Read both `.cursor/skills/pipeline/phases/arch-reviewer.md` and `.cursor/skills/pipeline/phases/code-reviewer.md`
+3. Spawn BOTH judges in parallel (single message, two Task calls with `run_in_background: true`):
+   - Arch Judge: `Task(model=$ARCH_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<arch-reviewer skill + evidence pack>")`
+   - Code Judge: `Task(model=$CODE_JUDGE_MODEL, subagent_type="generalPurpose", prompt="<code-reviewer skill + evidence pack>")`
+4. Wait for both to complete. Parse `PIPELINE_ARCH_VERDICT:` from arch judge and `PIPELINE_CODE_VERDICT:` from code judge. Do NOT emit per-judge checkpoints — wait silently until both finish, then emit ONE combined checkpoint (see below).
+5. Present both reviews in this exact order: `## ARCHITECTURE REVIEW` first, then `## CODE REVIEW`. The CI workflow's output splitting depends on this ordering.
+6. The overall pipeline passes only if BOTH verdicts pass (arch=APPROVE AND code=CLEAN).
+7. Emit a single post-judge checkpoint (one paragraph max): state both verdicts, the overall pass/fail, the health score, and any blocking items. Do NOT repeat this information — the Pipeline Summary at the end covers the rest.
 
-### PHASE 5: QA
+**For `arch-review` (Phase 9, standalone):**
+1. Run Inline Scout. Scope = user's file/folder arguments.
+2. Read `.cursor/skills/pipeline/phases/arch-reviewer.md`
+3. Spawn Arch Judge: `Task(model=$ARCH_JUDGE_MODEL, ...)` with evidence pack.
+4. Parse `PIPELINE_ARCH_VERDICT:` from Judge output.
 
-1. Read the skill file at `.cursor/skills/pipeline-qa/SKILL.md`.
-2. Switch persona to the QA Engineer.
-3. Analyze test coverage, write missing tests, run the test suite, and evaluate quality following the skill's QA process.
-4. Present results under a `## PHASE 5: QA` header.
-5. Extract the verdict. Then follow the QA VERDICT HANDLER below.
+**For `code-review-only` (Phase 4, standalone):**
+1. Run Inline Scout. Scope = user's file/folder arguments.
+2. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
+3. Spawn Code Judge: `Task(model=$CODE_JUDGE_MODEL, ...)` with evidence pack.
+4. Parse `PIPELINE_CODE_VERDICT:` from Judge output.
 
-#### QA VERDICT HANDLER
+**For `full` pipeline Phase 4 (after Phase 3):**
+1. Run Inline Scout. Scope = changed files from Phase 3.
+2. Read `.cursor/skills/pipeline/phases/code-reviewer.md`
+3. Spawn Code Judge with evidence pack + approved design from Phase 2.
+4. Parse `PIPELINE_CODE_VERDICT:`.
 
-```
-IF verdict is PASS:
-    Update state: Blocking Verdict = NONE
-    Proceed to Pipeline Summary.
+**Model fallback:** If the specified model is unavailable (Task tool returns an error), retry with `claude-4.6-sonnet-medium-thinking` and log: "Model fallback: <original> unavailable, using sonnet-medium-thinking."
 
-IF verdict is FAIL:
-    Separate the failures into:
-      - CODE BUGS: issues in the implementation that the Coder must fix
-      - TEST BUGS: issues in the tests that QA will fix in the next iteration
-    Increment QA Iterations counter.
+**Environment variable resolution:** Check `$ARCH_JUDGE_MODEL`, `$CODE_JUDGE_MODEL` env vars first. If not set, use the defaults above.
 
-    IF QA Iterations > 2:
-        STOP. Display state. Tell the user:
-        "QA has run 2 revision cycles but issues remain.
-        Here are the remaining failures: <list them>
-        You can run `/pipeline debug` to start a debug session on these remaining failures,
-        or provide guidance on how to proceed."
-        WAIT for user response. Do NOT continue.
+### Scope resolution (Phases 5 in standalone mode)
 
-    ELSE:
-        Display: "## REVISION LOOP <N>/2: Addressing QA Failures"
-        List ALL failures as a numbered checklist, tagged [CODE BUG] or [TEST BUG].
+For `qa-only` mode, the reviewer skill handles scope resolution and domain loading itself — it determines the file scope (from explicit paths or git diff) and resolves domains using its built-in path-prefix mapping. No additional orchestrator action is needed beyond passing the user's file/folder arguments (if any) to the reviewer.
 
-        IF there are CODE BUGS:
-            Step A: Re-read `.cursor/skills/pipeline-coder/SKILL.md`.
-            Step B: Switch to the Coder persona.
-            Step C: Fix each CODE BUG, stating what changed and why.
-            Step D: Present fixes under: "## PHASE 3: IMPLEMENTATION (QA Fix <N>)"
-            Step E: Re-read `.cursor/skills/pipeline-code-reviewer/SKILL.md`.
-            Step F: Switch to the Code Reviewer persona.
-            Step G: Review ONLY the code changes made in Step C-D (not the full codebase again).
-            Step H: Present the review under: "## PHASE 4: CODE REVIEW (QA Fix <N>)"
-            Step I: IF the Code Reviewer verdict is NOT CLEAN:
-                        Apply the Code Reviewer's fixes immediately (same as CODE REVIEW VERDICT HANDLER Step C-D).
-                        Present under: "## PHASE 3: IMPLEMENTATION (QA Fix <N> - CR Fix)"
-                        Do NOT loop Code Review again here — proceed to QA re-run.
+For `code-review-only`, `arch-review`, and `review` modes, scope resolution is handled by the inline Scout per the Agent Dispatch Protocol above.
 
-        THEN (whether or not there were code bugs):
-            Step J: Re-read `.cursor/skills/pipeline-qa/SKILL.md`.
-            Step K: Switch to the QA persona.
-            Step L: Fix any TEST BUGS, re-run all tests.
-            Step M: Present results under: "## PHASE 5: QA (Revision <N>)"
-            Step N: Check the verdict again (go back to top of QA VERDICT HANDLER).
-```
+### Single-phase modes (no revision loop)
 
----
+Modes `design-only`, `review-only`, `code-review-only`, `qa-only`, `arch-review`, `review`: execute ONE phase, record the verdict, stop. No revision loop.
 
-### PHASE 6: DEBUG
+### ADR annotation (Phase 2 only)
 
-1. Read the skill file at `.cursor/skills/pipeline-debugger/SKILL.md`.
-2. Switch persona to the Debugger.
-3. Follow the 6-step methodology defined in the skill: Gather Evidence → Reproduce → Isolate → Diagnose → Fix → Verify.
-4. Present the debug session under a `## PHASE 6: DEBUG` header (pipeline) or `## DEBUG SESSION` header (standalone).
-5. In standalone mode (`/pipeline debug`), WAIT for user confirmation after presenting the root cause diagnosis before applying fixes. The user may want to discuss findings or provide additional context.
-6. Update and display the pipeline state tracker.
+If `ADR File` in state is not NONE, pass the path to the design reviewer. It handles annotation per its own instructions (Part 2).
 
----
+### Debug mode
 
-## PIPELINE SUMMARY
+If input contains `/` or `.` + extension, probe with Read. If successful, use contents as error log. Otherwise treat input as symptom description. WAIT for user confirmation after diagnosis before applying fixes.
 
-After all applicable phases pass (or after a single-phase mode completes), produce a final summary.
+## Pipeline Summary (MANDATORY — do NOT skip)
 
-For **multi-phase modes** (full, design-and-review, implement):
+After all phases complete (or the single phase finishes), you MUST produce a summary using the template below. This is not optional — the pipeline is incomplete without it.
+
+**For multi-phase modes** (`full`, `design-and-review`, `implement`):
 
 ```
 ## PIPELINE COMPLETE
@@ -297,9 +235,9 @@ For **multi-phase modes** (full, design-and-review, implement):
 <mode used>
 
 ### Phases Summary
-| Phase | Agent | Verdict | Iterations |
-|-------|-------|---------|------------|
-(only include phases that were executed)
+| Phase | Agent | Verdict | Iterations | Skills Used |
+|-------|-------|---------|------------|-------------|
+(only include phases that were executed; list every skill file the agent read during the phase)
 
 ### Files Changed
 <list of all files created or modified, or "None" for design-only modes>
@@ -308,7 +246,7 @@ For **multi-phase modes** (full, design-and-review, implement):
 <important architectural or implementation decisions made during the pipeline>
 ```
 
-For **single-phase modes** (design-only, review-only, code-review-only, qa-only):
+**For single-phase modes** (`design-only`, `review-only`, `arch-review`, `review`, `code-review-only`, `qa-only`):
 
 ```
 ## <PHASE NAME> COMPLETE
@@ -316,24 +254,41 @@ For **single-phase modes** (design-only, review-only, code-review-only, qa-only)
 ### Input
 <Jira ticket, free-text prompt, or file provided>
 
+### Code Health Score: X/10
+(code-review-only mode only — copy from the phase output)
+
 ### Verdict
 <final verdict or "Design produced" for design-only>
+
+### Skills Used
+<list of all skill files read during the phase, e.g. "designer.md, codebase/SKILL.md, domain/rag/SKILL.md">
 
 ### Findings Summary
 <key findings, or design document location for design-only>
 
 ### Items Addressed in Revision Loops
-<list, or "None — approved on first pass">
+<list, or "None — single pass">
 ```
+
+To close the pipeline: first update the state tracker with `EXIT_STATUS: SUCCESS`, then emit the summary block as the absolute FINAL output. Do NOT consider the pipeline done until both are emitted in this order.
 
 ## Orchestrator Rules
 
-- You MUST read each skill file using the Read tool before starting that phase. The skill file contains the full persona and instructions.
-- Each phase must produce its output under the designated header.
-- NEVER proceed past a review phase when the verdict is not approval. Always execute the revision loop.
-- When in a revision loop, you must address EVERY item from the reviewer — not just some of them.
-- The revised output must be COMPLETE, not a partial diff. Produce the full design or full code fix.
+- You MUST read each skill file via Read tool before starting that phase. Do not rely on memory.
+- If reading a skill file fails: STOP. Display "PIPELINE ERROR: File not found at `<path>`." Set `EXIT_STATUS: SKILL_NOT_FOUND`.
+- If a phase encounters an unexpected failure (e.g., repeated tool errors, unrecoverable state, or an unhandled exception in execution): STOP. Display "PIPELINE ERROR: <description>." Set `EXIT_STATUS: ERROR`.
+- NEVER proceed past a review phase without approval. Always execute the revision loop.
+- In revision loops, address EVERY item — not just some.
 - Do not combine phases or run them out of order.
-- If Jira integration is needed but unavailable, notify the user and proceed with the information available.
-- Keep the user informed of progress: announce each phase transition clearly.
-- If any phase requires user input or clarification, stop and ask before proceeding.
+- If Jira MCP is unavailable, notify user and proceed with available info.
+- Announce each phase transition clearly.
+- If user input needed, stop and ask. Set `EXIT_STATUS: USER_INPUT_REQUIRED`.
+- Do NOT run `.github/scripts/evaluate_review_gate.py` or any CI gate/telemetry scripts. Those are executed by the workflow after your process exits.
+
+## Context Management
+
+- After each phase, emit a one-paragraph checkpoint: verdict, key decisions, files changed, and skills used (list every skill file the agent read via the Read tool during the phase, by short name — e.g. "designer.md, codebase/SKILL.md"). For parallel-judge phases (`review` mode), emit ONE checkpoint after both judges complete — do not narrate each judge's arrival separately.
+- If >15 tool calls within a single phase, summarize intermediate results before continuing.
+- In code revision loops, produce only changed files + summary of unchanged (not full re-emit).
+- In design revision loops, produce the complete revised design.
+- The state tracker is the single source of truth. If context is truncated, it alone must suffice.

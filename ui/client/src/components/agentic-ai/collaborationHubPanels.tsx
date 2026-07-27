@@ -1,33 +1,16 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  CustomDialogContent,
-} from "@/components/ui/dialog";
 import { Users, Trash2, Plus, MessageSquare, Network } from "lucide-react";
 import ChatInterface from "./chat/ChatInterface";
 import GraphDisplay from "./graphs/GraphDisplay";
-import WorkflowsPanel from "./WorkflowsPanel";
 import { CollabAvatar } from "@/components/shared/CollabAvatar";
 import type { MemberDisplay } from "@/utils/memberDisplay";
 import type { ChatSession, ChatMessage } from "@/types/session";
-import type { FlowObject } from "./graphs/interfaces";
 import type { SessionPayload } from "./ExecutionTab";
 import type { ElementValidationResult } from "@/types/validation";
+import type { PromptShortcut } from "@/api/blueprints";
+import { ViewModeToggle, type CarouselMode } from "@/components/shared/ViewModeToggle";
 
 export interface CollaborationHubSessionSidebarProps {
   chatSessions: ChatSession[];
@@ -151,9 +134,12 @@ export interface CollaborationHubMainColumnProps {
   isValidatingBlueprint: boolean;
   typingUsers: string[];
   teamMembers: MemberDisplay[];
+  defaultPrompts?: PromptShortcut[];
   triggerExecution: (payload: SessionPayload) => Promise<unknown>;
   onCancelSession: () => Promise<void>;
   getSessionParticipantMembers: (sessionId: string) => MemberDisplay[];
+  carouselMode?: CarouselMode;
+  onSetCarouselMode?: (mode: CarouselMode) => void;
 }
 
 export function CollaborationHubMainColumn({
@@ -167,12 +153,15 @@ export function CollaborationHubMainColumn({
   isValidatingBlueprint,
   typingUsers,
   teamMembers,
+  defaultPrompts,
   triggerExecution,
   onCancelSession,
   getSessionParticipantMembers,
+  carouselMode,
+  onSetCarouselMode,
 }: CollaborationHubMainColumnProps) {
   return (
-    <div className="flex-1 flex flex-col min-w-0">
+    <div className="h-full flex flex-col min-w-0">
       <div className="px-5 py-3 border-b border-gray-800 bg-background-surface flex items-center gap-3 flex-shrink-0">
         {selectedSession ? (
           <>
@@ -227,6 +216,9 @@ export function CollaborationHubMainColumn({
             collaborationMode={true}
             teamMembers={teamMembers}
             typingUsers={typingUsers}
+            defaultPrompts={defaultPrompts}
+            carouselMode={carouselMode}
+            onSetCarouselMode={onSetCarouselMode}
           />
         ) : (
           <div className="flex items-center justify-center h-full text-gray-500 text-sm">
@@ -253,6 +245,8 @@ export interface CollaborationHubRightPanelProps {
   blueprintValidationResults?: Record<string, ElementValidationResult>;
   isValidatingBlueprint: boolean;
   getSessionParticipantMembers: (sessionId: string) => MemberDisplay[];
+  carouselMode?: CarouselMode;
+  onSetCarouselMode?: (mode: CarouselMode) => void;
 }
 
 export function CollaborationHubRightPanel({
@@ -266,11 +260,23 @@ export function CollaborationHubRightPanel({
   blueprintValidationResults,
   isValidatingBlueprint,
   getSessionParticipantMembers,
+  carouselMode,
+  onSetCarouselMode,
 }: CollaborationHubRightPanelProps) {
+  const isGraphOnly = carouselMode === 'graph';
   return (
-    <div className="w-[340px] border-l border-gray-800 bg-background-card flex flex-col flex-shrink-0 hidden xl:flex">
+    <div className="h-full border-l border-gray-800 bg-background-card flex flex-col relative overflow-hidden">
+      {isGraphOnly && onSetCarouselMode && (
+        <div className="absolute top-3 right-3 z-30">
+          <ViewModeToggle
+            mode={carouselMode ?? 'normal'}
+            onModeChange={onSetCarouselMode}
+            className="shadow-lg"
+          />
+        </div>
+      )}
       <div className="flex-1 min-h-0 flex flex-col border-b border-gray-800">
-        <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
+        <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-3 flex-shrink-0 relative z-20">
           <div className="flex items-center gap-2">
             <Network className="w-3.5 h-3.5 text-primary" />
             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
@@ -296,14 +302,15 @@ export function CollaborationHubRightPanel({
               specDict={blueprintSpecCache.get(selectedSession.blueprintId)}
               height="100%"
               showBackground={true}
-              interactive={false}
+              interactive={true}
               centerInView={true}
               animated={true}
               validationResults={blueprintValidationResults}
               isValidating={isValidatingBlueprint}
               isLiveRequest={isLiveRequest}
               isCancelled={isCancelled}
-              isGraphVisible={true}
+              isGraphVisible={carouselMode !== 'chat'}
+              hitlEnabled={selectedSession.hitlEnabled}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-gray-600 text-xs">
@@ -357,7 +364,7 @@ export function CollaborationHubRightPanel({
             </dd>
           </div>
           <div className="flex justify-between">
-            <dt className="font-medium text-gray-400">Started</dt>
+            <dt className="font-medium text-gray-400">Last active</dt>
             <dd>{selectedSession?.lastActive || "—"}</dd>
           </div>
           <div className="flex justify-between">
@@ -380,105 +387,3 @@ export function CollaborationHubRightPanel({
   );
 }
 
-export interface CollaborationHubModalsProps {
-  showAddFlowModal: boolean;
-  setShowAddFlowModal: (open: boolean) => void;
-  selectedFlowForModal: FlowObject | null;
-  setSelectedFlowForModal: (flow: FlowObject | null) => void;
-  isCreatingSession: boolean;
-  onAddFlowConfirm: () => void;
-  showDeleteModal: boolean;
-  setShowDeleteModal: (open: boolean) => void;
-  chatToDelete: ChatSession | null;
-  isDeleting: boolean;
-  onConfirmDelete: () => void;
-  onDeleteCancel: () => void;
-}
-
-export function CollaborationHubModals({
-  showAddFlowModal,
-  setShowAddFlowModal,
-  selectedFlowForModal,
-  setSelectedFlowForModal,
-  isCreatingSession,
-  onAddFlowConfirm,
-  showDeleteModal,
-  setShowDeleteModal,
-  chatToDelete,
-  isDeleting,
-  onConfirmDelete,
-  onDeleteCancel,
-}: CollaborationHubModalsProps) {
-  return (
-    <>
-      <Dialog open={showAddFlowModal} onOpenChange={setShowAddFlowModal}>
-        <CustomDialogContent className="bg-background-card border-gray-800 max-w-[95vw] w-[95vw] h-[85vh] max-h-[85vh] flex flex-col overflow-hidden">
-          <DialogHeader className="flex-shrink-0 pb-4">
-            <DialogTitle className="text-lg">Start New Session</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 min-h-0 overflow-hidden">
-            <div key={`collab-hub-add-${showAddFlowModal}`} className="h-full">
-              <WorkflowsPanel
-                selectedFlow={selectedFlowForModal}
-                onFlowSelect={(flow: FlowObject | null) => setSelectedFlowForModal(flow)}
-                showActiveStatus={false}
-                showDeleteButton={false}
-                height="100%"
-                graphProps={{ showBackground: true, interactive: true }}
-              />
-            </div>
-          </div>
-          <DialogFooter className="flex-shrink-0 pt-4 border-t border-gray-800">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowAddFlowModal(false);
-                setSelectedFlowForModal(null);
-              }}
-              disabled={isCreatingSession}
-              className="bg-background-dark border-gray-700 hover:bg-background-surface"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={onAddFlowConfirm}
-              disabled={!selectedFlowForModal || isCreatingSession}
-              className="bg-[#03DAC6] hover:bg-opacity-80 text-black"
-            >
-              {isCreatingSession ? "Creating..." : "Start Session"}
-            </Button>
-          </DialogFooter>
-        </CustomDialogContent>
-      </Dialog>
-
-      <AlertDialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
-        <AlertDialogContent className="bg-background-card border-gray-800">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Session</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete &quot;{chatToDelete?.title}&quot;?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setShowDeleteModal(false);
-                onDeleteCancel();
-              }}
-              className="bg-background-dark border-gray-700 hover:bg-background-surface"
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={onConfirmDelete}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              {isDeleting ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
-  );
-}

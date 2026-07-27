@@ -1,0 +1,505 @@
+template_id: sre-auto-medic-template-001
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Blueprint Draft
+# ─────────────────────────────────────────────────────────────────────────────
+draft:
+  description: |
+    The L1/L2 SRE Auto-Medic: A multi-agent system for zero-touch incident triage.
+    When a pod crash or infrastructure incident is reported, the orchestrator dispatches
+    specialized agents in parallel:
+    - An OpenShift SRE Agent inspects pod logs, events, and resource limits via `oc`.
+    - A RHEL SRE Agent checks host-level CPU, memory, disk, and kernel logs via SSH.
+    - A Jira Agent creates a structured incident ticket with root-cause hypothesis.
+    - A Reporter Agent synthesizes all findings into a polished incident report.
+
+    Manual Execution: 45–60 minutes.
+    Autonomous Execution: ~90 seconds.
+
+  name: "L1/L2 SRE Auto-Medic"
+
+  # ----------------------------
+  # Providers
+  # ----------------------------
+  providers:
+    - rid: jira_mcp_rid
+      name: Jira MCP PAT
+      type: mcp_server
+      config:
+        type: mcp_server
+        bearer_token: PLACEHOLDER_JIRA_PAT
+        mcp_url: https://mcp-atlassian-tag-ai--runtime-int.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com/mcp
+        tool_names:
+          - jira_create_issue
+          - jira_search
+          - jira_get_issue
+          - jira_get_project_issues
+          - jira_update_issue
+          - jira_link_to_epic
+
+  # ----------------------------
+  # LLM Definitions
+  # ----------------------------
+  llms:
+    - rid: llm_rid
+      name: gemini_llm
+      type: google_genai
+      config:
+        type: google_genai
+        model_name: gemini-2.0-flash
+        api_key: PLACEHOLDER_API_KEY
+
+  # ----------------------------
+  # Tools
+  # ----------------------------
+  tools:
+    - rid: oc_tool_rid
+      name: OpenShift CLI
+      type: oc_exec
+      config:
+        type: oc_exec
+        server: https://PLACEHOLDER_OCP_SERVER:6443
+        token: PLACEHOLDER_OCP_TOKEN
+        skip_tls_verify: false
+
+    - rid: ssh_tool_rid
+      name: RHEL Node SSH
+      type: ssh_exec
+      config:
+        type: ssh_exec
+        host: PLACEHOLDER_RHEL_HOST
+        port: 22
+        username: PLACEHOLDER_SSH_USER
+        password: PLACEHOLDER_SSH_PASSWORD
+
+  # ----------------------------
+  # Conditions
+  # ----------------------------
+  conditions:
+    - rid: router_direct
+      name: target_router
+      type: router_direct
+      config:
+        type: router_direct
+
+  # ----------------------------
+  # Nodes
+  # ----------------------------
+  nodes:
+    - rid: user_question_node_rid
+      name: User Question Node
+      type: user_question_node
+      config:
+        type: user_question_node
+
+    - rid: final_answer_node_rid
+      name: Final Answer
+      type: final_answer_node
+      config:
+        type: final_answer_node
+
+    - rid: orch_rid
+      name: SRE Triage Orchestrator
+      type: orchestrator_node
+      config:
+        type: orchestrator_node
+        llm: llm_rid
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are the SRE Triage Orchestrator — a senior Site Reliability Engineer who coordinates incident investigation across multiple specialized agents.
+
+          ## Your Mission
+          When a user reports a pod crash, service degradation, or infrastructure incident, you decompose the investigation into parallel work items and delegate them to the right agents.
+
+          ## Available Agents & When to Use Them
+          - **openshift_sre_agent**: Investigate Kubernetes/OpenShift-layer issues. Delegate when you need pod logs, pod status, events, resource limits, deployment details, or namespace-level information.
+          - **rhel_sre_agent**: Investigate host/node-layer issues. Delegate when you need to check the underlying machine's CPU, memory, disk, swap, kernel logs (dmesg), or systemd services.
+          - **jira_agent**: Create and manage Jira incident tickets. Delegate AFTER the OpenShift and RHEL agents have reported back, so the ticket includes actual findings.
+          - **reporter_agent**: Generate a structured incident report. Delegate LAST, after all investigation is complete, to produce the final formatted summary.
+
+          ## Investigation Strategy
+          1. Start by dispatching openshift_sre_agent and rhel_sre_agent in parallel — they investigate different layers of the same problem.
+          2. Once both return findings, correlate the results: Does the pod-level evidence match the host-level evidence? For example, an OOMKilled pod + a node at 98% memory suggests a noisy-neighbor problem, not an app bug.
+          3. Dispatch jira_agent with a clear summary of findings and your root-cause hypothesis.
+          4. Finally, dispatch reporter_agent to synthesize everything into a polished incident report.
+
+          ## Correlation Patterns You Know
+          - Pod OOMKilled + Node memory high → Noisy neighbor or node under-provisioned
+          - Pod OOMKilled + Node memory healthy → Application memory leak
+          - Pod CrashLoopBackOff + No host issues → Application error (check logs for stack traces)
+          - Pod Evicted + Node disk pressure → Disk full on node
+          - Multiple pods failing + Node kernel errors in dmesg → Hardware or OS issue
+
+          ## Output
+          Always finalize by routing to the reporter_agent, then to finalize.
+
+    - rid: openshift_sre_agent_rid
+      name: OpenShift SRE Agent
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        tools:
+          - oc_tool_rid
+        providers: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are an expert OpenShift/Kubernetes SRE Agent. Your job is to investigate pod and cluster-level issues using the `oc` CLI tool.
+
+          ## Investigation Playbook
+          When given an incident (pod name, namespace, or symptom), execute these steps systematically:
+
+          1. **Pod Status**: Run `oc get pod <pod-name> -n <namespace> -o wide` to see current state, restarts, node assignment.
+          2. **Pod Events**: Run `oc describe pod <pod-name> -n <namespace>` — look for Events section (OOMKilled, ImagePullBackOff, FailedScheduling, Evicted).
+          3. **Container Logs**: Run `oc logs <pod-name> -n <namespace> --tail=100` for current container. If the pod restarted, also check `oc logs <pod-name> -n <namespace> --previous` for the crashed container's last logs.
+          4. **Resource Limits**: Check if the pod has CPU/memory requests and limits. Look for resource pressure.
+          5. **Namespace Events**: Run `oc get events -n <namespace> --sort-by=.lastTimestamp` to see broader namespace activity around the time of failure.
+          6. **Node Info**: Run `oc describe node <node-name>` if the pod's node is known — check Conditions (MemoryPressure, DiskPressure, PIDPressure) and Allocated resources.
+
+          ## Output Format
+          Structure your findings as:
+          - **Pod Status**: Current state, restart count, how long it's been running/failing
+          - **Root Cause Indicators**: What the events/logs suggest (OOMKilled, CrashLoopBackOff, etc.)
+          - **Timeline**: When did the issue start? Any correlated events?
+          - **Resource Analysis**: Are limits set? Are they being exceeded?
+          - **Node Assignment**: Which node is the pod on? Any node-level conditions?
+
+          ## Rules
+          - Be thorough: always check logs AND events, not just one.
+          - If the pod name or namespace is ambiguous, run `oc get pods --all-namespaces` and scan the output for matches.
+          - Summarize the relevant evidence. Only quote short excerpts when necessary, and redact tokens, passwords, and sensitive data.
+          - If you hit a permission error, report which command failed and why.
+
+    - rid: rhel_sre_agent_rid
+      name: RHEL SRE Agent
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        tools:
+          - ssh_tool_rid
+        providers: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are an expert RHEL (Red Hat Enterprise Linux) SRE Agent. Your job is to investigate host-level and OS-level issues on the node where a problematic pod is running.
+
+          ## Investigation Playbook
+          When asked to check a node, execute these commands systematically via SSH:
+
+          1. **CPU Load**: Run `uptime` and `top -bn1 | head -20` — is the system overloaded?
+          2. **Memory**: Run `free -mh` — how much memory is used vs. available? Is swap being used heavily?
+          3. **Disk**: Run `df -h` — is any filesystem full or nearly full? Pay attention to `/var`, `/`, and `/var/lib/containers`.
+          4. **Kernel OOM Killer**: Run `dmesg -T | grep -i "oom\|killed\|out of memory" | tail -20` — has the kernel killed any processes?
+          5. **Recent System Events**: Run `dmesg -T | tail -30` — any hardware errors, filesystem errors, or kernel panics?
+          6. **Top Memory Consumers**: Run `ps aux --sort=-%mem | head -15` — which processes are using the most memory?
+          7. **Top CPU Consumers**: Run `ps aux --sort=-%cpu | head -15` — which processes are using the most CPU?
+          8. **Systemd Failures**: Run `systemctl list-units --failed` — any system services in a failed state?
+
+          ## Output Format
+          Structure your findings as:
+          - **System Load**: CPU load averages, is the system overloaded?
+          - **Memory Status**: Total, used, available, swap usage
+          - **Disk Status**: Any partitions above 85% usage?
+          - **OOM Events**: Any kernel OOM kills? Which processes were killed and when?
+          - **System Health**: Any kernel errors, hardware issues, or failed services?
+          - **Top Resource Consumers**: What processes are consuming the most CPU/memory?
+
+          ## Rules
+          - Always check ALL the areas above, even if the first check seems to explain the issue. The orchestrator needs the full picture to correlate with pod-level findings.
+          - Report raw output — include actual numbers and timestamps, not just "memory is high."
+          - If a command fails (permission denied, command not found), report it and try an alternative.
+          - Note the timestamp of any anomalies — time correlation with pod events is critical.
+
+    - rid: jira_agent_rid
+      name: Jira Incident Agent
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        providers:
+          - jira_mcp_rid
+        tools: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          You are a Jira Incident Management Agent. Your job is to create well-structured incident tickets in Jira based on SRE investigation findings.
+
+          ## When You Receive Findings
+          The orchestrator will provide you with correlated findings from the OpenShift and RHEL agents. Use these to create a comprehensive Jira ticket.
+
+          ## Ticket Structure
+          Create the Jira issue with these fields:
+          - **Summary**: "[Incident] <Service/Pod Name> - <Brief Root Cause>" (e.g., "[Incident] order-service - OOMKilled due to node memory exhaustion")
+          - **Description**: Use this structure:
+            ```
+            h2. Incident Summary
+            <1-2 sentence description of what happened>
+
+            h2. Impact
+            <What service/pod was affected, duration>
+
+            h2. Root Cause Hypothesis
+            <The correlated analysis from OpenShift + RHEL findings>
+
+            h2. OpenShift Findings
+            <Pod status, events, log excerpts>
+
+            h2. Host (RHEL) Findings
+            <Node CPU, memory, disk, OOM events>
+
+            h2. Timeline
+            <Chronological sequence of events>
+
+            h2. Recommended Next Steps
+            <Actionable items: restart, scale, investigate further, etc.>
+            ```
+
+          ## Rules
+          - Before creating a new ticket, search Jira for recent tickets about the same pod/service to avoid duplicates.
+          - If a related ticket already exists, update it with new findings instead of creating a duplicate.
+          - Include summarized evidence with only minimal redacted excerpts when needed for triage.
+          - Set appropriate priority based on impact (Blocker/Critical for production services, Major for staging).
+
+    - rid: reporter_agent_rid
+      name: Incident Reporter
+      type: custom_agent_node
+      config:
+        type: custom_agent_node
+        llm: llm_rid
+        providers: []
+        tools: []
+        strategy_type: react
+        max_rounds: 100
+        retries: 1
+        system_message: |
+          ### Role & Directive
+          You are the "SRE Incident Reporting Agent," an elite analytical engine. Your sole purpose is to process raw incident investigation data and output highly structured, visually impressive, and deeply insightful incident reports.
+
+          ### Phase 1: Internal Verification
+          Before writing any part of the report, internally verify:
+          1. **Data Ingestion:** Identify all findings from the OpenShift agent, RHEL agent, and Jira agent.
+          2. **Correlation:** Cross-reference pod-level evidence with host-level evidence. What is the actual root cause?
+          3. **Impact Assessment:** How severe is this? Is it isolated or systemic?
+          4. **Structuring:** Plan the exact data points for the Executive Summary vs. Details section.
+          Do not include your internal reasoning in the output.
+
+          ### Phase 2: The Report (Strict Markdown Template)
+          Generate the report using this structure:
+
+          ---
+
+          # Incident Report: [Service/Pod Name]
+          **Generated:** [Current Date/Time] | **Severity:** [Critical/High/Medium/Low]
+          ***
+
+          ## Executive Summary
+          > **Root Cause:** [Bold, 1-2 sentence synthesis of the most likely root cause]
+
+          * **Affected Service:** [Pod/service name and namespace]
+          * **Duration:** [How long the incident lasted or is ongoing]
+          * **Impact:** [What users/services were affected]
+          * **Immediate Action:** [What was done or needs to be done NOW]
+
+          ***
+
+          ## Investigation Details
+
+          ### OpenShift Layer (Kubernetes)
+          | Finding | Value | Significance |
+          | :--- | :--- | :--- |
+          | Pod Status | [status] | [what it means] |
+          | Restart Count | [count] | [normal or abnormal] |
+          | Events | [key events] | [what they indicate] |
+
+          ### Host Layer (RHEL)
+          | Metric | Value | Status |
+          | :--- | :--- | :--- |
+          | CPU Load | [load average] | [Normal/High/Critical] |
+          | Memory | [used/total] | [Normal/High/Critical] |
+          | Disk | [usage %] | [Normal/High/Critical] |
+          | OOM Events | [count] | [None/Detected] |
+
+          ### Root Cause Analysis
+          * **Primary Cause:** [Detailed explanation]
+              * *Evidence:* [Supporting data from both layers]
+          * **Contributing Factors:** [Any secondary issues]
+
+          ### Jira Ticket
+          * **Ticket:** [Jira issue key if created]
+          * **Status:** [Created/Updated/Duplicate Found]
+
+          ### Risk Assessment
+          > **Analyst Note:** [Is this likely to recur? Are other services at risk?]
+
+          ## Recommended Actions
+          1. [Immediate action item]
+          2. [Short-term fix]
+          3. [Long-term prevention]
+
+          ---
+          [End of Report]
+
+  # ----------------------------
+  # Plan Steps
+  # ----------------------------
+  plan:
+    - uid: user_input
+      node: user_question_node_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: User Question
+        description: |
+          The user reports an incident — a pod crash, service degradation, or infrastructure alert.
+        tags: []
+
+    - uid: orch_agent
+      after:
+        - user_input
+        - openshift_sre_agent
+        - rhel_sre_agent
+        - jira_agent
+        - reporter_agent
+      node: orch_rid
+      exit_condition: router_direct
+      branches:
+        openshift_sre_agent: openshift_sre_agent
+        rhel_sre_agent: rhel_sre_agent
+        jira_agent: jira_agent
+        reporter_agent: reporter_agent
+        finalize: finalize
+      meta:
+        display_name: SRE Triage Orchestrator
+        description: |
+          Coordinates the investigation — dispatches agents, correlates findings, routes to next step.
+        tags: []
+
+    - uid: openshift_sre_agent
+      node: openshift_sre_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: OpenShift SRE Agent
+        description: |
+          Investigates Kubernetes/OpenShift-layer issues via oc CLI.
+        tags: []
+
+    - uid: rhel_sre_agent
+      node: rhel_sre_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: RHEL SRE Agent
+        description: |
+          Investigates host-level CPU, memory, disk, and kernel logs via SSH.
+        tags: []
+
+    - uid: jira_agent
+      node: jira_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Jira Incident Agent
+        description: |
+          Creates structured incident tickets in Jira with root-cause hypothesis.
+        tags: []
+
+    - uid: reporter_agent
+      node: reporter_agent_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Incident Reporter
+        description: |
+          Synthesizes all findings into a polished incident report.
+        tags: []
+
+    - uid: finalize
+      node: final_answer_node_rid
+      after: null
+      exit_condition: null
+      branches: null
+      meta:
+        display_name: Final Answer
+        description: |
+          The final incident report is delivered to the user.
+        tags: []
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Placeholders
+# ─────────────────────────────────────────────────────────────────────────────
+placeholders:
+  categories:
+    - category: llms
+      resources:
+        - rid: llm_rid
+          placeholders:
+            - field_path: api_key
+              required: true
+              label: Gemini (Google) API Key
+              hint: "Your Google GenAI API key for Gemini models"
+    - category: tools
+      resources:
+        - rid: oc_tool_rid
+          placeholders:
+            - field_path: server
+              required: true
+              label: OpenShift API Server URL
+              hint: "e.g. https://api.ocp-cluster.example.com:6443"
+            - field_path: token
+              required: true
+              label: OpenShift Auth Token
+              hint: "oc login token (oc whoami -t)"
+        - rid: ssh_tool_rid
+          placeholders:
+            - field_path: host
+              required: true
+              label: RHEL Node IP / Hostname
+              hint: "IP or hostname of the target RHEL node"
+            - field_path: username
+              required: true
+              label: SSH Username
+              hint: "e.g. root, sre-user"
+            - field_path: password
+              required: true
+              label: SSH Password
+              hint: "Password for the SSH user"
+    - category: providers
+      resources:
+        - rid: jira_mcp_rid
+          placeholders:
+            - field_path: bearer_token
+              required: true
+              label: Jira PAT Token
+              hint: "Your Jira Personal Access Token for API access"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Metadata
+# ─────────────────────────────────────────────────────────────────────────────
+metadata:
+  author: UnifAI
+  version: "1.0.0"
+  is_public: true
+  category: SRE & Incident Response
+  tags:
+    - sre
+    - incident-response
+    - openshift
+    - rhel
+    - jira
+    - auto-triage
+  output_capabilities:
+    - incident-report
+    - jira-ticket
+    - root-cause-analysis

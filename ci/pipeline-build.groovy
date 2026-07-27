@@ -58,7 +58,12 @@ def buildDockerImage(String component) {
 
     def componentLower = component.toLowerCase().replace("-", "")
 
-    def status = sh(script: "podman build -t ${componentLower}:${VERSION} -t ${componentLower}:latest -f ${component}/${dockerfile} ${context} > ${logFile} 2>&1", returnStatus: true)
+    sh "echo '>>> Build START: ${componentLower}' && date"
+    def status = sh(script: """#!/bin/bash
+        set -o pipefail
+        podman build -t ${componentLower}:${VERSION} -t ${componentLower}:latest -f ${component}/${dockerfile} ${context} 2>&1 | awk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), \$0; fflush() }' > ${logFile}""",
+        returnStatus: true)
+    sh "echo '>>> Build END: ${componentLower}' && date"
 
     if (status != 0) {
         echo("Build failed for module: ${componentLower}. Check ${logFile} for details.")
@@ -72,6 +77,7 @@ def buildDockerImage(String component) {
 
 def tagAndPushImageToRegistry( buildParams,component) {
     echo("Tagging and pushing image for ${component}.")
+    sh "echo '>>> Push START: ${component}' && date"
     component = component.replace("-", "")
     def componentLower = component.toLowerCase()
 
@@ -91,13 +97,15 @@ def tagAndPushImageToRegistry( buildParams,component) {
         }
         echo("Image for ${componentLower} has been tagged and pushed to ${buildParams.ImageRegistry}/${buildParams.ImageRegistryPath}/${componentLower}:${VERSION}")
     }
+    sh "echo '>>> Push END: ${component}' && date"
 }
 
 def cleanWorkspace(component) {
+    def componentLower = component.toLowerCase().replace("-", "")
     sh """
-        podman rm -f  ${component} || true
-        podman rmi -f ${component}:${VERSION} || true
-        podman rmi -f ${component}:latest || true  
+        podman rm -f  ${componentLower} || true
+        podman rmi \$(podman images -a --filter "reference=${componentLower}:${VERSION}" -q) -f || true
+        podman rmi -f ${componentLower}:latest || true  
     """
 }
 
@@ -116,6 +124,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
+                sh "echo '>>> Checkout START' && date"
                 echo("CheckOut ${buildParams.MainRepoProject}/${params.BRANCH}")
                 dir("${buildParams.DevRoot}/${params.BRANCH}/") {
                     checkout([$class: 'GitSCM',
@@ -141,7 +150,7 @@ pipeline {
                         ]]
                     ])
                 }
-                
+                sh "echo '>>> Checkout END' && date"
             }
         }
 
@@ -244,27 +253,38 @@ pipeline {
             }
             steps {
                 script {
-                    def modules = []
-                    if (params.build_identity_image) modules << 'identity'
-                    if (params.build_rag_backend) modules << 'rag'
-                    if (params.build_multiagent_backend) modules << 'multiagent'
-                    if (params.build_backend) modules << 'backend'
-                    if (params.build_gui) modules << 'ui'
-                    def modulesToDeploy = modules.join(',')
+                    def identityVersion = ""
+                    def ragVersion = ""
+                    def multiagentVersion = ""
+                    def backendVersion = ""
+                    def guiVersion = ""
+                    if (params.build_identity_image) identityVersion = params.VERSION
+                    if (params.build_rag_backend) ragVersion = params.VERSION
+                    if (params.build_multiagent_backend) multiagentVersion = params.VERSION
+                    if (params.build_backend) backendVersion = params.VERSION
+                    if (params.build_gui) guiVersion = params.VERSION
 
-                    echo "Triggering deployment pipeline with MODULES_TO_DEPLOY = ${modulesToDeploy}"
+                    echo "Triggering deployment pipeline with IDENTITY_VERSION = ${identityVersion}, RAG_VERSION = ${ragVersion}, MULTIAGENT_VERSION = ${multiagentVersion}, BACKEND_VERSION = ${backendVersion}, GUI_VERSION = ${guiVersion}"
                     build job: 'unifai-app-deployer',
                     parameters: [
                         string(name: 'PIPELINE_BRANCH', value: params.PIPELINE_BRANCH),
                         string(name: 'deploy_location', value: params.deploy_location),
                         string(name: 'deploy_type', value: params.deploy_type),
                         string(name: 'BRANCH', value: params.BRANCH),
-                        string(name: 'VERSION', value: params.VERSION),
-                        string(name: 'MODULES_TO_DEPLOY', value: modulesToDeploy),
+                        string(name: 'IDENTITY_VERSION', value: identityVersion),
+                        string(name: 'BACKEND_VERSION', value: backendVersion),
+                        string(name: 'RAG_VERSION', value: ragVersion),
+                        string(name: 'MA_VERSION', value: multiagentVersion),
+                        string(name: 'GUI_VERSION', value: guiVersion),
                         booleanParam(name: 'debug_mode', value: params.debug_mode),
                     ]
                 }
             }
+        }
+    }
+    post {
+        always {
+            cleanPodmanSystem()
         }
     }
 

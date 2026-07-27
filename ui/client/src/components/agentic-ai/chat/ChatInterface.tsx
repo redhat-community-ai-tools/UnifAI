@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Send, Square, Trash2, Loader2, Sparkles, Info, Copy, RotateCcw,
-  ThumbsUp, ThumbsDown, Check, Columns3, MessageSquare, Network,
+  ThumbsUp, ThumbsDown, Check,
   Maximize2, Minimize2, Download, FileText, FileJson, Ban, ChevronDown, ChevronUp,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -20,15 +20,19 @@ import axios from "../../../http/axiosAgentConfig";
 import { MarkdownComponents, preprocessText } from "./helpers/TextComponents";
 import { SessionPayload } from "../ExecutionTab";
 import { useStreamingData } from "../StreamingDataContext";
-import { Message, StreamLogEntry, WorkPlanSnapshot, isSessionCancellation } from "./types";
+import { Message, StreamLogEntry, WorkPlanSnapshot, ApprovalDecision, ApprovalStatus, AutoRuleAction, isSessionCancellation } from "./types";
 import { StreamLogDisplay } from "./StreamLogDisplay";
+import { ApprovalBadge } from "./ApprovalBadge";
+import { submitApproval, submitApprovalRule } from "@/api/sessions";
 import { useToast } from "@/hooks/use-toast";
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
 import WorkflowStatusBanner, { WorkflowBannerMessages } from '@/components/shared/WorkflowStatusBanner';
 import { useAuth } from "@/contexts/AuthContext";
+import type { PromptShortcut } from "@/api/blueprints";
 import { MemberDisplay, buildMemberDisplay } from "@/utils/memberDisplay";
 import { CollabAvatar } from "@/components/shared/CollabAvatar";
+import { ViewModeToggle, type CarouselMode } from "@/components/shared/ViewModeToggle";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -68,8 +72,8 @@ interface ChatInterfaceProps {
   isValidatingBlueprint?: boolean;
   isBlueprintGraphHidden?: boolean;
   isChatOnlyMode?: boolean;
-  onSetCarouselMode?: (mode: 'normal' | 'chat' | 'graph') => void;
-  carouselMode?: 'normal' | 'chat' | 'graph';
+  onSetCarouselMode?: (mode: CarouselMode) => void;
+  carouselMode?: CarouselMode;
   onQueueMessage?: (message: string) => void;
   queuedMessageToProcess?: string | null;
   onQueuedMessageProcessed?: () => void;
@@ -78,6 +82,7 @@ interface ChatInterfaceProps {
   collaborationMode?: boolean;
   teamMembers?: MemberDisplay[];
   typingUsers?: string[];
+  defaultPrompts?: PromptShortcut[];
 }
 
 export default function ChatInterface({
@@ -103,6 +108,7 @@ export default function ChatInterface({
   collaborationMode = false,
   teamMembers = [],
   typingUsers = [],
+  defaultPrompts,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -132,6 +138,23 @@ export default function ChatInterface({
   }, []);
   const wasCancelledByUserRef = useRef(false);
   const activeUserMessageIdRef = useRef<string | null>(null);
+
+  const isInputDisabled = useMemo(
+    () => !blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint || isLiveRequest,
+    [blueprintExists, isSharingDisabled, blueprintValid, isValidatingBlueprint, isLiveRequest]
+  );
+
+  // Prompt chips state — visible only until the first message is sent
+  const hasExistingConversation = initialMessages.length > 0;
+  const [chipsDismissed, setChipsDismissed] = useState(false);
+  const showPromptChips = !chipsDismissed && !hasExistingConversation && !isInputDisabled && (defaultPrompts?.length ?? 0) > 0;
+  const [previewChipId, setPreviewChipId] = useState<string | null>(null);
+
+  const getDisplayTitle = (prompt: { text: string }): string => {
+    const words = prompt.text.split(/\s+/);
+    const preview = words.length <= 3 ? prompt.text : words.slice(0, 3).join(" ") + "...";
+    return preview.length > 40 ? preview.slice(0, 37) + "..." : preview;
+  };
 
   const updateMessageById = useCallback(
     (messageId: string, updates: Partial<Message>) => {
@@ -299,12 +322,6 @@ export default function ChatInterface({
     }
     return "Ask a question about your data...";
   }, [blueprintExists, isSharingDisabled, isValidatingBlueprint, blueprintValid, isLiveRequest]);
-
-  // Transform backend messages to frontend format with stable IDs
-  const isInputDisabled = useMemo(
-    () => !blueprintExists || isSharingDisabled || !blueprintValid || isValidatingBlueprint || isLiveRequest,
-    [blueprintExists, isSharingDisabled, blueprintValid, isValidatingBlueprint, isLiveRequest]
-  );
 
   // Transform backend messages to frontend format (streamLogs/workPlans, managed separately)
   const transformBackendMessagesToFrontend = useCallback(
@@ -476,39 +493,48 @@ export default function ChatInterface({
           const newStatus = mapStreamToStatus(entry.stream);
           const newMessage = entry.text;
 
+          const currentApprovals = entry?.approvals || [];
+          const hasApprovals = currentApprovals.length > 0;
+
           if (
             !existingLog ||
             existingLog.status !== newStatus ||
-            existingLog.message !== newMessage
+            existingLog.message !== newMessage ||
+            (existingLog.approvals?.length || 0) !== currentApprovals.length ||
+            existingLog.approvals?.some(
+              (a, i) => a.status !== currentApprovals[i]?.status
+            )
           ) {
-            // Show stream log if there's text content OR if there are tool calls
-            if (newMessage || (entry?.tools && entry.tools.length > 0)) {
+            if (newMessage || (entry?.tools && entry.tools.length > 0) || hasApprovals) {
               updatedStreamLogs.push({
                 nodeId: entry.node_name,
                 nodeName: entry.node_name
                   .replace(/_/g, " ")
                   .replace(/\b\w/g, (l: string) => l.toUpperCase()),
-                message: newMessage || "", // Allow empty message when showing tools
-                tools: entry?.tools || [],
+                message: newMessage || "",
+                tools: (entry?.tools || []).map(t => ({ ...t })),
+                approvals: currentApprovals.map(a => ({ ...a })),
                 status: newStatus,
-                isExpanded: existingLog?.isExpanded || false,
+                isExpanded: existingLog?.isExpanded || (hasApprovals && !existingLog),
               });
             }
           } else {
-            // Keep existing log unchanged
             updatedStreamLogs.push(existingLog);
           }
         });
 
-        // Only update if there are actual changes
         const hasLogChanges =
           updatedStreamLogs.length !== currentLogs.length ||
           updatedStreamLogs.some((log, index) => {
             const currentLog = currentLogs[index];
-            return (
-              !currentLog ||
-              log.status !== currentLog.status ||
-              log.message !== currentLog.message
+            if (!currentLog) return true;
+            if (log.status !== currentLog.status) return true;
+            if (log.message !== currentLog.message) return true;
+            const prevA = currentLog.approvals || [];
+            const nextA = log.approvals || [];
+            if (prevA.length !== nextA.length) return true;
+            return prevA.some(
+              (a, i) => a.requestId !== nextA[i]?.requestId || a.status !== nextA[i]?.status,
             );
           });
 
@@ -832,6 +858,136 @@ export default function ChatInterface({
   }, []);
 
 
+  // ── HITL approval ──────────────────────────────────────────────────────────
+
+  const handleApprovalDecision = useCallback(
+    async (
+      requestId: string,
+      decision: ApprovalDecision,
+      feedback?: string,
+      modifiedArgs?: Record<string, any>,
+    ) => {
+      if (!runId) return;
+
+      const statusMap: Record<ApprovalDecision, ApprovalStatus> = {
+        approve: 'approved',
+        reject: 'rejected',
+        modify: 'modified',
+        redirect: 'redirected',
+      };
+
+      try {
+        await submitApproval({
+          sessionId: runId,
+          requestId,
+          decision,
+          feedback,
+          modifiedArgs,
+        });
+
+        // Optimistically update the approval status in nodeListRef
+        for (const entry of nodeListRef.current.values()) {
+          const approval = entry.approvals?.find((a) => a.requestId === requestId);
+          if (approval) {
+            approval.status = statusMap[decision];
+            if (feedback) approval.feedback = feedback;
+            break;
+          }
+        }
+
+        // Flush the mutation into React state so the UI re-renders immediately
+        // (the polling interval stores cloned snapshots, so in-place mutations aren't detected)
+        const currentMessageId = currentStreamingMessageId;
+        if (currentMessageId) {
+          const list = Array.from(nodeListRef.current.values());
+          const flushed = list
+            .filter(e => e.text || (e.tools && e.tools.length > 0) || (e.approvals && e.approvals.length > 0))
+            .map(e => {
+              const prev = streamLogDataRef.current[currentMessageId]?.find(l => l.nodeId === e.node_name);
+              return {
+                nodeId: e.node_name,
+                nodeName: e.node_name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+                message: e.text || '',
+                tools: (e.tools || []).map(t => ({ ...t })),
+                approvals: (e.approvals || []).map(a => ({ ...a })),
+                status: mapStreamToStatus(e.stream),
+                isExpanded: prev?.isExpanded ?? ((e.approvals?.length ?? 0) > 0),
+              };
+            });
+
+          streamLogDataRef.current = { ...streamLogDataRef.current, [currentMessageId]: flushed };
+          setStreamLogData(prev => ({ ...prev, [currentMessageId]: flushed }));
+        }
+      } catch (err) {
+        console.error('Error submitting approval:', err);
+        toast({
+          title: 'Approval failed',
+          description: 'Could not submit your decision. Please try again.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [runId, nodeListRef, toast, currentStreamingMessageId],
+  );
+
+  const handleAutoRule = useCallback(
+    async (
+      requestId: string,
+      nodeUid: string | null,
+      toolName: string | null,
+      action: AutoRuleAction,
+    ) => {
+      if (!runId) return;
+
+      const decision: ApprovalDecision = action === 'auto_approve' ? 'approve' : 'reject';
+      const feedback = action === 'auto_approve' ? undefined : 'auto-reject rule applied';
+
+      try {
+        await submitApprovalRule({
+          sessionId: runId,
+          nodeUid,
+          toolName,
+          action,
+        });
+
+        await handleApprovalDecision(requestId, decision, feedback);
+
+        toast({
+          title: action === 'auto_approve' ? 'Auto-approve rule saved' : 'Auto-reject rule saved',
+          description: 'Future matching requests will be resolved automatically.',
+        });
+      } catch (err) {
+        console.error('Failed to save auto-rule:', err);
+        toast({
+          title: 'Rule save failed',
+          description: 'Could not save the rule. The request was not resolved.',
+          variant: 'destructive',
+        });
+      }
+    },
+    [runId, handleApprovalDecision, toast],
+  );
+
+  const pendingApprovalCount = useMemo(() => {
+    let count = 0;
+    const allLogs = Object.values(streamLogData);
+    for (const logs of allLogs) {
+      for (const log of logs) {
+        if (log.approvals) {
+          count += log.approvals.filter((a) => a.status === 'pending').length;
+        }
+      }
+    }
+    return count;
+  }, [streamLogData]);
+
+  const scrollToFirstPendingApproval = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const el = container.querySelector('[data-node-id]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
   // User sends message → Creates an AI message with empty streamLogs
   // Streaming starts → Interval polls for node updates and updates the message
   // Live updates → Each node appears/updates as data becomes available
@@ -841,6 +997,8 @@ export default function ChatInterface({
   const handleSendMessage = async (messageToSend?: string) => {
     const messageContent = messageToSend || inputMessage;
     if (messageContent.trim() === "") return;
+
+    setChipsDismissed(true);
 
     if (isTyping || isLiveRequest) {
       if (onQueueMessage) {
@@ -1266,8 +1424,11 @@ export default function ChatInterface({
           {!isChatOnlyMode && (
             <StreamLogDisplay
               message={messageWithStreamingData}
+              sessionId={runId || ''}
               onToggleExpansion={toggleNodeExpansion}
               onToggleWorkPlanExpansion={toggleWorkPlanExpansion}
+              onApprovalDecision={handleApprovalDecision}
+              onAutoRule={handleAutoRule}
             />
           )}
 
@@ -1345,46 +1506,11 @@ export default function ChatInterface({
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
-              {/* Carousel Mode Switch - 3 icons for Split/Chat/Graph views */}
               {onSetCarouselMode && !isChatOnlyMode && (
-                <div className="flex items-center bg-background-surface border border-gray-700 rounded-lg p-0.5">
-                  {/* Split View */}
-                  <button
-                    onClick={() => onSetCarouselMode('normal')}
-                    className={`p-1.5 rounded-md transition-all duration-200 ${
-                      carouselMode === 'normal'
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                    }`}
-                    title="Split View"
-                  >
-                    <Columns3 className="h-4 w-4" />
-                  </button>
-                  {/* Full Chat View */}
-                  <button
-                    onClick={() => onSetCarouselMode('chat')}
-                    className={`p-1.5 rounded-md transition-all duration-200 ${
-                      carouselMode === 'chat'
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                    }`}
-                    title="Full Chat View"
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                  </button>
-                  {/* Full Graph View */}
-                  <button
-                    onClick={() => onSetCarouselMode('graph')}
-                    className={`p-1.5 rounded-md transition-all duration-200 ${
-                      carouselMode === 'graph'
-                        ? 'bg-primary text-white shadow-sm'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/50'
-                    }`}
-                    title="Full Graph View"
-                  >
-                    <Network className="h-4 w-4" />
-                  </button>
-                </div>
+                <ViewModeToggle
+                  mode={carouselMode ?? 'normal'}
+                  onModeChange={onSetCarouselMode}
+                />
               )}
             </>
           )}
@@ -1479,6 +1605,16 @@ export default function ChatInterface({
           <div ref={messagesEndRef} />
         </div>
         <div className="p-4 border-t border-gray-800 flex-shrink-0">
+          {/* HITL approval badge */}
+          {pendingApprovalCount > 0 && (
+            <div className="mb-3 flex justify-center">
+              <ApprovalBadge
+                pendingCount={pendingApprovalCount}
+                onClick={scrollToFirstPendingApproval}
+              />
+            </div>
+          )}
+
           {/* Status banners - priority order: deleted > sharing disabled > invalid > validating */}
           {!blueprintExists && (
             <WorkflowStatusBanner {...WorkflowBannerMessages.deleted} />
@@ -1491,6 +1627,85 @@ export default function ChatInterface({
           )}
           {blueprintExists && !isSharingDisabled && isValidatingBlueprint && (
             <WorkflowStatusBanner {...WorkflowBannerMessages.validating} />
+          )}
+
+          {/* Prompt shortcut chips */}
+          {showPromptChips && defaultPrompts && defaultPrompts.length > 0 && (
+            <div className="mb-3 max-w-[90%]">
+              <div className="flex flex-wrap gap-3">
+                {defaultPrompts.map((prompt) => (
+                  <div key={prompt.id} className="relative flex-1 min-w-[10rem] max-w-[calc(33%-0.5rem)]">
+                    <div
+                      className={`flex items-center justify-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium border transition-colors w-full overflow-hidden ${
+                        previewChipId === prompt.id
+                          ? "bg-primary/20 border-primary/50 text-primary"
+                          : "bg-background-surface border-gray-700 text-gray-300 hover:border-primary/50 hover:text-primary"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 min-w-0"
+                        onClick={() => {
+                          setInputMessage(prompt.text);
+                          setPreviewChipId(null);
+                          textareaRef.current?.focus();
+                        }}
+                      >
+                        <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="truncate">{getDisplayTitle(prompt)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="ml-1 p-0.5 rounded hover:bg-gray-700/50"
+                        onClick={() => setPreviewChipId(previewChipId === prompt.id ? null : prompt.id)}
+                        aria-label={previewChipId === prompt.id ? "Collapse prompt preview" : "Expand prompt preview"}
+                      >
+                        <Maximize2 className={`h-3.5 w-3.5 transition-transform ${previewChipId === prompt.id ? "rotate-180" : ""}`} />
+                      </button>
+                    </div>
+                    <AnimatePresence>
+                      {previewChipId === prompt.id && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 4 }}
+                          transition={{ duration: 0.15, ease: "easeOut" }}
+                          className="absolute bottom-full left-0 mb-2 z-10 w-full"
+                        >
+                          <div className="rounded-md bg-gray-900 border border-primary/50 p-3 flex flex-col shadow-lg">
+                            <div className="max-h-[200px] overflow-y-auto mb-2">
+                              <pre className="text-sm text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">
+                                {prompt.text}
+                              </pre>
+                            </div>
+                            <div className="flex justify-between items-center pt-2 border-t border-gray-700">
+                              <button
+                                type="button"
+                                className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+                                onClick={() => setPreviewChipId(null)}
+                              >
+                                Close
+                              </button>
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  setInputMessage(prompt.text);
+                                  setPreviewChipId(null);
+                                  textareaRef.current?.focus();
+                                }}
+                                className="bg-primary hover:bg-primary/80"
+                              >
+                                Use this prompt
+                              </Button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
           
           {/* Input area */}

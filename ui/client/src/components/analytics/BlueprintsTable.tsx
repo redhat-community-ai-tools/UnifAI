@@ -75,10 +75,10 @@ export function BlueprintsTable({ blueprints, colors }: BlueprintsTableProps) {
                                 <span className="text-red-400">Failed</span>
                                 <span className="font-medium">{bp.failed_runs ?? 0}</span>
                               </div>
-                              {(bp.in_progress_runs ?? 0) > 0 && (
+                              {(bp.active_runs ?? 0) > 0 && (
                                 <div className="flex justify-between gap-4">
-                                  <span className="text-yellow-400">In Progress</span>
-                                  <span className="font-medium">{bp.in_progress_runs}</span>
+                                  <span className="text-yellow-400">Active</span>
+                                  <span className="font-medium">{bp.active_runs}</span>
                                 </div>
                               )}
                             </div>
@@ -95,14 +95,21 @@ export function BlueprintsTable({ blueprints, colors }: BlueprintsTableProps) {
                           </TooltipTrigger>
                           <TooltipContent side="left" className="max-w-xs">
                             <div className="text-xs">
-                              <p className="font-semibold mb-1">Users who ran this workflow:</p>
+                              <p className="font-semibold mb-1">Identities who ran this workflow:</p>
                               <div className="max-h-32 overflow-y-auto">
                                 {bp.user_list && bp.user_list.length > 0 ? (
-                                  bp.user_list.map((user, i) => (
-                                    <div key={i} className="text-gray-300 truncate">{user}</div>
-                                  ))
+                                  bp.user_list.map((entry, i) => {
+                                    const [type, id, ...nameParts] = entry.split(':');
+                                    const displayName = nameParts.join(':');
+                                    return (
+                                      <div key={i} className="text-gray-300 truncate flex items-center gap-1">
+                                        {type === 'team' && <span className="text-blue-400">[team]</span>}
+                                        <span>{displayName || id || entry}</span>
+                                      </div>
+                                    );
+                                  })
                                 ) : (
-                                  <div className="text-gray-400">No user data</div>
+                                  <div className="text-gray-400">No identities found</div>
                                 )}
                               </div>
                             </div>

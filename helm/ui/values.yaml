@@ -75,7 +75,8 @@ globalConfigMapNames:
 - unifai-rag-config
 - multiagent-config
 - backend-config
-
+- identity-svc-config
+globalSecretName: shared-secret
 # This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
 ingress:
   enabled: false

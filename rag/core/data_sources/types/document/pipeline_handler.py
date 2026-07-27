@@ -10,7 +10,7 @@ from infrastructure.sources.document.connector import DocumentConnector
 from infrastructure.sources.document.chunker import PDFChunkerStrategy
 from shared.logger import logger
 
-from global_utils.utils import cleanup_file
+from global_utils.utils.file_utils import cleanup_file
 
 
 class DocumentPipelineHandler(SourcePipelinePort):
@@ -113,6 +113,7 @@ class DocumentPipelineHandler(SourcePipelinePort):
             chunk.setdefault("metadata", {}).update({
                 "source_id": context.source_id,
                 "source_type": self.source_type,
+                "owner_id": context.owner_id,
             })
         
         # Generate embeddings and convert to domain objects

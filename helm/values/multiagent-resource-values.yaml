@@ -2,11 +2,11 @@ multiagent_server:
   replicaCount: 1
   resources: 
     limits:
-      cpu: '4'
-      memory: '8Gi'
+      cpu: '6'
+      memory: '12Gi'
     requests:
-      cpu: '4'
-      memory: '8Gi'
+      cpu: '6'
+      memory: '12Gi'
   image: 
     repository: images.paas.redhat.com/unifai/multiagent
     tag: "latest"
@@ -19,6 +19,8 @@ multiagent_server:
     GUNICORN_WORKERS: "9"
     GUNICORN_THREADS: "8"
     GUNICORN_TIMEOUT: "600"
+    SHARED_STORAGE: "/app/shared"
+    GOOGLE_APPLICATION_CREDENTIALS: "/opt/app-root/src/config/gcp/gcp-sa-key.json"
     VERSION: ""
 
 multiagent_temporal_worker:
@@ -40,4 +42,18 @@ multiagent_temporal_worker:
     BACKEND_ENV: "production" #options - production development
     ROLE: "temporal-worker" # options are flask celery debug
     WORKER_THREADS: "100"
+    SHARED_STORAGE: "/app/shared"
+    GOOGLE_APPLICATION_CREDENTIALS: "/opt/app-root/src/config/gcp/gcp-sa-key.json"
     VERSION: ""
+
+storage:
+  volumeName: unifai-multiagent-shared-storage
+  requestedSize: 50Gi
+  className: aws-efs-tier-c1
+  accessModes:
+    - ReadWriteMany
+  keepPvc: true
+  annotations:
+    kubernetes.io/reclaimPolicy: Delete
+  labels:
+    paas.redhat.com/appcode: TAG-001

@@ -30,6 +30,7 @@ class DocumentService:
         cursor: Optional[str] = None,
         limit: int = 50,
         search: Optional[str] = None,
+        upload_by: Optional[str] = None,
     ) -> PaginatedResult[Dict[str, Any]]:
         """
         Get paginated list of DONE documents for dropdown selection.
@@ -41,6 +42,7 @@ class DocumentService:
             cursor: Pagination cursor
             limit: Max items to return
             search: Filter by name prefix
+            upload_by: Filter by owner username
             
         Returns:
             PaginatedResult with normalized docs {id, name, upload_by}
@@ -51,6 +53,7 @@ class DocumentService:
             limit=limit,
             source_type="DOCUMENT",
             search=search,
+            upload_by=upload_by,
         )
         
         # Convert to domain models for enrichment
@@ -76,6 +79,7 @@ class DocumentService:
         cursor: Optional[str] = None,
         limit: int = 50,
         search: Optional[str] = None,
+        upload_by: Optional[str] = None,
     ) -> PaginatedResult[Dict[str, str]]:
         """
         Get tags from DONE documents only (for UI dropdowns).
@@ -87,12 +91,13 @@ class DocumentService:
             cursor: Pagination cursor
             limit: Max tags to return
             search: Filter tags by prefix (case-insensitive)
+            upload_by: Filter by owner username
             
         Returns:
             PaginatedResult with tag options [{label, value}]
         """
-        # Get all DONE sources
-        all_sources = self._source_repo.find_all(source_type="DOCUMENT")
+        # Get all DONE sources for this user
+        all_sources = self._source_repo.find_all(source_type="DOCUMENT", upload_by=upload_by)
         enriched = self._data_source_service.enrich_with_pipeline_stats(all_sources)
         done_sources = [s for s in enriched if s.get("status") == "DONE"]
         

@@ -15,12 +15,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FieldValidation, ItemValidationResult } from "./FieldValidation";
 import { FieldPopulation } from "./FieldPopulation";
-import { AuthSelector } from "./AuthSelector";
 import { AuthFieldRenderer } from "./AuthFieldRenderer";
 import { AgentCardVisualization } from "./AgentCardVisualization";
+import { FileUpload } from "@/components/ui/file-upload";
 import { ElementType } from "../../../types/workspace";
 import { maskSecretValue } from "../../../utils/maskSecretFields";
-import { XCircle } from "lucide-react";
+import { XCircle, Settings } from "lucide-react";
 import {getArrayDisplayText, getArrayFieldMode, getValidRefOptions,} from "./arrayFieldHelpers";
 
 /** Resolved string enum definition from $defs */
@@ -46,6 +46,7 @@ interface FieldRendererProps {
   fieldType: "secret" | "public";
   fieldValidationStates?: { [fieldName: string]: boolean };
   itemValidationStates?: { [fieldName: string]: ItemValidationResult[] };
+  actionOutputs?: Record<string, any>;
   isArrayWithRefItems: (fieldSchema: any) => boolean;
   getArrayItemsSchema: (fieldSchema: any) => any;
   extractCategoryFromField: (fieldSchema: any) => string | null;
@@ -56,6 +57,8 @@ interface FieldRendererProps {
   onRemoveArrayItem?: (field: string, index: number) => void;
   onValidationChange: (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => void;
   onPopulateResult: (fieldName: string, results: string[] | any, multiSelect: boolean) => void;
+  onActionOutput?: (fieldName: string, output: any) => void;
+  onEditRefElement?: (rid: string) => void;
 }
 
 // Controlled number input with local state buffer to handle intermediate typing (e.g., "0.")
@@ -177,6 +180,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   fieldType,
   fieldValidationStates,
   itemValidationStates,
+  actionOutputs,
   isArrayWithRefItems,
   getArrayItemsSchema,
   extractCategoryFromField,
@@ -187,6 +191,8 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   onRemoveArrayItem,
   onValidationChange,
   onPopulateResult,
+  onActionOutput,
+  onEditRefElement,
 }) => {
   // Check if this field has validation errors based on validation action result
   // Use useMemo to recalculate when fieldValidationStates changes after validation action
@@ -382,6 +388,19 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
                           {selectedOption
                             ? `${selectedOption.name} (${selectedOption.type})`
                             : selectedRid}
+                          {onEditRefElement && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEditRefElement(selectedRid);
+                              }}
+                              className="ml-1 hover:text-primary"
+                              title="Configure this element"
+                            >
+                              <Settings className="h-3 w-3" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => {
@@ -491,6 +510,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
             selectedElementType={elementType}
             isRequired={isRequired}
             configValues={formData}
+            actionOutputs={actionOutputs}
             onValidationChange={onValidationChange}
             onInputChange={onInputChange}
           />
@@ -577,6 +597,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
             selectedElementType={elementType}
             isRequired={isRequired}
             configValues={formData}
+            actionOutputs={actionOutputs}
             onValidationChange={onValidationChange}
             onInputChange={onInputChange}
           />
@@ -610,7 +631,46 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         elementActions={elementActions}
         onValidationChange={onValidationChange}
         onInputChange={onInputChange}
+        onActionOutput={onActionOutput}
       />
+    );
+  }
+
+  // Handle fields with file_upload hint — render file picker
+  const fileUploadHint = fieldSchema?.hints?.file_upload;
+  if (fileUploadHint) {
+    return (
+      <div key={fieldName} className="space-y-2">
+        <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
+          {fieldName} {isRequired && <span className="text-red-400">*</span>}
+          {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
+        </Label>
+        {fieldSchema.description && (
+          <p className="text-xs text-gray-400">{fieldSchema.description}</p>
+        )}
+        <FileUpload
+          accept={fileUploadHint.accept || ".pem,.crt,.key"}
+          formatType={fileUploadHint.validate_format || "pem"}
+          maxSizeBytes={fileUploadHint.max_size_bytes || 16384}
+          value={value}
+          hasError={hasFieldError}
+          onUploadSuccess={(content, filename) => onInputChange(fieldName, content)}
+          onClear={() => onInputChange(fieldName, "")}
+        />
+        {validationHint && (
+          <FieldValidation
+            fieldName={fieldName}
+            fieldValue={value}
+            validationHint={validationHint}
+            elementActions={elementActions}
+            selectedElementType={elementType}
+            isRequired={isRequired}
+            configValues={formData}
+            onValidationChange={onValidationChange}
+            onInputChange={onInputChange}
+          />
+        )}
+      </div>
     );
   }
 
@@ -699,6 +759,18 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
                 )}
               </SelectContent>
             </Select>
+            {value && onEditRefElement && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 shrink-0"
+                onClick={() => onEditRefElement(value)}
+                title="Configure this element"
+              >
+                <Settings className="h-4 w-4 text-muted-foreground hover:text-primary" />
+              </Button>
+            )}
             {!isRequired && value && (
               <Button
                 type="button"
@@ -722,6 +794,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
               selectedElementType={elementType}
               isRequired={isRequired}
               configValues={formData}
+              actionOutputs={actionOutputs}
               onValidationChange={onValidationChange}
               onInputChange={onInputChange}
             />
@@ -903,6 +976,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
           selectedElementType={elementType}
           isRequired={isRequired}
           configValues={formData}
+          actionOutputs={actionOutputs}
           onValidationChange={onValidationChange}
           onInputChange={onInputChange}
         />
@@ -981,6 +1055,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         selectedElementType={elementType}
         isRequired={isRequired}
         configValues={formData}
+        actionOutputs={actionOutputs}
         onValidationChange={onValidationChange}
         onInputChange={onInputChange}
       />

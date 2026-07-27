@@ -1,15 +1,17 @@
 """Data source endpoints - driving adapter."""
-from flask import Blueprint, jsonify
+from flask import Blueprint, g, jsonify
 from webargs import fields
 
 from bootstrap.app_container import data_source_service
 from global_utils.helpers.apiargs import from_query, from_body
+from infrastructure.http.auth import rag_require_session
 from shared.logger import logger
 
 data_sources_bp = Blueprint("data_sources", __name__)
 
 
 @data_sources_bp.route("/data.sources.get", methods=["GET"])
+@rag_require_session
 @from_query({
     "source_type": fields.Str(required=True),
     "include_full_details": fields.Bool(required=False, load_default=False),
@@ -27,6 +29,7 @@ def get_sources(source_type, include_full_details):
         sources = data_source_service().list_with_stats(
             source_type,
             include_full_details=include_full_details,
+            upload_by=g.user_id,
         )
         return jsonify({"sources": sources}), 200
     except Exception as e:
@@ -35,6 +38,7 @@ def get_sources(source_type, include_full_details):
 
 
 @data_sources_bp.route("/data.source.delete", methods=["DELETE"])
+@rag_require_session
 @from_body({"pipeline_ids": fields.List(fields.Str(), required=True)})
 def delete_sources(pipeline_ids):
     """
@@ -50,8 +54,7 @@ def delete_sources(pipeline_ids):
         
         for source_id in pipeline_ids:
             try:
-                # Get source by source_id (matching backend behavior)
-                source = svc.get_by_id(source_id)
+                source = svc.get_by_id(source_id, upload_by=g.user_id)
                 if not source:
                     results["failed"].append({
                         "pipeline_id": source_id,
@@ -59,7 +62,7 @@ def delete_sources(pipeline_ids):
                     })
                     continue
                 
-                result = svc.delete(source.source_id)
+                result = svc.delete(source.source_id, upload_by=g.user_id)
                 if result.success:
                     results["succeeded"].append({
                         "pipeline_id": source_id,
@@ -108,6 +111,7 @@ def delete_sources(pipeline_ids):
 
 
 @data_sources_bp.route("/data.source.details.get", methods=["GET"])
+@rag_require_session
 @from_query({"source_id": fields.Str(required=True)})
 def get_source_details(source_id):
     """
@@ -115,7 +119,7 @@ def get_source_details(source_id):
     This endpoint is used for lazy loading expanded row data.
     """
     try:
-        result = data_source_service().get_with_stats(source_id)
+        result = data_source_service().get_with_stats(source_id, upload_by=g.user_id)
         
         if result:
             return jsonify({"success": True, "source": result}), 200
@@ -131,6 +135,7 @@ def get_source_details(source_id):
 
 
 @data_sources_bp.route("/data.source.update", methods=["PUT"])
+@rag_require_session
 @from_body({
     "source_id": fields.Str(required=True),
     "updates": fields.Dict(required=True)
@@ -138,7 +143,9 @@ def get_source_details(source_id):
 def update_source(source_id, updates):
     """Update a data source by its source ID."""
     try:
-        success = data_source_service().update(source_id, updates)
+        success = data_source_service().update(
+            source_id, updates, upload_by=g.user_id
+        )
         
         if success:
             return jsonify({

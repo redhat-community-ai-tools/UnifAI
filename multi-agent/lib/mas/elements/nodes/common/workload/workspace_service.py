@@ -862,8 +862,12 @@ class WorkspaceService(IWorkspaceService):
         
         Returns number of messages actually synced.
         """
-        # Extract recent messages
-        recent_messages = graphstate_messages[-limit:] if graphstate_messages else []
+        # Filter out cancelled messages, then take the most recent N
+        valid_messages = [
+            msg for msg in graphstate_messages
+            if not msg.is_cancelled
+        ] if graphstate_messages else []
+        recent_messages = valid_messages[-limit:]
         
         if not recent_messages:
             return 0

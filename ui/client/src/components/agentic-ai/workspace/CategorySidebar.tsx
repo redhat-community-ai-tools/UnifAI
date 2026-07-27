@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
   Bot, 
+  Box,
   Server, 
   Search, 
   Brain, 
@@ -34,7 +35,8 @@ const getCategoryIcon = (category: string) => {
     retrievers: <Search className="h-4 w-4" />,
     providers: <Server className="h-4 w-4" />,
     conditions: <GitBranch className="h-4 w-4" />,
-    auths: <Lock className="h-4 w-4" />
+    auths: <Lock className="h-4 w-4" />,
+    sandboxes: <Box className="h-4 w-4" />
   };
   
   return iconMap[category] || <Layers className="h-4 w-4" />;
@@ -48,7 +50,8 @@ const getCategoryDisplayName = (category: string) => {
     tools: 'Tools',
     retrievers: 'Retrievers',
     providers: 'Providers',
-    conditions: 'Conditions'
+    conditions: 'Conditions',
+    sandboxes: 'Sandboxes'
   };
   
   return nameMap[category] || category.charAt(0).toUpperCase() + category.slice(1);

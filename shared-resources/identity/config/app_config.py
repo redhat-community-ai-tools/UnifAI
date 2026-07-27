@@ -19,6 +19,9 @@ class AppConfig(SharedConfig):
     port: str = "13456"
     secret_key: str = ""
 
+    # Local auth (dev bypass -- set via local-development env_generator)
+    local_auth_enabled: bool = False
+
     # Keycloak Configuration
     keycloak_base_url: str = ""
     client_id: str = ""
@@ -30,14 +33,17 @@ class AppConfig(SharedConfig):
     frontend_url: str = "http://localhost:5000"    
     backend_env: str = "development"
 
+    # Public identity service base URL (env: IDENTITY_HOST). Used for OAuth redirect_uri in production.
+    identity_host: str = "http://127.0.0.1:13456"
+
     # Multi-agent connection
     multiagent_host: str = "localhost"
     multiagent_port: str = "8002"
 
     # Session Configuration
-    session_cookie_secure: bool = True
+    session_cookie_secure: bool = False
     session_cookie_http_only: bool = True
-    session_cookie_samesite: str = "None"
+    session_cookie_samesite: str = "Lax"
     permanent_session_lifetime: int = 10
 
     # MongoDB — teams collection (lives in the "users" DB alongside user approval terms)

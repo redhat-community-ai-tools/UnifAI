@@ -59,18 +59,20 @@ class StatisticsResponse(BaseModel):
 class TotalStats(BaseModel):
     """Total statistics for system-wide overview."""
     total_runs: int = Field(..., description="Total number of workflow runs")
-    unique_users: int = Field(..., description="Number of unique users")
+    unique_users: int = Field(..., description="Number of unique identities (users and teams)")
     blueprints_used: int = Field(..., description="Number of distinct blueprints executed")
 
 
 class UserActivity(BaseModel):
     """
-    User activity statistics for admin dashboard.
+    Identity activity statistics for admin dashboard.
 
-    Represents a single user's session activity within a given time range,
-    including run counts, status breakdown, and blueprint usage.
+    Represents a single identity's (user or team) session activity within a
+    given time range, including run counts, status breakdown, and blueprint usage.
     """
-    user_id: str = Field(..., description="User identifier")
+    identity_id: str = Field(..., description="Identity identifier (username or team ID)")
+    identity_type: str = Field("user", description="Identity type: 'user' or 'team'")
+    display_name: str = Field("", description="Human-readable display name (team name or username)")
     run_count: int = Field(0, description="Number of session runs in the time period")
     status_breakdown: Dict[str, int] = Field(default_factory=dict, description="Run counts broken down by session status")
     blueprints_used: int = Field(0, description="Number of distinct blueprints used")
@@ -101,10 +103,10 @@ class BlueprintUsage(BaseModel):
     )
     completed_runs: int = Field(0, description="Number of COMPLETED executions")
     failed_runs: int = Field(0, description="Number of FAILED executions")
-    in_progress_runs: int = Field(0, description="Number of non-terminal executions (PENDING, QUEUED, RUNNING)")
+    active_runs: int = Field(0, description="Number of currently executing sessions (RUNNING, IN_USE)")
     user_list: List[str] = Field(
         default_factory=list,
-        description="List of user IDs who executed this blueprint"
+        description="List of identities who executed this blueprint (format: 'type:id', e.g. 'user:alice', 'team:abc123')"
     )
 
 

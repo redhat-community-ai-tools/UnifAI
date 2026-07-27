@@ -18,7 +18,9 @@ export interface StatusBreakdown {
 }
 
 export interface UserActivity {
-  user_id: string;
+  identity_id: string;
+  identity_type: string;
+  display_name: string;
   run_count: number;
   blueprints_used: number;
   status_breakdown: StatusBreakdown;
@@ -34,7 +36,7 @@ export interface BlueprintUsage {
   success_rate: number;
   completed_runs: number;
   failed_runs: number;
-  in_progress_runs: number;
+  active_runs: number;
   user_list: string[];
 }
 

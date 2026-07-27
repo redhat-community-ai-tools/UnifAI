@@ -195,14 +195,16 @@ class ConditionRef(Ref):
     }
 
 
-class AuthRef(Ref):
-    """Reference to an Auth resource (OAuth configuration for MCP servers)."""
-    _category: ClassVar[ResourceCategory] = ResourceCategory.AUTH
+
+
+class SandboxRef(Ref):
+    """Reference to a Sandbox resource (execution environment for agents)."""
+    _category: ClassVar[ResourceCategory] = ResourceCategory.SANDBOX
 
     model_config = {
         "json_schema_extra": {
-            "category": ResourceCategory.AUTH.value,
-            "description": "Reference to an Auth resource for managed OAuth",
-            "examples": ["$ref:github-oauth", "atlassian-auth"]
+            "category": ResourceCategory.SANDBOX.value,
+            "description": "Reference to a Sandbox execution environment",
+            "examples": ["$ref:openshell-sandbox-1", "my-sandbox"]
         }
     }

@@ -6,7 +6,7 @@ from backend/services/documents/name_duplicate_checker.py.
 """
 from typing import Any, Dict, List, Optional, Tuple
 
-from global_utils.utils import secure_filename
+from global_utils.utils.file_utils import secure_filename
 
 
 class NameDuplicateCheckerAdapter:

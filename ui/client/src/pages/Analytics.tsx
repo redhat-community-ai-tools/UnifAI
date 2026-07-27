@@ -47,8 +47,8 @@ export default function Analytics() {
     queryFn: () => fetchSystemWideStats(timeRange, user?.username || user?.sub),
     staleTime: 60000,
     gcTime: 300000,
-    refetchInterval: 60000,
-    refetchOnWindowFocus: false,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
     enabled: hasAccess,
   });
 
@@ -90,8 +90,8 @@ export default function Analytics() {
     : [];
 
   const topUsersData = analytics?.active_users?.slice(0, 8).map((u: UserActivity) => ({
-    name: truncateUserId(u.user_id, 12),
-    fullName: u.user_id,
+    name: truncateUserId(u.display_name || u.identity_id, 12),
+    fullName: u.display_name || u.identity_id,
     runs: u.run_count,
     blueprints: u.blueprints_used,
     completed: u.status_breakdown?.COMPLETED || 0,
@@ -320,7 +320,7 @@ export default function Analytics() {
 
         {/* Footer */}
         <div className="mt-6 text-center text-xs text-gray-500">
-          Data generated at: {analytics?.generated_at ? new Date(analytics.generated_at).toLocaleString() : 'N/A'} • Auto-refreshes every 60 seconds
+          Data generated at: {analytics?.generated_at ? new Date(analytics.generated_at).toLocaleString() : 'N/A'} • Auto-refreshes every 30 seconds
         </div>
       </main>
     );

@@ -295,7 +295,7 @@ export default function SharedPanel({ isOpen, onClose }: SharedPanelProps) {
             clearOnSelect={false}
             accessToken={accessToken}
             placeholder="Search for a user..."
-            inputClassName="bg-gray-800 border-gray-600 text-white placeholder:text-gray-400"
+            inputClassName="bg-gray-800 border-gray-600 input-dark-theme-text-white placeholder:!text-gray-400"
           />
           {selectedRecipient && (
             <div className="mt-2 p-2 bg-accent/10 border border-accent/30 rounded-md flex items-center gap-2">
@@ -324,7 +324,7 @@ export default function SharedPanel({ isOpen, onClose }: SharedPanelProps) {
               setSendForm(prev => ({ ...prev, message: e.target.value }));
               if (error) clearError();
             }}
-            className="input-dark-theme-text-white placeholder:text-gray-400 bg-gray-800 border-gray-600"
+            className="input-dark-theme-text-white placeholder:!text-gray-400 bg-gray-800 border-gray-600"
           />
         </div>
 

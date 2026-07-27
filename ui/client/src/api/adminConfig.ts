@@ -45,28 +45,24 @@ export interface UpdateSectionResponse {
 
 /**
  * Fetch the full admin config template merged with stored values.
- * Pass username so the backend can enforce admin access when needed.
+ * Session cookie provides authentication automatically.
  */
-export async function getAdminConfig(username?: string): Promise<AdminConfigResponse> {
-  const headers = username ? { 'X-Username': username } : undefined;
-  const response = await backendApi.get('/admin_config/config.get', { headers });
+export async function getAdminConfig(): Promise<AdminConfigResponse> {
+  const response = await backendApi.get('/admin_config/config.get');
   return response.data;
 }
 
 /**
  * Update a single config section's values.
- * Pass username so the backend can enforce admin access.
+ * Session cookie provides authentication automatically.
  */
 export async function updateAdminConfigSection(
   sectionKey: string,
   values: Record<string, unknown>,
-  username?: string,
 ): Promise<UpdateSectionResponse> {
-  const headers = username ? { 'X-Username': username } : undefined;
   const response = await backendApi.put(
     '/admin_config/config.section.update',
     { sectionKey, values },
-    { headers },
   );
   return response.data;
 }

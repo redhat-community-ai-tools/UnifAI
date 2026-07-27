@@ -25,6 +25,7 @@ export const getCategoryDisplay = (category: string): CategoryDisplay => {
     providers: { icon: <Server className="w-4 h-4" />, color: "#FF5722" },
     retrievers: { icon: <Search className="w-4 h-4" />, color: "#4CAF50" },
     conditions: { icon: <GitBranch className="w-4 h-4" />, color: "#9C27B0" },
+    sandboxes: { icon: <Box className="w-4 h-4" />, color: "#795548" },
     default: { icon: <Box className="w-4 h-4" />, color: "#607D8B" },
   };
   return categoryMap[category] || categoryMap.default;
@@ -39,6 +40,7 @@ export const getCategoryDisplayName = (category: string) => {
     retrievers: "Retrievers",
     providers: "Providers",
     conditions: "Conditions",
+    sandboxes: "Sandboxes",
   };
 
   return (

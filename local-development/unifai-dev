@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""UnifAI local development tool.
+
+Preferred usage: pip install -e local-development/  →  unifai-dev <command>
+This script is kept as a fallback for running without installation.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from devtool.cli import main
+
+main()

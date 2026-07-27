@@ -3,6 +3,7 @@ from uuid import uuid4
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintSummary
+from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.core.enums import ResourceCategory
 from mas.core.identity import Identity
@@ -43,11 +44,6 @@ class MongoBlueprintRepository(BlueprintRepository):
 
     def update(self, *, blueprint_id: str, spec: BlueprintDraft,
                rid_refs: list[str]) -> bool:
-        # Fetch current document to obtain user_id and run existence checks
-        existing = self._col.find_one({"blueprint_id": blueprint_id})
-        if existing is None:
-            raise KeyError(f"No blueprint with id={blueprint_id}")
-
         res = self._col.update_one(
             {"blueprint_id": blueprint_id},
             {"$set": {
@@ -56,7 +52,6 @@ class MongoBlueprintRepository(BlueprintRepository):
                 "updated_at": datetime.now(timezone.utc),
             }}
         )
-
         return res.modified_count == 1
 
     def update_raw(self, *, blueprint_id: str, spec_dict: Dict[str, Any],
@@ -77,14 +72,26 @@ class MongoBlueprintRepository(BlueprintRepository):
         return res.modified_count == 1
 
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
-        """Set the metadata dictionary for a blueprint document."""
+        """Set individual metadata keys using dot-notation (key-level merge)."""
         if not isinstance(metadata, dict):
             raise ValueError(f"metadata must be a dictionary, got: {type(metadata)}")
+        update_fields = {f"metadata.{k}": v for k, v in metadata.items()}
+        update_fields["updated_at"] = datetime.now(timezone.utc)
         res = self._col.update_one(
             {"blueprint_id": blueprint_id},
-            {"$set": {"metadata": metadata, "updated_at": datetime.now(timezone.utc)}}
+            {"$set": update_fields},
         )
         return res.modified_count == 1
+
+    def set_prompt_shortcuts(self, *, blueprint_id: str, shortcuts: PromptShortcuts) -> bool:
+        now = datetime.now(timezone.utc)
+        storage = shortcuts.to_storage()
+        if storage:
+            op = {"$set": {"spec_dict.prompt_shortcuts": storage, "updated_at": now}}
+        else:
+            op = {"$unset": {"spec_dict.prompt_shortcuts": ""}, "$set": {"updated_at": now}}
+        res = self._col.update_one({"blueprint_id": blueprint_id}, op)
+        return res.matched_count >= 1
 
     def load(self, blueprint_id: str) -> BlueprintDocument:
         doc = self._col.find_one({"blueprint_id": blueprint_id})

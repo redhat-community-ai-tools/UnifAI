@@ -129,7 +129,7 @@ class ShareCloner:
             if not ctx.is_authorized_owner(bp_doc.identity.id):
                 raise ValueError(f"Blueprint {blueprint_id} not owned by sender")
 
-            draft = BlueprintDraft(**bp_doc.spec_dict)
+            draft = self.blueprints.load_draft_from_dict(bp_doc.spec_dict)
             # Union stored rid_refs with a fresh walk of the draft (avoids stale rid_refs).
             external_rids = set(bp_doc.rid_refs or [])
             external_rids |= RefWalker.external_rids(draft)
@@ -294,6 +294,11 @@ class ShareCloner:
         remapped_model = RefRemapper.remap(cache_data.cfg_model, rid_mapping)
         new_cfg_dict = remapped_model.model_dump(mode="json")
 
+        # Strip doc references on docs_rag retrievers — they belong to the
+        # sender and the recipient cannot access them due to owner scoping.
+        if original_doc.type == "docs_rag" and "docs" in new_cfg_dict:
+            new_cfg_dict["docs"] = None
+
         # Map dependencies to new RIDs
         new_nested_refs = [
             rid_mapping.get(dep_rid, dep_rid) for dep_rid in cache_data.dependencies
@@ -364,6 +369,7 @@ class ShareCloner:
             plan=self._clone_plan(draft.plan, rid_mapping),
             name=clone_name,
             description=draft.description,
+            prompt_shortcuts=draft.prompt_shortcuts,
             **resource_fields
         )
 

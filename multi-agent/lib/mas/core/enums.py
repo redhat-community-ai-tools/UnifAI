@@ -9,30 +9,16 @@ class ResourceCategory(str, Enum):
     CONDITION = "conditions"
     PROVIDER = "providers"
     NODE = "nodes"
-    AUTH = "auths"
-
+    SANDBOX = "sandboxes"
+    
     @classmethod
     def plan_categories(cls) -> frozenset:
         """Categories that appear in the final blueprint (plan-referenced)."""
         return frozenset({cls.NODE, cls.CONDITION})
 
-    @classmethod
-    def hidden_categories(cls) -> frozenset:
-        """Categories hidden from the UI catalog."""
-        return frozenset({cls.AUTH})
-
     def is_plan_category(self) -> bool:
         """Check if this category is plan-referenced."""
         return self in self.plan_categories()
-
-    def is_hidden(self) -> bool:
-        """Check if this category is hidden from the UI."""
-        return self in self.hidden_categories()
-
-    @classmethod
-    def list_values(cls) -> list[str]:
-        """All category values as strings."""
-        return [e.value for e in cls]
 
 
 class SchemeType(str, Enum):
@@ -54,11 +40,30 @@ class ChallengeType(str, Enum):
     DEVICE = "device"
 
 
+class AuthStatus(str, Enum):
+    """Action-level auth status returned to the UI."""
+    AUTHENTICATED = "authenticated"
+    CHALLENGE = "challenge"
+    NOT_CONFIGURED = "not_configured"
+    ERROR = "error"
+
+
+class AuthErrorCode(str, Enum):
+    """Machine-readable error codes for auth action failures."""
+    MISSING_USER_ID = "missing_user_id"
+    MISSING_SERVER_ID = "missing_server_identifier"
+    MISSING_SCHEME_TYPE = "missing_scheme_type"
+    AUTH_SERVICE_UNAVAILABLE = "auth_service_unavailable"
+    INITIATION_FAILED = "initiation_failed"
+    STRATEGY_NOT_FOUND = "strategy_not_found"
+    UNKNOWN = "unknown_error"
+
+
 class SystemNodeType(str, Enum):
     """Node types that stay inline in blueprints (never saved as resources)."""
     USER_QUESTION = "user_question_node"
     FINAL_ANSWER = "final_answer_node"
-
+    
     @classmethod
     def values(cls) -> frozenset:
         """All system node type values as strings."""

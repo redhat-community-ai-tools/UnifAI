@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 from mas.blueprints.service import BlueprintService
 from mas.session.service import SessionService
 from mas.resources.service import ResourcesService
-from mas.core.identity import Identity
+from mas.core.identity import Identity, IdentityFieldKey
 from mas.core.dto import GroupedCount
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
+from mas.session.domain.status import NON_RUNNABLE_STATUSES
 from global_utils.utils.time_utils import format_utc_iso
 from .models import (
     StatisticsResponse, ResourceCategoryStats, SystemStatsResponse,
@@ -281,51 +282,64 @@ class StatisticsService:
         """
         Build a list of UserActivity models from grouped count data.
         
-        Combines user+status counts with user+blueprint counts into
+        Combines identity+status counts with identity+blueprint counts into
         structured UserActivity models.
         
         Args:
-            status_counts: Sessions grouped by user_id and status
-            blueprint_counts: Sessions grouped by user_id and blueprint_id
+            status_counts: Sessions grouped by identity (type+id) and status
+            blueprint_counts: Sessions grouped by identity (type+id) and blueprint_id
             limit: Optional limit on number of results
         
         Returns:
             List of UserActivity models sorted by run count descending
         """
-        # Aggregate run counts and status breakdown by user
         user_data: Dict[str, UserActivity] = {}
         for item in status_counts:
-            user_id = item.get("user_id")
+            identity_id = item.get(IdentityFieldKey.IDENTITY_ID)
+            identity_type = item.get(IdentityFieldKey.IDENTITY_TYPE, "user")
+            display_name = item.get("display_name") or ""
             status = item.get("status")
             count = item.count
             
-            if not user_id:
+            if not identity_id:
                 continue
 
-            if user_id not in user_data:
-                user_data[user_id] = UserActivity(user_id=user_id)
+            composite_key = f"{identity_type}:{identity_id}"
+            if composite_key not in user_data:
+                user_data[composite_key] = UserActivity(
+                    identity_id=identity_id,
+                    identity_type=identity_type,
+                    display_name=display_name or identity_id
+                )
+            elif display_name and display_name != identity_id:
+                user_data[composite_key].display_name = display_name
             
-            user_data[user_id].run_count += count
+            if status not in NON_RUNNABLE_STATUSES:
+                user_data[composite_key].run_count += count
             if status:
-                current = user_data[user_id].status_breakdown.get(status, 0)
-                user_data[user_id].status_breakdown[status] = current + count
+                current = user_data[composite_key].status_breakdown.get(status, 0)
+                user_data[composite_key].status_breakdown[status] = current + count
         
-        # Count unique blueprints per user
-        user_blueprints: Dict[str, Set[str]] = {}
+        identity_blueprints: Dict[str, Set[str]] = {}
         for item in blueprint_counts:
-            user_id = item.get("user_id")
+            identity_id = item.get(IdentityFieldKey.IDENTITY_ID)
+            identity_type = item.get(IdentityFieldKey.IDENTITY_TYPE, "user")
             blueprint_id = item.get("blueprint_id")
-            if user_id:
-                if user_id not in user_blueprints:
-                    user_blueprints[user_id] = set()
+            if identity_id:
+                composite_key = f"{identity_type}:{identity_id}"
+                if composite_key not in identity_blueprints:
+                    identity_blueprints[composite_key] = set()
                 if blueprint_id:
-                    user_blueprints[user_id].add(blueprint_id)
+                    identity_blueprints[composite_key].add(blueprint_id)
         
-        for user_id, activity in user_data.items():
-            activity.blueprints_used = len(user_blueprints.get(user_id, set()))
+        for key, activity in user_data.items():
+            activity.blueprints_used = len(identity_blueprints.get(key, set()))
         
-        # Sort by run count descending
-        result = sorted(user_data.values(), key=lambda x: x.run_count, reverse=True)
+        result = sorted(
+            (a for a in user_data.values() if a.run_count > 0),
+            key=lambda x: x.run_count,
+            reverse=True,
+        )
         
         if limit:
             result = result[:limit]
@@ -338,31 +352,40 @@ class StatisticsService:
     ) -> tuple:
         """
         Derive total_runs, unique_users, and status_breakdown from
-        user+status grouped counts, avoiding separate DB round-trips.
+        identity+status grouped counts, avoiding separate DB round-trips.
         
         Args:
-            status_counts: Sessions grouped by user_id and status
+            status_counts: Sessions grouped by identity (type+id) and status
             
         Returns:
-            Tuple of (total_runs, unique_users, status_breakdown dict)
+            Tuple of (total_runs, unique_identities, status_breakdown dict)
         """
         total_runs = 0
-        user_ids: Set[str] = set()
+        active_identity_keys: Set[str] = set()
         status_breakdown: Dict[str, int] = {}
         
         for item in status_counts:
             count = item.count
-            total_runs += count
-            
-            user_id = item.get("user_id")
-            if user_id:
-                user_ids.add(user_id)
-            
             status = item.get("status")
+            is_runnable = status not in NON_RUNNABLE_STATUSES
+            
+            if is_runnable:
+                total_runs += count
+            
+            identity_id = item.get(IdentityFieldKey.IDENTITY_ID)
+            identity_type = item.get(IdentityFieldKey.IDENTITY_TYPE, "user")
+            if identity_id and is_runnable:
+                active_identity_keys.add(f"{identity_type}:{identity_id}")
+            
             if status:
                 status_breakdown[status] = status_breakdown.get(status, 0) + count
         
-        return total_runs, len(user_ids), status_breakdown
+        return total_runs, len(active_identity_keys), status_breakdown
+
+    @staticmethod
+    def _count_unique_identities(user_entries: List[str]) -> int:
+        """Count distinct identities from 'type:id:display_name' entries."""
+        return len({':'.join(u.split(':')[:2]) for u in user_entries})
 
     def _build_blueprint_usage_list(
         self,
@@ -382,6 +405,7 @@ class StatisticsService:
             List of BlueprintUsage models sorted by run count descending
         """
         # Sort by total_runs to get top blueprints first
+        # (non-runnable statuses are already excluded at the DB layer)
         sorted_stats = sorted(blueprint_stats, key=lambda s: s.total_runs, reverse=True)[:limit]
         
         # Batch lookup blueprint names (only for top N)
@@ -399,13 +423,13 @@ class StatisticsService:
                 blueprint_id=stats.blueprint_id,
                 blueprint_name=blueprint_names[stats.blueprint_id],
                 run_count=stats.total_runs,
-                unique_users=len(stats.users),
+                unique_users=self._count_unique_identities(stats.users),
                 avg_duration_seconds=avg_duration_seconds,
-                last_run_at=stats.last_run,
+                last_run_at=format_utc_iso(stats.last_run) if stats.last_run else None,
                 success_rate=success_rate,
                 completed_runs=stats.completed_runs,
                 failed_runs=stats.failed_runs,
-                in_progress_runs=stats.total_runs - terminal_runs,
+                active_runs=stats.active_runs,
                 user_list=stats.users
             ))
         

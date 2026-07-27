@@ -15,6 +15,17 @@ class IdentityType(str, Enum):
     TEAM = "team"
 
 
+class IdentityFieldKey(str, Enum):
+    """Canonical keys used when identity is flattened into aggregation results.
+
+    Both the persistence layer (repository facets) and the consuming
+    service layer must agree on these keys.  Defining them once here
+    prevents silent drift between producers and consumers.
+    """
+    IDENTITY_TYPE = "identity_type"
+    IDENTITY_ID = "identity_id"
+
+
 class Identity(BaseModel):
     """Lightweight owner reference — user or team.
 

@@ -30,6 +30,7 @@ class ResourcesService:
             validation_service: ElementValidationService = None,
             card_service: ElementCardService = None,
             auth_service=None,
+            encryption_key: str = "",
     ):
         self._store = resource_registry
         self.element_registry = element_registry
@@ -38,25 +39,23 @@ class ResourcesService:
         self._validation_service = validation_service
         self._auth_service = auth_service
 
-    def set_auth_service(self, auth_service) -> None:
-        """Late-bind the auth service (created after ResourcesService in the container)."""
-        self._auth_service = auth_service
+        from global_utils.utils.crypto import FieldCipher
+        self._cipher = FieldCipher(encryption_key) if encryption_key else None
 
     # ---------- CRUD ----------
     def create(self, *, identity: Identity, category, type, name, config) -> Resource:
         model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
         cfg_model = model_cls(**config)
 
-        self._run_pre_save_hook(cfg_model, identity.id)
-
         nested_refs = list(RefWalker.external_rids(cfg_model))
+        cfg_dict = self._encrypt_fields(cfg_model.model_dump(mode="json"), model_cls)
 
         doc = Resource(
             identity=identity,
             category=category,
             type=type,
             name=name,
-            cfg_dict=cfg_model.model_dump(mode="json"),
+            cfg_dict=cfg_dict,
             nested_refs=nested_refs,
         )
         return self._store.create(doc)
@@ -78,11 +77,9 @@ class ResourcesService:
             ResourceCategory(doc.category), doc.type)
         cfg_model = model_cls(**config)
 
-        self._run_pre_save_hook(cfg_model, doc.identity.id)
-
         nested_refs = list(RefWalker.external_rids(cfg_model))
 
-        doc.cfg_dict = cfg_model.model_dump(mode="json")
+        doc.cfg_dict = self._encrypt_fields(cfg_model.model_dump(mode="json"), model_cls)
         doc.nested_refs = nested_refs
 
         if name is not None:
@@ -340,10 +337,14 @@ class ResourcesService:
             self._auth_service.delete_credential(identity.id, server_id)
 
     # ---------- Helpers ----------
-    def _run_pre_save_hook(self, cfg_model: BaseModel, user_id: str) -> None:
-        """Call on_pre_save on the config model if it supports it."""
-        if hasattr(cfg_model, "on_pre_save"):
-            cfg_model.on_pre_save(user_id, auth_service=self._auth_service)
+    def _encrypt_fields(self, cfg_dict: dict, model_cls: type) -> dict:
+        """Encrypt fields declared in the config's ENCRYPTED_FIELDS before storage."""
+        if not self._cipher:
+            return cfg_dict
+        for field in getattr(model_cls, "ENCRYPTED_FIELDS", ()):
+            if cfg_dict.get(field):
+                cfg_dict[field] = self._cipher.encrypt(cfg_dict[field])
+        return cfg_dict
 
     def _ensure_validation_service(self) -> None:
         """Raise if validation service not configured."""

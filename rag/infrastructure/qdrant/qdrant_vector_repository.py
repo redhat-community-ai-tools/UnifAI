@@ -115,6 +115,7 @@ class QdrantVectorRepository(VectorRepository):
         self._create_payload_index("metadata.source_type", qmodels.PayloadSchemaType.KEYWORD)
         self._create_payload_index("metadata.channel_name", qmodels.PayloadSchemaType.KEYWORD)
         self._create_payload_index("metadata.source_id", qmodels.PayloadSchemaType.KEYWORD)
+        self._create_payload_index("metadata.owner_id", qmodels.PayloadSchemaType.KEYWORD)
 
         logger.info(f"Created collection '{self._collection_name}' with dimension {self._embedding_dim}")
 

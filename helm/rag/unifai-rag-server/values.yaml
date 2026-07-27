@@ -8,10 +8,14 @@ env:
   BACKEND_ENV: "production"
   ROLE: "flask"
   SHARED_STORAGE: "/app/shared"
+  SESSION_COOKIE_SAMESITE: "None"
+  SESSION_COOKIE_SECURE: true
+  SESSION_COOKIE_HTTPONLY: true
 
 debug: false
 
 globalConfigMapName: shared-config
+globalSecretName: shared-secret
 # This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
 replicaCount: 1
 

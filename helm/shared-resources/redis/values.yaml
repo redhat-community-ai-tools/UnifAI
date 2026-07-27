@@ -7,12 +7,14 @@ replicaCount: 1
 
 # This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
 image:
-  registry: registry.redhat.io
+  #registry: registry.redhat.io
+  registry: registry.access.redhat.com
   repository: rhel9/redis-7
   tag: '9.7'
   pullPolicy: IfNotPresent
 
 redisConfigMapName: redis-config
+redisSecretName: redis-secret
 
 storage:
   accessModes:

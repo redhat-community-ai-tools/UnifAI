@@ -6,9 +6,9 @@ Provides REST API for admin configuration:
   PUT  /api/admin_config/config.section.update  — update one section's values
   GET  /api/admin_config/access.check           — check if an email has admin access
 """
-from flask import Blueprint, jsonify, current_app, request
+from flask import Blueprint, g, jsonify, current_app, session
 from global_utils.helpers.apiargs import from_body, from_query
-from global_utils.flask.decorators import require_admin_access
+from global_utils.flask.decorators import require_admin_access, require_identity_session
 from webargs import fields
 import logging
 
@@ -16,10 +16,14 @@ logger = logging.getLogger(__name__)
 
 admin_config_bp = Blueprint("admin_config", __name__)
 
+_backend_require_session = require_identity_session(
+    get_redis_store=lambda: current_app.container.redis_kv_store,
+)
 
-def _get_current_user(req):
-    """Current user from X-Username/X-User-Id header (set by gateway)."""
-    return req.headers.get("X-Username") or req.headers.get("X-User-Id")
+
+def _get_current_user(_req) -> str | None:
+    """Current user from the validated Redis session."""
+    return getattr(g, "identity_session", None) and g.identity_session.username
 
 def _is_admin(user_id):
     return current_app.container.admin_config_service.is_admin(user_id)
@@ -28,6 +32,8 @@ def _is_admin(user_id):
 #  Read — template + stored values
 # ─────────────────────────────────────────────────────────────────────────────
 @admin_config_bp.route("/config.get", methods=["GET"])
+@_backend_require_session
+@require_admin_access(_get_current_user, _is_admin)
 def get_config():
     """
     Return the full admin config template merged with stored values.
@@ -47,6 +53,7 @@ def get_config():
 #  Write — update one section
 # ─────────────────────────────────────────────────────────────────────────────
 @admin_config_bp.route("/config.section.update", methods=["PUT"])
+@_backend_require_session
 @require_admin_access(_get_current_user, _is_admin)
 @from_body({
     "section_key": fields.Str(data_key="sectionKey", required=True),
@@ -82,9 +89,10 @@ def update_section(section_key, values):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Access check — is the given email an admin?
+#  Access check — is the given username an admin?
 # ─────────────────────────────────────────────────────────────────────────────
 @admin_config_bp.route("/access.check", methods=["GET"])
+@_backend_require_session
 @from_query({
     "username": fields.Str(required=True),
 })

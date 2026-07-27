@@ -1,0 +1,273 @@
+name: Cursor Pipeline Review
+
+env:
+  ORCHESTRATOR_MODEL: composer-2.5-fast
+  ARCH_JUDGE_MODEL: claude-4.6-opus-max-thinking
+  CODE_JUDGE_MODEL: claude-4.6-sonnet-medium-thinking
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to run pipeline on (defaults to current branch)"
+        required: false
+        default: "main"
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+
+    steps:
+      - name: Resolve branch
+        id: branch
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BRANCH: ${{ github.event.inputs.branch }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GIT_REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_BRANCH" ]; then
+            printf 'ref=%s\n' "$INPUT_BRANCH" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "pull_request" ]; then
+            printf 'ref=%s\n' "$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
+          else
+            printf 'ref=%s\n' "$GIT_REF_NAME" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.ref }}
+          fetch-depth: 0
+
+      - name: Install Cursor CLI
+        env:
+          CURSOR_CLI_VERSION: "2026.06.12-19-59-36-f6aba9a"
+          CURSOR_CLI_SHA256: "6e7f202dd8875b569d674564be6376f0f6fb5f7e45fdd973b59b84f33cc9a1e4"
+        run: |
+          curl -fsSL "https://downloads.cursor.com/lab/${CURSOR_CLI_VERSION}/linux/x64/agent-cli-package.tar.gz" \
+            -o /tmp/agent-cli-package.tar.gz
+          echo "${CURSOR_CLI_SHA256}  /tmp/agent-cli-package.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin" "$HOME/.local/share/cursor-agent/versions/${CURSOR_CLI_VERSION}"
+          tar --strip-components=1 -xzf /tmp/agent-cli-package.tar.gz \
+            -C "$HOME/.local/share/cursor-agent/versions/${CURSOR_CLI_VERSION}"
+          ln -sf "$HOME/.local/share/cursor-agent/versions/${CURSOR_CLI_VERSION}/cursor-agent" \
+            "$HOME/.local/bin/agent"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Validate model availability
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          MODEL_OUTPUT=$(agent --list-models 2>&1) || {
+            echo "::error::Failed to list models. Output: $MODEL_OUTPUT"
+            exit 1
+          }
+          if ! echo "$MODEL_OUTPUT" | grep -qF "$ORCHESTRATOR_MODEL"; then
+            echo "::error::Orchestrator model '$ORCHESTRATOR_MODEL' is not available. Available models:"
+            echo "$MODEL_OUTPUT"
+            exit 1
+          fi
+          for MODEL in "$ARCH_JUDGE_MODEL" "$CODE_JUDGE_MODEL"; do
+            if ! echo "$MODEL_OUTPUT" | grep -qF "$MODEL"; then
+              echo "::error::Judge model '$MODEL' is not available. Available models:"
+              echo "$MODEL_OUTPUT"
+              exit 1
+            fi
+          done
+
+      - name: Install Langfuse SDK
+        run: python3 -m pip install -r .cursor/hooks/requirements.txt
+
+      # Security: --trust grants the agent full tool access (file read/write, shell).
+      # --force skips interactive confirmation. The agent runs in a read-only
+      # checkout (contents: read permission) so it cannot push changes. The
+      # CURSOR_API_KEY is scoped to this organization's Cursor account only.
+      #
+      # Uses /pipeline review (dual-review mode): orchestrator runs scout logic
+      # inline, then spawns Arch Judge + Code Judge in parallel. Only 2 subagent
+      # spawns instead of 3.
+      - name: Run Pipeline Review
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
+          CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
+        run: |
+          AGENT_EXIT=0
+          agent --trust --force -p "/pipeline review" \
+            --model "$ORCHESTRATOR_MODEL" --output-format json \
+            > review.json 2> >(tee review_stderr.log >&2) || AGENT_EXIT=$?
+          # Extract result directly to file — avoids shell variable mangling
+          # (echo of large content can lose newlines / interpret backslashes)
+          jq -r '.result // empty' review.json > review_output.txt || true
+          # Normalize line endings (CRLF → LF) so grep anchors work reliably
+          sed -i 's/\r$//' review_output.txt
+          # Split combined output into separate files for the gate evaluator.
+          # Uses line-number-based extraction to prevent malformed output (repeated
+          # or out-of-order headers) from leaking verdicts across sections.
+          ARCH_LINES=$(grep -n -E '^## (PHASE [0-9]+: )?ARCHITECTURE REVIEW[[:space:]]*$' review_output.txt | cut -d: -f1 || true)
+          CODE_LINES=$(grep -n -E '^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$' review_output.txt | cut -d: -f1 || true)
+          ARCH_COUNT=$(echo "$ARCH_LINES" | grep -c . || true)
+          CODE_COUNT=$(echo "$CODE_LINES" | grep -c . || true)
+          if [ "$ARCH_COUNT" -ne 1 ] || [ "$CODE_COUNT" -ne 1 ]; then
+            echo "::error::Expected exactly one '## ARCHITECTURE REVIEW' and one '## CODE REVIEW' header, found ${ARCH_COUNT} and ${CODE_COUNT} respectively. Agent output is malformed."
+            exit 1
+          fi
+          ARCH_LINE=$(echo "$ARCH_LINES" | head -1)
+          CODE_LINE=$(echo "$CODE_LINES" | head -1)
+          if [ "$ARCH_LINE" -ge "$CODE_LINE" ]; then
+            echo "::error::ARCHITECTURE REVIEW header (line $ARCH_LINE) must appear before CODE REVIEW header (line $CODE_LINE). Agent output is malformed."
+            exit 1
+          fi
+          # Extract arch section: from ARCH_LINE+1 to CODE_LINE-1
+          ARCH_END=$((CODE_LINE - 1))
+          ARCH_START=$((ARCH_LINE + 1))
+          if [ "$ARCH_START" -le "$ARCH_END" ]; then
+            sed -n "${ARCH_START},${ARCH_END}p" review_output.txt > arch_review_output.txt
+          else
+            : > arch_review_output.txt
+          fi
+          # Extract code section: from CODE_LINE+1 to EOF
+          CODE_START=$((CODE_LINE + 1))
+          TOTAL_LINES=$(wc -l < review_output.txt)
+          if [ "$CODE_START" -le "$TOTAL_LINES" ]; then
+            sed -n "${CODE_START},\$p" review_output.txt > code_review_output.txt
+          else
+            : > code_review_output.txt
+          fi
+
+          # Validate split files contain expected review content
+          SPLIT_OK=true
+          for f in arch_review_output.txt code_review_output.txt; do
+            if [ ! -s "$f" ]; then
+              echo "::error::${f} is empty. Agent output must contain '## ARCHITECTURE REVIEW' and '## CODE REVIEW' headers (optionally prefixed with 'PHASE N: ')."
+              SPLIT_OK=false
+            elif ! grep -qE 'PIPELINE_(ARCH_|CODE_)?VERDICT' "$f"; then
+              echo "::warning::${f} missing PIPELINE_*_VERDICT — judge output may be incomplete."
+            fi
+          done
+          if [ "$AGENT_EXIT" -ne 0 ]; then
+            if [ "$SPLIT_OK" = false ]; then
+              echo "::error::Agent exited with code $AGENT_EXIT and produced unusable output. See review_stderr.log."
+              exit 1
+            fi
+            echo "::warning::Agent exited with code $AGENT_EXIT but review output appears valid. Continuing."
+          fi
+          if [ "$SPLIT_OK" = false ]; then
+            echo "::error::Output splitting failed — review sections missing or empty. Ensure output uses '## ARCHITECTURE REVIEW' then '## CODE REVIEW' headers (with or without 'PHASE N: ' prefix)."
+            exit 1
+          fi
+
+      - name: Publish results to Job Summary
+        if: always()
+        run: python3 .github/scripts/publish_review_summary.py
+
+      - name: Upload Review Summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pipeline-review-summary-${{ github.run_id }}
+          path: review_output.txt
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Extract Pipeline Telemetry
+        if: always()
+        env:
+          ORCHESTRATOR_MODEL: ${{ env.ORCHESTRATOR_MODEL }}
+          ARCH_JUDGE_MODEL: ${{ env.ARCH_JUDGE_MODEL }}
+          CODE_JUDGE_MODEL: ${{ env.CODE_JUDGE_MODEL }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
+        run: python3 .github/scripts/extract_pipeline_telemetry.py
+
+      - name: Send Langfuse Trace
+        if: always()
+        env:
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
+          PIPELINE_RESULTS_JSON: /tmp/pipeline_results.json
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
+        run: python3 .github/scripts/send_langfuse_trace.py
+
+      - name: Evaluate Review Scores
+        id: gate
+        if: always()
+        env:
+          PIPELINE_RESULTS_JSON: /tmp/pipeline_results.json
+        run: python3 .github/scripts/evaluate_review_gate.py
+
+      - name: Collect Training Data
+        if: always()
+        env:
+          PIPELINE_RESULTS_JSON: /tmp/pipeline_results.json
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_REF: ${{ steps.branch.outputs.ref }}
+        run: python3 .github/scripts/collect_training_data.py
+
+      - name: Upload Telemetry & Training Data
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pipeline-telemetry-${{ github.run_id }}
+          path: |
+            telemetry.json
+            training_data.csv
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish Commit Status
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          ARCH_VERDICT="${{ steps.gate.outputs.arch_verdict }}"
+          CODE_SCORE="${{ steps.gate.outputs.code_score }}"
+          ARCH_VERDICT="${ARCH_VERDICT:-UNKNOWN}"
+          CODE_SCORE="${CODE_SCORE:-?}"
+
+          DESCRIPTION="Architecture: ${ARCH_VERDICT} | Code: ${CODE_SCORE}/10"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          if [ "${{ steps.gate.outcome }}" = "success" ]; then
+            STATE="success"
+          else
+            STATE="failure"
+          fi
+
+          jq -n \
+            --arg state "$STATE" \
+            --arg target_url "$RUN_URL" \
+            --arg description "$DESCRIPTION" \
+            --arg context "Pipeline Review" \
+            '{
+              state: $state,
+              target_url: $target_url,
+              description: $description,
+              context: $context
+            }' | gh api "repos/${GH_REPOSITORY}/statuses/${{ github.event.pull_request.head.sha }}" \
+              -X POST --input -

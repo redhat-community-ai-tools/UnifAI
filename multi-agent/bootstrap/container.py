@@ -43,11 +43,15 @@ from mas.core.auth.strategies.oauth2.detection import OAuth2DetectionStrategy
 from mas.core.auth.strategies.oauth2.state_manager import OAuthStateManager
 from outbound.auth.api_key_strategy import ApiKeyStrategy
 from outbound.mongo.client_config_repository import MongoServerConfigStore
-from mas.actions.auth.authenticate.action import AuthenticateAction
+from mas.actions.auth.store_credential.action import StoreCredentialAction
+from mas.actions.auth.discovery.action import DiscoveryAction
+from mas.actions.auth.sign_out.action import SignOutAction
 from mas.actions.providers.mcp.validate_connection.validate_connection import ValidateConnectionAction
 from mas.actions.providers.mcp.get_tools_names.get_tools_names import GetToolsNamesAction
 
 from config.app_config import AppConfig
+from mas.core.platform_config import PlatformConfig
+from outbound.storage import LocalSessionStorageCleaner
 
 from outbound.mongo import (
     MongoBlueprintRepository,
@@ -59,10 +63,12 @@ from outbound.mongo import (
 # Auth layer — adapters
 from outbound.mongo.auth_token_repository import MongoCredentialStore
 from outbound.redis.auth_pending_store import RedisFlowStateStore
-from outbound.auth.http_oauth_client import HttpxAuthClient
+from outbound.http.httpx_client import HttpxClient
 
 from mas.core.identity.ports import IdentityProvider
 from global_utils.identity_client import IdentityClient
+from global_utils.redis import RedisKVStore, TeamMembershipCache, build_redis_client
+from global_utils.utils.crypto import FieldCipher
 from global_utils.utils.singleton import SingletonMeta
 from global_utils.utils.util import get_redis_url
 
@@ -146,7 +152,7 @@ class AppContainer(metaclass=SingletonMeta):
 
         # ── Auth layer ────────────────────────────────────────────────
 
-        http_client = HttpxAuthClient()
+        http_client = HttpxClient()
         self.credential_store = MongoCredentialStore(
             mongodb_ip=cfg.mongodb_ip,
             mongodb_port=cfg.mongodb_port,
@@ -159,7 +165,7 @@ class AppContainer(metaclass=SingletonMeta):
         pending_store = None
         if redis_url:
             import redis as redis_lib
-            redis_client = redis_lib.Redis.from_url(redis_url)
+            redis_client = redis_lib.Redis.from_url(redis_url, socket_timeout=30)
             pending_store = RedisFlowStateStore(
                 redis_client=redis_client,
                 encryption_key=cfg.credential_encryption_key,
@@ -177,21 +183,17 @@ class AppContainer(metaclass=SingletonMeta):
             mongodb_ip=cfg.mongodb_ip,
             mongodb_port=cfg.mongodb_port,
             db_name=cfg.mongo_db,
-            coll_name="server_configs",
+            coll_name=cfg.server_configs_coll,
         )
 
         # OAuth2 state manager
-        if not cfg.mcp_auth_state_secret:
-            logger.warning("MCP_AUTH_STATE_SECRET not set — using random key (sessions won't survive restarts)")
-            import secrets as _secrets
-            cfg.mcp_auth_state_secret = _secrets.token_urlsafe(32)
-        state_manager = OAuthStateManager(secret=cfg.mcp_auth_state_secret)
+        state_manager = OAuthStateManager(secret=cfg.oauth_state_secret)
 
         # Strategy registry — self-contained strategies
         oauth2_strategy = OAuth2Strategy(
             pending_store=pending_store,
             state_manager=state_manager,
-            callback_url=f"{cfg.identity_host.rstrip('/')}/api/credentials/callback",
+            callback_url=f"{cfg.identity_host.rstrip('/')}{cfg.oauth_callback_path}",
             client_config_store=self.server_config_store,
             http_client=http_client,
         )
@@ -207,12 +209,64 @@ class AppContainer(metaclass=SingletonMeta):
             strategy_registry=strategy_registry,
             server_config_store=self.server_config_store,
             detector=detector,
+            encryption_key=cfg.credential_encryption_key,
         )
 
-        self.resources_service.set_auth_service(self.auth_service)
-        self.blueprint_service.set_auth_service(self.auth_service)
+        # ── Data repositories ────────────────────────────────────────
 
-        self.actions_service.register_instance(AuthenticateAction(
+        self.blueprint_repo = MongoBlueprintRepository(
+            db_name=cfg.mongo_db,
+            coll_name=cfg.blueprint_coll
+        )
+
+        self.resource_repo = MongoResourceRepository(
+            cfg.mongodb_port,
+            mongodb_ip=cfg.mongodb_ip,
+            db_name=cfg.mongo_db,
+            coll_name=cfg.resources_coll,
+        )
+
+        field_cipher = FieldCipher(cfg.credential_encryption_key) if cfg.credential_encryption_key else None
+
+        resource_registry = ResourcesRegistry(
+            repo=self.resource_repo,
+            bp_repo=self.blueprint_repo,
+            cipher=field_cipher,
+        )
+
+        # ── Application services ─────────────────────────────────────
+
+        self.resources_service = ResourcesService(
+            resource_registry=resource_registry,
+            element_registry=self.element_registry,
+            validation_service=self.validation_service,
+            card_service=self.card_service,
+            auth_service=self.auth_service,
+            encryption_key=cfg.credential_encryption_key,
+        )
+
+        self.blueprint_resolver = BlueprintResolver(
+            resource_registry=resource_registry,
+            element_registry=self.element_registry
+        )
+
+        self.blueprint_service = BlueprintService(
+            self.blueprint_repo,
+            resolver=self.blueprint_resolver,
+            validation_service=self.validation_service,
+            card_service=self.card_service,
+            auth_service=self.auth_service,
+        )
+
+        # ── Auth actions ─────────────────────────────────────────────
+
+        self.actions_service.register_instance(StoreCredentialAction(
+            auth_service=self.auth_service,
+        ))
+        self.actions_service.register_instance(DiscoveryAction(
+            auth_service=self.auth_service,
+        ))
+        self.actions_service.register_instance(SignOutAction(
             auth_service=self.auth_service,
         ))
         self.actions_service.register_instance(ValidateConnectionAction(
@@ -222,11 +276,17 @@ class AppContainer(metaclass=SingletonMeta):
             auth_service=self.auth_service,
         ))
 
+        # ── Platform config (domain-layer projection of AppConfig) ────
+        self.platform_config = PlatformConfig(
+            shared_storage=cfg.shared_storage,
+        )
+
         # ── Session factory ───────────────────────────────────────────
         self.session_factory = WorkflowSessionFactory(
             element_registry=self.element_registry,
             engine_name=cfg.engine_name,
             auth_service=self.auth_service,
+            platform_config=self.platform_config,
         )
         self.session_repo = MongoSessionRepository(
             mongodb_port=cfg.mongodb_port,
@@ -234,10 +294,15 @@ class AppContainer(metaclass=SingletonMeta):
             db_name=cfg.mongo_db,
             collection_name=cfg.session_coll
         )
+        self.session_storage_cleaner = LocalSessionStorageCleaner(
+            base_path=cfg.shared_storage,
+        )
         self.session_manager = UserSessionManager(
             repository=self.session_repo,
             session_factory=self.session_factory,
-            blueprint_service=self.blueprint_service
+            blueprint_service=self.blueprint_service,
+            platform_config=self.platform_config,
+            storage_cleaner=self.session_storage_cleaner,
         )
 
         self.session_lifecycle = SessionLifecycle(repository=self.session_repo)
@@ -245,9 +310,16 @@ class AppContainer(metaclass=SingletonMeta):
 
         self.channel_factory = self._create_channel_factory(cfg)
 
+        from outbound.hitl import ChannelApprovalGateFactory
+        self.overrides_store = self._create_overrides_store()
+        self.gate_factory = ChannelApprovalGateFactory(
+            overrides_store=self.overrides_store,
+        )
+
         foreground_runner = ForegroundSessionRunner(
             lifecycle=self.session_lifecycle,
             channel_factory=self.channel_factory,
+            gate_factory=self.gate_factory,
         )
 
         background_engine = self._create_background_engine(cfg.engine_name)
@@ -259,11 +331,14 @@ class AppContainer(metaclass=SingletonMeta):
             background_engine=background_engine,
         )
 
-        # Single shared IdentityClient — the only object that makes HTTP calls
-        # to the Identity pod.  The identity_provider port adapter and the
-        # directory provider both delegate to it.
+        self.redis_kv_store = RedisKVStore(build_redis_client())
+        self.team_membership_cache = TeamMembershipCache(self.redis_kv_store)
+
         identity_base = (cfg.directory_sso_url or cfg.identity_host or "").rstrip("/")
-        self.identity_client = IdentityClient(base_url=identity_base)
+        self.identity_client = IdentityClient(
+            base_url=identity_base,
+            team_cache=self.team_membership_cache,
+        )
 
         self.identity_provider: IdentityProvider = self._build_identity_auth_provider(
             cfg, self.identity_client
@@ -307,6 +382,28 @@ class AppContainer(metaclass=SingletonMeta):
         )
 
         self._initialized = True
+
+    @staticmethod
+    def _create_overrides_store():
+        redis_url = get_redis_url()
+        if redis_url:
+            from outbound.hitl import RedisOverridesStore
+            return RedisOverridesStore(redis_url=redis_url)
+        from mas.core.hitl.ports import OverridesStore
+        from mas.core.hitl.models import ApprovalOverrides
+
+        class InMemoryOverridesStore(OverridesStore):
+            """Fallback for environments without Redis."""
+            def __init__(self) -> None:
+                self._data: dict[str, ApprovalOverrides] = {}
+            def load(self, session_id: str) -> ApprovalOverrides:
+                return self._data.get(session_id, ApprovalOverrides())
+            def save(self, session_id: str, overrides: ApprovalOverrides) -> None:
+                self._data[session_id] = overrides
+            def remove(self, session_id: str) -> None:
+                self._data.pop(session_id, None)
+
+        return InMemoryOverridesStore()
 
     @staticmethod
     def _create_channel_factory(cfg: AppConfig):

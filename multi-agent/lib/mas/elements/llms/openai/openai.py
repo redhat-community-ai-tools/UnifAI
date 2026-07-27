@@ -1,123 +1,121 @@
-from typing import Any, Dict, List, Optional, Iterator, Union
+"""
+OpenAI LLM implementation using the native ``openai`` Python SDK.
+
+Supports any OpenAI-compatible API (OpenAI, vLLM, Azure, etc.) via
+the ``base_url`` parameter.
+"""
+
+from __future__ import annotations
+
 import copy
-from langchain_openai import ChatOpenAI
+from typing import Any, Dict, Iterator, List, Optional, Union
+
+from openai import OpenAI
+from openai.types.chat import ChatCompletionToolParam
+
 from ..common.base_llm import BaseLLM
-from mas.core.contracts import SupportsStreaming
-from ..common.chat.converter import LangChainConverter
-from ..common.chat.message import ChatMessage
-from ...tools.common.base_tool import BaseTool
-from ...tools.common.converter import LangChainToolsConverter
+from ..common.chat.message import ChatMessage, Role
+from ...tools.common.tool_definition import ToolDefinition
+from .message_converter import OpenAIMessageConverter
+from .tools_converter import OpenAIToolsConverter
+from .stream_aggregator import StreamToolCallAggregator
 
 
-class OpenAILLM(BaseLLM, SupportsStreaming):
-    """
-    LLM client for vLLM-served Qwen model using LangChain's ChatOpenAI wrapper.
+class OpenAILLM(BaseLLM):
+    """LLM client backed by the native OpenAI Python SDK.
+
+    Responsibilities are split across dedicated collaborators:
+
+    * **OpenAIMessageConverter** – bidirectional ``ChatMessage`` ↔ OpenAI dict
+    * **OpenAIToolsConverter** – ``BaseTool`` → OpenAI function-tool schema
+    * **StreamToolCallAggregator** – reassembles incremental tool-call deltas
     """
 
     def __init__(
-            self,
-            base_url: str,
-            model_name: str,
-            temperature: float = 0.7,
-            max_tokens: int = 1024,
-            api_key: str = "EMPTY",
-            **extra: Any
-    ):
-        """
-        :param base_url:     vLLM API base (OpenAI-compatible).
-        :param model_name:   Qwen model ID (e.g. "Qwen/Qwen1.5-7B-Chat").
-        :param temperature:  Sampling temperature.
-        :param max_tokens:   Max tokens to generate.
-        :param extra:        Extra kwargs passed to ChatOpenAI.
-        """
-        self._name = "vllm-qwen"
-        self.client = ChatOpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            model=model_name,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **extra
-        )
+        self,
+        base_url: str,
+        model_name: str,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        api_key: str = "EMPTY",
+        **extra: Any,
+    ) -> None:
+        self._name = "openai"
+        self._model = model_name
+        self._temperature = temperature
+        self._max_tokens = max_tokens
+        self._tools: Optional[List[ChatCompletionToolParam]] = None
+        self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
 
-    def chat(
-            self,
-            messages: List[ChatMessage],
-            *,
-            temperature: Optional[float] = None,
-            max_tokens: Optional[int] = None,
-            stream: bool = False,
-            **kwargs: Any
-    ) -> ChatMessage:
-        """
-        Send a chat request to the vLLM model.
+    # ------------------------------------------------------------------
+    # BaseLLM interface
+    # ------------------------------------------------------------------
 
-        :param messages: List of {"role": "user"/"assistant"/"system", "content": "..."}
-        """
-        call_params: Dict[str, Any] = {}
-        if temperature is not None:
-            call_params["temperature"] = temperature
-        if max_tokens is not None:
-            call_params["max_tokens"] = max_tokens
-        call_params.update(kwargs)
-
-        # Convert to LangChain message objects
-        lc_messages = LangChainConverter.to_lc(messages)
-
-        response = self.client.invoke(lc_messages, stream=stream, **call_params)
-        return LangChainConverter.from_lc_message(response)
+    def chat(self, messages: List[ChatMessage]) -> ChatMessage:
+        request = self._build_request(messages)
+        response = self._client.chat.completions.create(**request)
+        return OpenAIMessageConverter.from_openai(response.choices[0].message)
 
     def stream(
-            self,
-            messages: List[ChatMessage],
-            **call_params: Any,
+        self,
+        messages: List[ChatMessage],
+        **call_params: Any,
     ) -> Iterator[Union[str, ChatMessage]]:
-        """
-        Provider-level streaming:
+        request = self._build_request(messages, stream=True, **call_params)
+        aggregator = StreamToolCallAggregator()
+        accumulated_content = ""
 
-        • Yields `str` tokens for regular answers.
-        • Aggregates *all* `tool_call_chunks` via the LangChain "+" operator
-          and, at the very end, yields **one** `ChatMessage` representing
-          the full assistant reply with `tool_calls=[…]`.
-        """
-        # Translate our domain history → LangChain
-        lc_history = LangChainConverter.to_lc(messages)
-
-        aggregated: Any | None = None  # will hold the growing AIMessage
-
-        for chunk in self.client.stream(lc_history, stream=True, **call_params):
-            # Tool-call partials -------------------------------------------------
-            if getattr(chunk, "tool_call_chunks", None):
-                aggregated = chunk if aggregated is None else aggregated + chunk
-                # we do NOT yield yet — wait until provider is done
+        for chunk in self._client.chat.completions.create(**request):
+            if not chunk.choices:
                 continue
 
-            # Plain token path --------------------------------------------------
-            token = chunk.content or ""
-            if token:
-                yield token
+            delta = chunk.choices[0].delta
 
-        # Provider finished ------------------------------------------------------
-        if aggregated:
-            # LangChain "+" produced a final AIMessage with complete tool_calls,
-            # Convert once to our ChatMessage model and yield it.
-            yield LangChainConverter.from_lc_message(aggregated)
+            if delta.content:
+                accumulated_content += delta.content
+                yield delta.content
 
-    def bind_tools(self, tools: List[BaseTool]) -> "OpenAILLM":
-        """
-        Return a new OpenAILLM instance with tools bound, avoiding cross-contamination.
-        
-        This creates a copy of the current LLM with tools bound to the client,
-        ensuring the original LLM instance remains unchanged.
-        """
-        # Create a shallow copy of the current instance
-        new_llm = copy.copy(self)
-        
-        # Create a new client with tools bound (LangChain's bind_tools returns a copy)
-        new_llm.client = self.client.bind_tools(LangChainToolsConverter.to_lc(tools))
-        
-        return new_llm
+            if delta.tool_calls:
+                aggregator.absorb(delta.tool_calls)
+
+        if aggregator.has_tool_calls:
+            yield ChatMessage(
+                role=Role.ASSISTANT,
+                content=accumulated_content,
+                tool_calls=aggregator.build(),
+            )
+
+    def bind_tools(self, tools: List[ToolDefinition]) -> OpenAILLM:
+        clone = copy.copy(self)
+        clone._tools = OpenAIToolsConverter.to_openai(tools)
+        return clone
 
     @property
     def name(self) -> str:
         return self._name
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _build_request(
+        self,
+        messages: List[ChatMessage],
+        *,
+        stream: bool = False,
+        **overrides: Any,
+    ) -> Dict[str, Any]:
+        """Assemble the kwargs dict for ``chat.completions.create``."""
+        request: Dict[str, Any] = {
+            "model": self._model,
+            "messages": OpenAIMessageConverter.to_openai(messages),
+            "temperature": self._temperature,
+            "max_tokens": self._max_tokens,
+        }
+        if stream:
+            request["stream"] = True
+        if self._tools:
+            request["tools"] = self._tools
+        if overrides:
+            request.update(overrides)
+        return request

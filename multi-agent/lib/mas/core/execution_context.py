@@ -11,6 +11,8 @@ from mas.core.identity import Identity
 # tokens for the acting human while ``identity`` remains the team (or other owner).
 CREDENTIAL_USER_ID_TAG = "credential_user_id"
 
+HITL_ENABLED_TAG = "hitl_enabled"
+
 
 class ExecutionContext(BaseModel):
     """Runtime execution context — who, what scope, when.
@@ -20,12 +22,14 @@ class ExecutionContext(BaseModel):
     older DB documents that carried fields no longer present.
     """
 
+    session_id: str = ""
     identity: Identity
     scope: str = "public"
     engine_name: str = ""
     engine_handle: Optional[str] = None
 
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_active_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
 
     tags: Dict[str, Any] = Field(default_factory=dict)
@@ -78,8 +82,27 @@ class ExecutionContext(BaseModel):
             return ""
         return self.identity.id
 
+    def with_hitl(self, enabled: bool) -> ExecutionContext:
+        """Copy with the HITL-enabled flag in ``tags``.
+
+        Stamped from ``SessionMeta.hitl_enabled`` during staging so that
+        nodes configured with ``HITLMode.DYNAMIC`` can read it at runtime.
+        """
+        tags = dict(self.tags or {})
+        tags[HITL_ENABLED_TAG] = enabled
+        return self.model_copy(update={"tags": tags})
+
+    @property
+    def hitl_enabled(self) -> bool:
+        """Whether dynamic HITL is active (sourced from session metadata)."""
+        return bool((self.tags or {}).get(HITL_ENABLED_TAG, False))
+
+    def mark_active(self) -> ExecutionContext:
+        return self.model_copy(update={"last_active_at": datetime.now(timezone.utc)})
+
     def mark_finished(self) -> ExecutionContext:
-        return self.model_copy(update={"finished_at": datetime.now(timezone.utc)})
+        now = datetime.now(timezone.utc)
+        return self.model_copy(update={"finished_at": now, "last_active_at": now})
 
 
 class ExecutionContextHolder:

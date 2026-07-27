@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from typing import Awaitable, Callable, Optional, Type, Any, Dict, Union, TYPE_CHECKING
+from typing import Awaitable, Callable, Optional, Type, Any, Dict, Union
 from pydantic import BaseModel, HttpUrl
 from global_utils.utils.util import validate_arguments
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.elements.providers.mcp_server_client.mcp_server_client import McpServerClient
 from mas.elements.providers.mcp_server_client.transport.enums import McpTransportType
+from mas.core.hitl.models import ToolAccessMode
 from mas.elements.tools.common.base_tool import BaseTool
 from global_utils.utils.util import json_schema_model
-
-if TYPE_CHECKING:
-    from mas.core.auth.credentials.credential import AuthCredential
+from mas.core.auth.credentials.credential import AuthCredential
 
 AsyncHeaderProvider = Callable[..., Awaitable[Dict[str, str]]]
 
@@ -21,6 +20,7 @@ class McpProxyToolError(Exception):
 
 
 class McpProxyTool(BaseTool):
+    access_mode: ToolAccessMode = ToolAccessMode.WRITE
     """
     A proxy tool that forwards calls to MCP server tools by creating fresh clients per portal.
     This approach eliminates cross-event-loop thread safety issues by avoiding shared state.
@@ -316,6 +316,23 @@ class McpProxyTool(BaseTool):
         tool._schema_initialized = True
 
         return tool
+
+    def get_sandbox_config(self) -> Dict[str, Any]:
+        """Extract serializable config for sandbox execution.
+
+        Resolves auth headers in the worker (where auth closures are
+        available) and returns a plain dict of strings that can cross
+        the cloudpickle boundary.
+        """
+        with get_async_bridge() as bridge:
+            headers = bridge.run(self._get_current_headers())
+        return {
+            "_tool_type": "mcp_proxy",
+            "mcp_url": str(self.mcp_url),
+            "mcp_tool_name": self.mcp_tool_name,
+            "headers": headers,
+            "transport_type": self.transport_type.value,
+        }
 
     def __repr__(self) -> str:
         desc = (self.description[:50] + "...") if self.description else "No description"

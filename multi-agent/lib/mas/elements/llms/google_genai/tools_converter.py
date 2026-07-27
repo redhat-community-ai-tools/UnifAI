@@ -1,25 +1,47 @@
-from langchain_core.tools import StructuredTool
-from langchain_core.tools import BaseTool as LangChainBaseTool
-from ...tools.common.converter import LangChainToolsConverter
-from ...tools.common.base_tool import BaseTool
+"""
+Converter from ``ToolDefinition`` to Google GenAI-native tool definitions.
+
+Uses the SDK's ``types.FunctionDeclaration`` and ``types.Tool`` Pydantic models
+so the output is validated against the API spec at construction time.
+
+Google GenAI has stricter schema validation than other providers, so
+``SchemaSanitizer`` is applied to remove patterns that would be rejected
+(empty properties, title-only fields, etc.).
+"""
+
+from __future__ import annotations
+
+from typing import List, Optional
+
+from google.genai import types
+
+from ...tools.common.tool_definition import ToolDefinition
 from .schema_sanitizer import SchemaSanitizer
 
 
-class GoogleGenAIToolsConverter(LangChainToolsConverter):
-    """Converter with schema sanitization for Google GenAI compatibility."""
+class GoogleGenAIToolsConverter:
+    """Converts ``ToolDefinition`` instances into a Google GenAI ``types.Tool``."""
 
-    @classmethod
-    def _convert_tool(cls, tool: BaseTool) -> LangChainBaseTool:
-        """Convert tool with sanitized schema for Google GenAI."""
-        schema = tool.get_args_schema_json()
+    @staticmethod
+    def to_genai(tools: Optional[List[ToolDefinition]]) -> Optional[List[types.Tool]]:
+        """Convert tool definitions to Google GenAI format.
 
-        if isinstance(schema, dict):
-            schema = SchemaSanitizer.sanitize(schema)
+        Returns a list containing a single ``types.Tool`` with all function
+        declarations, or *None* if no tools are provided.
+        """
+        if not tools:
+            return None
 
-        return StructuredTool.from_function(
-            func=tool.run,
-            args_schema=schema,
+        declarations = [GoogleGenAIToolsConverter._to_declaration(t) for t in tools]
+        return [types.Tool(function_declarations=declarations)]
+
+    @staticmethod
+    def _to_declaration(tool: ToolDefinition) -> types.FunctionDeclaration:
+        """Convert a single ToolDefinition to a ``FunctionDeclaration``."""
+        parameters = SchemaSanitizer.sanitize(tool.parameters)
+
+        return types.FunctionDeclaration(
             name=tool.name,
             description=tool.description,
-            coroutine=tool.arun
+            parameters_json_schema=parameters,
         )

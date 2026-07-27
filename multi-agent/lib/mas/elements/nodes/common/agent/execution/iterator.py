@@ -197,9 +197,17 @@ class AgentIterator:
                     if result_step.type == StepType.OBSERVATION:
                         from mas.elements.llms.common.chat.message import ChatMessage, Role
                         obs = result_step.data  # AgentObservation
+                        if obs.success:
+                            content = str(obs.output)
+                        elif obs.output:
+                            content = str(obs.output)
+                        elif obs.error:
+                            content = f"Error: {obs.error}"
+                        else:
+                            content = "Tool call was blocked."
                         tool_message = ChatMessage(
                             role=Role.TOOL,
-                            content=str(obs.output) if obs.success else f"Error: {obs.error}",
+                            content=content,
                             tool_call_id=obs.action_id
                         )
                         self.messages.append(tool_message)

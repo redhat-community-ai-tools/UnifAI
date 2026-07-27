@@ -23,15 +23,19 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSessionManagement } from "@/hooks/use-session-management";
 import { useSessionStream } from "@/hooks/use-session-stream";
 import { useSessionHub } from "@/hooks/use-session-hub";
+import { useCarouselLayout } from "@/hooks/use-carousel-layout";
+import { useDefaultPrompts } from "@/hooks/use-default-prompts";
 import { sortSessionsByTimestamp } from "@/utils/sessionHelpers";
 import {
   CollaborationHubSessionSidebar,
   CollaborationHubMainColumn,
   CollaborationHubRightPanel,
-  CollaborationHubModals,
 } from "./collaborationHubPanels";
+import { AnimatedPanelLayout } from "@/components/shared/AnimatedPanelLayout";
+import { AddFlowModal, DeleteSessionModal } from "@/components/shared/SessionModals";
 import { MemberDisplay, buildMemberDisplay } from "@/utils/memberDisplay";
 import type { ChatSessionData } from "@/types/session";
+import type { PromptShortcut } from "@/api/blueprints";
 import { transformSessionData } from "@/utils/sessionHelpers";
 
 const COLLAB_POLL_INTERVAL = 3000;
@@ -51,6 +55,11 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
   const [isSessionBusy, setIsSessionBusy] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const carousel = useCarouselLayout({
+    defaultChatPercent: 65,
+    containerSelector: '.collab-panel-container',
+  });
 
   const { user } = useAuth();
   const { clearStream } = useStreamingData();
@@ -332,6 +341,9 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
     };
   }, []);
 
+  // ── Prompt shortcuts ───────────────────────────────────────────────────
+  const defaultPrompts = useDefaultPrompts(hub);
+
   // ── Loading / Error ────────────────────────────────────────────────────
   if (hub.isLoading) {
     return (
@@ -361,48 +373,76 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
           onOpenAddFlow={() => hub.setShowAddFlowModal(true)}
           getSessionParticipantMembers={getSessionParticipantMembers}
         />
-        <CollaborationHubMainColumn
-          selectedSession={hub.selectedSession}
-          isLiveRequest={hub.isLiveRequest}
-          isSessionBusy={isSessionBusy}
-          isSubmitting={isSubmitting}
-          currentSessionMessages={hub.currentSessionMessages}
-          isSharingDisabled={hub.isSharingDisabled}
-          isBlueprintValid={hub.isBlueprintValid}
-          isValidatingBlueprint={hub.isValidatingBlueprint}
-          typingUsers={typingUsers}
-          teamMembers={teamMembers}
-          triggerExecution={triggerExecution}
-          onCancelSession={handleCancelSession}
-          getSessionParticipantMembers={getSessionParticipantMembers}
-        />
-        <CollaborationHubRightPanel
-          selectedSession={hub.selectedSession}
-          isLiveRequest={hub.isLiveRequest}
-          isCancelled={hub.isCancelled}
-          isSessionBusy={isSessionBusy}
-          teamName={teamName}
-          chatSessionsLength={hub.chatSessions.length}
-          blueprintSpecCache={hub.blueprintSpecCache}
-          blueprintValidationResults={hub.blueprintValidationResults}
-          isValidatingBlueprint={hub.isValidatingBlueprint}
-          getSessionParticipantMembers={getSessionParticipantMembers}
+
+        <AnimatedPanelLayout
+          carouselMode={carousel.carouselMode}
+          chatWidth={carousel.chatWidth}
+          graphWidth={carousel.graphWidth}
+          isResizing={carousel.isResizing}
+          resizerProps={carousel.resizerProps}
+          containerClassName="collab-panel-container"
+          chatPanel={
+            <CollaborationHubMainColumn
+              selectedSession={hub.selectedSession}
+              isLiveRequest={hub.isLiveRequest}
+              isSessionBusy={isSessionBusy}
+              isSubmitting={isSubmitting}
+              currentSessionMessages={hub.currentSessionMessages}
+              isSharingDisabled={hub.isSharingDisabled}
+              isBlueprintValid={hub.isBlueprintValid}
+              isValidatingBlueprint={hub.isValidatingBlueprint}
+              typingUsers={typingUsers}
+              teamMembers={teamMembers}
+              defaultPrompts={defaultPrompts}
+              triggerExecution={triggerExecution}
+              onCancelSession={handleCancelSession}
+              getSessionParticipantMembers={getSessionParticipantMembers}
+              carouselMode={carousel.carouselMode}
+              onSetCarouselMode={carousel.setCarouselMode}
+            />
+          }
+          graphPanel={
+            <CollaborationHubRightPanel
+              selectedSession={hub.selectedSession}
+              isLiveRequest={hub.isLiveRequest}
+              isCancelled={hub.isCancelled}
+              isSessionBusy={isSessionBusy}
+              teamName={teamName}
+              chatSessionsLength={hub.chatSessions.length}
+              blueprintSpecCache={hub.blueprintSpecCache}
+              blueprintValidationResults={hub.blueprintValidationResults}
+              isValidatingBlueprint={hub.isValidatingBlueprint}
+              getSessionParticipantMembers={getSessionParticipantMembers}
+              carouselMode={carousel.carouselMode}
+              onSetCarouselMode={carousel.setCarouselMode}
+            />
+          }
         />
       </div>
 
-      <CollaborationHubModals
-        showAddFlowModal={hub.showAddFlowModal}
-        setShowAddFlowModal={hub.setShowAddFlowModal}
-        selectedFlowForModal={hub.selectedFlowForModal}
-        setSelectedFlowForModal={hub.setSelectedFlowForModal}
-        isCreatingSession={hub.isCreatingSession}
-        onAddFlowConfirm={hub.handleAddFlow}
-        showDeleteModal={hub.showDeleteModal}
-        setShowDeleteModal={hub.setShowDeleteModal}
-        chatToDelete={hub.chatToDelete}
+      <AddFlowModal
+        open={hub.showAddFlowModal}
+        onOpenChange={hub.setShowAddFlowModal}
+        selectedFlow={hub.selectedFlowForModal}
+        onFlowSelect={hub.setSelectedFlowForModal}
+        isCreating={hub.isCreatingSession}
+        onConfirm={hub.handleAddFlow}
+        onCancel={() => {
+          hub.setShowAddFlowModal(false);
+          hub.setSelectedFlowForModal(null);
+        }}
+        title="Start New Session"
+        confirmLabel="Start Session"
+      />
+
+      <DeleteSessionModal
+        open={hub.showDeleteModal}
+        onOpenChange={hub.setShowDeleteModal}
+        session={hub.chatToDelete}
         isDeleting={hub.isDeleting}
-        onConfirmDelete={hub.confirmDeleteChat}
-        onDeleteCancel={hub.cancelDeleteChat}
+        onConfirm={hub.confirmDeleteChat}
+        onCancel={hub.cancelDeleteChat}
+        title="Delete Session"
       />
     </>
   );

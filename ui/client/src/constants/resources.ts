@@ -31,6 +31,7 @@ export const FALLBACK_CATEGORIES = [
   'agents',
   'providers',
   'retrievers',
+  'sandboxes',
   'tools',
 ] as const;
 
