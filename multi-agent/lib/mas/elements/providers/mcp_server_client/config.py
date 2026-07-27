@@ -154,6 +154,6 @@ class McpProviderConfig(ProviderBaseConfig):
                 }
             ),
             ReadOnlyHint(read_only=False),
-            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]),
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM], empty_text="All tools"),
         ),
     )

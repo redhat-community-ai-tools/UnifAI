@@ -402,21 +402,36 @@ class CardHint(BaseModel):
     carries this hint — that exclusion is enforced by card-rendering
     consumers, not by this hint itself.
 
+    ``empty_text`` covers fields whose "unset" state still has a meaningful
+    display value — e.g. an MCP provider's ``tool_names`` being empty means
+    "all tools from the server", not "nothing to show". Without it, empty
+    values are simply omitted from the card (the default, existing
+    behavior).
+
     Example::
 
         json_schema_extra=combine_hints(
             CardHint(contexts=[CardContext.CUSTOM]),
+        )
+
+        json_schema_extra=combine_hints(
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM], empty_text="All tools"),
         )
     """
     contexts: List[CardContext] = Field(
         ...,
         description="Which card ownership context(s) this field should be shown on.",
     )
+    empty_text: Optional[str] = Field(
+        default=None,
+        description="Fallback text shown on the card when the field's value is empty/unset, "
+                    "instead of omitting the field entirely (e.g. 'All tools', 'All documents').",
+    )
 
     def to_hints(self) -> Dict[str, Any]:
         return {
             "hints": {
-                "card": self.model_dump()
+                "card": self.model_dump(exclude_none=True)
             }
         }
 

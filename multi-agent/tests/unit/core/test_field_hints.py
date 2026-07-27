@@ -27,6 +27,18 @@ class TestCardHint:
         with pytest.raises(ValidationError):
             CardHint(contexts=["admin"])
 
+    def test_empty_text_omitted_by_default(self):
+        """`empty_text` is optional and excluded from the serialized hint
+        when unset, so existing fields without it keep their exact shape."""
+        hint = CardHint(contexts=["custom"])
+        assert hint.to_hints() == {"hints": {"card": {"contexts": ["custom"]}}}
+
+    def test_empty_text_included_when_set(self):
+        hint = CardHint(contexts=["builtin", "custom"], empty_text="All tools")
+        assert hint.to_hints() == {
+            "hints": {"card": {"contexts": ["builtin", "custom"], "empty_text": "All tools"}}
+        }
+
 
 class TestCombineHintsWithCardHint:
     def test_combines_with_other_hints(self):

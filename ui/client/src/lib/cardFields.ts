@@ -52,9 +52,27 @@ function resolveLabel(fieldName: string, fieldSchema: any): string {
   return fieldSchema?.title || humanizeFieldName(fieldName);
 }
 
+/**
+ * Format a single array item for card display. Items that are plain
+ * strings/numbers fall through to `formatConfigValue`. Items that are
+ * objects (e.g. a selected document `{id, name}` from a populate action)
+ * are reduced to their display name instead of the generic `[Object]`
+ * placeholder, so multi-select reference fields (docs, etc.) read as a
+ * human list rather than opaque blobs.
+ */
+function formatArrayItem(item: any): string {
+  if (item && typeof item === "object" && !Array.isArray(item)) {
+    const displayValue = item.name ?? item.title ?? item.label ?? item.id;
+    if (displayValue !== undefined && displayValue !== null) {
+      return formatConfigValue(String(displayValue), undefined, MAX_CARD_VALUE_LENGTH);
+    }
+  }
+  return formatConfigValue(item, undefined, MAX_CARD_VALUE_LENGTH);
+}
+
 function formatValue(value: any, fieldSchema: any, configSchema: any): string {
   if (Array.isArray(value)) {
-    const items = value.map((item) => formatConfigValue(item, undefined, MAX_CARD_VALUE_LENGTH));
+    const items = value.map(formatArrayItem);
     return items.join(", ");
   }
 
@@ -87,7 +105,8 @@ function formatValue(value: any, fieldSchema: any, configSchema: any): string {
  * hint — that exclusion is a hard rule enforced here, not left to the
  * schema authors. Fields hidden via `hints.hidden`, conditionally hidden
  * via `hints.conditional.visible_when`, or resolving to an empty value are
- * skipped as well.
+ * skipped as well — unless the card hint declares `empty_text`, in which
+ * case that fallback text is shown instead of dropping the field.
  */
 export function getCardFields(
   schema: ElementSchema | null | undefined,
@@ -105,13 +124,26 @@ export function getCardFields(
     if (hints.hidden) continue;
     if (hints.secret) continue;
 
-    const contexts = hints.card?.contexts;
+    const cardHint = hints.card;
+    const contexts = cardHint?.contexts;
     if (!Array.isArray(contexts) || !contexts.includes(ownership)) continue;
 
     if (!isConditionallyVisible(fieldSchema, config)) continue;
 
     const value = config[fieldName];
-    if (isEmptyValue(value)) continue;
+    if (isEmptyValue(value)) {
+      // Some fields have a meaningful "unset" state (e.g. an MCP provider's
+      // empty tool_names means "all tools", not "nothing configured") —
+      // `empty_text` surfaces that instead of silently dropping the field.
+      if (cardHint?.empty_text) {
+        fields.push({
+          key: fieldName,
+          label: resolveLabel(fieldName, fieldSchema),
+          value: cardHint.empty_text,
+        });
+      }
+      continue;
+    }
 
     fields.push({
       key: fieldName,
