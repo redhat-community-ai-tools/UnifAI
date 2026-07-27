@@ -174,16 +174,32 @@ class ValidateConnectionAction(BaseAction):
             )
 
         except TimeoutError:
+            elapsed = (time.time() - start) * 1000
+            logger.warning(
+                "a2a.validate_connection timeout host=%s server_identifier=%r "
+                "elapsed_ms=%.0f",
+                input_data.base_url.host,
+                server_id,
+                elapsed,
+            )
             return ValidateConnectionOutput(
                 success=False,
                 message="Connection timeout - agent may be unreachable",
                 is_reachable=False,
-                response_time_ms=(time.time() - start) * 1000,
+                response_time_ms=elapsed,
             )
         except Exception as e:
             elapsed = (time.time() - start) * 1000
             error_msg = str(e)
             if "401" in error_msg or "Unauthorized" in error_msg:
+                logger.warning(
+                    "a2a.validate_connection auth rejected (401) host=%s "
+                    "server_identifier=%r elapsed_ms=%.0f error_type=%s",
+                    input_data.base_url.host,
+                    server_id or str(input_data.base_url),
+                    elapsed,
+                    type(e).__name__,
+                )
                 return ValidateConnectionOutput(
                     success=True,
                     message="Server rejected credentials — sign in again",
@@ -194,6 +210,14 @@ class ValidateConnectionAction(BaseAction):
                     response_time_ms=elapsed,
                 )
             if "403" in error_msg or "Forbidden" in error_msg:
+                logger.warning(
+                    "a2a.validate_connection forbidden (403) host=%s "
+                    "server_identifier=%r elapsed_ms=%.0f error_type=%s",
+                    input_data.base_url.host,
+                    server_id or str(input_data.base_url),
+                    elapsed,
+                    type(e).__name__,
+                )
                 return ValidateConnectionOutput(
                     success=True,
                     message="Authenticated but not authorized — check scopes",
@@ -203,6 +227,13 @@ class ValidateConnectionAction(BaseAction):
                     server_identifier=server_id or str(input_data.base_url),
                     response_time_ms=elapsed,
                 )
+            logger.exception(
+                "a2a.validate_connection failed host=%s server_identifier=%r "
+                "elapsed_ms=%.0f",
+                input_data.base_url.host,
+                server_id,
+                elapsed,
+            )
             return ValidateConnectionOutput(
                 success=False,
                 message=f"Connection failed: {error_msg}",

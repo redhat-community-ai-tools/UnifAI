@@ -83,22 +83,52 @@ class A2AAgentNode(
         )
 
         self._auth_credential = auth_credential
+        headers = self._resolve_initial_headers(bearer_token, auth_credential)
 
-        headers = None
-        if bearer_token:
-            headers = {"Authorization": f"Bearer {bearer_token}"}
-
-        self.a2a_provider = A2AProvider.create_sync(
-            base_url=base_url,
-            agent_card=agent_card,
-            headers=headers
-        )
+        # create_sync eagerly opens A2AClient (fetches agent card when missing).
+        # Prefer auth_credential headers so SSO-protected cards are reachable.
+        # When bind_lazy cannot resolve the user yet, defer network init so
+        # construction succeeds; _refresh_auth_headers runs before delegation.
+        if headers is not None or agent_card is not None or auth_credential is None:
+            self.a2a_provider = A2AProvider.create_sync(
+                base_url=base_url,
+                agent_card=agent_card,
+                headers=headers,
+            )
+        else:
+            self.a2a_provider = A2AProvider(
+                base_url=base_url,
+                agent_card=agent_card,
+                headers=None,
+            )
 
         # Sensible defaults for context and polling
         self._max_context_messages = 20
         self._wait_for_completion = True
         self._poll_interval = 0.5
         self._max_poll_attempts = 60
+
+    @staticmethod
+    def _resolve_initial_headers(
+        bearer_token: Optional[str],
+        auth_credential: Optional[AuthCredential],
+    ) -> Optional[Dict[str, str]]:
+        """Build headers for provider init: OAuth credential first, then bearer."""
+        if auth_credential is not None:
+            try:
+                with get_async_bridge() as bridge:
+                    headers = bridge.run(auth_credential.get_headers())
+                if headers:
+                    return dict(headers)
+            except Exception as exc:
+                logger.warning(
+                    "A2AAgentNode: auth headers unavailable at init (%s); "
+                    "will refresh before delegation",
+                    type(exc).__name__,
+                )
+        if bearer_token:
+            return {"Authorization": f"Bearer {bearer_token}"}
+        return None
 
     def run(self, state: StateView) -> StateView:
         """Main entry point - process all incoming TaskPackets."""

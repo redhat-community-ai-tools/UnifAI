@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock
 
 from outbound.mongo.client_config_repository import MongoServerConfigStore
@@ -71,6 +72,29 @@ class TestMongoServerConfigStoreListByCategory:
         assert len(configs) == 1
         assert configs[0].client_id == "good-client"
         assert configs[0].server_identifier == "https://auth.example/sso"
+
+    def test_invalid_doc_log_omits_secret_values(self, monkeypatch, caplog):
+        monkeypatch.delenv("ALLOW_INSECURE_OAUTH_ENDPOINTS", raising=False)
+        secret = "super-secret-client-value"
+        coll = MagicMock()
+        coll.find.return_value = [
+            {
+                "_id": "bad",
+                "client_id": "bad-client",
+                "client_secret": secret,
+                "server_identifier": "https://legacy.example/sso",
+                "categories": ["a2a"],
+                "token_endpoint": "https://10.0.0.5/token",
+            },
+        ]
+        store = _store_with_coll(coll)
+
+        with caplog.at_level(logging.WARNING):
+            assert store.list_by_category("a2a") == []
+
+        joined = " ".join(caplog.messages)
+        assert "https://legacy.example/sso" in joined
+        assert secret not in joined
 
 
 class TestMongoServerConfigStoreFindByServer:

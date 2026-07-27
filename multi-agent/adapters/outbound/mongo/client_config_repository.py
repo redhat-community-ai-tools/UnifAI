@@ -19,6 +19,14 @@ from mas.core.auth.credentials.ports import ServerConfigStore
 logger = logging.getLogger(__name__)
 
 
+def _validation_error_summary(exc: ValidationError) -> list[dict]:
+    """Return ValidationError details safe for logs (no rejected input values)."""
+    return [
+        {"loc": err.get("loc"), "type": err.get("type"), "msg": err.get("msg")}
+        for err in exc.errors()
+    ]
+
+
 class MongoServerConfigStore(ServerConfigStore):
 
     def __init__(
@@ -83,6 +91,6 @@ class MongoServerConfigStore(ServerConfigStore):
             logger.warning(
                 "Skipping invalid server_config server_identifier=%r: %s",
                 doc.get("server_identifier"),
-                e,
+                _validation_error_summary(e),
             )
             return None
