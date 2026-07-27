@@ -42,3 +42,50 @@ class TestMongoServerConfigStoreListByCategory:
         assert configs[0].server_identifier == "https://auth.example/sso"
         assert configs[0].display_name == "RH SSO"
         assert configs[0].categories == ["a2a"]
+
+    def test_skips_invalid_docs_and_returns_valid_ones(self, monkeypatch):
+        monkeypatch.delenv("ALLOW_INSECURE_OAUTH_ENDPOINTS", raising=False)
+        coll = MagicMock()
+        coll.find.return_value = [
+            {
+                "_id": "bad",
+                "client_id": "bad-client",
+                "server_identifier": "https://legacy.example/sso",
+                "display_name": "Legacy private IP",
+                "categories": ["a2a"],
+                "token_endpoint": "https://10.0.0.5/token",
+            },
+            {
+                "_id": "good",
+                "client_id": "good-client",
+                "server_identifier": "https://auth.example/sso",
+                "display_name": "Good SSO",
+                "categories": ["a2a"],
+                "token_endpoint": "https://auth.example/token",
+            },
+        ]
+        store = _store_with_coll(coll)
+
+        configs = store.list_by_category("a2a")
+
+        assert len(configs) == 1
+        assert configs[0].client_id == "good-client"
+        assert configs[0].server_identifier == "https://auth.example/sso"
+
+
+class TestMongoServerConfigStoreFindByServer:
+    def test_returns_none_for_invalid_doc(self, monkeypatch):
+        monkeypatch.delenv("ALLOW_INSECURE_OAUTH_ENDPOINTS", raising=False)
+        coll = MagicMock()
+        coll.find_one.return_value = {
+            "_id": "bad",
+            "client_id": "bad-client",
+            "server_identifier": "https://legacy.example/sso",
+            "token_endpoint": "https://169.254.169.254/latest/meta-data/",
+        }
+        store = _store_with_coll(coll)
+
+        assert store.find_by_server("", "https://legacy.example/sso") is None
+        coll.find_one.assert_called_once_with(
+            {"server_identifier": "https://legacy.example/sso"}
+        )

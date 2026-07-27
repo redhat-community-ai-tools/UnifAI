@@ -11,6 +11,7 @@ import logging
 from typing import List, Optional
 
 from pymongo import MongoClient, ASCENDING
+from pydantic import ValidationError
 
 from mas.core.auth.credentials.models import ClientConfig
 from mas.core.auth.credentials.ports import ServerConfigStore
@@ -65,9 +66,23 @@ class MongoServerConfigStore(ServerConfigStore):
         if not category:
             return []
         docs = self._coll.find({"categories": category})
-        return [self._to_model(doc) for doc in docs]
+        configs: List[ClientConfig] = []
+        for doc in docs:
+            cfg = self._to_model(doc)
+            if cfg is not None:
+                configs.append(cfg)
+        return configs
 
     @staticmethod
-    def _to_model(doc: dict) -> ClientConfig:
+    def _to_model(doc: dict) -> Optional[ClientConfig]:
+        """Map a Mongo doc to ClientConfig; skip invalid docs (legacy / env mismatch)."""
         doc.pop("_id", None)
-        return ClientConfig.model_validate(doc)
+        try:
+            return ClientConfig.model_validate(doc)
+        except ValidationError as e:
+            logger.warning(
+                "Skipping invalid server_config server_identifier=%r: %s",
+                doc.get("server_identifier"),
+                e,
+            )
+            return None
