@@ -67,6 +67,16 @@ class A2AAgentNode(
             retriever: Any = None,
             **kwargs: Any
     ):
+        """
+        Initialize A2A Agent Node.
+
+        Args:
+            base_url: A2A agent endpoint URL
+            agent_card: Optional pre-fetched agent card
+            bearer_token: Optional bearer token for authentication
+            auth_credential: Optional bound credential for OAuth token refresh
+            retriever: Optional retriever for context augmentation
+        """
         super().__init__(
             retriever=retriever,
             **kwargs
