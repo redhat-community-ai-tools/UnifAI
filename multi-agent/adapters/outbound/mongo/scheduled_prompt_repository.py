@@ -55,8 +55,6 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
         doc = prompt.model_dump(mode="json")
         doc["created_at"] = now
         doc["updated_at"] = now
-        if prompt.completed_at is not None:
-            doc["completed_at"] = prompt.completed_at
         self._col.insert_one(doc)
         return prompt.id
 

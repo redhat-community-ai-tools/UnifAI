@@ -40,10 +40,10 @@ class ScheduleActivities:
 
     @activity.defn(name="create_scheduled_session")
     def create_scheduled_session(self, params: ScheduledSessionParams) -> str:
-        if params.idempotency_key:
+        if params.dedupe_key:
             try:
-                self._session_manager.get_record(params.idempotency_key)
-                return params.idempotency_key
+                self._session_manager.get_record(params.dedupe_key)
+                return params.dedupe_key
             except KeyError:
                 pass
 
@@ -56,7 +56,7 @@ class ScheduleActivities:
             identity=params.identity,
             blueprint_id=params.blueprint_id,
             metadata=metadata,
-            run_id=params.idempotency_key,
+            run_id=params.dedupe_key,
         )
 
     @activity.defn(name="stage_scheduled_inputs")

@@ -49,8 +49,8 @@ class ScheduledSessionWorkflow:
     async def run(self, params: ScheduledSessionParams) -> str:
         # Deterministic session key — same value on activity retries,
         # preventing duplicate session creation.
-        idempotent_params = params.model_copy(
-            update={"idempotency_key": str(workflow.uuid4())}
+        deduped_params = params.model_copy(
+            update={"dedupe_key": str(workflow.uuid4())}
         )
 
         run_id: str | None = None
@@ -61,7 +61,7 @@ class ScheduledSessionWorkflow:
         try:
             run_id = await workflow.execute_activity(
                 "create_scheduled_session",
-                idempotent_params,
+                deduped_params,
                 start_to_close_timeout=_ACTIVITY_TIMEOUT,
                 retry_policy=_ACTIVITY_RETRY,
             )

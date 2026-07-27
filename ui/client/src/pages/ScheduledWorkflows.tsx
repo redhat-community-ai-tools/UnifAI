@@ -15,6 +15,8 @@ import {
   Plus,
 } from "lucide-react";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
+import StatusPill from "@/components/shared/StatusPill";
+import { StatusTone } from "@/lib/statusTones";
 import { DataTable, DataTableColumn } from "@/components/shared/DataTable";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { useToast } from "@/hooks/use-toast";
@@ -105,24 +107,17 @@ function describeSchedule(schedule: ScheduleDefinitionInput): string {
 
 type ScheduleStatusType = "active" | "paused" | "completed";
 
-function statusColor(s: ScheduleStatusType): string {
-  switch (s) {
-    case "active":
-      return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-    case "paused":
-      return "bg-amber-500/15 text-amber-400 border-amber-500/30";
-    case "completed":
-      return "bg-gray-500/15 text-gray-400 border-gray-500/30";
-  }
-}
+const SCHEDULE_STATUS_TONE: Record<ScheduleStatusType, StatusTone> = {
+  active: "success",
+  paused: "warning",
+  completed: "neutral",
+};
 
 function StatusBadge({ status }: { status: ScheduleStatusType }) {
   return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full border ${statusColor(status)}`}
-    >
+    <StatusPill tone={SCHEDULE_STATUS_TONE[status]}>
       {status.charAt(0).toUpperCase() + status.slice(1)}
-    </span>
+    </StatusPill>
   );
 }
 

@@ -4,15 +4,17 @@ import { useLocation } from "wouter";
 import { ExternalLink, Loader2 } from "lucide-react";
 import { getPromptRuns, PromptRunResponse } from "@/api/prompts";
 import { formatTime } from "@/utils/dateTimeUtils";
+import StatusPill from "@/components/shared/StatusPill";
+import { StatusTone } from "@/lib/statusTones";
 
-const STATUS_BADGE: Record<string, string> = {
-  COMPLETED: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  FAILED: "bg-red-500/15 text-red-400 border-red-500/30",
-  RUNNING: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+const RUN_STATUS_TONE: Record<string, StatusTone> = {
+  COMPLETED: "success",
+  FAILED: "danger",
+  RUNNING: "info",
 };
 
-function badgeClass(status: string): string {
-  return STATUS_BADGE[status] ?? "bg-gray-500/15 text-gray-400 border-gray-500/30";
+function runStatusTone(status: string): StatusTone {
+  return RUN_STATUS_TONE[status] ?? "neutral";
 }
 
 interface RunHistoryPanelProps {
@@ -73,9 +75,7 @@ export default function RunHistoryPanel({ promptId, userId, identityType }: RunH
                 {formatTime(run.started_at)}
               </td>
               <td className="py-2">
-                <span className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full border ${badgeClass(run.status)}`}>
-                  {run.status}
-                </span>
+                <StatusPill tone={runStatusTone(run.status)}>{run.status}</StatusPill>
               </td>
               <td className="py-2 text-right">
                 <button
