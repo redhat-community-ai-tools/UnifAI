@@ -84,6 +84,9 @@ class BlueprintResolver:
         )
         return spec, broken_refs
 
+    # --------------------------------------------------------------------
+    # helpers
+    # --------------------------------------------------------------------
     def _stash_inline(
         self, cat: ResourceCategory, res: BlueprintResource, bucket: dict, visited: set,
         identity: Identity, broken_refs: Dict[str, str], strict: bool,
