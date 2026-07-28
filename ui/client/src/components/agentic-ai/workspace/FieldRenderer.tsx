@@ -22,19 +22,12 @@ import { ElementType } from "../../../types/workspace";
 import { maskSecretValue } from "../../../utils/maskSecretFields";
 import { XCircle, Lock, Settings } from "lucide-react";
 import {getArrayDisplayText, getArrayFieldMode, getValidRefOptions,} from "./arrayFieldHelpers";
+import { getStringEnumFromRef } from "@/lib/schemaRefs";
 
 /** Builds the dropdown label for a ref option, flagging drafts so users can
  * see (and not select) built-ins that aren't published yet. */
 const getRefOptionLabel = (option: any): string =>
   `${option.name} (${option.type})${option.visibility === "draft" ? " (Draft)" : ""}`;
-
-/** Resolved string enum definition from $defs */
-interface ResolvedStringEnum {
-  type: "string";
-  enum: string[];
-  title?: string;
-  description?: string;
-}
 
 interface FieldRendererProps {
   fieldName: string;
@@ -138,36 +131,6 @@ const NumberFieldInput: React.FC<NumberFieldInputProps> = ({
       placeholder={placeholder}
     />
   );
-};
-
-/**
- * Checks if a $ref (pydantic mode) resolves to a string enum definition.
- * Returns the resolved enum definition if found, null otherwise.
- */
-export const getStringEnumFromRef = (
-  fieldSchema: any,
-  resolveSchemaRef?: (ref: string) => any | null
-): ResolvedStringEnum | null => {
-  if (!resolveSchemaRef || !fieldSchema.$ref) {
-    return null;
-  }
-
-  const resolved = resolveSchemaRef(fieldSchema.$ref);
-  if (!resolved) {
-    return null;
-  }
-
-  // Check if resolved definition is a string enum
-  if (resolved.type === "string" && Array.isArray(resolved.enum) && resolved.enum.length > 0) {
-    return {
-      type: "string",
-      enum: resolved.enum,
-      title: resolved.title,
-      description: resolved.description,
-    };
-  }
-
-  return null;
 };
 
 export const FieldRenderer: React.FC<FieldRendererProps> = ({

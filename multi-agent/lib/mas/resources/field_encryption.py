@@ -53,7 +53,13 @@ class ResourceFieldEncryption:
         return configurable, sensitive
 
     def find_missing_conditionally_required_secrets(
-        self, category: str, type_key: str, resolved_config: Any,
+        self,
+        category: str,
+        type_key: str,
+        resolved_config: Any,
+        *,
+        candidate_keys: Optional[set] = None,
+        require_unconditional: bool = False,
     ) -> list[str]:
         """Secret fields that are relevant (per ``ConditionalHint``) but empty.
 
@@ -63,15 +69,26 @@ class ResourceFieldEncryption:
         config actually have the secret it claims to need?" — so it works
         identically for built-in and custom resources.
 
-        Scoped strictly to fields carrying *both* ``SecretHint`` and
-        ``ConditionalHint`` (e.g. an MCP ``bearer_token``, only relevant
-        when ``auth_method == "access_token"``). A secret field with no
-        ``ConditionalHint`` is left alone — "optional and unset" is a
-        legitimate state for it, and we have no schema signal saying
-        otherwise. Without this check, an empty credential just gets
-        handed to the element's validator, which may probe the connection
-        anyway and — if the server happens to tolerate unauthenticated
-        requests — incorrectly report the resource as valid.
+        ``candidate_keys`` restricts the scan to a caller-supplied key set
+        instead of every ``secret``-hinted field in the schema — used by
+        ``BuiltinResourceService.find_missing_required_overlay_fields`` to
+        scope the check to configurable-and-secret fields (the only ones a
+        per-identity overlay could supply). Defaults to every field
+        carrying ``SecretHint`` when omitted (the plain custom-resource
+        behavior).
+
+        ``require_unconditional`` controls a candidate field with no
+        ``ConditionalHint`` at all: when ``False`` (default — the custom-
+        resource behavior), it's left alone, since "optional and unset" is
+        a legitimate state with no schema signal saying otherwise; when
+        ``True`` (the built-in overlay behavior), it's treated as always
+        relevant, since being both configurable and secret already implies
+        a specific caller is expected to supply it.
+
+        Without this check, an empty credential just gets handed to the
+        element's validator, which may probe the connection anyway and —
+        if the server happens to tolerate unauthenticated requests —
+        incorrectly report the resource as valid.
         """
         try:
             schema = self._element_registry.get_schema_json(
@@ -80,18 +97,22 @@ class ResourceFieldEncryption:
         except KeyError:
             return []
 
+        properties = schema.get("properties", {})
+        keys = sorted(candidate_keys) if candidate_keys is not None else sorted(properties)
+
         missing = []
-        for key, field_schema in sorted(schema.get("properties", {}).items()):
-            hints = field_schema.get("hints", {})
-            if "secret" not in hints:
+        for key in keys:
+            hints = properties.get(key, {}).get("hints", {})
+            if candidate_keys is None and "secret" not in hints:
                 continue
             conditional = hints.get("conditional", {}).get("visible_when")
-            if not conditional:
-                continue
-            if not all(
-                getattr(resolved_config, field_name, None) == value
-                for field_name, value in conditional.items()
-            ):
+            if conditional:
+                if not all(
+                    getattr(resolved_config, field_name, None) == value
+                    for field_name, value in conditional.items()
+                ):
+                    continue
+            elif not require_unconditional:
                 continue
             if not getattr(resolved_config, key, None):
                 missing.append(key)

@@ -47,6 +47,22 @@ def _make_builtin_resource(service, admin_identity, name="builtin-1", available_
     return resource
 
 
+def _make_disabled_category_resource(service, identity, name="my-retriever"):
+    """A resource in a category that can never become a built-in
+    (``ResourceCategory.RETRIEVER``), created by writing straight to the
+    store since ``service.create()`` would need a registered schema for it."""
+    from mas.core.enums import ResourceCategory as _ResourceCategory
+
+    doc = Resource(
+        identity=identity,
+        category=_ResourceCategory.RETRIEVER,
+        type="fake_retriever",
+        name=name,
+        cfg_dict={},
+    )
+    return service._store.create(doc)
+
+
 def _link_nested(service, parent: Resource, *child_rids: str) -> Resource:
     """Wire ``parent.nested_refs`` directly, bypassing schema Ref-field
     extraction, so tests can build an aggregator/leaf graph (e.g. an agent
@@ -461,3 +477,47 @@ class TestNestedDependencyCascade:
 
         demoted = service.demote(llm.rid)
         assert demoted.visibility == ResourceVisibility.DRAFT
+
+    def test_promote_rejects_cascade_through_disabled_category_dependency(self, service, alice):
+        """Regression test: a dependency in a `builtin_disabled_categories()`
+        category (e.g. a retriever) must reject the whole promotion instead
+        of being silently skipped — leaving the parent public while it still
+        references a resource that end users can never see would defeat the
+        entire cascade-promotion guarantee."""
+        retriever = _make_disabled_category_resource(service, alice)
+        agent = _make_custom_resource(service, alice, name="agent-with-retriever-dep")
+        _link_nested(service, agent, retriever.rid)
+
+        with pytest.raises(ValueError):
+            service.promote_with_cascade(agent.rid)
+
+        reloaded_agent = service.get(agent.rid)
+        assert reloaded_agent.ownership == ResourceOwnership.CUSTOM
+        assert reloaded_agent.visibility == ResourceVisibility.DRAFT
+
+        reloaded_retriever = service.get(retriever.rid)
+        assert reloaded_retriever.ownership == ResourceOwnership.CUSTOM
+        assert reloaded_retriever.visibility == ResourceVisibility.DRAFT
+
+    def test_update_builtin_rejects_cascade_through_disabled_category_dependency(
+        self, service, alice, admin_identity,
+    ):
+        """Same guarantee via `update_builtin_with_cascade` (toggling an
+        existing draft built-in to "available to all"): no public resource
+        should ever be published if a dependency can't cascade."""
+        retriever = _make_disabled_category_resource(service, alice)
+        builtin_doc = _make_builtin_resource(
+            service, admin_identity, name="draft-builtin-with-retriever-dep",
+            available_to_all=False,
+        )
+        _link_nested(service, builtin_doc, retriever.rid)
+
+        with pytest.raises(ValueError):
+            service.update_builtin_with_cascade(builtin_doc.rid, available_to_all=True)
+
+        reloaded_builtin = service.get(builtin_doc.rid)
+        assert reloaded_builtin.visibility == ResourceVisibility.DRAFT
+
+        reloaded_retriever = service.get(retriever.rid)
+        assert reloaded_retriever.ownership == ResourceOwnership.CUSTOM
+        assert reloaded_retriever.visibility == ResourceVisibility.DRAFT

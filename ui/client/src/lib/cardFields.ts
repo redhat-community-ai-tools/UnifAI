@@ -1,7 +1,6 @@
 import { ElementSchema } from "@/types/workspace";
 import { formatConfigValue } from "@/utils/maskSecretFields";
-import { resolveSchemaRef } from "@/lib/schemaRefs";
-import { getStringEnumFromRef } from "@/components/agentic-ai/workspace/FieldRenderer";
+import { getStringEnumFromRef, resolveSchemaRef } from "@/lib/schemaRefs";
 
 export interface CardField {
   /** Config field name, e.g. "mcp_url" */

@@ -13,7 +13,7 @@ methods to it — the "Service as Public API" pattern is preserved at the
 import logging
 from typing import Any, Dict, List, Optional
 
-from pydantic import ValidationError as PydanticValidationError
+from pydantic import BaseModel, ValidationError as PydanticValidationError
 
 from mas.core.identity import Identity
 from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
@@ -244,7 +244,7 @@ class BuiltinResourceService:
         return stripped
 
     def find_missing_required_overlay_fields(
-        self, resource: Resource, resolved_config: Any,
+        self, resource: Resource, resolved_config: BaseModel,
     ) -> list[str]:
         """Secret+configurable fields still empty after overlay resolution.
 
@@ -258,9 +258,12 @@ class BuiltinResourceService:
         incorrectly report the resource as valid for a user who never
         configured anything.
 
-        ``ConditionalHint`` scopes the check to fields actually relevant to
-        *resolved_config* (e.g. a ``sign_in``-mode MCP never requires
-        ``bearer_token``, so it's skipped rather than always demanded).
+        Delegates the actual schema/``visible_when`` walk to
+        ``ResourceFieldEncryption.find_missing_conditionally_required_secrets``
+        (shared with the equivalent custom-resource check), scoped to this
+        resource's configurable-and-secret fields and treating a candidate
+        with no ``ConditionalHint`` as always relevant (unlike the plain
+        custom-resource behavior) — see that method's docstring for why.
         """
         configurable_keys, sensitive_keys = self._fields.scan_schema_hints(
             resource.category, resource.type
@@ -269,27 +272,13 @@ class BuiltinResourceService:
         if not secret_configurable_keys:
             return []
 
-        try:
-            schema = self.element_registry.get_schema_json(
-                ResourceCategory(resource.category), resource.type
-            )
-        except KeyError:
-            return []
-        properties = schema.get("properties", {})
-
-        missing = []
-        for key in sorted(secret_configurable_keys):
-            conditional = (
-                properties.get(key, {}).get("hints", {}).get("conditional", {}).get("visible_when")
-            )
-            if conditional and not all(
-                getattr(resolved_config, field_name, None) == value
-                for field_name, value in conditional.items()
-            ):
-                continue
-            if not getattr(resolved_config, key, None):
-                missing.append(key)
-        return missing
+        return self._fields.find_missing_conditionally_required_secrets(
+            resource.category,
+            resource.type,
+            resolved_config,
+            candidate_keys=secret_configurable_keys,
+            require_unconditional=True,
+        )
 
     def resolve_overlay(self, resource: Resource, identity: Identity) -> Dict[str, Any]:
         """Resolve the effective config overlay for a built-in resource.
@@ -375,10 +364,15 @@ class BuiltinResourceService:
             cfg_dict=cfg_dict,
             nested_refs=nested_refs,
             ownership=ResourceOwnership.BUILTIN,
-            visibility=ResourceVisibility.PUBLIC if available_to_all else ResourceVisibility.DRAFT,
+            visibility=ResourceVisibility.DRAFT,
         )
         created = self._store.create(doc)
-        cascaded = self._cascade_promote_dependencies(created.rid) if available_to_all else []
+
+        cascaded: List[Resource] = []
+        if available_to_all:
+            cascaded = self._cascade_promote_dependencies(created.rid)
+            created.visibility = ResourceVisibility.PUBLIC
+            created = self._store.update(created)
         return created, cascaded
 
     def promote_with_cascade(self, rid: str) -> "tuple[Resource, List[Resource]]":
@@ -408,6 +402,13 @@ class BuiltinResourceService:
             raise ValueError(
                 f"Category '{resource.category}' is not supported for built-in resources"
             )
+        # Validate before mutating anything: a transitive dependency that
+        # can never become a built-in (e.g. a retriever) must block the
+        # whole promotion rather than being silently skipped — otherwise
+        # `resource` would end up public while referencing something end
+        # users can't see.
+        self._assert_cascade_promotable(rid)
+
         resource.ownership = ResourceOwnership.BUILTIN
         resource.visibility = ResourceVisibility.PUBLIC
         updated = self._store.update(resource)
@@ -448,17 +449,33 @@ class BuiltinResourceService:
             )
         ]
 
+    def _assert_cascade_promotable(self, rid: str) -> None:
+        """Raise if cascade-promoting *rid*'s dependencies would require
+        promoting one from a disabled category (e.g. a retriever).
+
+        Read-only — callers run this before mutating *rid* itself so a
+        rejected cascade never leaves *rid* public while referencing a
+        dependency end users can't see (see ``builtin_disabled_categories()``).
+        """
+        for dep in self.preview_cascade_targets(rid):
+            if ResourceCategory(dep.category) in ResourceCategory.builtin_disabled_categories():
+                raise ValueError(
+                    f"Cannot make this resource available to all: dependency "
+                    f"'{dep.name}' ({dep.category}) is not supported as a "
+                    f"built-in resource."
+                )
+
     def _cascade_promote_dependencies(self, rid: str) -> List[Resource]:
-        """Promote every not-yet-public transitive dependency of *rid*."""
+        """Promote every not-yet-public transitive dependency of *rid*.
+
+        Raises ``ValueError`` (via ``_assert_cascade_promotable``) instead
+        of skipping-and-continuing when a dependency belongs to a disabled
+        category — the parent must not end up public while referencing a
+        dependency that can never become visible to end users.
+        """
+        self._assert_cascade_promotable(rid)
         promoted: List[Resource] = []
         for dep in self.preview_cascade_targets(rid):
-            cat_enum = ResourceCategory(dep.category)
-            if cat_enum in ResourceCategory.builtin_disabled_categories():
-                logger.warning(
-                    "Skipping cascade promotion of '%s': category '%s' is "
-                    "not supported for built-in resources", dep.rid, dep.category,
-                )
-                continue
             dep.ownership = ResourceOwnership.BUILTIN
             dep.visibility = ResourceVisibility.PUBLIC
             self._store.update(dep)
@@ -558,16 +575,25 @@ class BuiltinResourceService:
         if name is not None:
             resource.name = name
 
-        if available_to_all is not None:
-            if available_to_all:
-                resource.visibility = ResourceVisibility.PUBLIC
-            else:
-                if resource.visibility == ResourceVisibility.PUBLIC:
-                    self._ensure_no_public_dependents(resource)
-                resource.visibility = ResourceVisibility.DRAFT
+        going_public = available_to_all is True
+        if available_to_all is not None and not going_public:
+            if resource.visibility == ResourceVisibility.PUBLIC:
+                self._ensure_no_public_dependents(resource)
+            resource.visibility = ResourceVisibility.DRAFT
 
+        # Persist config/name/off-visibility changes first — cascade
+        # validation below reads dependencies via fresh store lookups, so
+        # it must see any newly-added refs. Visibility is flipped to
+        # PUBLIC only *after* cascade-promotion succeeds, so a rejected
+        # cascade (see `_cascade_promote_dependencies`) never leaves this
+        # resource public while referencing an invisible dependency.
         updated = self._store.update(resource)
-        cascaded = self._cascade_promote_dependencies(rid) if available_to_all else []
+
+        cascaded: List[Resource] = []
+        if going_public:
+            cascaded = self._cascade_promote_dependencies(rid)
+            updated.visibility = ResourceVisibility.PUBLIC
+            updated = self._store.update(updated)
         return updated, cascaded
 
     def toggle_visibility_with_cascade(

@@ -324,10 +324,37 @@ class ShareCloner:
         )
 
     def _batch_create_resources(self, docs: List[Resource]) -> None:
-        """Create multiple resources efficiently."""
-        # TODO: Implement actual batch creation in ResourcesService
-        for doc in docs:
-            self.resources.save_resource(doc)
+        """Create multiple resources, rolling back on partial failure.
+
+        ``ResourcesService`` has no transactional/batch-save API, so each
+        ``save_resource`` call is a separate write. If one fails partway
+        through, the docs already saved would otherwise be left behind as
+        orphaned clones with no caller-visible way to remove them (the
+        overall clone is reported as failed, implying nothing was
+        persisted). Tracking what succeeded and deleting it (most recently
+        created first, since later docs may reference earlier ones) before
+        re-raising keeps the operation effectively all-or-nothing.
+        """
+        saved: List[Resource] = []
+        try:
+            for doc in docs:
+                self.resources.save_resource(doc)
+                saved.append(doc)
+        except Exception:
+            logger.error(
+                "Batch resource creation failed after saving %d of %d "
+                "resources; rolling back the ones that succeeded",
+                len(saved), len(docs),
+            )
+            for doc in reversed(saved):
+                try:
+                    self.resources.delete(doc.rid)
+                except Exception:
+                    logger.exception(
+                        "Failed to roll back cloned resource '%s' — it may "
+                        "be orphaned and require manual cleanup", doc.rid,
+                    )
+            raise
 
     def _resolve_name_conflict(self, identity: Identity, category: str,
                                type_: str, preferred_name: str,

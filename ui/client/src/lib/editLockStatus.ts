@@ -27,8 +27,7 @@ export function resolveEditLockStatus(
   fallbackLabel: string,
 ): EditLockStatus {
   const lockUnknown = lockHolder === "unknown";
-  const lockedByOther =
-    !lockUnknown && !!lockHolder && !!currentUsername && lockHolder.userId !== currentUsername;
+  const lockedByOther = !lockUnknown && !!lockHolder && lockHolder.userId !== currentUsername;
   const lockedByLabel = lockUnknown
     ? "unknown"
     : lockHolder?.displayName?.trim() || lockHolder?.userId || fallbackLabel;

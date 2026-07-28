@@ -21,3 +21,40 @@ export function resolveSchemaRef(rootSchema: any, ref: string): any | null {
   }
   return current;
 }
+
+/** Resolved string enum definition from `$defs`. */
+export interface ResolvedStringEnum {
+  type: "string";
+  enum: string[];
+  title?: string;
+  description?: string;
+}
+
+/**
+ * Checks if a $ref (pydantic mode) resolves to a string enum definition.
+ * Returns the resolved enum definition if found, null otherwise.
+ */
+export const getStringEnumFromRef = (
+  fieldSchema: any,
+  resolveRef?: (ref: string) => any | null,
+): ResolvedStringEnum | null => {
+  if (!resolveRef || !fieldSchema?.$ref) {
+    return null;
+  }
+
+  const resolved = resolveRef(fieldSchema.$ref);
+  if (!resolved) {
+    return null;
+  }
+
+  if (resolved.type === "string" && Array.isArray(resolved.enum) && resolved.enum.length > 0) {
+    return {
+      type: "string",
+      enum: resolved.enum,
+      title: resolved.title,
+      description: resolved.description,
+    };
+  }
+
+  return null;
+};

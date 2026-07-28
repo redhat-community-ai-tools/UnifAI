@@ -138,8 +138,13 @@ can't see — so promotion/creation/update cascades:
 - `preview_cascade_targets(rid)` — read-only BFS over `nested_refs`, returns every
   transitive dependency not already a public built-in. Used for a "these will
   also become available to all" confirmation dialog *before* mutating.
-- `_cascade_promote_dependencies(rid)` — same walk, but promotes each dependency
-  (skips any in `builtin_disabled_categories()`, logs and continues rather than failing).
+- `_cascade_promote_dependencies(rid)` — same walk, but promotes each dependency.
+  Rejects the whole cascade (raises `ValueError` via `_assert_cascade_promotable()`)
+  if any transitive dependency belongs to `builtin_disabled_categories()`, instead
+  of skipping it — `promote_with_cascade`/`create_builtin_with_cascade`/
+  `update_builtin_with_cascade` all validate/mutate in an order that keeps the
+  parent non-public until this succeeds, so a rejected cascade never leaves a
+  public resource referencing an invisible dependency.
 - Demoting/toggling a built-in **off** is blocked with `BuiltinDependentsPublicError`
   if a public built-in still depends on it (`_find_public_dependents` — reverse BFS
   via `ResourcesRegistry.list_nested_usage()`).

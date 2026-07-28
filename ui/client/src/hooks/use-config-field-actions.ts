@@ -86,7 +86,7 @@ export function useConfigFieldActions(
   const handleArrayChange = (field: string, index: number, value: any) => {
     setFormData((prev: any) => ({
       ...prev,
-      [field]: prev[field].map((item: any, i: number) => (i === index ? value : item)),
+      [field]: (prev[field] || []).map((item: any, i: number) => (i === index ? value : item)),
     }));
   };
 
@@ -100,7 +100,7 @@ export function useConfigFieldActions(
   const removeArrayItem = (field: string, index: number) => {
     setFormData((prev: any) => ({
       ...prev,
-      [field]: prev[field].filter((_: any, i: number) => i !== index),
+      [field]: (prev[field] || []).filter((_: any, i: number) => i !== index),
     }));
   };
 

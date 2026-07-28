@@ -24,6 +24,10 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
   const [elementSchema, setElementSchema] = useState<ElementSchema | null>(null);
   // Looked up here since the `BuildingBlock` passed in doesn't carry ownership info.
   const [ownership, setOwnership] = useState<'builtin' | 'custom' | null>(null);
+  // Gates config rendering until the async lookup below settles, so secret
+  // masking / hidden-field filtering (which depend on elementSchema/ownership)
+  // can't be bypassed by a render that happens before they resolve.
+  const [schemaResolved, setSchemaResolved] = useState(false);
   const { getResourceName, resolveRefsInConfig } = useAgenticAI();
 
   // Built-ins use `/resources/builtin.schema` instead of the plain
@@ -36,10 +40,12 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
     if (!isOpen || !rid || !category || !type) {
       setElementSchema(null);
       setOwnership(null);
+      setSchemaResolved(false);
       return;
     }
 
     let cancelled = false;
+    setSchemaResolved(false);
 
     (async () => {
       // Best-effort — an unresolvable rid falls back to non-builtin filtering below.
@@ -66,6 +72,8 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
       } catch (error) {
         console.error('Error fetching element schema:', error);
         if (!cancelled) setElementSchema(null);
+      } finally {
+        if (!cancelled) setSchemaResolved(true);
       }
     })();
 
@@ -74,7 +82,7 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
 
   // Built-ins only surface configurable + card-visible fields; other ownerships
   // just drop `hints.hidden` bookkeeping fields.
-  const displayableConfig = element?.workspaceData?.config
+  const displayableConfig = schemaResolved && element?.workspaceData?.config
     ? (() => {
         const resolved = simplifyConfigForDisplay(resolveRefsInConfig(element.workspaceData.config));
         return ownership === 'builtin'

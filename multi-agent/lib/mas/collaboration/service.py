@@ -77,8 +77,19 @@ class CollaborationService:
     def check_team_membership(self, user_id: str, team_id: str) -> None:
         """Verify the user is a member of the team.
 
-        Raises ``PermissionError`` if the user is not a member.
+        Raises ``PermissionError`` if the user is not a member, or if
+        ``team_id`` is the reserved ``ADMIN_LOCK_NAMESPACE`` sentinel —
+        team-facing callers (edit locks, team sessions) must never be able
+        to operate in the admin lock namespace just because an identity
+        provider happens to consider the caller a "member" of it (e.g.
+        ``DevIdentityProvider.is_member()`` always returns ``True``). Real
+        admin access to that namespace goes exclusively through
+        ``acquire_admin_edit_lock``/``release_admin_edit_lock``/etc., which
+        skip this check entirely and rely on ``@require_admin_access`` at
+        the endpoint layer instead.
         """
+        if team_id == ADMIN_LOCK_NAMESPACE:
+            raise PermissionError("Access denied: reserved namespace")
         if not self._identity_provider.is_member(user_id, team_id):
             raise PermissionError("Access denied: you are not a member of this team")
 

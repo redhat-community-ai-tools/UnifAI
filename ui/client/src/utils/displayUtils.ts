@@ -146,6 +146,8 @@ export const filterHiddenFieldsInConfig = (
  * fields, dropping locked admin-only setup (e.g. an MCP server's
  * `mcp_url`) that a regular user was never meant to see.
  */
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 export const filterToFieldNames = (config: any, allowed: Set<string>): any => {
   if (!config || typeof config !== 'object' || Array.isArray(config)) {
     return config;
@@ -153,6 +155,7 @@ export const filterToFieldNames = (config: any, allowed: Set<string>): any => {
 
   const filtered: any = {};
   for (const key of Object.keys(config)) {
+    if (UNSAFE_KEYS.has(key)) continue;
     if (allowed.has(key)) filtered[key] = config[key];
   }
   return filtered;

@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { getStringEnumFromRef } from "@/components/agentic-ai/workspace/FieldRenderer";
+import { getStringEnumFromRef } from "@/lib/schemaRefs";
 
 export interface ElementFieldHelpers {
   isFieldConditionallyVisible: (fieldSchema: any) => boolean;

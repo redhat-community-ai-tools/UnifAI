@@ -52,7 +52,7 @@ export const ElementConfigField: React.FC<ElementConfigFieldProps> = ({
   fieldActions,
   onEditRefElement,
 }) => {
-  const value = fieldActions.formData[fieldName] || "";
+  const value = fieldActions.formData[fieldName] ?? "";
 
   const actionValidationHint =
     fieldSchema.hints?.action?.hint_type === "validate" ? fieldSchema.hints.action : null;

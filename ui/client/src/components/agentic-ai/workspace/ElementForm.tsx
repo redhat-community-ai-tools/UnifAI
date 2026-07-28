@@ -444,7 +444,10 @@ export const ElementForm: React.FC<ElementFormProps> = ({
 
     if (result) {
       try {
-        const updatedOptions = await fetchResourcesForCategory(refElementType.category);
+        const updatedOptions = await fetchResourcesForCategory(
+          refElementType.category,
+          builtinOnly ? "builtin" : undefined,
+        );
         setRefOptions(prev => ({
           ...prev,
           [refElementType.category]: updatedOptions,
@@ -455,7 +458,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     }
 
     return result;
-  }, [refEditState, saveRefElement, fetchResourcesForCategory]);
+  }, [refEditState, saveRefElement, fetchResourcesForCategory, builtinOnly]);
 
   // Check if all required fields are filled.
   // Validation hints (connection checks, ref validation) are informational —
@@ -802,6 +805,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         editingElement={refEditState.element}
         existingNames={refEditState.existingNames}
         onSave={handleSaveRefElement}
+        builtinOnly={builtinOnly}
       />
     )}
     </>

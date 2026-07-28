@@ -179,11 +179,11 @@ class ResourcesService:
         return self._serialize_with_user_configured(resources, identity), total
 
     # ---------- resolve ----------
-    def resolve(self, rid: str, identity: Identity = None) -> BaseModel:
+    def resolve(self, rid: str, identity: Optional[Identity] = None) -> BaseModel:
         resource = self._store.get(rid)
         return self.resolve_resource(resource, identity=identity)
 
-    def resolve_resource(self, resource: Resource, identity: Identity = None) -> BaseModel:
+    def resolve_resource(self, resource: Resource, identity: Optional[Identity] = None) -> BaseModel:
         """Resolve an already-fetched ``Resource`` into its validated config model.
 
         Same behavior as ``resolve(rid, identity)`` but skips the redundant

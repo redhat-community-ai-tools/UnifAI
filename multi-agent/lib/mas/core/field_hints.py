@@ -84,7 +84,7 @@ class ActionHint(BaseModel):
                     "Skipped when any required dependency value is empty.",
     )
 
-    def model_dump(self, **kwargs) -> dict[str, Any]:
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """Override to return clean dict for json_schema_extra"""
         return super().model_dump(**kwargs)
     
@@ -150,7 +150,7 @@ class ApiHint(BaseModel):
         description="Whether the endpoint supports search filtering"
     )
 
-    def model_dump(self, **kwargs) -> dict[str, Any]:
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """Override to return clean dict for json_schema_extra"""
         return super().model_dump(**kwargs)
     
@@ -173,7 +173,7 @@ class HiddenHint(BaseModel):
         description="Optional reason why field is hidden"
     )
 
-    def model_dump(self, **kwargs) -> dict[str, Any]:
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """Override to return clean dict for json_schema_extra"""
         return super().model_dump(**kwargs)
     
@@ -205,7 +205,7 @@ class SecretHint(BaseModel):
         description="Whether to show eye icon to reveal secret temporarily"
     )
 
-    def model_dump(self, **kwargs) -> dict[str, Any]:
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """Override to return clean dict for json_schema_extra"""
         return super().model_dump(**kwargs)
     
@@ -243,7 +243,7 @@ class AuthHint(BaseModel):
         description="Config field → action input field mapping",
     )
 
-    def model_dump(self, **kwargs) -> dict[str, Any]:
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         return super().model_dump(**kwargs)
 
     def to_hints(self) -> dict[str, Any]:
@@ -287,7 +287,7 @@ class FileUploadHint(BaseModel):
         description="Format to validate on the backend (e.g. 'pem')",
     )
 
-    def model_dump(self, **kwargs) -> dict[str, Any]:
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         return super().model_dump(**kwargs)
 
     def to_hints(self) -> dict[str, Any]:
@@ -318,7 +318,7 @@ class ConditionalHint(BaseModel):
         description="Map of {field_name: required_value}. All must match for the field to be visible.",
     )
 
-    def model_dump(self, **kwargs) -> dict[str, Any]:
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         return super().model_dump(**kwargs)
 
     def to_hints(self) -> dict[str, Any]:
@@ -351,7 +351,7 @@ class PropagateHint(BaseModel):
         description="Fixed value to write. If None, copies the source field's value.",
     )
 
-    def model_dump(self, **kwargs) -> dict[str, Any]:
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         return super().model_dump(**kwargs)
 
     def to_hints(self) -> dict[str, Any]:

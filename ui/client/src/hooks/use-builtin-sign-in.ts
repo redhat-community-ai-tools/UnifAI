@@ -128,7 +128,8 @@ export function useBuiltinSignIn({
         setSignInMessage(data.message || "Could not determine auth status");
       }
       return data;
-    } catch {
+    } catch (error) {
+      console.error("Failed to check authentication status:", error);
       setSignInStatus("error");
       setSignInMessage("Failed to check authentication status");
       return null;
@@ -199,7 +200,8 @@ export function useBuiltinSignIn({
       checkedRef.current = false;
       checkAuth();
       onAuthChange();
-    } catch {
+    } catch (error) {
+      console.error("Sign out failed:", error);
       setSignInStatus("error");
       setSignInMessage("Sign out failed");
     } finally {
