@@ -11,7 +11,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 from mas.core.auth.credentials.endpoint_validation import validate_oauth_endpoint
 
@@ -105,7 +105,7 @@ class ClientConfig(BaseModel):
 
     @field_validator("authorization_endpoint", "token_endpoint")
     @classmethod
-    def _validate_oauth_endpoints(cls, v: str, info) -> str:
+    def _validate_oauth_endpoints(cls, v: str, info: ValidationInfo) -> str:
         return validate_oauth_endpoint(v or "", field_name=info.field_name)
 
 
