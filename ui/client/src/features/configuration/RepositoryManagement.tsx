@@ -11,10 +11,10 @@ import { acquireBuiltinEditLock, previewBuiltinCascade, listBuiltins } from "@/a
 import type { ResourceDependencySummary } from "@/api/resources";
 import { ElementForm } from "@/components/agentic-ai/workspace/ElementForm";
 import { ElementData } from "@/components/agentic-ai/workspace/ElementData";
+import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import type { ElementType, ElementInstance } from "@/types/workspace";
 import { AddResourceWizardPanel } from "./repository-management/AddResourceWizardPanel";
 import { BuiltinResourceTable } from "./repository-management/BuiltinResourceTable";
-import { DeleteResourceDialog } from "./repository-management/DeleteResourceDialog";
 import { CascadeConfirmDialog } from "./repository-management/CascadeConfirmDialog";
 import { BUILTIN_DISABLED_CATEGORIES, type ResourceItem, type WizardStep } from "./repository-management/types";
 
@@ -494,10 +494,13 @@ export default function RepositoryManagement() {
         />
       )}
 
-      <DeleteResourceDialog
-        target={deleteTarget}
-        isDeleting={isDeleting}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete Resource"
+        message={`Are you sure you want to delete "${deleteTarget?.name || "Unnamed"}"? This action is irreversible.`}
+        confirmLabel="Delete"
+        loading={isDeleting}
+        onCancel={() => setDeleteTarget(null)}
         onConfirm={confirmDelete}
       />
 

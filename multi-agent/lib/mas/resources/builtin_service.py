@@ -12,7 +12,6 @@ methods to it — the "Service as Public API" pattern is preserved at the
 """
 import logging
 from typing import Any, Dict, List, Optional
-from uuid import uuid4
 
 from pydantic import ValidationError as PydanticValidationError
 
@@ -331,50 +330,6 @@ class BuiltinResourceService:
         return self._fields.decrypt_config_fields(overlay, sensitive_keys, model_cls)
 
     # ---------- Admin lifecycle ----------
-
-    def duplicate_builtin(
-        self,
-        rid: str,
-        identity: Identity,
-        name: str,
-        config_overrides: Dict[str, Any] = None,
-    ) -> Resource:
-        """Clone a built-in resource into a custom resource."""
-        source = self._store.get(rid)
-        if source.ownership != ResourceOwnership.BUILTIN:
-            raise ValueError("Resource is not a built-in resource")
-        if source.visibility != ResourceVisibility.PUBLIC:
-            raise KeyError(rid)
-
-        # cfg_dict may contain encrypted sensitive fields — decrypt before
-        # merging overrides so the merge operates on plaintext, then
-        # re-encrypt the merged result. Encrypting without decrypting first
-        # would double-encrypt already-ciphertext values and corrupt them.
-        merged_config = self._store.raw_config(rid)
-        if config_overrides:
-            merged_config.update(config_overrides)
-
-        model_cls = self.element_registry.get_schema(
-            ResourceCategory(source.category), source.type)
-        cfg_model = model_cls(**merged_config)
-        nested_refs = list(RefWalker.external_rids(cfg_model))
-        cfg_dict = self._fields.encrypt_fields(
-            cfg_model.model_dump(mode="json"), model_cls,
-            category=source.category, type_key=source.type,
-        )
-
-        doc = Resource(
-            rid=uuid4().hex,
-            identity=identity,
-            category=source.category,
-            type=source.type,
-            name=name,
-            cfg_dict=cfg_dict,
-            nested_refs=nested_refs,
-            ownership=ResourceOwnership.CUSTOM,
-            parent_builtin_id=source.rid,
-        )
-        return self._store.create(doc)
 
     def create_builtin(
         self,

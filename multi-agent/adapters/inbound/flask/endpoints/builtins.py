@@ -3,10 +3,10 @@ admin edit locks.
 
 Split out of ``resources.py`` to keep that module scoped to core
 resource CRUD/validation/cards, while this module owns the built-in-specific
-surface area (admin create/update/promote/demote/toggle, schema exposure,
-user overlays, and duplication into a custom resource). Registered under
-the same ``/api/resources`` URL prefix as ``resources_bp`` (see
-``endpoints/__init__.py``), so the API contract is unchanged for clients.
+surface area (admin create/update/toggle, schema exposure, user overlays).
+Registered under the same ``/api/resources`` URL prefix as ``resources_bp``
+(see ``endpoints/__init__.py``), so the API contract is unchanged for
+clients.
 """
 import logging
 
@@ -173,37 +173,6 @@ def configure_builtin(identity, resource_id, config):
         return jsonify({"error": "Internal server error"}), 500
 
 
-@builtins_bp.route("/resource.duplicate", methods=["POST"])
-@with_require_identity_authorization
-@from_body({
-    "resource_id": fields.Str(data_key="resourceId", required=True),
-    "name": fields.Str(required=True),
-    "config_overrides": fields.Dict(data_key="configOverrides", load_default=None),
-})
-def duplicate_resource(identity, resource_id, name, config_overrides=None):
-    """Duplicate a built-in resource into the caller's workspace as a custom resource.
-
-    The clone gets ownership=custom and parent_builtin_id set to the source.
-    Users can optionally override config fields (e.g. select a subset of tools).
-    """
-    svc = current_app.container.resources_service
-    try:
-        doc = svc.duplicate_builtin(
-            rid=resource_id,
-            identity=identity,
-            name=name,
-            config_overrides=config_overrides,
-        )
-        return jsonify(doc.model_dump(mode="json")), 201
-    except KeyError as e:
-        return jsonify({"error": f"Resource not found: {e}"}), 404
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception:
-        logger.exception("Failed to duplicate resource '%s'", resource_id)
-        return jsonify({"error": "Internal server error"}), 500
-
-
 @builtins_bp.route("/builtin.cascade-preview", methods=["GET"])
 @require_admin_access
 @from_query({
@@ -228,45 +197,6 @@ def preview_builtin_cascade(resource_id):
         return jsonify({"error": str(e)}), 400
     except Exception:
         logger.exception("Failed to preview cascade for resource '%s'", resource_id)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@builtins_bp.route("/resource.promote", methods=["PATCH"])
-@require_admin_access
-@from_body({
-    "resource_id": fields.Str(data_key="resourceId", required=True),
-})
-def promote_resource(resource_id):
-    """Promote a custom resource to public built-in (admin only).
-
-    Sets ownership='builtin' and visibility='public'. The resource's
-    original owner identity is preserved (not reset to system) so all
-    built-in documents keep a consistent, auditable owner.
-
-    Any element this resource aggregates (LLMs, providers, tools, etc. via
-    ``nested_refs``) that isn't already a public built-in is promoted
-    alongside it; those are reported back as ``cascaded_resources`` so the
-    UI can disclaim the side effect.
-
-    Rejected with 409 if another admin currently holds the edit lock on
-    this resource.
-    """
-    lock_error = _reject_if_locked_by_other(resource_id)
-    if lock_error:
-        return lock_error
-    svc = current_app.container.resources_service
-    try:
-        doc, cascaded = svc.promote_with_cascade(resource_id)
-        response = doc.model_dump(mode="json")
-        if cascaded:
-            response["cascaded_resources"] = _resource_summaries(cascaded)
-        return jsonify(response), 200
-    except KeyError as e:
-        return jsonify({"error": f"Resource not found: {e}"}), 404
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception:
-        logger.exception("Failed to promote resource '%s'", resource_id)
         return jsonify({"error": "Internal server error"}), 500
 
 
@@ -429,7 +359,7 @@ def toggle_builtin_visibility(resource_id, available_to_all):
 #
 #  Enforcement: acquiring a lock is cooperative (the UI does it before
 #  opening the edit form), but the mutating endpoints above
-#  (builtin.update, resource.promote, builtin.toggle) as well as the
+#  (builtin.update, builtin.toggle) as well as the
 #  generic resource.update/resource.delete routes in resources.py (which
 #  admins also use to mutate built-in resources) call
 #  ``reject_if_locked_by_other`` (see ``_collaboration_shared.py``) and reject with

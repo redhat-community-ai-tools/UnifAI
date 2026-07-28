@@ -89,7 +89,19 @@ export function AddResourceWizardPanel({
                   <label className="text-sm font-medium text-gray-300">
                     Resource Category
                   </label>
-                  <Select value={selectedCategoryKey} onValueChange={onCategoryChange}>
+                  {/* Keyed on the value: when the wizard stays open across two
+                      "Add to category" clicks (or "Add New" while already
+                      open), Radix Select's controlled value can get stuck
+                      showing the previous selection because the outgoing
+                      item's portaled text isn't cleared without a remount
+                      (see radix-ui/primitives#1569, unfixed as of the
+                      @radix-ui/react-select version pinned here). Forcing a
+                      fresh instance per value sidesteps that. */}
+                  <Select
+                    key={selectedCategoryKey || "none"}
+                    value={selectedCategoryKey}
+                    onValueChange={onCategoryChange}
+                  >
                     <SelectTrigger className="bg-background-dark border-gray-700">
                       <SelectValue placeholder="Choose a category..." />
                     </SelectTrigger>
@@ -121,7 +133,12 @@ export function AddResourceWizardPanel({
                   <label className="text-sm font-medium text-gray-300">
                     Resource Type
                   </label>
+                  {/* Same Radix Select remount workaround as the category
+                      dropdown above — the type list (and value) fully
+                      changes whenever the category changes anyway, so keying
+                      on the category is a natural remount boundary. */}
                   <Select
+                    key={selectedCategoryKey}
                     value={selectedElementType?.type ?? ""}
                     onValueChange={onTypeChange}
                     disabled={!selectedCategoryKey}

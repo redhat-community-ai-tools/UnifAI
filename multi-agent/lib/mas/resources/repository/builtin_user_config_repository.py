@@ -33,11 +33,6 @@ class BuiltinUserConfigRepository(ABC):
         ...
 
     @abstractmethod
-    def find_by_resource(self, resource_id: str) -> List[BuiltinUserConfig]:
-        """Return all user configs for a given resource."""
-        ...
-
-    @abstractmethod
     def find_by_identity(self, identity_key: str) -> List[BuiltinUserConfig]:
         """Return all user configs for a given identity across all resources."""
         ...

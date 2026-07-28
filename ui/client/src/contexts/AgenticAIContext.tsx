@@ -262,37 +262,52 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
       const nameMap = new Map<string, string>();
       const resourceMap = new Map<string, ResourceMapping>();
 
-      // Fetch resources for each category
+      // Fetch resources for each category. The endpoint caps `limit` at
+      // 1000 per request, so categories with more than 1000 resources are
+      // paged through via `offset`/`has_more` rather than assumed to fit
+      // in a single page.
+      const RESOURCES_PAGE_SIZE = 1000;
       await Promise.all(
         categories.map(async (category) => {
           try {
-            const listParams = new URLSearchParams({
-              userId: USER_ID,
-              category,
-              limit: "1000",
-              identityType: WORKSPACE_IDENTITY_TYPE,
-            });
-            if (WORKSPACE_DISPLAY_NAME) {
-              listParams.set("displayName", WORKSPACE_DISPLAY_NAME);
-            }
-            const response = await axios.get<{
-              resources: Array<{
-                rid: string;
-                name: string;
-                category: string;
-                type: string;
-              }>;
-            }>(`/resources/resources.list?${listParams.toString()}`);
-
-            response.data.resources.forEach((resource) => {
-              nameMap.set(resource.rid, resource.name);
-              resourceMap.set(resource.rid, {
-                rid: resource.rid,
-                name: resource.name,
-                category: resource.category,
-                type: resource.type,
+            let offset = 0;
+            while (true) {
+              const listParams = new URLSearchParams({
+                userId: USER_ID,
+                category,
+                limit: String(RESOURCES_PAGE_SIZE),
+                offset: String(offset),
+                identityType: WORKSPACE_IDENTITY_TYPE,
               });
-            });
+              if (WORKSPACE_DISPLAY_NAME) {
+                listParams.set("displayName", WORKSPACE_DISPLAY_NAME);
+              }
+              const response = await axios.get<{
+                resources: Array<{
+                  rid: string;
+                  name: string;
+                  category: string;
+                  type: string;
+                }>;
+                pagination?: { has_more: boolean };
+              }>(`/resources/resources.list?${listParams.toString()}`);
+
+              const page = response.data.resources;
+              page.forEach((resource) => {
+                nameMap.set(resource.rid, resource.name);
+                resourceMap.set(resource.rid, {
+                  rid: resource.rid,
+                  name: resource.name,
+                  category: resource.category,
+                  type: resource.type,
+                });
+              });
+
+              if (!response.data.pagination?.has_more || page.length === 0) {
+                break;
+              }
+              offset += page.length;
+            }
           } catch (err: any) {
             console.warn(`Failed to fetch resources for category ${category}:`, err);
           }
@@ -694,9 +709,15 @@ return String(ref);
     setBlueprintValidationStatus(blueprintId, 'loading');
     
     try {
+      // Default to the current workspace identity (team id + "team" in team
+      // view) rather than the human credential user — the server resolves
+      // team membership/overlays from this, and the human user for
+      // OAuth/credential lookups is derived separately, server-side, from
+      // the session.
       const result = await validateBlueprintApi({
         ...request,
-        userId: request.userId || CREDENTIAL_USER_ID,
+        userId: request.userId || USER_ID,
+        identityType: request.identityType || WORKSPACE_IDENTITY_TYPE,
       });
       
       // Cache the result
@@ -708,7 +729,7 @@ return String(ref);
       setBlueprintValidationStatus(blueprintId, 'invalid');
       throw error;
     }
-  }, [setBlueprintValidationStatus, cacheBlueprintResult, CREDENTIAL_USER_ID]);
+  }, [setBlueprintValidationStatus, cacheBlueprintResult, USER_ID, WORKSPACE_IDENTITY_TYPE]);
 
   // ==================== Effects ====================
 

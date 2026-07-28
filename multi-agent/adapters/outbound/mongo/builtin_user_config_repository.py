@@ -78,12 +78,6 @@ class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
         result = self.col.delete_many({"resource_id": resource_id})
         return result.deleted_count
 
-    def find_by_resource(self, resource_id: str) -> List[BuiltinUserConfig]:
-        return [
-            BuiltinUserConfig(**doc)
-            for doc in self.col.find({"resource_id": resource_id})
-        ]
-
     def find_by_identity(self, identity_key: str) -> List[BuiltinUserConfig]:
         return [
             BuiltinUserConfig(**doc)

@@ -16,6 +16,7 @@ import { deriveThemeColors } from "@/lib/colorUtils";
 import axios from "../http/axiosAgentConfig";
 import * as yaml from "js-yaml";
 import { saveBlueprint, updateBlueprint, PromptShortcutInput } from "@/api/blueprints";
+import { listAllResources } from "@/api/resources";
 import {
   acquireTeamEditLock,
   heartbeatTeamEditLock,
@@ -595,12 +596,13 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     try {
       setIsLoadingBlocks(true);
       // Building blocks must reflect the workspace's *complete* resource
-      // set, not just the endpoint's default page — request the max page
-      // size explicitly rather than relying on a large default limit.
-      const response = await axios.get(
-        `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}&limit=1000`,
-      );
-      const allBlocks = response.data.resources.map(transformResourceToBlock);
+      // set, not just a single page — page through via offset/has_more so
+      // this stays correct even past the endpoint's per-request cap.
+      const resources = await listAllResources({
+        userId: USER_ID,
+        identityType,
+      });
+      const allBlocks = resources.map(transformResourceToBlock);
 
       setAllBlocksData(allBlocks);
 

@@ -1,4 +1,4 @@
-from typing import TypeVar, Any
+from typing import TypeVar, Any, Dict, Tuple
 from pydantic import BaseModel
 from mas.core.enums import ResourceCategory
 from mas.core.identity import Identity
@@ -30,10 +30,36 @@ class BlueprintResolver:
         ``builtin_user_configs`` overlay on top of the resource's defaults.
         Without it (e.g. schema-only tooling), built-ins resolve to their
         raw defaults — the same behavior as before overlays existed.
+
+        Raises ``KeyError`` if any referenced resource no longer exists.
+        Use ``resolve_tolerant`` when broken refs should be reported
+        rather than raised (e.g. blueprint validation).
         """
+        spec, _broken_refs = self._resolve(draft, identity, strict=True)
+        return spec
+
+    def resolve_tolerant(
+        self, draft: BlueprintDraft, identity: Identity = None
+    ) -> Tuple[BlueprintSpec, Dict[str, str]]:
+        """Like ``resolve``, but never raises for a missing referenced resource.
+
+        Unresolvable external refs are skipped (left out of the returned
+        spec) and reported in the second return value as ``{rid: reason}``,
+        so callers — namely blueprint validation — can surface them as
+        per-element failures instead of aborting the whole request.
+        """
+        return self._resolve(draft, identity, strict=False)
+
+    # --------------------------------------------------------------------
+    # helpers
+    # --------------------------------------------------------------------
+    def _resolve(
+        self, draft: BlueprintDraft, identity: Identity, strict: bool
+    ) -> Tuple[BlueprintSpec, Dict[str, str]]:
         # Create local state for this resolution (thread-safe)
         bucket: dict[str, list] = {}
         visited: set[str] = set()
+        broken_refs: Dict[str, str] = {}
 
         # --- walk every catalogue in the draft ---------------------------
         for cat in list(ResourceCategory):
@@ -44,25 +70,23 @@ class BlueprintResolver:
 
                 if not external_ref:
                     # inline resource → keep its config in the bucket
-                    self._stash_inline(cat, res, bucket, visited, identity)
+                    self._stash_inline(cat, res, bucket, visited, identity, broken_refs, strict)
                 else:  # ← LIVE REF
                     # external Ref → fetch from registry
-                    self._walk_live(raw_rid, res.name, bucket, visited, identity)
+                    self._walk_live(raw_rid, res.name, bucket, visited, identity, broken_refs, strict)
 
         # --- build executable spec ---------------------------------------
-        return BlueprintSpec(
+        spec = BlueprintSpec(
             **{cat.value: bucket.get(cat.value, []) for cat in list(ResourceCategory)},
             plan=draft.plan,
             name=draft.name,
             description=draft.description,
         )
+        return spec, broken_refs
 
-    # --------------------------------------------------------------------
-    # helpers
-    # --------------------------------------------------------------------
     def _stash_inline(
         self, cat: ResourceCategory, res: BlueprintResource, bucket: dict, visited: set,
-        identity: Identity = None,
+        identity: Identity, broken_refs: Dict[str, str], strict: bool,
     ):
         """Put an inline/frozen entry straight into the bucket."""
         concrete = res.config  # already a validated Pydantic model
@@ -72,18 +96,25 @@ class BlueprintResolver:
             )
         )
         # still inspect it for nested rids
-        self._scan_nested(concrete, bucket, visited, identity)
+        self._scan_nested(concrete, bucket, visited, identity, broken_refs, strict)
 
     def _walk_live(
         self, rid: str, name: str | None, bucket: dict, visited: set,
-        identity: Identity = None,
+        identity: Identity, broken_refs: Dict[str, str], strict: bool,
     ):
         """Fetch a live resource (with built-in overlay applied) and recurse."""
         if rid in visited:
             return
         visited.add(rid)
 
-        resource = self.resources_service.get(rid)
+        try:
+            resource = self.resources_service.get(rid)
+        except KeyError:
+            if strict:
+                raise
+            broken_refs[rid] = f"Referenced resource not found: {rid}"
+            return
+
         obj = self.resources_service.resolve_resource(resource, identity=identity)
         cat = resource.category.value if hasattr(resource.category, "value") else resource.category
         name = name if name is not None else resource.name
@@ -91,12 +122,15 @@ class BlueprintResolver:
         bucket.setdefault(cat, []).append(
             ResourceSpec[type(obj)](rid=rid, name=name, type=resource.type, config=obj)
         )
-        self._scan_nested(obj, bucket, visited, identity)
+        self._scan_nested(obj, bucket, visited, identity, broken_refs, strict)
 
-    def _scan_nested(self, node: Any, bucket: dict, visited: set, identity: Identity = None):
+    def _scan_nested(
+        self, node: Any, bucket: dict, visited: set,
+        identity: Identity, broken_refs: Dict[str, str], strict: bool,
+    ):
         """
         Recursively walk any BaseModel, dict, list/tuple or Ref.
         Whenever we hit an external Ref, call _walk_live.
         """
         for child_rid in RefWalker.external_rids(node):
-            self._walk_live(child_rid, None, bucket, visited, identity)
+            self._walk_live(child_rid, None, bucket, visited, identity, broken_refs, strict)

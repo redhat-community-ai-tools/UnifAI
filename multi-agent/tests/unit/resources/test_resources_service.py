@@ -2,7 +2,7 @@
 
 - IDOR guard on update/delete (guard_write_access)
 - Draft-builtin visibility enforcement (get_visible / validate_resource / get_cards)
-- Secret encryption consistency (schema-hint-only secrets + duplicate_builtin)
+- Secret encryption consistency (schema-hint-only secrets)
 - resolve() decrypting cfg_dict while merging the builtin overlay
 - configure_builtin() failing loudly when no repo is configured
 """
@@ -146,30 +146,6 @@ class TestEncryption:
 
         resolved_config = service.resolve(doc.rid)
         assert resolved_config.bearer_token == "super-secret"
-
-    def test_duplicate_builtin_does_not_double_encrypt(self, service, admin_identity, alice):
-        """Regression test: duplicating a built-in must decrypt cfg_dict
-        before re-encrypting, otherwise the secret is corrupted."""
-        source = _make_builtin_resource(service, admin_identity, bearer_token="super-secret")
-
-        clone = service.duplicate_builtin(source.rid, identity=alice, name="my-clone")
-
-        assert clone.ownership == ResourceOwnership.CUSTOM
-        resolved = service.resolve(clone.rid)
-        assert resolved.bearer_token == "super-secret"
-
-    def test_duplicate_builtin_with_override_encrypts_new_value(self, service, admin_identity, alice):
-        source = _make_builtin_resource(service, admin_identity, bearer_token="original-secret")
-
-        clone = service.duplicate_builtin(
-            source.rid, identity=alice, name="my-clone-2",
-            config_overrides={"bearer_token": "overridden-secret"},
-        )
-
-        raw = service.get(clone.rid)
-        assert raw.cfg_dict["bearer_token"] != "overridden-secret"
-        resolved = service.resolve(clone.rid)
-        assert resolved.bearer_token == "overridden-secret"
 
 
 # ────────────────────────────── builtin overlay ──────────────────────────────
@@ -335,62 +311,6 @@ class TestBuiltinRequiredSecretValidation:
 
         built = next(c for c in captured["configs"] if c.rid == doc.rid)
         assert built.validation_override_error is None
-
-
-# ────────────────────────────── built-in URL collision ──────────────────────────────
-
-class TestBuiltinUrlCollision:
-    """A custom provider resource whose ``mcp_url`` matches an existing
-    built-in must be blocked on creation — but re-saving an already-existing
-    custom resource must not be permanently locked out just because a
-    built-in with the same URL showed up later (see ``_mcp_url_changed``)."""
-
-    @staticmethod
-    def _make_provider(resource_registry, identity, url, name, ownership=ResourceOwnership.CUSTOM):
-        doc = Resource(
-            identity=identity,
-            category=FAKE_CATEGORY,
-            type=FAKE_TYPE,
-            name=name,
-            cfg_dict={"mcp_url": url},
-            ownership=ownership,
-        )
-        return resource_registry.create(doc)
-
-    def test_create_blocks_url_matching_an_existing_builtin(self, resource_registry, admin_identity, alice):
-        self._make_provider(
-            resource_registry, admin_identity, "https://mcp.example.com/sse", "admin-builtin",
-            ownership=ResourceOwnership.BUILTIN,
-        )
-        with pytest.raises(ValueError, match="already exists and is ready for use"):
-            self._make_provider(resource_registry, alice, "https://mcp.example.com/sse", "alice-custom")
-
-    def test_resaving_unchanged_url_is_not_blocked_by_a_later_builtin(self, resource_registry, admin_identity, alice):
-        """Regression test: a custom resource created before a built-in with
-        the same URL existed must remain editable afterward — otherwise
-        every future save (even an unrelated field change) fails with a
-        confusing 'duplicate' error."""
-        custom = self._make_provider(resource_registry, alice, "https://mcp.example.com/sse", "alice-custom")
-        # A built-in with the same URL is added/promoted later.
-        self._make_provider(
-            resource_registry, admin_identity, "https://mcp.example.com/sse", "admin-builtin",
-            ownership=ResourceOwnership.BUILTIN,
-        )
-
-        custom.name = "renamed-mcp"
-        updated = resource_registry.update(custom)
-        assert updated.name == "renamed-mcp"
-
-    def test_changing_url_to_match_a_builtin_is_still_blocked(self, resource_registry, admin_identity, alice):
-        self._make_provider(
-            resource_registry, admin_identity, "https://mcp.example.com/sse", "admin-builtin",
-            ownership=ResourceOwnership.BUILTIN,
-        )
-        custom = self._make_provider(resource_registry, alice, "https://other.example.com/sse", "alice-custom")
-
-        custom.cfg_dict = {"mcp_url": "https://mcp.example.com/sse"}
-        with pytest.raises(ValueError, match="already exists and is ready for use"):
-            resource_registry.update(custom)
 
 
 # ────────────────────────────── card-visibility hint ──────────────────────────────

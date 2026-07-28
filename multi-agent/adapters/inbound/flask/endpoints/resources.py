@@ -199,6 +199,7 @@ def update_resource(identity, resource_id, config, name=None):
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
 def delete_resource(identity, resource_id):
+    # TODO: Add authorization check - verify user has permission to delete this resource
     svc = current_app.container.resources_service
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
@@ -214,6 +215,7 @@ def delete_resource(identity, resource_id):
     except ResourceAccessDeniedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceInUseError as e:
+        # The resource is referenced by blueprints or other resources
         return jsonify({"error": str(e),
                         "blueprints": e.by_blueprints,
                         "resources": e.by_resources}), 400
@@ -295,9 +297,11 @@ def validate_resources(identity, resource_ids, user_id, timeout_seconds, max_wor
     svc = current_app.container.resources_service
     authenticated_user = getattr(g, G_IDENTITY_USERNAME, "")
 
+    # Validate input
     if not resource_ids:
         return jsonify([]), 200
 
+    # Cap max_workers and ensure a positive value
     max_workers = max(1, min(max_workers, 20))
 
     try:

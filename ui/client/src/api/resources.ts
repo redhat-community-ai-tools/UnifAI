@@ -1,4 +1,5 @@
 import axios from '@/http/axiosAgentConfig';
+import { ElementSchema } from '@/types/workspace';
 
 export interface ResourceIdentity {
   type: 'user' | 'team' | 'system';
@@ -74,6 +75,36 @@ export async function listResources(params: {
   return data;
 }
 
+/**
+ * Fetch a caller's *complete* resource set for the given filters — pages
+ * through with `offset`/`has_more` (server caps `limit` at 1000/request)
+ * instead of assuming everything fits in one page. Use this whenever the
+ * caller needs "all resources matching X" (dropdown/$ref sources, building
+ * blocks, name lookups, etc.) rather than a UI-paginated list.
+ */
+export async function listAllResources(params: {
+  userId: string;
+  identityType: string;
+  category?: string;
+  type?: string;
+  ownership?: string;
+}): Promise<ResourceInstance[]> {
+  const PAGE_SIZE = 1000;
+  const resources: ResourceInstance[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await listResources({ ...params, limit: PAGE_SIZE, offset });
+    resources.push(...page.resources);
+    if (!page.pagination?.has_more || page.resources.length === 0) {
+      break;
+    }
+    offset += page.resources.length;
+  }
+
+  return resources;
+}
+
 export async function getResource(resourceId: string): Promise<ResourceInstance> {
   const { data } = await axios.get<ResourceInstance>(
     `/resources/resource.get?resourceId=${encodeURIComponent(resourceId)}`,
@@ -113,15 +144,6 @@ export async function deleteResource(resourceId: string): Promise<void> {
 
 export async function getResourceSchema(): Promise<any> {
   const { data } = await axios.get('/resources/resource.schema');
-  return data;
-}
-
-export async function validateResource(payload: {
-  resourceId: string;
-  userId?: string;
-  timeoutSeconds?: number;
-}): Promise<any> {
-  const { data } = await axios.post('/resources/resource.validate', payload);
   return data;
 }
 
@@ -187,6 +209,13 @@ export async function getBuiltinSchema(resourceId: string): Promise<any> {
   return data;
 }
 
+export async function getElementSpec(category: string, type: string): Promise<ElementSchema> {
+  const { data } = await axios.get<ElementSchema>(
+    `/catalog/element.spec.get?category=${encodeURIComponent(category)}&type=${encodeURIComponent(type)}`,
+  );
+  return data;
+}
+
 export async function configureBuiltin(payload: {
   resourceId: string;
   userId: string;
@@ -236,14 +265,6 @@ export async function toggleBuiltinVisibility(payload: {
   const { data } = await axios.patch<ResourceInstance>(
     '/resources/builtin.toggle',
     payload,
-  );
-  return data;
-}
-
-export async function promoteResource(resourceId: string): Promise<ResourceInstance> {
-  const { data } = await axios.patch<ResourceInstance>(
-    '/resources/resource.promote',
-    { resourceId },
   );
   return data;
 }

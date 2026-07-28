@@ -149,7 +149,13 @@ def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, 
 
     except BlueprintNotFoundError as e:
         return jsonify({"error": str(e)}), 404
+    except KeyError as e:
+        # The blueprint itself exists (checked above) but references a
+        # resource that no longer exists — surface a clear message instead
+        # of the bare KeyError string (e.g. "'<rid>'").
+        return jsonify({"error": f"Referenced resource not found: {e}"}), 404
     except Exception as e:
+        logger.exception(f"Unexpected error resolving blueprint(s) for blueprint_id={blueprint_id}")
         return jsonify({"error": str(e)}), 500
 
 

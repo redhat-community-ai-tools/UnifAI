@@ -6,7 +6,6 @@ from mas.resources.repository.base import ResourceRepository
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.resources.errors import ResourceInUseError
 from mas.core.identity import Identity
-from mas.core.enums import ResourceOwnership, ResourceCategory
 from mas.core.dto import GroupedCount
 
 
@@ -29,9 +28,6 @@ class ResourcesRegistry:
         if self._repo.find_by_name(doc.identity, doc.category, doc.type, doc.name):
             raise ValueError(f"{doc.category}:{doc.type}:{doc.name} exists for user")
 
-        if doc.ownership != ResourceOwnership.BUILTIN:
-            self._check_builtin_url_collision(doc)
-
         self._repo.save(doc)
         return doc
 
@@ -40,18 +36,6 @@ class ResourcesRegistry:
         existing_with_name = self._repo.find_by_name(doc.identity, doc.category, doc.type, doc.name)
         if existing_with_name and existing_with_name.rid != doc.rid:
             raise ValueError(f"{doc.category}:{doc.type}:{doc.name} exists for user")
-
-        if doc.ownership != ResourceOwnership.BUILTIN and self._mcp_url_changed(doc):
-            # Only re-check the built-in-URL collision when the URL is
-            # actually changing. Checking unconditionally on every update
-            # would permanently lock out a resource that predates a
-            # since-added built-in with the same URL (e.g. a user's own
-            # GitHub MCP resource created before an admin seeded/promoted a
-            # built-in "GitHub MCP" pointing at the same endpoint) — every
-            # future save of that resource, even an unrelated field change,
-            # would fail with a "duplicate" error despite nothing about the
-            # URL having changed.
-            self._check_builtin_url_collision(doc)
 
         doc.version += 1
         doc.updated = datetime.now(timezone.utc)
@@ -151,38 +135,3 @@ class ResourcesRegistry:
     ) -> List[Resource]:
         """Return all built-in resources (public and private)."""
         return self._repo.find_all_builtins(category=category, resource_type=resource_type)
-
-    def find_builtin_by_url(self, url: str) -> Optional[Resource]:
-        """Find a built-in resource whose cfg_dict.mcp_url matches *url*."""
-        return self._repo.find_builtin_by_url(url)
-
-    def _mcp_url_changed(self, doc: Resource) -> bool:
-        """Whether *doc*'s ``mcp_url`` differs from what's currently persisted.
-
-        Returns True (i.e. "treat as changed, run the collision check") for
-        non-provider resources and brand-new resources alike, since the
-        collision check itself already no-ops for those cases — this only
-        needs to suppress the check for the one case that matters: an
-        existing provider resource being re-saved with the same URL it
-        already had.
-        """
-        if doc.category != ResourceCategory.PROVIDER:
-            return True
-        try:
-            existing = self._repo.get(doc.rid)
-        except KeyError:
-            return True
-        return existing.cfg_dict.get("mcp_url", "") != doc.cfg_dict.get("mcp_url", "")
-
-    def _check_builtin_url_collision(self, doc: Resource) -> None:
-        """Block registration of a custom MCP whose URL matches a built-in."""
-        if doc.category != ResourceCategory.PROVIDER:
-            return
-        mcp_url = doc.cfg_dict.get("mcp_url", "")
-        if not mcp_url:
-            return
-        existing = self._repo.find_builtin_by_url(mcp_url)
-        if existing:
-            raise ValueError(
-                "An identical built-in MCP server already exists and is ready for use."
-            )

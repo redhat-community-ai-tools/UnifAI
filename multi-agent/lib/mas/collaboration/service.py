@@ -206,6 +206,47 @@ class CollaborationService:
     def is_available(self) -> bool:
         return self._store.is_available()
 
+    # ── Edit locks (shared primitive) ────────────────────────────────
+    #
+    # Team and admin edit locks are the *same* underlying Redis lock,
+    # keyed by (namespace, kind, entity_id). "Team" locks scope the
+    # namespace to a real team_id and require team membership; "admin"
+    # locks scope it to a fixed sentinel namespace (``ADMIN_LOCK_NAMESPACE``)
+    # and skip that check because authorization is already enforced at the
+    # endpoint layer via ``@require_admin_access``. These private helpers
+    # hold the one implementation; the public methods below only differ in
+    # which authorization check (if any) they run and which namespace/kind
+    # they pass through.
+
+    def _acquire_edit_lock(
+        self, namespace: str, kind: str, entity_id: str, user_id: str,
+    ) -> Tuple[bool, Optional[TeamEditLockHolder]]:
+        return self._store.acquire_team_edit_lock(
+            namespace, kind, entity_id, user_id, user_id, ttl=self._edit_lock_ttl,
+        )
+
+    def _release_edit_lock(
+        self, namespace: str, kind: str, entity_id: str, user_id: str,
+    ) -> None:
+        self._store.release_team_edit_lock(namespace, kind, entity_id, user_id)
+
+    def _renew_edit_lock(
+        self, namespace: str, kind: str, entity_id: str, user_id: str,
+    ) -> bool:
+        return self._store.renew_team_edit_lock(
+            namespace, kind, entity_id, user_id, user_id, ttl=self._edit_lock_ttl,
+        )
+
+    def _get_edit_lock(
+        self, namespace: str, kind: str, entity_id: str,
+    ) -> Optional[TeamEditLockHolder]:
+        return self._store.get_team_edit_lock(namespace, kind, entity_id)
+
+    def _get_edit_locks_batch(
+        self, namespace: str, kind: str, entity_ids: list[str],
+    ) -> Dict[str, Optional[TeamEditLockHolder]]:
+        return self._store.get_team_edit_locks_batch(namespace, kind, entity_ids)
+
     # ── Team edit locks ─────────────────────────────────────────────
 
     def acquire_team_edit_lock(
@@ -217,14 +258,7 @@ class CollaborationService:
     ) -> Tuple[bool, Optional[TeamEditLockHolder]]:
         self.check_team_membership(user_id, team_id)
         self.validate_edit_lock_kind(entity_kind)
-        return self._store.acquire_team_edit_lock(
-            team_id,
-            entity_kind,
-            entity_id,
-            user_id,
-            user_id,
-            ttl=self._edit_lock_ttl,
-        )
+        return self._acquire_edit_lock(team_id, entity_kind, entity_id, user_id)
 
     def release_team_edit_lock(
         self,
@@ -235,9 +269,7 @@ class CollaborationService:
     ) -> None:
         self.check_team_membership(user_id, team_id)
         self.validate_edit_lock_kind(entity_kind)
-        self._store.release_team_edit_lock(
-            team_id, entity_kind, entity_id, user_id
-        )
+        self._release_edit_lock(team_id, entity_kind, entity_id, user_id)
 
     def renew_team_edit_lock(
         self,
@@ -248,14 +280,7 @@ class CollaborationService:
     ) -> bool:
         self.check_team_membership(user_id, team_id)
         self.validate_edit_lock_kind(entity_kind)
-        return self._store.renew_team_edit_lock(
-            team_id,
-            entity_kind,
-            entity_id,
-            user_id,
-            user_id,
-            ttl=self._edit_lock_ttl,
-        )
+        return self._renew_edit_lock(team_id, entity_kind, entity_id, user_id)
 
     def get_team_edit_lock(
         self,
@@ -266,7 +291,7 @@ class CollaborationService:
     ) -> Optional[TeamEditLockHolder]:
         self.check_team_membership(user_id, team_id)
         self.validate_edit_lock_kind(entity_kind)
-        return self._store.get_team_edit_lock(team_id, entity_kind, entity_id)
+        return self._get_edit_lock(team_id, entity_kind, entity_id)
 
     def get_team_edit_locks_batch(
         self,
@@ -277,24 +302,22 @@ class CollaborationService:
     ) -> Dict[str, Optional[TeamEditLockHolder]]:
         self.check_team_membership(user_id, team_id)
         self.validate_edit_lock_kind(entity_kind)
-        return self._store.get_team_edit_locks_batch(
-            team_id, entity_kind, entity_ids
-        )
+        return self._get_edit_locks_batch(team_id, entity_kind, entity_ids)
 
     # ── Admin edit locks (built-in resources) ─────────────────────────
     #
-    # These mirror the team lock methods but skip team-membership checks.
-    # Authorization is enforced at the endpoint layer via @require_admin_access.
-    # All admin locks share a fixed namespace so they're globally visible.
+    # Same lock primitive as team locks (see helpers above), fixed to a
+    # sentinel namespace/kind so all admin locks are globally visible and
+    # skip team-membership checks (admin-only access is enforced by the
+    # @require_admin_access endpoint decorator instead).
 
     def acquire_admin_edit_lock(
         self,
         entity_id: str,
         user_id: str,
     ) -> Tuple[bool, Optional[TeamEditLockHolder]]:
-        return self._store.acquire_team_edit_lock(
-            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id,
-            user_id, user_id, ttl=self._edit_lock_ttl,
+        return self._acquire_edit_lock(
+            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id, user_id,
         )
 
     def release_admin_edit_lock(
@@ -302,7 +325,7 @@ class CollaborationService:
         entity_id: str,
         user_id: str,
     ) -> None:
-        self._store.release_team_edit_lock(
+        self._release_edit_lock(
             ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id, user_id,
         )
 
@@ -311,23 +334,20 @@ class CollaborationService:
         entity_id: str,
         user_id: str,
     ) -> bool:
-        return self._store.renew_team_edit_lock(
-            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id,
-            user_id, user_id, ttl=self._edit_lock_ttl,
+        return self._renew_edit_lock(
+            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id, user_id,
         )
 
     def get_admin_edit_lock(
         self,
         entity_id: str,
     ) -> Optional[TeamEditLockHolder]:
-        return self._store.get_team_edit_lock(
-            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id,
-        )
+        return self._get_edit_lock(ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id)
 
     def get_admin_edit_locks_batch(
         self,
         entity_ids: list[str],
     ) -> Dict[str, Optional[TeamEditLockHolder]]:
-        return self._store.get_team_edit_locks_batch(
+        return self._get_edit_locks_batch(
             ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_ids,
         )

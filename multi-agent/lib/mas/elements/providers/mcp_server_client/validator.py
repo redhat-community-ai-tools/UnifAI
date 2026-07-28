@@ -99,7 +99,22 @@ class McpProviderValidator(BaseElementValidator):
                 # way the sign-in status widget (auth.discovery) does before
                 # concluding the resource is unauthenticated.
                 if auth_cred is None and is_sign_in:
-                    detection = await context.auth_service.discover(str(config.mcp_url))
+                    try:
+                        detection = await context.auth_service.discover(str(config.mcp_url))
+                    except (CancelledError, TimeoutError):
+                        # Real budget exhaustion — let it propagate so the
+                        # outer handler reports it as a timeout, not a
+                        # misleading "connection failed".
+                        raise
+                    except Exception as e:
+                        # This rediscovery is a best-effort auxiliary check;
+                        # a failure here must not fail the whole validation
+                        # — fall through and let the real connection probe
+                        # below determine (and report) the actual outcome.
+                        logger.warning(
+                            "Auth rediscovery failed for %s: %s", config.mcp_url, e,
+                        )
+                        detection = None
                     identifier_changed = (
                         detection and detection.server_identifier
                         and detection.server_identifier != lookup_id

@@ -14,8 +14,7 @@ import {
   ElementSchema,
   ElementInstance,
 } from "../../../types/workspace";
-import { FieldRenderer } from "./FieldRenderer";
-import { ItemValidationResult } from "./FieldValidation";
+import { ElementConfigField } from "./ElementConfigField";
 
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
@@ -23,6 +22,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { useToast } from "@/hooks/use-toast";
 import { useElementFieldHelpers } from "@/hooks/use-element-field-helpers";
+import { useConfigFieldActions } from "@/hooks/use-config-field-actions";
+import { useResourceRefOptions } from "@/hooks/use-resource-ref-options";
 import {
   acquireTeamEditLock,
   heartbeatTeamEditLock,
@@ -60,16 +61,22 @@ export const ElementForm: React.FC<ElementFormProps> = ({
   onSave,
   builtinOnly = false,
 }) => {
-  const [formData, setFormData] = useState<any>({});
   const [isSaving, setIsSaving] = useState(false);
-  const [refOptions, setRefOptions] = useState<{ [category: string]: any[] }>(
-    {},
-  );
-  const [fieldValidationStates, setFieldValidationStates] = useState<{ [fieldName: string]: boolean }>({});
-  const [itemValidationStates, setItemValidationStates] = useState<{ [fieldName: string]: ItemValidationResult[] }>({});
-  const [validatingFields, setValidatingFields] = useState<Set<string>>(new Set());
-  const [populateResults, setPopulateResults] = useState<{ [fieldName: string]: string[] | any }>({});
-  const [actionOutputs, setActionOutputs] = useState<Record<string, any>>({});
+  const fieldActions = useConfigFieldActions(elementSchema?.config_schema?.properties);
+  const {
+    formData,
+    setFormData,
+    fieldValidationStates,
+    itemValidationStates,
+    actionOutputs,
+    handleInputChange,
+    handleArrayChange,
+    addArrayItem,
+    removeArrayItem,
+    handleValidationChange,
+    handlePopulateResult,
+    handleActionOutput,
+  } = fieldActions;
   const [refEditState, setRefEditState] = useState<{
     element: ElementInstance;
     schema: ElementSchema;
@@ -239,14 +246,6 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     return null;
   }, [formData.name, existingNamesSet, editingElement?.name, elementType.name]);
 
-  // Helper to check if a field has validation hint
-  const fieldHasValidation = useCallback((fieldName: string): boolean => {
-    const fieldSchema = elementSchema?.config_schema.properties[fieldName];
-    if (!fieldSchema) return false;
-    return fieldSchema.hints?.action?.hint_type === 'validate' || 
-           fieldSchema.hints?.api?.hint_type === 'validate';
-  }, [elementSchema]);
-
   const {
     isFieldConditionallyVisible,
     isArrayWithRefItems,
@@ -256,50 +255,10 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     extractCategoryFromField,
   } = useElementFieldHelpers(elementSchema?.config_schema, formData);
 
-  const handleValidationChange = (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => {
-    setFieldValidationStates(prev => ({
-      ...prev,
-      [fieldName]: isValid
-    }));
-    // Store per-item validation results if provided (for list fields)
-    if (itemResults) {
-      setItemValidationStates(prev => ({
-        ...prev,
-        [fieldName]: itemResults
-      }));
-    }
-    // Remove from validating set when validation completes
-    setValidatingFields(prev => {
-      const next = new Set(prev);
-      next.delete(fieldName);
-      return next;
-    });
-  };
-
-  const handlePopulateResult = (fieldName: string, results: any[], multiSelect: boolean) => {
-    setPopulateResults(prev => ({
-      ...prev,
-      [fieldName]: results
-    }));
-    
-    // For multi-select fields, store the full array of objects (or strings)
-    // For single select, store just the first item (can be object or string)
-    if (multiSelect) {
-      // Multi-select: always store as array
-      handleInputChange(fieldName, results);
-    } else {
-      // Single select: store single item (first in array, or empty string)
-      const singleResult = results.length > 0 ? results[0] : "";
-      handleInputChange(fieldName, singleResult);
-    }
-  };
-
-
   // Initialize form data
   useEffect(() => {
     if (elementSchema && isOpen) {
       const initialData: any = {};
-      const fieldsToValidate = new Set<string>();
 
       // Set default values from combined schema, excluding hidden fields
       Object.entries(elementSchema.config_schema.properties).forEach(
@@ -361,33 +320,31 @@ export const ElementForm: React.FC<ElementFormProps> = ({
             } else {
               initialData[key] = value;
             }
-
-            // Track fields with validation hints that have values - these will trigger validation
-            // and Save button should be disabled until validation completes
-            const hasValidationHint = fieldSchema?.hints?.action?.hint_type === 'validate' || 
-                                      fieldSchema?.hints?.api?.hint_type === 'validate';
-            if (hasValidationHint) {
-              const processedValue = initialData[key];
-              const hasValue = Array.isArray(processedValue) 
-                ? processedValue.length > 0 
-                : processedValue !== undefined && processedValue !== null && processedValue !== '';
-              if (hasValue) {
-                fieldsToValidate.add(key);
-              }
-            }
           });
         }
       }
 
       setFormData(initialData);
-      
-      // In edit mode, mark fields with validation hints and values as "validating"
-      // This ensures Save button is disabled until all validation API calls complete
-      if (editingElement && fieldsToValidate.size > 0) {
-        setValidatingFields(fieldsToValidate);
-      }
     }
   }, [elementSchema, editingElement, isOpen]);
+
+  // Fields whose $ref (or array-of-$ref) resolves to a resource category —
+  // drives which categories `useResourceRefOptions` needs to fetch.
+  const refCategories = useMemo(() => {
+    const categories = new Set<string>();
+    if (!elementSchema || !isOpen) return categories;
+    for (const property of Object.values(elementSchema.config_schema.properties)) {
+      const category = extractCategoryFromField(property);
+      if (category) categories.add(category);
+    }
+    return categories;
+  }, [elementSchema, isOpen, extractCategoryFromField]);
+
+  const [refOptions, setRefOptions] = useResourceRefOptions(
+    refCategories,
+    fetchResourcesForCategory,
+    builtinOnly ? "builtin" : undefined,
+  );
 
   // Re-apply form data when ref options are loaded (for proper pre-selection)
   useEffect(() => {
@@ -420,101 +377,6 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       });
     }
   }, [refOptions, editingElement]);
-
-  // Load reference options for $ref fields
-  useEffect(() => {
-    if (elementSchema && isOpen) {
-      const refFields = Object.entries(
-        elementSchema.config_schema.properties,
-      ).filter(
-        ([, property]: [string, any]) =>
-          property.$ref ||
-          (property.items && property.items.$ref) ||
-          (property.type === "array" &&
-            property.items &&
-            property.items.$ref) ||
-          isArrayWithRefItems(property) ||
-          (property.anyOf && property.anyOf.some((option: any) => option.$ref)),
-      );
-
-      const refCategories = new Set<string>();
-      refFields.forEach(([, property]: [string, any]) => {
-        const category = extractCategoryFromField(property);
-        if (category) {
-          refCategories.add(category);
-        }
-      });
-
-      // Fetch actual reference options from Resources API
-      const loadRefOptions = async () => {
-        const options: { [category: string]: any[] } = {};
-        const ownershipFilter = builtinOnly ? "builtin" : undefined;
-
-        for (const category of Array.from(refCategories)) {
-          try {
-            const resources = await fetchResourcesForCategory(category, ownershipFilter);
-            options[category] = resources;
-          } catch (error) {
-            console.error(
-              `Failed to load resources for category ${category}:`,
-              error,
-            );
-            options[category] = [];
-          }
-        }
-
-        setRefOptions(options);
-      };
-
-      if (refCategories.size > 0) {
-        loadRefOptions();
-      }
-    }
-  }, [elementSchema, isOpen, fetchResourcesForCategory, builtinOnly]);
-
-  const handleInputChange = (field: string, value: any) => {
-    setFormData((prev: any) => {
-      const next = { ...prev, [field]: value };
-
-      // Direct propagate from the changed field
-      const fieldSchema = elementSchema?.config_schema?.properties?.[field];
-      const propagate = fieldSchema?.hints?.propagate;
-      if (propagate?.to) {
-        next[propagate.to] = propagate.value !== undefined && propagate.value !== null
-          ? propagate.value
-          : value;
-      }
-
-      // Re-propagate from fields that just became visible due to this change
-      const allProps = elementSchema?.config_schema?.properties;
-      if (allProps) {
-        Object.entries(allProps).forEach(([name, schema]: [string, any]) => {
-          const conditional = schema?.hints?.conditional?.visible_when;
-          const prop = schema?.hints?.propagate;
-          if (!conditional || !prop?.to) return;
-          const isVisible = Object.entries(conditional).every(
-            ([f, v]) => next[f] === v,
-          );
-          if (isVisible && next[name]) {
-            next[prop.to] = prop.value !== undefined && prop.value !== null
-              ? prop.value
-              : next[name];
-          }
-        });
-      }
-
-      return next;
-    });
-    // If field has validation hint, mark it as validating immediately
-    // This prevents the save button from being enabled during the validation delay
-    if (fieldHasValidation(field)) {
-      setValidatingFields(prev => new Set(prev).add(field));
-    }
-  };
-
-  const handleActionOutput = (fieldName: string, output: any) => {
-    setActionOutputs(prev => ({ ...prev, [fieldName]: output }));
-  };
 
   const handleEditRefElement = useCallback(async (rid: string) => {
     let foundCategory: string | null = null;
@@ -594,29 +456,6 @@ export const ElementForm: React.FC<ElementFormProps> = ({
 
     return result;
   }, [refEditState, saveRefElement, fetchResourcesForCategory]);
-
-  const handleArrayChange = (field: string, index: number, value: any) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      [field]: prev[field].map((item: any, i: number) =>
-        i === index ? value : item,
-      ),
-    }));
-  };
-
-  const addArrayItem = (field: string) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      [field]: [...(prev[field] || []), ""],
-    }));
-  };
-
-  const removeArrayItem = (field: string, index: number) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      [field]: prev[field].filter((_: any, i: number) => i !== index),
-    }));
-  };
 
   // Check if all required fields are filled.
   // Validation hints (connection checks, ref validation) are informational —
@@ -810,52 +649,20 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     }
   };
 
-  const renderFormField = (fieldName: string, fieldSchema: any) => {
-    const isRequired = elementSchema.config_schema.required?.includes(fieldName);
-    const value = formData[fieldName] || "";
-    
-    const actionValidationHint = fieldSchema.hints?.action?.hint_type === 'validate' ? fieldSchema.hints.action : null;
-    const apiValidationHint = fieldSchema.hints?.api?.hint_type === 'validate' ? fieldSchema.hints.api : null;
-    const validationHint = actionValidationHint || apiValidationHint;
-
-    const actionPopulateHint = fieldSchema.hints?.action?.hint_type === 'populate' ? fieldSchema.hints.action : null;
-    const apiPopulateHint = fieldSchema.hints?.api?.hint_type === 'populate' ? fieldSchema.hints.api : null;
-    const populateHint = actionPopulateHint || apiPopulateHint;
-    
-    const isSecret = fieldSchema?.hints?.secret?.hint_type === "secret";
-
-    return (
-      <FieldRenderer
-        fieldName={fieldName}
-        fieldSchema={fieldSchema}
-        value={value}
-        isRequired={isRequired}
-        validationHint={validationHint}
-        populateHint={populateHint}
-        editingElement={editingElement}
-        elementActions={elementActions}
-        elementType={elementType}
-        formData={formData}
-        refOptions={refOptions}
-        fieldType={isSecret ? "secret" : "public"}
-        fieldValidationStates={fieldValidationStates}
-        itemValidationStates={itemValidationStates}
-        actionOutputs={actionOutputs}
-        isArrayWithRefItems={isArrayWithRefItems}
-        getArrayItemsSchema={getArrayItemsSchema}
-        extractCategoryFromField={extractCategoryFromField}
-        resolveSchemaRef={resolveRef}
-        onInputChange={handleInputChange}
-        onArrayChange={handleArrayChange}
-        onAddArrayItem={addArrayItem}
-        onRemoveArrayItem={removeArrayItem}
-        onValidationChange={handleValidationChange}
-        onPopulateResult={handlePopulateResult}
-        onActionOutput={handleActionOutput}
-        onEditRefElement={handleEditRefElement}
-      />
-    );
-  };
+  const renderFormField = (fieldName: string, fieldSchema: any) => (
+    <ElementConfigField
+      fieldName={fieldName}
+      fieldSchema={fieldSchema}
+      isRequired={elementSchema.config_schema.required?.includes(fieldName) ?? false}
+      editingElement={editingElement}
+      elementActions={elementActions}
+      elementType={elementType}
+      refOptions={refOptions}
+      fieldHelpers={{ isArrayWithRefItems, getArrayItemsSchema, extractCategoryFromField, resolveRef }}
+      fieldActions={fieldActions}
+      onEditRefElement={handleEditRefElement}
+    />
+  );
 
   const renderFormGuidelines = (): React.ReactNode => {
     switch (elementType.type) {

@@ -242,6 +242,7 @@ class ShareCloner:
             visited_rids.add(rid)
 
             try:
+                # Load and validate resource
                 doc = self.resources.get(rid)
 
                 if doc.ownership == ResourceOwnership.BUILTIN:
@@ -257,18 +258,21 @@ class ShareCloner:
                     )
                     continue
 
+                # Create schema model and compute dependencies
                 cfg_model = self.elements.get_schema(
                     ResourceCategory(doc.category), doc.type
                 )(**doc.cfg_dict)
 
                 dependencies = RefWalker.external_rids(cfg_model)
 
+                # Cache all computed data
                 closure_cache[rid] = ResourceCacheData(
                     doc=doc,
                     dependencies=dependencies,
                     cfg_model=cfg_model
                 )
 
+                # Add new dependencies to traversal queue
                 for dep_rid in dependencies:
                     if dep_rid not in visited_rids:
                         to_visit.add(dep_rid)

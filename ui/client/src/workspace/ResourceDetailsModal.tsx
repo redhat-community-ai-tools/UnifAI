@@ -7,8 +7,7 @@ import { maskSecretFieldsInConfig } from '../utils/maskSecretFields';
 import { filterHiddenFieldsInConfig, filterToFieldNames, simplifyConfigForDisplay } from '../utils/displayUtils';
 import { getBuiltinVisibleFieldNames } from '@/lib/cardFields';
 import { ElementSchema } from '../types/workspace';
-import axios from '../http/axiosAgentConfig';
-import { getResource, getBuiltinSchema } from '@/api/resources';
+import { getResource, getBuiltinSchema, getElementSpec } from '@/api/resources';
 import { useAgenticAI } from '@/contexts/AgenticAIContext';
 
 interface ResourceDetailsModalProps {
@@ -23,21 +22,13 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
   element
 }) => {
   const [elementSchema, setElementSchema] = useState<ElementSchema | null>(null);
-  // The graph/blueprint spec a `BuildingBlock` is built from (see
-  // `buildElementBlockMap`) carries no ownership info, so it's looked up
-  // directly here — this is what makes the built-in field filtering below
-  // work correctly for elements opened from the workflows view, not just
-  // the Agent Repository grid (which already has `ownership` on hand).
+  // Looked up here since the `BuildingBlock` passed in doesn't carry ownership info.
   const [ownership, setOwnership] = useState<'builtin' | 'custom' | null>(null);
   const { getResourceName, resolveRefsInConfig } = useAgenticAI();
 
-  // Fetch ownership, then the schema variant that matches it. A built-in's
-  // schema must come from `/resources/builtin.schema` (which annotates
-  // every field the resource's spec doesn't explicitly mark configurable
-  // with `read_only: true`) rather than the plain `/catalog/element.spec.get`
-  // schema — otherwise a field like an MCP provider's `mcp_url` (no
-  // explicit ReadOnlyHint at all) would look "configurable" by omission
-  // and leak into the built-in field allowlist below.
+  // Built-ins use `/resources/builtin.schema` instead of the plain
+  // `/catalog/element.spec.get` schema so locked fields (e.g. `mcp_url`)
+  // are correctly marked read-only rather than leaking into the allowlist below.
   useEffect(() => {
     const rid = element?.workspaceData?.rid;
     const category = element?.workspaceData?.category;
@@ -51,9 +42,7 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
     let cancelled = false;
 
     (async () => {
-      // Best-effort — an unresolvable rid (e.g. a synthetic placeholder
-      // node that was never persisted as a resource) just falls back to
-      // the non-builtin (hidden-fields-only) filtering below.
+      // Best-effort — an unresolvable rid falls back to non-builtin filtering below.
       let resolvedOwnership: 'builtin' | 'custom' | null = null;
       try {
         const resource = await getResource(rid);
@@ -71,10 +60,8 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
             setElementSchema({ category, name: '', type, description: '', tags: [], config_schema: configSchema });
           }
         } else {
-          const response = await axios.get<ElementSchema>(
-            `/catalog/element.spec.get?category=${category}&type=${type}`
-          );
-          if (!cancelled) setElementSchema(response.data);
+          const spec = await getElementSpec(category, type);
+          if (!cancelled) setElementSchema(spec);
         }
       } catch (error) {
         console.error('Error fetching element schema:', error);
@@ -85,10 +72,8 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
     return () => { cancelled = true; };
   }, [isOpen, element?.workspaceData?.rid, element?.workspaceData?.category, element?.workspaceData?.type]);
 
-  // Built-ins only surface configurable + card-visible fields (locked
-  // admin-only setup like an MCP server's `mcp_url` is never shown to a
-  // regular user); other ownerships just drop `hints.hidden` bookkeeping
-  // fields (e.g. `server_identifier`, `credential_token`).
+  // Built-ins only surface configurable + card-visible fields; other ownerships
+  // just drop `hints.hidden` bookkeeping fields.
   const displayableConfig = element?.workspaceData?.config
     ? (() => {
         const resolved = simplifyConfigForDisplay(resolveRefsInConfig(element.workspaceData.config));

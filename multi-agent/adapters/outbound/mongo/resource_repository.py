@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import pymongo
 from mas.resources.models import Resource, ResourceQuery
 from mas.resources.repository.base import ResourceRepository
@@ -80,11 +80,14 @@ class MongoResourceRepository(ResourceRepository):
         """
         filter_dict = self._build_resource_filter(query)
 
+        # Build cursor with filtering
         cursor = self.col.find(filter_dict)
 
+        # Apply sorting
         sort_direction = pymongo.DESCENDING if query.sort_order == "desc" else pymongo.ASCENDING
         cursor = cursor.sort(query.sort_by, sort_direction)
 
+        # Apply pagination
         if query.offset:
             cursor = cursor.skip(query.offset)
         if query.limit:
@@ -209,11 +212,3 @@ class MongoResourceRepository(ResourceRepository):
         if resource_type:
             filter_dict["type"] = resource_type
         return [Resource(**doc) for doc in self.col.find(filter_dict)]
-
-    def find_builtin_by_url(self, url: str) -> Optional[Resource]:
-        """Find a built-in MCP resource matching the given URL."""
-        raw = self.col.find_one({
-            "ownership": ResourceOwnership.BUILTIN.value,
-            "cfg_dict.mcp_url": url,
-        })
-        return Resource(**raw) if raw else None

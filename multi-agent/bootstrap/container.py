@@ -12,8 +12,6 @@ into the layers that need them.
 """
 import logging
 
-import pymongo.errors
-
 from mas.catalog.element_registry import ElementRegistry
 from mas.catalog.service import CatalogService
 from mas.catalog.card_service import ElementCardService
@@ -25,7 +23,6 @@ from mas.session.execution import SessionLifecycle, ForegroundSessionRunner, Ses
 from mas.session.service import SessionService
 from mas.resources.registry import ResourcesRegistry
 from mas.resources.service import ResourcesService
-from mas.resources.builtin_templates import BUILTIN_RESOURCES
 from mas.graph.service import GraphService
 from mas.graph.validation.service import GraphValidationService
 from mas.actions.service import ActionsService
@@ -217,8 +214,6 @@ class AppContainer(metaclass=SingletonMeta):
             auth_service=self.auth_service,
             encryption_key=cfg.credential_encryption_key,
         )
-
-        self._seed_builtin_resources()
 
         self.blueprint_resolver = BlueprintResolver(
             resources_service=self.resources_service,
@@ -476,23 +471,3 @@ class AppContainer(metaclass=SingletonMeta):
             identity_client=identity_client,
             timeout=cfg.directory_timeout,
         )
-
-    def _seed_builtin_resources(self) -> None:
-        """Idempotently seed built-in resources from static templates.
-
-        Uses exists() as a fast pre-check, but the actual insert can still
-        race with another worker seeding concurrently at startup — the
-        duplicate-key failure from that race is caught and ignored so
-        seeding remains idempotent regardless of worker count.
-        """
-        seeded = 0
-        for template in BUILTIN_RESOURCES:
-            if self.resource_repo.exists(template.rid):
-                continue
-            try:
-                self.resource_repo.save(template)
-                seeded += 1
-            except pymongo.errors.DuplicateKeyError:
-                pass
-        if seeded:
-            logger.info("Seeded %d built-in resource(s)", seeded)

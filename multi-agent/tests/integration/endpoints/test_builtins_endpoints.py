@@ -127,20 +127,6 @@ class TestConfigureBuiltin:
         assert resp.status_code == 404
 
 
-class TestDuplicateResource:
-    def test_success_returns_201(self, client, user_headers, resources_service):
-        resources_service.duplicate_builtin.return_value = _fake_resource_dump(rid="clone-1")
-
-        resp = client.post(
-            "/api/resources/resource.duplicate",
-            json={"resourceId": "r1", "name": "my-clone"},
-            headers=user_headers,
-        )
-
-        assert resp.status_code == 201
-        assert resp.get_json()["rid"] == "clone-1"
-
-
 class TestCascadePreview:
     """Read-only preview so the UI can confirm *before* promoting/toggling,
     instead of only disclaiming the cascade after the mutation happened."""
@@ -177,93 +163,6 @@ class TestCascadePreview:
         )
 
         assert resp.status_code == 404
-
-
-class TestPromoteResource:
-    def test_requires_admin(self, client, user_headers, resources_service):
-        resp = client.patch(
-            "/api/resources/resource.promote",
-            json={"resourceId": "r1"},
-            headers=user_headers,
-        )
-        assert resp.status_code == 403
-        resources_service.promote_with_cascade.assert_not_called()
-
-    def test_admin_success(self, client, admin_headers, resources_service):
-        resources_service.promote_with_cascade.return_value = (_fake_resource_dump(), [])
-
-        resp = client.patch(
-            "/api/resources/resource.promote",
-            json={"resourceId": "r1"},
-            headers=admin_headers,
-        )
-
-        assert resp.status_code == 200
-
-    def test_blocked_when_locked_by_another_admin(
-        self, client, admin_headers, resources_service, collaboration_service,
-    ):
-        holder = Mock(user_id="other-admin", display_name="Other Admin")
-        collaboration_service.get_admin_edit_lock.return_value = holder
-
-        resp = client.patch(
-            "/api/resources/resource.promote",
-            json={"resourceId": "r1"},
-            headers=admin_headers,
-        )
-
-        assert resp.status_code == 409
-        resources_service.promote_with_cascade.assert_not_called()
-
-    def test_allowed_when_lock_held_by_self(
-        self, client, admin_headers, resources_service, collaboration_service,
-    ):
-        from tests.integration.endpoints.conftest import ADMIN_USER
-
-        holder = Mock(user_id=ADMIN_USER, display_name="Admin Alice")
-        collaboration_service.get_admin_edit_lock.return_value = holder
-        resources_service.promote_with_cascade.return_value = (_fake_resource_dump(), [])
-
-        resp = client.patch(
-            "/api/resources/resource.promote",
-            json={"resourceId": "r1"},
-            headers=admin_headers,
-        )
-
-        assert resp.status_code == 200
-
-    def test_allowed_when_collaboration_service_unavailable(
-        self, client, admin_headers, resources_service, container,
-    ):
-        container.collaboration_service = None
-        resources_service.promote_with_cascade.return_value = (_fake_resource_dump(), [])
-
-        resp = client.patch(
-            "/api/resources/resource.promote",
-            json={"resourceId": "r1"},
-            headers=admin_headers,
-        )
-
-        assert resp.status_code == 200
-
-    def test_reports_cascaded_dependencies(self, client, admin_headers, resources_service):
-        """The nested LLM/provider/tool an agent aggregates gets swept along
-        when the agent is promoted — surfaced as ``cascaded_resources``."""
-        resources_service.promote_with_cascade.return_value = (
-            _fake_resource_dump(),
-            [_fake_dependency(rid="llm-1", name="My LLM", category="llms")],
-        )
-
-        resp = client.patch(
-            "/api/resources/resource.promote",
-            json={"resourceId": "r1"},
-            headers=admin_headers,
-        )
-
-        assert resp.status_code == 200
-        assert resp.get_json()["cascaded_resources"] == [
-            {"rid": "llm-1", "name": "My LLM", "category": "llms"},
-        ]
 
 
 class TestCreateBuiltinResource:

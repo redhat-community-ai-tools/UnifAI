@@ -30,6 +30,7 @@ import {
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import type { BuiltinEditLockResolved } from "@/api/resources";
 import type { ElementType } from "@/types/workspace";
+import { resolveEditLockStatus } from "@/lib/editLockStatus";
 import { DROPDOWN_BG, getCategoryMeta, type ResourceItem } from "./types";
 
 interface CategoryOption {
@@ -192,18 +193,11 @@ export function BuiltinResourceTable({
                           );
                         }
                         return filtered.map((resource, idx) => {
-                          const lockHolder = editLocks[resource.rid];
-                          const lockUnknown = lockHolder === "unknown";
-                          const lockedByOther =
-                            !lockUnknown &&
-                            !!lockHolder &&
-                            !!currentUsername &&
-                            lockHolder.userId !== currentUsername;
-                          const lockedByLabel = lockUnknown
-                            ? "unknown"
-                            : (lockHolder as any)?.displayName?.trim() ||
-                              (lockHolder as any)?.userId ||
-                              "another admin";
+                          const { lockedByOther, lockUnknown, lockedByLabel } = resolveEditLockStatus(
+                            editLocks[resource.rid],
+                            currentUsername,
+                            "another admin",
+                          );
 
                           return (
                             <motion.div

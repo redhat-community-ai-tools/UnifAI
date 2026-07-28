@@ -228,6 +228,7 @@ export async function validateBlueprint(request: BlueprintValidationRequest): Pr
   const response = await axios.post('/blueprints/blueprint.validate', {
     blueprintId: request.blueprintId,
     userId: request.userId,
+    identityType: request.identityType,
     timeoutSeconds: request.timeoutSeconds ?? 10.0,
   });
   return response.data;

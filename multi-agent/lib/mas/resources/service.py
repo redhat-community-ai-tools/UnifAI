@@ -482,18 +482,6 @@ class ResourcesService:
         """Save per-user/team configuration for a built-in resource."""
         return self.builtin.configure_builtin(rid, identity, config)
 
-    def duplicate_builtin(
-        self,
-        rid: str,
-        identity: Identity,
-        name: str,
-        config_overrides: Dict[str, Any] = None,
-    ) -> Resource:
-        """Clone a built-in resource into a custom resource."""
-        return self.builtin.duplicate_builtin(
-            rid, identity, name, config_overrides=config_overrides,
-        )
-
     def create_builtin(
         self,
         *,

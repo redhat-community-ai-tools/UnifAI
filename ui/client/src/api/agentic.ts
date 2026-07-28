@@ -45,29 +45,48 @@ export async function fetchBlueprintSessionCounts(userId?: string): Promise<Reco
 }
 
 // The endpoint's default page size is intentionally small (matches
-// ResourceQuery's default). These helpers want the caller's *complete*
-// resource set (stats, building blocks, etc.), so they request the max
-// page size explicitly rather than relying on the default.
-const BULK_LIST_LIMIT = 1000;
+// ResourceQuery's default) and its `limit` is capped server-side at 1000
+// per request. These helpers want the caller's *complete* resource set
+// (stats, building blocks, etc.), so they page through with `offset` —
+// using the backend's max page size per request — until the response's
+// `has_more` says there's nothing left. This stays correct no matter how
+// many resources a user has, instead of assuming a single request is
+// always enough.
+const BULK_LIST_PAGE_SIZE = 1000;
+
+async function fetchAllPages(baseUrl: string): Promise<any[]> {
+  const resources: any[] = [];
+  let offset = 0;
+
+  while (true) {
+    const response = await axios.get(
+      `${baseUrl}&limit=${BULK_LIST_PAGE_SIZE}&offset=${offset}`
+    );
+    const page = response.data?.resources || [];
+    resources.push(...page);
+
+    const pagination = response.data?.pagination;
+    if (!pagination?.has_more || page.length === 0) {
+      break;
+    }
+    offset += page.length;
+  }
+
+  return resources;
+}
 
 // Fetch all resources for a user
 export async function fetchAllResources(userId?: string, identityType?: string): Promise<any[]> {
   const userIdParam = userId || 'default';
   const idType = identityType || 'user';
-  const response = await axios.get(
-    `/resources/resources.list?userId=${userIdParam}&identityType=${idType}&limit=${BULK_LIST_LIMIT}`
-  );
-  return response.data?.resources || [];
+  return fetchAllPages(`/resources/resources.list?userId=${userIdParam}&identityType=${idType}`);
 }
 
 // Fetch resources by category
 export async function fetchResourcesByCategory(category: string, userId?: string, identityType?: string): Promise<any[]> {
   const userIdParam = userId || 'default';
   const idType = identityType || 'user';
-  const response = await axios.get(
-    `/resources/resources.list?userId=${userIdParam}&identityType=${idType}&category=${category}&limit=${BULK_LIST_LIMIT}`
-  );
-  return response.data?.resources || [];
+  return fetchAllPages(`/resources/resources.list?userId=${userIdParam}&identityType=${idType}&category=${category}`);
 }
 
 // Fetch catalog elements (for inventory stats)

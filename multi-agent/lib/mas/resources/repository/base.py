@@ -94,8 +94,3 @@ class ResourceRepository(ABC):
     ) -> List[Resource]:
         """Return all built-in resources, optionally filtered by category/type."""
         ...
-
-    @abstractmethod
-    def find_builtin_by_url(self, url: str) -> Resource | None:
-        """Find a built-in resource whose cfg_dict.mcp_url matches *url*."""
-        ...

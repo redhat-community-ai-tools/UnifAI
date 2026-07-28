@@ -13,11 +13,11 @@ import {
   ElementSchema,
   ElementInstance,
 } from "../../../types/workspace";
-import { FieldRenderer } from "./FieldRenderer";
-import { ItemValidationResult } from "./FieldValidation";
+import { ElementConfigField } from "./ElementConfigField";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
-import { useAuth } from "@/contexts/AuthContext";
 import { useElementFieldHelpers } from "@/hooks/use-element-field-helpers";
+import { useConfigFieldActions } from "@/hooks/use-config-field-actions";
+import { useResourceRefOptions } from "@/hooks/use-resource-ref-options";
 import { LoaderCircle, Check, Loader2 } from "lucide-react";
 
 interface BuiltinConfigureModalProps {
@@ -37,19 +37,16 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
   elementSchema: parentSchema,
   onSave,
 }) => {
-  const [formData, setFormData] = useState<any>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingSchema, setIsLoadingSchema] = useState(false);
   const [builtinSchema, setBuiltinSchema] = useState<ElementSchema | null>(null);
-  const [refOptions, setRefOptions] = useState<{ [category: string]: any[] }>({});
-  const [fieldValidationStates, setFieldValidationStates] = useState<{ [fieldName: string]: boolean }>({});
-  const [itemValidationStates, setItemValidationStates] = useState<{ [fieldName: string]: ItemValidationResult[] }>({});
-  const [actionOutputs, setActionOutputs] = useState<Record<string, any>>({});
 
   const { fetchBuiltinSchema, fetchBuiltinUserConfig, fetchResourcesForCategory, fetchElementActions } = useWorkspaceData();
-  const { user } = useAuth();
   const [elementActions, setElementActions] = useState<any[]>([]);
   const [userOverlay, setUserOverlay] = useState<Record<string, any> | null>(null);
+
+  const fieldActions = useConfigFieldActions(builtinSchema?.config_schema?.properties);
+  const { formData, setFormData, fieldValidationStates, resetTransientState } = fieldActions;
 
   useEffect(() => {
     if (!isOpen || !element) return;
@@ -62,9 +59,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     // results from a previous session would leak in and could let Save
     // stay enabled — or stay wrongly disabled — before anything in the
     // freshly-opened form has actually been (re)validated.
-    setFieldValidationStates({});
-    setItemValidationStates({});
-    setActionOutputs({});
+    resetTransientState();
 
     (async () => {
       try {
@@ -173,90 +168,17 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     extractCategoryFromField,
   } = useElementFieldHelpers(builtinSchema?.config_schema, formData);
 
-  useEffect(() => {
-    if (!builtinSchema || !isOpen) return;
-
-    const refCategories = new Set<string>();
-    for (const [, property] of Object.entries(configurableFields)) {
+  const refCategories = useMemo(() => {
+    const categories = new Set<string>();
+    if (!isOpen) return categories;
+    for (const property of Object.values(configurableFields)) {
       const category = extractCategoryFromField(property);
-      if (category) refCategories.add(category);
+      if (category) categories.add(category);
     }
+    return categories;
+  }, [configurableFields, isOpen, extractCategoryFromField]);
 
-    if (refCategories.size === 0) return;
-
-    const loadRefOptions = async () => {
-      const options: { [category: string]: any[] } = {};
-      for (const category of Array.from(refCategories)) {
-        try {
-          const resources = await fetchResourcesForCategory(category);
-          options[category] = resources;
-        } catch {
-          options[category] = [];
-        }
-      }
-      setRefOptions(options);
-    };
-    loadRefOptions();
-  }, [builtinSchema, isOpen, configurableFields, fetchResourcesForCategory]);
-
-  const handleInputChange = (field: string, value: any) => {
-    setFormData((prev: any) => {
-      const updated = { ...prev, [field]: value };
-
-      const fieldSchema =
-        configurableFields[field] ||
-        builtinSchema?.config_schema?.properties?.[field];
-      const propagateHint = (fieldSchema as any)?.hints?.propagate;
-      if (propagateHint?.to) {
-        updated[propagateHint.to] =
-          propagateHint.value !== undefined && propagateHint.value !== null
-            ? propagateHint.value
-            : value;
-      }
-
-      return updated;
-    });
-  };
-
-  const handleArrayChange = (field: string, index: number, value: any) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      [field]: prev[field].map((item: any, i: number) => i === index ? value : item),
-    }));
-  };
-
-  const addArrayItem = (field: string) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      [field]: [...(prev[field] || []), ""],
-    }));
-  };
-
-  const removeArrayItem = (field: string, index: number) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      [field]: prev[field].filter((_: any, i: number) => i !== index),
-    }));
-  };
-
-  const handleValidationChange = (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => {
-    setFieldValidationStates(prev => ({ ...prev, [fieldName]: isValid }));
-    if (itemResults) {
-      setItemValidationStates(prev => ({ ...prev, [fieldName]: itemResults }));
-    }
-  };
-
-  const handlePopulateResult = (fieldName: string, results: any[], multiSelect: boolean) => {
-    if (multiSelect) {
-      handleInputChange(fieldName, results);
-    } else {
-      handleInputChange(fieldName, results.length > 0 ? results[0] : "");
-    }
-  };
-
-  const handleActionOutput = (fieldName: string, output: any) => {
-    setActionOutputs(prev => ({ ...prev, [fieldName]: output }));
-  };
+  const [refOptions] = useResourceRefOptions(refCategories, fetchResourcesForCategory);
 
   const handleSave = async () => {
     // Guard against native form submission (e.g. pressing Enter in a text
@@ -306,51 +228,19 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     }
   };
 
-  const renderFormField = (fieldName: string, fieldSchema: any) => {
-    const isRequired = builtinSchema?.config_schema?.required?.includes(fieldName) ?? false;
-    const value = formData[fieldName] || "";
-
-    const actionValidationHint = fieldSchema.hints?.action?.hint_type === 'validate' ? fieldSchema.hints.action : null;
-    const apiValidationHint = fieldSchema.hints?.api?.hint_type === 'validate' ? fieldSchema.hints.api : null;
-    const validationHint = actionValidationHint || apiValidationHint;
-
-    const actionPopulateHint = fieldSchema.hints?.action?.hint_type === 'populate' ? fieldSchema.hints.action : null;
-    const apiPopulateHint = fieldSchema.hints?.api?.hint_type === 'populate' ? fieldSchema.hints.api : null;
-    const populateHint = actionPopulateHint || apiPopulateHint;
-
-    const isSecret = fieldSchema?.hints?.secret?.hint_type === "secret";
-
-    return (
-      <FieldRenderer
-        fieldName={fieldName}
-        fieldSchema={fieldSchema}
-        value={value}
-        isRequired={isRequired}
-        validationHint={validationHint}
-        populateHint={populateHint}
-        editingElement={element}
-        elementActions={elementActions}
-        elementType={elementType}
-        formData={formData}
-        refOptions={refOptions}
-        fieldType={isSecret ? "secret" : "public"}
-        fieldValidationStates={fieldValidationStates}
-        itemValidationStates={itemValidationStates}
-        actionOutputs={actionOutputs}
-        isArrayWithRefItems={isArrayWithRefItems}
-        getArrayItemsSchema={getArrayItemsSchema}
-        extractCategoryFromField={extractCategoryFromField}
-        resolveSchemaRef={resolveRef}
-        onInputChange={handleInputChange}
-        onArrayChange={handleArrayChange}
-        onAddArrayItem={addArrayItem}
-        onRemoveArrayItem={removeArrayItem}
-        onValidationChange={handleValidationChange}
-        onPopulateResult={handlePopulateResult}
-        onActionOutput={handleActionOutput}
-      />
-    );
-  };
+  const renderFormField = (fieldName: string, fieldSchema: any) => (
+    <ElementConfigField
+      fieldName={fieldName}
+      fieldSchema={fieldSchema}
+      isRequired={builtinSchema?.config_schema?.required?.includes(fieldName) ?? false}
+      editingElement={element}
+      elementActions={elementActions}
+      elementType={elementType}
+      refOptions={refOptions}
+      fieldHelpers={{ isArrayWithRefItems, getArrayItemsSchema, extractCategoryFromField, resolveRef }}
+      fieldActions={fieldActions}
+    />
+  );
 
   const fieldEntries = Object.entries(configurableFields).filter(
     ([, schema]) => isFieldConditionallyVisible(schema as any)

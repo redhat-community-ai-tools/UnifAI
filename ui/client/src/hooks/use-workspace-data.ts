@@ -88,18 +88,14 @@ export const useWorkspaceData = () => {
         setError(null);
         setElementInstances([]);
 
-        const data = await resourcesApi.listResources({
+        const resources = await resourcesApi.listAllResources({
           userId: USER_ID,
           identityType,
           category,
           type,
-          // The endpoint's default page size is intentionally small; this
-          // call wants the caller's complete set of instances for the
-          // category/type, so request the max page size explicitly.
-          limit: 1000,
         });
 
-        const instances: ElementInstance[] = data.resources.map(
+        const instances: ElementInstance[] = resources.map(
           (resource) => ({
             rid: resource.rid,
             name: resource.name,
@@ -168,17 +164,14 @@ export const useWorkspaceData = () => {
   const fetchResourcesForCategory = useCallback(
     async (category: string, ownership?: string) => {
       try {
-        const data = await resourcesApi.listResources({
+        const resources = await resourcesApi.listAllResources({
           userId: USER_ID,
           identityType,
           category,
           ownership,
-          // $ref dropdowns need the complete set for the category, not
-          // just the endpoint's default page.
-          limit: 1000,
         });
 
-        return data.resources.map((resource) => ({
+        return resources.map((resource) => ({
           rid: resource.rid,
           name: resource.name,
           type: resource.type,

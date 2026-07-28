@@ -178,11 +178,14 @@ acquire_admin_edit_lock/release_admin_edit_lock/renew_admin_edit_lock/get_admin_
 ```
 
 No team-membership checks are needed (`@require_admin_access` at the endpoint
-gates it instead). `builtin.update`, `resource.promote`, and `builtin.toggle`
-(plus the generic `resource.update`/`resource.delete` routes admins also use
-on built-ins) call `reject_if_locked_by_other()` — the lock is a real,
-server-enforced guard, not just a UI hint. `builtin.create` has no lock check
-(no entity id exists yet).
+gates it instead). `builtin.update` and `builtin.toggle` (plus the generic
+`resource.update`/`resource.delete` routes admins also use on built-ins)
+call `reject_if_locked_by_other()` — the lock is a real, server-enforced
+guard, not just a UI hint. `builtin.create` has no lock check (no entity id
+exists yet). Note: `promote_with_cascade()` still exists as a service-layer
+method (used internally by `toggle_visibility_with_cascade` when turning a
+draft built-in public) — there is no dedicated `resource.promote` HTTP
+endpoint; it was removed as unused (no UI caller).
 
 ### Seeding
 

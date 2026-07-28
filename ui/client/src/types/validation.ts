@@ -84,7 +84,10 @@ export interface ResourceValidationRequest {
  */
 export interface BlueprintValidationRequest {
   blueprintId: string;
+  /** Workspace owner id — a team id when validating a team-owned blueprint. */
   userId?: string;
+  /** Discriminator for `userId` above; required for the server to resolve team identity. */
+  identityType?: "team" | "user";
   skipNetworkChecks?: boolean;
   timeoutSeconds?: number;
 }

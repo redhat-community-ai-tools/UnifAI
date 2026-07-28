@@ -152,15 +152,6 @@ class FakeResourceRepository:
             d for d in self._docs.values() if d.ownership == ResourceOwnership.BUILTIN
         ]
 
-    def find_builtin_by_url(self, url: str):
-        for doc in self._docs.values():
-            if (
-                doc.ownership == ResourceOwnership.BUILTIN
-                and doc.cfg_dict.get("mcp_url") == url
-            ):
-                return doc
-        return None
-
 
 class FakeBlueprintRepository:
     """Only the subset of ``BlueprintRepository`` used by ``ResourcesRegistry``."""
@@ -199,9 +190,6 @@ class FakeBuiltinUserConfigRepository:
         for k in keys:
             self._configs.pop(k)
         return len(keys)
-
-    def find_by_resource(self, resource_id: str) -> List[BuiltinUserConfig]:
-        return [v for v in self._configs.values() if v.resource_id == resource_id]
 
     def find_by_identity(self, identity_key: str) -> List[BuiltinUserConfig]:
         return [v for v in self._configs.values() if v.identity_key == identity_key]
