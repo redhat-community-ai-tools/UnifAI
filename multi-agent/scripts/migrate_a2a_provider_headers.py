@@ -22,6 +22,7 @@ import argparse
 import os
 import sys
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 from pymongo import MongoClient
 
@@ -38,9 +39,12 @@ _FILTER = {
 }
 
 
-def _merge_headers(existing_additional, legacy_headers):
+def _merge_headers(
+    existing_additional: Optional[Any],
+    legacy_headers: Optional[Any],
+) -> Dict[str, Any]:
     """Prefer explicit additional_headers keys over legacy headers on conflict."""
-    merged = {}
+    merged: Dict[str, Any] = {}
     if isinstance(legacy_headers, dict):
         merged.update({str(k): v for k, v in legacy_headers.items()})
     if isinstance(existing_additional, dict):

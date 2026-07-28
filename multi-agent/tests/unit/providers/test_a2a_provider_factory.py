@@ -56,6 +56,41 @@ class TestA2AProviderFactoryAuth:
         assert mock_create_sync.call_args.kwargs["auth"] is None
 
     @patch(
+        "mas.elements.providers.a2a_client.a2a_provider_factory.A2AProvider.create_sync"
+    )
+    def test_additional_headers_passthrough_and_coercion(self, mock_create_sync):
+        factory = A2AProviderFactory()
+        cfg = _cfg(
+            additional_headers={"X-Custom": "v", "X-Retry": 3, "X-Skip": None},
+        )
+
+        factory.create(cfg)
+
+        headers = mock_create_sync.call_args.kwargs["headers"]
+        assert headers == {"X-Custom": "v", "X-Retry": "3"}
+
+    @patch(
+        "mas.elements.providers.a2a_client.a2a_provider_factory.A2AProvider.create_sync"
+    )
+    def test_bearer_authorization_overrides_additional_headers(
+        self, mock_create_sync
+    ):
+        factory = A2AProviderFactory()
+        cfg = _cfg(
+            auth_method=StaticAuthMethod.ACCESS_TOKEN.value,
+            bearer_token="manual-token",
+            additional_headers={"Authorization": "Bearer stale", "X-Custom": "v"},
+        )
+
+        factory.create(cfg)
+
+        headers = mock_create_sync.call_args.kwargs["headers"]
+        assert headers == {
+            "Authorization": "Bearer manual-token",
+            "X-Custom": "v",
+        }
+
+    @patch(
         "mas.elements.providers.a2a_client.a2a_provider_factory.A2AProvider.create",
         new_callable=AsyncMock,
     )

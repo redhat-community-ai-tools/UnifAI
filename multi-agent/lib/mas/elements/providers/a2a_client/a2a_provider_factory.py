@@ -27,9 +27,16 @@ class A2AProviderFactory(BaseFactory[A2AProviderConfig, A2AProvider]):
     @staticmethod
     def _resolve_headers(cfg: A2AProviderConfig) -> Optional[Dict[str, str]]:
         """Build static HTTP headers from config auth fields (not SSO store)."""
-        headers: Dict[str, str] = (
-            dict(cfg.additional_headers) if cfg.additional_headers else {}
-        )
+        headers: Dict[str, str] = {}
+        if cfg.additional_headers:
+            # Coerce to str for httpx (config allows Dict[str, Any]).
+            headers.update(
+                {
+                    str(k): str(v)
+                    for k, v in cfg.additional_headers.items()
+                    if v is not None
+                }
+            )
 
         if cfg.credential_token:
             headers["Authorization"] = f"Bearer {cfg.credential_token}"
