@@ -482,22 +482,6 @@ class ResourcesService:
         """Save per-user/team configuration for a built-in resource."""
         return self.builtin.configure_builtin(rid, identity, config)
 
-    def create_builtin(
-        self,
-        *,
-        identity: Identity,
-        category: str,
-        type: str,
-        name: str,
-        config: dict,
-        available_to_all: bool = False,
-    ) -> Resource:
-        """Create a resource directly as built-in (admin only)."""
-        return self.builtin.create_builtin(
-            identity=identity, category=category, type=type, name=name,
-            config=config, available_to_all=available_to_all,
-        )
-
     def create_builtin_with_cascade(
         self,
         *,
@@ -519,10 +503,6 @@ class ResourcesService:
             config=config, available_to_all=available_to_all,
         )
 
-    def promote(self, rid: str) -> Resource:
-        """Make a resource a public built-in (admin only)."""
-        return self.builtin.promote(rid)
-
     def promote_with_cascade(self, rid: str) -> Tuple[Resource, List[Resource]]:
         """Make a resource a public built-in (admin only).
 
@@ -534,19 +514,6 @@ class ResourcesService:
     def demote(self, rid: str) -> Resource:
         """Demote a public built-in to draft (admin-only visibility)."""
         return self.builtin.demote(rid)
-
-    def update_builtin(
-        self,
-        rid: str,
-        *,
-        config: dict = None,
-        name: str = None,
-        available_to_all: bool = None,
-    ) -> Resource:
-        """Update a built-in resource (admin only)."""
-        return self.builtin.update_builtin(
-            rid, config=config, name=name, available_to_all=available_to_all,
-        )
 
     def update_builtin_with_cascade(
         self,
@@ -564,10 +531,6 @@ class ResourcesService:
         return self.builtin.update_builtin_with_cascade(
             rid, config=config, name=name, available_to_all=available_to_all,
         )
-
-    def toggle_visibility(self, rid: str, *, available_to_all: bool) -> Resource:
-        """Set visibility of a built-in resource (admin only)."""
-        return self.builtin.toggle_visibility(rid, available_to_all=available_to_all)
 
     def toggle_visibility_with_cascade(
         self, rid: str, *, available_to_all: bool,

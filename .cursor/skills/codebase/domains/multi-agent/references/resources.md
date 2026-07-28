@@ -144,10 +144,13 @@ can't see — so promotion/creation/update cascades:
   if a public built-in still depends on it (`_find_public_dependents` — reverse BFS
   via `ResourcesRegistry.list_nested_usage()`).
 
-Every mutation that can cascade returns a `(resource, cascaded)` tuple (`*_with_cascade`
-methods); the non-cascade variants (`promote`, `create_builtin`, `update_builtin`,
-`toggle_visibility`) are thin wrappers that drop the second element — endpoints
-always call the `*_with_cascade` variants so they can report `cascaded_resources`.
+Every mutation that can cascade returns a `(resource, cascaded)` tuple from a
+`*_with_cascade` method — `create_builtin_with_cascade`, `promote_with_cascade`,
+`update_builtin_with_cascade`, `toggle_visibility_with_cascade`. There are no
+non-cascade convenience wrappers; endpoints and tests alike call the
+`*_with_cascade` variants directly (discarding the second element when the
+cascade list isn't needed) so behavior never silently diverges between a
+"thin" and "cascading" code path.
 
 ### Authorization
 

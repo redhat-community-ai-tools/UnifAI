@@ -331,26 +331,6 @@ class BuiltinResourceService:
 
     # ---------- Admin lifecycle ----------
 
-    def create_builtin(
-        self,
-        *,
-        identity: Identity,
-        category: str,
-        type: str,
-        name: str,
-        config: dict,
-        available_to_all: bool = False,
-    ) -> Resource:
-        """Create a resource directly as built-in (admin only).
-
-        See ``create_builtin_with_cascade`` for the cascading behavior.
-        """
-        resource, _ = self.create_builtin_with_cascade(
-            identity=identity, category=category, type=type, name=name,
-            config=config, available_to_all=available_to_all,
-        )
-        return resource
-
     def create_builtin_with_cascade(
         self,
         *,
@@ -400,14 +380,6 @@ class BuiltinResourceService:
         created = self._store.create(doc)
         cascaded = self._cascade_promote_dependencies(created.rid) if available_to_all else []
         return created, cascaded
-
-    def promote(self, rid: str) -> Resource:
-        """Make a resource a public built-in (admin only).
-
-        See ``promote_with_cascade`` for the cascading behavior.
-        """
-        resource, _ = self.promote_with_cascade(rid)
-        return resource
 
     def promote_with_cascade(self, rid: str) -> "tuple[Resource, List[Resource]]":
         """Make a resource a public built-in (admin only).
@@ -551,23 +523,6 @@ class BuiltinResourceService:
                 queue.append(parent_rid)
         return result
 
-    def update_builtin(
-        self,
-        rid: str,
-        *,
-        config: dict = None,
-        name: str = None,
-        available_to_all: bool = None,
-    ) -> Resource:
-        """Update a built-in resource (admin only).
-
-        See ``update_builtin_with_cascade`` for the cascading behavior.
-        """
-        resource, _ = self.update_builtin_with_cascade(
-            rid, config=config, name=name, available_to_all=available_to_all,
-        )
-        return resource
-
     def update_builtin_with_cascade(
         self,
         rid: str,
@@ -614,11 +569,6 @@ class BuiltinResourceService:
         updated = self._store.update(resource)
         cascaded = self._cascade_promote_dependencies(rid) if available_to_all else []
         return updated, cascaded
-
-    def toggle_visibility(self, rid: str, *, available_to_all: bool) -> Resource:
-        """Set visibility of a built-in resource (admin only)."""
-        resource, _ = self.toggle_visibility_with_cascade(rid, available_to_all=available_to_all)
-        return resource
 
     def toggle_visibility_with_cascade(
         self, rid: str, *, available_to_all: bool,

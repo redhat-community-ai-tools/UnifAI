@@ -36,7 +36,7 @@ def _make_custom_resource(service, identity, name="custom-1", bearer_token=None)
 
 
 def _make_builtin_resource(service, admin_identity, name="builtin-1", available_to_all=True, bearer_token="s3cr3t"):
-    return service.create_builtin(
+    resource, _ = service.create_builtin_with_cascade(
         identity=admin_identity,
         category=FAKE_CATEGORY,
         type=FAKE_TYPE,
@@ -44,6 +44,7 @@ def _make_builtin_resource(service, admin_identity, name="builtin-1", available_
         config={"bearer_token": bearer_token, "endpoint": "https://b.example"},
         available_to_all=available_to_all,
     )
+    return resource
 
 
 def _link_nested(service, parent: Resource, *child_rids: str) -> Resource:
@@ -347,7 +348,7 @@ class TestCardVisibilityHint:
 class TestPromoteDemote:
     def test_promote_custom_to_public_builtin(self, service, alice):
         doc = _make_custom_resource(service, alice)
-        promoted = service.promote(doc.rid)
+        promoted, _ = service.promote_with_cascade(doc.rid)
         assert promoted.ownership == ResourceOwnership.BUILTIN
         assert promoted.visibility == ResourceVisibility.PUBLIC
 
@@ -358,11 +359,11 @@ class TestPromoteDemote:
 
     def test_toggle_visibility_delegates_to_promote_and_demote(self, service, alice, admin_identity):
         custom = _make_custom_resource(service, alice)
-        toggled_on = service.toggle_visibility(custom.rid, available_to_all=True)
+        toggled_on, _ = service.toggle_visibility_with_cascade(custom.rid, available_to_all=True)
         assert toggled_on.visibility == ResourceVisibility.PUBLIC
         assert toggled_on.ownership == ResourceOwnership.BUILTIN
 
-        toggled_off = service.toggle_visibility(toggled_on.rid, available_to_all=False)
+        toggled_off, _ = service.toggle_visibility_with_cascade(toggled_on.rid, available_to_all=False)
         assert toggled_off.visibility == ResourceVisibility.DRAFT
 
 
@@ -379,7 +380,7 @@ class TestNestedDependencyCascade:
         agent = _make_custom_resource(service, alice, name="my-agent")
         _link_nested(service, agent, llm.rid)
 
-        service.promote(agent.rid)
+        service.promote_with_cascade(agent.rid)
 
         promoted_llm = service.get(llm.rid)
         assert promoted_llm.ownership == ResourceOwnership.BUILTIN
@@ -392,7 +393,7 @@ class TestNestedDependencyCascade:
         _link_nested(service, tool, provider.rid)
         _link_nested(service, agent, tool.rid)
 
-        service.promote(agent.rid)
+        service.promote_with_cascade(agent.rid)
 
         assert service.get(tool.rid).visibility == ResourceVisibility.PUBLIC
         assert service.get(provider.rid).visibility == ResourceVisibility.PUBLIC
@@ -402,7 +403,7 @@ class TestNestedDependencyCascade:
         agent = _make_custom_resource(service, alice, name="agent-using-shared-llm")
         _link_nested(service, agent, llm.rid)
 
-        service.promote(agent.rid)
+        service.promote_with_cascade(agent.rid)
 
         # No-op: still public, version unchanged by the cascade.
         assert service.get(llm.rid).version == llm.version
@@ -420,7 +421,7 @@ class TestNestedDependencyCascade:
         llm = _make_custom_resource(service, alice, name="blocked-llm")
         agent = _make_custom_resource(service, alice, name="blocking-agent")
         _link_nested(service, agent, llm.rid)
-        service.promote(agent.rid)  # cascades llm to public too
+        service.promote_with_cascade(agent.rid)  # cascades llm to public too
 
         with pytest.raises(BuiltinDependentsPublicError) as exc_info:
             service.demote(llm.rid)
@@ -432,7 +433,7 @@ class TestNestedDependencyCascade:
         llm = _make_custom_resource(service, alice, name="unblocked-llm")
         agent = _make_custom_resource(service, alice, name="unblocking-agent")
         _link_nested(service, agent, llm.rid)
-        service.promote(agent.rid)
+        service.promote_with_cascade(agent.rid)
 
         service.demote(agent.rid)
         demoted_llm = service.demote(llm.rid)
@@ -445,7 +446,7 @@ class TestNestedDependencyCascade:
         agent = _make_custom_resource(service, alice, name="chain-agent")
         _link_nested(service, tool, provider.rid)
         _link_nested(service, agent, tool.rid)
-        service.promote(agent.rid)  # cascades tool + provider to public
+        service.promote_with_cascade(agent.rid)  # cascades tool + provider to public
 
         with pytest.raises(BuiltinDependentsPublicError) as exc_info:
             service.demote(provider.rid)
@@ -456,7 +457,7 @@ class TestNestedDependencyCascade:
         llm = _make_custom_resource(service, alice, name="free-llm")
         draft_agent = _make_custom_resource(service, alice, name="draft-agent")
         _link_nested(service, draft_agent, llm.rid)
-        service.promote(llm.rid)  # llm becomes public on its own; agent stays custom/draft
+        service.promote_with_cascade(llm.rid)  # llm becomes public on its own; agent stays custom/draft
 
         demoted = service.demote(llm.rid)
         assert demoted.visibility == ResourceVisibility.DRAFT
