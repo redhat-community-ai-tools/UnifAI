@@ -124,23 +124,29 @@ class ResourceFieldEncryption:
                 cfg_dict[field] = self._cipher.encrypt(cfg_dict[field])
         return cfg_dict
 
+    @staticmethod
+    def _effective_sensitive_keys(sensitive_keys: set, model_cls: Optional[type]) -> set:
+        """Union schema-hint-derived ``sensitive_keys`` with a model's declared ``ENCRYPTED_FIELDS``.
+
+        Shared by ``encrypt_config_fields`` and ``decrypt_config_fields`` so both
+        honor the same two sources — keeping per-identity overlay
+        encryption/decryption consistent with base ``cfg_dict`` encryption
+        (see ``encrypt_fields``).
+        """
+        if model_cls is None:
+            return sensitive_keys
+        return sensitive_keys | set(getattr(model_cls, "ENCRYPTED_FIELDS", ()))
+
     def encrypt_config_fields(
         self,
         config: Dict[str, Any],
         sensitive_keys: set,
         model_cls: Optional[type] = None,
     ) -> Dict[str, Any]:
-        """Encrypt values of fields identified as sensitive.
-
-        Unions schema-hint-derived ``sensitive_keys`` with the config model's
-        declared ``ENCRYPTED_FIELDS`` (when ``model_cls`` is provided), the
-        same two sources honored by ``encrypt_fields`` — keeping per-identity
-        overlay encryption consistent with base ``cfg_dict`` encryption.
-        """
+        """Encrypt values of fields identified as sensitive."""
         if not self._cipher:
             return config
-        if model_cls is not None:
-            sensitive_keys = sensitive_keys | set(getattr(model_cls, "ENCRYPTED_FIELDS", ()))
+        sensitive_keys = self._effective_sensitive_keys(sensitive_keys, model_cls)
         result = {}
         for k, v in config.items():
             if k in sensitive_keys and v:
@@ -162,8 +168,7 @@ class ResourceFieldEncryption:
         """
         if not self._cipher:
             return config
-        if model_cls is not None:
-            sensitive_keys = sensitive_keys | set(getattr(model_cls, "ENCRYPTED_FIELDS", ()))
+        sensitive_keys = self._effective_sensitive_keys(sensitive_keys, model_cls)
         result = {}
         for k, v in config.items():
             if k in sensitive_keys and v and isinstance(v, str):
