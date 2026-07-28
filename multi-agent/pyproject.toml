@@ -62,8 +62,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 pythonpath = ["lib", "adapters", "."]
-importmode = "importlib"
-addopts = "-v --tb=short --strict-markers --strict-config --disable-warnings --color=yes"
+addopts = "-v --tb=short --strict-markers --disable-warnings --color=yes --import-mode=importlib"
 console_output_style = "progress"
 junit_family = "xunit2"
 minversion = "6.0"
