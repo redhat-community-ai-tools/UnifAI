@@ -63,12 +63,29 @@ def format_session_list(
     return SlackResponse(text="\n".join(lines))
 
 
-def format_workflow_list(workflows: list) -> SlackResponse:
+def format_team_list(teams: list) -> SlackResponse:
+    """Format a list of team dicts into a Slack message."""
+    if not teams:
+        return SlackResponse(text=":inbox_tray: You are not part of any teams.")
+
+    lines = [f"*Your Teams* ({len(teams)} total)\n"]
+
+    for team in teams:
+        name = team.get("name") or team.get("team_id") or "?"
+        team_id = team.get("team_id") or "?"
+        lines.append(f":busts_in_silhouette: *{name}* (`{team_id}`)")
+
+    return SlackResponse(text="\n".join(lines))
+
+
+def format_workflow_list(workflows: list, label: str = None) -> SlackResponse:
     """Format a list of workflow dicts into a Slack message."""
     if not workflows:
-        return SlackResponse(text=":inbox_tray: No workflows available.")
+        suffix = f" for {label}" if label else ""
+        return SlackResponse(text=f":inbox_tray: No workflows available{suffix}.")
 
-    lines = [f"*Available Workflows* ({len(workflows)} total)\n"]
+    header = f"*Workflows for {label}*" if label else "*Available Workflows*"
+    lines = [f"{header} ({len(workflows)} total)\n"]
 
     for wf in workflows[:15]:
         wf_id = wf.get("blueprint_id", "?")

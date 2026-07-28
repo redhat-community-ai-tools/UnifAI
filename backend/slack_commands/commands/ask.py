@@ -5,9 +5,11 @@ the long-running execution to SessionExecutor (deferred response pattern).
 """
 import logging
 import re
+from typing import Optional
 
 import requests
 
+from global_utils.identity_client import IdentityClient
 from slack_commands.commands.base import CommandHandler
 from slack_commands.http import MAS_TIMEOUT, handle_client_error, mas_get
 from slack_commands.execution.session_executor import SessionExecutor
@@ -20,15 +22,21 @@ _UUID_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+_TEAM_FLAG = re.compile(r"--team\s+(\S+)", re.IGNORECASE)
+
 
 class AskCommand(CommandHandler):
 
-    def __init__(self, base_url: str, executor: SessionExecutor):
+    def __init__(self, base_url: str, executor: SessionExecutor, identity_client: IdentityClient):
         self._url = base_url.rstrip("/")
         self._executor = executor
+        self._identity = identity_client
 
     def handle(self, command: SlackCommand) -> SlackResponse:
-        parts = command.args.split(maxsplit=1)
+        team_uid = self._extract_team(command)
+        args = _TEAM_FLAG.sub("", command.args).strip()
+
+        parts = args.split(maxsplit=1)
 
         if len(parts) < 2:
             return self._usage()
@@ -49,7 +57,7 @@ class AskCommand(CommandHandler):
                 )
             # UUID is not a confirmed session — treat it as a workflow ID below
 
-        workflow_id, label = self._resolve_workflow(command.user_name, ref)
+        workflow_id, label = self._resolve_workflow(command.user_name, ref, team_uid=team_uid)
         if workflow_id is None:
             return label
 
@@ -59,10 +67,20 @@ class AskCommand(CommandHandler):
             question=question,
             response_url=command.response_url,
             public=command.public,
+            team_uid=team_uid,
         )
         return SlackResponse(
             text=f":hourglass: Running *{label}* with your question...",
         )
+
+    def _extract_team(self, command: SlackCommand) -> Optional[str]:
+        match = _TEAM_FLAG.search(command.args)
+        if not match:
+            return None
+        team_uid = match.group(1)
+        if not self._identity.is_member(command.user_name, team_uid):
+            return None
+        return team_uid
 
     def _session_exists(self, session_id: str, user_name: str):
         """Returns True / False / None (transient error)."""
@@ -86,7 +104,7 @@ class AskCommand(CommandHandler):
             logger.warning("session_exists check failed: %s", e)
             return None
 
-    def _resolve_workflow(self, user_name: str, ref: str):
+    def _resolve_workflow(self, user_name: str, ref: str, *, team_uid: Optional[str] = None):
         """Resolve a workflow reference (UUID or name) to (id, display_label).
 
         Returns (None, SlackResponse) on error so the caller can short-circuit.
@@ -94,11 +112,16 @@ class AskCommand(CommandHandler):
         if _UUID_PATTERN.match(ref):
             return ref, ref
 
+        if team_uid:
+            params = {"teamId": team_uid}
+        else:
+            params = {"userId": user_name, "identityType": "user"}
+
         try:
             resp = mas_get(
                 f"{self._url}/api/blueprints/available.blueprints.summary.get",
                 user_name,
-                params={"userId": user_name, "identityType": "user"},
+                params=params,
                 timeout=MAS_TIMEOUT,
             )
             resp.raise_for_status()
@@ -144,7 +167,9 @@ class AskCommand(CommandHandler):
             text=(
                 "*Usage:*\n"
                 "• `/unifai ask <workflow> <question>` — Start a new session\n"
+                "• `/unifai ask --team <team_uid> <workflow> <question>` — Start with a team workflow\n"
                 "• `/unifai ask <session_id> <question>` — Continue an existing session\n"
-                "\nRun `/unifai workflows` to see available workflows."
+                "\nRun `/unifai workflows` to see available workflows.\n"
+                "Run `/unifai teams` to see your team UIDs."
             ),
         )
