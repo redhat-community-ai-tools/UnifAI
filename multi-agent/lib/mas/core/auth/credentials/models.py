@@ -35,6 +35,11 @@ class StaticAuthMethod(str, Enum):
     NONE = "none"
     ACCESS_TOKEN = "access_token"
 
+    @classmethod
+    def values(cls) -> frozenset[str]:
+        """All static dropdown values (e.g. for reserved-id / bind skips)."""
+        return frozenset(m.value for m in cls)
+
 
 class TokenSet(BaseModel):
     """Fresh credential set produced by any auth scheme."""
@@ -97,7 +102,7 @@ class ClientConfig(BaseModel):
         # Match store normalization (rstrip("/")) before reserved-id checks so
         # values like "none/" cannot bypass and later collide with StaticAuthMethod.
         normalized = (v or "").rstrip("/")
-        if normalized in {m.value for m in StaticAuthMethod}:
+        if normalized in StaticAuthMethod.values():
             raise ValueError(
                 f"server_identifier {v!r} is reserved for static auth methods"
             )

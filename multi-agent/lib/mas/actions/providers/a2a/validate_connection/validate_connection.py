@@ -27,10 +27,7 @@ from mas.elements.providers.a2a_client.identifiers import Identifier as Provider
 
 logger = logging.getLogger(__name__)
 
-_STATIC_AUTH = {
-    StaticAuthMethod.NONE.value,
-    StaticAuthMethod.ACCESS_TOKEN.value,
-}
+_STATIC_AUTH = StaticAuthMethod.values()
 
 
 def _endpoint_label(url: HttpUrl) -> str:

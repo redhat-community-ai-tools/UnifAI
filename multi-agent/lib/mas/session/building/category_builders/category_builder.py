@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, ClassVar, Iterable, Optional
 from mas.elements.common.exceptions import PluginConfigurationError
 from pydantic import ValidationError
+from mas.core.auth.credentials.models import StaticAuthMethod
 from mas.core.enums import ResourceCategory
 from mas.core.contracts import SessionRegistry
 from mas.core.element_deps import ElementBuildContext
@@ -37,6 +38,36 @@ class CategoryBuilder(ABC):
 
     def _register(self, registry, name: str, inst: Any, spec: Any, resource_spec: Any):
         registry.register(self.category, name, inst, spec, resource_spec)
+
+    def _resolve_auth_credential(
+        self,
+        cfg: Any,
+        deps: Optional[ElementBuildContext],
+    ) -> Any:
+        """
+        Bind a lazy OAuth credential when cfg names a registry auth server.
+
+        Static dropdown values (none / access_token) must not bind.
+        Returns the credential or None.
+        """
+        server_id = (getattr(cfg, "server_identifier", "") or "").rstrip("/")
+        scheme_type = getattr(cfg, "scheme_type", "") or ""
+        if (
+            not server_id
+            or server_id in StaticAuthMethod.values()
+            or not deps
+            or not deps.auth_service
+        ):
+            return None
+
+        ctx_holder = getattr(deps, "execution_ctx", None)
+        if not ctx_holder:
+            return None
+
+        def resolver(_h=ctx_holder) -> str:
+            return _h.context.credential_user_id()
+
+        return deps.auth_service.bind_lazy(resolver, server_id, scheme_type)
 
     # ––– shared factory construction with error handling ––––––––––––––
     def _create_instance(
