@@ -56,9 +56,9 @@ MONGODB_PORT = os.environ.get("MONGODB_PORT", "27017")
 SOURCES_DB = "data_sources"
 SOURCES_COLLECTION = "sources"
 
-QDRANT_URL = os.environ.get("QDRANT_URL")
+QDRANT_URL = os.environ.get("QDRANT_IP")
 QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", "")
-QDRANT_PORT = 80
+QDRANT_PORT = os.environ.get("QDRANT_PORT")
 QDRANT_TIMEOUT = 60.0
 
 DEFAULT_COLLECTIONS = ["document_data", "slack_data"]
@@ -269,6 +269,7 @@ def main():
 
     # Connect
     mongo_uri = f"mongodb://{MONGODB_IP}:{MONGODB_PORT}/"
+    qdrant_uri = f"{QDRANT_IP}:{QDRANT_PORT}"
     print(f"\nMongoDB: {mongo_uri} / {SOURCES_DB}.{SOURCES_COLLECTION}")
     print(f"Qdrant:  {QDRANT_URL}")
     print(f"Collections: {collections}")
