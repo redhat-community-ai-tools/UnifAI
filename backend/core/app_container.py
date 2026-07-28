@@ -16,6 +16,7 @@ from slack_commands.commands.delete import DeleteCommand
 from slack_commands.commands.health import HealthCommand
 from slack_commands.commands.help import HelpCommand
 from slack_commands.commands.history import HistoryCommand
+from slack_commands.commands.list_teams import ListTeamsCommand
 from slack_commands.commands.list_workflows import ListWorkflowsCommand
 from slack_commands.commands.list_sessions import ListSessionsCommand
 from slack_commands.commands.session_status import StatusCommand
@@ -57,6 +58,14 @@ class AppContainer(metaclass=SingletonMeta):
             action_dispatcher=self.action_dispatcher,
         )
 
+        # ── Identity ─────────────────────────────────────────────────
+        self.redis_kv_store = RedisKVStore(build_redis_client())
+        self.team_membership_cache = TeamMembershipCache(self.redis_kv_store)
+        self.identity_client = IdentityClient(
+            base_url=(cfg.identity_host or "").rstrip("/"),
+            team_cache=self.team_membership_cache,
+        )
+
         # ── Slack Commands ───────────────────────────────────────────
         mas_url = cfg.multiagent_url
         session_executor = SessionExecutor(base_url=mas_url)
@@ -66,21 +75,15 @@ class AppContainer(metaclass=SingletonMeta):
                 "help": HelpCommand(),
                 "health": HealthCommand(),
                 "whoami": WhoamiCommand(),
+                "teams": ListTeamsCommand(identity_client=self.identity_client),
                 "list": ListSessionsCommand(base_url=mas_url),
-                "workflows": ListWorkflowsCommand(base_url=mas_url),
-                "ask": AskCommand(base_url=mas_url, executor=session_executor),
+                "workflows": ListWorkflowsCommand(base_url=mas_url, identity_client=self.identity_client),
+                "ask": AskCommand(base_url=mas_url, executor=session_executor, identity_client=self.identity_client),
                 "status": StatusCommand(base_url=mas_url),
                 "cancel": CancelCommand(base_url=mas_url),
                 "delete": DeleteCommand(base_url=mas_url),
                 "history": HistoryCommand(base_url=mas_url),
             }
-        )
-
-        self.redis_kv_store = RedisKVStore(build_redis_client())
-        self.team_membership_cache = TeamMembershipCache(self.redis_kv_store)
-        self.identity_client = IdentityClient(
-            base_url=(cfg.identity_host or "").rstrip("/"),
-            team_cache=self.team_membership_cache,
         )
 
         self._initialized = True
