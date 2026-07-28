@@ -84,11 +84,20 @@ class ResourcesRegistry:
     def raw_config(self, rid: str) -> dict:
         """Return cfg_dict with encrypted string fields decrypted.
 
+        Fetches the resource fresh from storage. Prefer ``raw_config_for``
+        when the caller already has the ``Resource`` in hand, to avoid a
+        redundant round-trip.
+        """
+        return self.raw_config_for(self.get(rid))
+
+    def raw_config_for(self, resource: Resource) -> dict:
+        """Return *resource*'s cfg_dict with encrypted string fields decrypted.
+
         Uses a shallow copy so the in-memory Resource is not mutated.
         FieldCipher.decrypt() is prefix-aware: non-encrypted values
         pass through unchanged, making this safe for all resource types.
         """
-        cfg = dict(self.get(rid).cfg_dict)
+        cfg = dict(resource.cfg_dict)
         if self._cipher:
             for key, value in cfg.items():
                 if isinstance(value, str):

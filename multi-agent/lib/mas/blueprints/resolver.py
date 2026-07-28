@@ -84,7 +84,7 @@ class BlueprintResolver:
         visited.add(rid)
 
         resource = self.resources_service.get(rid)
-        obj = self.resources_service.resolve(rid, identity=identity)
+        obj = self.resources_service.resolve_resource(resource, identity=identity)
         cat = resource.category.value if hasattr(resource.category, "value") else resource.category
         name = name if name is not None else resource.name
 

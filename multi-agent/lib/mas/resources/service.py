@@ -181,10 +181,20 @@ class ResourcesService:
     # ---------- resolve ----------
     def resolve(self, rid: str, identity: Identity = None) -> BaseModel:
         resource = self._store.get(rid)
-        # raw_config() decrypts ENCRYPTED_FIELDS values so downstream
+        return self.resolve_resource(resource, identity=identity)
+
+    def resolve_resource(self, resource: Resource, identity: Identity = None) -> BaseModel:
+        """Resolve an already-fetched ``Resource`` into its validated config model.
+
+        Same behavior as ``resolve(rid, identity)`` but skips the redundant
+        ``_store.get()`` lookup when the caller already has the ``Resource``
+        in hand (e.g. blueprint resolution, which needs the resource itself
+        for category/type/name before resolving its config).
+        """
+        # raw_config_for() decrypts ENCRYPTED_FIELDS values so downstream
         # elements (e.g. sandboxes, MCP clients) receive plaintext secrets
         # rather than ciphertext.
-        config = self._store.raw_config(rid)
+        config = self._store.raw_config_for(resource)
 
         if resource.ownership == ResourceOwnership.BUILTIN and identity:
             # A caller-supplied credential (below) must always win over the
@@ -680,7 +690,7 @@ class ResourcesService:
         configs: List[ElementConfigMeta] = []
         for rid in rids:
             resource = self._store.get(rid)
-            config = self.resolve(rid, identity=identity)
+            config = self.resolve_resource(resource, identity=identity)
 
             override_error = None
             if resource.ownership == ResourceOwnership.BUILTIN and identity:
