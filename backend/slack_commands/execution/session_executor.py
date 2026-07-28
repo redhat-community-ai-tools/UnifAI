@@ -58,10 +58,11 @@ class SessionExecutor:
         response_url: str,
         *,
         public: bool = False,
+        team_uid: Optional[str] = None,
     ) -> None:
         """Submit a background task that submits to existing session, polls, and responds."""
         self._pool.submit(
-            self._execute, user_name, session_id, question, response_url, True, public,
+            self._execute, user_name, session_id, question, response_url, True, public, team_uid,
         )
 
     def _execute(

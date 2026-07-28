@@ -54,6 +54,7 @@ class AskCommand(CommandHandler):
                     question=question,
                     response_url=command.response_url,
                     public=command.public,
+                    team_uid=team_uid,
                 )
                 return SlackResponse(
                     text=f":hourglass: Continuing session `{ref[:8]}…` with your question...",
@@ -174,6 +175,7 @@ class AskCommand(CommandHandler):
                 "• `/unifai ask <workflow> <question>` — Start a new session\n"
                 "• `/unifai ask --team <team_uid> <workflow> <question>` — Start with a team workflow\n"
                 "• `/unifai ask <session_id> <question>` — Continue an existing session\n"
+                "• `/unifai ask --team <team_uid> <session_id> <question>` — Continue a team session\n"
                 "\nRun `/unifai workflows` to see available workflows.\n"
                 "Run `/unifai teams` to see your team UIDs."
             ),

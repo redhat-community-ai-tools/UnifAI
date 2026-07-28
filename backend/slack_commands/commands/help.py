@@ -13,6 +13,7 @@ class HelpCommand(CommandHandler):
                 "• `/unifai ask <workflow> <question>` — Start a new session\n"
                 "• `/unifai ask --team <team_uid> <workflow> <question>` — Start a session with a team workflow\n"
                 "• `/unifai ask <session_id> <question>` — Continue an existing session\n"
+                "• `/unifai ask --team <team_uid> <session_id> <question>` — Continue a team session\n"
                 "• `/unifai list [page]` — List your sessions\n"
                 "• `/unifai status <session_id>` — Check session status\n"
                 "• `/unifai history <session_id>` — View session chat history\n"
