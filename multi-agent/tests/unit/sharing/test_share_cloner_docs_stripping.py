@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, create_autospec
 
 from mas.sharing.cloner import ShareCloner, CloneContext, ResourceCacheData
 from mas.resources.models import Resource
-from mas.resources.registry import ResourcesRegistry
+from mas.resources.service import ResourcesService
 from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.identity import Identity
@@ -34,12 +34,12 @@ class TestShareClonerDocsRagStripping:
     """Cloning a docs_rag retriever must strip sender's doc references."""
 
     def _build_cloner(self):
-        registry = create_autospec(ResourcesRegistry, instance=True)
-        registry.exists_by_name.return_value = False
+        resources_service = create_autospec(ResourcesService, instance=True)
+        resources_service.exists_by_name.return_value = False
         bp_service = create_autospec(BlueprintService, instance=True)
         element_registry = create_autospec(ElementRegistry, instance=True)
         element_registry.get_schema.return_value = DocsRagRetrieverConfig
-        return ShareCloner(registry, bp_service, element_registry)
+        return ShareCloner(resources_service, bp_service, element_registry)
 
     def _build_cache_data(self, resource, cfg_model):
         return ResourceCacheData(

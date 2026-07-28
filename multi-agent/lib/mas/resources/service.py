@@ -204,6 +204,12 @@ class ResourcesService:
         """Raw JSON for UI."""
         return self._store.raw_config(rid)
 
+    def exists_by_name(
+        self, identity: Identity, category: str, type_: str, name: str,
+    ) -> bool:
+        """Whether a resource with *name* already exists for *identity* (name-conflict check)."""
+        return self._store.exists_by_name(identity, category, type_, name)
+
     @staticmethod
     def get_resource_schema() -> dict:
         """Get the JSON schema for Resource model."""

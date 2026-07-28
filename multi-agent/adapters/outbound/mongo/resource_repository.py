@@ -217,11 +217,3 @@ class MongoResourceRepository(ResourceRepository):
             "cfg_dict.mcp_url": url,
         })
         return Resource(**raw) if raw else None
-
-    def set_user_config(self, rid: str, identity_key: str, config: Dict[str, Any]) -> bool:
-        """Atomically set user_configs.<identity_key> on a resource (legacy)."""
-        result = self.col.update_one(
-            {"_id": rid},
-            {"$set": {f"user_configs.{identity_key}": config}},
-        )
-        return result.modified_count > 0

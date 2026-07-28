@@ -161,9 +161,6 @@ class FakeResourceRepository:
                 return doc
         return None
 
-    def set_user_config(self, rid, identity_key, config) -> bool:
-        return True
-
 
 class FakeBlueprintRepository:
     """Only the subset of ``BlueprintRepository`` used by ``ResourcesRegistry``."""

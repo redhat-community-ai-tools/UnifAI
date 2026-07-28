@@ -147,14 +147,6 @@ class ResourcesRegistry:
         """Find a built-in resource whose cfg_dict.mcp_url matches *url*."""
         return self._repo.find_builtin_by_url(url)
 
-    def set_user_config(self, rid: str, identity_key: str, config: Dict[str, Any]) -> bool:
-        """Legacy: set user_configs.<identity_key> on a resource.
-
-        Deprecated — user configs now live in the builtin_user_configs collection.
-        Retained for backward compatibility during migration.
-        """
-        return self._repo.set_user_config(rid, identity_key, config)
-
     def _mcp_url_changed(self, doc: Resource) -> bool:
         """Whether *doc*'s ``mcp_url`` differs from what's currently persisted.
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,10 +13,11 @@ import {
   ElementSchema,
   ElementInstance,
 } from "../../../types/workspace";
-import { FieldRenderer, getStringEnumFromRef } from "./FieldRenderer";
+import { FieldRenderer } from "./FieldRenderer";
 import { ItemValidationResult } from "./FieldValidation";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
 import { useAuth } from "@/contexts/AuthContext";
+import { useElementFieldHelpers } from "@/hooks/use-element-field-helpers";
 import { LoaderCircle, Check, Loader2 } from "lucide-react";
 
 interface BuiltinConfigureModalProps {
@@ -163,67 +164,14 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     setFormData(initialData);
   }, [configurableFields, isOpen, element?.config, userOverlay]);
 
-  const isFieldConditionallyVisible = useCallback((fieldSchema: any): boolean => {
-    const conditions = fieldSchema?.hints?.conditional?.visible_when;
-    if (!conditions) return true;
-    return Object.entries(conditions).every(
-      ([field, requiredValue]) => formData[field] === requiredValue,
-    );
-  }, [formData]);
-
-  const isArrayWithRefItems = (fieldSchema: any) => {
-    if (fieldSchema.type === "array" && fieldSchema.items?.$ref) return true;
-    if (fieldSchema.anyOf && Array.isArray(fieldSchema.anyOf)) {
-      return fieldSchema.anyOf.some(
-        (option: any) => option.type === "array" && option.items?.$ref,
-      );
-    }
-    return false;
-  };
-
-  const getArrayItemsSchema = (fieldSchema: any) => {
-    if (fieldSchema.type === "array" && fieldSchema.items) return fieldSchema.items;
-    if (fieldSchema.anyOf && Array.isArray(fieldSchema.anyOf)) {
-      const arrayOption = fieldSchema.anyOf.find(
-        (option: any) => option.type === "array" && option.items,
-      );
-      return arrayOption?.items;
-    }
-    return null;
-  };
-
-  const resolveRef = (ref: string): any | null => {
-    if (!ref || typeof ref !== 'string' || !ref.startsWith('#/')) return null;
-    const pathSegments = ref.substring(2).split('/').filter(s => s.length > 0);
-    let current: any = builtinSchema?.config_schema;
-    for (const segment of pathSegments) {
-      if (!current || typeof current !== 'object' || !(segment in current)) return null;
-      current = current[segment];
-    }
-    return current;
-  };
-
-  const isStringEnumRef = (fieldSchema: any): boolean => {
-    return getStringEnumFromRef(fieldSchema, resolveRef) !== null;
-  };
-
-  const extractCategoryFromField = (fieldSchema: any): string | null => {
-    const tryResolve = (ref: string) => {
-      const resolved = resolveRef(ref);
-      return resolved?.category || null;
-    };
-    if (fieldSchema.$ref) { const c = tryResolve(fieldSchema.$ref); if (c) return c; }
-    if (fieldSchema.items?.$ref) { const c = tryResolve(fieldSchema.items.$ref); if (c) return c; }
-    if (fieldSchema.anyOf && Array.isArray(fieldSchema.anyOf)) {
-      for (const option of fieldSchema.anyOf) {
-        if (option.$ref) { const c = tryResolve(option.$ref); if (c) return c; }
-        if (option.type === "array" && option.items?.$ref) {
-          const c = tryResolve(option.items.$ref); if (c) return c;
-        }
-      }
-    }
-    return null;
-  };
+  const {
+    isFieldConditionallyVisible,
+    isArrayWithRefItems,
+    getArrayItemsSchema,
+    resolveRef,
+    isStringEnumRef,
+    extractCategoryFromField,
+  } = useElementFieldHelpers(builtinSchema?.config_schema, formData);
 
   useEffect(() => {
     if (!builtinSchema || !isOpen) return;

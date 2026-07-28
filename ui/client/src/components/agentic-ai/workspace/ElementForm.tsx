@@ -14,7 +14,7 @@ import {
   ElementSchema,
   ElementInstance,
 } from "../../../types/workspace";
-import { FieldRenderer, getStringEnumFromRef } from "./FieldRenderer";
+import { FieldRenderer } from "./FieldRenderer";
 import { ItemValidationResult } from "./FieldValidation";
 
 import { UmamiTrack } from '@/components/ui/umamitrack';
@@ -22,6 +22,7 @@ import { UmamiEvents } from '@/config/umamiEvents';
 import { useAuth } from "@/contexts/AuthContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { useToast } from "@/hooks/use-toast";
+import { useElementFieldHelpers } from "@/hooks/use-element-field-helpers";
 import {
   acquireTeamEditLock,
   heartbeatTeamEditLock,
@@ -246,13 +247,14 @@ export const ElementForm: React.FC<ElementFormProps> = ({
            fieldSchema.hints?.api?.hint_type === 'validate';
   }, [elementSchema]);
 
-  const isFieldConditionallyVisible = useCallback((fieldSchema: any): boolean => {
-    const conditions = fieldSchema?.hints?.conditional?.visible_when;
-    if (!conditions) return true;
-    return Object.entries(conditions).every(
-      ([field, requiredValue]) => formData[field] === requiredValue,
-    );
-  }, [formData]);
+  const {
+    isFieldConditionallyVisible,
+    isArrayWithRefItems,
+    getArrayItemsSchema,
+    resolveRef,
+    isStringEnumRef,
+    extractCategoryFromField,
+  } = useElementFieldHelpers(elementSchema?.config_schema, formData);
 
   const handleValidationChange = (fieldName: string, isValid: boolean, itemResults?: ItemValidationResult[]) => {
     setFieldValidationStates(prev => ({
@@ -418,158 +420,6 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       });
     }
   }, [refOptions, editingElement]);
-
-  // Helper function to check if a field is an array with $ref items
-  const isArrayWithRefItems = (fieldSchema: any) => {
-    // Direct array type
-    if (
-      fieldSchema.type === "array" &&
-      fieldSchema.items &&
-      fieldSchema.items.$ref
-    ) {
-      return true;
-    }
-    // anyOf structure (like tools field)
-    if (fieldSchema.anyOf && Array.isArray(fieldSchema.anyOf)) {
-      return fieldSchema.anyOf.some(
-        (option: any) =>
-          option.type === "array" && option.items && option.items.$ref,
-      );
-    }
-    return false;
-  };
-
-  // Helper function to get array items schema from anyOf or direct structure
-  const getArrayItemsSchema = (fieldSchema: any) => {
-    if (fieldSchema.type === "array" && fieldSchema.items) {
-      return fieldSchema.items;
-    }
-    if (fieldSchema.anyOf && Array.isArray(fieldSchema.anyOf)) {
-      const arrayOption = fieldSchema.anyOf.find(
-        (option: any) => option.type === "array" && option.items,
-      );
-      return arrayOption?.items;
-    }
-    return null;
-  };
-
-  // Helper function to parse JSON path from reference string
-  const parseJsonPath = (ref: string): string[] | null => {
-    if (!ref || typeof ref !== 'string' || !ref.startsWith('#/')) {
-      return null;
-    }
-
-    // Remove the '#/' prefix and split by '/'
-    const pathString = ref.substring(2);
-    if (!pathString) {
-      return null;
-    }
-
-    return pathString.split('/').filter(segment => segment.length > 0);
-  };
-
-  // Generic helper function to resolve JSON path in an object
-  const resolveJsonPath = (obj: any, pathSegments: string[]): any | null => {
-    if (!obj || !pathSegments || pathSegments.length === 0) {
-      return null;
-    }
-
-    let current = obj;
-    for (const segment of pathSegments) {
-      if (!current || typeof current !== 'object' || !(segment in current)) {
-        return null;
-      }
-      current = current[segment];
-    }
-
-    return current;
-  };
-
-  // Helper function to find definition in schema by reference path
-  const findDefinitionByRef = (ref: string): any | null => {
-    const pathSegments = parseJsonPath(ref);
-    if (!pathSegments || !elementSchema?.config_schema) {
-      return null;
-    }
-
-    return resolveJsonPath(elementSchema.config_schema, pathSegments);
-  };
-
-  // Helper function to resolve $ref to actual definition with full details
-  const resolveRef = (ref: string): any | null => {
-    const definition = findDefinitionByRef(ref);
-    if (definition) {
-      console.log(`Resolved $ref ${ref} to:`, definition);
-      return definition;
-    }
-
-    console.warn(`Could not resolve $ref: ${ref}`);
-    return null;
-  };
-
-  // Helper function to extract category from resolved definition
-  const extractCategoryFromDefinition = (definition: any): string | null => {
-    if (!definition || typeof definition !== 'object') {
-      return null;
-    }
-
-    // Direct category property
-    if (definition.category && typeof definition.category === 'string') {
-      return definition.category;
-    }
-
-    return null;
-  };
-
-  // Helper function to check if a $ref resolves to a string enum (not a resource reference)
-  const isStringEnumRef = (fieldSchema: any): boolean => {
-    return getStringEnumFromRef(fieldSchema, resolveRef) !== null;
-  };
-
-  // Helper function to extract category from $ref field or anyOf structure
-  const extractCategoryFromField = (fieldSchema: any): string | null => {
-    // Handle direct $ref by resolving it
-    if (fieldSchema.$ref) {
-      const resolved = resolveRef(fieldSchema.$ref);
-      const category = extractCategoryFromDefinition(resolved);
-      if (category) {
-        return category;
-      }
-    }
-
-    // Handle items with $ref (for arrays)
-    if (fieldSchema.items && fieldSchema.items.$ref) {
-      const resolved = resolveRef(fieldSchema.items.$ref);
-      const category = extractCategoryFromDefinition(resolved);
-      if (category) {
-        return category;
-      }
-    }
-
-    // Category from anyOf structure
-    if (fieldSchema.anyOf && Array.isArray(fieldSchema.anyOf)) {
-      // Check for direct $ref in anyOf
-      for (const option of fieldSchema.anyOf) {
-        if (option.$ref) {
-          const resolved = resolveRef(option.$ref);
-          const category = extractCategoryFromDefinition(resolved);
-          if (category) {
-            return category;
-          }
-        }
-
-        // Check for array with $ref items in anyOf
-        if (option.type === "array" && option.items && option.items.$ref) {
-          const resolved = resolveRef(option.items.$ref);
-          const category = extractCategoryFromDefinition(resolved);
-          if (category) {
-            return category;
-          }
-        }
-      }
-    }
-    return null; // Return null if no category is found
-  };
 
   // Load reference options for $ref fields
   useEffect(() => {

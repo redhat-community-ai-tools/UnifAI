@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from mas.core.identity import Identity
 from mas.resources.models import Resource
-from mas.resources.registry import ResourcesRegistry
+from mas.resources.service import ResourcesService
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintResource, StepDef
 from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
@@ -89,10 +89,10 @@ class ShareCloner:
     """
 
     def __init__(self,
-                 resources_registry: ResourcesRegistry,
+                 resources_service: ResourcesService,
                  blueprint_service: BlueprintService,
                  element_registry: ElementRegistry):
-        self.resources = resources_registry
+        self.resources = resources_service
         self.blueprints = blueprint_service
         self.elements = element_registry
 
@@ -321,9 +321,9 @@ class ShareCloner:
 
     def _batch_create_resources(self, docs: List[Resource]) -> None:
         """Create multiple resources efficiently."""
-        # TODO: Implement actual batch creation in ResourcesRegistry
+        # TODO: Implement actual batch creation in ResourcesService
         for doc in docs:
-            self.resources.create(doc)
+            self.resources.save_resource(doc)
 
     def _resolve_name_conflict(self, identity: Identity, category: str,
                                type_: str, preferred_name: str,

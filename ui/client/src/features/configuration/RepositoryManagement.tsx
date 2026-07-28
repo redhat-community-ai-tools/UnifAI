@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useBuiltinEditLockPoll } from "@/hooks/use-builtin-edit-lock-poll";
 import { useBuiltinEditLockSession } from "@/hooks/use-builtin-edit-lock-session";
-import { acquireBuiltinEditLock, previewBuiltinCascade } from "@/api/resources";
+import { acquireBuiltinEditLock, previewBuiltinCascade, listBuiltins } from "@/api/resources";
 import type { ResourceDependencySummary } from "@/api/resources";
 import { ElementForm } from "@/components/agentic-ai/workspace/ElementForm";
 import { ElementData } from "@/components/agentic-ai/workspace/ElementData";
@@ -96,7 +96,6 @@ export default function RepositoryManagement() {
 
   const reloadBuiltins = useCallback(async () => {
     try {
-      const { listBuiltins } = await import("@/api/resources");
       const data = await listBuiltins();
       const resources = data.resources || [];
       const grouped: Record<string, ResourceItem[]> = {};

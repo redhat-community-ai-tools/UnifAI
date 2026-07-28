@@ -325,7 +325,7 @@ class AppContainer(metaclass=SingletonMeta):
             coll_name=cfg.shares_coll
         )
         self.share_cloner = ShareCloner(
-            resources_registry=resource_registry,
+            resources_service=self.resources_service,
             blueprint_service=self.blueprint_service,
             element_registry=self.element_registry
         )

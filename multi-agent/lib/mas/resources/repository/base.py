@@ -99,12 +99,3 @@ class ResourceRepository(ABC):
     def find_builtin_by_url(self, url: str) -> Resource | None:
         """Find a built-in resource whose cfg_dict.mcp_url matches *url*."""
         ...
-
-    @abstractmethod
-    def set_user_config(self, rid: str, identity_key: str, config: Dict[str, Any]) -> bool:
-        """Legacy: atomically set user_configs.<identity_key> on a resource.
-
-        Deprecated — user configs now live in the builtin_user_configs collection.
-        Retained for backward compatibility during migration.
-        """
-        ...
