@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, ReactNode, useCa
 import axios from '@/http/axiosAgentConfig';
 import { useWorkspaceIdentity } from '@/hooks/use-workspace-identity';
 import { catalogService } from '@/api/catalog';
+import { listAllResources } from '@/api/resources';
 import { ElementValidationResult, CachedValidationResult, BlueprintValidationResult, BlueprintValidationRequest, CachedBlueprintValidationResult } from '@/types/validation';
 import { validateBlueprint as validateBlueprintApi } from '@/api/blueprints';
 
@@ -262,52 +263,29 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
       const nameMap = new Map<string, string>();
       const resourceMap = new Map<string, ResourceMapping>();
 
-      // Fetch resources for each category. The endpoint caps `limit` at
-      // 1000 per request, so categories with more than 1000 resources are
-      // paged through via `offset`/`has_more` rather than assumed to fit
-      // in a single page.
-      const RESOURCES_PAGE_SIZE = 1000;
+      // Fetch resources for each category. `listAllResources` pages
+      // through `offset`/`has_more` internally (the endpoint caps `limit`
+      // at 1000/request), so categories with more than 1000 resources
+      // aren't assumed to fit in a single page.
       await Promise.all(
         categories.map(async (category) => {
           try {
-            let offset = 0;
-            while (true) {
-              const listParams = new URLSearchParams({
-                userId: USER_ID,
-                category,
-                limit: String(RESOURCES_PAGE_SIZE),
-                offset: String(offset),
-                identityType: WORKSPACE_IDENTITY_TYPE,
-              });
-              if (WORKSPACE_DISPLAY_NAME) {
-                listParams.set("displayName", WORKSPACE_DISPLAY_NAME);
-              }
-              const response = await axios.get<{
-                resources: Array<{
-                  rid: string;
-                  name: string;
-                  category: string;
-                  type: string;
-                }>;
-                pagination?: { has_more: boolean };
-              }>(`/resources/resources.list?${listParams.toString()}`);
+            const resources = await listAllResources({
+              userId: USER_ID,
+              identityType: WORKSPACE_IDENTITY_TYPE,
+              category,
+              displayName: WORKSPACE_DISPLAY_NAME || undefined,
+            });
 
-              const page = response.data.resources;
-              page.forEach((resource) => {
-                nameMap.set(resource.rid, resource.name);
-                resourceMap.set(resource.rid, {
-                  rid: resource.rid,
-                  name: resource.name,
-                  category: resource.category,
-                  type: resource.type,
-                });
+            resources.forEach((resource) => {
+              nameMap.set(resource.rid, resource.name);
+              resourceMap.set(resource.rid, {
+                rid: resource.rid,
+                name: resource.name,
+                category: resource.category,
+                type: resource.type,
               });
-
-              if (!response.data.pagination?.has_more || page.length === 0) {
-                break;
-              }
-              offset += page.length;
-            }
+            });
           } catch (err: any) {
             console.warn(`Failed to fetch resources for category ${category}:`, err);
           }

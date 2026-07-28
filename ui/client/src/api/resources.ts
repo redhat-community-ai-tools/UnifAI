@@ -59,6 +59,8 @@ export async function listResources(params: {
   ownership?: string;
   limit?: number;
   offset?: number;
+  /** Team display name — needed so team-workspace auth matches `require_identity_authorization`. */
+  displayName?: string;
 }): Promise<ResourcesListResponse> {
   const query = new URLSearchParams();
   query.set('userId', params.userId);
@@ -68,6 +70,7 @@ export async function listResources(params: {
   if (params.ownership) query.set('ownership', params.ownership);
   if (params.limit != null) query.set('limit', String(params.limit));
   if (params.offset != null) query.set('offset', String(params.offset));
+  if (params.displayName) query.set('displayName', params.displayName);
 
   const { data } = await axios.get<ResourcesListResponse>(
     `/resources/resources.list?${query.toString()}`,
@@ -88,6 +91,7 @@ export async function listAllResources(params: {
   category?: string;
   type?: string;
   ownership?: string;
+  displayName?: string;
 }): Promise<ResourceInstance[]> {
   const PAGE_SIZE = 1000;
   const resources: ResourceInstance[] = [];
