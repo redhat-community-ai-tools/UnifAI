@@ -5,7 +5,7 @@ the long-running execution to SessionExecutor (deferred response pattern).
 """
 import logging
 import re
-from typing import Optional
+from typing import Optional, Union
 
 import requests
 
@@ -33,7 +33,10 @@ class AskCommand(CommandHandler):
         self._identity = identity_client
 
     def handle(self, command: SlackCommand) -> SlackResponse:
-        team_uid = self._extract_team(command)
+        result = self._extract_team(command)
+        if isinstance(result, SlackResponse):
+            return result
+        team_uid = result
         args = _TEAM_FLAG.sub("", command.args).strip()
 
         parts = args.split(maxsplit=1)
@@ -73,13 +76,15 @@ class AskCommand(CommandHandler):
             text=f":hourglass: Running *{label}* with your question...",
         )
 
-    def _extract_team(self, command: SlackCommand) -> Optional[str]:
+    def _extract_team(self, command: SlackCommand) -> Union[Optional[str], SlackResponse]:
         match = _TEAM_FLAG.search(command.args)
         if not match:
             return None
         team_uid = match.group(1)
         if not self._identity.is_member(command.user_name, team_uid):
-            return None
+            return SlackResponse(
+                text=f":x: Team `{team_uid}` not found or you are not a member.",
+            )
         return team_uid
 
     def _session_exists(self, session_id: str, user_name: str):
