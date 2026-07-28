@@ -84,16 +84,46 @@ class A2AProvider:
     async def _get_current_headers(self) -> Dict[str, str]:
         """Merge live auth headers with static headers (static wins on key clash)."""
         current: Dict[str, str] = {}
+        # >>> A2A_AUTH_DEBUG_START (temporary — delete this block) <<<
+        # Presence-only diagnostics for AskRH 401; never log token/header values.
+        # Grep: A2A_AUTH_DEBUG | A2A_AUTH_DEBUG_START
+        live_keys: List[str] = []
+        live_error = ""
+        # >>> A2A_AUTH_DEBUG_END <<<
         if self._auth:
             try:
-                current.update(await self._auth.get_headers())
+                live = await self._auth.get_headers()
+                current.update(live)
+                # >>> A2A_AUTH_DEBUG_START (temporary — delete this block) <<<
+                live_keys = sorted(live.keys())
+                # >>> A2A_AUTH_DEBUG_END <<<
             except AuthError as exc:
+                # >>> A2A_AUTH_DEBUG_START (temporary — delete this block) <<<
+                live_error = type(exc).__name__
+                # >>> A2A_AUTH_DEBUG_END <<<
                 logger.warning(
                     "A2AProvider: auth headers unavailable (%s)",
                     type(exc).__name__,
                 )
         if self.headers:
             current.update(self.headers)
+        # >>> A2A_AUTH_DEBUG_START (temporary — delete this block) <<<
+        auth_val = current.get("Authorization") or current.get("authorization") or ""
+        auth_scheme = auth_val.split(" ", 1)[0] if auth_val else ""
+        logger.info(
+            "A2A_AUTH_DEBUG provider url=%s has_live_auth=%s live_keys=%s "
+            "live_error=%s static_keys=%s merged_keys=%s has_authorization=%s "
+            "auth_scheme=%r",
+            self.base_url,
+            self._auth is not None,
+            live_keys,
+            live_error or None,
+            sorted((self.headers or {}).keys()),
+            sorted(current.keys()),
+            bool(auth_val),
+            auth_scheme,
+        )
+        # >>> A2A_AUTH_DEBUG_END <<<
         return current
 
     async def _ensure_initialized(self) -> None:

@@ -284,7 +284,32 @@ class A2AAgentNode(
         Logs context before raising; never logs token/header values.
         """
         if not self._auth_credential:
+            # >>> A2A_AUTH_DEBUG_START (temporary — delete this block) <<<
+            logger.info(
+                "A2A_AUTH_DEBUG node=%s refresh skipped: no auth_credential bound",
+                self.uid,
+            )
+            # >>> A2A_AUTH_DEBUG_END <<<
             return
+        # >>> A2A_AUTH_DEBUG_START (temporary — delete this block) <<<
+        # Presence-only diagnostics for AskRH 401; never log token/header values.
+        # Grep: A2A_AUTH_DEBUG | A2A_AUTH_DEBUG_START
+        server_id = getattr(self._auth_credential, "_server_id", "")
+        try:
+            user_id = getattr(self._auth_credential, "_user_id", "")
+            user_id_set = bool(str(user_id).strip())
+        except Exception:
+            user_id_set = False
+        logger.info(
+            "A2A_AUTH_DEBUG node=%s refresh start server_id=%r user_id_set=%s "
+            "provider_has_auth=%s static_header_keys=%s",
+            self.uid,
+            server_id,
+            user_id_set,
+            getattr(self.a2a_provider, "_auth", None) is not None,
+            sorted((self.a2a_provider.headers or {}).keys()),
+        )
+        # >>> A2A_AUTH_DEBUG_END <<<
         try:
             with get_async_bridge() as bridge:
                 headers = bridge.run(self._auth_credential.get_headers())
@@ -297,6 +322,18 @@ class A2AAgentNode(
                     f"Cannot refresh auth headers for A2A node {self.uid}: "
                     "no headers returned"
                 )
+            # >>> A2A_AUTH_DEBUG_START (temporary — delete this block) <<<
+            auth_val = headers.get("Authorization") or headers.get("authorization") or ""
+            auth_scheme = auth_val.split(" ", 1)[0] if auth_val else ""
+            logger.info(
+                "A2A_AUTH_DEBUG node=%s refresh ok header_keys=%s "
+                "has_authorization=%s auth_scheme=%r",
+                self.uid,
+                sorted(headers.keys()),
+                bool(auth_val),
+                auth_scheme,
+            )
+            # >>> A2A_AUTH_DEBUG_END <<<
             self.a2a_provider.update_headers(headers)
         except AuthError as exc:
             logger.warning(
