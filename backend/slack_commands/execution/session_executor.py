@@ -9,6 +9,7 @@ import atexit
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Optional
 from urllib.parse import urlparse
 
 import requests
@@ -42,10 +43,11 @@ class SessionExecutor:
         response_url: str,
         *,
         public: bool = False,
+        team_uid: Optional[str] = None,
     ) -> None:
         """Submit a background task that creates, submits, polls, and responds."""
         self._pool.submit(
-            self._execute, user_name, workflow_id, question, response_url, False, public,
+            self._execute, user_name, workflow_id, question, response_url, False, public, team_uid,
         )
 
     def continue_session(
@@ -70,14 +72,15 @@ class SessionExecutor:
         response_url: str,
         is_continuation: bool,
         public: bool,
+        team_uid: Optional[str] = None,
     ) -> None:
         try:
             if is_continuation:
                 session_id = ref_id
             else:
-                session_id = self._create_session(user_name, ref_id)
+                session_id = self._create_session(user_name, ref_id, team_uid=team_uid)
 
-            self._submit_session(user_name, session_id, question)
+            self._submit_session(user_name, session_id, question, team_uid=team_uid)
             status = self._poll_until_terminal(session_id, user_name)
 
             if status == "COMPLETED":
@@ -123,15 +126,18 @@ class SessionExecutor:
 
     # ── MAS API calls ─────────────────────────────────────────────
 
-    def _create_session(self, user_name: str, workflow_id: str) -> str:
+    def _create_session(self, user_name: str, workflow_id: str, *, team_uid: Optional[str] = None) -> str:
+        payload = {"blueprintId": workflow_id}
+        if team_uid:
+            payload["teamId"] = team_uid
+        else:
+            payload["userId"] = user_name
+            payload["identityType"] = "user"
+
         resp = mas_post(
             f"{self._url}/api/sessions/user.session.create",
             user_name,
-            {
-                "blueprintId": workflow_id,
-                "userId": user_name,
-                "identityType": "user",
-            },
+            payload,
             timeout=15,
         )
         resp.raise_for_status()
@@ -148,16 +154,21 @@ class SessionExecutor:
                 return str(sid)
         raise ValueError(f"Unexpected create_session response type: {type(payload).__name__}")
 
-    def _submit_session(self, user_name: str, session_id: str, prompt: str) -> None:
+    def _submit_session(self, user_name: str, session_id: str, prompt: str, *, team_uid: Optional[str] = None) -> None:
+        payload = {
+            "sessionId": session_id,
+            "inputs": {"user_prompt": prompt},
+        }
+        if team_uid:
+            payload["teamId"] = team_uid
+        else:
+            payload["userId"] = user_name
+            payload["identityType"] = "user"
+
         resp = mas_post(
             f"{self._url}/api/sessions/user.session.submit",
             user_name,
-            {
-                "sessionId": session_id,
-                "inputs": {"user_prompt": prompt},
-                "userId": user_name,
-                "identityType": "user",
-            },
+            payload,
             timeout=15,
         )
         resp.raise_for_status()
