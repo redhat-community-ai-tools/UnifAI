@@ -269,7 +269,6 @@ def main():
 
     # Connect
     mongo_uri = f"mongodb://{MONGODB_IP}:{MONGODB_PORT}/"
-    qdrant_uri = f"{QDRANT_IP}:{QDRANT_PORT}"
     print(f"\nMongoDB: {mongo_uri} / {SOURCES_DB}.{SOURCES_COLLECTION}")
     print(f"Qdrant:  {QDRANT_URL}")
     print(f"Collections: {collections}")
