@@ -9,6 +9,7 @@ import atexit
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Optional
 from urllib.parse import urlparse
 
 import requests
@@ -39,13 +40,15 @@ class SessionExecutor:
         user_name: str,
         workflow_id: str,
         question: str,
-        response_url: str,
+        response_url: str = "",
         *,
         public: bool = False,
+        team_uid: Optional[str] = None,
+        reply_fn=None,
     ) -> None:
         """Submit a background task that creates, submits, polls, and responds."""
         self._pool.submit(
-            self._execute, user_name, workflow_id, question, response_url, False, public,
+            self._execute, user_name, workflow_id, question, response_url, False, public, team_uid, reply_fn,
         )
 
     def continue_session(
@@ -56,10 +59,11 @@ class SessionExecutor:
         response_url: str,
         *,
         public: bool = False,
+        team_uid: Optional[str] = None,
     ) -> None:
         """Submit a background task that submits to existing session, polls, and responds."""
         self._pool.submit(
-            self._execute, user_name, session_id, question, response_url, True, public,
+            self._execute, user_name, session_id, question, response_url, True, public, team_uid,
         )
 
     def _execute(
@@ -70,68 +74,61 @@ class SessionExecutor:
         response_url: str,
         is_continuation: bool,
         public: bool,
+        team_uid: Optional[str] = None,
+        reply_fn=None,
     ) -> None:
+        def _reply(text):
+            if reply_fn:
+                reply_fn(text)
+            else:
+                self._post_to_slack(response_url, text, public=public)
+
         try:
             if is_continuation:
                 session_id = ref_id
             else:
-                session_id = self._create_session(user_name, ref_id)
+                session_id = self._create_session(user_name, ref_id, team_uid=team_uid)
 
-            self._submit_session(user_name, session_id, question)
+            self._submit_session(user_name, session_id, question, team_uid=team_uid)
             status = self._poll_until_terminal(session_id, user_name)
 
             if status == "COMPLETED":
                 state = self._get_session_state(session_id, user_name)
                 text = self._format_answer(state, session_id)
-                self._post_to_slack(response_url, text, public=public)
+                _reply(text)
             else:
-                self._post_to_slack(
-                    response_url,
+                _reply(
                     f":x: Session ended with status: *{status}*\n"
                     f"_Session ID: `{session_id}`_",
-                    public=public,
                 )
 
         except requests.HTTPError as e:
             status_code = e.response.status_code if e.response is not None else "?"
             body = self._extract_error_body(e)
             logger.error("Session HTTP error: %s %s", status_code, body, exc_info=True)
-            self._post_to_slack(
-                response_url,
-                ":x: Session request failed. Please try again later.",
-                public=public,
-            )
+            _reply(":x: Session request failed. Please try again later.")
         except requests.Timeout:
-            self._post_to_slack(
-                response_url,
-                ":hourglass: MAS request timed out. The session may still be running.",
-                public=public,
-            )
+            _reply(":hourglass: MAS request timed out. The session may still be running.")
         except TimeoutError:
-            self._post_to_slack(
-                response_url,
-                ":x: Session timed out. It may still be running.",
-                public=public,
-            )
+            _reply(":x: Session timed out. It may still be running.")
         except Exception as e:
             logger.error("Session execution failed: %s", e, exc_info=True)
-            self._post_to_slack(
-                response_url,
-                ":x: An unexpected error occurred. Please try again later.",
-                public=public,
-            )
+            _reply(":x: An unexpected error occurred. Please try again later.")
 
     # ── MAS API calls ─────────────────────────────────────────────
 
-    def _create_session(self, user_name: str, workflow_id: str) -> str:
+    def _create_session(self, user_name: str, workflow_id: str, *, team_uid: Optional[str] = None) -> str:
+        payload = {"blueprintId": workflow_id}
+        if team_uid:
+            payload["teamId"] = team_uid
+        else:
+            payload["userId"] = user_name
+            payload["identityType"] = "user"
+
         resp = mas_post(
             f"{self._url}/api/sessions/user.session.create",
             user_name,
-            {
-                "blueprintId": workflow_id,
-                "userId": user_name,
-                "identityType": "user",
-            },
+            payload,
             timeout=15,
         )
         resp.raise_for_status()
@@ -148,16 +145,21 @@ class SessionExecutor:
                 return str(sid)
         raise ValueError(f"Unexpected create_session response type: {type(payload).__name__}")
 
-    def _submit_session(self, user_name: str, session_id: str, prompt: str) -> None:
+    def _submit_session(self, user_name: str, session_id: str, prompt: str, *, team_uid: Optional[str] = None) -> None:
+        payload = {
+            "sessionId": session_id,
+            "inputs": {"user_prompt": prompt},
+        }
+        if team_uid:
+            payload["teamId"] = team_uid
+        else:
+            payload["userId"] = user_name
+            payload["identityType"] = "user"
+
         resp = mas_post(
             f"{self._url}/api/sessions/user.session.submit",
             user_name,
-            {
-                "sessionId": session_id,
-                "inputs": {"user_prompt": prompt},
-                "userId": user_name,
-                "identityType": "user",
-            },
+            payload,
             timeout=15,
         )
         resp.raise_for_status()

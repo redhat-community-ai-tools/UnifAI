@@ -1,8 +1,14 @@
 """
 auth.discovery — discover auth requirements and initiate sign-in.
 
-For the sign-in flow: discovers the auth server from an MCP URL,
-checks for existing credentials, and initiates OAuth if needed.
+Shared by both MCP and A2A elements.  Two entry paths:
+
+1. **MCP** — ``mcp_url`` is provided; the action auto-detects the auth
+   server via well-known metadata, then checks for an existing credential
+   or initiates OAuth.
+2. **A2A** — ``server_identifier`` is provided directly (selected from
+   the auth-server dropdown); the action checks for an existing credential
+   or initiates OAuth against that server.
 """
 
 from __future__ import annotations
@@ -16,7 +22,9 @@ from mas.actions.common.base_action import BaseAction
 from mas.actions.common.action_models import BaseActionInput, BaseActionOutput, ActionType
 from mas.core.auth.service import AuthService
 from mas.core.enums import ResourceCategory, AuthStatus, AuthErrorCode
-from mas.elements.providers.mcp_server_client.identifiers import Identifier
+from mas.elements.providers.mcp_server_client.identifiers import Identifier as McpIdentifier
+from mas.elements.nodes.a2a_agent.identifiers import Identifier as A2ANodeIdentifier
+from mas.elements.providers.a2a_client.identifiers import Identifier as A2AProviderIdentifier
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +55,11 @@ class DiscoveryAction(BaseAction):
     output_schema = DiscoveryOutput
     version = "1.0.0"
     tags = {"auth", "discovery"}
-    elements = {(ResourceCategory.PROVIDER.value, Identifier.TYPE)}
+    elements = {
+        (ResourceCategory.PROVIDER.value, McpIdentifier.TYPE),
+        (ResourceCategory.NODE.value, A2ANodeIdentifier.TYPE),
+        (ResourceCategory.PROVIDER.value, A2AProviderIdentifier.TYPE),
+    }
 
     def __init__(self, auth_service: Optional[AuthService] = None):
         super().__init__()

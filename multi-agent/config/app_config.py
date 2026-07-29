@@ -1,4 +1,7 @@
 import secrets
+
+from pydantic import Field
+
 from global_utils.config.config import SharedConfig
 
 
@@ -14,7 +17,7 @@ class AppConfig(SharedConfig):
     hostname: str = "0.0.0.0"
     port: str = "8002"
     version: str = "1.0.0"
-    admin_allowed_users: list = []  # Populate with user_ids (usernames) to grant admin access
+    admin_allowed_users: list = Field(default_factory=list)  # user_ids (usernames) for admin access
     secret_key: str = ""
 
     # Session cookie — must match Identity so Flask never re-signs with different attributes
