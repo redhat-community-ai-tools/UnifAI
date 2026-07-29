@@ -99,14 +99,15 @@ temporal:
     storageClassName: aws-ebs
 
 logging:
-  volumeName: "unifai-logging-volume"
-  requestedSize: 100Gi
-  className: aws-ebs
-  accessModes:
-    - ReadWriteOnce
-  keepPvc: true
-  annotations:
-    kubernetes.io/reclaimPolicy: Delete
-  labels:
-    paas.redhat.com/appcode: TAG-001
+  storage:
+    volumeName: "unifai-logging-volume"
+    requestedSize: 100Gi
+    className: aws-ebs
+    accessModes:
+      - ReadWriteOnce
+    keepPvc: true
+    annotations:
+      kubernetes.io/reclaimPolicy: Delete
+    labels:
+      paas.redhat.com/appcode: TAG-001
 

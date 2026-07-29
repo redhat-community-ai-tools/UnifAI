@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "logging.fullname" . }}
+  name: {{ .Values.storage.volumeName }}
   labels:
     {{- include "logging.labels" . | nindent 4 }}
     {{- with .Values.storage.labels }}
@@ -27,5 +27,4 @@ spec:
   {{- if .className }}
   storageClassName: {{ .className }}
   {{- end }}
-
-
+  {{- end }}
