@@ -11,7 +11,9 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
+
+from mas.core.auth.credentials.endpoint_validation import validate_oauth_endpoint
 
 
 def _is_expired(expires_at: Optional[datetime], buffer_seconds: int = 60) -> bool:
@@ -26,6 +28,22 @@ class TokenStatus(str, Enum):
     ACTIVE = "active"
     REFRESH_FAILED = "refresh_failed"
     REVOKED = "revoked"
+
+
+class StaticAuthMethod(str, Enum):
+    """Built-in auth dropdown options. Registry servers use free-form identifiers."""
+    NONE = "none"
+    ACCESS_TOKEN = "access_token"
+
+    @classmethod
+    def values(cls) -> frozenset[str]:
+        """All static dropdown values (e.g. for reserved-id / bind skips).
+
+        Returns:
+            frozenset of reserved static auth identifiers (e.g. ``none``,
+            ``access_token``).
+        """
+        return frozenset(m.value for m in cls)
 
 
 class TokenSet(BaseModel):
@@ -80,6 +98,25 @@ class ClientConfig(BaseModel):
     extra_authorize_params: Dict[str, str] = Field(default_factory=dict)
     protocol_type: str = "oauth2"
     server_identifier: str = ""
+    display_name: str = ""
+    categories: List[str] = Field(default_factory=list)
+
+    @field_validator("server_identifier")
+    @classmethod
+    def _normalize_and_reject_reserved_ids(cls, v: str) -> str:
+        # Match store normalization (rstrip("/")) before reserved-id checks so
+        # values like "none/" cannot bypass and later collide with StaticAuthMethod.
+        normalized = (v or "").rstrip("/")
+        if normalized in StaticAuthMethod.values():
+            raise ValueError(
+                f"server_identifier {v!r} is reserved for static auth methods"
+            )
+        return normalized
+
+    @field_validator("authorization_endpoint", "token_endpoint")
+    @classmethod
+    def _validate_oauth_endpoints(cls, v: str, info: ValidationInfo) -> str:
+        return validate_oauth_endpoint(v or "", field_name=info.field_name)
 
 
 class RecoveryResult(BaseModel):

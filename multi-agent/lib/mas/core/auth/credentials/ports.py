@@ -5,7 +5,7 @@ Auth-layer storage ports — protocol-agnostic persistence contracts.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import List, Optional
 
 from .models import StoredCredential, ClientConfig
 
@@ -36,3 +36,6 @@ class ServerConfigStore(ABC):
 
     @abstractmethod
     def save(self, user_id: str, config: ClientConfig) -> None: ...
+
+    @abstractmethod
+    def list_by_category(self, category: str) -> List[ClientConfig]: ...

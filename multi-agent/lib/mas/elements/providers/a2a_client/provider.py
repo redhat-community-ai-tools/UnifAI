@@ -6,6 +6,7 @@ Orchestrates client, converter, and polling.
 """
 
 import asyncio
+import logging
 from typing import Optional, Dict, Any, AsyncIterator, Iterator, Tuple
 
 from pydantic import HttpUrl
@@ -14,10 +15,14 @@ from a2a.types import AgentCard, TaskState
 
 from global_utils.utils.async_bridge import get_async_bridge
 
+from mas.core.auth.credentials.credential import AuthCredential
+from mas.core.auth.errors import AuthError
 from mas.elements.llms.common.chat.message import ChatMessage
 from mas.elements.providers.a2a_client.client import A2AClient, A2AClientError, A2AConnectionError
 from mas.elements.providers.a2a_client.converter import A2AConverter, ConversionResult
 from mas.elements.providers.a2a_client.result import A2AResult
+
+logger = logging.getLogger(__name__)
 
 
 class A2ATaskError(A2AClientError):
@@ -54,6 +59,7 @@ class A2AProvider:
             base_url: HttpUrl,
             agent_card: Optional[AgentCard] = None,
             headers: Optional[Dict[str, str]] = None,
+            auth: Optional[AuthCredential] = None,
     ):
         """
         Initialize provider.
@@ -61,13 +67,34 @@ class A2AProvider:
         Args:
             base_url: A2A agent URL
             agent_card: Pre-fetched agent card (optional)
-            headers: HTTP headers for auth (optional)
+            headers: Static HTTP headers (optional; e.g. additional_headers / bearer)
+            auth: Optional AuthCredential for live SSO token refresh
         """
         self.base_url = base_url
         self.agent_card = agent_card
         self.headers = headers or {}
+        self._auth = auth
         self._converter = A2AConverter()
         self._initialized = False
+
+    def update_headers(self, headers: Dict[str, str]) -> None:
+        """Merge new headers (e.g. refreshed auth token) into the provider."""
+        self.headers.update(headers)
+
+    async def _get_current_headers(self) -> Dict[str, str]:
+        """Merge live auth headers with static headers (static wins on key clash)."""
+        current: Dict[str, str] = {}
+        if self._auth:
+            try:
+                current.update(await self._auth.get_headers())
+            except AuthError as exc:
+                logger.warning(
+                    "A2AProvider: auth headers unavailable (%s)",
+                    type(exc).__name__,
+                )
+        if self.headers:
+            current.update(self.headers)
+        return current
 
     async def _ensure_initialized(self) -> None:
         """Initialize on first use."""
@@ -77,7 +104,7 @@ class A2AProvider:
         async with A2AClient(
                 self.base_url,
                 agent_card=self.agent_card,
-                headers=self.headers,
+                headers=await self._get_current_headers() or None,
         ) as client:
             self.agent_card = client.agent_card
 
@@ -117,7 +144,7 @@ class A2AProvider:
         async with A2AClient(
                 self.base_url,
                 agent_card=self.agent_card,
-                headers=self.headers,
+                headers=await self._get_current_headers() or None,
         ) as client:
             a2a_message = self._converter.to_a2a_message(
                 message,
@@ -211,7 +238,7 @@ class A2AProvider:
         async with A2AClient(
                 self.base_url,
                 agent_card=self.agent_card,
-                headers=self.headers,
+                headers=await self._get_current_headers() or None,
         ) as client:
             a2a_message = self._converter.to_a2a_message(
                 message,
@@ -265,7 +292,7 @@ class A2AProvider:
         async with A2AClient(
                 self.base_url,
                 agent_card=self.agent_card,
-                headers=self.headers,
+                headers=await self._get_current_headers() or None,
         ) as client:
             result = await client.cancel_task(task_id)
             conversion = self._converter.to_chat_message(result)
