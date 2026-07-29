@@ -118,11 +118,50 @@ class FakeResourceRepository:
                 return doc.model_copy(deep=True)
         return None
 
+    def _matches_query(self, doc: Resource, query: ResourceQuery) -> bool:
+        """Mirror ``MongoResourceRepository._build_resource_filter`` semantics
+        so tests exercise the same identity/category/type/ownership filtering
+        a real query would apply, instead of always returning every document.
+        """
+        if query.ownership == ResourceOwnership.BUILTIN:
+            if doc.ownership != ResourceOwnership.BUILTIN:
+                return False
+            if not query.is_admin and doc.visibility != ResourceVisibility.PUBLIC:
+                return False
+            if query.category and doc.category != query.category:
+                return False
+            if query.type and doc.type != query.type:
+                return False
+            return True
+
+        identity_match = (
+            doc.identity.type == query.identity.type
+            and doc.identity.id == query.identity.id
+        )
+        builtin_match = (
+            doc.ownership == ResourceOwnership.BUILTIN
+            and doc.visibility == ResourceVisibility.PUBLIC
+        )
+
+        if query.category and doc.category != query.category:
+            return False
+        if query.type and doc.type != query.type:
+            return False
+
+        if query.ownership == ResourceOwnership.CUSTOM:
+            return identity_match and doc.ownership == ResourceOwnership.CUSTOM
+
+        return identity_match or builtin_match
+
     def find_resources(self, query: ResourceQuery) -> List[Resource]:
-        return [doc.model_copy(deep=True) for doc in self._docs.values()]
+        return [
+            doc.model_copy(deep=True)
+            for doc in self._docs.values()
+            if self._matches_query(doc, query)
+        ]
 
     def count_resources(self, query: ResourceQuery) -> int:
-        return len(self._docs)
+        return sum(1 for doc in self._docs.values() if self._matches_query(doc, query))
 
     def count(self, identity: Identity, filter: Optional[dict] = None) -> int:
         return len(self._docs)

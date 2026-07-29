@@ -347,6 +347,7 @@ class BlueprintService:
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
+        is_admin: bool = False,
     ) -> BlueprintValidationResult:
         """
         Validate a blueprint draft before saving.
@@ -355,7 +356,7 @@ class BlueprintService:
         Useful for UI validation before creating a blueprint.
         """
         self._ensure_validation_service()
-        spec = self.resolve_draft_dict(draft_dict, identity=identity)
+        spec = self.resolve_draft_dict(draft_dict, identity=identity, is_admin=is_admin)
         return self._validate_spec(
             spec, "draft", timeout_seconds,
             user_id=user_id, credential_user_id=credential_user_id,
@@ -366,24 +367,26 @@ class BlueprintService:
         self,
         blueprint_id: str,
         identity: Optional[Identity] = None,
+        is_admin: bool = False,
     ) -> Dict[str, ElementCard]:
         """
         Get element cards for all elements in a saved blueprint.
         """
         self._ensure_card_service()
-        spec = self.load_resolved(blueprint_id, identity=identity)
+        spec = self.load_resolved(blueprint_id, identity=identity, is_admin=is_admin)
         return self._build_cards_from_spec(spec)
 
     def get_draft_cards(
         self,
         draft_dict: dict,
         identity: Optional[Identity] = None,
+        is_admin: bool = False,
     ) -> Dict[str, ElementCard]:
         """
         Get element cards for a blueprint draft.
         """
         self._ensure_card_service()
-        spec = self.resolve_draft_dict(draft_dict, identity=identity)
+        spec = self.resolve_draft_dict(draft_dict, identity=identity, is_admin=is_admin)
         return self._build_cards_from_spec(spec)
 
     # ────────── Helpers ──────────

@@ -144,7 +144,7 @@ class ResourceFieldEncryption:
             sensitive |= hint_sensitive
         for field in sensitive:
             if cfg_dict.get(field):
-                cfg_dict[field] = self._cipher.encrypt(cfg_dict[field])
+                cfg_dict[field] = self._cipher.encrypt(str(cfg_dict[field]))
         return cfg_dict
 
     @staticmethod

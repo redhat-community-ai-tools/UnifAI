@@ -28,6 +28,13 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
   // masking / hidden-field filtering (which depend on elementSchema/ownership)
   // can't be bypassed by a render that happens before they resolve.
   const [schemaResolved, setSchemaResolved] = useState(false);
+  // RID the above state was resolved for. `schemaResolved` alone isn't
+  // enough to gate rendering: state setters from the effect only take
+  // effect on the *next* render, so if `element` swaps to a new resource
+  // before that render happens, a render could otherwise compute
+  // `displayableConfig` from the new element's config using the previous
+  // resource's `ownership`/`elementSchema` — applying the wrong filter.
+  const [resolvedRid, setResolvedRid] = useState<string | null>(null);
   const { getResourceName, resolveRefsInConfig } = useAgenticAI();
 
   // Built-ins use `/resources/builtin.schema` instead of the plain
@@ -41,6 +48,7 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
       setElementSchema(null);
       setOwnership(null);
       setSchemaResolved(false);
+      setResolvedRid(null);
       return;
     }
 
@@ -63,6 +71,7 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
           setOwnership(null);
           setElementSchema(null);
           setSchemaResolved(true);
+          setResolvedRid(rid);
         }
         return;
       }
@@ -83,7 +92,10 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
         console.error('Error fetching element schema:', error);
         if (!cancelled) setElementSchema(null);
       } finally {
-        if (!cancelled) setSchemaResolved(true);
+        if (!cancelled) {
+          setSchemaResolved(true);
+          setResolvedRid(rid);
+        }
       }
     })();
 
@@ -93,8 +105,15 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
   // Built-ins only surface configurable + card-visible fields; other ownerships
   // just drop `hints.hidden` bookkeeping fields. `ownership` must be
   // definitively resolved (not null) — an unresolved lookup fails closed
-  // rather than defaulting to the weaker non-builtin filter.
-  const displayableConfig = schemaResolved && ownership && element?.workspaceData?.config
+  // rather than defaulting to the weaker non-builtin filter. `resolvedRid`
+  // must also match the *current* element's rid — otherwise a render that
+  // happens after `element` swaps to a new resource but before the effect
+  // above has re-run/settled would apply the previous resource's
+  // ownership/schema filter to the new resource's config.
+  const displayableConfig = schemaResolved
+    && ownership
+    && resolvedRid === element?.workspaceData?.rid
+    && element?.workspaceData?.config
     ? (() => {
         const resolved = simplifyConfigForDisplay(resolveRefsInConfig(element.workspaceData.config));
         return ownership === 'builtin'

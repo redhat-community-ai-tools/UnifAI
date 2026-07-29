@@ -10,26 +10,32 @@ uncaught, and the Flask endpoint's generic ``except KeyError`` handler
 mislabeled it as "Blueprint not found: '<the missing resource's rid>'",
 even though the blueprint itself existed and was visible to the caller.
 """
+from typing import Dict, List, Optional
+
 import pytest
+from pydantic import BaseModel
 
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintResource
 from mas.blueprints.resolver import BlueprintResolver
 from mas.blueprints.service import BlueprintService
+from mas.core.element_meta import ElementConfigMeta
 from mas.core.identity import Identity
 from mas.core.ref.models import ProviderRef
+from mas.elements.common.validator import ElementValidationResult, ValidationContext
 from mas.elements.providers.types import ProviderSpec
+from mas.resources.models import Resource
 
 
 class _FakeResourcesService:
     """Minimal stand-in exposing only what BlueprintResolver calls."""
 
-    def get(self, rid: str):
+    def get(self, rid: str) -> Resource:
         raise KeyError(rid)
 
-    def get_visible(self, rid: str, *, is_admin: bool = False):
+    def get_visible(self, rid: str, *, is_admin: bool = False) -> Resource:
         raise KeyError(rid)
 
-    def resolve_resource(self, resource, identity=None):  # pragma: no cover
+    def resolve_resource(self, resource: Resource, identity: Optional[Identity] = None) -> BaseModel:  # pragma: no cover
         raise AssertionError("resolve_resource should not run when get() fails")
 
 
@@ -43,7 +49,9 @@ class _FakeBlueprintRepo:
 
 
 class _FakeValidationService:
-    def validate_ordered(self, configs, context):
+    def validate_ordered(
+        self, configs: List[ElementConfigMeta], context: ValidationContext,
+    ) -> Dict[str, ElementValidationResult]:
         # No successfully-resolved elements in these tests.
         assert configs == []
         return {}

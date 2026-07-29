@@ -153,8 +153,12 @@ class TestEncryption:
         doc = _make_builtin_resource(service, admin_identity, bearer_token="super-secret")
 
         raw = service.get(doc.rid)
-        assert raw.cfg_dict["bearer_token"] != "super-secret"
-        assert raw.cfg_dict["bearer_token"].startswith("gAAAAAB")
+        stored = raw.cfg_dict["bearer_token"]
+        assert stored != "super-secret"
+        # Behavior, not representation: it must be decryptable back to the
+        # original secret via the same cipher used elsewhere (also exercised
+        # end-to-end by test_resolve_decrypts_cfg_dict below).
+        assert service._fields._cipher.decrypt(stored) == "super-secret"
 
     def test_resolve_decrypts_cfg_dict(self, service, admin_identity):
         """Regression test: resolve() must return plaintext secrets to

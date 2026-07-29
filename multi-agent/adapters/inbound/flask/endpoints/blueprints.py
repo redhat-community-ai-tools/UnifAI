@@ -1,10 +1,11 @@
-from flask import Blueprint, jsonify, current_app, request, g
+from flask import Blueprint, jsonify, current_app, request, g, Response
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import yaml
 import logging
 from werkzeug.exceptions import BadRequest
 from typing import Optional
+from mas.core.identity import Identity
 from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
     BlueprintAccessDeniedError,
@@ -395,7 +396,12 @@ def set_metadata(blueprint_id, metadata):
     "user_id": fields.Str(data_key="userId", load_default=""),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_blueprint(identity, blueprint_id, user_id, timeout_seconds):
+def validate_blueprint(
+    identity: Identity,
+    blueprint_id: str,
+    user_id: str,
+    timeout_seconds: float,
+) -> tuple[Response, int]:
     """Validate all elements in a saved blueprint."""
     svc = current_app.container.blueprint_service
     authenticated_user = getattr(g, G_IDENTITY_USERNAME, "")

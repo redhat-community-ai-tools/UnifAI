@@ -24,7 +24,7 @@ from mas.core.ref.models import RetrieverRef
 from mas.core.auth.credentials.models import StaticAuthMethod
 from mas.core.field_hints import (
     ActionHint, HintType, SelectionType,
-    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, CardHint, combine_hints,
+    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, CardHint, CardContext, combine_hints,
 )
 
 
@@ -54,7 +54,7 @@ class A2AAgentNodeConfig(NodeBaseConfig):
                     "auth_method": "auth_method",
                 },
             ),
-            CardHint(contexts=["custom"]),
+            CardHint(contexts=[CardContext.CUSTOM]),
         ),
     )
 
@@ -142,5 +142,5 @@ class A2AAgentNodeConfig(NodeBaseConfig):
     retriever: Optional[RetrieverRef] = Field(
         None,
         description="Retriever for context augmentation (optional)",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
