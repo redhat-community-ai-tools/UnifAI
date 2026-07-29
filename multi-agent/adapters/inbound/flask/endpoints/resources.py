@@ -110,7 +110,11 @@ def get_resource(identity, resource_id):
     svc = current_app.container.resources_service
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
-        doc = svc.get_visible(resource_id, is_admin=is_admin_user(username))
+        doc = svc.get_visible(
+            resource_id,
+            identity=identity,
+            is_admin=is_admin_user(username),
+        )
         return jsonify(doc.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404

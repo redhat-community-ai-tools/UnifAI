@@ -137,17 +137,38 @@ class ResourcesService:
         """Get a single resource by ID."""
         return self._store.get(rid)
 
-    def get_visible(self, rid: str, *, is_admin: bool = False) -> Resource:
-        """Get a resource by ID, enforcing draft-builtin visibility.
+    def get_visible(
+        self, rid: str, *, identity: Optional[Identity] = None, is_admin: bool = False,
+    ) -> Resource:
+        """Get a resource by ID, enforcing draft-builtin visibility and ownership.
 
         Draft built-ins are only visible to admins. Non-admin callers
         receive a KeyError (404) for draft built-ins.
+
+        When ``identity`` is provided, a custom resource owned by a
+        different identity is likewise hidden (KeyError) from non-admin
+        callers — otherwise any authenticated caller could read another
+        user's or team's private resource just by guessing/enumerating its
+        rid. ``identity`` is optional (defaults to no ownership check) since
+        several internal callers (dependency resolution, card building,
+        blueprint validation) intentionally look up resources without
+        scoping to a single identity.
         """
         resource = self._store.get(rid)
+        if is_admin:
+            return resource
         if (
             resource.ownership == ResourceOwnership.BUILTIN
             and resource.visibility != ResourceVisibility.PUBLIC
-            and not is_admin
+        ):
+            raise KeyError(rid)
+        if (
+            identity is not None
+            and resource.ownership != ResourceOwnership.BUILTIN
+            and (
+                resource.identity.type != identity.type
+                or resource.identity.id != identity.id
+            )
         ):
             raise KeyError(rid)
         return resource

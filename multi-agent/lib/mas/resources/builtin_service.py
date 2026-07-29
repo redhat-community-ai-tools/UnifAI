@@ -178,16 +178,29 @@ class BuiltinResourceService:
 
         # Validate the overlay against the element's Pydantic model before
         # persisting, the same way ResourcesService.create()/update_builtin()
-        # validate cfg_dict. Merge onto the (decrypted) base config first so
-        # cross-field constraints see the complete picture, then re-extract
-        # only the overridden keys from the validated/coerced output — this
-        # ensures invalid values are rejected here instead of silently
-        # persisting and only surfacing later at resolve() time.
+        # validate cfg_dict. Merge onto the (decrypted) base config, then the
+        # caller's *existing* overlay (so unrelated fields already configured
+        # by this identity survive validation), then the newly-filtered
+        # values last so they win — this ensures cross-field constraints see
+        # the complete *effective* configuration, not just the base plus
+        # this call's fields, and re-extract only the overridden keys from
+        # the validated/coerced output so invalid values are rejected here
+        # instead of silently persisting and only surfacing later at
+        # resolve() time.
         model_cls = self.element_registry.get_schema(
             ResourceCategory(resource.category), resource.type
         )
+        key = identity_to_key(identity)
+        existing = self._builtin_user_config_repo.get(rid, key)
+
         base_config = self._store.raw_config(rid)
-        merged = {**base_config, **filtered}
+        existing_fields = {}
+        if existing:
+            existing_fields = self._fields.decrypt_config_fields(
+                {k: v for k, v in existing.fields.items() if k in allowed_keys},
+                sensitive_keys, model_cls,
+            )
+        merged = {**base_config, **existing_fields, **filtered}
         try:
             cfg_model = model_cls(**merged)
         except PydanticValidationError as e:
@@ -197,8 +210,6 @@ class BuiltinResourceService:
 
         encrypted = self._fields.encrypt_config_fields(validated, sensitive_keys, model_cls)
 
-        key = identity_to_key(identity)
-        existing = self._builtin_user_config_repo.get(rid, key)
         if existing:
             existing.fields.update(encrypted)
             self._builtin_user_config_repo.save(existing)
@@ -575,22 +586,21 @@ class BuiltinResourceService:
         if name is not None:
             resource.name = name
 
-        going_public = available_to_all is True
-        if available_to_all is not None and not going_public:
-            if resource.visibility == ResourceVisibility.PUBLIC:
-                self._ensure_no_public_dependents(resource)
-            resource.visibility = ResourceVisibility.DRAFT
+        ends_public = available_to_all is True or (
+            available_to_all is None and resource.visibility == ResourceVisibility.PUBLIC
+        )
+        if available_to_all is False and resource.visibility == ResourceVisibility.PUBLIC:
+            self._ensure_no_public_dependents(resource)
 
-        # Persist config/name/off-visibility changes first — cascade
-        # validation below reads dependencies via fresh store lookups, so
-        # it must see any newly-added refs. Visibility is flipped to
-        # PUBLIC only *after* cascade-promotion succeeds, so a rejected
-        # cascade (see `_cascade_promote_dependencies`) never leaves this
-        # resource public while referencing an invisible dependency.
+        # Persist config/name changes first — cascade validation below reads dependencies
+        # via fresh store lookups, so it must see any newly-added refs. Force DRAFT during
+        # this intermediate save so a rejected cascade never leaves this resource public
+        # while referencing an invisible dependency.
+        resource.visibility = ResourceVisibility.DRAFT
         updated = self._store.update(resource)
 
         cascaded: List[Resource] = []
-        if going_public:
+        if ends_public:
             cascaded = self._cascade_promote_dependencies(rid)
             updated.visibility = ResourceVisibility.PUBLIC
             updated = self._store.update(updated)

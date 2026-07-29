@@ -109,11 +109,15 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
   // must also match the *current* element's rid — otherwise a render that
   // happens after `element` swaps to a new resource but before the effect
   // above has re-run/settled would apply the previous resource's
-  // ownership/schema filter to the new resource's config.
+  // ownership/schema filter to the new resource's config. For non-builtins,
+  // `elementSchema` must also be present — without it, `filterHiddenFieldsInConfig`
+  // can't strip `hints.hidden` fields, so rendering must fail closed rather
+  // than leak raw (potentially secret-bearing) config.
   const displayableConfig = schemaResolved
     && ownership
     && resolvedRid === element?.workspaceData?.rid
     && element?.workspaceData?.config
+    && (ownership === 'builtin' || !!elementSchema?.config_schema)
     ? (() => {
         const resolved = simplifyConfigForDisplay(resolveRefsInConfig(element.workspaceData.config));
         return ownership === 'builtin'

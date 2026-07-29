@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from flask import Flask
+from flask import Flask, jsonify
 
 from inbound.flask.decorators import is_admin_user, require_admin_access
 
@@ -63,7 +63,6 @@ class TestRequireAdminAccess:
         @app.route("/admin-only")
         @require_admin_access
         def admin_only():
-            from flask import jsonify
             return jsonify({"ok": True})
 
         return app.test_client()
