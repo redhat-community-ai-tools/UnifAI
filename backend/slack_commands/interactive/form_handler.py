@@ -18,7 +18,8 @@ _SCOPE_TEAM = "team"
 
 
 class FormHandler:
-
+    """Handles the Slack `/unifai form` interactive modal flow (open, update, submit)."""
+    
     def __init__(self, mas_url: str, identity_client: IdentityClient, executor: SessionExecutor):
         self._mas_url = mas_url.rstrip("/")
         self._identity = identity_client
