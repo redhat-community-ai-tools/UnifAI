@@ -38,6 +38,7 @@ async def run_worker(
 
     node_executor = NodeExecutor(
         session_factory=container.session_factory,
+        tracing_service=container.tracing_service,
     )
 
     thread_pool = ThreadPoolExecutor(max_workers=threads)
@@ -46,7 +47,6 @@ async def run_worker(
         node_executor=node_executor,
         channel_factory=container.channel_factory,
         gate_factory=container.gate_factory,
-        tracing_service=container.tracing_service,
     )
 
     lifecycle = SessionLifecycle(repository=container.session_repo)

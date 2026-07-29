@@ -23,6 +23,7 @@ from mas.core.channels import ChannelFactory
 from mas.core.hitl.models import ToolApprovalPolicy
 from mas.core.hitl.ports import ApprovalGate, ApprovalGateFactory
 from mas.core.runtime_binder import NodeRuntimeBinder, NodeRuntimeBindings
+from mas.core.tracing import TracingService
 from mas.graph.state.graph_state import GraphState
 from mas.session.execution.lifecycle import SessionLifecycle
 from mas.session.domain.workflow_session import WorkflowSession
@@ -49,7 +50,7 @@ class ForegroundSessionRunner:
         channel_factory: ChannelFactory,
         gate_factory: Optional[ApprovalGateFactory] = None,
         binder: Optional[NodeRuntimeBinder] = None,
-        tracing_service=None,
+        tracing_service: TracingService = None,
     ) -> None:
         self._lifecycle = lifecycle
         self._channel_factory = channel_factory

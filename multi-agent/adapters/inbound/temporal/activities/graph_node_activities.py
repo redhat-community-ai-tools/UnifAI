@@ -23,7 +23,6 @@ from mas.core.hitl.ports import ApprovalGateFactory
 from mas.core.runtime_binder import NodeRuntimeBindings
 from mas.engine.distributed.node_executor import NodeExecutor
 from mas.graph.state.graph_state import GraphState
-from mas.core.tracing.service import TracingService
 from inbound.temporal.activities.heartbeat import heartbeat
 from temporal.models import ExecuteNodeParams, EvaluateConditionParams
 
@@ -43,42 +42,27 @@ class GraphNodeActivities:
         node_executor: NodeExecutor,
         channel_factory: Optional[ChannelFactory] = None,
         gate_factory: Optional[ApprovalGateFactory] = None,
-        tracing_service: TracingService = None,
     ) -> None:
         self._executor = node_executor
         self._channel_factory = channel_factory
         self._gate_factory = gate_factory
-        self._tracing = tracing_service
 
     @activity.defn(name="execute_graph_node")
     @heartbeat(interval=3)
     def execute_node(self, params: ExecuteNodeParams) -> GraphState:
         bindings = self._build_bindings(params.session_id)
-
-        user_id = ""
-        if params.execution_context:
-            user_id = getattr(params.execution_context, "identity_id", "") or ""
-
-        with self._tracing.trace_session(
-            session_id=params.session_id,
-            user_id=user_id,
-            metadata={"node_uid": params.node_uid},
-        ):
-            try:
-                result = self._executor.execute_node(
-                    node_uid=params.node_uid,
-                    node_blueprint=params.node_blueprint,
-                    step_context=params.step_context,
-                    state=params.state,
-                    bindings=bindings,
-                    execution_context=params.execution_context,
-                )
-            finally:
-                self._tracing.flush()
-                if self._gate_factory is not None:
-                    self._gate_factory.remove(params.session_id)
-
-        return result
+        try:
+            return self._executor.execute_node(
+                node_uid=params.node_uid,
+                node_blueprint=params.node_blueprint,
+                step_context=params.step_context,
+                state=params.state,
+                bindings=bindings,
+                execution_context=params.execution_context,
+            )
+        finally:
+            if self._gate_factory is not None:
+                self._gate_factory.remove(params.session_id)
 
     @activity.defn(name="evaluate_condition")
     def evaluate_condition(self, params: EvaluateConditionParams) -> str:

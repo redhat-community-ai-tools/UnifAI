@@ -12,6 +12,8 @@ keeping the iterator focused on its core responsibility: step-by-step control.
 
 from typing import Iterator, Optional, List, Callable, Dict, Any
 
+from mas.core.tracing import TracingService
+
 from ..primitives import (
     AgentAction,
     AgentObservation,
@@ -69,7 +71,7 @@ class AgentIterator:
             execution_handler: ExecutionHandler,
             stream: Optional[Callable[[Dict[str, Any]], None]] = None,
             on_action: Optional[Callable[[AgentAction], bool]] = None,
-            tracing: Any = None,
+            tracing: TracingService = None,
     ):
         """
         Initialize clean agent iterator.
@@ -79,7 +81,7 @@ class AgentIterator:
             execution_handler: Handler for execution policy (auto/guided/etc)
             stream: Optional streaming callback for events
             on_action: Optional callback to approve/reject actions
-            tracing: Optional TracingService for observability
+            tracing: TracingService for observability
         """
         self.strategy = strategy
         self.execution_handler = execution_handler
@@ -95,9 +97,6 @@ class AgentIterator:
         # Queue for steps waiting to be yielded
         self._step_queue: List[AgentStep] = []
 
-        if tracing is None:
-            from mas.core.tracing.noop import NoOpTracingService
-            tracing = NoOpTracingService()
         self._tracing = tracing
 
     def __iter__(self) -> Iterator[AgentStep]:
@@ -144,10 +143,9 @@ class AgentIterator:
             self._finished = True
             raise StopIteration
 
-        strategy_name = getattr(self.strategy, "strategy_name", type(self.strategy).__name__)
         _iter_cm = self._tracing.trace_agent_iteration(
             iteration=self._iteration_count,
-            strategy=strategy_name,
+            strategy=self.strategy.strategy_name,
         )
         _iter_handle = _iter_cm.__enter__()
 

@@ -5,6 +5,7 @@ from mas.graph.state.state_view import StateView
 from typing import Optional, Any, Mapping, ClassVar
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.core.contracts import SupportsStateContext
+from mas.core.tracing import TracingService
 from mas.elements.nodes.common.capabilities.streaming_capable import StreamingCapableMixin
 
 
@@ -29,7 +30,7 @@ class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
     READS: ClassVar[set[str]] = set()
     WRITES: ClassVar[set[str]] = set()
 
-    def __init__(self, *, retries: int = 1, tracing_service=None, **kwargs: Any):
+    def __init__(self, *, retries: int = 1, tracing_service: TracingService = None, **kwargs: Any):
         super().__init__(**kwargs)  # MRO
         self.retries = retries
         self._ctx: Optional[StepContext] = None

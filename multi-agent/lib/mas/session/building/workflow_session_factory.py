@@ -15,10 +15,8 @@ from mas.core.execution_context import ExecutionContextHolder
 from mas.core.element_deps import ElementBuildContext
 from mas.blueprints.models.blueprint import BlueprintSpec
 from mas.core.auth.service import AuthService
-
-if TYPE_CHECKING:
-    from mas.core.platform_config import PlatformConfig
-    from mas.core.tracing import TracingService
+from mas.core.platform_config import PlatformConfig
+from mas.core.tracing import TracingService
 
 
 class WorkflowSessionFactory:
