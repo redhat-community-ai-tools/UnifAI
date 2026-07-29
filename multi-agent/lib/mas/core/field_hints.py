@@ -69,6 +69,11 @@ class ActionHint(BaseModel):
         default_factory=dict,
         description="Field dependencies for action input (config_field_name -> action_input_field)"
     )
+    constants: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Static values always sent to the action (action_input_field -> value). "
+                    "Unlike dependencies which read from form fields, constants are fixed.",
+    )
     pagination: bool = Field(
         default=False,
         description="Whether the action supports pagination (has next_cursor, has_more)"
@@ -306,16 +311,22 @@ class ConditionalHint(BaseModel):
     ``visible_when`` is satisfied (i.e. the named sibling field has the
     specified value).
 
-    Example::
+    Values can be plain scalars (exact match) or operator objects:
 
-        json_schema_extra=combine_hints(
-            SecretHint(),
-            ConditionalHint(visible_when={"auth_method": "access_token"}),
-        )
+    * ``"access_token"``  — field must equal ``"access_token"``
+    * ``{"in": ["a", "b"]}`` — field must be one of the listed values
+    * ``{"not_in": ["a", "b"]}`` — field must NOT be one of the listed values
+
+    Examples::
+
+        ConditionalHint(visible_when={"auth_method": "access_token"})
+        ConditionalHint(visible_when={"auth_method": {"not_in": ["none", "access_token"]}})
     """
     visible_when: dict[str, Any] = Field(
         ...,
-        description="Map of {field_name: required_value}. All must match for the field to be visible.",
+        description="Map of {field_name: required_value_or_operator}. "
+                    "All must match for the field to be visible. "
+                    "Values can be scalars (exact match) or operator objects like {\"not_in\": [...]}.",
     )
 
     def model_dump(self, **kwargs: Any) -> dict[str, Any]:

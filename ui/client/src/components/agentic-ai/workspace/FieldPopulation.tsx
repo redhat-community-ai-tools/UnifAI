@@ -365,6 +365,13 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
         });
       }
 
+      // Merge static constants (fixed values that don't come from form fields)
+      if (populateHint.constants) {
+        Object.entries(populateHint.constants).forEach(([key, value]) => {
+          inputData[key] = value;
+        });
+      }
+
       // Add pagination params if supported
       if (supportsPagination) {
         inputData.limit = 30;
