@@ -136,10 +136,16 @@ volumes:
   - name: unifai-rag-shared-storage
     persistentVolumeClaim:
       claimName: unifai-rag-shared-storage
+  - name: unifai-logging-volume
+    persistentVolumeClaim:
+      claimName: unifai-logging-volume
 
 volumeMounts:
   - name: unifai-rag-shared-storage
     mountPath: /app/shared
+  - name: unifai-logging-volume
+    mountPath: /var/log/rag-celery
+    readOnly: false
 
 nodeSelector: {}
 

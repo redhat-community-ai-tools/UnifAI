@@ -83,8 +83,15 @@ slackSocket:
       cpu: 100m
       memory: 128Mi
 
-volumes: []
-volumeMounts: []
+volumes: 
+  - name: unifai-logging-volume
+    persistentVolumeClaim:
+      claimName: unifai-logging-volume
+volumeMounts:
+  - name: unifai-logging-volume
+    mountPath: /var/log/backend
+    readOnly: false
+    
 nodeSelector: {}
 tolerations: []
 affinity: {}

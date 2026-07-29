@@ -79,3 +79,9 @@ releases:
         command: bash
         args:
         - "./scripts/shared-resources-postsync.sh"
+
+  - name: unifai-logging
+    chart: ./shared-resources/logging
+    wait: true
+    values:
+     - {{- toYaml .Values.logging | nindent 8 }}
