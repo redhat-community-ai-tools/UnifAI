@@ -11,6 +11,7 @@ from global_utils.utils.singleton import SingletonMeta
 from global_utils.utils.util import get_mongo_url
 
 from slack_commands.commands.ask import AskCommand
+from slack_commands.interactive.form_handler import FormHandler
 from slack_commands.commands.cancel import CancelCommand
 from slack_commands.commands.delete import DeleteCommand
 from slack_commands.commands.health import HealthCommand
@@ -84,6 +85,13 @@ class AppContainer(metaclass=SingletonMeta):
                 "delete": DeleteCommand(base_url=mas_url),
                 "history": HistoryCommand(base_url=mas_url),
             }
+        )
+
+        # ── Interactive (modals) ─────────────────────────────────────
+        self.form_handler = FormHandler(
+            mas_url=mas_url,
+            identity_client=self.identity_client,
+            executor=session_executor,
         )
 
         self._initialized = True
