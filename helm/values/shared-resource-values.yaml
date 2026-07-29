@@ -102,9 +102,9 @@ logging:
   storage:
     volumeName: "unifai-logging-volume"
     requestedSize: 100Gi
-    className: aws-ebs
+    className: aws-efs-tier-c1
     accessModes:
-      - ReadWriteOnce
+      - ReadWriteMany
     keepPvc: true
     annotations:
       kubernetes.io/reclaimPolicy: Delete
