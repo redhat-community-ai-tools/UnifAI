@@ -11,6 +11,7 @@ import AgenticChats from "@/pages/AgenticChats";
 import AgenticTemplates from "@/pages/AgenticTemplates";
 import GetToKnow from "@/pages/GetToKnow";
 import Analytics from "@/pages/Analytics";
+import UserManagement from "@/pages/UserManagement";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { ProjectProvider } from '@/contexts/ProjectContext';
@@ -86,6 +87,7 @@ function AppRoutes() {
       <Route path="/configuration" component={Configuration} />
       <Route path="/guides" component={GuidesPage} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/users" component={UserManagement} />
       <Route component={NotFound} />
     </Switch>
   );

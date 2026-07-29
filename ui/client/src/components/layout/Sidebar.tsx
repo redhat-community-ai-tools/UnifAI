@@ -389,7 +389,7 @@ export default function Sidebar() {
             isActive={location === '/users'}
             status={null}
             isCollapsed={isCollapsed}
-            disabled={true}
+            disabled={false}
           />
           <NavItem 
             icon={<FaCog className="sidebar-icon" />} 
