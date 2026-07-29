@@ -14,7 +14,7 @@ activity body runs.  Cancellation is handled at the workflow level.
 pydantic_data_converter handles GraphState serialization/deserialization
 automatically — no manual .serialize()/.deserialize() calls needed.
 """
-from typing import Any, Optional
+from typing import Optional
 
 from temporalio import activity
 
@@ -43,14 +43,11 @@ class GraphNodeActivities:
         node_executor: NodeExecutor,
         channel_factory: Optional[ChannelFactory] = None,
         gate_factory: Optional[ApprovalGateFactory] = None,
-        tracing_service: Optional[TracingService] = None,
+        tracing_service: TracingService = None,
     ) -> None:
         self._executor = node_executor
         self._channel_factory = channel_factory
         self._gate_factory = gate_factory
-        if not tracing_service:
-            from mas.core.tracing.noop import NoOpTracingService
-            tracing_service = NoOpTracingService()
         self._tracing = tracing_service
 
     @activity.defn(name="execute_graph_node")
