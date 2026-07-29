@@ -26,7 +26,11 @@ class SlackCommandsService:
 
     def execute(self, command: SlackCommand) -> SlackResponse:
         """Dispatch a parsed command to the matching handler."""
-        handler = self._handlers.get(command.subcommand)
+        subcommand = command.subcommand
+        if subcommand in ("--help", "-h"):
+            subcommand = "help"
+
+        handler = self._handlers.get(subcommand)
 
         if handler is None:
             return SlackResponse(
