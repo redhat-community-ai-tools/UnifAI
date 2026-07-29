@@ -7,6 +7,7 @@ Supports Gemini models via the Google AI Studio API key.
 from __future__ import annotations
 
 import copy
+import logging
 from typing import Any, Iterator, List, Optional, Union
 
 from google import genai
@@ -17,6 +18,8 @@ from ..common.chat.message import ChatMessage
 from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import GoogleGenAIMessageConverter
 from .tools_converter import GoogleGenAIToolsConverter
+
+logger = logging.getLogger(__name__)
 
 _DISABLE_AUTO_FC = types.AutomaticFunctionCallingConfig(disable=True)
 
@@ -75,6 +78,7 @@ class GoogleGenAILLM(BaseLLM):
 
         accumulated_text = ""
         collected_parts: List[types.Part] = []
+        yielded = False
 
         for chunk in self._client.models.generate_content_stream(
             model=self._model,
@@ -84,6 +88,7 @@ class GoogleGenAILLM(BaseLLM):
             if chunk.text:
                 accumulated_text += chunk.text
                 yield chunk.text
+                yielded = True
 
             for part in (chunk.parts or []):
                 if part.function_call is not None:
@@ -93,6 +98,11 @@ class GoogleGenAILLM(BaseLLM):
             yield GoogleGenAIMessageConverter.from_genai_parts(
                 collected_parts, accumulated_text,
             )
+            yielded = True
+
+        if not yielded:
+            logger.warning("Google GenAI stream returned no content and no tool calls (model=%s)", self._model)
+            yield ""
 
     def bind_tools(self, tools: List[ToolDefinition]) -> GoogleGenAILLM:
         clone = copy.copy(self)
