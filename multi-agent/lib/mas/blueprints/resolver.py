@@ -21,7 +21,9 @@ class BlueprintResolver:
         # Removed instance variables to make thread-safe:
         # _visited and _bucket are now local to each resolve() call
 
-    def resolve(self, draft: BlueprintDraft, identity: Identity = None) -> BlueprintSpec:
+    def resolve(
+        self, draft: BlueprintDraft, identity: Identity | None = None, is_admin: bool = False,
+    ) -> BlueprintSpec:
         """Resolve a draft into an executable spec.
 
         ``identity`` is the caller/session owner. When provided, any
@@ -31,15 +33,20 @@ class BlueprintResolver:
         Without it (e.g. schema-only tooling), built-ins resolve to their
         raw defaults — the same behavior as before overlays existed.
 
+        ``is_admin`` gates draft-builtin visibility the same way it does
+        elsewhere (``ResourcesService.get_visible``) — a non-admin caller's
+        external ref to a draft built-in is treated as not found rather
+        than resolved.
+
         Raises ``KeyError`` if any referenced resource no longer exists.
         Use ``resolve_tolerant`` when broken refs should be reported
         rather than raised (e.g. blueprint validation).
         """
-        spec, _broken_refs = self._resolve(draft, identity, strict=True)
+        spec, _broken_refs = self._resolve(draft, identity, strict=True, is_admin=is_admin)
         return spec
 
     def resolve_tolerant(
-        self, draft: BlueprintDraft, identity: Identity = None
+        self, draft: BlueprintDraft, identity: Identity | None = None, is_admin: bool = False,
     ) -> Tuple[BlueprintSpec, Dict[str, str]]:
         """Like ``resolve``, but never raises for a missing referenced resource.
 
@@ -48,13 +55,13 @@ class BlueprintResolver:
         so callers — namely blueprint validation — can surface them as
         per-element failures instead of aborting the whole request.
         """
-        return self._resolve(draft, identity, strict=False)
+        return self._resolve(draft, identity, strict=False, is_admin=is_admin)
 
     # --------------------------------------------------------------------
     # helpers
     # --------------------------------------------------------------------
     def _resolve(
-        self, draft: BlueprintDraft, identity: Identity, strict: bool
+        self, draft: BlueprintDraft, identity: Identity | None, strict: bool, is_admin: bool = False,
     ) -> Tuple[BlueprintSpec, Dict[str, str]]:
         # Create local state for this resolution (thread-safe)
         bucket: dict[str, list] = {}
@@ -70,10 +77,14 @@ class BlueprintResolver:
 
                 if not external_ref:
                     # inline resource → keep its config in the bucket
-                    self._stash_inline(cat, res, bucket, visited, identity, broken_refs, strict)
+                    self._stash_inline(
+                        cat, res, bucket, visited, identity, broken_refs, strict, is_admin,
+                    )
                 else:  # ← LIVE REF
                     # external Ref → fetch from registry
-                    self._walk_live(raw_rid, res.name, bucket, visited, identity, broken_refs, strict)
+                    self._walk_live(
+                        raw_rid, res.name, bucket, visited, identity, broken_refs, strict, is_admin,
+                    )
 
         # --- build executable spec ---------------------------------------
         spec = BlueprintSpec(
@@ -89,8 +100,8 @@ class BlueprintResolver:
     # --------------------------------------------------------------------
     def _stash_inline(
         self, cat: ResourceCategory, res: BlueprintResource, bucket: dict, visited: set,
-        identity: Identity, broken_refs: Dict[str, str], strict: bool,
-    ):
+        identity: Identity | None, broken_refs: Dict[str, str], strict: bool, is_admin: bool = False,
+    ) -> None:
         """Put an inline/frozen entry straight into the bucket."""
         concrete = res.config  # already a validated Pydantic model
         bucket.setdefault(cat.value, []).append(
@@ -99,19 +110,24 @@ class BlueprintResolver:
             )
         )
         # still inspect it for nested rids
-        self._scan_nested(concrete, bucket, visited, identity, broken_refs, strict)
+        self._scan_nested(concrete, bucket, visited, identity, broken_refs, strict, is_admin)
 
     def _walk_live(
         self, rid: str, name: str | None, bucket: dict, visited: set,
-        identity: Identity, broken_refs: Dict[str, str], strict: bool,
-    ):
-        """Fetch a live resource (with built-in overlay applied) and recurse."""
+        identity: Identity | None, broken_refs: Dict[str, str], strict: bool, is_admin: bool = False,
+    ) -> None:
+        """Fetch a live resource (with built-in overlay applied) and recurse.
+
+        Uses ``get_visible`` rather than a plain ``get`` so a non-admin
+        caller's ref to a draft built-in is treated the same as a missing
+        resource (KeyError) instead of resolving its config.
+        """
         if rid in visited:
             return
         visited.add(rid)
 
         try:
-            resource = self.resources_service.get(rid)
+            resource = self.resources_service.get_visible(rid, is_admin=is_admin)
         except KeyError:
             if strict:
                 raise
@@ -125,15 +141,15 @@ class BlueprintResolver:
         bucket.setdefault(cat, []).append(
             ResourceSpec[type(obj)](rid=rid, name=name, type=resource.type, config=obj)
         )
-        self._scan_nested(obj, bucket, visited, identity, broken_refs, strict)
+        self._scan_nested(obj, bucket, visited, identity, broken_refs, strict, is_admin)
 
     def _scan_nested(
         self, node: Any, bucket: dict, visited: set,
-        identity: Identity, broken_refs: Dict[str, str], strict: bool,
-    ):
+        identity: Identity | None, broken_refs: Dict[str, str], strict: bool, is_admin: bool = False,
+    ) -> None:
         """
         Recursively walk any BaseModel, dict, list/tuple or Ref.
         Whenever we hit an external Ref, call _walk_live.
         """
         for child_rid in RefWalker.external_rids(node):
-            self._walk_live(child_rid, None, bucket, visited, identity, broken_refs, strict)
+            self._walk_live(child_rid, None, bucket, visited, identity, broken_refs, strict, is_admin)

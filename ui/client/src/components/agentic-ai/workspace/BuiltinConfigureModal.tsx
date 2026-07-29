@@ -87,6 +87,8 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
           const actions = await fetchElementActions(element.category, element.type);
           if (!cancelled) setElementActions(actions || []);
         }
+      } catch (error) {
+        console.error('Error loading builtin schema/config:', error);
       } finally {
         if (!cancelled) setIsLoadingSchema(false);
       }
@@ -214,6 +216,12 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
 
         if (!isEmpty) {
           config[fieldName] = processedValue;
+        } else if (userOverlay && Object.prototype.hasOwnProperty.call(userOverlay, fieldName)) {
+          // Previously configured but now cleared by the user — send an
+          // explicit `null` so the backend overlay clears the stored value,
+          // instead of omitting the key (which would leave the old value in
+          // place). Fields that were never configured stay omitted.
+          config[fieldName] = null;
         }
       }
 

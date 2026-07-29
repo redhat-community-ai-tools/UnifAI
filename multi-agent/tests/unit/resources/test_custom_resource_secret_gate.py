@@ -5,6 +5,8 @@ only relevant when ``auth_method == "access_token"``) to verify the check works
 for *any* resource — custom or built-in — since it operates purely on the
 resolved config against its own schema, with no admin/overlay concept.
 """
+from typing import Any, Dict
+
 from pydantic import BaseModel, Field
 
 from mas.core.field_hints import SecretHint, ReadOnlyHint, ConditionalHint, combine_hints
@@ -16,6 +18,8 @@ TYPE_KEY = "fake_auth_provider"
 
 
 class FakeAuthProviderConfig(BaseModel):
+    """Fake resolved config mirroring the real MCP ``bearer_token`` field's hints."""
+
     auth_method: str = Field(default="access_token")
     bearer_token: str | None = Field(
         default=None,
@@ -35,7 +39,9 @@ class FakeAuthProviderConfig(BaseModel):
 
 
 class FakeElementRegistry:
-    def get_schema_json(self, category, type_key):
+    """Fake ``ElementRegistry`` exposing a single registered element's schema."""
+
+    def get_schema_json(self, category: str, type_key: str) -> Dict[str, Any]:
         if (category, type_key) != (CATEGORY, TYPE_KEY):
             raise KeyError((category, type_key))
         return FakeAuthProviderConfig.model_json_schema()
@@ -46,7 +52,9 @@ def _fields() -> ResourceFieldEncryption:
 
 
 class TestFindMissingConditionallyRequiredSecrets:
-    def test_flags_empty_bearer_token_when_access_token_mode(self):
+    """Tests for ``ResourceFieldEncryption.find_missing_conditionally_required_secrets``."""
+
+    def test_flags_empty_bearer_token_when_access_token_mode(self) -> None:
         resolved = FakeAuthProviderConfig(auth_method="access_token", bearer_token=None)
 
         missing = _fields().find_missing_conditionally_required_secrets(
@@ -55,7 +63,7 @@ class TestFindMissingConditionallyRequiredSecrets:
 
         assert missing == ["bearer_token"]
 
-    def test_does_not_flag_when_bearer_token_present(self):
+    def test_does_not_flag_when_bearer_token_present(self) -> None:
         resolved = FakeAuthProviderConfig(auth_method="access_token", bearer_token="tok-123")
 
         missing = _fields().find_missing_conditionally_required_secrets(
@@ -64,7 +72,7 @@ class TestFindMissingConditionallyRequiredSecrets:
 
         assert missing == []
 
-    def test_sign_in_mode_never_requires_bearer_token(self):
+    def test_sign_in_mode_never_requires_bearer_token(self) -> None:
         resolved = FakeAuthProviderConfig(auth_method="sign_in", bearer_token=None)
 
         missing = _fields().find_missing_conditionally_required_secrets(
@@ -73,7 +81,7 @@ class TestFindMissingConditionallyRequiredSecrets:
 
         assert missing == []
 
-    def test_secret_without_conditional_hint_is_never_flagged(self):
+    def test_secret_without_conditional_hint_is_never_flagged(self) -> None:
         """A secret field with no ConditionalHint is left alone even when
         empty — this check is intentionally scoped to fields the schema
         explicitly ties to another field's value."""
@@ -87,7 +95,7 @@ class TestFindMissingConditionallyRequiredSecrets:
 
         assert missing == []
 
-    def test_unknown_type_returns_empty(self):
+    def test_unknown_type_returns_empty(self) -> None:
         resolved = FakeAuthProviderConfig()
 
         missing = _fields().find_missing_conditionally_required_secrets(

@@ -69,7 +69,7 @@ class ActionHint(BaseModel):
         default_factory=dict,
         description="Field dependencies for action input (config_field_name -> action_input_field)"
     )
-    constants: Dict[str, Any] = Field(
+    constants: dict[str, Any] = Field(
         default_factory=dict,
         description="Static values always sent to the action (action_input_field -> value). "
                     "Unlike dependencies which read from form fields, constants are fixed.",

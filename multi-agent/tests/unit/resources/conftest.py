@@ -62,16 +62,16 @@ class FakeProviderConfig(BaseModel):
 class FakeElementRegistry:
     """Fake ``ElementRegistry`` exposing a single registered element."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._schemas = {(FAKE_CATEGORY, FAKE_TYPE): FakeProviderConfig}
 
-    def get_schema(self, category, type_key):
+    def get_schema(self, category: str, type_key: str) -> type:
         try:
             return self._schemas[(ResourceCategory(category), type_key)]
         except KeyError as exc:
             raise KeyError(f"No schema for {category}:{type_key}") from exc
 
-    def get_schema_json(self, category, type_key):
+    def get_schema_json(self, category: str, type_key: str) -> Dict[str, Any]:
         return self.get_schema(category, type_key).model_json_schema()
 
 
@@ -85,7 +85,7 @@ class FakeResourceRepository:
     a doc's new state against what's actually stored.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._docs: Dict[str, Resource] = {}
 
     def save(self, doc: Resource) -> str:
@@ -104,7 +104,9 @@ class FakeResourceRepository:
     def delete(self, rid: str) -> None:
         self._docs.pop(rid, None)
 
-    def find_by_name(self, identity, category, type, name):
+    def find_by_name(
+        self, identity: Identity, category: str, type: str, name: str,
+    ) -> Optional[Resource]:
         for doc in self._docs.values():
             if (
                 doc.identity.type == identity.type
@@ -113,19 +115,19 @@ class FakeResourceRepository:
                 and doc.type == type
                 and doc.name == name
             ):
-                return doc
+                return doc.model_copy(deep=True)
         return None
 
     def find_resources(self, query: ResourceQuery) -> List[Resource]:
-        return list(self._docs.values())
+        return [doc.model_copy(deep=True) for doc in self._docs.values()]
 
     def count_resources(self, query: ResourceQuery) -> int:
         return len(self._docs)
 
-    def count(self, identity, filter=None) -> int:
+    def count(self, identity: Identity, filter: Optional[dict] = None) -> int:
         return len(self._docs)
 
-    def meta(self, rid: str):
+    def meta(self, rid: str) -> Tuple[str, str]:
         doc = self.get(rid)
         return doc.category, doc.type
 
@@ -138,18 +140,25 @@ class FakeResourceRepository:
     def exists(self, rid: str) -> bool:
         return rid in self._docs
 
-    def count_by_config_field(self, identity, field, value, exclude_rid=""):
+    def count_by_config_field(
+        self, identity: Identity, field: str, value: Any, exclude_rid: str = "",
+    ) -> int:
         return 0
 
-    def group_count(self, identity, group_by, filter=None):
+    def group_count(
+        self, identity: Identity, group_by: List[str], filter: Optional[dict] = None,
+    ) -> list:
         return []
 
-    def delete_by_identity(self, identity) -> int:
+    def delete_by_identity(self, identity: Identity) -> int:
         return 0
 
-    def find_all_builtins(self, category=None, resource_type=None) -> List[Resource]:
+    def find_all_builtins(
+        self, category: Optional[str] = None, resource_type: Optional[str] = None,
+    ) -> List[Resource]:
         return [
-            d for d in self._docs.values() if d.ownership == ResourceOwnership.BUILTIN
+            d.model_copy(deep=True)
+            for d in self._docs.values() if d.ownership == ResourceOwnership.BUILTIN
         ]
 
 
@@ -163,10 +172,10 @@ class FakeBlueprintRepository:
 class FakeBuiltinUserConfigRepository:
     """In-memory stand-in for ``BuiltinUserConfigRepository``."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._configs: Dict[str, BuiltinUserConfig] = {}
 
-    def _key(self, resource_id, identity_key):
+    def _key(self, resource_id: str, identity_key: str) -> str:
         return f"{resource_id}::{identity_key}"
 
     def save(self, config: BuiltinUserConfig) -> str:

@@ -190,6 +190,12 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   const isSecret = fieldType === "secret";
   const isReadOnly = fieldSchema?.hints?.read_only?.read_only === true;
 
+  // Object-field JSON textarea: buffers the raw (possibly invalid) text so a
+  // mid-edit parse failure doesn't corrupt `formData` with a plain string in
+  // place of the expected object, while still surfacing the error inline.
+  const [objectFieldRawText, setObjectFieldRawText] = useState<string | null>(null);
+  const [objectParseError, setObjectParseError] = useState<string | null>(null);
+
   // Calculate if dependencies are validated for automatic population fields
   const areDependenciesValid = React.useMemo(() => {
     if (populateHint?.selection_type === "automatic" && populateHint?.dependencies) {
@@ -799,7 +805,9 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   // Handle object fields (like 'extra')
   if (fieldSchema.type === "object") {
     const isEmptyObject = typeof value === "object" && value !== null && Object.keys(value).length === 0;
-    const displayValue = isEmptyObject
+    const displayValue = objectFieldRawText !== null
+      ? objectFieldRawText
+      : isEmptyObject
       ? ""
       : typeof value === "object" ? JSON.stringify(value, null, 2) : value;
 
@@ -813,17 +821,32 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
           id={fieldName}
           value={displayValue}
           onChange={(e) => {
+            const text = e.target.value;
+            if (text.trim() === "") {
+              setObjectFieldRawText(null);
+              setObjectParseError(null);
+              onInputChange(fieldName, {});
+              return;
+            }
             try {
-              const parsed = JSON.parse(e.target.value);
+              const parsed = JSON.parse(text);
+              setObjectFieldRawText(null);
+              setObjectParseError(null);
               onInputChange(fieldName, parsed);
             } catch (error) {
-              onInputChange(fieldName, e.target.value);
+              // Keep the raw text in local state only — don't propagate
+              // invalid JSON to `formData`, which expects an object here.
+              setObjectFieldRawText(text);
+              setObjectParseError("Invalid JSON — fix it before this field can be saved.");
             }
           }}
           rows={6}
-          className={`bg-background-dark resize-none font-mono text-sm ${hasFieldError ? 'border-red-500' : ''}`}
+          className={`bg-background-dark resize-none font-mono text-sm ${hasFieldError || objectParseError ? 'border-red-500' : ''}`}
           placeholder="Enter JSON object (e.g., {})"
         />
+        {objectParseError && (
+          <p className="text-xs text-red-400">{objectParseError}</p>
+        )}
         {fieldSchema.description && (
           <p className="text-xs text-gray-400">{fieldSchema.description}</p>
         )}

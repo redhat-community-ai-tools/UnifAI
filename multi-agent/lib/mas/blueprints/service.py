@@ -91,7 +91,9 @@ class BlueprintService:
             blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs,
         )
 
-    def load_resolved(self, blueprint_id: str, identity: Optional[Identity] = None) -> BlueprintSpec:
+    def load_resolved(
+        self, blueprint_id: str, identity: Optional[Identity] = None, is_admin: bool = False,
+    ) -> BlueprintSpec:
         """Resolve a saved blueprint's refs into an executable spec.
 
         ``identity`` should be the session/caller owner so built-in
@@ -99,17 +101,21 @@ class BlueprintService:
         overlay applied. Without it, built-ins resolve to their raw
         defaults.
         """
-        return self._resolver.resolve(self.load_draft(blueprint_id), identity=identity)
+        return self._resolver.resolve(
+            self.load_draft(blueprint_id), identity=identity, is_admin=is_admin,
+        )
 
     def load_resolved_tolerant(
-        self, blueprint_id: str, identity: Optional[Identity] = None
+        self, blueprint_id: str, identity: Optional[Identity] = None, is_admin: bool = False,
     ) -> Tuple[BlueprintSpec, Dict[str, str]]:
         """Like ``load_resolved``, but reports broken external refs instead of raising.
 
         Used by validation, where a stale/deleted referenced resource should
         show up as a failing element rather than crash the whole request.
         """
-        return self._resolver.resolve_tolerant(self.load_draft(blueprint_id), identity=identity)
+        return self._resolver.resolve_tolerant(
+            self.load_draft(blueprint_id), identity=identity, is_admin=is_admin,
+        )
 
     def load_draft_from_dict(self, draft_dict: dict) -> BlueprintDraft:
         """Load a BlueprintDraft from a dictionary without saving to database.
@@ -121,10 +127,12 @@ class BlueprintService:
         return BlueprintDraft.from_stored_dict(draft_dict)
 
     def resolve_draft_dict(
-        self, draft_dict: dict, identity: Optional[Identity] = None
+        self, draft_dict: dict, identity: Optional[Identity] = None, is_admin: bool = False,
     ) -> BlueprintSpec:
         """Resolve a draft dictionary directly to BlueprintSpec without saving to database."""
-        return self._resolver.resolve(BlueprintDraft(**draft_dict), identity=identity)
+        return self._resolver.resolve(
+            BlueprintDraft(**draft_dict), identity=identity, is_admin=is_admin,
+        )
 
     def to_dict(self, blueprint_id: str) -> Dict[str, Any]:
         """Draft -> JSON-serialisable dict (no meta)."""
@@ -168,7 +176,7 @@ class BlueprintService:
         return self._repo.list_docs(identity=identity, **pg)
 
     def _resolve_doc(
-        self, doc: BlueprintDocument, identity: Optional[Identity] = None
+        self, doc: BlueprintDocument, identity: Optional[Identity] = None, is_admin: bool = False,
     ) -> BlueprintDocument:
         """Resolve a single document's spec_dict from draft to fully resolved form.
 
@@ -180,7 +188,9 @@ class BlueprintService:
         surfaces it as a failing/unvalidated element); only logged here.
         """
         draft = BlueprintDraft.from_stored_dict(doc.spec_dict)
-        spec, broken_refs = self._resolver.resolve_tolerant(draft, identity=identity)
+        spec, broken_refs = self._resolver.resolve_tolerant(
+            draft, identity=identity, is_admin=is_admin,
+        )
         if broken_refs:
             logger.warning(
                 "Blueprint '%s' has broken resource ref(s), resolved with gaps — %s",
@@ -193,7 +203,7 @@ class BlueprintService:
         return doc.model_copy(update={"spec_dict": resolved_dict})
 
     def list_resolved_docs(
-            self, *, identity: Optional[Identity] = None, **pg
+            self, *, identity: Optional[Identity] = None, is_admin: bool = False, **pg
     ) -> List[BlueprintDocument]:
         """
         Return documents with resolved spec_dict instead of draft spec_dict.
@@ -206,7 +216,7 @@ class BlueprintService:
 
         for doc in docs:
             try:
-                resolved_docs.append(self._resolve_doc(doc, identity=identity))
+                resolved_docs.append(self._resolve_doc(doc, identity=identity, is_admin=is_admin))
             except Exception as e:
                 logger.warning(
                     "Skipping blueprint '%s': resolution failed — %s",
@@ -217,7 +227,7 @@ class BlueprintService:
         return resolved_docs
 
     def get_resolved_doc(
-        self, blueprint_id: str, identity: Optional[Identity] = None
+        self, blueprint_id: str, identity: Optional[Identity] = None, is_admin: bool = False,
     ) -> BlueprintDocument:
         """
         Return a single document with its spec_dict resolved.
@@ -225,14 +235,19 @@ class BlueprintService:
         Raises:
             BlueprintNotFoundError: If the blueprint does not exist.
 
-        Note: refs to resources that no longer exist do NOT raise — see
+        Note: refs to resources that no longer exist (or, for a non-admin
+        caller, a draft built-in) do NOT raise — see
         ``_resolve_doc``/``resolve_tolerant``. The document still resolves;
-        the dangling ``$ref:...`` is simply left unresolved in place.
+        the reference is simply omitted from the resolved spec's resource
+        lists rather than the dangling ``$ref:...`` being left in place.
         """
         if not self.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
-        doc = self._repo.load(blueprint_id)
-        return self._resolve_doc(doc, identity=identity)
+        try:
+            doc = self._repo.load(blueprint_id)
+        except KeyError as exc:
+            raise BlueprintNotFoundError(blueprint_id) from exc
+        return self._resolve_doc(doc, identity=identity, is_admin=is_admin)
 
     def count(self, *, identity: Optional[Identity] = None) -> int:
         return self._repo.count(identity=identity)
@@ -294,6 +309,7 @@ class BlueprintService:
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
+        is_admin: bool = False,
     ) -> BlueprintValidationResult:
         """
         Validate all elements in a saved blueprint.
@@ -315,7 +331,9 @@ class BlueprintService:
         show up as failing elements in the returned result instead.
         """
         self._ensure_validation_service()
-        spec, broken_refs = self.load_resolved_tolerant(blueprint_id, identity=identity)
+        spec, broken_refs = self.load_resolved_tolerant(
+            blueprint_id, identity=identity, is_admin=is_admin,
+        )
         return self._validate_spec(
             spec, blueprint_id, timeout_seconds,
             user_id=user_id, credential_user_id=credential_user_id,

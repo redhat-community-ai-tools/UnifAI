@@ -179,8 +179,16 @@ class ResourcesService:
         return self._serialize_with_user_configured(resources, identity), total
 
     # ---------- resolve ----------
-    def resolve(self, rid: str, identity: Optional[Identity] = None) -> BaseModel:
-        resource = self._store.get(rid)
+    def resolve(
+        self, rid: str, identity: Optional[Identity] = None, is_admin: bool = False,
+    ) -> BaseModel:
+        """Resolve a resource by rid into its validated config model.
+
+        Enforces the same draft-builtin visibility as ``get_visible`` —
+        a non-admin caller cannot resolve (and thereby decrypt) a draft
+        built-in's config just by knowing its rid.
+        """
+        resource = self.get_visible(rid, is_admin=is_admin)
         return self.resolve_resource(resource, identity=identity)
 
     def resolve_resource(self, resource: Resource, identity: Optional[Identity] = None) -> BaseModel:
@@ -268,7 +276,9 @@ class ResourcesService:
         if not ordered_rids:
             raise KeyError(f"Resource not found: {rid}")
 
-        ordered_configs = self._build_configs_from_rids(ordered_rids, identity=identity)
+        ordered_configs = self._build_configs_from_rids(
+            ordered_rids, identity=identity, is_admin=is_admin,
+        )
 
         return self._validate_and_get(
             ordered_configs, rid, timeout_seconds,
@@ -424,7 +434,7 @@ class ResourcesService:
             self.get_visible(rid, is_admin=is_admin)
 
         all_rids = self._dependency_resolver.resolve_all_with_deps(rids)
-        configs = self._build_configs_from_rids(all_rids, identity=identity)
+        configs = self._build_configs_from_rids(all_rids, identity=identity, is_admin=is_admin)
 
         return self._card_service.build_all_cards(configs)
 
@@ -618,9 +628,14 @@ class ResourcesService:
             raise RuntimeError("CardService not configured")
 
     def _build_configs_from_rids(
-        self, rids: List[str], identity: Identity = None,
+        self, rids: List[str], identity: Identity = None, is_admin: bool = False,
     ) -> List[ElementConfigMeta]:
         """Build ElementConfigMeta list from saved resource rids.
+
+        Enforces draft-builtin visibility on every rid — including
+        transitive dependencies, not just the originally requested one —
+        via ``get_visible`` so a non-admin caller can't reach a draft
+        built-in's (decrypted) config through a dependency chain.
 
         For a built-in resource, also checks whether the resolved config is
         still missing a required per-identity secret (e.g. an MCP bearer
@@ -640,7 +655,7 @@ class ResourcesService:
         """
         configs: List[ElementConfigMeta] = []
         for rid in rids:
-            resource = self._store.get(rid)
+            resource = self.get_visible(rid, is_admin=is_admin)
             config = self.resolve_resource(resource, identity=identity)
 
             override_error = None

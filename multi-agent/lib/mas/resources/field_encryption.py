@@ -7,6 +7,8 @@ duplicated or drifting between the two.
 """
 from typing import Any, Dict, Optional, Tuple
 
+from pydantic import BaseModel
+
 from global_utils.utils.crypto import FieldCipher
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.enums import ResourceCategory
@@ -56,7 +58,7 @@ class ResourceFieldEncryption:
         self,
         category: str,
         type_key: str,
-        resolved_config: Any,
+        resolved_config: BaseModel,
         *,
         candidate_keys: Optional[set] = None,
         require_unconditional: bool = False,

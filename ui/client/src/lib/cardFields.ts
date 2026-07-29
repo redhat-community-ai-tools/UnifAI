@@ -1,6 +1,6 @@
 import { ElementSchema } from "@/types/workspace";
 import { formatConfigValue } from "@/utils/maskSecretFields";
-import { getStringEnumFromRef, resolveSchemaRef } from "@/lib/schemaRefs";
+import { getStringEnumFromRef, resolveSchemaRef, isFieldConditionallyVisible as isConditionallyVisible } from "@/lib/schemaRefs";
 
 export interface CardField {
   /** Config field name, e.g. "mcp_url" */
@@ -28,12 +28,6 @@ function isEmptyValue(value: any): boolean {
   if (typeof value === "string") return value.trim() === "";
   if (Array.isArray(value)) return value.length === 0;
   return false;
-}
-
-function isConditionallyVisible(fieldSchema: any, config: Record<string, any>): boolean {
-  const conditions = fieldSchema?.hints?.conditional?.visible_when;
-  if (!conditions) return true;
-  return Object.entries(conditions).every(([field, requiredValue]) => config?.[field] === requiredValue);
 }
 
 function humanizeFieldName(fieldName: string): string {

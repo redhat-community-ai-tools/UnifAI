@@ -48,13 +48,23 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
     setSchemaResolved(false);
 
     (async () => {
-      // Best-effort — an unresolvable rid falls back to non-builtin filtering below.
+      // Ownership gates which filter (builtin-allowlist vs. hidden-fields-only)
+      // is safe to apply below — an unresolvable rid must NOT fall back to the
+      // weaker non-builtin filter (it could leak locked built-in fields), so
+      // failure here leaves `ownership`/`elementSchema` null, which suppresses
+      // config rendering entirely (see `displayableConfig` below).
       let resolvedOwnership: 'builtin' | 'custom' | null = null;
       try {
         const resource = await getResource(rid);
         resolvedOwnership = resource.ownership ?? 'custom';
-      } catch {
-        resolvedOwnership = null;
+      } catch (error) {
+        console.error('Error resolving resource ownership:', error);
+        if (!cancelled) {
+          setOwnership(null);
+          setElementSchema(null);
+          setSchemaResolved(true);
+        }
+        return;
       }
       if (cancelled) return;
       setOwnership(resolvedOwnership);
@@ -81,8 +91,10 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
   }, [isOpen, element?.workspaceData?.rid, element?.workspaceData?.category, element?.workspaceData?.type]);
 
   // Built-ins only surface configurable + card-visible fields; other ownerships
-  // just drop `hints.hidden` bookkeeping fields.
-  const displayableConfig = schemaResolved && element?.workspaceData?.config
+  // just drop `hints.hidden` bookkeeping fields. `ownership` must be
+  // definitively resolved (not null) — an unresolved lookup fails closed
+  // rather than defaulting to the weaker non-builtin filter.
+  const displayableConfig = schemaResolved && ownership && element?.workspaceData?.config
     ? (() => {
         const resolved = simplifyConfigForDisplay(resolveRefsInConfig(element.workspaceData.config));
         return ownership === 'builtin'

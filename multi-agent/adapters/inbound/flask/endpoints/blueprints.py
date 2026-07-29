@@ -16,6 +16,7 @@ from mas.blueprints.exceptions import (
 from inbound.flask.decorators import (
     with_require_identity_authorization,
     with_authenticated_user,
+    is_admin_user,
     G_IDENTITY_USERNAME,
 )
 
@@ -129,16 +130,20 @@ def available_blueprint_summaries(identity):
 def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, sort_desc=True):
     try:
         svc = current_app.container.blueprint_service
+        username = getattr(g, G_IDENTITY_USERNAME, "")
+        is_admin = is_admin_user(username)
 
         # Single blueprint by ID
         if blueprint_id:
-            resolved = svc.get_resolved_doc(blueprint_id=blueprint_id, identity=identity)
+            resolved = svc.get_resolved_doc(
+                blueprint_id=blueprint_id, identity=identity, is_admin=is_admin,
+            )
             return jsonify(resolved.model_dump(mode="json")), 200
 
         # Paginated list
         total = svc.count(identity=identity)
         items = svc.list_resolved_docs(
-            identity=identity, skip=skip, limit=limit, sort_desc=sort_desc
+            identity=identity, skip=skip, limit=limit, sort_desc=sort_desc, is_admin=is_admin,
         )
         return jsonify({
             "items": [item.model_dump(mode="json") for item in items],
@@ -149,12 +154,12 @@ def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, 
 
     except BlueprintNotFoundError as e:
         return jsonify({"error": str(e)}), 404
-    except KeyError as e:
-        # The blueprint itself exists (checked above) but references a
-        # resource that no longer exists — surface a clear message instead
-        # of the bare KeyError string (e.g. "'<rid>'").
-        return jsonify({"error": f"Referenced resource not found: {e}"}), 404
     except Exception as e:
+        # Referenced-resource-not-found is already handled without raising
+        # (see BlueprintResolver.resolve_tolerant) — any KeyError reaching
+        # here is unexpected (e.g. a genuine bug), so let it fall through
+        # to the generic logged 500 rather than being mislabeled as a
+        # "referenced resource not found" 404.
         logger.exception(f"Unexpected error resolving blueprint(s) for blueprint_id={blueprint_id}")
         return jsonify({"error": str(e)}), 500
 
@@ -401,6 +406,7 @@ def validate_blueprint(identity, blueprint_id, user_id, timeout_seconds):
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,
+            is_admin=is_admin_user(authenticated_user),
         )
         return jsonify(result.model_dump()), 200
     except BlueprintNotFoundError as e:

@@ -26,6 +26,9 @@ class _FakeResourcesService:
     def get(self, rid: str):
         raise KeyError(rid)
 
+    def get_visible(self, rid: str, *, is_admin: bool = False):
+        raise KeyError(rid)
+
     def resolve_resource(self, resource, identity=None):  # pragma: no cover
         raise AssertionError("resolve_resource should not run when get() fails")
 

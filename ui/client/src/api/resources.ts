@@ -94,10 +94,11 @@ export async function listAllResources(params: {
   displayName?: string;
 }): Promise<ResourceInstance[]> {
   const PAGE_SIZE = 1000;
+  const MAX_PAGES = 100; // safety cap: 100k resources — guards against a runaway loop if the backend misreports has_more
   const resources: ResourceInstance[] = [];
   let offset = 0;
 
-  while (true) {
+  for (let page_num = 0; page_num < MAX_PAGES; page_num++) {
     const page = await listResources({ ...params, limit: PAGE_SIZE, offset });
     resources.push(...page.resources);
     if (!page.pagination?.has_more || page.resources.length === 0) {

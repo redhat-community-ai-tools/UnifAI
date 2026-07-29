@@ -197,13 +197,16 @@ endpoint; it was removed as unused (no UI caller).
 
 ### Seeding
 
-`AppContainer._seed_builtin_resources()` inserts `BUILTIN_RESOURCES` (from
-`builtin_templates.py`) at startup if not already present (checked via
-`ResourceRepository.exists(rid)` — templates use deterministic `rid`s).
-`pymongo.errors.DuplicateKeyError` from a concurrent-worker race is caught
-and ignored, so seeding stays idempotent regardless of worker count. New
-built-in templates default to `visibility=DRAFT` — an admin promotes them
-via the Repository Management panel when ready.
+There is no startup-time template seeding anymore — built-in resources are
+created on demand via `BuiltinResourceService.create_builtin_with_cascade()`
+(admin only, e.g. through the Repository Management panel), which persists
+the resource under the creating admin's own identity with a random `rid`
+(same as any other resource) rather than a deterministic one. New built-ins
+default to `visibility=DRAFT`; an admin promotes/toggles them public
+(`promote_with_cascade()` / `toggle_visibility_with_cascade()`) when ready.
+(A separate, unrelated idempotent script — `multi-agent/scripts/seed_auth_servers.py`
+— pre-populates the `server_configs` collection with known OAuth client
+configs; it has nothing to do with the `resources` collection above.)
 
 ### Sharing Interaction
 

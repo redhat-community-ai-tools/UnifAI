@@ -452,7 +452,11 @@ export const useWorkspaceData = () => {
     ) => {
       const silent = options?.silent ?? false;
       try {
-        setIsLoading(true);
+        // Silent background writes (e.g. persisting a discovered auth
+        // identifier) must not toggle the shared loading state — that would
+        // spuriously show a loading spinner elsewhere in the workspace for
+        // a save the user didn't initiate.
+        if (!silent) setIsLoading(true);
         setError(null);
 
         const result = await resourcesApi.configureBuiltin({
@@ -495,7 +499,7 @@ export const useWorkspaceData = () => {
         // don't dismiss the modal as if it had succeeded.
         throw err;
       } finally {
-        setIsLoading(false);
+        if (!silent) setIsLoading(false);
       }
     },
     [toast, USER_ID, identityType, revalidateResourceAndAncestors],

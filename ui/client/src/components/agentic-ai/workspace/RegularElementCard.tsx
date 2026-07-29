@@ -50,7 +50,7 @@ export const RegularElementCard: React.FC<RegularElementCardProps> = ({
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0, transition: { duration: 0.3, delay: index * 0.1 } }}
+      animate={{ opacity: 1, y: 0, transition: { duration: 0.3, delay: Math.min(index, 10) * 0.1 } }}
       whileHover={{ y: -8, scale: 1.03, transition: { duration: 0.15, delay: 0 } }}
       whileTap={{ scale: 0.97, transition: { duration: 0.1, delay: 0 } }}
       className="h-full"

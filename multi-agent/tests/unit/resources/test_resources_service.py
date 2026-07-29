@@ -488,7 +488,7 @@ class TestNestedDependencyCascade:
         agent = _make_custom_resource(service, alice, name="agent-with-retriever-dep")
         _link_nested(service, agent, retriever.rid)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="is not supported as a built-in resource"):
             service.promote_with_cascade(agent.rid)
 
         reloaded_agent = service.get(agent.rid)
@@ -512,7 +512,7 @@ class TestNestedDependencyCascade:
         )
         _link_nested(service, builtin_doc, retriever.rid)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="is not supported as a built-in resource"):
             service.update_builtin_with_cascade(builtin_doc.rid, available_to_all=True)
 
         reloaded_builtin = service.get(builtin_doc.rid)

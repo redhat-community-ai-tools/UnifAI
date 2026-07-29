@@ -7,6 +7,7 @@
  * containing the display string value. This is the explicit marker that identifies
  * a display object. Example: { id: "abc123", name: "My Doc", _display: "My Doc" }
  */
+import { resolveSchemaRef } from '@/lib/schemaRefs';
 
 /**
  * Check if an object is marked as a display object.
@@ -119,19 +120,35 @@ export const simplifyConfigForDisplay = (config: any): any => {
  */
 export const filterHiddenFieldsInConfig = (
   config: any,
-  schema?: { properties?: { [key: string]: any } },
+  schema?: any,
+  rootSchema?: any,
 ): any => {
-  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+  if (config === null || typeof config !== 'object') {
     return config;
+  }
+
+  // `rootSchema` carries `$defs` for `$ref` resolution and is threaded through
+  // recursive calls (it's only the top-level `config_schema` that has them).
+  const root = rootSchema ?? schema;
+  const resolvedSchema = schema?.$ref ? resolveSchemaRef(root, schema.$ref) ?? schema : schema;
+
+  if (Array.isArray(config)) {
+    return config.map((item) => filterHiddenFieldsInConfig(item, resolvedSchema?.items, root));
   }
 
   const filtered: any = {};
   for (const [key, value] of Object.entries(config)) {
-    const fieldSchema = schema?.properties?.[key];
+    const rawFieldSchema = resolvedSchema?.properties?.[key];
+    const fieldSchema = rawFieldSchema?.$ref
+      ? resolveSchemaRef(root, rawFieldSchema.$ref) ?? rawFieldSchema
+      : rawFieldSchema;
     if (fieldSchema?.hints?.hidden?.hint_type === 'hidden') continue;
 
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      filtered[key] = filterHiddenFieldsInConfig(value, schema);
+    if (value !== null && typeof value === 'object') {
+      // Recurse with the field's own (resolved) schema — not the parent's —
+      // so nested object/array properties are evaluated against their own
+      // `properties`/`items` rather than the outer schema's.
+      filtered[key] = filterHiddenFieldsInConfig(value, fieldSchema, root);
     } else {
       filtered[key] = value;
     }

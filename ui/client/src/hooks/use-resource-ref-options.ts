@@ -29,14 +29,14 @@ export function useResourceRefOptions(
     let cancelled = false;
 
     (async () => {
+      const categories = Array.from(refCategories);
+      const results = await Promise.allSettled(
+        categories.map((category) => fetchResourcesForCategory(category, ownershipFilter)),
+      );
       const options: RefOptionsMap = {};
-      for (const category of Array.from(refCategories)) {
-        try {
-          options[category] = await fetchResourcesForCategory(category, ownershipFilter);
-        } catch {
-          options[category] = [];
-        }
-      }
+      results.forEach((result, i) => {
+        options[categories[i]] = result.status === "fulfilled" ? result.value : [];
+      });
       if (!cancelled) setRefOptions(options);
     })();
 

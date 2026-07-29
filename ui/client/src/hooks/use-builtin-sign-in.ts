@@ -163,7 +163,14 @@ export function useBuiltinSignIn({
 
   const openAuthPopup = (url: string) => {
     popupAuthUrlRef.current = url;
-    popupRef.current = window.open(url, "oauth_signin", "width=600,height=700,scrollbars=yes");
+    const popup = window.open(url, "oauth_signin", "width=600,height=700,scrollbars=yes");
+    if (!popup) {
+      popupAuthUrlRef.current = null;
+      setSignInStatus("error");
+      setSignInMessage("Popup blocked — please allow popups for this site and try again");
+      return;
+    }
+    popupRef.current = popup;
   };
 
   // Opens the popup immediately, either from an already-known challenge or by

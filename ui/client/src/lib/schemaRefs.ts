@@ -22,6 +22,24 @@ export function resolveSchemaRef(rootSchema: any, ref: string): any | null {
   return current;
 }
 
+/**
+ * Evaluates a field's `hints.conditional.visible_when` against the current
+ * form/config values. A field with no conditional hint is always visible.
+ * Shared by `use-element-field-helpers.ts` (form rendering) and
+ * `cardFields.ts` (read-only card rendering) so both agree on what
+ * "conditionally visible" means.
+ */
+export function isFieldConditionallyVisible(
+  fieldSchema: any,
+  values: Record<string, any>,
+): boolean {
+  const conditions = fieldSchema?.hints?.conditional?.visible_when;
+  if (!conditions) return true;
+  return Object.entries(conditions).every(
+    ([field, requiredValue]) => values?.[field] === requiredValue,
+  );
+}
+
 /** Resolved string enum definition from `$defs`. */
 export interface ResolvedStringEnum {
   type: "string";

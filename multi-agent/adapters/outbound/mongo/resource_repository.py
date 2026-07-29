@@ -25,8 +25,20 @@ class MongoResourceRepository(ResourceRepository):
         self.col.create_index(
             [("identity.type", 1), ("identity.id", 1), ("created", -1)],
             background=True)
+        # One compound index per sortable field (see ResourceQuery.sort_by's
+        # allowlist) scoped by identity, matching the identity+created index
+        # above — keeps identity-scoped listings/sorts index-backed instead
+        # of falling back to an in-memory sort as the collection grows.
+        for sort_field in ("updated", "name", "type", "category"):
+            self.col.create_index(
+                [("identity.type", 1), ("identity.id", 1), (sort_field, 1)],
+                background=True)
+        # Covers the builtin-only query shape in `_build_resource_filter`
+        # (ownership=BUILTIN [+ visibility, category, type]) so admin/
+        # non-admin built-in listings hit the index on every filtered field
+        # instead of just narrowing by ownership then scanning.
         self.col.create_index(
-            "ownership",
+            [("ownership", 1), ("visibility", 1), ("category", 1), ("type", 1)],
             partialFilterExpression={"ownership": ResourceOwnership.BUILTIN.value},
             background=True,
         )
@@ -131,7 +143,7 @@ class MongoResourceRepository(ResourceRepository):
             builtin_filter["type"] = query.type
 
         if query.ownership == ResourceOwnership.CUSTOM:
-            return identity_filter
+            return {**identity_filter, "ownership": ResourceOwnership.CUSTOM.value}
 
         return {"$or": [identity_filter, builtin_filter]}
 

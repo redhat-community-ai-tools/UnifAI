@@ -33,7 +33,7 @@ def _make_docs_rag_resource(docs=None, tags=None):
 class TestShareClonerDocsRagStripping:
     """Cloning a docs_rag retriever must strip sender's doc references."""
 
-    def _build_cloner(self):
+    def _build_cloner(self) -> ShareCloner:
         resources_service = create_autospec(ResourcesService, instance=True)
         resources_service.exists_by_name.return_value = False
         bp_service = create_autospec(BlueprintService, instance=True)

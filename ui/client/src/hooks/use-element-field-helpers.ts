@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { getStringEnumFromRef } from "@/lib/schemaRefs";
+import { getStringEnumFromRef, isFieldConditionallyVisible as evaluateConditionalVisibility } from "@/lib/schemaRefs";
 
 export interface ElementFieldHelpers {
   isFieldConditionallyVisible: (fieldSchema: any) => boolean;
@@ -22,13 +22,7 @@ export function useElementFieldHelpers(
   formData: Record<string, any>,
 ): ElementFieldHelpers {
   const isFieldConditionallyVisible = useCallback(
-    (fieldSchema: any): boolean => {
-      const conditions = fieldSchema?.hints?.conditional?.visible_when;
-      if (!conditions) return true;
-      return Object.entries(conditions).every(
-        ([field, requiredValue]) => formData[field] === requiredValue,
-      );
-    },
+    (fieldSchema: any): boolean => evaluateConditionalVisibility(fieldSchema, formData),
     [formData],
   );
 
