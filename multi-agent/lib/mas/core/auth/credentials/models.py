@@ -37,7 +37,12 @@ class StaticAuthMethod(str, Enum):
 
     @classmethod
     def values(cls) -> frozenset[str]:
-        """All static dropdown values (e.g. for reserved-id / bind skips)."""
+        """All static dropdown values (e.g. for reserved-id / bind skips).
+
+        Returns:
+            frozenset of reserved static auth identifiers (e.g. ``none``,
+            ``access_token``).
+        """
         return frozenset(m.value for m in cls)
 
 
