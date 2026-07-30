@@ -4,7 +4,7 @@ from typing import Optional, List, Literal
 from .identifiers import Identifier
 from mas.core.ref.models import LLMRef, RetrieverRef, ToolRef, ProviderRef
 from mas.elements.nodes.common.agent.constants import StrategyType
-from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint, combine_hints
+from mas.core.field_hints import ApiHint, HintType, SelectionType, CardHint, CardContext, combine_hints
 from mas.core.hitl.models import HITLMode
 
 
@@ -25,18 +25,18 @@ class CustomAgentNodeConfig(NodeBaseConfig):
                 dependencies={"llm": "resourceId"},
                 field_mapping="is_valid"
             ),
-            CardHint(contexts=["builtin", "custom"]),
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]),
         ),
     )
     retriever: Optional[RetrieverRef] = Field(
         None,
         description="Retriever key to use",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
     tools: Optional[List[ToolRef]] = Field(
         default_factory=list,
         description="List of tool keys",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
     providers: Optional[List[ProviderRef]] = Field(
         default_factory=list,
@@ -51,7 +51,7 @@ class CustomAgentNodeConfig(NodeBaseConfig):
                 dependencies={"providers": "resourceIds"},
                 field_mapping="is_valid"
             ),
-            CardHint(contexts=["builtin", "custom"]),
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]),
         ),
     )
     system_message: str = Field(

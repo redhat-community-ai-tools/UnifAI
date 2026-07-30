@@ -341,7 +341,7 @@ class ShareCloner:
                 self.resources.save_resource(doc)
                 saved.append(doc)
         except Exception:
-            logger.error(
+            logger.exception(
                 "Batch resource creation failed after saving %d of %d "
                 "resources; rolling back the ones that succeeded",
                 len(saved), len(docs),

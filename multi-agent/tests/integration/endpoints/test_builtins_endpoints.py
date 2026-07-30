@@ -6,6 +6,7 @@ domain errors that route through ``BuiltinConfigUnavailableError`` /
 admin edit-lock routes degrade gracefully when collaboration isn't
 configured.
 """
+from typing import Any
 from unittest.mock import Mock
 
 from mas.resources.errors import (
@@ -15,7 +16,7 @@ from mas.resources.errors import (
 )
 
 
-def _fake_resource_dump(**overrides):
+def _fake_resource_dump(**overrides: Any) -> Mock:
     base = {"rid": "r1", "name": "thing", "category": "provider", "type": "mcp"}
     base.update(overrides)
     doc = Mock()
@@ -23,7 +24,7 @@ def _fake_resource_dump(**overrides):
     return doc
 
 
-def _fake_dependency(rid="dep-1", name="Dependency", category="llms"):
+def _fake_dependency(rid: str = "dep-1", name: str = "Dependency", category: str = "llms") -> Mock:
     """A stand-in for a ``Resource`` returned by ``preview_cascade_targets`` /
     ``BuiltinDependentsPublicError.dependents`` — the endpoint reads plain
     ``.rid`` / ``.name`` / ``.category`` attributes off these (not

@@ -11,6 +11,7 @@ from unittest.mock import Mock
 
 import pytest
 from flask import Flask, jsonify
+from flask.testing import FlaskClient
 
 from inbound.flask.decorators import is_admin_user, require_admin_access
 
@@ -54,7 +55,7 @@ class TestIsAdminUser:
 
 
 class TestRequireAdminAccess:
-    def _build_client(self, *, admin_config_reader=None, admin_allowed_users=None):
+    def _build_client(self, *, admin_config_reader=None, admin_allowed_users=None) -> FlaskClient:
         app = _make_app(
             admin_config_reader=admin_config_reader,
             admin_allowed_users=admin_allowed_users,

@@ -19,7 +19,7 @@ class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
         mongodb_ip: str = "localhost",
         db_name: str = "UnifAI",
         coll_name: str = "builtin_user_configs",
-    ):
+    ) -> None:
         mongo_uri = f"mongodb://{mongodb_ip}:{mongodb_port}/"
         self._client = pymongo.MongoClient(
             mongo_uri,
@@ -47,10 +47,14 @@ class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
 
     def save(self, config: BuiltinUserConfig) -> str:
         config.updated = datetime.now(timezone.utc)
-        doc = {"_id": config.config_id, **config.model_dump(mode="json")}
-        self.col.replace_one(
+        fields = config.model_dump(mode="json")
+        fields.pop("config_id", None)
+        self.col.update_one(
             {"resource_id": config.resource_id, "identity_key": config.identity_key},
-            doc,
+            {
+                "$set": fields,
+                "$setOnInsert": {"_id": config.config_id, "config_id": config.config_id},
+            },
             upsert=True,
         )
         return config.config_id

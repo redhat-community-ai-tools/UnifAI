@@ -4,6 +4,7 @@ scoping a required-secret check to fields that are actually relevant per
 is only required when ``auth_method == "access_token"`` (a ``sign_in``-mode
 built-in must never be forced through this gate).
 """
+from typing import Any, Dict, Type
 from unittest.mock import Mock
 
 import pytest
@@ -38,10 +39,10 @@ class FakeAuthProviderConfig(BaseModel):
 
 
 class FakeElementRegistry:
-    def get_schema(self, category, type_key):
+    def get_schema(self, _category: ResourceCategory, _type_key: str) -> Type[FakeAuthProviderConfig]:
         return FakeAuthProviderConfig
 
-    def get_schema_json(self, category, type_key):
+    def get_schema_json(self, _category: ResourceCategory, _type_key: str) -> Dict[str, Any]:
         return FakeAuthProviderConfig.model_json_schema()
 
 
@@ -70,7 +71,11 @@ def _builtin_resource() -> Resource:
 
 
 class TestConditionalSecretGate:
-    def test_missing_bearer_token_flagged_when_access_token_mode(self, builtin_service):
+    """Verifies the required-overlay-secret gate respects ``ConditionalHint`` scoping."""
+
+    def test_missing_bearer_token_flagged_when_access_token_mode(
+        self, builtin_service: BuiltinResourceService,
+    ) -> None:
         resource = _builtin_resource()
         resolved = FakeAuthProviderConfig(auth_method="access_token", bearer_token=None)
 
@@ -78,7 +83,9 @@ class TestConditionalSecretGate:
 
         assert missing == ["bearer_token"]
 
-    def test_present_bearer_token_not_flagged(self, builtin_service):
+    def test_present_bearer_token_not_flagged(
+        self, builtin_service: BuiltinResourceService,
+    ) -> None:
         resource = _builtin_resource()
         resolved = FakeAuthProviderConfig(auth_method="access_token", bearer_token="user-own-token")
 
@@ -86,7 +93,9 @@ class TestConditionalSecretGate:
 
         assert missing == []
 
-    def test_sign_in_mode_never_requires_bearer_token(self, builtin_service):
+    def test_sign_in_mode_never_requires_bearer_token(
+        self, builtin_service: BuiltinResourceService,
+    ) -> None:
         """ConditionalHint scoping: bearer_token is irrelevant once the
         resolved config is in sign_in mode, so an empty value must not be
         flagged as a missing overlay."""

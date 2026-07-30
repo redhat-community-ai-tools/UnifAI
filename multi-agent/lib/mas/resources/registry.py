@@ -133,5 +133,5 @@ class ResourcesRegistry:
         category: str | None = None,
         resource_type: str | None = None,
     ) -> List[Resource]:
-        """Return all built-in resources (public and private)."""
+        """Return all built-in resources (public and draft)."""
         return self._repo.find_all_builtins(category=category, resource_type=resource_type)

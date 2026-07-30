@@ -3,7 +3,7 @@ from pydantic import Field
 from typing import Dict, Optional, List, Literal
 from .identifiers import Identifier
 from mas.core.ref.models import LLMRef, RetrieverRef, ToolRef, ProviderRef, SandboxRef
-from mas.core.field_hints import ApiHint, HiddenHint, HintType, SelectionType, CardHint, combine_hints
+from mas.core.field_hints import ApiHint, HiddenHint, HintType, SelectionType, CardHint, CardContext, combine_hints
 from mas.core.hitl.models import HITLMode
 
 
@@ -29,20 +29,20 @@ class DeepAgentNodeConfig(NodeBaseConfig):
                 dependencies={"llm": "resourceId"},
                 field_mapping="is_valid"
             ),
-            CardHint(contexts=["builtin", "custom"]),
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]),
         ),
     )
 
     retriever: Optional[RetrieverRef] = Field(
         None,
         description="Retriever for context augmentation (optional)",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
 
     tools: Optional[List[ToolRef]] = Field(
         default_factory=list,
         description="List of tool keys",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
 
     providers: Optional[List[ProviderRef]] = Field(
@@ -58,7 +58,7 @@ class DeepAgentNodeConfig(NodeBaseConfig):
                 dependencies={"providers": "resourceIds"},
                 field_mapping="is_valid"
             ),
-            CardHint(contexts=["builtin", "custom"]),
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]),
         ),
     )
 
@@ -92,5 +92,5 @@ class DeepAgentNodeConfig(NodeBaseConfig):
     sandbox: Optional[SandboxRef] = Field(
         None,
         description="Sandbox execution environment (optional)",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )

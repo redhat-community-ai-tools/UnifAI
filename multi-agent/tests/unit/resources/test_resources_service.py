@@ -25,7 +25,7 @@ from tests.unit.resources.conftest import FAKE_CATEGORY, FAKE_TYPE
 
 # ────────────────────────────── helpers ──────────────────────────────
 
-def _make_custom_resource(service, identity, name="custom-1", bearer_token=None):
+def _make_custom_resource(service, identity, name="custom-1", bearer_token=None) -> Resource:
     return service.create(
         identity=identity,
         category=FAKE_CATEGORY,
@@ -35,7 +35,7 @@ def _make_custom_resource(service, identity, name="custom-1", bearer_token=None)
     )
 
 
-def _make_builtin_resource(service, admin_identity, name="builtin-1", available_to_all=True, bearer_token="s3cr3t"):
+def _make_builtin_resource(service, admin_identity, name="builtin-1", available_to_all=True, bearer_token="s3cr3t") -> Resource:
     resource, _ = service.create_builtin_with_cascade(
         identity=admin_identity,
         category=FAKE_CATEGORY,
@@ -47,7 +47,7 @@ def _make_builtin_resource(service, admin_identity, name="builtin-1", available_
     return resource
 
 
-def _make_disabled_category_resource(service, identity, name="my-retriever"):
+def _make_disabled_category_resource(service, identity, name="my-retriever") -> Resource:
     """A resource in a category that can never become a built-in
     (``ResourceCategory.RETRIEVER``), created by writing straight to the
     store since ``service.create()`` would need a registered schema for it."""
@@ -141,6 +141,30 @@ class TestVisibilityGuards:
         doc = _make_builtin_resource(service, admin_identity, available_to_all=False)
         with pytest.raises(KeyError):
             service.get_cards([doc.rid], is_admin=False)
+
+    def test_validate_resource_blocks_non_owner_on_custom_resource(self, service, alice, bob):
+        """Regression test: validate_resource must forward ``identity`` into
+        ``get_visible`` so a non-owner cannot validate someone else's custom
+        resource just by knowing its rid."""
+        doc = _make_custom_resource(service, alice)
+        with pytest.raises(KeyError):
+            service.validate_resource(doc.rid, identity=bob, is_admin=False)
+
+    def test_get_cards_blocks_non_owner_on_custom_resource(self, service, alice, bob):
+        """Regression test: get_cards must forward ``identity`` into
+        ``get_visible`` so a non-owner cannot build a card for someone
+        else's custom resource just by knowing its rid."""
+        doc = _make_custom_resource(service, alice)
+        with pytest.raises(KeyError):
+            service.get_cards([doc.rid], identity=bob, is_admin=False)
+
+    def test_resolve_blocks_non_owner_on_custom_resource(self, service, alice, bob):
+        """Regression test: resolve() must forward ``identity`` into
+        ``get_visible`` so a non-owner cannot resolve/decrypt someone
+        else's custom resource just by knowing its rid."""
+        doc = _make_custom_resource(service, alice, bearer_token="alices-secret")
+        with pytest.raises(KeyError):
+            service.resolve(doc.rid, identity=bob, is_admin=False)
 
 
 # ────────────────────────────── encryption ──────────────────────────────

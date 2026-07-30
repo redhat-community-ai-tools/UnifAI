@@ -255,6 +255,7 @@ export function BuiltinResourceTable({
                                       <Switch
                                         checked={availableToAll[resource.rid] ?? false}
                                         onCheckedChange={() => onToggleAvailableToAll(resource.rid)}
+                                        disabled={lockedByOther || lockUnknown}
                                       />
                                     )}
                                     {availableToAll[resource.rid] && (

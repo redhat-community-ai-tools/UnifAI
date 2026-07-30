@@ -40,7 +40,7 @@ class _FakeResourcesService:
 
 
 class _FakeBlueprintRepo:
-    def __init__(self, doc: BlueprintDocument):
+    def __init__(self, doc: BlueprintDocument) -> None:
         self._doc = doc
 
     def load(self, blueprint_id: str) -> BlueprintDocument:

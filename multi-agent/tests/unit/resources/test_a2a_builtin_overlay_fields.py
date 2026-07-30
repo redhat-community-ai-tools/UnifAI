@@ -26,38 +26,40 @@ ADMIN_CONTROLLED_FIELDS = {"base_url", "auth_method"}
 
 
 class _FakeElementRegistry:
-    def __init__(self, config_cls):
+    def __init__(self, config_cls: type, expected_category: str):
         self._config_cls = config_cls
+        self._expected_category = expected_category
 
-    def get_schema_json(self, category, type_key):
+    def get_schema_json(self, category: ResourceCategory, _type_key: str) -> dict:
+        assert category.value == self._expected_category
         return self._config_cls.model_json_schema()
 
 
-def _configurable_keys(config_cls) -> set:
-    fields = ResourceFieldEncryption(_FakeElementRegistry(config_cls), cipher=None)
-    configurable, _sensitive = fields.scan_schema_hints(ResourceCategory.NODE.value, "irrelevant")
+def _configurable_keys(config_cls: type, category: str) -> set:
+    fields = ResourceFieldEncryption(_FakeElementRegistry(config_cls, category), cipher=None)
+    configurable, _sensitive = fields.scan_schema_hints(category, "irrelevant")
     return configurable
 
 
 class TestA2AAgentNodeBuiltinOverlay:
-    def test_auth_fields_are_configurable(self):
-        configurable = _configurable_keys(A2AAgentNodeConfig)
-        assert REQUIRED_CONFIGURABLE_FIELDS <= configurable
+    def test_auth_fields_are_configurable(self) -> None:
+        configurable = _configurable_keys(A2AAgentNodeConfig, ResourceCategory.NODE.value)
+        assert configurable >= REQUIRED_CONFIGURABLE_FIELDS
 
-    def test_admin_controlled_fields_stay_locked(self):
+    def test_admin_controlled_fields_stay_locked(self) -> None:
         """base_url is the built-in resource's identity and auth_method is
         the admin's choice of *how* callers authenticate — both must stay
         read-only on the overlay; only the caller's own credentials
         (sign_in / bearer_token) are user-configurable."""
-        configurable = _configurable_keys(A2AAgentNodeConfig)
+        configurable = _configurable_keys(A2AAgentNodeConfig, ResourceCategory.NODE.value)
         assert ADMIN_CONTROLLED_FIELDS.isdisjoint(configurable)
 
 
 class TestA2AProviderBuiltinOverlay:
-    def test_auth_fields_are_configurable(self):
-        configurable = _configurable_keys(A2AProviderConfig)
-        assert REQUIRED_CONFIGURABLE_FIELDS <= configurable
+    def test_auth_fields_are_configurable(self) -> None:
+        configurable = _configurable_keys(A2AProviderConfig, ResourceCategory.PROVIDER.value)
+        assert configurable >= REQUIRED_CONFIGURABLE_FIELDS
 
-    def test_admin_controlled_fields_stay_locked(self):
-        configurable = _configurable_keys(A2AProviderConfig)
+    def test_admin_controlled_fields_stay_locked(self) -> None:
+        configurable = _configurable_keys(A2AProviderConfig, ResourceCategory.PROVIDER.value)
         assert ADMIN_CONTROLLED_FIELDS.isdisjoint(configurable)

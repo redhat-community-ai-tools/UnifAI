@@ -89,7 +89,7 @@ This is the SOLE mechanism for passing infrastructure into elements. Populated b
 | `ResourceCategory` | NODE, LLM, TOOL, PROVIDER, RETRIEVER, CONDITION, AUTH | Element spec declarations |
 | `ResourceOwnership` | BUILTIN, CUSTOM | Built-in vs. user-owned resources — see `references/resources.md` |
 | `ResourceVisibility` | DRAFT, PUBLIC | Built-in admin-only vs. all-users visibility — see `references/resources.md` |
-| `IdentityType` | USER, TEAM, SYSTEM | Identity scoping. `SYSTEM` (`Identity.system()`) is currently used only as the owner of seeded built-in resources — there is no `API_KEY` type yet. |
+| `IdentityType` | USER, TEAM | Identity scoping — there is no `SYSTEM` or `API_KEY` type. Built-in resources are owned by the creating admin's own (user) identity — see `references/resources.md`. |
 | `EngineType` | LANGGRAPH, TEMPORAL | Graph engine selection |
 
 Field hints (`ReadOnlyHint`, `CardHint`, `SecretHint`, `HiddenHint`, `ActionHint`, `ApiHint`,

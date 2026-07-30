@@ -41,17 +41,19 @@ export function CascadeConfirmDialog({
       <AlertDialogContent className="bg-background-card border-gray-800">
         <AlertDialogHeader>
           <AlertDialogTitle>Also make dependencies available to all?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Making &quot;{target?.resourceName}&quot; available to all also requires
-            making the following resources it uses available to all, since they
-            aren&apos;t public built-ins yet:
-            <ul className="list-disc list-inside mt-2 space-y-1">
-              {target?.cascaded.map((r) => (
-                <li key={r.rid}>
-                  {r.name} <span className="text-gray-500">({r.category})</span>
-                </li>
-              ))}
-            </ul>
+          <AlertDialogDescription asChild>
+            <div>
+              Making &quot;{target?.resourceName}&quot; available to all also requires
+              making the following resources it uses available to all, since they
+              aren&apos;t public built-ins yet:
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                {target?.cascaded.map((r) => (
+                  <li key={r.rid}>
+                    {r.name} <span className="text-gray-500">({r.category})</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

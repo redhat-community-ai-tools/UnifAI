@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
 from mas.core.identity import Identity
-from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, combine_hints
+from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, CardContext, combine_hints
 from mas.resources.models import Resource, ResourceQuery
 from mas.resources.registry import ResourcesRegistry
 from mas.resources.service import ResourcesService
@@ -33,8 +33,9 @@ class FakeProviderConfig(BaseModel):
     ``bearer_token`` field), one configurable field that is sensitive only
     via ``ENCRYPTED_FIELDS`` (no ``SecretHint``, like the real ``api_key``
     field on some LLM/provider configs), one read-only field, and one plain
-    field marked with ``CardHint(contexts=["custom"])`` (like the real MCP
-    ``mcp_url`` field) to exercise card-visibility schema passthrough."""
+    field marked with ``CardHint(contexts=[CardContext.CUSTOM])`` (like the
+    real MCP ``mcp_url`` field) to exercise card-visibility schema
+    passthrough."""
 
     ENCRYPTED_FIELDS: ClassVar[Tuple[str, ...]] = ("api_key",)
 
@@ -54,7 +55,7 @@ class FakeProviderConfig(BaseModel):
     endpoint: str = Field(
         default="https://example.com",
         json_schema_extra=combine_hints(
-            CardHint(contexts=["custom"]),
+            CardHint(contexts=[CardContext.CUSTOM]),
         ),
     )
 
@@ -197,7 +198,10 @@ class FakeResourceRepository:
     ) -> List[Resource]:
         return [
             d.model_copy(deep=True)
-            for d in self._docs.values() if d.ownership == ResourceOwnership.BUILTIN
+            for d in self._docs.values()
+            if d.ownership == ResourceOwnership.BUILTIN
+            and (category is None or d.category == category)
+            and (resource_type is None or d.type == resource_type)
         ]
 
 

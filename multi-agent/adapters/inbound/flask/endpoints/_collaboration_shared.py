@@ -80,7 +80,7 @@ def reject_if_locked_by_other(resource_id: str) -> Optional[tuple[Response, int]
     if holder is None:
         return None
     username = getattr(g, G_IDENTITY_USERNAME, "")
-    if holder.user_id == username:
+    if holder.user_id.casefold() == username.casefold():
         return None
     return jsonify({
         "error": f"Resource is currently locked for editing by "

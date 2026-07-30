@@ -18,6 +18,7 @@ class OpenAIConfig(BaseLLMConfig):
     )
     max_tokens: int = Field(
         4096,
+        ge=1,
         description="Maximum number of tokens to generate",
         json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
     )

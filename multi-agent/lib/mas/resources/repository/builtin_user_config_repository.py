@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Optional
 
 from mas.resources.builtin_models import BuiltinUserConfig
 
@@ -33,6 +33,6 @@ class BuiltinUserConfigRepository(ABC):
         ...
 
     @abstractmethod
-    def find_by_identity(self, identity_key: str) -> List[BuiltinUserConfig]:
+    def find_by_identity(self, identity_key: str) -> list[BuiltinUserConfig]:
         """Return all user configs for a given identity across all resources."""
         ...

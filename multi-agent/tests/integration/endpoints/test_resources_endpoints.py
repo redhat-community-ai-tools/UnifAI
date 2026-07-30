@@ -3,6 +3,7 @@
 Verifies route wiring, auth, and exception -> HTTP status-code mapping
 against a mocked ``resources_service`` (see ``conftest.py``).
 """
+from typing import Any
 from unittest.mock import Mock
 
 from mas.core.enums import ResourceOwnership
@@ -13,7 +14,7 @@ from mas.resources.errors import (
 )
 
 
-def _fake_resource_dump(**overrides):
+def _fake_resource_dump(**overrides: Any) -> Mock:
     base = {"rid": "r1", "name": "thing", "category": "provider", "type": "mcp"}
     base.update(overrides)
     doc = Mock()

@@ -14,6 +14,7 @@ import {
   ElementInstance,
 } from "../../../types/workspace";
 import { ElementConfigField } from "./ElementConfigField";
+import { isUserConfigurable } from "@/lib/cardFields";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
 import { useElementFieldHelpers } from "@/hooks/use-element-field-helpers";
 import { useConfigFieldActions } from "@/hooks/use-config-field-actions";
@@ -101,11 +102,8 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     if (!builtinSchema?.config_schema?.properties) return {};
     const fields: Record<string, any> = {};
     for (const [name, schema] of Object.entries(builtinSchema.config_schema.properties)) {
-      const s = schema as any;
-      if (s?.hints?.hidden?.hint_type === "hidden") continue;
-      if (s?.hints?.read_only?.read_only === true) continue;
-      if (s?.hints?.auth) continue;
-      fields[name] = s;
+      if (!isUserConfigurable(schema)) continue;
+      fields[name] = schema;
     }
     return fields;
   }, [builtinSchema]);

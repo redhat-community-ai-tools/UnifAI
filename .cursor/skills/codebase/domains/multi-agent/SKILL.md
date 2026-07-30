@@ -111,9 +111,9 @@ class Identity(BaseModel):
 Identity flows: Flask decorator resolves Identity → service method(identity=...) → repository scopes by identity.
 All repositories that filter by owner accept `Identity`. `ExecutionContext` carries identity through execution runtime.
 
-`IdentityType` also has a `SYSTEM` value (`Identity.system()`), used as the owner of
-seeded built-in resources (`resources/builtin_templates.py`) so every document in the
-`resources` collection has a consistent, non-null owner — see `references/resources.md`.
+There is no `SYSTEM` identity type — built-in resources are owned by the admin
+identity that created them via `BuiltinResourceService.create_builtin_with_cascade()`,
+same as any other resource — see `references/resources.md` ("Seeding").
 
 ### 3. Two-Phase Session Execution
 

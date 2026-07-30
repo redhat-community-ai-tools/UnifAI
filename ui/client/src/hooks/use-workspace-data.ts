@@ -206,10 +206,7 @@ export const useWorkspaceData = () => {
         const resourceSchema = await resourcesApi.getResourceSchema();
 
         // Then fetch the element-specific schema (cfg_dict schema)
-        const elementSchemaResponse = await axios.get<ElementSchema>(
-          `/catalog/element.spec.get?category=${category}&type=${type}`,
-        );
-        const elementSchema = elementSchemaResponse.data;
+        const elementSchema = await resourcesApi.getElementSpec(category, type);
 
         // Combine both schemas into a unified schema
         const combinedSchema: ElementSchema = {

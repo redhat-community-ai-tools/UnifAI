@@ -29,22 +29,24 @@ _MINIMAL_STORED_DICT = {
 
 
 class TestBlueprintDraftLegacyFields:
-    def test_direct_construction_rejects_legacy_field(self):
+    """Regression coverage for tolerant loading of legacy BlueprintDraft fields."""
+
+    def test_direct_construction_rejects_legacy_field(self) -> None:
         """Sanity check: plain construction is still strict for fresh input."""
         with pytest.raises(ValidationError):
             BlueprintDraft(**_MINIMAL_STORED_DICT)
 
-    def test_from_stored_dict_strips_legacy_field(self):
+    def test_from_stored_dict_strips_legacy_field(self) -> None:
         draft = BlueprintDraft.from_stored_dict(_MINIMAL_STORED_DICT)
         assert draft.name == "legacy blueprint"
         assert not hasattr(draft, "auths")
 
-    def test_from_stored_dict_preserves_known_fields(self):
+    def test_from_stored_dict_preserves_known_fields(self) -> None:
         stored = {**_MINIMAL_STORED_DICT, "description": "kept"}
         draft = BlueprintDraft.from_stored_dict(stored)
         assert draft.description == "kept"
 
-    def test_from_stored_dict_still_enforces_required_fields(self):
+    def test_from_stored_dict_still_enforces_required_fields(self) -> None:
         """Tolerance only applies to *unknown* keys — a genuinely missing
         required field (e.g. ``plan``) should still raise."""
         stored = {k: v for k, v in _MINIMAL_STORED_DICT.items() if k != "plan"}

@@ -6,7 +6,7 @@ definitions that combine inline configs and resource refs into an executable spe
 
 ## Architecture
 
-```
+```text
    BLUEPRINTS                          RESOURCES
    BlueprintService                    ResourcesService (facade)
       │ resolve(draft, identity) ─────►   │
@@ -23,14 +23,13 @@ for free through `ResourcesService.resolve()` without knowing built-ins exist.
 
 ### Structure
 
-```
+```text
 lib/mas/resources/
 ├── models.py                    Resource, ResourceQuery
 ├── registry.py                  ResourcesRegistry — thin persistence wrapper (uniqueness, in-use checks)
 ├── service.py                   ResourcesService — the public facade (see below)
 ├── builtin_service.py           BuiltinResourceService — admin lifecycle + overlays (internal collaborator)
 ├── builtin_models.py            BuiltinUserConfig, identity_to_key()
-├── builtin_templates.py         BUILTIN_RESOURCES — static seed data (idempotent startup seeding)
 ├── field_encryption.py          ResourceFieldEncryption — schema-hint scan + encrypt/decrypt (internal collaborator)
 ├── errors.py                    Resource*Error, BuiltIn*Error, Builtin*Error
 ├── resolver.py                  DependencyResolver (nested_refs / cascade helpers used by registry)
@@ -104,7 +103,7 @@ the shared source of truth consumed by `get_builtin_schema()`, `get_user_config(
 
 ### Per-Identity Overlay Resolution
 
-```
+```text
 BlueprintResolver.resolve(draft, identity)
   → _walk_live(rid, ..., identity)
   → ResourcesService.resolve(rid, identity=identity)
@@ -180,7 +179,7 @@ infrastructure (`CollaborationService`) with a fixed `__admin__` namespace
 and a new `"builtin"` lock kind (`BUILTIN_LOCK_KIND`), instead of adding a
 parallel locking mechanism:
 
-```
+```text
 acquire_admin_edit_lock/release_admin_edit_lock/renew_admin_edit_lock/get_admin_edit_lock(s)_batch
   → CollaborationService.*_team_edit_lock(ADMIN_LOCK_NAMESPACE, "builtin", entity_id, user_id, ...)
 ```
@@ -247,8 +246,9 @@ are also summarized in `references/elements.md`.
 
 ### Resources → Core (Identity, Enums, Field Hints)
 
-- `Resource.identity: Identity` — `Identity.system()` is used as the owner
-  for seeded built-in templates.
+- `Resource.identity: Identity` — for built-ins this is the identity of the
+  admin who created the resource via `create_builtin_with_cascade()` (see
+  "Seeding" above); there is no separate `SYSTEM` identity type.
 - `ResourceOwnership`, `ResourceVisibility` live in `mas.core.enums` alongside `ResourceCategory`.
 - Field hints (`ReadOnlyHint`, `CardHint`, `SecretHint`, ...) live in `mas.core.field_hints`.
 

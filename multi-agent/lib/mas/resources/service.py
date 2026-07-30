@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Tuple, Dict, Any, TYPE_CHECKING
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pydantic import BaseModel
@@ -27,6 +27,9 @@ from mas.resources.errors import (
 )
 from mas.validation.service import ElementValidationService
 
+if TYPE_CHECKING:
+    from mas.core.auth.service import AuthService
+
 logger = logging.getLogger(__name__)
 
 class ResourcesService:
@@ -39,10 +42,10 @@ class ResourcesService:
             self,
             resource_registry: ResourcesRegistry,
             element_registry: ElementRegistry,
-            builtin_user_config_repo: BuiltinUserConfigRepository = None,
-            validation_service: ElementValidationService = None,
-            card_service: ElementCardService = None,
-            auth_service=None,
+            builtin_user_config_repo: Optional[BuiltinUserConfigRepository] = None,
+            validation_service: Optional[ElementValidationService] = None,
+            card_service: Optional[ElementCardService] = None,
+            auth_service: Optional["AuthService"] = None,
             encryption_key: str = "",
     ):
         self._store = resource_registry
@@ -209,7 +212,7 @@ class ResourcesService:
         a non-admin caller cannot resolve (and thereby decrypt) a draft
         built-in's config just by knowing its rid.
         """
-        resource = self.get_visible(rid, is_admin=is_admin)
+        resource = self.get_visible(rid, identity=identity, is_admin=is_admin)
         return self.resolve_resource(resource, identity=identity)
 
     def resolve_resource(self, resource: Resource, identity: Optional[Identity] = None) -> BaseModel:
@@ -274,7 +277,7 @@ class ResourcesService:
     def validate_resource(
         self,
         rid: str,
-        identity: Identity = None,
+        identity: Optional[Identity] = None,
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
@@ -291,7 +294,7 @@ class ResourcesService:
         """
         self._ensure_validation_service()
 
-        self.get_visible(rid, is_admin=is_admin)
+        self.get_visible(rid, identity=identity, is_admin=is_admin)
 
         ordered_rids = self._dependency_resolver.resolve_with_deps(rid)
         if not ordered_rids:
@@ -309,7 +312,7 @@ class ResourcesService:
     def validate_resources(
         self,
         rids: List[str],
-        identity: Identity = None,
+        identity: Optional[Identity] = None,
         user_id: str = "",
         timeout_seconds: float = 10.0,
         max_workers: int = 10,
@@ -341,7 +344,7 @@ class ResourcesService:
     def _validate_in_parallel(
         self,
         rids: List[str],
-        identity: Identity,
+        identity: Optional[Identity],
         user_id: str,
         timeout_seconds: float,
         max_workers: int,
@@ -369,7 +372,7 @@ class ResourcesService:
     def _validate_resource_safe(
         self,
         rid: str,
-        identity: Identity = None,
+        identity: Optional[Identity] = None,
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
@@ -436,7 +439,7 @@ class ResourcesService:
     def get_cards(
         self,
         rids: List[str],
-        identity: Identity = None,
+        identity: Optional[Identity] = None,
         is_admin: bool = False,
     ) -> Dict[str, ElementCard]:
         """
@@ -452,7 +455,7 @@ class ResourcesService:
         self._ensure_card_service()
 
         for rid in rids:
-            self.get_visible(rid, is_admin=is_admin)
+            self.get_visible(rid, identity=identity, is_admin=is_admin)
 
         all_rids = self._dependency_resolver.resolve_all_with_deps(rids)
         configs = self._build_configs_from_rids(all_rids, identity=identity, is_admin=is_admin)
@@ -462,7 +465,7 @@ class ResourcesService:
     def get_card(
         self,
         rid: str,
-        identity: Identity = None,
+        identity: Optional[Identity] = None,
         is_admin: bool = False,
     ) -> ElementCard:
         """
@@ -649,7 +652,7 @@ class ResourcesService:
             raise RuntimeError("CardService not configured")
 
     def _build_configs_from_rids(
-        self, rids: List[str], identity: Identity = None, is_admin: bool = False,
+        self, rids: List[str], identity: Optional[Identity] = None, is_admin: bool = False,
     ) -> List[ElementConfigMeta]:
         """Build ElementConfigMeta list from saved resource rids.
 
@@ -676,7 +679,7 @@ class ResourcesService:
         """
         configs: List[ElementConfigMeta] = []
         for rid in rids:
-            resource = self.get_visible(rid, is_admin=is_admin)
+            resource = self.get_visible(rid, identity=identity, is_admin=is_admin)
             config = self.resolve_resource(resource, identity=identity)
 
             override_error = None

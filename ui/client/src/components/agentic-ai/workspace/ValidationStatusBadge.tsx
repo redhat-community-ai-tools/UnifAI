@@ -29,6 +29,7 @@ export const ValidationStatusBadge: React.FC<ValidationStatusBadgeProps> = ({ st
       <SimpleTooltip content={<p>Resource is valid - Click for details</p>}>
         <button
           type="button"
+          aria-label="Resource is valid. Click for details"
           className="flex items-center justify-center w-8 h-8 rounded-md bg-green-500/10 hover:bg-green-500/20 transition-colors cursor-pointer"
           onClick={onClick}
         >
@@ -43,6 +44,7 @@ export const ValidationStatusBadge: React.FC<ValidationStatusBadgeProps> = ({ st
       <SimpleTooltip content={<p>Resource is invalid - Click for details</p>}>
         <button
           type="button"
+          aria-label="Resource is invalid. Click for details"
           className="flex items-center justify-center w-8 h-8 rounded-md bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors cursor-pointer"
           onClick={onClick}
         >

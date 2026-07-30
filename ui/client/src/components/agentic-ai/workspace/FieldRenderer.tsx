@@ -66,6 +66,7 @@ interface NumberFieldInputProps {
   isFloatField: boolean;
   hasFieldError: boolean;
   placeholder?: string;
+  isReadOnly?: boolean;
   onChange: (value: number | null) => void;
 }
 
@@ -75,6 +76,7 @@ const NumberFieldInput: React.FC<NumberFieldInputProps> = ({
   isFloatField,
   hasFieldError,
   placeholder,
+  isReadOnly,
   onChange,
 }) => {
   // Local string buffer to preserve intermediate typing states like "0." or "-"
@@ -129,6 +131,8 @@ const NumberFieldInput: React.FC<NumberFieldInputProps> = ({
       onChange={handleChange}
       className={`bg-background-dark ${hasFieldError ? 'border-red-500' : ''}`}
       placeholder={placeholder}
+      readOnly={isReadOnly}
+      disabled={isReadOnly}
     />
   );
 };
@@ -943,17 +947,16 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
           {isReadOnly && <Lock className="h-3.5 w-3.5 text-gray-500 ml-1" />}
           {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
         </Label>
-        <div className={isReadOnly ? "pointer-events-none" : ""}>
-          <NumberFieldInput
-            key={`${fieldName}-${editingElement?.rid || 'new'}`}
-            fieldName={fieldName}
-            value={value}
-            isFloatField={isFloatField}
-            hasFieldError={hasFieldError}
-            placeholder={fieldSchema.description}
-            onChange={(numValue) => onInputChange(fieldName, numValue)}
-          />
-        </div>
+        <NumberFieldInput
+          key={`${fieldName}-${editingElement?.rid || 'new'}`}
+          fieldName={fieldName}
+          value={value}
+          isFloatField={isFloatField}
+          hasFieldError={hasFieldError}
+          placeholder={fieldSchema.description}
+          isReadOnly={isReadOnly}
+          onChange={(numValue) => onInputChange(fieldName, numValue)}
+        />
         {fieldSchema.description && (
           <p className="text-xs text-gray-400">{fieldSchema.description}</p>
         )}

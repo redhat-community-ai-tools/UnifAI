@@ -164,7 +164,7 @@ export default function RepositoryManagement() {
     if (!selectedElementType) return;
     setIsLoadingSchema(true);
     try {
-      await Promise.all([
+      const [schema] = await Promise.all([
         fetchElementSchema(
           selectedElementType.category,
           selectedElementType.type,
@@ -174,6 +174,11 @@ export default function RepositoryManagement() {
           selectedElementType.type,
         ),
       ]);
+      if (!schema) {
+        // fetchElementSchema already surfaces its own error toast — just
+        // abort the wizard step transition, matching the edit path's unwind.
+        return;
+      }
       setEditingElement(null);
       setIsFormOpen(true);
       setStep("configure");

@@ -224,6 +224,9 @@ def with_identity(f: Callable) -> Callable:
 # Admin access (unchanged)
 # ──────────────────────────────────────────────────────────────────────────────
 
+G_ADMIN_STATUS_CACHE = "_admin_status_cache"
+
+
 def is_admin_user(username: str) -> bool:
     """Check admin status via the container's admin config reader,
     falling back to the static ``admin_allowed_users`` Flask config.
@@ -232,14 +235,28 @@ def is_admin_user(username: str) -> bool:
     ``is_admin`` flags for service calls) instead of reaching into this
     module's private implementation detail.
 
-    Delegates to ``current_app.container.admin_config_reader.is_admin()``.
+    Delegates to ``current_app.container.admin_config_reader.is_admin()``,
+    which applies its own short-TTL cache for cross-request reuse. The
+    result is additionally cached on ``g`` so repeated checks for the
+    same username within one request never re-enter that lookup.
     """
+    cache = getattr(g, G_ADMIN_STATUS_CACHE, None)
+    if cache is None:
+        cache = {}
+        setattr(g, G_ADMIN_STATUS_CACHE, cache)
+    elif username in cache:
+        return cache[username]
+
     container = getattr(current_app, "container", None)
     reader = getattr(container, "admin_config_reader", None) if container else None
     if reader and reader.is_admin(username):
-        return True
-    admin_allowed_users = current_app.config.get("admin_allowed_users", [])
-    return username.lower() in [u.lower() for u in admin_allowed_users]
+        result = True
+    else:
+        admin_allowed_users = current_app.config.get("admin_allowed_users", [])
+        result = username.lower() in [u.lower() for u in admin_allowed_users]
+
+    cache[username] = result
+    return result
 
 
 # Backward-compat alias for any remaining internal call sites within this module.

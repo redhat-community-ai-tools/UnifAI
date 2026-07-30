@@ -79,6 +79,18 @@ export function useBuiltinSignIn({
   const checkedRef = useRef(false);
   const persistedIdentifierRef = useRef<string>(String(element.config?.server_identifier || ""));
 
+  // `onAuthChange` is typically a fresh inline callback from the caller on
+  // every render (e.g. `BuiltInElementCard` recreates it each render). Kept
+  // in a ref + stable wrapper so the message-listener effect below doesn't
+  // tear down and re-add the `window` listener on every unrelated render.
+  const onAuthChangeRef = useRef(onAuthChange);
+  useEffect(() => {
+    onAuthChangeRef.current = onAuthChange;
+  }, [onAuthChange]);
+  const stableOnAuthChange = useCallback(() => {
+    onAuthChangeRef.current();
+  }, []);
+
   const authHint = elementSchema?.config_schema?.properties?.sign_in?.hints?.auth as
     | { action_uid?: string; dependencies?: Record<string, string> }
     | undefined;
@@ -107,16 +119,20 @@ export function useBuiltinSignIn({
     });
   }, [onConfigureBuiltin, element.rid, onAuthChange]);
 
-  // Discovery-input fields (e.g. MCP's `mcp_url`, A2A's `auth_method`) come
-  // straight from the resource's base config — reliable and always present.
-  // Anything else (e.g. `auth.sign_out`'s `server_identifier` dependency)
-  // isn't a plain config field; it's only known once discovery has resolved
-  // it, so it's read from `authFields` instead.
+  // Resolves a dependency's value for *any* action (discovery, sign-out,
+  // ...), not just the sign-in AuthHint — so it can't gate on the sign-in
+  // hint's own `dependencies` map (a field another action depends on, e.g.
+  // sign-out's `server_identifier`, may not be a discovery input at all).
+  // Persisted config is always the most authoritative source when present;
+  // fields discovery resolves but that were never (yet) persisted back onto
+  // the resource (e.g. `server_identifier` before `persistAuthIdentifier`
+  // completes) fall back to `authFields`.
   const resolveDependencyValue = useCallback((configField: string): any => {
-    if (configField in dependencies) return element.config?.[configField];
+    if (Object.prototype.hasOwnProperty.call(element.config ?? {}, configField)) {
+      return element.config?.[configField];
+    }
     return authFields[configField];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [element.config, authFields, dependenciesKey]);
+  }, [element.config, authFields]);
 
   const checkAuth = useCallback(async (): Promise<DiscoveryResponse | null> => {
     const depFields = Object.keys(dependencies);
@@ -183,7 +199,7 @@ export function useBuiltinSignIn({
       if (event.data.success) {
         checkedRef.current = false;
         checkAuth();
-        onAuthChange();
+        stableOnAuthChange();
       } else {
         setSignInStatus("error");
         setSignInMessage(event.data.error || "Authentication failed");
@@ -191,7 +207,7 @@ export function useBuiltinSignIn({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [checkAuth, onAuthChange]);
+  }, [checkAuth, stableOnAuthChange]);
 
   const openAuthPopup = (url: string) => {
     popupAuthUrlRef.current = url;

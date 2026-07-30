@@ -16,7 +16,9 @@ export function resolveSchemaRef(rootSchema: any, ref: string): any | null {
   const segments = ref.substring(2).split("/").filter((s) => s.length > 0);
   let current: any = rootSchema;
   for (const segment of segments) {
-    if (!current || typeof current !== "object" || !(segment in current)) return null;
+    if (!current || typeof current !== "object" || !Object.prototype.hasOwnProperty.call(current, segment)) {
+      return null;
+    }
     current = current[segment];
   }
   return current;

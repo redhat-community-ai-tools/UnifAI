@@ -441,7 +441,12 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
 
               if (validatedSelections.length !== prevSelected.length) {
                 setTimeout(() => {
-                  onPopulateResult(fieldName, getSelectedObjects(validatedSelections), populateHint.multi_select || false);
+                  // Same shape rule as applySelection: multi-select needs full
+                  // backend objects, single-select needs the plain id string.
+                  const prunedResults = populateHint.multi_select
+                    ? getSelectedObjects(validatedSelections)
+                    : validatedSelections;
+                  onPopulateResult(fieldName, prunedResults, populateHint.multi_select || false);
                 }, 0);
               }
 

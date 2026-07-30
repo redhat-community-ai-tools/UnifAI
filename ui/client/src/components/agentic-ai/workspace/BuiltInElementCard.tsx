@@ -10,7 +10,7 @@ import {
   Settings,
   Loader2,
 } from 'lucide-react';
-import { useAuth } from "@/contexts/AuthContext";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useBuiltinSignIn, SignOutAction } from "@/hooks/use-builtin-sign-in";
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
@@ -19,7 +19,7 @@ import { BuiltinConfigureModal } from './BuiltinConfigureModal';
 import { CardFieldList } from './CardFieldList';
 import { ValidationStatusBadge } from './ValidationStatusBadge';
 import { SignInStatusIndicator } from './SignInStatusIndicator';
-import { getCardFields } from "@/lib/cardFields";
+import { getCardFields, isUserConfigurable } from "@/lib/cardFields";
 import { isFieldConditionallyVisible } from "@/lib/schemaRefs";
 import { cn } from "@/lib/utils";
 
@@ -57,18 +57,19 @@ function hasSignInAuth(element: ElementInstance, elementSchema?: ElementSchema |
 }
 
 /**
- * Whether the "Configure" modal has anything worth showing. Auth-trigger
- * fields (`hints.auth`) are excluded — those are handled by the dedicated
- * Sign In / Sign Out button above, not the generic form — and fields gated
- * behind a `ConditionalHint` that doesn't currently match (e.g. `bearer_token`
- * when `auth_method` is "none" or an SSO server) are excluded too, so the
- * button doesn't appear when there's genuinely nothing to configure.
+ * Whether the "Configure" modal has anything worth showing. Uses the same
+ * `isUserConfigurable` predicate as `BuiltinConfigureModal`'s field list
+ * (hidden/read-only/auth-trigger fields excluded) so this button's
+ * visibility never drifts from what the modal actually renders. Fields
+ * gated behind a `ConditionalHint` that doesn't currently match (e.g.
+ * `bearer_token` when `auth_method` is "none" or an SSO server) are
+ * excluded too, so the button doesn't appear when there's genuinely
+ * nothing to configure.
  */
 function hasConfigurableFields(element: ElementInstance, elementSchema?: ElementSchema | null): boolean {
   if (!elementSchema?.config_schema?.properties) return false;
   return Object.values(elementSchema.config_schema.properties).some((field: any) =>
-    field?.hints?.read_only?.read_only === false &&
-    !field?.hints?.auth &&
+    isUserConfigurable(field) &&
     isFieldConditionallyVisible(field, element.config || {})
   );
 }
@@ -83,8 +84,11 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
   validationStatus,
   onValidationClick,
 }) => {
-  const { user } = useAuth();
-  const userId = user?.username || '';
+  // Sign-in/auth is an OAuth-style credential lookup, keyed per human member
+  // even in team view — `credentialUserId` is the canonical source for that
+  // (see `useWorkspaceIdentity`), while the team-scoped `userId` there is
+  // reserved for identity-scoped resource ownership.
+  const { credentialUserId: userId } = useWorkspaceIdentity();
   const { revalidateResourceAndAncestors, resolveRefsInConfig } = useAgenticAI();
 
   const isSignIn = hasSignInAuth(element, elementSchema);

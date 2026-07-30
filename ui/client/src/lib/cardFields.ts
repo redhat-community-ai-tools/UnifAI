@@ -148,17 +148,19 @@ export function getCardFields(
   return fields;
 }
 
-function isUserConfigurable(fieldSchema: any): boolean {
+export function isUserConfigurable(fieldSchema: any): boolean {
   const hints = fieldSchema?.hints || {};
   if (hints.hidden) return false;
-  // `read_only=True` (the default when the hint is omitted) locks a field
-  // for end-users on built-in resources — see `ReadOnlyHint` — so it isn't
-  // something the user configured themselves.
-  if (hints.read_only?.read_only === true) return false;
   // Auth-trigger fields (e.g. an MCP "Sign In" button) aren't a plain
   // configurable value either.
   if (hints.auth) return false;
-  return true;
+  // `read_only=True` (the default when the hint is omitted) locks a field
+  // for end-users on built-in resources — see `ReadOnlyHint`. Only an
+  // explicit `read_only: false` opts a field into being user-configurable;
+  // schemas that haven't been through `get_builtin_schema()` (which injects
+  // an explicit `read_only: true` for every non-configurable field) may omit
+  // the hint entirely, and that omission must still resolve to "locked".
+  return hints.read_only?.read_only === false;
 }
 
 function isCardVisibleFor(fieldSchema: any, ownership: "builtin" | "custom"): boolean {
