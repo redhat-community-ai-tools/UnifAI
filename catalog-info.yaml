@@ -1,0 +1,38 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: unifai
+  title: UnifAI
+  description: RA platform for building and running multi-agent AI workflows over your enterprise knowledge.
+  annotations:
+    servicenow.com/appcode: UNI-001
+  tags:
+    - python
+    - reactjs
+    - typescript
+    - helm
+  links:
+    - title: production
+      url: http://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com/
+    - title: Slack '#forum-unifai'
+      url: https://redhat-internal.slack.com/archives/C09S75KCKJR
+      icon: chat
+spec:
+  type: service
+  system: unifai
+  lifecycle: production
+  owner: group:redhat/automation-and-tools
+  contacts:
+    - label: manager
+      users: 
+        - user:redhat/osabach
+    - label: developer
+      users:        
+        - user:redhat/nrashti
+        - user:redhat/oodeh
+        - user:redhat/yhabushi
+        - user:redhat/mcarmi
+        - user:redhat/stzvi
+        - user:redhat/labuyous
+        - user:redhat/aarbiv
+        - user:redhat/sfiresht
