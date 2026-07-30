@@ -23,6 +23,7 @@ from mas.core.channels import ChannelFactory
 from mas.core.hitl.models import ToolApprovalPolicy
 from mas.core.hitl.ports import ApprovalGate, ApprovalGateFactory
 from mas.core.runtime_binder import NodeRuntimeBinder, NodeRuntimeBindings
+from mas.core.tracing import TracingService
 from mas.graph.state.graph_state import GraphState
 from mas.session.execution.lifecycle import SessionLifecycle
 from mas.session.domain.workflow_session import WorkflowSession
@@ -49,11 +50,13 @@ class ForegroundSessionRunner:
         channel_factory: ChannelFactory,
         gate_factory: Optional[ApprovalGateFactory] = None,
         binder: Optional[NodeRuntimeBinder] = None,
+        tracing_service: TracingService = None,
     ) -> None:
         self._lifecycle = lifecycle
         self._channel_factory = channel_factory
         self._gate_factory = gate_factory
         self._binder = binder or NodeRuntimeBinder.default()
+        self._tracing = tracing_service
 
     def run(
         self,
@@ -89,13 +92,23 @@ class ForegroundSessionRunner:
         self._lifecycle.begin(session.record, scope)
         session.execution_holder.context = session.record.run_context
 
-        try:
-            final_state = session.executable_graph.run(
-                session.graph_state, session_id=session.get_run_id(),
-            )
-        except Exception as e:
-            self._lifecycle.fail(session.record, e)
-            raise
+        run_id = session.get_run_id()
+        user_id = getattr(session.record.run_context, "identity_id", "") or ""
+
+        with self._tracing.trace_session(
+            session_id=run_id,
+            user_id=user_id,
+            metadata={"scope": scope},
+        ):
+            try:
+                final_state = session.executable_graph.run(
+                    session.graph_state, session_id=run_id,
+                )
+            except Exception as e:
+                self._lifecycle.fail(session.record, e)
+                raise
+            finally:
+                self._tracing.flush()
 
         self._lifecycle.complete(session.record, final_state)
         return final_state
@@ -128,16 +141,24 @@ class ForegroundSessionRunner:
         self._binder.bind_all(session.session_registry, bindings)
 
         result: dict = {"state": None, "error": None}
+        tracing = self._tracing
+        user_id = getattr(session.record.run_context, "identity_id", "") or ""
 
         def _execute() -> None:
-            try:
-                result["state"] = session.executable_graph.run(
-                    session.graph_state, session_id=run_id,
-                )
-            except Exception as e:
-                result["error"] = e
-            finally:
-                channel.close()
+            with tracing.trace_session(
+                session_id=run_id,
+                user_id=user_id,
+                metadata={"scope": scope, "streaming": True},
+            ):
+                try:
+                    result["state"] = session.executable_graph.run(
+                        session.graph_state, session_id=run_id,
+                    )
+                except Exception as e:
+                    result["error"] = e
+                finally:
+                    tracing.flush()
+                    channel.close()
 
         thread = threading.Thread(target=_execute, name=f"graph-exec-{run_id[:8]}")
         thread.start()

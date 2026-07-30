@@ -29,8 +29,9 @@ claude = ["claude-agent-sdk>=0.2.0", "anthropic[vertex]>=0.40.0"]
 openshell = ["openshell>=0.0.59"]
 rag = ["jsonschema"]
 redis = ["redis"]
+tracing = ["langfuse>=3.0.0"]
 all = [
-    "mas[flask,mongo,temporal,langgraph,llms,tools,a2a,claude,rag,redis,openshell]",
+    "mas[flask,mongo,temporal,langgraph,llms,tools,a2a,claude,rag,redis,openshell,tracing]",
 ]
 test = ["pytest>=6.0"]
 

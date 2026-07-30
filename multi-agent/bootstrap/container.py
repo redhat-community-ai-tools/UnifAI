@@ -55,6 +55,7 @@ from mas.actions.providers.mcp.get_tools_names.get_tools_names import GetToolsNa
 
 from config.app_config import AppConfig
 from mas.core.platform_config import PlatformConfig
+from mas.core.tracing import TracingService
 from outbound.storage import LocalSessionStorageCleaner
 
 from outbound.mongo import (
@@ -243,6 +244,9 @@ class AppContainer(metaclass=SingletonMeta):
             auth_service=self.auth_service,
         ))
 
+        # ── Tracing (observability) ───────────────────────────────────
+        self.tracing_service = self._create_tracing_service(cfg)
+
         # ── Platform config (domain-layer projection of AppConfig) ────
         self.platform_config = PlatformConfig(
             shared_storage=cfg.shared_storage,
@@ -254,6 +258,7 @@ class AppContainer(metaclass=SingletonMeta):
             engine_name=cfg.engine_name,
             auth_service=self.auth_service,
             platform_config=self.platform_config,
+            tracing_service=self.tracing_service,
         )
         self.session_repo = MongoSessionRepository(
             mongodb_port=cfg.mongodb_port,
@@ -287,6 +292,7 @@ class AppContainer(metaclass=SingletonMeta):
             lifecycle=self.session_lifecycle,
             channel_factory=self.channel_factory,
             gate_factory=self.gate_factory,
+            tracing_service=self.tracing_service,
         )
 
         background_engine = self._create_background_engine(cfg.engine_name)
@@ -349,6 +355,23 @@ class AppContainer(metaclass=SingletonMeta):
         )
 
         self._initialized = True
+
+    @staticmethod
+    def _create_tracing_service(cfg: AppConfig) -> TracingService:
+        if not cfg.langfuse_enabled:
+            from mas.core.tracing.noop import NoOpTracingService
+            return NoOpTracingService()
+        try:
+            from outbound.langfuse.langfuse_tracing_service import LangfuseTracingService
+            return LangfuseTracingService(
+                secret_key=cfg.langfuse_secret_key,
+                public_key=cfg.langfuse_public_key,
+                base_url=cfg.langfuse_base_url,
+            )
+        except ImportError:
+            logger.warning("langfuse package not installed; tracing disabled")
+            from mas.core.tracing.noop import NoOpTracingService
+            return NoOpTracingService()
 
     @staticmethod
     def _create_overrides_store():

@@ -17,6 +17,7 @@ from ..common.chat.message import ChatMessage
 from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import GoogleGenAIMessageConverter
 from .tools_converter import GoogleGenAIToolsConverter
+from mas.core.tracing import TracingService
 
 _DISABLE_AUTO_FC = types.AutomaticFunctionCallingConfig(disable=True)
 
@@ -39,6 +40,7 @@ class GoogleGenAILLM(BaseLLM):
         max_tokens: Optional[int] = None,
         top_p: Optional[float] = None,
         top_k: Optional[int] = None,
+        tracing: TracingService = None,
         **extra: Any,
     ) -> None:
         self._name = "google-genai"
@@ -49,6 +51,7 @@ class GoogleGenAILLM(BaseLLM):
         self._top_k = top_k
         self._tools: Optional[List[types.Tool]] = None
         self._client = genai.Client(api_key=api_key, **extra)
+        self._tracing = tracing
 
     # ------------------------------------------------------------------
     # BaseLLM interface
@@ -58,12 +61,34 @@ class GoogleGenAILLM(BaseLLM):
         split = GoogleGenAIMessageConverter.to_genai(messages)
         config = self._build_config(system_instruction=split.system_instruction)
 
-        response = self._client.models.generate_content(
+        with self._tracing.trace_llm(
             model=self._model,
-            contents=split.contents,
-            config=config,
-        )
-        return GoogleGenAIMessageConverter.from_genai(response)
+            provider="google-genai",
+            input_messages=[{"role": m.role.value, "content": m.content} for m in messages[-5:]],
+        ) as gen:
+            try:
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=split.contents,
+                    config=config,
+                )
+            except Exception as e:
+                gen.update(
+                    level="ERROR",
+                    status_message=f"Google GenAI API error: {type(e).__name__}: {e}",
+                )
+                raise
+            result_msg = GoogleGenAIMessageConverter.from_genai(response)
+            usage = {}
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                um = response.usage_metadata
+                usage = {
+                    "input_tokens": getattr(um, "prompt_token_count", 0),
+                    "output_tokens": getattr(um, "candidates_token_count", 0),
+                    "total_tokens": getattr(um, "total_token_count", 0),
+                }
+            gen.update(output=result_msg.content, usage_details=usage or None)
+        return result_msg
 
     def stream(
         self,
@@ -75,19 +100,46 @@ class GoogleGenAILLM(BaseLLM):
 
         accumulated_text = ""
         collected_parts: List[types.Part] = []
+        last_usage_metadata = None
 
-        for chunk in self._client.models.generate_content_stream(
+        with self._tracing.trace_llm(
             model=self._model,
-            contents=split.contents,
-            config=config,
-        ):
-            if chunk.text:
-                accumulated_text += chunk.text
-                yield chunk.text
+            provider="google-genai",
+            input_messages=[{"role": m.role.value, "content": m.content} for m in messages[-5:]],
+            metadata={"streaming": True},
+        ) as gen:
+            try:
+                stream_iter = self._client.models.generate_content_stream(
+                    model=self._model,
+                    contents=split.contents,
+                    config=config,
+                )
+            except Exception as e:
+                gen.update(
+                    level="ERROR",
+                    status_message=f"Google GenAI API error: {type(e).__name__}: {e}",
+                )
+                raise
+            for chunk in stream_iter:
+                if chunk.text:
+                    accumulated_text += chunk.text
+                    yield chunk.text
 
-            for part in (chunk.parts or []):
-                if part.function_call is not None:
-                    collected_parts.append(part)
+                for part in (chunk.parts or []):
+                    if part.function_call is not None:
+                        collected_parts.append(part)
+
+                if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                    last_usage_metadata = chunk.usage_metadata
+
+            usage = {}
+            if last_usage_metadata:
+                usage = {
+                    "input_tokens": getattr(last_usage_metadata, "prompt_token_count", 0),
+                    "output_tokens": getattr(last_usage_metadata, "candidates_token_count", 0),
+                    "total_tokens": getattr(last_usage_metadata, "total_token_count", 0),
+                }
+            gen.update(output=accumulated_text, usage_details=usage or None)
 
         if collected_parts:
             yield GoogleGenAIMessageConverter.from_genai_parts(
