@@ -258,7 +258,16 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
 
   const applySelection = (values: string[]) => {
     setSelectedValues(values);
-    onPopulateResult(fieldName, getSelectedObjects(values), populateHint.multi_select || false);
+    // Multi-select fields (e.g. `docs: List[Dict]`) need the full backend
+    // objects preserved in formData. Single-select fields driven by this
+    // component are plain strings (e.g. `auth_method: str`) identified by
+    // `value_field` — storing the raw `{label, value}` object there instead
+    // of the extracted id string breaks every downstream consumer that
+    // expects a string (ConditionalHint checks, PropagateHint targets,
+    // action `dependencies` mappings, and the field's own pydantic type on
+    // save).
+    const results = populateHint.multi_select ? getSelectedObjects(values) : values;
+    onPopulateResult(fieldName, results, populateHint.multi_select || false);
   };
 
   /**

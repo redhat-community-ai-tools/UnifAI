@@ -24,7 +24,7 @@ from mas.core.ref.models import RetrieverRef
 from mas.core.auth.credentials.models import StaticAuthMethod
 from mas.core.field_hints import (
     ActionHint, HintType, SelectionType,
-    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, CardHint, CardContext, combine_hints,
+    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, ReadOnlyHint, CardHint, CardContext, combine_hints,
 )
 
 
@@ -74,6 +74,7 @@ class A2AAgentNodeConfig(NodeBaseConfig):
                 value_field="value",
                 constants={"category": "a2a"},
             ),
+            ReadOnlyHint(read_only=False),
         ),
     )
 
@@ -96,6 +97,7 @@ class A2AAgentNodeConfig(NodeBaseConfig):
                     "auth_method": "server_identifier",
                 },
             ),
+            ReadOnlyHint(read_only=False),
         ),
     )
 
@@ -108,6 +110,7 @@ class A2AAgentNodeConfig(NodeBaseConfig):
                 "auth_method": StaticAuthMethod.ACCESS_TOKEN.value,
             }),
             PropagateHint(to="credential_token"),
+            ReadOnlyHint(read_only=False),
         ),
     )
 

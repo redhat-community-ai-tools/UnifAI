@@ -19,7 +19,7 @@ from mas.elements.providers.common.base_config import ProviderBaseConfig
 from mas.core.auth.credentials.models import StaticAuthMethod
 from mas.core.field_hints import (
     ActionHint, HintType, SelectionType,
-    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, CardHint, CardContext, combine_hints,
+    SecretHint, AuthHint, HiddenHint, ConditionalHint, PropagateHint, ReadOnlyHint, CardHint, CardContext, combine_hints,
 )
 from a2a.types import AgentCard
 from .identifiers import Identifier
@@ -79,6 +79,7 @@ class A2AProviderConfig(ProviderBaseConfig):
                 value_field="value",
                 constants={"category": "a2a"},
             ),
+            ReadOnlyHint(read_only=False),
         ),
     )
 
@@ -103,6 +104,7 @@ class A2AProviderConfig(ProviderBaseConfig):
                     "auth_method": "server_identifier",
                 },
             ),
+            ReadOnlyHint(read_only=False),
         ),
     )
 
@@ -117,6 +119,7 @@ class A2AProviderConfig(ProviderBaseConfig):
                 "auth_method": StaticAuthMethod.ACCESS_TOKEN.value,
             }),
             PropagateHint(to="credential_token"),
+            ReadOnlyHint(read_only=False),
         ),
     )
 

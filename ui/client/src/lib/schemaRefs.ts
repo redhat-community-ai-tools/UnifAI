@@ -23,6 +23,23 @@ export function resolveSchemaRef(rootSchema: any, ref: string): any | null {
 }
 
 /**
+ * Evaluates a single `visible_when` entry. `requiredValue` is either a plain
+ * scalar (exact match) or an operator object — `{"in": [...]}` / `{"not_in":
+ * [...]}` — as documented on the backend's `ConditionalHint` (see
+ * `mas/core/field_hints.py`). Open-ended fields like A2A's `auth_method`
+ * (populated dynamically from the auth server registry) can't be gated with
+ * a scalar match, hence `not_in`.
+ */
+export function matchesCondition(actualValue: any, requiredValue: any): boolean {
+  if (requiredValue && typeof requiredValue === "object" && !Array.isArray(requiredValue)) {
+    if (Array.isArray(requiredValue.in)) return requiredValue.in.includes(actualValue);
+    if (Array.isArray(requiredValue.not_in)) return !requiredValue.not_in.includes(actualValue);
+    return false;
+  }
+  return actualValue === requiredValue;
+}
+
+/**
  * Evaluates a field's `hints.conditional.visible_when` against the current
  * form/config values. A field with no conditional hint is always visible.
  * Shared by `use-element-field-helpers.ts` (form rendering) and
@@ -36,7 +53,7 @@ export function isFieldConditionallyVisible(
   const conditions = fieldSchema?.hints?.conditional?.visible_when;
   if (!conditions) return true;
   return Object.entries(conditions).every(
-    ([field, requiredValue]) => values?.[field] === requiredValue,
+    ([field, requiredValue]) => matchesCondition(values?.[field], requiredValue),
   );
 }
 

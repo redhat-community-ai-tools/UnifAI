@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ItemValidationResult } from "@/components/agentic-ai/workspace/FieldValidation";
+import { matchesCondition } from "@/lib/schemaRefs";
 
 export interface ConfigFieldActions {
   formData: any;
@@ -70,7 +71,7 @@ export function useConfigFieldActions(
           const prop = schema?.hints?.propagate;
           if (!conditional || !prop?.to) return;
           const isVisible = Object.entries(conditional).every(
-            ([f, v]) => next[f] === v,
+            ([f, v]) => matchesCondition(next[f], v),
           );
           if (isVisible && next[name]) {
             next[prop.to] =
