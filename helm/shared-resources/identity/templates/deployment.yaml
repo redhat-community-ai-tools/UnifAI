@@ -61,12 +61,12 @@ spec:
           - name: APP_VERSION
             value: "{{ .Values.backend.image.tag }}"
           {{- range $key, $value := .Values.backend.env }}
-            - name: "{{ $key }}"
-              value: "{{ $value }}"
+          - name: "{{ $key }}"
+            value: "{{ $value }}"
           {{- end }}
           {{- range $key, $value := .Values.env }}
-            - name: "{{ $key }}"
-              value: "{{ $value }}"
+          - name: "{{ $key }}"
+            value: "{{ $value }}"
           {{- end }}
           {{- with .Values.volumeMounts }}
           volumeMounts:
