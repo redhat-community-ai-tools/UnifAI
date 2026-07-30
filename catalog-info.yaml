@@ -13,7 +13,7 @@ metadata:
     - helm
   links:
     - title: production
-      url: http://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com/
+      url: https://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com/
     - title: Slack '#forum-unifai'
       url: https://redhat-internal.slack.com/archives/C09S75KCKJR
       icon: chat
