@@ -19,6 +19,7 @@ from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import OpenAIMessageConverter
 from .tools_converter import OpenAIToolsConverter
 from .stream_aggregator import StreamToolCallAggregator
+from mas.core.tracing import TracingService
 
 
 class OpenAILLM(BaseLLM):
@@ -38,6 +39,7 @@ class OpenAILLM(BaseLLM):
         temperature: float = 0.7,
         max_tokens: int = 1024,
         api_key: str = "EMPTY",
+        tracing: TracingService = None,
         **extra: Any,
     ) -> None:
         self._name = "openai"
@@ -46,6 +48,7 @@ class OpenAILLM(BaseLLM):
         self._max_tokens = max_tokens
         self._tools: Optional[List[ChatCompletionToolParam]] = None
         self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
+        self._tracing = tracing
 
     # ------------------------------------------------------------------
     # BaseLLM interface
@@ -53,8 +56,29 @@ class OpenAILLM(BaseLLM):
 
     def chat(self, messages: List[ChatMessage]) -> ChatMessage:
         request = self._build_request(messages)
-        response = self._client.chat.completions.create(**request)
-        return OpenAIMessageConverter.from_openai(response.choices[0].message)
+        with self._tracing.trace_llm(
+            model=self._model,
+            provider="openai",
+            input_messages=[{"role": m.role.value, "content": m.content} for m in messages[-5:]],
+        ) as gen:
+            try:
+                response = self._client.chat.completions.create(**request)
+            except Exception as e:
+                gen.update(
+                    level="ERROR",
+                    status_message=f"OpenAI API error: {type(e).__name__}: {e}",
+                )
+                raise
+            result_msg = OpenAIMessageConverter.from_openai(response.choices[0].message)
+            usage = {}
+            if response.usage:
+                usage = {
+                    "input_tokens": response.usage.prompt_tokens,
+                    "output_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                }
+            gen.update(output=result_msg.content, usage_details=usage or None)
+        return result_msg
 
     def stream(
         self,
@@ -65,18 +89,40 @@ class OpenAILLM(BaseLLM):
         aggregator = StreamToolCallAggregator()
         accumulated_content = ""
 
-        for chunk in self._client.chat.completions.create(**request):
-            if not chunk.choices:
-                continue
+        with self._tracing.trace_llm(
+            model=self._model,
+            provider="openai",
+            input_messages=[{"role": m.role.value, "content": m.content} for m in messages[-5:]],
+            metadata={"streaming": True},
+        ) as gen:
+            try:
+                stream_iter = self._client.chat.completions.create(**request)
+            except Exception as e:
+                gen.update(
+                    level="ERROR",
+                    status_message=f"OpenAI API error: {type(e).__name__}: {e}",
+                )
+                raise
+            for chunk in stream_iter:
+                if not chunk.choices:
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        gen.update(usage_details={
+                            "input_tokens": chunk.usage.prompt_tokens,
+                            "output_tokens": chunk.usage.completion_tokens,
+                            "total_tokens": chunk.usage.total_tokens,
+                        })
+                    continue
 
-            delta = chunk.choices[0].delta
+                delta = chunk.choices[0].delta
 
-            if delta.content:
-                accumulated_content += delta.content
-                yield delta.content
+                if delta.content:
+                    accumulated_content += delta.content
+                    yield delta.content
 
-            if delta.tool_calls:
-                aggregator.absorb(delta.tool_calls)
+                if delta.tool_calls:
+                    aggregator.absorb(delta.tool_calls)
+
+            gen.update(output=accumulated_content)
 
         if aggregator.has_tool_calls:
             yield ChatMessage(

@@ -25,6 +25,7 @@ class CustomAgentNodeFactory(BaseFactory[CustomAgentNodeConfig, CustomAgentNode]
         try:
             element_deps = deps.pop("deps", None)
             execution_holder = element_deps.execution_ctx if element_deps else None
+            tracing_service = element_deps.tracing_service if element_deps else None
 
             return CustomAgentNode(
                 llm=deps.pop("llm"),
@@ -37,6 +38,7 @@ class CustomAgentNodeFactory(BaseFactory[CustomAgentNodeConfig, CustomAgentNode]
                 retries=cfg.retries,
                 hitl_mode=cfg.hitl_mode,
                 execution_holder=execution_holder,
+                tracing_service=tracing_service,
             )
         except Exception as e:
             raise PluginConfigurationError(

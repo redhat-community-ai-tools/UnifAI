@@ -8,6 +8,9 @@ Like a Flask handler — any worker can execute any node.
 Runtime capabilities (streaming channel, HITL gate/policy) are
 injected via ``NodeRuntimeBinder`` using capability protocols —
 no ``hasattr`` duck-typing.
+
+Tracing is owned here so that every distributed engine (Temporal,
+Celery, …) gets session-level traces for free — adapters stay thin.
 """
 from typing import Any, Dict, Optional
 
@@ -16,6 +19,7 @@ from mas.core.contracts import SupportsStepContext
 from mas.core.enums import ResourceCategory
 from mas.core.execution_context import ExecutionContext, ExecutionContextHolder
 from mas.core.runtime_binder import NodeRuntimeBinder, NodeRuntimeBindings
+from mas.core.tracing import TracingService
 from mas.graph.models.step_context import StepContext
 from mas.graph.state.graph_state import GraphState
 from mas.session.building.workflow_session_factory import WorkflowSessionFactory
@@ -37,9 +41,11 @@ class NodeExecutor:
         self,
         session_factory: WorkflowSessionFactory,
         binder: Optional[NodeRuntimeBinder] = None,
+        tracing_service: TracingService = None,
     ) -> None:
         self._factory = session_factory
         self._binder = binder or NodeRuntimeBinder.default()
+        self._tracing = tracing_service
 
     def execute_node(
         self,
@@ -53,9 +59,41 @@ class NodeExecutor:
         """
         Build ONE node from its mini-blueprint, inject context, run it.
 
+        Wraps execution in a session-level trace (deterministic trace_id
+        from session_id) so that all nodes in the same session appear
+        under one Langfuse trace.
+
         Runtime capabilities (channel, HITL) are applied from the
         ``bindings`` value object via the binder's protocol checks.
         """
+        session_id = ""
+        user_id = ""
+        if execution_context:
+            session_id = execution_context.session_id or ""
+            user_id = getattr(execution_context, "identity_id", "") or ""
+
+        with self._tracing.trace_session(
+            session_id=session_id,
+            user_id=user_id,
+            metadata={"node_uid": node_uid},
+        ):
+            try:
+                return self._execute_node_inner(
+                    node_uid, node_blueprint, step_context,
+                    state, bindings, execution_context,
+                )
+            finally:
+                self._tracing.flush()
+
+    def _execute_node_inner(
+        self,
+        node_uid: str,
+        node_blueprint: Dict[str, Any],
+        step_context: Optional[StepContext],
+        state: GraphState,
+        bindings: Optional[NodeRuntimeBindings] = None,
+        execution_context: Optional[ExecutionContext] = None,
+    ) -> GraphState:
         mini_bp = BlueprintSpec.model_validate(node_blueprint)
 
         ctx_holder = ExecutionContextHolder()
