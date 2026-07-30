@@ -144,7 +144,8 @@ volumeMounts:
   - name: unifai-rag-shared-storage
     mountPath: /app/shared
   - name: unifai-logging-volume
-    mountPath: /var/log/rag-celery
+    mountPath: /var/log/unifai
+    subPathExpr: rag-celery/$(POD_NAME)/$(APP_VERSION)
     readOnly: false
 
 nodeSelector: {}

@@ -89,9 +89,10 @@ volumes:
       claimName: unifai-logging-volume
 volumeMounts:
   - name: unifai-logging-volume
-    mountPath: /var/log/backend
+    mountPath: /var/log/unifai
+    subPathExpr: backend/$(POD_NAME)/$(APP_VERSION)
     readOnly: false
-    
+ 
 nodeSelector: {}
 tolerations: []
 affinity: {}

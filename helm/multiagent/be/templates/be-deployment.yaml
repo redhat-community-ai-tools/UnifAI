@@ -43,6 +43,12 @@ spec:
           stdin: true
           tty: true
           env:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: APP_VERSION
+            value: "{{ .Values.image.tag | default .Chart.AppVersion }}"
           {{- range $key, $value := .Values.env }}
           - name: "{{ $key }}"
             value: "{{ $value }}"

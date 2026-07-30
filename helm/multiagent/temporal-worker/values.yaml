@@ -157,9 +157,10 @@ volumeMounts:
     mountPath: /opt/app-root/src/config/gcp
     readOnly: true
   - name: unifai-logging-volume
-    mountPath: /var/log/multiagent-temporal-worker
+    mountPath: /var/log/unifai
+    subPathExpr: multi-agent-temporal-worker/$(POD_NAME)/$(APP_VERSION)
     readOnly: false
-    
+ 
 nodeSelector: {}
 
 tolerations: []
