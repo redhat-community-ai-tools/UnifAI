@@ -4,12 +4,15 @@
 resolve_overlay) only treats a field as part of a built-in resource's
 per-identity overlay when it carries ``ReadOnlyHint(read_only=False)`` — see
 ``ResourceFieldEncryption.scan_schema_hints``. The MCP provider config marks
-its auth fields (``sign_in``, ``bearer_token``, ...) this way; the A2A node
-and provider configs must do the same for ``auth_method``, ``sign_in`` and
-``bearer_token``, or a built-in A2A agent's auth-server selection and
-sign-in/bearer-token flow is silently stripped out of every overlay
-(``get_builtin_schema`` locks the fields as read-only, and
-``configure_builtin``/``resolve_overlay`` drop them entirely).
+its credential fields (``sign_in``, ``bearer_token``) this way while leaving
+``auth_method`` unannotated (admin-controlled — it decides *how* every caller
+of a shared built-in authenticates, not something each user picks for
+themselves). The A2A node and provider configs must mirror this split, or a
+built-in A2A agent's sign-in/bearer-token flow is silently stripped out of
+every overlay (``get_builtin_schema`` locks the fields as read-only, and
+``configure_builtin``/``resolve_overlay`` drop them entirely) — or, in the
+other direction, callers would each be able to override the admin's chosen
+auth method for a shared resource.
 """
 from __future__ import annotations
 
@@ -18,7 +21,8 @@ from mas.elements.nodes.a2a_agent.config import A2AAgentNodeConfig
 from mas.elements.providers.a2a_client.config import A2AProviderConfig
 from mas.resources.field_encryption import ResourceFieldEncryption
 
-REQUIRED_CONFIGURABLE_FIELDS = {"auth_method", "sign_in", "bearer_token"}
+REQUIRED_CONFIGURABLE_FIELDS = {"sign_in", "bearer_token"}
+ADMIN_CONTROLLED_FIELDS = {"base_url", "auth_method"}
 
 
 class _FakeElementRegistry:
@@ -40,11 +44,13 @@ class TestA2AAgentNodeBuiltinOverlay:
         configurable = _configurable_keys(A2AAgentNodeConfig)
         assert REQUIRED_CONFIGURABLE_FIELDS <= configurable
 
-    def test_base_url_stays_admin_controlled(self):
-        """base_url is the built-in resource's identity — it must stay
-        read-only on the overlay; only auth should be user-configurable."""
+    def test_admin_controlled_fields_stay_locked(self):
+        """base_url is the built-in resource's identity and auth_method is
+        the admin's choice of *how* callers authenticate — both must stay
+        read-only on the overlay; only the caller's own credentials
+        (sign_in / bearer_token) are user-configurable."""
         configurable = _configurable_keys(A2AAgentNodeConfig)
-        assert "base_url" not in configurable
+        assert ADMIN_CONTROLLED_FIELDS.isdisjoint(configurable)
 
 
 class TestA2AProviderBuiltinOverlay:
@@ -52,6 +58,6 @@ class TestA2AProviderBuiltinOverlay:
         configurable = _configurable_keys(A2AProviderConfig)
         assert REQUIRED_CONFIGURABLE_FIELDS <= configurable
 
-    def test_base_url_stays_admin_controlled(self):
+    def test_admin_controlled_fields_stay_locked(self):
         configurable = _configurable_keys(A2AProviderConfig)
-        assert "base_url" not in configurable
+        assert ADMIN_CONTROLLED_FIELDS.isdisjoint(configurable)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { executeAction } from "@/api/actions";
 import { isTrustedCredentialsCallback } from "@/lib/oauthPopupSecurity";
-import { ElementInstance } from "../types/workspace";
+import { ElementInstance, ElementSchema } from "../types/workspace";
 
 export type SignInStatus = "idle" | "checking" | "authenticated" | "challenge" | "not_configured" | "error";
 
@@ -32,6 +32,12 @@ interface DiscoveryResponse {
 
 interface UseBuiltinSignInParams {
   element: ElementInstance;
+  /** Schema for `element`'s type — used to read the `sign_in` field's
+   * `AuthHint` (action_uid + dependencies) generically, so this hook works
+   * for any element carrying that hint (MCP's `mcp_url`-keyed discovery,
+   * A2A's `server_identifier`-keyed discovery, future ones) without a
+   * hardcoded field name. */
+  elementSchema?: ElementSchema | null;
   userId: string;
   isSignIn: boolean;
   onConfigureBuiltin?: (
@@ -44,14 +50,16 @@ interface UseBuiltinSignInParams {
 }
 
 /**
- * Drives the sign-in/out flow for a built-in "sign in" MCP card: runs
- * `auth.discovery`, manages the OAuth popup handshake, and persists the
- * discovered `server_identifier` back onto the resource (there's no wizard
- * Save step for built-ins to do this after the fact) so later validations
- * can use a fast credential lookup instead of a live rediscovery probe.
+ * Drives the sign-in/out flow for a built-in "sign in" card: runs the
+ * `sign_in` field's `AuthHint` action (typically `auth.discovery`), manages
+ * the OAuth popup handshake, and persists the discovered `server_identifier`
+ * back onto the resource (there's no wizard Save step for built-ins to do
+ * this after the fact) so later validations can use a fast credential
+ * lookup instead of a live rediscovery probe.
  */
 export function useBuiltinSignIn({
   element,
+  elementSchema,
   userId,
   isSignIn,
   onConfigureBuiltin,
@@ -71,6 +79,16 @@ export function useBuiltinSignIn({
   const checkedRef = useRef(false);
   const persistedIdentifierRef = useRef<string>(String(element.config?.server_identifier || ""));
 
+  const authHint = elementSchema?.config_schema?.properties?.sign_in?.hints?.auth as
+    | { action_uid?: string; dependencies?: Record<string, string> }
+    | undefined;
+  const actionUid = authHint?.action_uid || "";
+  const dependencies = authHint?.dependencies || {};
+  // Stable key for effect/callback dependency arrays — `dependencies` (and
+  // its containing `authHint`) is a fresh object each render even when its
+  // contents haven't changed.
+  const dependenciesKey = JSON.stringify(dependencies);
+
   const persistAuthIdentifier = useCallback((serverIdentifier?: string, schemeType?: string) => {
     if (!onConfigureBuiltin || !serverIdentifier) return;
     if (persistedIdentifierRef.current === serverIdentifier) return;
@@ -89,20 +107,33 @@ export function useBuiltinSignIn({
     });
   }, [onConfigureBuiltin, element.rid, onAuthChange]);
 
+  // Discovery-input fields (e.g. MCP's `mcp_url`, A2A's `auth_method`) come
+  // straight from the resource's base config — reliable and always present.
+  // Anything else (e.g. `auth.sign_out`'s `server_identifier` dependency)
+  // isn't a plain config field; it's only known once discovery has resolved
+  // it, so it's read from `authFields` instead.
   const resolveDependencyValue = useCallback((configField: string): any => {
-    if (configField === "mcp_url") return String(element.config?.mcp_url || "");
+    if (configField in dependencies) return element.config?.[configField];
     return authFields[configField];
-  }, [element.config?.mcp_url, authFields]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [element.config, authFields, dependenciesKey]);
 
   const checkAuth = useCallback(async (): Promise<DiscoveryResponse | null> => {
-    if (!userId || !element.config?.mcp_url) return null;
+    const depFields = Object.keys(dependencies);
+    const hasRequiredDeps = depFields.length > 0 && depFields.every((configField) => {
+      const val = element.config?.[configField];
+      return val !== undefined && val !== null && val !== "";
+    });
+    if (!userId || !actionUid || !hasRequiredDeps) return null;
+
     setSignInStatus("checking");
     try {
-      const data: DiscoveryResponse = await executeAction(
-        "auth.discovery",
-        { mcp_url: String(element.config.mcp_url), user_id: userId },
-        userId,
-      );
+      const inputData: Record<string, any> = { user_id: userId };
+      Object.entries(dependencies).forEach(([configField, actionField]) => {
+        const val = element.config?.[configField];
+        if (val !== undefined) inputData[actionField] = val;
+      });
+      const data: DiscoveryResponse = await executeAction(actionUid, inputData, userId);
       const nextAuthFields = {
         ...data.form_updates,
         ...(data.server_identifier ? { server_identifier: data.server_identifier } : {}),
@@ -134,7 +165,8 @@ export function useBuiltinSignIn({
       setSignInMessage("Failed to check authentication status");
       return null;
     }
-  }, [userId, element.config?.mcp_url, persistAuthIdentifier]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, actionUid, element.config, persistAuthIdentifier, dependenciesKey]);
 
   useEffect(() => {
     if (isSignIn && !checkedRef.current) {
@@ -195,8 +227,8 @@ export function useBuiltinSignIn({
     setSigningOut(true);
     try {
       const inputData: Record<string, any> = { user_id: userId };
-      const dependencies = action.dependencies || { server_identifier: "server_identifier" };
-      Object.entries(dependencies).forEach(([configField, actionField]) => {
+      const signOutDependencies = action.dependencies || { server_identifier: "server_identifier" };
+      Object.entries(signOutDependencies).forEach(([configField, actionField]) => {
         const val = resolveDependencyValue(configField);
         if (val !== undefined) {
           inputData[actionField] = val;

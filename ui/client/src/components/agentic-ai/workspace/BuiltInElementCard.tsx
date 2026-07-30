@@ -20,6 +20,7 @@ import { CardFieldList } from './CardFieldList';
 import { ValidationStatusBadge } from './ValidationStatusBadge';
 import { SignInStatusIndicator } from './SignInStatusIndicator';
 import { getCardFields } from "@/lib/cardFields";
+import { isFieldConditionallyVisible } from "@/lib/schemaRefs";
 import { cn } from "@/lib/utils";
 
 interface BuiltInElementCardProps {
@@ -39,14 +40,36 @@ interface BuiltInElementCardProps {
   onValidationClick?: () => void;
 }
 
-function hasSignInAuth(element: ElementInstance): boolean {
-  return element.config?.auth_method === 'sign_in';
+/**
+ * Whether this built-in instance currently needs an interactive sign-in —
+ * driven entirely by the schema's `sign_in` field (if any) rather than a
+ * hardcoded auth_method value, so it works for both MCP's single static
+ * "sign_in" mode and A2A's open-ended registry server identifiers (e.g.
+ * `visible_when: {auth_method: {not_in: ["none", "access_token"]}}`).
+ * `auth_method` itself is admin-controlled (see `A2AAgentNodeConfig`), so
+ * reading it straight off `element.config` (the shared base config) is
+ * correct — it's the same for every caller of this built-in.
+ */
+function hasSignInAuth(element: ElementInstance, elementSchema?: ElementSchema | null): boolean {
+  const signInField = elementSchema?.config_schema?.properties?.sign_in as any;
+  if (!signInField?.hints?.auth) return false;
+  return isFieldConditionallyVisible(signInField, element.config || {});
 }
 
+/**
+ * Whether the "Configure" modal has anything worth showing. Auth-trigger
+ * fields (`hints.auth`) are excluded — those are handled by the dedicated
+ * Sign In / Sign Out button above, not the generic form — and fields gated
+ * behind a `ConditionalHint` that doesn't currently match (e.g. `bearer_token`
+ * when `auth_method` is "none" or an SSO server) are excluded too, so the
+ * button doesn't appear when there's genuinely nothing to configure.
+ */
 function hasConfigurableFields(element: ElementInstance, elementSchema?: ElementSchema | null): boolean {
   if (!elementSchema?.config_schema?.properties) return false;
-  return Object.values(elementSchema.config_schema.properties).some(
-    (field: any) => field?.hints?.read_only?.read_only === false
+  return Object.values(elementSchema.config_schema.properties).some((field: any) =>
+    field?.hints?.read_only?.read_only === false &&
+    !field?.hints?.auth &&
+    isFieldConditionallyVisible(field, element.config || {})
   );
 }
 
@@ -64,7 +87,7 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
   const userId = user?.username || '';
   const { revalidateResourceAndAncestors, resolveRefsInConfig } = useAgenticAI();
 
-  const isSignIn = hasSignInAuth(element);
+  const isSignIn = hasSignInAuth(element, elementSchema);
   const hasConfigFields = hasConfigurableFields(element, elementSchema);
   const cardFields = useMemo(
     () => getCardFields(elementSchema, resolveRefsInConfig(element.config), 'builtin'),
@@ -82,6 +105,7 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
     handleSignOut,
   } = useBuiltinSignIn({
     element,
+    elementSchema,
     userId,
     isSignIn,
     onConfigureBuiltin,
