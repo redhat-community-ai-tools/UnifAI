@@ -20,7 +20,7 @@ metadata:
 spec:
   type: service
   system: unifai
-  lifecycle: production
+  lifecycle: implementation
   owner: group:redhat/automation-and-tools
   contacts:
     - label: manager
