@@ -15,14 +15,5 @@ class ProviderBuilder(CategoryBuilder):
     def _extra_kwargs(
         self, cfg: Any, session_registry: SessionRegistry, deps: Optional[ElementBuildContext] = None,
     ) -> dict[str, Any]:
-        server_id = getattr(cfg, "server_identifier", "")
-        scheme_type = getattr(cfg, "scheme_type", "")
-        if server_id and deps and deps.auth_service:
-            ctx_holder = getattr(deps, "execution_ctx", None)
-            if ctx_holder:
-                resolver = lambda _h=ctx_holder: _h.context.credential_user_id()
-                cred = deps.auth_service.bind_lazy(resolver, server_id, scheme_type)
-                if cred:
-                    return {"auth_credential": cred}
-
-        return {}
+        cred = self._resolve_auth_credential(cfg, deps)
+        return {"auth_credential": cred} if cred else {}

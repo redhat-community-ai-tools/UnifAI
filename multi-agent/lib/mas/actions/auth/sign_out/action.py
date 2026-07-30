@@ -16,7 +16,9 @@ from mas.actions.common.base_action import BaseAction
 from mas.actions.common.action_models import BaseActionInput, BaseActionOutput, ActionType
 from mas.core.auth.service import AuthService
 from mas.core.enums import ResourceCategory
-from mas.elements.providers.mcp_server_client.identifiers import Identifier
+from mas.elements.providers.mcp_server_client.identifiers import Identifier as McpIdentifier
+from mas.elements.nodes.a2a_agent.identifiers import Identifier as A2ANodeIdentifier
+from mas.elements.providers.a2a_client.identifiers import Identifier as A2AProviderIdentifier
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,11 @@ class SignOutAction(BaseAction):
     output_schema = SignOutOutput
     version = "1.0.0"
     tags = {"auth", "credential"}
-    elements = {(ResourceCategory.PROVIDER.value, Identifier.TYPE)}
+    elements = {
+        (ResourceCategory.PROVIDER.value, McpIdentifier.TYPE),
+        (ResourceCategory.NODE.value, A2ANodeIdentifier.TYPE),
+        (ResourceCategory.PROVIDER.value, A2AProviderIdentifier.TYPE),
+    }
 
     def __init__(self, auth_service: Optional[AuthService] = None):
         super().__init__()
