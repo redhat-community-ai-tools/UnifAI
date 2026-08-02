@@ -2,7 +2,7 @@ import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { ExternalLink, Loader2 } from "lucide-react";
-import { getPromptRuns, PromptRunResponse } from "@/api/prompts";
+import { getScheduleRuns, type ScheduleRunResponse } from "@/api/schedules";
 import { formatTime } from "@/utils/dateTimeUtils";
 import StatusPill from "@/components/shared/StatusPill";
 import { StatusTone } from "@/lib/statusTones";
@@ -10,6 +10,7 @@ import { StatusTone } from "@/lib/statusTones";
 const RUN_STATUS_TONE: Record<string, StatusTone> = {
   COMPLETED: "success",
   FAILED: "danger",
+  CANCELLED: "neutral",
   RUNNING: "info",
 };
 
@@ -26,9 +27,9 @@ interface RunHistoryPanelProps {
 export default function RunHistoryPanel({ promptId, userId, identityType }: RunHistoryPanelProps) {
   const [, navigate] = useLocation();
 
-  const { data: runs = [], isLoading, isError } = useQuery<PromptRunResponse[]>({
+  const { data: runs = [], isLoading, isError } = useQuery<ScheduleRunResponse[]>({
     queryKey: ["prompt-runs", promptId, userId, identityType],
-    queryFn: () => getPromptRuns(promptId, userId, identityType, 8),
+    queryFn: () => getScheduleRuns(promptId, userId, identityType, 8),
     staleTime: 5_000,
     refetchInterval: 10_000,
   });

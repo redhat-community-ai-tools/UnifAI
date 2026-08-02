@@ -84,10 +84,8 @@ class TestWorkerRegistration:
 
     def test_schedule_activities_importable(self):
         from inbound.temporal.activities.schedule_activities import ScheduleActivities
-        assert hasattr(ScheduleActivities, "create_scheduled_session")
-        assert hasattr(ScheduleActivities, "stage_scheduled_inputs")
-        assert hasattr(ScheduleActivities, "build_session_workflow_params")
-        assert hasattr(ScheduleActivities, "post_execution")
+        assert hasattr(ScheduleActivities, "provision_scheduled_session")
+        assert hasattr(ScheduleActivities, "record_scheduled_outcome")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -95,25 +93,27 @@ class TestWorkerRegistration:
 # ═══════════════════════════════════════════════════════════════════
 
 class TestServiceWiring:
-    def test_prompt_service_instantiation(self):
-        """PromptService can be instantiated with minimal dependencies."""
+    def test_service_instantiation(self):
+        """WorkflowScheduleService can be instantiated with minimal dependencies."""
         from unittest.mock import Mock
-        from mas.prompts.service import PromptService
-        svc = PromptService(
-            prompt_repo=Mock(),
-            schedule_port=None,
+        from mas.scheduling.service import WorkflowScheduleService
+        from mas.scheduling.noop import NoOpScheduleEngine
+        svc = WorkflowScheduleService(
+            schedule_repo=Mock(),
+            schedule_engine=NoOpScheduleEngine(),
             blueprint_service=Mock(),
         )
         assert svc is not None
 
-    def test_prompt_service_with_no_schedule_port(self):
-        """PromptService works with schedule_port=None (non-temporal engine)."""
+    def test_noop_engine_rejects_create(self):
+        """WorkflowScheduleService with NoOpScheduleEngine rejects schedule creation."""
         from unittest.mock import Mock
-        from mas.prompts.service import PromptService
+        from mas.scheduling.service import WorkflowScheduleService
+        from mas.scheduling.noop import NoOpScheduleEngine
+        from mas.scheduling.ports import ScheduleValidationError
         repo = Mock()
         repo.count_active_by_blueprint.return_value = 0
         repo.save.return_value = "id"
-        repo.update.return_value = True
 
         identity = Identity.user("u1")
 
@@ -124,14 +124,14 @@ class TestServiceWiring:
         doc.identity = identity
         bp_svc.get_blueprint_draft_doc.return_value = doc
 
-        svc = PromptService(prompt_repo=repo, schedule_port=None, blueprint_service=bp_svc)
-        result = svc.create(
-            identity=identity,
-            blueprint_id="bp-1",
-            text="hello",
-            schedule={"interval": "PT60S"},
-        )
-        assert result.temporal_schedule_id is None
+        svc = WorkflowScheduleService(schedule_repo=repo, schedule_engine=NoOpScheduleEngine(), blueprint_service=bp_svc)
+        with pytest.raises(ScheduleValidationError, match="no engine configured"):
+            svc.create(
+                identity=identity,
+                blueprint_id="bp-1",
+                text="hello",
+                schedule={"interval": "PT60S"},
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════

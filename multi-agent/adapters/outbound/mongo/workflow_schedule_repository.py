@@ -1,8 +1,8 @@
 """
-MongoDB implementation of ScheduledPromptRepository.
+MongoDB implementation of WorkflowScheduleRepository.
 
-Manages the `scheduled_prompts` collection with TTL cleanup for
-completed prompts and identity-scoped queries.
+Manages the `workflow_schedules` collection with TTL cleanup for
+completed schedules and identity-scoped queries.
 """
 from datetime import datetime, timezone
 from typing import List
@@ -10,15 +10,15 @@ from typing import List
 import pymongo
 
 from mas.core.identity import Identity
-from mas.prompts.models import RunOutcome, ScheduledPrompt, ScheduleStatus
-from mas.prompts.repository import ScheduledPromptRepository
+from mas.scheduling.models import RunOutcome, WorkflowSchedule, ScheduleStatus
+from mas.scheduling.repository import WorkflowScheduleRepository
 from outbound.mongo.helpers import identity_q
 from global_utils.utils.util import get_mongo_url
 
 
-class MongoScheduledPromptRepository(ScheduledPromptRepository):
+class MongoWorkflowScheduleRepository(WorkflowScheduleRepository):
 
-    def __init__(self, db_name: str = "UnifAI", coll_name: str = "scheduled_prompts"):
+    def __init__(self, db_name: str = "UnifAI", coll_name: str = "workflow_schedules"):
         mongo_uri = get_mongo_url()
         client = pymongo.MongoClient(mongo_uri)
         self._col = client[db_name][coll_name]
@@ -50,40 +50,40 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
                 background=True,
             )
 
-    def save(self, prompt: ScheduledPrompt) -> str:
+    def save(self, schedule: WorkflowSchedule) -> str:
         now = datetime.now(timezone.utc)
-        doc = prompt.model_dump(mode="json")
+        doc = schedule.model_dump(mode="json")
         doc["created_at"] = now
         doc["updated_at"] = now
         self._col.insert_one(doc)
-        return prompt.id
+        return schedule.id
 
-    def load(self, prompt_id: str) -> ScheduledPrompt:
-        doc = self._col.find_one({"id": prompt_id})
+    def load(self, schedule_id: str) -> WorkflowSchedule:
+        doc = self._col.find_one({"id": schedule_id})
         if not doc:
-            raise KeyError(f"No scheduled prompt with id={prompt_id}")
+            raise KeyError(f"No workflow schedule with id={schedule_id}")
         return self._deserialize(doc)
 
-    def update(self, prompt: ScheduledPrompt) -> bool:
+    def update(self, schedule: WorkflowSchedule) -> bool:
         now = datetime.now(timezone.utc)
-        doc = prompt.model_dump(mode="json")
+        doc = schedule.model_dump(mode="json")
         doc["updated_at"] = now
         doc.pop("created_at", None)
-        if prompt.completed_at is not None:
-            doc["completed_at"] = prompt.completed_at
+        if schedule.completed_at is not None:
+            doc["completed_at"] = schedule.completed_at
         res = self._col.update_one(
-            {"id": prompt.id},
+            {"id": schedule.id},
             {"$set": doc},
         )
         return res.modified_count == 1
 
-    def delete(self, prompt_id: str) -> bool:
-        res = self._col.delete_one({"id": prompt_id})
+    def delete(self, schedule_id: str) -> bool:
+        res = self._col.delete_one({"id": schedule_id})
         return res.deleted_count == 1
 
     def list_by_identity(
         self, identity: Identity, *, skip: int = 0, limit: int = 100,
-    ) -> List[ScheduledPrompt]:
+    ) -> List[WorkflowSchedule]:
         query = identity_q(identity)
         cursor = (
             self._col.find(query)
@@ -93,7 +93,7 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
         )
         return [self._deserialize(doc) for doc in cursor]
 
-    def find_by_blueprint(self, blueprint_id: str) -> List[ScheduledPrompt]:
+    def find_by_blueprint(self, blueprint_id: str) -> List[WorkflowSchedule]:
         cursor = self._col.find({
             "blueprint_id": blueprint_id,
         }).sort("updated_at", pymongo.DESCENDING)
@@ -105,17 +105,15 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
             "schedule_status": {"$in": [ScheduleStatus.ACTIVE, ScheduleStatus.PAUSED]},
         })
 
-    def record_run(self, prompt_id: str, session_id: str, status: RunOutcome, started_at: datetime) -> None:
+    def record_run(self, schedule_id: str, session_id: str, status: RunOutcome, started_at: datetime) -> None:
         entry = {
             "session_id": session_id,
             "status": status,
             "started_at": started_at,
         }
-        # Idempotent: the $ne guard ensures that a retry of the same
-        # session_id is a no-op — no double $inc, no duplicate $push.
         result = self._col.update_one(
             {
-                "id": prompt_id,
+                "id": schedule_id,
                 "run_stats.recent_statuses.session_id": {"$ne": session_id},
             },
             {
@@ -130,10 +128,9 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
             },
         )
         if result.matched_count == 0:
-            # Already recorded — update status in case it changed on retry
             self._col.update_one(
                 {
-                    "id": prompt_id,
+                    "id": schedule_id,
                     "run_stats.recent_statuses.session_id": session_id,
                 },
                 {
@@ -143,8 +140,8 @@ class MongoScheduledPromptRepository(ScheduledPromptRepository):
             )
 
     @staticmethod
-    def _deserialize(doc: dict) -> ScheduledPrompt:
+    def _deserialize(doc: dict) -> WorkflowSchedule:
         doc.pop("_id", None)
         doc.pop("created_at", None)
         doc.pop("updated_at", None)
-        return ScheduledPrompt(**doc)
+        return WorkflowSchedule(**doc)

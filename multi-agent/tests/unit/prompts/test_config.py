@@ -8,9 +8,9 @@ from config.app_config import AppConfig
 
 
 class TestAppConfigExtensions:
-    def test_scheduled_prompts_coll_default(self):
+    def test_workflow_schedules_coll_default(self):
         cfg = AppConfig.get_instance()
-        assert cfg.scheduled_prompts_coll == "scheduled_prompts"
+        assert cfg.workflow_schedules_coll == "workflow_schedules"
 
     def test_existing_config_unaffected(self):
         cfg = AppConfig.get_instance()

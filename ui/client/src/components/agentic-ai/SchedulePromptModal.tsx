@@ -31,7 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { ScheduledPromptResponse } from "@/api/prompts";
+import { type WorkflowScheduleResponse } from "@/api/schedules";
 import { RecurrenceOption, OVERLAP_OPTIONS, formatInMode } from "@/utils/scheduleDefinitionUtils";
 import { useSchedulePromptForm } from "@/hooks/use-schedule-prompt-form";
 import { CustomRecurrenceDialog } from "./CustomRecurrenceDialog";
@@ -43,7 +43,7 @@ interface SchedulePromptModalProps {
   blueprintName: string;
   userId?: string;
   identityType?: string;
-  editPrompt?: ScheduledPromptResponse | null;
+  editPrompt?: WorkflowScheduleResponse | null;
 }
 
 export default function SchedulePromptModal({

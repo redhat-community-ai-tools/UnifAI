@@ -10,26 +10,26 @@ from unittest.mock import Mock
 import pytest
 
 from mas.core.identity import Identity
-from mas.prompts.models import (
+from mas.scheduling.models import (
     ScheduleDefinition,
     ScheduleStatus,
-    ScheduledPrompt,
+    WorkflowSchedule,
 )
-from mas.prompts.service import (
-    PromptNotFoundError,
-    PromptPermissionError,
-    PromptService,
+from mas.scheduling.service import (
+    ScheduleNotFoundError,
+    SchedulePermissionError,
+    WorkflowScheduleService,
 )
 
 
 def _make_prompt(identity, **kwargs):
-    return ScheduledPrompt(
+    return WorkflowSchedule(
         blueprint_id=kwargs.pop("blueprint_id", "bp-1"),
         identity=identity,
         text=kwargs.pop("text", "test"),
         schedule=ScheduleDefinition(interval=timedelta(minutes=15)),
         schedule_status=kwargs.pop("status", ScheduleStatus.ACTIVE),
-        temporal_schedule_id=kwargs.pop("temporal_schedule_id", "sched-1"),
+        engine_handle=kwargs.pop("engine_handle", "sched-1"),
         **kwargs,
     )
 
@@ -68,12 +68,11 @@ def service():
     port = Mock()
     port.create_schedule.return_value = "sched-id"
 
-    svc = PromptService(
-        prompt_repo=repo,
-        schedule_port=port,
+    svc = WorkflowScheduleService(
+        schedule_repo=repo,
+        schedule_engine=port,
         blueprint_service=bp_svc,
     )
-    svc._repo = repo
     return svc
 
 
@@ -92,15 +91,15 @@ class TestPersonalMode:
     def test_user_cannot_manage_others_prompt(self, service, user_a, user_b):
         prompt = _make_prompt(user_a)
         service._repo.load.return_value = prompt
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.pause(prompt.id, identity=user_b)
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.resume(prompt.id, identity=user_b)
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.delete(prompt.id, identity=user_b)
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.trigger(prompt.id, identity=user_b)
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.update(prompt.id, identity=user_b, text="hack")
 
 
@@ -124,7 +123,7 @@ class TestTeamMode:
     def test_other_team_cannot_access(self, service, team_x, team_y):
         prompt = _make_prompt(team_x)
         service._repo.load.return_value = prompt
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.get(prompt.id, identity=team_y)
 
 
@@ -136,13 +135,13 @@ class TestCrossContextIsolation:
     def test_personal_not_visible_in_team(self, service, user_a, team_x):
         personal_prompt = _make_prompt(user_a)
         service._repo.load.return_value = personal_prompt
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.get(personal_prompt.id, identity=team_x)
 
     def test_team_not_visible_in_personal(self, service, user_a, team_x):
         team_prompt = _make_prompt(team_x)
         service._repo.load.return_value = team_prompt
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.get(team_prompt.id, identity=user_a)
 
 
@@ -155,23 +154,23 @@ class TestSecurity:
         prompt = _make_prompt(user_a)
         service._repo.load.return_value = prompt
 
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.get(prompt.id, identity=user_b)
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.update(prompt.id, identity=user_b, text="x")
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.pause(prompt.id, identity=user_b)
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.resume(prompt.id, identity=user_b)
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.delete(prompt.id, identity=user_b)
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.trigger(prompt.id, identity=user_b)
 
     def test_get_runs_respects_ownership(self, service, user_a, user_b):
         prompt = _make_prompt(user_a)
         service._repo.load.return_value = prompt
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.get_runs(prompt.id, identity=user_b)
 
     def test_nosql_injection_in_text_stored_literally(self, service, user_a):

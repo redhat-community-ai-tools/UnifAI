@@ -10,11 +10,11 @@ export interface ScheduleDefinitionInput {
   overlap_policy?: string;
   timezone?: string;
   start_at?: string;
-  end_at?: string;
-  remaining_actions?: number;
+  end_at?: string | null;
+  remaining_actions?: number | null;
 }
 
-export interface CreatePromptInput {
+export interface CreateScheduleInput {
   blueprintId: string;
   text: string;
   inputs?: Record<string, any>;
@@ -22,8 +22,8 @@ export interface CreatePromptInput {
   schedule: ScheduleDefinitionInput;
 }
 
-export interface UpdatePromptInput {
-  promptId: string;
+export interface UpdateScheduleInput {
+  scheduleId: string;
   text?: string;
   inputs?: Record<string, any>;
   schedule?: ScheduleDefinitionInput;
@@ -41,22 +41,26 @@ export interface RunStats {
   recent_statuses: RunStatusEntry[];
 }
 
-export interface ScheduledPromptResponse {
+export interface Prompt {
+  text: string;
+}
+
+export interface WorkflowScheduleResponse {
   id: string;
+  prompt: Prompt;
   blueprint_id: string;
   blueprint_name?: string;
   identity: { type: string; id: string; display_name: string };
-  text: string;
   inputs: Record<string, any>;
   source: string;
   schedule: ScheduleDefinitionInput;
   schedule_status: string;
-  temporal_schedule_id?: string;
+  engine_handle?: string;
   completed_at?: string;
   run_stats: RunStats;
 }
 
-export interface PromptRunResponse {
+export interface ScheduleRunResponse {
   session_id: string;
   status: string;
   started_at: string;
@@ -67,12 +71,12 @@ export interface PromptRunResponse {
 // CRUD Operations
 // ────────────────────────────────────────────────────────────────────────────────
 
-export async function createScheduledPrompt(
-  input: CreatePromptInput,
+export async function createSchedule(
+  input: CreateScheduleInput,
   userId?: string,
   identityType?: string,
-): Promise<ScheduledPromptResponse> {
-  const { data } = await axios.post('/prompts/prompt.create', {
+): Promise<WorkflowScheduleResponse> {
+  const { data } = await axios.post('/schedules/schedule.create', {
     ...input,
     userId: userId || 'default',
     identityType: identityType || 'user',
@@ -80,12 +84,12 @@ export async function createScheduledPrompt(
   return data;
 }
 
-export async function updateScheduledPrompt(
-  input: UpdatePromptInput,
+export async function updateSchedule(
+  input: UpdateScheduleInput,
   userId?: string,
   identityType?: string,
-): Promise<ScheduledPromptResponse> {
-  const { data } = await axios.post('/prompts/prompt.update', {
+): Promise<WorkflowScheduleResponse> {
+  const { data } = await axios.post('/schedules/schedule.update', {
     ...input,
     userId: userId || 'default',
     identityType: identityType || 'user',
@@ -93,28 +97,28 @@ export async function updateScheduledPrompt(
   return data;
 }
 
-export async function listScheduledPrompts(
+export async function listSchedules(
   userId?: string,
   identityType?: string,
   blueprintId?: string,
-): Promise<ScheduledPromptResponse[]> {
+): Promise<WorkflowScheduleResponse[]> {
   const params: Record<string, string> = {
     userId: userId || 'default',
     identityType: identityType || 'user',
   };
   if (blueprintId) params.blueprintId = blueprintId;
-  const { data } = await axios.get('/prompts/prompt.list', { params });
+  const { data } = await axios.get('/schedules/schedule.list', { params });
   return data;
 }
 
-export async function getScheduledPrompt(
-  promptId: string,
+export async function getSchedule(
+  scheduleId: string,
   userId?: string,
   identityType?: string,
-): Promise<ScheduledPromptResponse> {
-  const { data } = await axios.get('/prompts/prompt.get', {
+): Promise<WorkflowScheduleResponse> {
+  const { data } = await axios.get('/schedules/schedule.get', {
     params: {
-      promptId,
+      scheduleId,
       userId: userId || 'default',
       identityType: identityType || 'user',
     },
@@ -126,53 +130,53 @@ export async function getScheduledPrompt(
 // Schedule Lifecycle
 // ────────────────────────────────────────────────────────────────────────────────
 
-export async function pausePromptSchedule(
-  promptId: string,
+export async function pauseSchedule(
+  scheduleId: string,
   userId?: string,
   identityType?: string,
-): Promise<ScheduledPromptResponse> {
-  const { data } = await axios.post('/prompts/prompt.schedule.pause', {
-    promptId,
+): Promise<WorkflowScheduleResponse> {
+  const { data } = await axios.post('/schedules/schedule.pause', {
+    scheduleId,
     userId: userId || 'default',
     identityType: identityType || 'user',
   });
   return data;
 }
 
-export async function resumePromptSchedule(
-  promptId: string,
+export async function resumeSchedule(
+  scheduleId: string,
   userId?: string,
   identityType?: string,
-): Promise<ScheduledPromptResponse> {
-  const { data } = await axios.post('/prompts/prompt.schedule.resume', {
-    promptId,
+): Promise<WorkflowScheduleResponse> {
+  const { data } = await axios.post('/schedules/schedule.resume', {
+    scheduleId,
     userId: userId || 'default',
     identityType: identityType || 'user',
   });
   return data;
 }
 
-export async function triggerPromptSchedule(
-  promptId: string,
+export async function triggerSchedule(
+  scheduleId: string,
   userId?: string,
   identityType?: string,
-): Promise<ScheduledPromptResponse> {
-  const { data } = await axios.post('/prompts/prompt.schedule.trigger', {
-    promptId,
+): Promise<WorkflowScheduleResponse> {
+  const { data } = await axios.post('/schedules/schedule.trigger', {
+    scheduleId,
     userId: userId || 'default',
     identityType: identityType || 'user',
   });
   return data;
 }
 
-export async function deleteScheduledPrompt(
-  promptId: string,
+export async function deleteSchedule(
+  scheduleId: string,
   userId?: string,
   identityType?: string,
 ): Promise<{ deleted: boolean }> {
-  const { data } = await axios.delete('/prompts/prompt.delete', {
+  const { data } = await axios.delete('/schedules/schedule.delete', {
     data: {
-      promptId,
+      scheduleId,
       userId: userId || 'default',
       identityType: identityType || 'user',
     },
@@ -181,21 +185,21 @@ export async function deleteScheduledPrompt(
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
-// Prompt Runs (session history for a scheduled prompt)
+// Schedule Runs (session history for a workflow schedule)
 // ────────────────────────────────────────────────────────────────────────────────
 
-export async function getPromptRuns(
-  promptId: string,
+export async function getScheduleRuns(
+  scheduleId: string,
   userId?: string,
   identityType?: string,
   limit?: number,
-): Promise<PromptRunResponse[]> {
+): Promise<ScheduleRunResponse[]> {
   const params: Record<string, string | number> = {
-    promptId,
+    scheduleId,
     userId: userId || 'default',
     identityType: identityType || 'user',
   };
   if (limit) params.limit = limit;
-  const { data } = await axios.get('/prompts/prompt.runs', { params });
+  const { data } = await axios.get('/schedules/schedule.runs', { params });
   return data;
 }

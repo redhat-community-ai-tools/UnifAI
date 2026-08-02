@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, Mock, patch, MagicMock
 import pytest
 
 from mas.core.identity import Identity
-from mas.prompts.models import (
+from mas.scheduling.models import (
     ScheduleDefinition,
     ScheduleOverlapPolicy,
-    ScheduledPrompt,
+    WorkflowSchedule,
 )
 
 
@@ -33,7 +33,7 @@ def _make_prompt(
     if end_at:
         sched_kwargs["end_at"] = end_at
 
-    return ScheduledPrompt(
+    return WorkflowSchedule(
         id="prompt-abc",
         blueprint_id="bp-1",
         identity=Identity.user("user-1"),
@@ -174,7 +174,7 @@ class TestDescribe:
 
     def test_describe_exhausted_schedule(self):
         """limited_actions=True + remaining_actions=0 → running=False."""
-        from mas.prompts.ports import ScheduleInfo
+        from mas.scheduling.ports import ScheduleInfo
 
         client = self._mock_client_with_state(
             limited_actions=True, remaining_actions=0, paused=False,
@@ -190,7 +190,7 @@ class TestDescribe:
 
     def test_describe_running_finite_schedule(self):
         """limited_actions=True + remaining_actions > 0 → running=True."""
-        from mas.prompts.ports import ScheduleInfo
+        from mas.scheduling.ports import ScheduleInfo
 
         client = self._mock_client_with_state(
             limited_actions=True, remaining_actions=2, paused=False,
@@ -206,7 +206,7 @@ class TestDescribe:
 
     def test_describe_unlimited_schedule(self):
         """limited_actions=False → remaining_actions=None, running=True."""
-        from mas.prompts.ports import ScheduleInfo
+        from mas.scheduling.ports import ScheduleInfo
 
         client = self._mock_client_with_state(
             limited_actions=False, remaining_actions=0, paused=False,
@@ -222,7 +222,7 @@ class TestDescribe:
 
     def test_describe_not_found_raises(self):
         """RPCError NOT_FOUND → ScheduleNotFoundError."""
-        from mas.prompts.ports import ScheduleNotFoundError
+        from mas.scheduling.ports import ScheduleNotFoundError
         from temporalio.service import RPCError, RPCStatusCode
 
         rpc_error = RPCError("not found", RPCStatusCode.NOT_FOUND, b"")
@@ -243,7 +243,7 @@ class TestDescribe:
 
     def test_describe_paused_schedule(self):
         """Paused schedule → paused=True, running still reflects actions state."""
-        from mas.prompts.ports import ScheduleInfo
+        from mas.scheduling.ports import ScheduleInfo
 
         client = self._mock_client_with_state(
             limited_actions=True, remaining_actions=5, paused=True,
@@ -268,7 +268,7 @@ class TestCreateUpdateErrorTranslation:
         self.adapter_cls = TemporalScheduleAdapter
 
     def test_create_schedule_invalid_argument_translated(self):
-        from mas.prompts.ports import ScheduleValidationError
+        from mas.scheduling.ports import ScheduleValidationError
         from temporalio.service import RPCError, RPCStatusCode
 
         rpc_error = RPCError("bad cron", RPCStatusCode.INVALID_ARGUMENT, b"")
@@ -301,7 +301,7 @@ class TestCreateUpdateErrorTranslation:
                 adapter.create_schedule(prompt)
 
     def test_update_schedule_invalid_argument_translated(self):
-        from mas.prompts.ports import ScheduleValidationError
+        from mas.scheduling.ports import ScheduleValidationError
         from temporalio.service import RPCError, RPCStatusCode
 
         rpc_error = RPCError("bad timezone", RPCStatusCode.INVALID_ARGUMENT, b"")

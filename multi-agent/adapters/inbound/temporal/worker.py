@@ -64,7 +64,7 @@ async def run_worker(
         session_service=container.session_service,
         input_projector=container.input_projector,
         session_manager=container.session_manager,
-        prompt_service=container.prompt_service,
+        schedule_service=container.schedule_service,
     )
 
     client = await get_temporal_client()
@@ -80,10 +80,8 @@ async def run_worker(
             lifecycle_activities.complete_session,
             lifecycle_activities.fail_session,
             lifecycle_activities.cancel_session,
-            schedule_activities.create_scheduled_session,
-            schedule_activities.stage_scheduled_inputs,
-            schedule_activities.build_session_workflow_params,
-            schedule_activities.post_execution,
+            schedule_activities.provision_scheduled_session,
+            schedule_activities.record_scheduled_outcome,
         ],
         activity_executor=thread_pool,
         max_concurrent_activities=threads,

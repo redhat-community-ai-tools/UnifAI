@@ -1,6 +1,6 @@
 """Unit tests for Scheduled Prompt domain models.
 
-Covers: BasePrompt, ScheduleDefinition, RunStatusEntry, RunStats, ScheduledPrompt.
+Covers: BasePrompt, ScheduleDefinition, RunStatusEntry, RunStats, WorkflowSchedule.
 (Test Plan sections 1.1, 1.3, 1.4, 1.5)
 """
 import re
@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from mas.core.identity import Identity
 from mas.core.prompt import BasePrompt
-from mas.prompts.models import (
+from mas.scheduling.models import (
     PromptSource,
     RunOutcome,
     RunStats,
@@ -20,7 +20,7 @@ from mas.prompts.models import (
     ScheduleDefinition,
     ScheduleOverlapPolicy,
     ScheduleStatus,
-    ScheduledPrompt,
+    WorkflowSchedule,
 )
 
 
@@ -187,10 +187,10 @@ class TestRunStats:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# 1.5 ScheduledPrompt
+# 1.5 WorkflowSchedule
 # ═══════════════════════════════════════════════════════════════════
 
-class TestScheduledPrompt:
+class TestWorkflowSchedule:
     @pytest.fixture
     def identity(self):
         return Identity.user("user-1")
@@ -200,7 +200,7 @@ class TestScheduledPrompt:
         return ScheduleDefinition(interval=timedelta(minutes=15))
 
     def test_valid_creation(self, identity, schedule):
-        p = ScheduledPrompt(
+        p = WorkflowSchedule(
             blueprint_id="bp-1",
             identity=identity,
             text="test prompt",
@@ -213,7 +213,7 @@ class TestScheduledPrompt:
 
     def test_inherits_base_prompt_text_validation(self, identity, schedule):
         with pytest.raises(ValidationError, match="must not be empty"):
-            ScheduledPrompt(
+            WorkflowSchedule(
                 blueprint_id="bp-1",
                 identity=identity,
                 text="",
@@ -221,13 +221,13 @@ class TestScheduledPrompt:
             )
 
     def test_default_source_is_manual(self, identity, schedule):
-        p = ScheduledPrompt(
+        p = WorkflowSchedule(
             blueprint_id="bp-1", identity=identity, text="x", schedule=schedule,
         )
         assert p.source == PromptSource.MANUAL
 
     def test_source_shortcut_copy(self, identity, schedule):
-        p = ScheduledPrompt(
+        p = WorkflowSchedule(
             blueprint_id="bp-1",
             identity=identity,
             text="x",
@@ -237,14 +237,14 @@ class TestScheduledPrompt:
         assert p.source == PromptSource.SHORTCUT_COPY
 
     def test_empty_inputs_default(self, identity, schedule):
-        p = ScheduledPrompt(
+        p = WorkflowSchedule(
             blueprint_id="bp-1", identity=identity, text="x", schedule=schedule,
         )
         assert p.inputs == {}
 
     def test_complex_inputs(self, identity, schedule):
         inputs = {"key": [1, 2, 3], "nested": {"a": "b"}}
-        p = ScheduledPrompt(
+        p = WorkflowSchedule(
             blueprint_id="bp-1",
             identity=identity,
             text="x",
@@ -254,11 +254,11 @@ class TestScheduledPrompt:
         assert p.inputs == inputs
 
     def test_model_dump_json_roundtrip(self, identity, schedule):
-        p = ScheduledPrompt(
+        p = WorkflowSchedule(
             blueprint_id="bp-1", identity=identity, text="hello", schedule=schedule,
         )
         dumped = p.model_dump(mode="json")
-        reconstructed = ScheduledPrompt(**dumped)
+        reconstructed = WorkflowSchedule(**dumped)
         assert reconstructed.id == p.id
         assert reconstructed.text == p.text
         assert reconstructed.blueprint_id == p.blueprint_id
@@ -266,10 +266,10 @@ class TestScheduledPrompt:
 
     def test_identity_field_required(self, schedule):
         with pytest.raises(ValidationError):
-            ScheduledPrompt(blueprint_id="bp-1", text="x", schedule=schedule)
+            WorkflowSchedule(blueprint_id="bp-1", text="x", schedule=schedule)
 
     def test_run_stats_defaults_to_empty(self, identity, schedule):
-        p = ScheduledPrompt(
+        p = WorkflowSchedule(
             blueprint_id="bp-1", identity=identity, text="x", schedule=schedule,
         )
         assert p.run_stats.total_runs == 0

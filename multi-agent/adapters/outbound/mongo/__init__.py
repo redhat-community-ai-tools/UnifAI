@@ -4,7 +4,7 @@ from .resource_repository import MongoResourceRepository
 from .share_repository import MongoShareRepository
 from .template_repository import MongoTemplateRepository
 from .auth_token_repository import MongoCredentialStore
-from .scheduled_prompt_repository import MongoScheduledPromptRepository
+from .workflow_schedule_repository import MongoWorkflowScheduleRepository
 
 __all__ = [
     "MongoSessionRepository",
@@ -13,5 +13,5 @@ __all__ = [
     "MongoShareRepository",
     "MongoTemplateRepository",
     "MongoCredentialStore",
-    "MongoScheduledPromptRepository",
+    "MongoWorkflowScheduleRepository",
 ]

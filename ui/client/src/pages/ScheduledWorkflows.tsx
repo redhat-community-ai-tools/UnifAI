@@ -21,14 +21,14 @@ import { DataTable, DataTableColumn } from "@/components/shared/DataTable";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { useToast } from "@/hooks/use-toast";
 import {
-  listScheduledPrompts,
-  pausePromptSchedule,
-  resumePromptSchedule,
-  deleteScheduledPrompt,
-  triggerPromptSchedule,
-  ScheduledPromptResponse,
-  ScheduleDefinitionInput,
-} from "@/api/prompts";
+  listSchedules,
+  pauseSchedule,
+  resumeSchedule,
+  deleteSchedule,
+  triggerSchedule,
+  type WorkflowScheduleResponse,
+  type ScheduleDefinitionInput,
+} from "@/api/schedules";
 import { fetchResolvedBlueprint } from "@/api/blueprints";
 import SchedulePromptModal from "@/components/agentic-ai/SchedulePromptModal";
 import GraphDisplay from "@/components/agentic-ai/graphs/GraphDisplay";
@@ -138,13 +138,13 @@ function PromptCell({ text }: { text: string }) {
 // ---------------------------------------------------------------------------
 
 interface ActionsCellProps {
-  prompt: ScheduledPromptResponse;
+  prompt: WorkflowScheduleResponse;
   expandedPromptId: string | null;
   onToggleExpand: (id: string) => void;
   onTrigger: (id: string) => void;
   onPause: (id: string) => void;
   onResume: (id: string) => void;
-  onEdit: (prompt: ScheduledPromptResponse) => void;
+  onEdit: (prompt: WorkflowScheduleResponse) => void;
   onDelete: (id: string) => void;
 }
 
@@ -257,7 +257,7 @@ export default function ScheduledWorkflows() {
   const qc = useQueryClient();
 
   // Edit / create modal state
-  const [editPrompt, setEditPrompt] = useState<ScheduledPromptResponse | null>(null);
+  const [editPrompt, setEditPrompt] = useState<WorkflowScheduleResponse | null>(null);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [selectedBlueprint, setSelectedBlueprint] = useState<{ id: string; name: string } | null>(null);
 
@@ -280,9 +280,9 @@ export default function ScheduledWorkflows() {
     [userId, identityType],
   );
 
-  const { data: prompts = [], isLoading } = useQuery<ScheduledPromptResponse[]>({
+  const { data: prompts = [], isLoading } = useQuery<WorkflowScheduleResponse[]>({
     queryKey,
-    queryFn: () => listScheduledPrompts(userId, identityType),
+    queryFn: () => listSchedules(userId, identityType),
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
@@ -315,8 +315,8 @@ export default function ScheduledWorkflows() {
   // ---- Optimistic helper ----
 
   const optimisticUpdate = useCallback(
-    (id: string, patch: Partial<ScheduledPromptResponse>) => {
-      qc.setQueryData<ScheduledPromptResponse[]>(queryKey, (old) =>
+    (id: string, patch: Partial<WorkflowScheduleResponse>) => {
+      qc.setQueryData<WorkflowScheduleResponse[]>(queryKey, (old) =>
         old?.map((p) => (p.id === id ? { ...p, ...patch } : p)),
       );
     },
@@ -328,7 +328,7 @@ export default function ScheduledWorkflows() {
   const handleTrigger = useCallback(
     async (id: string) => {
       try {
-        await triggerPromptSchedule(id, userId, identityType);
+        await triggerSchedule(id, userId, identityType);
         toast({ title: "Triggered", description: "Schedule run started" });
         invalidate();
       } catch {
@@ -342,7 +342,7 @@ export default function ScheduledWorkflows() {
     async (id: string) => {
       optimisticUpdate(id, { schedule_status: "paused" });
       try {
-        await pausePromptSchedule(id, userId, identityType);
+        await pauseSchedule(id, userId, identityType);
         toast({ title: "Paused", description: "Schedule paused" });
         invalidate();
       } catch {
@@ -357,7 +357,7 @@ export default function ScheduledWorkflows() {
     async (id: string) => {
       optimisticUpdate(id, { schedule_status: "active" });
       try {
-        await resumePromptSchedule(id, userId, identityType);
+        await resumeSchedule(id, userId, identityType);
         toast({ title: "Resumed", description: "Schedule resumed" });
         invalidate();
       } catch {
@@ -373,7 +373,7 @@ export default function ScheduledWorkflows() {
       if (!deleteTarget) return;
       optimisticUpdate(deleteTarget, { schedule_status: "completed" });
       try {
-        await deleteScheduledPrompt(deleteTarget, userId, identityType);
+        await deleteSchedule(deleteTarget, userId, identityType);
         toast({ title: "Deleted", description: "Scheduled prompt removed" });
         invalidate();
       } catch {
@@ -386,7 +386,7 @@ export default function ScheduledWorkflows() {
     [deleteTarget, userId, identityType, toast, invalidate, optimisticUpdate],
   );
 
-  const handleEdit = useCallback((prompt: ScheduledPromptResponse) => {
+  const handleEdit = useCallback((prompt: WorkflowScheduleResponse) => {
     setEditPrompt(prompt);
     setSelectedBlueprint({ id: prompt.blueprint_id, name: prompt.blueprint_name ?? prompt.blueprint_id });
     setScheduleModalOpen(true);
@@ -423,7 +423,7 @@ export default function ScheduledWorkflows() {
 
   // ---- DataTable column definitions ----
 
-  const columns: DataTableColumn<ScheduledPromptResponse>[] = useMemo(() => [
+  const columns: DataTableColumn<WorkflowScheduleResponse>[] = useMemo(() => [
     {
       accessorFn: (row) => row.blueprint_name ?? row.blueprint_id,
       id: "workflow",
@@ -434,9 +434,9 @@ export default function ScheduledWorkflows() {
       meta: { align: "left" as const, filterType: "text" as const },
     },
     {
-      accessorKey: "text",
+      accessorKey: "prompt.text",
       header: "Prompt",
-      cell: ({ row }) => <PromptCell text={row.original.text} />,
+      cell: ({ row }) => <PromptCell text={row.original.prompt.text} />,
       meta: { align: "left" as const, filterType: "text" as const },
     },
     {
@@ -565,7 +565,7 @@ export default function ScheduledWorkflows() {
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-300 whitespace-pre-wrap">{prompt.text}</p>
+                      <p className="text-sm text-gray-300 whitespace-pre-wrap">{prompt.prompt.text}</p>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

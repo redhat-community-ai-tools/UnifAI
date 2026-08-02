@@ -4,7 +4,7 @@
  * and the cron/interval-based `ScheduleDefinitionInput` the backend understands.
  */
 import { format } from "date-fns";
-import { ScheduleDefinitionInput } from "@/api/prompts";
+import { type ScheduleDefinitionInput } from "@/api/schedules";
 import { parseISODuration } from "@/utils/dateTimeUtils";
 import { DAY_CRON_NAMES, CRON_TO_DAY } from "@/constants/dateConstants";
 
@@ -93,6 +93,9 @@ export function buildScheduleDefinition(
   const base: ScheduleDefinitionInput = {
     timezone: tz,
     start_at: startAt,
+    // Explicit nulls so partial schedule.update merges can clear prior ends policy.
+    end_at: null,
+    remaining_actions: null,
   };
   if (overlapPolicy && overlapPolicy !== "skip") {
     base.overlap_policy = overlapPolicy;
@@ -131,8 +134,10 @@ export function buildScheduleDefinition(
 
     if (ends === "on_date" && endDate) {
       result.end_at = endDate.toISOString();
+      result.remaining_actions = null;
     } else if (ends === "after_count" && endCount) {
       result.remaining_actions = endCount;
+      result.end_at = null;
     }
 
     if (!result.interval && !result.cron_expression) {
@@ -157,6 +162,26 @@ export function buildScheduleDefinition(
     default:
       return { ...base, interval: "PT1H", remaining_actions: 1 };
   }
+}
+
+/** True when two instants fall in the same clock minute (UI time precision is HH:mm). */
+export function isSameMinute(a: Date, b: Date): boolean {
+  return Math.floor(a.getTime() / 60_000) === Math.floor(b.getTime() / 60_000);
+}
+
+/**
+ * Resolve a picker HH:mm start into a concrete instant.
+ * If the chosen minute is already slightly in the past, bump by `graceMs`
+ * so Save at the current minute still succeeds (seconds stay system-side).
+ */
+export function resolveStartDateTime(combined: Date, now = new Date(), graceMs = 20_000): Date | null {
+  if (combined.getTime() > now.getTime()) {
+    return combined;
+  }
+  if (combined.getTime() > now.getTime() - graceMs) {
+    return new Date(now.getTime() + graceMs);
+  }
+  return null;
 }
 
 export function parseScheduleToState(schedule: ScheduleDefinitionInput): {

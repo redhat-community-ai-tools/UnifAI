@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { listScheduledPrompts } from "@/api/prompts";
+import { listSchedules } from "@/api/schedules";
 
 /**
  * Returns the set of blueprint IDs that have at least one active scheduled prompt
@@ -12,7 +12,7 @@ export function useScheduledBlueprints(
 ): Set<string> {
   const { data = new Set<string>() } = useQuery({
     queryKey: ["scheduled-prompts", userId, identityType],
-    queryFn: () => listScheduledPrompts(userId, identityType),
+    queryFn: () => listSchedules(userId, identityType),
     select: (prompts) =>
       new Set(
         prompts
@@ -34,7 +34,7 @@ export function useScheduledBlueprintCounts(
 ): Map<string, number> {
   const { data = new Map<string, number>() } = useQuery({
     queryKey: ["scheduled-prompts", userId, identityType],
-    queryFn: () => listScheduledPrompts(userId, identityType),
+    queryFn: () => listSchedules(userId, identityType),
     select: (prompts) => {
       const counts = new Map<string, number>();
       for (const p of prompts) {

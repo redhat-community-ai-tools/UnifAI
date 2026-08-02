@@ -2,10 +2,10 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { format } from "date-fns";
 import { getPromptShortcuts, PromptShortcut } from "@/api/blueprints";
 import {
-  createScheduledPrompt,
-  updateScheduledPrompt,
-  ScheduledPromptResponse,
-} from "@/api/prompts";
+  createSchedule,
+  updateSchedule,
+  type WorkflowScheduleResponse,
+} from "@/api/schedules";
 import {
   RecurrenceOption,
   CustomRecurrenceConfig,
@@ -13,6 +13,8 @@ import {
   summarizeCustomRecurrence,
   buildScheduleDefinition,
   parseScheduleToState,
+  isSameMinute,
+  resolveStartDateTime,
 } from "@/utils/scheduleDefinitionUtils";
 
 interface UseSchedulePromptFormArgs {
@@ -20,7 +22,7 @@ interface UseSchedulePromptFormArgs {
   blueprintId: string;
   userId?: string;
   identityType?: string;
-  editPrompt?: ScheduledPromptResponse | null;
+  editPrompt?: WorkflowScheduleResponse | null;
   onClose: (saved?: boolean) => void;
 }
 
@@ -100,7 +102,7 @@ export function useSchedulePromptForm({
     setError(null);
 
     if (editPrompt) {
-      setPromptText(editPrompt.text);
+      setPromptText(editPrompt.prompt.text);
       const parsed = parseScheduleToState(editPrompt.schedule);
       setStartDate(parsed.startDate);
       setTime(format(parsed.startDate, "HH:mm"));
@@ -196,25 +198,59 @@ export function useSchedulePromptForm({
       setError("Prompt text is required");
       return;
     }
-    if (combinedDateTime < new Date()) {
-      setError("Start date and time must be in the future");
-      return;
+
+    const isCompleted = editPrompt?.schedule_status === "completed";
+    const originalStart = editPrompt?.schedule.start_at
+      ? new Date(editPrompt.schedule.start_at)
+      : null;
+    const startAtDirty =
+      !isEditMode || isCompleted || !originalStart || !isSameMinute(combinedDateTime, originalStart);
+
+    let effectiveStart = combinedDateTime;
+    if (startAtDirty) {
+      const resolved = resolveStartDateTime(combinedDateTime);
+      if (!resolved) {
+        setError("Start date and time must be in the future");
+        return;
+      }
+      effectiveStart = resolved;
     }
+
+    if (
+      isEditMode &&
+      !isCompleted &&
+      customRecurrence?.ends === "after_count" &&
+      customRecurrence.endCount != null &&
+      editPrompt
+    ) {
+      const totalRuns = editPrompt.run_stats?.total_runs ?? 0;
+      if (customRecurrence.endCount < totalRuns) {
+        setError(
+          `Ends after cannot be less than runs already completed (${totalRuns} so far)`,
+        );
+        return;
+      }
+    }
+
     setIsSaving(true);
     setError(null);
     try {
       const schedule = buildScheduleDefinition(
-        combinedDateTime, timezone, recurrence, customRecurrence, overlapPolicy,
+        effectiveStart, timezone, recurrence, customRecurrence, overlapPolicy,
       );
+      if (isEditMode && !startAtDirty) {
+        // Keep the original start on the server; omit so merge preserves it.
+        delete schedule.start_at;
+      }
       if (isEditMode && editPrompt) {
-        await updateScheduledPrompt(
-          { promptId: editPrompt.id, text: promptText, schedule },
+        await updateSchedule(
+          { scheduleId: editPrompt.id, text: promptText, schedule },
           userId,
           identityType,
         );
       } else {
         const source = copiedFromShortcut ? "shortcut_copy" : "manual";
-        await createScheduledPrompt(
+        await createSchedule(
           { blueprintId, text: promptText, source, schedule },
           userId,
           identityType,

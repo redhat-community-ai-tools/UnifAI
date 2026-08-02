@@ -1,4 +1,4 @@
-"""Unit tests for MongoScheduledPromptRepository.
+"""Unit tests for MongoWorkflowScheduleRepository.
 
 Tests are isolated by patching pymongo.MongoClient with an in-memory
 mock collection that supports the basic operations used by the repository.
@@ -12,17 +12,17 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from mas.core.identity import Identity
-from mas.prompts.models import (
+from mas.scheduling.models import (
     RunOutcome,
     ScheduleDefinition,
     ScheduleOverlapPolicy,
     ScheduleStatus,
-    ScheduledPrompt,
+    WorkflowSchedule,
 )
 
 
 def _make_prompt(identity, blueprint_id="bp-1", status=ScheduleStatus.ACTIVE, **kwargs):
-    return ScheduledPrompt(
+    return WorkflowSchedule(
         blueprint_id=blueprint_id,
         identity=identity,
         text=kwargs.pop("text", "test"),
@@ -189,15 +189,15 @@ def in_memory_col():
 @pytest.fixture
 def repo(in_memory_col):
     """Create repository with in-memory collection."""
-    with patch("outbound.mongo.scheduled_prompt_repository.pymongo.MongoClient") as mock_client, \
-         patch("outbound.mongo.scheduled_prompt_repository.get_mongo_url", return_value="mongodb://localhost"):
+    with patch("outbound.mongo.workflow_schedule_repository.pymongo.MongoClient") as mock_client, \
+         patch("outbound.mongo.workflow_schedule_repository.get_mongo_url", return_value="mongodb://localhost"):
         mock_db = MagicMock()
         mock_db.__getitem__ = lambda self, key: in_memory_col
         mock_client.return_value.__getitem__ = lambda self, key: mock_db
 
-        from outbound.mongo.scheduled_prompt_repository import MongoScheduledPromptRepository
+        from outbound.mongo.workflow_schedule_repository import MongoWorkflowScheduleRepository
 
-        r = MongoScheduledPromptRepository.__new__(MongoScheduledPromptRepository)
+        r = MongoWorkflowScheduleRepository.__new__(MongoWorkflowScheduleRepository)
         r._col = in_memory_col
         return r
 

@@ -1,12 +1,13 @@
 import React from "react";
 import { useLocation } from "wouter";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
-import { RunStats } from "@/api/prompts";
+import { type RunStats } from "@/api/schedules";
 import { formatRelativeTime } from "@/utils/dateTimeUtils";
 
 const STATUS_COLORS: Record<string, string> = {
   COMPLETED: "bg-emerald-400",
   FAILED: "bg-red-400",
+  CANCELLED: "bg-gray-400",
   RUNNING: "bg-blue-400 animate-pulse",
 };
 

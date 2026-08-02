@@ -1,15 +1,15 @@
 """
-Schedule port (ABC) -- outbound port for schedule orchestration.
+Schedule engine port (ABC) -- outbound port for schedule orchestration.
 
-Abstracts Temporal's Schedules API behind a domain port so the
-domain never imports temporalio.
+Abstracts the external scheduling API behind a domain port so the
+domain never imports any infrastructure library.
 """
 from abc import ABC, abstractmethod
 from typing import Dict, FrozenSet, List, Optional
 
 from pydantic import BaseModel, Field
 
-from mas.prompts.models import ScheduledPrompt
+from mas.scheduling.models import WorkflowSchedule
 
 
 class ScheduleNotFoundError(Exception):
@@ -53,8 +53,8 @@ class ScheduleInfo(BaseModel):
 class BatchDescribeResult(BaseModel):
     """Result of a batch describe operation.
 
-    ``found`` maps schedule IDs to their info (None = confirmed not found).
-    ``errored`` contains IDs whose lookup failed due to transient errors.
+    ``found`` maps engine handles to their info (None = confirmed not found).
+    ``errored`` contains handles whose lookup failed due to transient errors.
     """
 
     model_config = {"frozen": True}
@@ -63,55 +63,60 @@ class BatchDescribeResult(BaseModel):
     errored: FrozenSet[str] = frozenset()
 
 
-class SchedulePort(ABC):
+class ScheduleEngine(ABC):
+    """Outbound port for schedule timer management.
+
+    Each infrastructure adapter (Temporal Schedules, Celery Beat, …)
+    implements this port.
+    """
 
     @abstractmethod
-    def create_schedule(self, prompt: ScheduledPrompt) -> str:
-        """Create a Temporal schedule for the prompt. Returns the schedule ID."""
+    def create_schedule(self, schedule: WorkflowSchedule) -> str:
+        """Create a schedule in the engine. Returns the engine handle."""
         ...
 
     @abstractmethod
-    def pause(self, temporal_schedule_id: str) -> None:
+    def pause(self, engine_handle: str) -> None:
         """Pause a running schedule."""
         ...
 
     @abstractmethod
-    def resume(self, temporal_schedule_id: str) -> None:
+    def resume(self, engine_handle: str) -> None:
         """Resume a paused schedule."""
         ...
 
     @abstractmethod
-    def delete(self, temporal_schedule_id: str) -> None:
+    def delete(self, engine_handle: str) -> None:
         """Delete a schedule permanently."""
         ...
 
     @abstractmethod
-    def update_schedule(self, temporal_schedule_id: str, prompt: ScheduledPrompt) -> None:
+    def update_schedule(self, engine_handle: str, schedule: WorkflowSchedule) -> None:
         """Atomically update an existing schedule in-place."""
         ...
 
     @abstractmethod
-    def trigger_now(self, temporal_schedule_id: str) -> None:
+    def trigger_now(self, engine_handle: str) -> None:
         """Trigger an immediate execution of the schedule (one-off)."""
         ...
 
     @abstractmethod
-    def describe(self, temporal_schedule_id: str) -> ScheduleInfo:
+    def describe(self, engine_handle: str) -> ScheduleInfo:
         """Read-back the schedule's live state from the orchestrator."""
         ...
 
-    def describe_batch(self, schedule_ids: List[str]) -> BatchDescribeResult:
+    def describe_batch(self, engine_handles: List[str]) -> BatchDescribeResult:
         """Batch read-back of multiple schedules' live state.
 
         Default implementation falls back to sequential describe() calls.
         """
         found: Dict[str, Optional[ScheduleInfo]] = {}
         errored: set[str] = set()
-        for sid in schedule_ids:
+        for handle in engine_handles:
             try:
-                found[sid] = self.describe(sid)
+                found[handle] = self.describe(handle)
             except ScheduleNotFoundError:
-                found[sid] = None
+                found[handle] = None
             except ScheduleDescribeError:
-                errored.add(sid)
+                errored.add(handle)
         return BatchDescribeResult(found=found, errored=frozenset(errored))

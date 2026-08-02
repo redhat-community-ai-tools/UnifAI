@@ -158,6 +158,41 @@ class SessionService:
             return False
         return True
 
+    # ---- Scheduled execution ----
+
+    def prepare_for_scheduled_execution(
+        self,
+        *,
+        identity: Identity,
+        blueprint_id: str,
+        inputs: Dict[str, Any],
+        text: str = "",
+        metadata: SessionMeta | None = None,
+        logged_in_user: str = "",
+        run_id: str | None = None,
+    ) -> tuple[str, "WorkflowSession"]:
+        """
+        Prepare a session for scheduled background execution.
+
+        Creates session, stages inputs, resolves blueprint, compiles graph.
+        Returns (session_id, fully-hydrated WorkflowSession).
+        Parallels submit() but stops before engine.submit().
+        """
+        session_id = self.create(
+            identity=identity,
+            blueprint_id=blueprint_id,
+            metadata=metadata,
+            run_id=run_id,
+        )
+        record = self._manager.get_record(session_id)
+        combined_inputs: Dict[str, Any] = {**inputs}
+        if text:
+            combined_inputs["user_prompt"] = text
+        self._projector.apply(record, combined_inputs, logged_in_user=logged_in_user)
+
+        session = self._manager.get_session(session_id)
+        return session_id, session
+
     # ---- Private staging ----
 
     _BUSY_STATUSES = frozenset({"QUEUED", "RUNNING"})

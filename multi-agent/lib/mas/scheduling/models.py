@@ -1,25 +1,22 @@
 """
-Scheduled prompt domain models.
+Workflow scheduling domain models.
 
-Defines the ScheduledPrompt aggregate, ScheduleDefinition value object,
-and supporting enums for the prompt scheduling domain.
+Defines the WorkflowSchedule aggregate, ScheduleDefinition value object,
+and supporting enums for the workflow scheduling domain.
 """
 import re
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 from zoneinfo import available_timezones
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from mas.core.identity import Identity
-from mas.core.prompt import BasePrompt
 
-# Minimum recurrence interval -- guards against capacity abuse from
-# extremely frequent schedules (e.g. sub-minute ticks).
 _MIN_INTERVAL = timedelta(minutes=1)
 
-# Basic cron sanity check -- five whitespace-separated fields
 _CRON_FIELD_RE = re.compile(r"^[A-Za-z0-9*/,-]+$")
 
 _VALID_TIMEZONES = frozenset(available_timezones())
@@ -47,6 +44,20 @@ class ScheduleOverlapPolicy(str, Enum):
     SKIP = "skip"
     BUFFER_ONE = "buffer_one"
     CANCEL_OTHER = "cancel_other"
+
+
+class Prompt(BaseModel):
+    """The content that will be executed on each schedule tick."""
+
+    text: str
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Prompt text must not be empty")
+        return stripped
 
 
 class ScheduleDefinition(BaseModel):
@@ -88,6 +99,7 @@ class RunOutcome(str, Enum):
     """Fixed outcome set for scheduled workflow runs."""
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 class RunStatusEntry(BaseModel):
@@ -101,23 +113,46 @@ class RunStatusEntry(BaseModel):
 
 
 class RunStats(BaseModel):
-    """Lightweight run-history summary embedded in the prompt aggregate."""
+    """Lightweight run-history summary embedded in the schedule aggregate."""
 
     total_runs: int = 0
     last_run_at: Optional[datetime] = None
     recent_statuses: List[RunStatusEntry] = Field(default_factory=list)
 
 
-class ScheduledPrompt(BasePrompt):
-    """Standalone scheduled prompt -- identity-owned, tied to a blueprint."""
+class WorkflowSchedule(BaseModel):
+    """Workflow schedule — identity-owned configuration that causes a
+    blueprint to execute on a recurring schedule.
 
+    Each tick produces a session.  The schedule is the configuration;
+    the prompt is the content; sessions are the output.
+    """
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    prompt: Prompt
     blueprint_id: str
     identity: Identity
     inputs: Dict[str, Any] = Field(default_factory=dict)
     source: PromptSource = PromptSource.MANUAL
     schedule: ScheduleDefinition
     schedule_status: ScheduleStatus = ScheduleStatus.ACTIVE
-    temporal_schedule_id: Optional[str] = None
+    engine_handle: Optional[str] = None
     completed_at: Optional[datetime] = None
     run_stats: RunStats = Field(default_factory=RunStats)
     credential_user_id: str = ""
+
+    @property
+    def text(self) -> str:
+        """Convenience accessor for the prompt text."""
+        return self.prompt.text
+
+    @model_validator(mode="before")
+    @classmethod
+    def _backfill_prompt(cls, values: Any) -> Any:
+        """Handle legacy documents that stored text at the top level."""
+        if isinstance(values, dict):
+            if "prompt" not in values and "text" in values:
+                values["prompt"] = {"text": values.pop("text")}
+            if "temporal_schedule_id" in values:
+                values.setdefault("engine_handle", values.pop("temporal_schedule_id"))
+        return values

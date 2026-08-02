@@ -1,5 +1,5 @@
 """
-Temporal schedule adapter -- implements SchedulePort using Temporal's Schedules API.
+Temporal schedule adapter -- implements ScheduleEngine using Temporal's Schedules API.
 
 Bridges from synchronous Flask context to async Temporal client
 using asyncio.run(), same pattern as TemporalSessionEngine.
@@ -23,13 +23,13 @@ from temporalio.client import (
 from config.app_config import AppConfig
 from temporalio.service import RPCError, RPCStatusCode
 
-from mas.prompts.models import ScheduleOverlapPolicy, ScheduledPrompt
-from mas.prompts.ports import (
+from mas.scheduling.models import ScheduleOverlapPolicy, ScheduleStatus, WorkflowSchedule
+from mas.scheduling.ports import (
     BatchDescribeResult,
     ScheduleDescribeError,
+    ScheduleEngine,
     ScheduleInfo,
     ScheduleNotFoundError,
-    SchedulePort,
     ScheduleValidationError,
 )
 from temporal.client import get_temporal_client
@@ -46,9 +46,9 @@ _OVERLAP_MAP = {
 }
 
 
-class TemporalScheduleAdapter(SchedulePort):
+class TemporalScheduleAdapter(ScheduleEngine):
 
-    def create_schedule(self, prompt: ScheduledPrompt) -> str:
+    def create_schedule(self, prompt: WorkflowSchedule) -> str:
         try:
             return asyncio.run(self._create(prompt))
         except RPCError as exc:
@@ -56,43 +56,43 @@ class TemporalScheduleAdapter(SchedulePort):
                 raise ScheduleValidationError(str(exc)) from exc
             raise
 
-    def pause(self, temporal_schedule_id: str) -> None:
-        asyncio.run(self._pause(temporal_schedule_id))
+    def pause(self, engine_handle: str) -> None:
+        asyncio.run(self._pause(engine_handle))
 
-    def resume(self, temporal_schedule_id: str) -> None:
-        asyncio.run(self._resume(temporal_schedule_id))
+    def resume(self, engine_handle: str) -> None:
+        asyncio.run(self._resume(engine_handle))
 
-    def delete(self, temporal_schedule_id: str) -> None:
+    def delete(self, engine_handle: str) -> None:
         try:
-            asyncio.run(self._delete(temporal_schedule_id))
+            asyncio.run(self._delete(engine_handle))
         except RPCError as exc:
             if exc.status == RPCStatusCode.NOT_FOUND:
-                raise ScheduleNotFoundError(temporal_schedule_id) from exc
+                raise ScheduleNotFoundError(engine_handle) from exc
             raise
 
-    def update_schedule(self, temporal_schedule_id: str, prompt: ScheduledPrompt) -> None:
+    def update_schedule(self, engine_handle: str, prompt: WorkflowSchedule) -> None:
         try:
-            asyncio.run(self._update(temporal_schedule_id, prompt))
+            asyncio.run(self._update(engine_handle, prompt))
         except RPCError as exc:
             if exc.status == RPCStatusCode.INVALID_ARGUMENT:
                 raise ScheduleValidationError(str(exc)) from exc
             raise
 
-    def trigger_now(self, temporal_schedule_id: str) -> None:
-        asyncio.run(self._trigger(temporal_schedule_id))
+    def trigger_now(self, engine_handle: str) -> None:
+        asyncio.run(self._trigger(engine_handle))
 
-    def describe(self, temporal_schedule_id: str) -> ScheduleInfo:
+    def describe(self, engine_handle: str) -> ScheduleInfo:
         try:
-            return asyncio.run(self._describe(temporal_schedule_id))
+            return asyncio.run(self._describe(engine_handle))
         except RPCError as exc:
             if exc.status == RPCStatusCode.NOT_FOUND:
-                raise ScheduleNotFoundError(temporal_schedule_id) from exc
-            raise ScheduleDescribeError(temporal_schedule_id) from exc
+                raise ScheduleNotFoundError(engine_handle) from exc
+            raise ScheduleDescribeError(engine_handle) from exc
 
     def describe_batch(self, schedule_ids: list[str]) -> BatchDescribeResult:
         return asyncio.run(self._describe_batch(schedule_ids))
 
-    async def _create(self, prompt: ScheduledPrompt) -> str:
+    async def _create(self, prompt: WorkflowSchedule) -> str:
         cfg = AppConfig.get_instance()
         client = await get_temporal_client()
 
@@ -104,7 +104,7 @@ class TemporalScheduleAdapter(SchedulePort):
         )
 
         params = ScheduledSessionParams(
-            prompt_id=prompt.id,
+            schedule_id=prompt.id,
             blueprint_id=prompt.blueprint_id,
             identity=prompt.identity,
             text=prompt.text,
@@ -124,41 +124,37 @@ class TemporalScheduleAdapter(SchedulePort):
                 ),
                 spec=spec,
                 policy=SchedulePolicy(overlap=overlap),
-                state=ScheduleState(
-                    limited_actions=prompt.schedule.remaining_actions is not None,
-                    remaining_actions=prompt.schedule.remaining_actions or 0,
-                    paused=not prompt.schedule.enabled,
-                ),
+                state=self._build_state(prompt),
             ),
         )
         return schedule_id
 
-    async def _pause(self, temporal_schedule_id: str) -> None:
+    async def _pause(self, engine_handle: str) -> None:
         client = await get_temporal_client()
-        handle = client.get_schedule_handle(temporal_schedule_id)
+        handle = client.get_schedule_handle(engine_handle)
         await handle.pause()
 
-    async def _resume(self, temporal_schedule_id: str) -> None:
+    async def _resume(self, engine_handle: str) -> None:
         client = await get_temporal_client()
-        handle = client.get_schedule_handle(temporal_schedule_id)
+        handle = client.get_schedule_handle(engine_handle)
         await handle.unpause()
 
-    async def _delete(self, temporal_schedule_id: str) -> None:
+    async def _delete(self, engine_handle: str) -> None:
         client = await get_temporal_client()
-        handle = client.get_schedule_handle(temporal_schedule_id)
+        handle = client.get_schedule_handle(engine_handle)
         await handle.delete()
 
-    async def _update(self, temporal_schedule_id: str, prompt: ScheduledPrompt) -> None:
+    async def _update(self, engine_handle: str, prompt: WorkflowSchedule) -> None:
         cfg = AppConfig.get_instance()
         client = await get_temporal_client()
-        handle = client.get_schedule_handle(temporal_schedule_id)
+        handle = client.get_schedule_handle(engine_handle)
 
         spec = self._build_spec(prompt)
         overlap = _OVERLAP_MAP.get(
             prompt.schedule.overlap_policy, TemporalOverlapPolicy.SKIP
         )
         params = ScheduledSessionParams(
-            prompt_id=prompt.id,
+            schedule_id=prompt.id,
             blueprint_id=prompt.blueprint_id,
             identity=prompt.identity,
             text=prompt.text,
@@ -178,24 +174,20 @@ class TemporalScheduleAdapter(SchedulePort):
                     ),
                     spec=spec,
                     policy=SchedulePolicy(overlap=overlap),
-                    state=ScheduleState(
-                        limited_actions=prompt.schedule.remaining_actions is not None,
-                        remaining_actions=prompt.schedule.remaining_actions or 0,
-                        paused=not prompt.schedule.enabled,
-                    ),
+                    state=self._build_state(prompt),
                 )
             )
 
         await handle.update(_updater)
 
-    async def _trigger(self, temporal_schedule_id: str) -> None:
+    async def _trigger(self, engine_handle: str) -> None:
         client = await get_temporal_client()
-        handle = client.get_schedule_handle(temporal_schedule_id)
+        handle = client.get_schedule_handle(engine_handle)
         await handle.trigger()
 
-    async def _describe(self, temporal_schedule_id: str) -> ScheduleInfo:
+    async def _describe(self, engine_handle: str) -> ScheduleInfo:
         client = await get_temporal_client()
-        handle = client.get_schedule_handle(temporal_schedule_id)
+        handle = client.get_schedule_handle(engine_handle)
         desc = await handle.describe()
         state = desc.schedule.state
         no_next = not desc.info.next_action_times
@@ -248,7 +240,31 @@ class TemporalScheduleAdapter(SchedulePort):
         return BatchDescribeResult(found=found, errored=frozenset(errored))
 
     @staticmethod
-    def _build_spec(prompt: ScheduledPrompt) -> ScheduleSpec:
+    def _build_state(prompt: WorkflowSchedule) -> ScheduleState:
+        """Map domain schedule + run_stats to Temporal ScheduleState.
+
+        remaining_actions is ends-after N; Temporal stores the live remainder
+        (N - total_runs). Pause follows schedule_status.
+        """
+        configured = prompt.schedule.remaining_actions
+        if configured is None:
+            limited, remaining = False, 0
+        else:
+            limited = True
+            remaining = max(0, configured - prompt.run_stats.total_runs)
+
+        paused = (
+            prompt.schedule_status == ScheduleStatus.PAUSED
+            or not prompt.schedule.enabled
+        )
+        return ScheduleState(
+            limited_actions=limited,
+            remaining_actions=remaining,
+            paused=paused,
+        )
+
+    @staticmethod
+    def _build_spec(prompt: WorkflowSchedule) -> ScheduleSpec:
         sched = prompt.schedule
         kwargs: dict = {}
 

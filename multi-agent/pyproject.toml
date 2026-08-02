@@ -88,4 +88,5 @@ markers = [
     "smoke: Smoke tests for basic functionality",
     "regression: Regression tests for bug fixes",
     "performance: Performance and load tests",
+    "asyncio: Async tests (pytest-asyncio)",
 ]

@@ -1,4 +1,4 @@
-"""Unit tests for PromptService.
+"""Unit tests for WorkflowScheduleService.
 
 Covers: create, update, pause, resume, trigger, delete, list, list_enriched,
         get, get_runs, record_run, mark_completed.
@@ -10,21 +10,22 @@ from unittest.mock import ANY, Mock, MagicMock, patch, call
 import pytest
 
 from mas.core.identity import Identity
-from mas.prompts.models import (
+from mas.scheduling.models import (
     PromptSource,
     RunStats,
     ScheduleDefinition,
     ScheduleOverlapPolicy,
     ScheduleStatus,
-    ScheduledPrompt,
+    WorkflowSchedule,
 )
-from mas.prompts.ports import ScheduleNotFoundError
-from mas.prompts.service import (
-    MAX_ACTIVE_PROMPTS_PER_BLUEPRINT,
-    PromptLimitExceededError,
-    PromptNotFoundError,
-    PromptPermissionError,
-    PromptService,
+from mas.scheduling.noop import NoOpScheduleEngine
+from mas.scheduling.ports import ScheduleNotFoundError as EngineScheduleNotFoundError, ScheduleValidationError
+from mas.scheduling.service import (
+    MAX_ACTIVE_SCHEDULES_PER_BLUEPRINT,
+    ScheduleLimitExceededError,
+    ScheduleNotFoundError,
+    SchedulePermissionError,
+    WorkflowScheduleService,
 )
 
 
@@ -44,7 +45,7 @@ def team_identity():
 
 
 def _make_prompt(identity, blueprint_id="bp-1", status=ScheduleStatus.ACTIVE, **kwargs):
-    return ScheduledPrompt(
+    return WorkflowSchedule(
         blueprint_id=blueprint_id,
         identity=identity,
         text=kwargs.pop("text", "test prompt"),
@@ -66,8 +67,10 @@ def mock_repo():
 
 @pytest.fixture
 def mock_schedule_port():
+    from mas.scheduling.ports import BatchDescribeResult
     port = Mock()
     port.create_schedule.return_value = "sched-prompt-id"
+    port.describe_batch.return_value = BatchDescribeResult(found={}, errored=frozenset())
     return port
 
 
@@ -91,9 +94,9 @@ def mock_session_service():
 
 @pytest.fixture
 def service(mock_repo, mock_schedule_port, mock_blueprint_service, mock_session_service):
-    return PromptService(
-        prompt_repo=mock_repo,
-        schedule_port=mock_schedule_port,
+    return WorkflowScheduleService(
+        schedule_repo=mock_repo,
+        schedule_engine=mock_schedule_port,
         blueprint_service=mock_blueprint_service,
         session_service=mock_session_service,
     )
@@ -112,7 +115,7 @@ class TestServiceCreate:
             schedule={"interval": "PT900S"},
         )
         assert result.schedule_status == ScheduleStatus.ACTIVE
-        assert result.temporal_schedule_id == "sched-prompt-id"
+        assert result.engine_handle == "sched-prompt-id"
         mock_repo.save.assert_called_once()
         mock_schedule_port.create_schedule.assert_called_once()
         mock_repo.update.assert_called_once()
@@ -139,8 +142,8 @@ class TestServiceCreate:
         mock_blueprint_service.get_blueprint_draft_doc.side_effect = None
 
     def test_per_blueprint_limit_exceeded(self, service, mock_repo, identity_a):
-        mock_repo.count_active_by_blueprint.return_value = MAX_ACTIVE_PROMPTS_PER_BLUEPRINT
-        with pytest.raises(PromptLimitExceededError):
+        mock_repo.count_active_by_blueprint.return_value = MAX_ACTIVE_SCHEDULES_PER_BLUEPRINT
+        with pytest.raises(ScheduleLimitExceededError):
             service.create(
                 identity=identity_a,
                 blueprint_id="bp-1",
@@ -149,8 +152,8 @@ class TestServiceCreate:
             )
 
     def test_paused_counts_toward_limit(self, service, mock_repo, identity_a):
-        mock_repo.count_active_by_blueprint.return_value = MAX_ACTIVE_PROMPTS_PER_BLUEPRINT
-        with pytest.raises(PromptLimitExceededError):
+        mock_repo.count_active_by_blueprint.return_value = MAX_ACTIVE_SCHEDULES_PER_BLUEPRINT
+        with pytest.raises(ScheduleLimitExceededError):
             service.create(
                 identity=identity_a,
                 blueprint_id="bp-1",
@@ -159,7 +162,7 @@ class TestServiceCreate:
             )
 
     def test_completed_do_not_count_toward_limit(self, service, mock_repo, identity_a):
-        mock_repo.count_active_by_blueprint.return_value = MAX_ACTIVE_PROMPTS_PER_BLUEPRINT - 1
+        mock_repo.count_active_by_blueprint.return_value = MAX_ACTIVE_SCHEDULES_PER_BLUEPRINT - 1
         result = service.create(
             identity=identity_a,
             blueprint_id="bp-1",
@@ -187,21 +190,20 @@ class TestServiceCreate:
                 schedule={"interval": "PT60S"},
             )
 
-    def test_schedule_port_none(self, mock_repo, mock_blueprint_service, identity_a):
-        svc = PromptService(
-            prompt_repo=mock_repo,
-            schedule_port=None,
+    def test_noop_engine_rejects_create(self, mock_repo, mock_blueprint_service, identity_a):
+        svc = WorkflowScheduleService(
+            schedule_repo=mock_repo,
+            schedule_engine=NoOpScheduleEngine(),
             blueprint_service=mock_blueprint_service,
         )
-        result = svc.create(
-            identity=identity_a,
-            blueprint_id="bp-1",
-            text="x",
-            schedule={"interval": "PT60S"},
-        )
-        assert result.temporal_schedule_id is None
-        mock_repo.save.assert_called_once()
-        assert mock_repo.update.call_count == 0
+        with pytest.raises(ScheduleValidationError, match="no engine configured"):
+            svc.create(
+                identity=identity_a,
+                blueprint_id="bp-1",
+                text="x",
+                schedule={"interval": "PT60S"},
+            )
+        mock_repo.delete.assert_called_once()
 
     def test_temporal_fails_after_save(self, service, mock_schedule_port, mock_repo, identity_a):
         mock_schedule_port.create_schedule.side_effect = RuntimeError("Temporal down")
@@ -254,7 +256,7 @@ class TestServiceCreate:
 class TestServiceUpdate:
     @pytest.fixture(autouse=True)
     def setup(self, mock_repo, identity_a):
-        self.existing = _make_prompt(identity_a, temporal_schedule_id="sched-old")
+        self.existing = _make_prompt(identity_a, engine_handle="sched-old")
         mock_repo.load.return_value = self.existing
 
     def test_update_text_only(self, service, mock_repo, mock_schedule_port, identity_a):
@@ -285,11 +287,11 @@ class TestServiceUpdate:
 
     def test_update_nonexistent_prompt(self, service, mock_repo, identity_a):
         mock_repo.load.side_effect = KeyError("not found")
-        with pytest.raises(PromptNotFoundError):
+        with pytest.raises(ScheduleNotFoundError):
             service.update("bad-id", identity=identity_a, text="x")
 
     def test_update_wrong_identity(self, service, identity_b):
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.update(self.existing.id, identity=identity_b, text="x")
 
     def test_update_all_fields(self, service, mock_schedule_port, identity_a):
@@ -320,18 +322,162 @@ class TestServiceUpdate:
         mock_schedule_port.update_schedule.assert_not_called()
         mock_repo.update.assert_not_called()
 
-    def test_schedule_change_with_no_schedule_port(
+    def test_schedule_change_with_noop_engine(
         self, mock_repo, mock_blueprint_service, identity_a,
     ):
-        existing = _make_prompt(identity_a, temporal_schedule_id=None)
+        """NoOp engine rejects schedule creation during update sync."""
+        existing = _make_prompt(identity_a, engine_handle=None)
         mock_repo.load.return_value = existing
-        svc = PromptService(
-            prompt_repo=mock_repo,
-            schedule_port=None,
+        svc = WorkflowScheduleService(
+            schedule_repo=mock_repo,
+            schedule_engine=NoOpScheduleEngine(),
             blueprint_service=mock_blueprint_service,
         )
-        result = svc.update(existing.id, identity=identity_a, schedule={"interval": "PT3600S"})
-        mock_repo.update.assert_called_once()
+        with pytest.raises(ScheduleValidationError, match="no engine configured"):
+            svc.update(existing.id, identity=identity_a, schedule={"interval": "PT3600S"})
+
+    def test_recurrence_only_update_preserves_run_stats_and_start_at(
+        self, service, mock_repo, mock_schedule_port, identity_a,
+    ):
+        start = datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc)
+        existing = _make_prompt(
+            identity_a,
+            engine_handle="sched-old",
+            schedule=ScheduleDefinition(
+                interval=timedelta(minutes=15), start_at=start, remaining_actions=10,
+            ),
+            run_stats=RunStats(total_runs=3),
+        )
+        mock_repo.load.return_value = existing
+
+        result = service.update(
+            existing.id,
+            identity=identity_a,
+            schedule={"interval": "PT3600S"},  # no start_at — keep existing
+        )
+
+        assert result.run_stats.total_runs == 3
+        assert result.schedule.start_at == start
+        assert result.schedule.remaining_actions == 10
+        assert result.schedule.interval == timedelta(hours=1)
+        assert result.schedule_status == ScheduleStatus.ACTIVE
+        mock_schedule_port.update_schedule.assert_called_once()
+
+    def test_remaining_actions_below_total_runs_rejected(
+        self, service, mock_repo, mock_schedule_port, identity_a,
+    ):
+        existing = _make_prompt(
+            identity_a,
+            engine_handle="sched-old",
+            schedule=ScheduleDefinition(
+                interval=timedelta(hours=1), remaining_actions=10,
+            ),
+            run_stats=RunStats(total_runs=6),
+        )
+        mock_repo.load.return_value = existing
+
+        with pytest.raises(ValueError, match="Ends after cannot be less"):
+            service.update(
+                existing.id,
+                identity=identity_a,
+                schedule={"remaining_actions": 5},
+            )
+        mock_schedule_port.update_schedule.assert_not_called()
+        mock_repo.update.assert_not_called()
+
+    def test_remaining_actions_equal_total_runs_marks_completed(
+        self, service, mock_repo, identity_a,
+    ):
+        """Ends-after == total_runs is valid: schedule has no runs left → COMPLETED."""
+        existing = _make_prompt(
+            identity_a,
+            engine_handle="sched-old",
+            schedule=ScheduleDefinition(
+                interval=timedelta(hours=1), remaining_actions=10,
+            ),
+            run_stats=RunStats(total_runs=1),
+        )
+        mock_repo.load.return_value = existing
+
+        result = service.update(
+            existing.id,
+            identity=identity_a,
+            schedule={"remaining_actions": 1},
+        )
+        assert result.schedule.remaining_actions == 1
+        assert result.run_stats.total_runs == 1
+        assert result.schedule_status == ScheduleStatus.COMPLETED
+        assert result.completed_at is not None
+
+    def test_remaining_actions_above_total_runs_keeps_run_stats(
+        self, service, mock_repo, identity_a,
+    ):
+        existing = _make_prompt(
+            identity_a,
+            engine_handle="sched-old",
+            schedule=ScheduleDefinition(
+                interval=timedelta(hours=1), remaining_actions=10,
+            ),
+            run_stats=RunStats(total_runs=6),
+        )
+        mock_repo.load.return_value = existing
+
+        result = service.update(
+            existing.id,
+            identity=identity_a,
+            schedule={"remaining_actions": 8},
+        )
+        assert result.schedule.remaining_actions == 8
+        assert result.run_stats.total_runs == 6
+        assert result.schedule_status == ScheduleStatus.ACTIVE
+
+    def test_completed_reactivation_resets_run_stats(
+        self, service, mock_repo, mock_schedule_port, identity_a,
+    ):
+        start = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+        existing = _make_prompt(
+            identity_a,
+            status=ScheduleStatus.COMPLETED,
+            engine_handle="sched-old",
+            schedule=ScheduleDefinition(
+                interval=timedelta(hours=1), remaining_actions=3, start_at=start,
+            ),
+            run_stats=RunStats(total_runs=3),
+            completed_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        )
+        mock_repo.load.return_value = existing
+
+        new_start = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+        result = service.update(
+            existing.id,
+            identity=identity_a,
+            schedule={
+                "interval": "PT3600S",
+                "remaining_actions": 5,
+                "start_at": new_start,
+            },
+        )
+        assert result.schedule_status == ScheduleStatus.ACTIVE
+        assert result.completed_at is None
+        assert result.run_stats.total_runs == 0
+        assert result.schedule.remaining_actions == 5
+        mock_schedule_port.update_schedule.assert_called_once()
+
+    def test_engine_missing_on_update_recreates(
+        self, service, mock_repo, mock_schedule_port, identity_a,
+    ):
+        existing = _make_prompt(identity_a, engine_handle="sched-gone")
+        mock_repo.load.return_value = existing
+        mock_schedule_port.update_schedule.side_effect = EngineScheduleNotFoundError("sched-gone")
+        mock_schedule_port.create_schedule.return_value = "sched-new"
+
+        result = service.update(
+            existing.id,
+            identity=identity_a,
+            schedule={"interval": "PT3600S"},
+        )
+        assert result.engine_handle == "sched-new"
+        mock_schedule_port.create_schedule.assert_called_once()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -340,7 +486,7 @@ class TestServiceUpdate:
 
 class TestServicePauseResume:
     def test_pause_active(self, service, mock_repo, mock_schedule_port, identity_a):
-        prompt = _make_prompt(identity_a, temporal_schedule_id="sched-1")
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
         mock_repo.load.return_value = prompt
         result = service.pause(prompt.id, identity=identity_a)
         assert result.schedule_status == ScheduleStatus.PAUSED
@@ -348,7 +494,7 @@ class TestServicePauseResume:
 
     def test_resume_paused(self, service, mock_repo, mock_schedule_port, identity_a):
         prompt = _make_prompt(
-            identity_a, status=ScheduleStatus.PAUSED, temporal_schedule_id="sched-1",
+            identity_a, status=ScheduleStatus.PAUSED, engine_handle="sched-1",
         )
         mock_repo.load.return_value = prompt
         result = service.resume(prompt.id, identity=identity_a)
@@ -357,7 +503,7 @@ class TestServicePauseResume:
 
     def test_pause_already_paused_idempotent(self, service, mock_repo, mock_schedule_port, identity_a):
         prompt = _make_prompt(
-            identity_a, status=ScheduleStatus.PAUSED, temporal_schedule_id="sched-1",
+            identity_a, status=ScheduleStatus.PAUSED, engine_handle="sched-1",
         )
         mock_repo.load.return_value = prompt
         result = service.pause(prompt.id, identity=identity_a)
@@ -365,27 +511,27 @@ class TestServicePauseResume:
         mock_schedule_port.pause.assert_called_once()
 
     def test_resume_already_active_idempotent(self, service, mock_repo, mock_schedule_port, identity_a):
-        prompt = _make_prompt(identity_a, temporal_schedule_id="sched-1")
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
         mock_repo.load.return_value = prompt
         result = service.resume(prompt.id, identity=identity_a)
         assert result.schedule_status == ScheduleStatus.ACTIVE
         mock_schedule_port.resume.assert_called_once()
 
     def test_pause_wrong_identity(self, service, mock_repo, identity_a, identity_b):
-        prompt = _make_prompt(identity_a, temporal_schedule_id="sched-1")
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
         mock_repo.load.return_value = prompt
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.pause(prompt.id, identity=identity_b)
 
     def test_pause_no_temporal_id(self, service, mock_repo, mock_schedule_port, identity_a):
-        prompt = _make_prompt(identity_a, temporal_schedule_id=None)
+        prompt = _make_prompt(identity_a, engine_handle=None)
         mock_repo.load.return_value = prompt
         result = service.pause(prompt.id, identity=identity_a)
         assert result.schedule_status == ScheduleStatus.PAUSED
         mock_schedule_port.pause.assert_not_called()
 
     def test_temporal_pause_fails(self, service, mock_repo, mock_schedule_port, identity_a):
-        prompt = _make_prompt(identity_a, temporal_schedule_id="sched-1")
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
         mock_repo.load.return_value = prompt
         mock_schedule_port.pause.side_effect = RuntimeError("Temporal error")
         with pytest.raises(RuntimeError):
@@ -398,7 +544,7 @@ class TestServicePauseResume:
 
 class TestServiceDelete:
     def test_delete_active(self, service, mock_repo, mock_schedule_port, identity_a):
-        prompt = _make_prompt(identity_a, temporal_schedule_id="sched-1")
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
         mock_repo.load.return_value = prompt
         service.delete(prompt.id, identity=identity_a)
         mock_schedule_port.delete.assert_called_once_with("sched-1")
@@ -406,7 +552,7 @@ class TestServiceDelete:
 
     def test_delete_paused(self, service, mock_repo, mock_schedule_port, identity_a):
         prompt = _make_prompt(
-            identity_a, status=ScheduleStatus.PAUSED, temporal_schedule_id="sched-1",
+            identity_a, status=ScheduleStatus.PAUSED, engine_handle="sched-1",
         )
         mock_repo.load.return_value = prompt
         service.delete(prompt.id, identity=identity_a)
@@ -416,29 +562,29 @@ class TestServiceDelete:
     def test_delete_wrong_identity(self, service, mock_repo, identity_a, identity_b):
         prompt = _make_prompt(identity_a)
         mock_repo.load.return_value = prompt
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.delete(prompt.id, identity=identity_b)
 
     def test_schedule_already_removed_still_deletes_from_mongo(
         self, service, mock_repo, mock_schedule_port, identity_a,
     ):
-        prompt = _make_prompt(identity_a, temporal_schedule_id="sched-1")
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
         mock_repo.load.return_value = prompt
-        mock_schedule_port.delete.side_effect = ScheduleNotFoundError("sched-1")
+        mock_schedule_port.delete.side_effect = EngineScheduleNotFoundError("sched-1")
         service.delete(prompt.id, identity=identity_a)
         mock_repo.delete.assert_called_once_with(prompt.id)
 
     def test_unexpected_schedule_error_propagates_on_delete(
         self, service, mock_repo, mock_schedule_port, identity_a,
     ):
-        prompt = _make_prompt(identity_a, temporal_schedule_id="sched-1")
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
         mock_repo.load.return_value = prompt
         mock_schedule_port.delete.side_effect = RuntimeError("Temporal unavailable")
         with pytest.raises(RuntimeError, match="Temporal unavailable"):
             service.delete(prompt.id, identity=identity_a)
 
     def test_delete_no_temporal_id(self, service, mock_repo, mock_schedule_port, identity_a):
-        prompt = _make_prompt(identity_a, temporal_schedule_id=None)
+        prompt = _make_prompt(identity_a, engine_handle=None)
         mock_repo.load.return_value = prompt
         service.delete(prompt.id, identity=identity_a)
         mock_schedule_port.delete.assert_not_called()
@@ -446,7 +592,7 @@ class TestServiceDelete:
 
     def test_delete_nonexistent(self, service, mock_repo, identity_a):
         mock_repo.load.side_effect = KeyError("nope")
-        with pytest.raises(PromptNotFoundError):
+        with pytest.raises(ScheduleNotFoundError):
             service.delete("bad-id", identity=identity_a)
 
 
@@ -456,36 +602,36 @@ class TestServiceDelete:
 
 class TestServiceTrigger:
     def test_trigger_active(self, service, mock_repo, mock_schedule_port, identity_a):
-        prompt = _make_prompt(identity_a, temporal_schedule_id="sched-1")
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
         mock_repo.load.return_value = prompt
         result = service.trigger(prompt.id, identity=identity_a)
         mock_schedule_port.trigger_now.assert_called_once_with("sched-1")
         assert result.id == prompt.id
 
     def test_trigger_wrong_identity(self, service, mock_repo, identity_a, identity_b):
-        prompt = _make_prompt(identity_a, temporal_schedule_id="sched-1")
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
         mock_repo.load.return_value = prompt
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.trigger(prompt.id, identity=identity_b)
 
-    def test_trigger_no_schedule_port(self, mock_repo, mock_blueprint_service, identity_a):
-        prompt = _make_prompt(identity_a, temporal_schedule_id="sched-1")
+    def test_trigger_noop_engine(self, mock_repo, mock_blueprint_service, identity_a):
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
         mock_repo.load.return_value = prompt
-        svc = PromptService(
-            prompt_repo=mock_repo, schedule_port=None, blueprint_service=mock_blueprint_service,
+        svc = WorkflowScheduleService(
+            schedule_repo=mock_repo, schedule_engine=NoOpScheduleEngine(), blueprint_service=mock_blueprint_service,
         )
-        with pytest.raises(ValueError, match="no active Temporal schedule"):
+        with pytest.raises(ScheduleValidationError, match="no scheduling engine configured"):
             svc.trigger(prompt.id, identity=identity_a)
 
     def test_trigger_no_temporal_id(self, service, mock_repo, identity_a):
-        prompt = _make_prompt(identity_a, temporal_schedule_id=None)
+        prompt = _make_prompt(identity_a, engine_handle=None)
         mock_repo.load.return_value = prompt
-        with pytest.raises(ValueError, match="no active Temporal schedule"):
+        with pytest.raises(ValueError, match="no active engine handle"):
             service.trigger(prompt.id, identity=identity_a)
 
     def test_trigger_nonexistent(self, service, mock_repo, identity_a):
         mock_repo.load.side_effect = KeyError("nope")
-        with pytest.raises(PromptNotFoundError):
+        with pytest.raises(ScheduleNotFoundError):
             service.trigger("bad-id", identity=identity_a)
 
 
@@ -510,12 +656,12 @@ class TestServiceListGet:
     def test_get_wrong_identity(self, service, mock_repo, identity_a, identity_b):
         prompt = _make_prompt(identity_a)
         mock_repo.load.return_value = prompt
-        with pytest.raises(PromptPermissionError):
+        with pytest.raises(SchedulePermissionError):
             service.get(prompt.id, identity=identity_b)
 
     def test_get_nonexistent(self, service, mock_repo, identity_a):
         mock_repo.load.side_effect = KeyError("nope")
-        with pytest.raises(PromptNotFoundError):
+        with pytest.raises(ScheduleNotFoundError):
             service.get("bad-id", identity=identity_a)
 
     def test_list_enriched_adds_blueprint_name(
@@ -638,12 +784,12 @@ class TestServiceReconciliation:
         self, service, mock_repo, mock_schedule_port, identity_a,
     ):
         """Finite schedule that Temporal reports as exhausted → COMPLETED."""
-        from mas.prompts.ports import ScheduleInfo
+        from mas.scheduling.ports import ScheduleInfo
 
         prompt = _make_prompt(
             identity_a,
             schedule=ScheduleDefinition(interval=timedelta(hours=1), remaining_actions=3),
-            temporal_schedule_id="sched-abc",
+            engine_handle="sched-abc",
         )
         mock_repo.load.return_value = prompt
         mock_schedule_port.describe.return_value = ScheduleInfo(
@@ -659,12 +805,12 @@ class TestServiceReconciliation:
         self, service, mock_repo, mock_schedule_port, identity_a,
     ):
         """Finite schedule still running in Temporal → stays ACTIVE."""
-        from mas.prompts.ports import ScheduleInfo
+        from mas.scheduling.ports import ScheduleInfo
 
         prompt = _make_prompt(
             identity_a,
             schedule=ScheduleDefinition(interval=timedelta(hours=1), remaining_actions=3),
-            temporal_schedule_id="sched-abc",
+            engine_handle="sched-abc",
         )
         mock_repo.load.return_value = prompt
         mock_schedule_port.describe.return_value = ScheduleInfo(
@@ -682,10 +828,10 @@ class TestServiceReconciliation:
         prompt = _make_prompt(
             identity_a,
             schedule=ScheduleDefinition(interval=timedelta(hours=1), remaining_actions=1),
-            temporal_schedule_id="sched-gone",
+            engine_handle="sched-gone",
         )
         mock_repo.load.return_value = prompt
-        mock_schedule_port.describe.side_effect = ScheduleNotFoundError("sched-gone")
+        mock_schedule_port.describe.side_effect = EngineScheduleNotFoundError("sched-gone")
 
         result = service.get(prompt.id, identity=identity_a)
         assert result.schedule_status == ScheduleStatus.COMPLETED
@@ -697,7 +843,7 @@ class TestServiceReconciliation:
         prompt = _make_prompt(
             identity_a,
             schedule=ScheduleDefinition(interval=timedelta(hours=1), remaining_actions=1),
-            temporal_schedule_id="sched-abc",
+            engine_handle="sched-abc",
         )
         mock_repo.load.return_value = prompt
         mock_schedule_port.describe.side_effect = RuntimeError("connection refused")
@@ -713,7 +859,7 @@ class TestServiceReconciliation:
         prompt = _make_prompt(
             identity_a,
             schedule=ScheduleDefinition(interval=timedelta(hours=1)),
-            temporal_schedule_id="sched-abc",
+            engine_handle="sched-abc",
         )
         mock_repo.load.return_value = prompt
 
@@ -729,7 +875,7 @@ class TestServiceReconciliation:
             identity_a,
             status=ScheduleStatus.PAUSED,
             schedule=ScheduleDefinition(interval=timedelta(hours=1), remaining_actions=1),
-            temporal_schedule_id="sched-abc",
+            engine_handle="sched-abc",
         )
         mock_repo.load.return_value = prompt
 
@@ -737,56 +883,57 @@ class TestServiceReconciliation:
         assert result.schedule_status == ScheduleStatus.PAUSED
         mock_schedule_port.describe.assert_not_called()
 
-    def test_get_skips_reconcile_without_schedule_port(
+    def test_get_reconciles_with_noop_engine(
         self, mock_repo, mock_blueprint_service, identity_a,
     ):
-        """No schedule port → reconciliation is a no-op."""
-        svc = PromptService(
-            prompt_repo=mock_repo,
-            schedule_port=None,
+        """NoOp engine reports schedule not found → marks finite schedule COMPLETED."""
+        svc = WorkflowScheduleService(
+            schedule_repo=mock_repo,
+            schedule_engine=NoOpScheduleEngine(),
             blueprint_service=mock_blueprint_service,
         )
         prompt = _make_prompt(
             identity_a,
             schedule=ScheduleDefinition(interval=timedelta(hours=1), remaining_actions=1),
-            temporal_schedule_id="sched-abc",
+            engine_handle="sched-abc",
         )
         mock_repo.load.return_value = prompt
 
         result = svc.get(prompt.id, identity=identity_a)
-        assert result.schedule_status == ScheduleStatus.ACTIVE
+        assert result.schedule_status == ScheduleStatus.COMPLETED
 
     def test_list_enriched_reconciles_per_prompt(
         self, service, mock_repo, mock_schedule_port, mock_blueprint_service, identity_a,
     ):
         """list_enriched reconciles each finite prompt individually."""
-        from mas.prompts.ports import ScheduleInfo
+        from mas.scheduling.ports import BatchDescribeResult, ScheduleInfo
 
         active_prompt = _make_prompt(
             identity_a,
             schedule=ScheduleDefinition(interval=timedelta(hours=1), remaining_actions=1),
-            temporal_schedule_id="sched-1",
+            engine_handle="sched-1",
         )
         infinite_prompt = _make_prompt(
             identity_a,
             schedule=ScheduleDefinition(interval=timedelta(hours=1)),
-            temporal_schedule_id="sched-2",
+            engine_handle="sched-2",
         )
         mock_repo.list_by_identity.return_value = [active_prompt, infinite_prompt]
-        mock_schedule_port.describe.return_value = ScheduleInfo(
-            paused=False, remaining_actions=0, running=False,
+        mock_schedule_port.describe_batch.return_value = BatchDescribeResult(
+            found={"sched-1": ScheduleInfo(paused=False, remaining_actions=0, running=False)},
+            errored=frozenset(),
         )
 
         result = service.list_enriched(identity=identity_a)
         assert result[0]["schedule_status"] == "completed"
         assert result[1]["schedule_status"] == "active"
-        mock_schedule_port.describe.assert_called_once_with("sched-1")
+        mock_schedule_port.describe_batch.assert_called_once_with(["sched-1"])
 
     def test_reconcile_with_end_at_schedule(
         self, service, mock_repo, mock_schedule_port, identity_a,
     ):
         """Schedule with end_at (no remaining_actions) is also reconciled."""
-        from mas.prompts.ports import ScheduleInfo
+        from mas.scheduling.ports import ScheduleInfo
 
         prompt = _make_prompt(
             identity_a,
@@ -794,7 +941,7 @@ class TestServiceReconciliation:
                 interval=timedelta(hours=1),
                 end_at=datetime(2030, 1, 1, tzinfo=timezone.utc),
             ),
-            temporal_schedule_id="sched-end",
+            engine_handle="sched-end",
         )
         mock_repo.load.return_value = prompt
         mock_schedule_port.describe.return_value = ScheduleInfo(

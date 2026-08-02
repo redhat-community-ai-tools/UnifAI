@@ -126,9 +126,9 @@ class SessionDetail(BaseModel):
 
 
 class ScheduleRunSummary(BaseModel):
-    """One execution record in a scheduled prompt's run history.
+    """One execution record in a workflow schedule's run history.
 
-    Lives in the session domain (rather than ``mas.prompts``) because each
+    Lives in the session domain (rather than ``mas.scheduling``) because each
     run is a session — projected from session documents by
     ``SessionService.get_runs_by_schedule()``.
     """

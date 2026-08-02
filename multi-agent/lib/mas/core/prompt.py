@@ -2,7 +2,7 @@
 Base prompt model — shared foundation for all prompt-like entities.
 
 Lives in core/ so both `blueprints.models.prompt_shortcuts.PromptShortcutItem`
-and `prompts.models.ScheduledPrompt` can inherit without circular deps.
+and `scheduling.models.WorkflowSchedule` can reference it without circular deps.
 """
 from uuid import uuid4
 

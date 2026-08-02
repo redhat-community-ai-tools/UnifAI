@@ -1,147 +1,130 @@
 """
 Scheduled session workflow -- triggered by Temporal Schedule on each tick.
 
-Creates a fresh session, stages inputs, builds workflow params via activity
-(blueprint resolution), then delegates to SessionWorkflow as a child.
-After the child completes (or fails), a post_execution activity records the
-run outcome in the prompt aggregate and handles finite-schedule completion.
+Implements ScheduledRunOps; ScheduledSessionRunner owns the
+provision → execute → record ordering.
 """
 import asyncio
 from datetime import timedelta
+from typing import Optional
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import ActivityError, ChildWorkflowError
+from temporalio.exceptions import ChildWorkflowError, is_cancelled_exception
 
 from mas.graph.state.graph_state import GraphState
+from mas.scheduling.models import RunOutcome
+from mas.session.domain.exceptions import ScheduledSessionCancelledException
+from mas.session.execution.ports import ScheduledExecutionParams
+from mas.session.execution.scheduled_runner import ScheduledSessionRunner
 from temporal.models import (
-    BuildSessionWorkflowParamsInput,
-    PostExecutionParams,
-    RunOutcome,
+    ProvisionResult,
+    RecordOutcomeParams,
     ScheduledSessionParams,
     SessionWorkflowParams,
-    StageScheduledInputsParams,
 )
+from temporal.workflow_ids import scheduled_session_workflow_id
+from inbound.temporal.workflows.session_workflow import SessionWorkflow
 
-with workflow.unsafe.imports_passed_through():
-    from inbound.temporal.workflows.session_workflow import SessionWorkflow
-
-_ACTIVITY_TIMEOUT = timedelta(seconds=30)
-_BUILD_PARAMS_TIMEOUT = timedelta(minutes=2)
+_PROVISION_TIMEOUT = timedelta(minutes=2)
+_RECORD_TIMEOUT = timedelta(seconds=30)
 _ACTIVITY_RETRY = RetryPolicy(maximum_attempts=3)
 _CHILD_EXECUTION_TIMEOUT = timedelta(hours=4)
 
 
 @workflow.defn
 class ScheduledSessionWorkflow:
-    """
-    Parent workflow for scheduled session execution.
-
-    Each schedule tick starts one instance. Steps:
-    1. create_scheduled_session -- new SessionRecord in Mongo (PENDING)
-    2. stage_scheduled_inputs -- apply inputs + prompt text (QUEUED)
-    3. build_session_workflow_params -- resolve blueprint, compile graph
-    4. SessionWorkflow (child) -- full lifecycle (begin -> execute -> complete/fail)
-    5. post_execution -- record run stats, conditionally complete finite schedules
-    """
+    """Parent workflow for one schedule tick; implements ScheduledRunOps."""
 
     @workflow.run
     async def run(self, params: ScheduledSessionParams) -> str:
-        # Deterministic session key — same value on activity retries,
-        # preventing duplicate session creation.
-        deduped_params = params.model_copy(
-            update={"dedupe_key": str(workflow.uuid4())}
-        )
+        self._params = params
+        self._started_at = workflow.now().isoformat()
+        self._dedupe_key = str(workflow.uuid4())
 
-        run_id: str | None = None
-        started_at: str = workflow.now().isoformat()
-        outcome = RunOutcome.FAILED
-        failure_reason: str | None = None
-
+        runner = ScheduledSessionRunner()
         try:
-            run_id = await workflow.execute_activity(
-                "create_scheduled_session",
-                deduped_params,
-                start_to_close_timeout=_ACTIVITY_TIMEOUT,
-                retry_policy=_ACTIVITY_RETRY,
-            )
-
-            started_at = workflow.now().isoformat()
-
-            # stage_scheduled_inputs and build_session_workflow_params are
-            # naturally idempotent (overwrite-style writes / pure reads).
-            await workflow.execute_activity(
-                "stage_scheduled_inputs",
-                StageScheduledInputsParams(
-                    run_id=run_id,
-                    inputs=params.inputs,
-                    text=params.text,
-                    credential_user_id=params.credential_user_id,
-                ),
-                start_to_close_timeout=_ACTIVITY_TIMEOUT,
-                retry_policy=_ACTIVITY_RETRY,
-            )
-
-            session_params = await workflow.execute_activity(
-                "build_session_workflow_params",
-                BuildSessionWorkflowParamsInput(run_id=run_id),
-                start_to_close_timeout=_BUILD_PARAMS_TIMEOUT,
-                retry_policy=_ACTIVITY_RETRY,
-                result_type=SessionWorkflowParams,
-            )
-
-            try:
-                await workflow.execute_child_workflow(
-                    SessionWorkflow.run,
-                    session_params,
-                    id=f"sched-session-{run_id}",
-                    execution_timeout=_CHILD_EXECUTION_TIMEOUT,
-                    result_type=GraphState,
-                )
-                outcome = RunOutcome.COMPLETED
-            except ChildWorkflowError as exc:
-                workflow.logger.error(
-                    "Child workflow sched-session-%s failed: %s", run_id, exc,
-                )
-                failure_reason = f"{type(exc).__name__}: {exc}"
+            return await runner.run(self)
+        except ScheduledSessionCancelledException:
+            raise asyncio.CancelledError()
         except asyncio.CancelledError:
-            outcome = RunOutcome.FAILED
-            failure_reason = "WorkflowCancelled"
             raise
-        except ActivityError as exc:
-            workflow.logger.error(
-                "ScheduledSessionWorkflow setup failed for prompt %s: %s",
-                params.prompt_id, exc,
+
+    # ── ScheduledRunOps implementation ────────────────────────────────
+
+    async def provision(self) -> tuple[str, ScheduledExecutionParams]:
+        """Create session, stage inputs, resolve blueprint in one activity."""
+        deduped_params = self._params.model_copy(
+            update={"dedupe_key": self._dedupe_key}
+        )
+        result: ProvisionResult = await workflow.execute_activity(
+            "provision_scheduled_session",
+            deduped_params,
+            start_to_close_timeout=_PROVISION_TIMEOUT,
+            retry_policy=_ACTIVITY_RETRY,
+            result_type=ProvisionResult,
+        )
+        return result.session_id, result.params.to_scheduled_execution_params()
+
+    async def execute(self, params: ScheduledExecutionParams) -> RunOutcome:
+        """Run the session as a child workflow.
+
+        Translate Temporal cancellation (parent or child) into
+        ScheduledSessionCancelledException.
+        """
+        workflow_params = SessionWorkflowParams.from_scheduled_execution_params(params)
+        child_id = scheduled_session_workflow_id(workflow_params.run_id)
+        try:
+            await workflow.execute_child_workflow(
+                SessionWorkflow.run,
+                workflow_params,
+                id=child_id,
+                execution_timeout=_CHILD_EXECUTION_TIMEOUT,
+                result_type=GraphState,
             )
-            failure_reason = f"{type(exc).__name__}: {exc}"
-        finally:
-            if run_id is not None:
-                # post_execution is idempotent — record_run uses a $ne guard
-                # on session_id so retries neither double-count nor duplicate.
-                # asyncio.shield keeps the activity running even when the
-                # workflow is being cancelled
-                try:
-                    await asyncio.shield(
-                        workflow.execute_activity(
-                            "post_execution",
-                            PostExecutionParams(
-                                prompt_id=params.prompt_id,
-                                run_id=run_id,
-                                status=outcome,
-                                started_at=started_at,
-                                failure_reason=failure_reason,
-                            ),
-                            start_to_close_timeout=_ACTIVITY_TIMEOUT,
-                            retry_policy=_ACTIVITY_RETRY,
-                        )
-                    )
-                except asyncio.CancelledError:
-                    pass
+            return RunOutcome.COMPLETED
+        except asyncio.CancelledError:
+            raise ScheduledSessionCancelledException()
+        except ChildWorkflowError as e:
+            if is_cancelled_exception(e):
+                workflow.logger.info(
+                    "Child workflow %s cancelled — propagating to parent tick",
+                    child_id,
+                )
+                raise ScheduledSessionCancelledException() from e
+            workflow.logger.error(
+                "Child workflow %s failed: %s",
+                child_id, e,
+            )
+            return RunOutcome.FAILED
+        except Exception as e:
+            workflow.logger.error(
+                "Child workflow %s failed: %s",
+                child_id, e,
+            )
+            return RunOutcome.FAILED
 
-        if run_id is None:
-            msg = f"Failed to create session for prompt {params.prompt_id}"
-            if failure_reason:
-                msg = f"{msg}: {failure_reason}"
-            raise RuntimeError(msg)
-
-        return run_id
+    async def record(
+        self,
+        session_id: str,
+        outcome: RunOutcome,
+        failure_reason: Optional[str],
+    ) -> None:
+        """Record outcome via activity, shielded from cancellation."""
+        try:
+            await asyncio.shield(
+                workflow.execute_activity(
+                    "record_scheduled_outcome",
+                    RecordOutcomeParams(
+                        schedule_id=self._params.schedule_id,
+                        session_id=session_id,
+                        outcome=outcome,
+                        started_at=self._started_at,
+                        failure_reason=failure_reason,
+                    ),
+                    start_to_close_timeout=_RECORD_TIMEOUT,
+                    retry_policy=_ACTIVITY_RETRY,
+                )
+            )
+        except asyncio.CancelledError:
+            pass

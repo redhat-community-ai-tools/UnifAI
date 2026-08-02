@@ -33,9 +33,9 @@ from mas.validation.service import ElementValidationService
 from mas.templates.service import TemplateService
 from mas.collaboration.service import CollaborationService
 
-# Scheduled prompts
-from mas.prompts.service import PromptService
-from outbound.mongo.scheduled_prompt_repository import MongoScheduledPromptRepository
+# Workflow scheduling
+from mas.scheduling.service import WorkflowScheduleService
+from outbound.mongo.workflow_schedule_repository import MongoWorkflowScheduleRepository
 
 # Auth layer
 from mas.core.auth.service import AuthService, AuthStrategyRegistry
@@ -358,15 +358,15 @@ class AppContainer(metaclass=SingletonMeta):
             cfg, self.session_repo, self.identity_provider
         )
 
-        # ── Scheduled prompts ──────────────────────────────────────────
-        self.prompt_repo = MongoScheduledPromptRepository(
+        # ── Workflow scheduling ─────────────────────────────────────────
+        self.schedule_repo = MongoWorkflowScheduleRepository(
             db_name=cfg.mongo_db,
-            coll_name=cfg.scheduled_prompts_coll,
+            coll_name=cfg.workflow_schedules_coll,
         )
-        schedule_adapter = self._create_schedule_adapter(cfg.engine_name)
-        self.prompt_service = PromptService(
-            prompt_repo=self.prompt_repo,
-            schedule_port=schedule_adapter,
+        schedule_engine = self._create_schedule_adapter(cfg.engine_name)
+        self.schedule_service = WorkflowScheduleService(
+            schedule_repo=self.schedule_repo,
+            schedule_engine=schedule_engine,
             blueprint_service=self.blueprint_service,
             session_service=self.session_service,
         )
@@ -449,11 +449,12 @@ class AppContainer(metaclass=SingletonMeta):
         return None
 
     @staticmethod
-    def _create_schedule_adapter(engine_name: str):
+    def _create_schedule_adapter(engine_name: str) -> "ScheduleEngine":
         if engine_name == "temporal":
             from outbound.temporal.schedule_adapter import TemporalScheduleAdapter
             return TemporalScheduleAdapter()
-        return None
+        from mas.scheduling.noop import NoOpScheduleEngine
+        return NoOpScheduleEngine()
 
     @staticmethod
     def _build_identity_auth_provider(
