@@ -99,16 +99,12 @@ ingress:
   #      - chart-example.local
 
 resources: 
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
   limits:
     cpu: '4'
-    memory: '32Gi'
+    memory: '6Gi'
   requests:
-    cpu: '4'
-    memory: '16Gi'
+    cpu: '2'
+    memory: '3Gi'
 
 ##### currently the liveness/readyness probes are set manually in the deployment file and taking the port from the service in this file.
 # This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
@@ -133,11 +129,18 @@ readinessProbe:
 
 # This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
 autoscaling:
-  enabled: false
+  enabled: true
   minReplicas: 1
-  maxReplicas: 100
-  targetCPUUtilizationPercentage: 80
-  # targetMemoryUtilizationPercentage: 80
+  maxReplicas: 6
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120
+      maxPodsPerMinute: 1
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      maxPodsPerPeriod: 1
+      periodSeconds: 120
 
 # Additional volumes on the output Deployment definition.
 volumes:
@@ -156,6 +159,9 @@ volumeMounts:
   - name: gcp-credentials
     mountPath: /opt/app-root/src/config/gcp
     readOnly: true
+
+podAntiAffinity:
+  enabled: true
 
 nodeSelector: {}
 

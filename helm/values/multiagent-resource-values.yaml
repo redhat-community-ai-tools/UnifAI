@@ -3,10 +3,10 @@ multiagent_server:
   resources:
     limits:
       cpu: '4'
-      memory: '10Gi'
+      memory: '6Gi'
     requests:
-      cpu: '4'
-      memory: '10Gi'
+      cpu: '2'
+      memory: '3Gi'
   image: 
     repository: images.paas.redhat.com/unifai/multiagent
     tag: "latest"
@@ -30,10 +30,10 @@ multiagent_temporal_worker:
   resources:
     limits:
       cpu: '4'
-      memory: '16Gi'
+      memory: '6Gi'
     requests:
       cpu: '2'
-      memory: '8Gi'
+      memory: '3Gi'
   image:
     repository: images.paas.redhat.com/unifai/multiagent
     tag: "latest"
