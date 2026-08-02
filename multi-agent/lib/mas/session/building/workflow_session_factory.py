@@ -15,9 +15,8 @@ from mas.core.execution_context import ExecutionContextHolder
 from mas.core.element_deps import ElementBuildContext
 from mas.blueprints.models.blueprint import BlueprintSpec
 from mas.core.auth.service import AuthService
-
-if TYPE_CHECKING:
-    from mas.core.platform_config import PlatformConfig
+from mas.core.platform_config import PlatformConfig
+from mas.core.tracing import TracingService
 
 
 class WorkflowSessionFactory:
@@ -36,11 +35,13 @@ class WorkflowSessionFactory:
             engine_name: str,
             auth_service: Optional[AuthService] = None,
             platform_config: Optional[PlatformConfig] = None,
+            tracing_service: Optional[TracingService] = None,
     ):
         self._elements = element_registry
         self._engine_name = engine_name
         self._auth_service = auth_service
         self._platform_config = platform_config
+        self._tracing_service = tracing_service
         self._session_builder = SessionElementBuilder(element_registry)
 
     @property
@@ -63,6 +64,7 @@ class WorkflowSessionFactory:
             execution_ctx=holder,
             auth_service=self._auth_service,
             platform_config=self._platform_config,
+            tracing_service=self._tracing_service,
         )
         logical_plan = PlanBuilder(self._elements).build(blueprint_spec)
         registry = self._session_builder.build(blueprint_spec, deps=deps)

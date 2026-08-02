@@ -1,9 +1,10 @@
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 from mas.core.execution_context import ExecutionContextHolder
 from mas.core.auth.service import AuthService
 from mas.core.platform_config import PlatformConfig
+from mas.core.tracing import TracingService
 
 
 @dataclass
@@ -21,3 +22,4 @@ class ElementBuildContext:
     execution_ctx: Optional[ExecutionContextHolder] = field(default=None)
     auth_service: Optional[AuthService] = field(default=None)
     platform_config: Optional[PlatformConfig] = field(default=None)
+    tracing_service: Optional[TracingService] = field(default=None)

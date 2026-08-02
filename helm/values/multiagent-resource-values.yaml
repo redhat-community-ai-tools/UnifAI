@@ -1,6 +1,6 @@
 multiagent_server:
   replicaCount: 1
-  resources: 
+  resources:
     limits:
       cpu: '4'
       memory: '10Gi'
@@ -21,18 +21,20 @@ multiagent_server:
     GUNICORN_TIMEOUT: "600"
     SHARED_STORAGE: "/app/shared"
     GOOGLE_APPLICATION_CREDENTIALS: "/opt/app-root/src/config/gcp/gcp-sa-key.json"
+    LANGFUSE_ENABLED: true
+    LANGFUSE_BASE_URL: "https://us.cloud.langfuse.com"
     VERSION: ""
 
 multiagent_temporal_worker:
   replicaCount: 2
-  resources: 
+  resources:
     limits:
       cpu: '4'
       memory: '16Gi'
     requests:
       cpu: '2'
       memory: '8Gi'
-  image: 
+  image:
     repository: images.paas.redhat.com/unifai/multiagent
     tag: "latest"
   service:
@@ -44,6 +46,8 @@ multiagent_temporal_worker:
     WORKER_THREADS: "100"
     SHARED_STORAGE: "/app/shared"
     GOOGLE_APPLICATION_CREDENTIALS: "/opt/app-root/src/config/gcp/gcp-sa-key.json"
+    LANGFUSE_ENABLED: true
+    LANGFUSE_BASE_URL: "https://us.cloud.langfuse.com"
     VERSION: ""
 
 storage:

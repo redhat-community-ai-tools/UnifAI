@@ -5,6 +5,7 @@ from mas.graph.state.state_view import StateView
 from typing import Optional, Any, Mapping, ClassVar
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.core.contracts import SupportsStateContext
+from mas.core.tracing import TracingService
 from mas.elements.nodes.common.capabilities.streaming_capable import StreamingCapableMixin
 
 
@@ -29,10 +30,11 @@ class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
     READS: ClassVar[set[str]] = set()
     WRITES: ClassVar[set[str]] = set()
 
-    def __init__(self, *, retries: int = 1, **kwargs: Any):
+    def __init__(self, *, retries: int = 1, tracing_service: TracingService = None, **kwargs: Any):
         super().__init__(**kwargs)  # MRO
         self.retries = retries
         self._ctx: Optional[StepContext] = None
+        self._tracing = tracing_service
 
     @abstractmethod
     def run(self, state: StateView) -> StateView:
@@ -47,7 +49,23 @@ class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
 
         self._state = wrapped_state
 
-        self.run(wrapped_state)
+        if self._tracing:
+            with self._tracing.trace_node(
+                node_uid=self.uid,
+                node_type=type(self).__name__,
+                display_name=self.display_name,
+            ) as node_handle:
+                try:
+                    self.run(wrapped_state)
+                except Exception as e:
+                    node_handle.update(
+                        level="ERROR",
+                        status_message=f"Node '{self.display_name}' failed: {type(e).__name__}: {e}",
+                    )
+                    raise
+        else:
+            self.run(wrapped_state)
+
         result = wrapped_state.backing_state
 
         self._stream({

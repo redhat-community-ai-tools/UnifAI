@@ -38,6 +38,7 @@ async def run_worker(
 
     node_executor = NodeExecutor(
         session_factory=container.session_factory,
+        tracing_service=container.tracing_service,
     )
 
     thread_pool = ThreadPoolExecutor(max_workers=threads)

@@ -34,12 +34,16 @@ class OpenAIFactory(BaseFactory[OpenAIConfig, OpenAILLM]):
         :raises PluginConfigurationError: on validation failure
         """
         try:
+            element_deps = deps.pop("deps", None)
+            tracing = element_deps.tracing_service if element_deps else None
+
             llm = OpenAILLM(
                 model_name=cfg.model_name,
                 api_key=cfg.api_key,
                 base_url=str(cfg.base_url),
                 temperature=cfg.temperature,
                 max_tokens=cfg.max_tokens,
+                tracing=tracing,
                 **cfg.extra
             )
             return llm
