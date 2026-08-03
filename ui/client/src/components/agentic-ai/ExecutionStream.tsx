@@ -69,7 +69,7 @@ export default function ExecutionStream({
   const [isPaused, setIsPaused] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const { nodeListRef } = useStreamingData();
-  const { userId: contextUserId, identityType } = useWorkspaceIdentity();
+  const { teamId } = useWorkspaceIdentity();
 
   const extractNodeData = (graphFlow: GraphFlow): { id: string; name: string; description: string | null }[] => {
     if (!graphFlow || !graphFlow.plan) {
@@ -90,7 +90,7 @@ export default function ExecutionStream({
   // Create agent nodes from selected graph nodes on component mount
   useEffect(() => {
     const getGraphNodes = async () => {
-      const blueprintObjects = await fetchResolvedBlueprints(contextUserId, identityType);
+      const blueprintObjects = await fetchResolvedBlueprints(teamId);
       
       // Find the specific graph flow by blueprint_id
       const targetBlueprintObj = blueprintObjects.find((blueprintObj: any, index: number) => 

@@ -83,12 +83,10 @@ export async function createShare(request: CreateShareRequest): Promise<CreateSh
 
 export async function listShares(
   direction: 'received' | 'sent',
-  userId?: string,
   status?: 'pending' | 'accepted' | 'declined' | 'canceled',
   skip: number = 0,
   limit: number = 100,
-  identityType?: 'user' | 'team',
-  displayName?: string,
+  teamId?: string,
 ): Promise<SharesListResponse> {
   const params: Record<string, string | number> = {
     direction,
@@ -96,19 +94,12 @@ export async function listShares(
     limit,
   };
 
-  if (userId) {
-    params.userId = userId;
-  }
-
   if (status) {
     params.status = status;
   }
 
-  if (identityType) {
-    params.identityType = identityType;
-  }
-  if (displayName) {
-    params.displayName = displayName;
+  if (teamId) {
+    params.teamId = teamId;
   }
 
   const { data } = await axios.get<SharesListResponse>('/shares/shares.list', { params });

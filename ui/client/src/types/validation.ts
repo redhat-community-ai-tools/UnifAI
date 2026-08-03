@@ -81,20 +81,13 @@ export interface ResourceValidationRequest {
 
 /**
  * Request payload for blueprint validation.
- *
- * `userId` and `identityType` are a discriminated pair: either both are
- * given (so a team id is never interpreted without its "team" discriminator)
- * or neither is, in which case the caller (`AgenticAIContext`) falls back to
- * the current workspace identity.
  */
-export type BlueprintValidationRequest = {
+export interface BlueprintValidationRequest {
   blueprintId: string;
+  teamId?: string;
   skipNetworkChecks?: boolean;
   timeoutSeconds?: number;
-} & (
-  | { userId?: undefined; identityType?: undefined }
-  | { userId: string; identityType: "team" | "user" }
-);
+}
 
 /**
  * Cached validation entry with timestamp for potential TTL usage

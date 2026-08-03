@@ -103,7 +103,7 @@ export interface UseSessionHubReturn {
 
   // ── Identity helpers (pass-through for convenience) ─────────────────────
   contextUserId: string;
-  identityType: "team" | "user";
+  teamId: string | undefined;
   isTeam: boolean;
   displayName: string;
   globalScope: "public" | "private";
@@ -175,7 +175,7 @@ export function useSessionHub({
   const { nodeListRef, clearStream } = useStreamingData();
   const { user } = useAuth();
   const { selectedTeam } = useView();
-  const { isTeam, userId: contextUserId, displayName, identityType } =
+  const { isTeam, userId: contextUserId, displayName, teamId } =
     useWorkspaceIdentity();
   const { toast } = useToast();
 
@@ -349,8 +349,7 @@ export function useSessionHub({
         try {
           const resolved = await fetchResolvedBlueprint(
             session.blueprintId,
-            contextUserId,
-            identityType,
+            teamId,
             isTeam ? (selectedTeam?.name ?? undefined) : undefined,
           );
           if (sessionSelectRequestId.current !== requestId) return;
@@ -428,8 +427,7 @@ export function useSessionHub({
       sessionStream,
       clearStream,
       validateSelectedBlueprint,
-      contextUserId,
-      identityType,
+      teamId,
       isTeam,
       selectedTeam?.name,
       loadSessionMessages,
@@ -443,8 +441,10 @@ export function useSessionHub({
     try {
       setIsLoading(true);
       setError(null);
+      const params = new URLSearchParams({ userId: contextUserId });
+      if (teamId) params.set("teamId", teamId);
       const response = await axios.get(
-        `/sessions/session.user.list?userId=${contextUserId}&identityType=${identityType}`,
+        `/sessions/session.user.list?${params.toString()}`,
       );
       const sorted = sortSessionsByTimestamp(
         transformApiDataToSessions(response.data),
@@ -463,7 +463,7 @@ export function useSessionHub({
     } finally {
       setIsLoading(false);
     }
-  }, [contextUserId, identityType, runId, transformApiDataToSessions]);
+  }, [contextUserId, teamId, runId, transformApiDataToSessions]);
 
   // ── Delete ─────────────────────────────────────────────────────────────
   const handleDeleteChat = useCallback(
@@ -513,11 +513,12 @@ export function useSessionHub({
       await axios.post("/sessions/user.session.create", {
         blueprintId: graphId,
         userId: contextUserId,
-        displayName,
-        identityType,
+        ...(teamId ? { teamId } : {}),
       });
+      const params = new URLSearchParams({ userId: contextUserId });
+      if (teamId) params.set("teamId", teamId);
       const response = await axios.get(
-        `/sessions/session.user.list?userId=${contextUserId}&identityType=${identityType}`,
+        `/sessions/session.user.list?${params.toString()}`,
       );
       const sorted = sortSessionsByTimestamp(
         transformApiDataToSessions(response.data),
@@ -532,7 +533,7 @@ export function useSessionHub({
     } finally {
       setIsCreatingSession(false);
     }
-  }, [selectedFlowForModal, contextUserId, displayName, identityType, transformApiDataToSessions]);
+  }, [selectedFlowForModal, contextUserId, teamId, transformApiDataToSessions]);
 
   const handleCancelAddFlow = useCallback(() => {
     setShowAddFlowModal(false);
@@ -627,7 +628,7 @@ export function useSessionHub({
     setSelectedSession(null);
     setCurrentSessionMessages([]);
     fetchChatSessions();
-  }, [contextUserId, identityType]);
+  }, [contextUserId, teamId]);
 
   // ── Return ─────────────────────────────────────────────────────────────
   return {
@@ -677,7 +678,7 @@ export function useSessionHub({
     handleCancelAddFlow,
 
     contextUserId,
-    identityType,
+    teamId,
     isTeam,
     displayName,
     globalScope,

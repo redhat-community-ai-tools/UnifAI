@@ -69,11 +69,12 @@ export interface SaveBlueprintResponse {
 /**
  * Fetch available blueprints for a user
  */
-export async function fetchBlueprints(userId?: string, identityType?: string): Promise<WorkflowBlueprint[]> {
-  const userIdParam = userId || 'default';
-  const idType = identityType || 'user';
+export async function fetchBlueprints(teamId?: string): Promise<WorkflowBlueprint[]> {
+  const query = new URLSearchParams();
+  if (teamId) query.set('teamId', teamId);
+  const qs = query.toString();
   const response = await axios.get(
-    `/blueprints/available.blueprints.get?userId=${userIdParam}&identityType=${idType}`
+    `/blueprints/available.blueprints.get${qs ? `?${qs}` : ''}`
   );
   return response.data || [];
 }
@@ -82,11 +83,12 @@ export async function fetchBlueprints(userId?: string, identityType?: string): P
  * Fetch lightweight blueprint summaries (name, description, metadata only - no spec_dict).
  * Use this for listing blueprints when the full spec is not needed.
  */
-export async function fetchBlueprintSummaries(userId?: string, identityType?: string): Promise<BlueprintSummary[]> {
-  const userIdParam = userId || 'default';
-  const idType = identityType || 'user';
+export async function fetchBlueprintSummaries(teamId?: string): Promise<BlueprintSummary[]> {
+  const query = new URLSearchParams();
+  if (teamId) query.set('teamId', teamId);
+  const qs = query.toString();
   const response = await axios.get<BlueprintSummary[]>(
-    `/blueprints/available.blueprints.summary.get?userId=${userIdParam}&identityType=${idType}`
+    `/blueprints/available.blueprints.summary.get${qs ? `?${qs}` : ''}`
   );
   return response.data || [];
 }
@@ -104,36 +106,25 @@ export interface ResolvedBlueprintsResponse {
 /**
  * Fetch resolved blueprints (with all references resolved) - paginated list
  */
-export async function fetchResolvedBlueprints(userId?: string, identityType?: string): Promise<WorkflowBlueprint[]> {
-  const userIdParam = userId || 'default';
-  const idType = identityType || 'user';
+export async function fetchResolvedBlueprints(teamId?: string): Promise<WorkflowBlueprint[]> {
+  const query = new URLSearchParams();
+  if (teamId) query.set('teamId', teamId);
+  const qs = query.toString();
   const response = await axios.get<ResolvedBlueprintsResponse>(
-    `/blueprints/available.blueprints.resolved.get?userId=${userIdParam}&identityType=${idType}`
+    `/blueprints/available.blueprints.resolved.get${qs ? `?${qs}` : ''}`
   );
   return response.data?.items || [];
 }
 
 /**
  * Fetch a single resolved blueprint by ID (with all references resolved).
- * For team workspace, pass the team id as `userId`, `identityType: "team"`, and
- * optional `displayName` (team name) so auth matches `require_identity_authorization`.
  */
 export async function fetchResolvedBlueprint(
   blueprintId: string,
-  userId?: string,
-  identityType?: string,
-  displayName?: string,
+  teamId?: string,
 ): Promise<WorkflowBlueprint | null> {
-  const userIdParam = userId || 'default';
-  const idType = identityType || 'user';
-  const params = new URLSearchParams({
-    userId: userIdParam,
-    blueprintId,
-    identityType: idType,
-  });
-  if (displayName) {
-    params.set('displayName', displayName);
-  }
+  const params = new URLSearchParams({ blueprintId });
+  if (teamId) params.set('teamId', teamId);
   const response = await axios.get<WorkflowBlueprint>(
     `/blueprints/available.blueprints.resolved.get?${params.toString()}`
   );
@@ -166,16 +157,11 @@ export async function deleteBlueprint(blueprintId: string): Promise<DeleteBluepr
  */
 export async function saveBlueprint(
   blueprintRaw: string,
-  userId: string,
-  displayName: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<SaveBlueprintResponse> {
-  const { data } = await axios.post<SaveBlueprintResponse>('/blueprints/blueprint.save', {
-    blueprintRaw,
-    userId,
-    displayName,
-    identityType: identityType || 'user',
-  });
+  const body: Record<string, any> = { blueprintRaw };
+  if (teamId) body.teamId = teamId;
+  const { data } = await axios.post<SaveBlueprintResponse>('/blueprints/blueprint.save', body);
   return data;
 }
 
@@ -185,15 +171,11 @@ export async function saveBlueprint(
 export async function updateBlueprint(
   blueprintId: string,
   blueprintRaw: string,
-  userId: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<SaveBlueprintResponse> {
-  const { data } = await axios.put<SaveBlueprintResponse>('/blueprints/blueprint.update', {
-    blueprintId,
-    blueprintRaw,
-    userId,
-    identityType: identityType || 'user',
-  });
+  const body: Record<string, any> = { blueprintId, blueprintRaw };
+  if (teamId) body.teamId = teamId;
+  const { data } = await axios.put<SaveBlueprintResponse>('/blueprints/blueprint.update', body);
   return data;
 }
 
@@ -225,12 +207,12 @@ export async function setBlueprintMetadata(
  * Validate a saved blueprint and all its elements
  */
 export async function validateBlueprint(request: BlueprintValidationRequest): Promise<BlueprintValidationResult> {
-  const response = await axios.post('/blueprints/blueprint.validate', {
+  const body: Record<string, any> = {
     blueprintId: request.blueprintId,
-    userId: request.userId,
-    identityType: request.identityType,
     timeoutSeconds: request.timeoutSeconds ?? 10.0,
-  });
+  };
+  if (request.teamId) body.teamId = request.teamId;
+  const response = await axios.post('/blueprints/blueprint.validate', body);
   return response.data;
 }
 
@@ -276,15 +258,11 @@ export interface PromptShortcut {
 export async function setPromptShortcuts(
   blueprintId: string,
   prompts: PromptShortcutInput[],
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<{ prompts: PromptShortcut[] }> {
-  const { data } = await axios.put('/blueprints/blueprint.prompt-shortcuts.set', {
-    blueprintId,
-    prompts,
-    userId: userId || 'default',
-    identityType: identityType || 'user',
-  });
+  const body: Record<string, any> = { blueprintId, prompts };
+  if (teamId) body.teamId = teamId;
+  const { data } = await axios.put('/blueprints/blueprint.prompt-shortcuts.set', body);
   return data;
 }
 
@@ -293,15 +271,10 @@ export async function setPromptShortcuts(
  */
 export async function getPromptShortcuts(
   blueprintId: string,
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<{ prompts: PromptShortcut[] }> {
-  const { data } = await axios.get('/blueprints/blueprint.prompt-shortcuts.get', {
-    params: {
-      blueprintId,
-      userId: userId || 'default',
-      identityType: identityType || 'user',
-    },
-  });
+  const params: Record<string, string> = { blueprintId };
+  if (teamId) params.teamId = teamId;
+  const { data } = await axios.get('/blueprints/blueprint.prompt-shortcuts.get', { params });
   return data;
 }

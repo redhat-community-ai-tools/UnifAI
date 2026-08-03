@@ -75,8 +75,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
   const [validationRevision, setValidationRevision] = useState(0);
   const {
     userId: USER_ID,
-    displayName: WORKSPACE_DISPLAY_NAME,
-    identityType: WORKSPACE_IDENTITY_TYPE,
+    teamId: WORKSPACE_TEAM_ID,
     credentialUserId: CREDENTIAL_USER_ID,
     isTeam: IS_TEAM_WORKSPACE,
   } = useWorkspaceIdentity();
@@ -231,7 +230,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
           // incorrectly comes back "Invalid" despite being fully configured
           // for the team. Must stay in sync with how `configureBuiltin`
           // (which does send team identity) resolves identity.
-          ...(IS_TEAM_WORKSPACE ? { teamId: USER_ID } : {}),
+          ...(WORKSPACE_TEAM_ID ? { teamId: WORKSPACE_TEAM_ID } : {}),
         },
       );
       const result = response.data;
@@ -247,7 +246,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
       cacheValidationResult(rid, errorResult);
       return errorResult;
     }
-  }, [CREDENTIAL_USER_ID, IS_TEAM_WORKSPACE, USER_ID, cacheValidationResult, createErrorResult, updateDependencyParentMap]);
+  }, [CREDENTIAL_USER_ID, IS_TEAM_WORKSPACE, WORKSPACE_TEAM_ID, cacheValidationResult, createErrorResult, updateDependencyParentMap]);
 
   // ==================== Resource Mapping Functions ====================
 
@@ -271,10 +270,8 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
         categories.map(async (category) => {
           try {
             const resources = await listAllResources({
-              userId: USER_ID,
-              identityType: WORKSPACE_IDENTITY_TYPE,
+              teamId: WORKSPACE_TEAM_ID,
               category,
-              displayName: WORKSPACE_DISPLAY_NAME || undefined,
             });
 
             resources.forEach((resource) => {
@@ -301,7 +298,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
     } finally {
       setIsLoading(false);
     }
-  }, [USER_ID, WORKSPACE_IDENTITY_TYPE, WORKSPACE_DISPLAY_NAME]);
+  }, [USER_ID, WORKSPACE_TEAM_ID]);
 
   // Get resource name from a ref (falls back to type if no name)
   const getResourceName = useCallback((ref: string | any): string => {
@@ -695,7 +692,7 @@ return String(ref);
       const result = await validateBlueprintApi({
         ...request,
         userId: request.userId || USER_ID,
-        identityType: request.identityType || WORKSPACE_IDENTITY_TYPE,
+        teamId: request.teamId || WORKSPACE_TEAM_ID,
       });
       
       // Cache the result
@@ -707,7 +704,7 @@ return String(ref);
       setBlueprintValidationStatus(blueprintId, 'invalid');
       throw error;
     }
-  }, [setBlueprintValidationStatus, cacheBlueprintResult, USER_ID, WORKSPACE_IDENTITY_TYPE]);
+  }, [setBlueprintValidationStatus, cacheBlueprintResult, USER_ID, WORKSPACE_TEAM_ID]);
 
   // ==================== Effects ====================
 
@@ -734,7 +731,7 @@ return String(ref);
     if (USER_ID) {
       fetchAllResources();
     }
-  }, [USER_ID, WORKSPACE_IDENTITY_TYPE, fetchAllResources]);
+  }, [USER_ID, WORKSPACE_TEAM_ID, fetchAllResources]);
 
   // ==================== Context Value ====================
 

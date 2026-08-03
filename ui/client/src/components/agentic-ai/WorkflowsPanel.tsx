@@ -89,9 +89,9 @@ export default function WorkflowsPanel({
 
   const { selectedTeam } = useView();
   const { openShareForItem } = useShared();
-  const { isTeam, userId: contextUserId, identityType } = useWorkspaceIdentity();
-  const workspaceScopeRef = useRef({ contextUserId, identityType });
-  workspaceScopeRef.current = { contextUserId, identityType };
+  const { isTeam, userId: contextUserId, teamId } = useWorkspaceIdentity();
+  const workspaceScopeRef = useRef({ contextUserId, teamId });
+  workspaceScopeRef.current = { contextUserId, teamId };
   
   // Blueprint validation hook
   const {
@@ -132,13 +132,13 @@ export default function WorkflowsPanel({
   // `forceAutoSelect` bypasses the `selectedFlow` check so the first item is always
   // picked after a scope change (where the closure still sees the stale value).
   const fetchAvailableFlows = async (forceAutoSelect = false): Promise<void> => {
-    const scopeAtStart = { contextUserId, identityType };
+    const scopeAtStart = { contextUserId, teamId };
     try {
-      const summaries = await fetchBlueprintSummaries(contextUserId, identityType);
+      const summaries = await fetchBlueprintSummaries(contextUserId, teamId);
 
       if (
         workspaceScopeRef.current.contextUserId !== scopeAtStart.contextUserId ||
-        workspaceScopeRef.current.identityType !== scopeAtStart.identityType
+        workspaceScopeRef.current.teamId !== scopeAtStart.teamId
       ) {
         return;
       }
@@ -169,7 +169,7 @@ export default function WorkflowsPanel({
     } finally {
       if (
         workspaceScopeRef.current.contextUserId === scopeAtStart.contextUserId &&
-        workspaceScopeRef.current.identityType === scopeAtStart.identityType
+        workspaceScopeRef.current.teamId === scopeAtStart.teamId
       ) {
         setIsLoading(false);
       }
@@ -184,7 +184,7 @@ export default function WorkflowsPanel({
     fetchAvailableFlows(true).finally(() => {
       setIsLoading(false);
     });
-  }, [contextUserId, identityType]);
+  }, [contextUserId, teamId]);
 
   // Trigger validation when selected flow changes
   useEffect(() => {
@@ -215,8 +215,7 @@ export default function WorkflowsPanel({
       try {
         const blueprint = await fetchResolvedBlueprint(
           selectedFlow.id,
-          contextUserId,
-          identityType,
+          teamId,
           isTeam ? selectedTeam!.name : undefined,
         );
         if (cancelled) return;
@@ -271,7 +270,7 @@ export default function WorkflowsPanel({
 
   const handleSavePromptShortcuts = async (prompts: PromptShortcutInput[]) => {
     if (!promptShortcutsFlow) return;
-    await setPromptShortcuts(promptShortcutsFlow.id, prompts, contextUserId, identityType);
+    await setPromptShortcuts(promptShortcutsFlow.id, prompts, contextUserId, teamId);
   };
 
   const handleDeleteConfirm = async () => {
@@ -589,7 +588,7 @@ export default function WorkflowsPanel({
         onClose={() => setPromptShortcutsModalOpen(false)}
         blueprintId={promptShortcutsFlow?.id || ""}
         userId={contextUserId}
-        identityType={identityType}
+        teamId={teamId}
         onSave={handleSavePromptShortcuts}
       />
     </>

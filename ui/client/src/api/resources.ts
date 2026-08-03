@@ -52,25 +52,20 @@ export interface BuiltinsListResponse {
 }
 
 export async function listResources(params: {
-  userId: string;
-  identityType: string;
+  teamId?: string;
   category?: string;
   type?: string;
   ownership?: string;
   limit?: number;
   offset?: number;
-  /** Team display name — needed so team-workspace auth matches `require_identity_authorization`. */
-  displayName?: string;
 }): Promise<ResourcesListResponse> {
   const query = new URLSearchParams();
-  query.set('userId', params.userId);
-  query.set('identityType', params.identityType);
+  if (params.teamId) query.set('teamId', params.teamId);
   if (params.category) query.set('category', params.category);
   if (params.type) query.set('type', params.type);
   if (params.ownership) query.set('ownership', params.ownership);
   if (params.limit != null) query.set('limit', String(params.limit));
   if (params.offset != null) query.set('offset', String(params.offset));
-  if (params.displayName) query.set('displayName', params.displayName);
 
   const { data } = await axios.get<ResourcesListResponse>(
     `/resources/resources.list?${query.toString()}`,
@@ -86,12 +81,10 @@ export async function listResources(params: {
  * blocks, name lookups, etc.) rather than a UI-paginated list.
  */
 export async function listAllResources(params: {
-  userId: string;
-  identityType: string;
+  teamId?: string;
   category?: string;
   type?: string;
   ownership?: string;
-  displayName?: string;
 }): Promise<ResourceInstance[]> {
   const PAGE_SIZE = 1000;
   // Not a business limit on how many resources a caller can have — pagination
@@ -129,19 +122,13 @@ export async function getResource(resourceId: string): Promise<ResourceInstance>
 }
 
 export async function createResource(payload: {
-  userId: string;
-  identityType: string;
-  displayName?: string;
+  teamId?: string;
   category: string;
   type: string;
   name: string;
   config: Record<string, any>;
 }): Promise<ResourceInstance> {
-  const { config, ...rest } = payload;
-  const { data } = await axios.post<ResourceInstance>('/resources/resource.save', {
-    ...rest,
-    config,
-  });
+  const { data } = await axios.post<ResourceInstance>('/resources/resource.save', payload);
   return data;
 }
 
@@ -191,13 +178,11 @@ export async function uploadResourceFile(
 
 export async function getBuiltinUserConfig(params: {
   resourceId: string;
-  userId: string;
-  identityType: string;
+  teamId?: string;
 }): Promise<Record<string, any> | null> {
   const query = new URLSearchParams();
   query.set('resourceId', params.resourceId);
-  query.set('userId', params.userId);
-  query.set('identityType', params.identityType);
+  if (params.teamId) query.set('teamId', params.teamId);
   const { data } = await axios.get<{ config: Record<string, any> | null }>(
     `/resources/builtin.user-config?${query.toString()}`,
   );
@@ -234,8 +219,7 @@ export async function getElementSpec(category: string, type: string): Promise<El
 
 export async function configureBuiltin(payload: {
   resourceId: string;
-  userId: string;
-  identityType: string;
+  teamId?: string;
   config: Record<string, any>;
 }): Promise<ResourceInstance> {
   const { data } = await axios.patch<ResourceInstance>(
@@ -246,8 +230,7 @@ export async function configureBuiltin(payload: {
 }
 
 export async function createBuiltin(payload: {
-  userId: string;
-  identityType: string;
+  teamId?: string;
   category: string;
   type: string;
   name: string;

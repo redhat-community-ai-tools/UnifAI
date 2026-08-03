@@ -41,7 +41,7 @@ export const useWorkspaceData = () => {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const { addOrUpdateResource, removeResource, revalidateResourceAndAncestors } = useAgenticAI();
-  const { userId: USER_ID, displayName: USER_DISPLAY_NAME, identityType } = useWorkspaceIdentity();
+  const { userId: USER_ID, teamId } = useWorkspaceIdentity();
 
   // Fetch all available categories and element types
   const fetchCategories = useCallback(async () => {
@@ -89,8 +89,7 @@ export const useWorkspaceData = () => {
         setElementInstances([]);
 
         const resources = await resourcesApi.listAllResources({
-          userId: USER_ID,
-          identityType,
+          teamId,
           category,
           type,
         });
@@ -131,7 +130,7 @@ export const useWorkspaceData = () => {
         setIsLoadingInstances(false);
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, teamId],
   );
 
   // Fetch single resource by ID
@@ -165,8 +164,7 @@ export const useWorkspaceData = () => {
     async (category: string, ownership?: string) => {
       try {
         const resources = await resourcesApi.listAllResources({
-          userId: USER_ID,
-          identityType,
+          teamId,
           category,
           ownership,
         });
@@ -192,7 +190,7 @@ export const useWorkspaceData = () => {
         return [];
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, teamId],
   );
 
   // Fetch element schema for form generation (combines resource schema + element-specific schema)
@@ -317,9 +315,7 @@ export const useWorkspaceData = () => {
         } else {
           const { cfg_dict, ...firstLevelFields } = elementData;
           const result = await resourcesApi.createResource({
-            userId: USER_ID,
-            identityType,
-            displayName: USER_DISPLAY_NAME,
+            teamId,
             category,
             type,
             config: cfg_dict,
@@ -354,7 +350,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, teamId],
   );
 
   // Delete element using Resources API
@@ -429,15 +425,14 @@ export const useWorkspaceData = () => {
       try {
         return await resourcesApi.getBuiltinUserConfig({
           resourceId,
-          userId: USER_ID,
-          identityType,
+          teamId,
         });
       } catch (err: any) {
         console.error("Error fetching built-in user config:", err);
         return null;
       }
     },
-    [USER_ID, identityType],
+    [teamId],
   );
 
   // Save per-user configuration for a built-in resource (only non-readOnly fields)
@@ -458,8 +453,7 @@ export const useWorkspaceData = () => {
 
         const result = await resourcesApi.configureBuiltin({
           resourceId,
-          userId: USER_ID,
-          identityType,
+          teamId,
           config,
         });
 
@@ -499,7 +493,7 @@ export const useWorkspaceData = () => {
         if (!silent) setIsLoading(false);
       }
     },
-    [toast, USER_ID, identityType, revalidateResourceAndAncestors],
+    [toast, teamId, revalidateResourceAndAncestors],
   );
 
   // Create a built-in resource directly (admin only).
@@ -535,8 +529,7 @@ export const useWorkspaceData = () => {
         } else {
           const { cfg_dict, name } = elementData;
           const result = await resourcesApi.createBuiltin({
-            userId: USER_ID,
-            identityType,
+            teamId,
             category,
             type,
             name,
@@ -567,7 +560,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, teamId],
   );
 
   // Toggle available_to_all status for a resource (admin only)

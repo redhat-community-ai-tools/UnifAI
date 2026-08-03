@@ -134,7 +134,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
 
   const { user } = useAuth();
   const { selectedTeam } = useView();
-  const { isTeam, userId: USER_ID, displayName: USER_DISPLAY_NAME, identityType } = useWorkspaceIdentity();
+  const { isTeam, userId: USER_ID, teamId } = useWorkspaceIdentity();
 
   // Stable refs for callbacks embedded in node data (avoids stale closures)
   const deleteNodeRef = useRef<(id: string) => void>(() => {});
@@ -599,8 +599,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
       // set, not just a single page — page through via offset/has_more so
       // this stays correct even past the endpoint's per-request cap.
       const resources = await listAllResources({
-        userId: USER_ID,
-        identityType,
+        teamId,
       });
       const allBlocks = resources.map(transformResourceToBlock);
 
@@ -635,7 +634,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     } finally {
       setIsLoadingBlocks(false);
     }
-  }, [toast, USER_ID, identityType, isTeam, user?.username]);
+  }, [toast, teamId, isTeam, user?.username]);
 
   useEffect(() => {
     loadBuildingBlocks();
@@ -1141,7 +1140,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         let blueprintId;
         
         if (isEditMode && editBlueprintId) {
-          response = await updateBlueprint(editBlueprintId, yamlString, USER_ID, identityType);
+          response = await updateBlueprint(editBlueprintId, yamlString, USER_ID, teamId);
           blueprintId = editBlueprintId;
         } else {
           if (!USER_ID) {
@@ -1153,7 +1152,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
             setIsSaving(false);
             return;
           }
-          response = await saveBlueprint(yamlString, USER_ID, USER_DISPLAY_NAME, identityType);
+          response = await saveBlueprint(yamlString, USER_ID, teamId);
           blueprintId = response.blueprint_id;
         }
 
@@ -1194,7 +1193,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         setIsSaving(false);
       }
     },
-    [yamlFlow, toast, onSaveComplete, USER_ID, USER_DISPLAY_NAME, identityType, isEditMode, editBlueprintId],
+    [yamlFlow, toast, onSaveComplete, USER_ID, teamId, isEditMode, editBlueprintId],
   );
 
   useEffect(() => {
