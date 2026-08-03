@@ -1,24 +1,18 @@
 """Unit tests for Temporal DTO models.
 
-Covers: ScheduledSessionParams, StageScheduledInputsParams,
-        BuildSessionWorkflowParamsInput, RunOutcome, PostExecutionParams.
+Covers: ScheduledSessionParams, RunOutcome, SessionWorkflowParams.
 (Test Plan section 16.2)
 """
-import pytest
-
 from mas.core.identity import Identity
 from mas.core.execution_context import ExecutionContext
 from mas.engine.domain.models import GraphDefinition
 from mas.graph.state.graph_state import GraphState
 from mas.session.execution.ports import ScheduledExecutionParams
 from temporal.models import (
-    BuildSessionWorkflowParamsInput,
     GraphExecutionParams,
-    PostExecutionParams,
     RunOutcome,
     ScheduledSessionParams,
     SessionWorkflowParams,
-    StageScheduledInputsParams,
 )
 
 
@@ -42,26 +36,6 @@ class TestScheduledSessionParams:
         assert restored.source == "shortcut_copy"
 
 
-class TestStageScheduledInputsParams:
-    def test_defaults(self):
-        params = StageScheduledInputsParams(run_id="r1")
-        assert params.inputs == {}
-        assert params.text == ""
-
-    def test_with_values(self):
-        params = StageScheduledInputsParams(
-            run_id="r1", inputs={"a": 1}, text="Go",
-        )
-        assert params.inputs == {"a": 1}
-        assert params.text == "Go"
-
-
-class TestBuildSessionWorkflowParamsInput:
-    def test_minimal(self):
-        params = BuildSessionWorkflowParamsInput(run_id="r1")
-        assert params.run_id == "r1"
-
-
 class TestRunOutcome:
     def test_completed_value(self):
         assert RunOutcome.COMPLETED == "COMPLETED"
@@ -78,27 +52,6 @@ class TestRunOutcome:
             RunOutcome.FAILED,
             RunOutcome.CANCELLED,
         }
-
-
-class TestPostExecutionParams:
-    def test_all_fields(self):
-        params = PostExecutionParams(
-            schedule_id="p1",
-            run_id="r1",
-            status=RunOutcome.FAILED,
-            started_at="2026-07-20T10:00:00+00:00",
-        )
-        assert params.schedule_id == "p1"
-        assert params.run_id == "r1"
-        assert params.status == RunOutcome.FAILED
-        assert params.started_at == "2026-07-20T10:00:00+00:00"
-
-    def test_status_is_run_outcome_enum(self):
-        params = PostExecutionParams(
-            schedule_id="p1", run_id="r1",
-            status=RunOutcome.COMPLETED, started_at="t",
-        )
-        assert isinstance(params.status, RunOutcome)
 
 
 class TestSessionWorkflowParamsDomainMapping:

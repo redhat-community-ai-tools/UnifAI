@@ -336,29 +336,30 @@ class ShareCloner:
         else:
             base_name = f"{preferred_name} (from {ctx.sender_label})"
 
-        current_name = base_name
-
-        for counter in range(2, 101):
-            existing = self.resources.exists_by_name(identity, category, type_, current_name)
-            if not existing:
-                return current_name
-
-            current_name = f"{base_name} ({counter})"
-
-        # Fallback to UUID if too many conflicts
-        return f"{base_name} ({uuid4().hex[:8]})"
+        return self._find_unique_name(
+            base_name,
+            exists_fn=lambda name: self.resources.exists_by_name(identity, category, type_, name),
+        )
 
     def _resolve_blueprint_name_conflict(
             self, identity: Identity, preferred_name: str,
     ) -> str:
         """Find a unique blueprint name for *identity*, appending a counter if needed."""
-        if not self.blueprints.name_exists_for_identity(identity, preferred_name):
-            return preferred_name
+        return self._find_unique_name(
+            preferred_name,
+            exists_fn=lambda name: self.blueprints.name_exists_for_identity(identity, name),
+        )
+
+    @staticmethod
+    def _find_unique_name(base_name: str, *, exists_fn) -> str:
+        """Return *base_name* (or *base_name (N)*) that doesn't already exist."""
+        if not exists_fn(base_name):
+            return base_name
         for counter in range(2, 101):
-            candidate = f"{preferred_name} ({counter})"
-            if not self.blueprints.name_exists_for_identity(identity, candidate):
+            candidate = f"{base_name} ({counter})"
+            if not exists_fn(candidate):
                 return candidate
-        return f"{preferred_name} ({uuid4().hex[:8]})"
+        return f"{base_name} ({uuid4().hex[:8]})"
 
     def _clone_blueprint_draft(self, draft: BlueprintDraft, rid_mapping: Dict[str, str],
                                ctx: CloneContext) -> BlueprintDraft:

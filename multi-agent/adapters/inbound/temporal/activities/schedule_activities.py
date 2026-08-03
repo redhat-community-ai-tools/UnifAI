@@ -10,7 +10,11 @@ from datetime import datetime, timezone
 from temporalio import activity
 
 from mas.core.execution_context import ExecutionContext
+from mas.scheduling.service import WorkflowScheduleService
 from mas.session.domain.models import SessionMeta
+from mas.session.execution.input_projector import SessionInputProjector
+from mas.session.management.user_session_manager import UserSessionManager
+from mas.session.service import SessionService
 from temporal.models import (
     GraphExecutionParams,
     ProvisionResult,
@@ -28,11 +32,11 @@ class ScheduleActivities:
 
     def __init__(
         self,
-        session_service,
-        input_projector,
-        session_manager,
-        schedule_service,
-    ):
+        session_service: SessionService,
+        input_projector: SessionInputProjector,
+        session_manager: UserSessionManager,
+        schedule_service: WorkflowScheduleService,
+    ) -> None:
         self._session_service = session_service
         self._input_projector = input_projector
         self._session_manager = session_manager

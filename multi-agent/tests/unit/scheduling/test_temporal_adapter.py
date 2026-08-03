@@ -319,3 +319,110 @@ class TestCreateUpdateErrorTranslation:
         ):
             with pytest.raises(ScheduleValidationError):
                 adapter.update_schedule("sched-1", prompt)
+
+    def test_update_schedule_not_found_translated(self):
+        from mas.scheduling.ports import ScheduleNotFoundError
+        from temporalio.service import RPCError, RPCStatusCode
+
+        rpc_error = RPCError("not found", RPCStatusCode.NOT_FOUND, b"")
+        handle = Mock()
+        handle.update = AsyncMock(side_effect=rpc_error)
+        client = Mock()
+        client.get_schedule_handle = Mock(return_value=handle)
+
+        prompt = _make_prompt(interval=timedelta(minutes=5))
+        adapter = self.adapter_cls()
+        with patch(
+            "outbound.temporal.schedule_adapter.get_temporal_client",
+            new_callable=AsyncMock, return_value=client,
+        ):
+            with pytest.raises(ScheduleNotFoundError):
+                adapter.update_schedule("sched-gone", prompt)
+
+
+class TestLifecycleNotFoundTranslation:
+    """RPCError(NOT_FOUND) on pause/resume/trigger/delete → ScheduleNotFoundError
+    so service-layer drift handling can catch a typed port error."""
+
+    @pytest.fixture(autouse=True)
+    def import_adapter(self):
+        from outbound.temporal.schedule_adapter import TemporalScheduleAdapter
+        self.adapter_cls = TemporalScheduleAdapter
+
+    @staticmethod
+    def _client_with_handle_method(method_name: str, side_effect):
+        handle = Mock()
+        setattr(handle, method_name, AsyncMock(side_effect=side_effect))
+        client = Mock()
+        client.get_schedule_handle = Mock(return_value=handle)
+        return client
+
+    def test_pause_not_found_translated(self):
+        from mas.scheduling.ports import ScheduleNotFoundError
+        from temporalio.service import RPCError, RPCStatusCode
+
+        rpc_error = RPCError("not found", RPCStatusCode.NOT_FOUND, b"")
+        client = self._client_with_handle_method("pause", rpc_error)
+        adapter = self.adapter_cls()
+        with patch(
+            "outbound.temporal.schedule_adapter.get_temporal_client",
+            new_callable=AsyncMock, return_value=client,
+        ):
+            with pytest.raises(ScheduleNotFoundError):
+                adapter.pause("sched-gone")
+
+    def test_resume_not_found_translated(self):
+        from mas.scheduling.ports import ScheduleNotFoundError
+        from temporalio.service import RPCError, RPCStatusCode
+
+        rpc_error = RPCError("not found", RPCStatusCode.NOT_FOUND, b"")
+        client = self._client_with_handle_method("unpause", rpc_error)
+        adapter = self.adapter_cls()
+        with patch(
+            "outbound.temporal.schedule_adapter.get_temporal_client",
+            new_callable=AsyncMock, return_value=client,
+        ):
+            with pytest.raises(ScheduleNotFoundError):
+                adapter.resume("sched-gone")
+
+    def test_trigger_not_found_translated(self):
+        from mas.scheduling.ports import ScheduleNotFoundError
+        from temporalio.service import RPCError, RPCStatusCode
+
+        rpc_error = RPCError("not found", RPCStatusCode.NOT_FOUND, b"")
+        client = self._client_with_handle_method("trigger", rpc_error)
+        adapter = self.adapter_cls()
+        with patch(
+            "outbound.temporal.schedule_adapter.get_temporal_client",
+            new_callable=AsyncMock, return_value=client,
+        ):
+            with pytest.raises(ScheduleNotFoundError):
+                adapter.trigger_now("sched-gone")
+
+    def test_delete_not_found_translated(self):
+        from mas.scheduling.ports import ScheduleNotFoundError
+        from temporalio.service import RPCError, RPCStatusCode
+
+        rpc_error = RPCError("not found", RPCStatusCode.NOT_FOUND, b"")
+        client = self._client_with_handle_method("delete", rpc_error)
+        adapter = self.adapter_cls()
+        with patch(
+            "outbound.temporal.schedule_adapter.get_temporal_client",
+            new_callable=AsyncMock, return_value=client,
+        ):
+            with pytest.raises(ScheduleNotFoundError):
+                adapter.delete("sched-gone")
+
+    def test_pause_other_rpc_error_translated(self):
+        from mas.scheduling.ports import ScheduleEngineError
+        from temporalio.service import RPCError, RPCStatusCode
+
+        rpc_error = RPCError("unavailable", RPCStatusCode.UNAVAILABLE, b"")
+        client = self._client_with_handle_method("pause", rpc_error)
+        adapter = self.adapter_cls()
+        with patch(
+            "outbound.temporal.schedule_adapter.get_temporal_client",
+            new_callable=AsyncMock, return_value=client,
+        ):
+            with pytest.raises(ScheduleEngineError, match="unavailable"):
+                adapter.pause("sched-1")

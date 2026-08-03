@@ -10,9 +10,11 @@ natively handles model_dump/model_validate for all Pydantic fields.
 Shared by both inbound (worker/activities/workflows) and outbound
 (executor/submitter) Temporal adapters.
 """
+from __future__ import annotations
+
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from mas.scheduling.models import RunOutcome as RunOutcome
 from mas.engine.domain.models import GraphDefinition
@@ -126,7 +128,7 @@ class CancelSessionParams(BaseModel):
 
 class ScheduledSessionParams(BaseModel):
     """Input to ScheduledSessionWorkflow (triggered by Temporal Schedule)."""
-    schedule_id: str
+    schedule_id: str = Field(validation_alias=AliasChoices("schedule_id", "prompt_id"))
     blueprint_id: str
     identity: Identity
     text: str = ""
@@ -134,32 +136,6 @@ class ScheduledSessionParams(BaseModel):
     source: PromptSource = PromptSource.MANUAL
     dedupe_key: Optional[str] = None
     credential_user_id: str = ""
-
-
-class StageScheduledInputsParams(BaseModel):
-    """Input to the stage_scheduled_inputs activity."""
-    run_id: str
-    inputs: Dict[str, Any] = Field(default_factory=dict)
-    text: str = ""
-    credential_user_id: str = ""
-
-
-class BuildSessionWorkflowParamsInput(BaseModel):
-    """Input to the build_session_workflow_params activity."""
-    run_id: str
-
-
-class PostExecutionParams(BaseModel):
-    """Input to the post_execution activity (record run + conditional completion).
-
-    DEPRECATED: Replaced by RecordOutcomeParams in the consolidated workflow.
-    Kept for backward compatibility during migration.
-    """
-    schedule_id: str
-    run_id: str
-    status: RunOutcome
-    started_at: str
-    failure_reason: Optional[str] = None
 
 
 # ── Consolidated scheduled session params ─────────────────────────────

@@ -11,9 +11,10 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 from zoneinfo import available_timezones
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mas.core.identity import Identity
+from mas.core.prompt import BasePrompt
 
 _MIN_INTERVAL = timedelta(minutes=1)
 
@@ -46,18 +47,8 @@ class ScheduleOverlapPolicy(str, Enum):
     CANCEL_OTHER = "cancel_other"
 
 
-class Prompt(BaseModel):
+class Prompt(BasePrompt):
     """The content that will be executed on each schedule tick."""
-
-    text: str
-
-    @field_validator("text")
-    @classmethod
-    def validate_text(cls, v: str) -> str:
-        stripped = v.strip()
-        if not stripped:
-            raise ValueError("Prompt text must not be empty")
-        return stripped
 
 
 class ScheduleDefinition(BaseModel):

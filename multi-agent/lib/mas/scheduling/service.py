@@ -273,7 +273,14 @@ class WorkflowScheduleService:
         wf_schedule = self._load_and_verify(schedule_id, identity)
 
         if wf_schedule.engine_handle:
-            self._schedule_engine.pause(wf_schedule.engine_handle)
+            try:
+                self._schedule_engine.pause(wf_schedule.engine_handle)
+            except EngineScheduleNotFoundError:
+                logger.warning(
+                    "Engine schedule %s already removed for schedule %s during pause",
+                    wf_schedule.engine_handle,
+                    schedule_id,
+                )
 
         wf_schedule = wf_schedule.model_copy(update={"schedule_status": ScheduleStatus.PAUSED})
         self._persist_after_external_mutation(wf_schedule)
@@ -283,7 +290,14 @@ class WorkflowScheduleService:
         wf_schedule = self._load_and_verify(schedule_id, identity)
 
         if wf_schedule.engine_handle:
-            self._schedule_engine.resume(wf_schedule.engine_handle)
+            try:
+                self._schedule_engine.resume(wf_schedule.engine_handle)
+            except EngineScheduleNotFoundError:
+                logger.warning(
+                    "Engine schedule %s already removed for schedule %s during resume",
+                    wf_schedule.engine_handle,
+                    schedule_id,
+                )
 
         wf_schedule = wf_schedule.model_copy(update={"schedule_status": ScheduleStatus.ACTIVE})
         self._persist_after_external_mutation(wf_schedule)
@@ -298,7 +312,10 @@ class WorkflowScheduleService:
                 f"Schedule {schedule_id} has no active engine handle to trigger"
             )
 
-        self._schedule_engine.trigger_now(wf_schedule.engine_handle)
+        try:
+            self._schedule_engine.trigger_now(wf_schedule.engine_handle)
+        except EngineScheduleNotFoundError as exc:
+            raise ScheduleNotFoundError(schedule_id) from exc
         return wf_schedule
 
     def delete(self, schedule_id: str, *, identity: Identity) -> None:
@@ -421,17 +438,7 @@ class WorkflowScheduleService:
 
             info = batch_result.found.get(sched_id)
             if info is None or not info.running:
-                wf_schedule = result[idx]
-                logger.info(
-                    "reconcile: marking schedule %s COMPLETED — engine schedule exhausted",
-                    wf_schedule.id,
-                )
-                wf_schedule = wf_schedule.model_copy(update={
-                    "schedule_status": ScheduleStatus.COMPLETED,
-                    "completed_at": datetime.now(timezone.utc),
-                })
-                self._persist_best_effort(wf_schedule)
-                result[idx] = wf_schedule
+                result[idx] = self._mark_exhausted(result[idx])
 
         return result
 
@@ -459,16 +466,21 @@ class WorkflowScheduleService:
             return wf_schedule
 
         if info is None or not info.running:
-            logger.info(
-                "reconcile: marking schedule %s COMPLETED — engine schedule exhausted",
-                wf_schedule.id,
-            )
-            wf_schedule = wf_schedule.model_copy(update={
-                "schedule_status": ScheduleStatus.COMPLETED,
-                "completed_at": datetime.now(timezone.utc),
-            })
-            self._persist_best_effort(wf_schedule)
+            return self._mark_exhausted(wf_schedule)
 
+        return wf_schedule
+
+    def _mark_exhausted(self, wf_schedule: WorkflowSchedule) -> WorkflowSchedule:
+        """Transition a schedule to COMPLETED and persist best-effort."""
+        logger.info(
+            "reconcile: marking schedule %s COMPLETED — engine schedule exhausted",
+            wf_schedule.id,
+        )
+        wf_schedule = wf_schedule.model_copy(update={
+            "schedule_status": ScheduleStatus.COMPLETED,
+            "completed_at": datetime.now(timezone.utc),
+        })
+        self._persist_best_effort(wf_schedule)
         return wf_schedule
 
     def _persist_after_external_mutation(self, wf_schedule: WorkflowSchedule) -> None:

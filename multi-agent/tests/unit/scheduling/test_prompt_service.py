@@ -543,6 +543,28 @@ class TestServicePauseResume:
         with pytest.raises(RuntimeError):
             service.pause(prompt.id, identity=identity_a)
 
+    def test_pause_engine_already_removed_still_updates_mongo(
+        self, service, mock_repo, mock_schedule_port, identity_a,
+    ):
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
+        mock_repo.load.return_value = prompt
+        mock_schedule_port.pause.side_effect = EngineScheduleNotFoundError("sched-1")
+        result = service.pause(prompt.id, identity=identity_a)
+        assert result.schedule_status == ScheduleStatus.PAUSED
+        mock_repo.update.assert_called_once()
+
+    def test_resume_engine_already_removed_still_updates_mongo(
+        self, service, mock_repo, mock_schedule_port, identity_a,
+    ):
+        prompt = _make_prompt(
+            identity_a, status=ScheduleStatus.PAUSED, engine_handle="sched-1",
+        )
+        mock_repo.load.return_value = prompt
+        mock_schedule_port.resume.side_effect = EngineScheduleNotFoundError("sched-1")
+        result = service.resume(prompt.id, identity=identity_a)
+        assert result.schedule_status == ScheduleStatus.ACTIVE
+        mock_repo.update.assert_called_once()
+
 
 # ═══════════════════════════════════════════════════════════════════
 # 3.4 Delete
@@ -639,6 +661,15 @@ class TestServiceTrigger:
         mock_repo.load.side_effect = KeyError("nope")
         with pytest.raises(ScheduleNotFoundError):
             service.trigger("bad-id", identity=identity_a)
+
+    def test_trigger_engine_already_removed_maps_to_not_found(
+        self, service, mock_repo, mock_schedule_port, identity_a,
+    ):
+        prompt = _make_prompt(identity_a, engine_handle="sched-1")
+        mock_repo.load.return_value = prompt
+        mock_schedule_port.trigger_now.side_effect = EngineScheduleNotFoundError("sched-1")
+        with pytest.raises(ScheduleNotFoundError):
+            service.trigger(prompt.id, identity=identity_a)
 
 
 # ═══════════════════════════════════════════════════════════════════

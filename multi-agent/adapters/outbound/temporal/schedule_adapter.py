@@ -61,12 +61,16 @@ class TemporalScheduleAdapter(ScheduleEngine):
         try:
             asyncio.run(self._pause_schedule(engine_handle))
         except RPCError as exc:
+            if exc.status == RPCStatusCode.NOT_FOUND:
+                raise ScheduleNotFoundError(engine_handle) from exc
             raise ScheduleEngineError(str(exc)) from exc
 
     def resume(self, engine_handle: str) -> None:
         try:
             asyncio.run(self._resume_schedule(engine_handle))
         except RPCError as exc:
+            if exc.status == RPCStatusCode.NOT_FOUND:
+                raise ScheduleNotFoundError(engine_handle) from exc
             raise ScheduleEngineError(str(exc)) from exc
 
     def delete(self, engine_handle: str) -> None:
@@ -81,6 +85,8 @@ class TemporalScheduleAdapter(ScheduleEngine):
         try:
             asyncio.run(self._update_schedule(engine_handle, prompt))
         except RPCError as exc:
+            if exc.status == RPCStatusCode.NOT_FOUND:
+                raise ScheduleNotFoundError(engine_handle) from exc
             if exc.status == RPCStatusCode.INVALID_ARGUMENT:
                 raise ScheduleValidationError(str(exc)) from exc
             raise ScheduleEngineError(str(exc)) from exc
@@ -89,6 +95,8 @@ class TemporalScheduleAdapter(ScheduleEngine):
         try:
             asyncio.run(self._trigger_schedule(engine_handle))
         except RPCError as exc:
+            if exc.status == RPCStatusCode.NOT_FOUND:
+                raise ScheduleNotFoundError(engine_handle) from exc
             raise ScheduleEngineError(str(exc)) from exc
 
     def describe(self, engine_handle: str) -> ScheduleInfo:
