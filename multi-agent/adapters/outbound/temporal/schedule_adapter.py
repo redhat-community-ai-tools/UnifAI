@@ -50,21 +50,21 @@ class TemporalScheduleAdapter(ScheduleEngine):
 
     def create_schedule(self, prompt: WorkflowSchedule) -> str:
         try:
-            return asyncio.run(self._create(prompt))
+            return asyncio.run(self._create_schedule(prompt))
         except RPCError as exc:
             if exc.status == RPCStatusCode.INVALID_ARGUMENT:
                 raise ScheduleValidationError(str(exc)) from exc
             raise
 
     def pause(self, engine_handle: str) -> None:
-        asyncio.run(self._pause(engine_handle))
+        asyncio.run(self._pause_schedule(engine_handle))
 
     def resume(self, engine_handle: str) -> None:
-        asyncio.run(self._resume(engine_handle))
+        asyncio.run(self._resume_schedule(engine_handle))
 
     def delete(self, engine_handle: str) -> None:
         try:
-            asyncio.run(self._delete(engine_handle))
+            asyncio.run(self._delete_schedule(engine_handle))
         except RPCError as exc:
             if exc.status == RPCStatusCode.NOT_FOUND:
                 raise ScheduleNotFoundError(engine_handle) from exc
@@ -72,27 +72,27 @@ class TemporalScheduleAdapter(ScheduleEngine):
 
     def update_schedule(self, engine_handle: str, prompt: WorkflowSchedule) -> None:
         try:
-            asyncio.run(self._update(engine_handle, prompt))
+            asyncio.run(self._update_schedule(engine_handle, prompt))
         except RPCError as exc:
             if exc.status == RPCStatusCode.INVALID_ARGUMENT:
                 raise ScheduleValidationError(str(exc)) from exc
             raise
 
     def trigger_now(self, engine_handle: str) -> None:
-        asyncio.run(self._trigger(engine_handle))
+        asyncio.run(self._trigger_schedule(engine_handle))
 
     def describe(self, engine_handle: str) -> ScheduleInfo:
         try:
-            return asyncio.run(self._describe(engine_handle))
+            return asyncio.run(self._describe_schedule(engine_handle))
         except RPCError as exc:
             if exc.status == RPCStatusCode.NOT_FOUND:
                 raise ScheduleNotFoundError(engine_handle) from exc
             raise ScheduleDescribeError(engine_handle) from exc
 
     def describe_batch(self, schedule_ids: list[str]) -> BatchDescribeResult:
-        return asyncio.run(self._describe_batch(schedule_ids))
+        return asyncio.run(self._describe_schedules_batch(schedule_ids))
 
-    async def _create(self, prompt: WorkflowSchedule) -> str:
+    async def _create_schedule(self, prompt: WorkflowSchedule) -> str:
         cfg = AppConfig.get_instance()
         client = await get_temporal_client()
 
@@ -129,22 +129,22 @@ class TemporalScheduleAdapter(ScheduleEngine):
         )
         return schedule_id
 
-    async def _pause(self, engine_handle: str) -> None:
+    async def _pause_schedule(self, engine_handle: str) -> None:
         client = await get_temporal_client()
         handle = client.get_schedule_handle(engine_handle)
         await handle.pause()
 
-    async def _resume(self, engine_handle: str) -> None:
+    async def _resume_schedule(self, engine_handle: str) -> None:
         client = await get_temporal_client()
         handle = client.get_schedule_handle(engine_handle)
         await handle.unpause()
 
-    async def _delete(self, engine_handle: str) -> None:
+    async def _delete_schedule(self, engine_handle: str) -> None:
         client = await get_temporal_client()
         handle = client.get_schedule_handle(engine_handle)
         await handle.delete()
 
-    async def _update(self, engine_handle: str, prompt: WorkflowSchedule) -> None:
+    async def _update_schedule(self, engine_handle: str, prompt: WorkflowSchedule) -> None:
         cfg = AppConfig.get_instance()
         client = await get_temporal_client()
         handle = client.get_schedule_handle(engine_handle)
@@ -180,12 +180,12 @@ class TemporalScheduleAdapter(ScheduleEngine):
 
         await handle.update(_updater)
 
-    async def _trigger(self, engine_handle: str) -> None:
+    async def _trigger_schedule(self, engine_handle: str) -> None:
         client = await get_temporal_client()
         handle = client.get_schedule_handle(engine_handle)
         await handle.trigger()
 
-    async def _describe(self, engine_handle: str) -> ScheduleInfo:
+    async def _describe_schedule(self, engine_handle: str) -> ScheduleInfo:
         client = await get_temporal_client()
         handle = client.get_schedule_handle(engine_handle)
         desc = await handle.describe()
@@ -201,7 +201,7 @@ class TemporalScheduleAdapter(ScheduleEngine):
             running=not exhausted,
         )
 
-    async def _describe_batch(self, schedule_ids: list[str]) -> BatchDescribeResult:
+    async def _describe_schedules_batch(self, schedule_ids: list[str]) -> BatchDescribeResult:
         """Concurrently describe multiple schedules in a single event loop."""
         client = await get_temporal_client()
 

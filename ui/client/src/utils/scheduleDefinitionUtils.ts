@@ -60,6 +60,22 @@ export function getRecurrenceLabels(startDate: Date, timezone: "UTC" | "local"):
   };
 }
 
+/**
+ * Normalize a cron weekday token to a Sunday-first index `0..6`.
+ * Accepts numeric `0..6`, the common `7`=Sunday dialect, and named days (SUN..SAT).
+ * Returns `null` for anything outside that set.
+ */
+export function normalizeCronWeekDay(token: string): number | null {
+  const num = parseInt(token, 10);
+  if (!isNaN(num)) {
+    if (num === 7) return 0;
+    if (num >= 0 && num <= 6) return num;
+    return null;
+  }
+  const named = CRON_TO_DAY[token.toUpperCase()];
+  return named !== undefined ? named : null;
+}
+
 export function summarizeCustomRecurrence(config: CustomRecurrenceConfig): string {
   const { repeatEvery, unit, weekDays } = config;
   const n = repeatEvery;
@@ -68,7 +84,10 @@ export function summarizeCustomRecurrence(config: CustomRecurrenceConfig): strin
   if (unit === "day") return n === 1 ? "Daily" : `Every ${n} days`;
   if (unit === "month") return n === 1 ? "Monthly" : `Every ${n} months`;
   if (unit === "week") {
-    const dayLabels = weekDays.sort().map((d) => DAY_CRON_NAMES[d].slice(0, 3));
+    const dayLabels = [...weekDays]
+      .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+      .sort((a, b) => a - b)
+      .map((d) => DAY_CRON_NAMES[d].slice(0, 3));
     const daysPart = dayLabels.length > 0 ? ` on ${dayLabels.join(", ")}` : "";
     return n === 1 ? `Weekly${daysPart}` : `Every ${n} weeks${daysPart}`;
   }
@@ -252,20 +271,14 @@ export function parseScheduleToState(schedule: ScheduleDefinitionInput): {
       if (parts[2] === "*" && parts[3] === "*" && parts[4] !== "*") {
         const dayParts = parts[4].split(",");
         if (dayParts.length === 1 && !hasEnds) {
-          const dayNum = parseInt(dayParts[0], 10);
-          if (!isNaN(dayNum) && dayNum === startDate.getDay()) {
-            return { recurrence: "every_week", startDate, timezone, customConfig: null, overlapPolicy };
-          }
-          const cronDay = CRON_TO_DAY[dayParts[0]];
-          if (cronDay !== undefined && cronDay === startDate.getDay()) {
+          const dayNum = normalizeCronWeekDay(dayParts[0]);
+          if (dayNum !== null && dayNum === startDate.getDay()) {
             return { recurrence: "every_week", startDate, timezone, customConfig: null, overlapPolicy };
           }
         }
-        const weekDays = dayParts.map((d) => {
-          const num = parseInt(d, 10);
-          if (!isNaN(num)) return num;
-          return CRON_TO_DAY[d.toUpperCase()] ?? -1;
-        }).filter((d) => d >= 0);
+        const weekDays = dayParts
+          .map((d) => normalizeCronWeekDay(d))
+          .filter((d): d is number => d !== null);
         return {
           recurrence: "custom",
           startDate,

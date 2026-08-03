@@ -105,15 +105,19 @@ function describeSchedule(schedule: ScheduleDefinitionInput): string {
 // Status badge
 // ---------------------------------------------------------------------------
 
-type ScheduleStatusType = "active" | "paused" | "completed";
+enum ScheduleStatus {
+  Active = "active",
+  Paused = "paused",
+  Completed = "completed",
+}
 
-const SCHEDULE_STATUS_TONE: Record<ScheduleStatusType, StatusTone> = {
-  active: "success",
-  paused: "warning",
-  completed: "neutral",
+const SCHEDULE_STATUS_TONE: Record<ScheduleStatus, StatusTone> = {
+  [ScheduleStatus.Active]: "success",
+  [ScheduleStatus.Paused]: "warning",
+  [ScheduleStatus.Completed]: "neutral",
 };
 
-function StatusBadge({ status }: { status: ScheduleStatusType }) {
+function StatusBadge({ status }: { status: ScheduleStatus }) {
   return (
     <StatusPill tone={SCHEDULE_STATUS_TONE[status]}>
       {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -158,7 +162,7 @@ function ActionsCell({
   onEdit,
   onDelete,
 }: ActionsCellProps) {
-  const status = prompt.schedule_status as ScheduleStatusType;
+  const status = prompt.schedule_status as ScheduleStatus;
   const isExpanded = expandedPromptId === prompt.id;
   const name = prompt.blueprint_name ?? prompt.blueprint_id;
 
@@ -176,7 +180,7 @@ function ActionsCell({
         </Button>
       </SimpleTooltip>
 
-      {status === "active" && (
+      {status === ScheduleStatus.Active && (
         <SimpleTooltip content={<p>Run now</p>}>
           <Button
             variant="ghost"
@@ -190,7 +194,7 @@ function ActionsCell({
         </SimpleTooltip>
       )}
 
-      {status === "active" && (
+      {status === ScheduleStatus.Active && (
         <SimpleTooltip content={<p>Pause</p>}>
           <Button
             variant="ghost"
@@ -204,7 +208,7 @@ function ActionsCell({
         </SimpleTooltip>
       )}
 
-      {status === "paused" && (
+      {status === ScheduleStatus.Paused && (
         <SimpleTooltip content={<p>Resume</p>}>
           <Button
             variant="ghost"
@@ -340,7 +344,7 @@ export default function ScheduledWorkflows() {
 
   const handlePause = useCallback(
     async (id: string) => {
-      optimisticUpdate(id, { schedule_status: "paused" });
+      optimisticUpdate(id, { schedule_status: ScheduleStatus.Paused });
       try {
         await pauseSchedule(id, userId, identityType);
         toast({ title: "Paused", description: "Schedule paused" });
@@ -355,7 +359,7 @@ export default function ScheduledWorkflows() {
 
   const handleResume = useCallback(
     async (id: string) => {
-      optimisticUpdate(id, { schedule_status: "active" });
+      optimisticUpdate(id, { schedule_status: ScheduleStatus.Active });
       try {
         await resumeSchedule(id, userId, identityType);
         toast({ title: "Resumed", description: "Schedule resumed" });
@@ -371,7 +375,7 @@ export default function ScheduledWorkflows() {
   const handleDeleteConfirmed = useCallback(
     async () => {
       if (!deleteTarget) return;
-      optimisticUpdate(deleteTarget, { schedule_status: "completed" });
+      optimisticUpdate(deleteTarget, { schedule_status: ScheduleStatus.Completed });
       try {
         await deleteSchedule(deleteTarget, userId, identityType);
         toast({ title: "Deleted", description: "Scheduled prompt removed" });
@@ -463,12 +467,12 @@ export default function ScheduledWorkflows() {
       accessorKey: "schedule_status",
       header: "Status",
       cell: ({ getValue }) => (
-        <StatusBadge status={getValue() as ScheduleStatusType} />
+        <StatusBadge status={getValue() as ScheduleStatus} />
       ),
       meta: {
         align: "center" as const,
         filterType: "select" as const,
-        filterOptions: ["active", "paused", "completed"],
+        filterOptions: Object.values(ScheduleStatus),
       },
     },
     {
