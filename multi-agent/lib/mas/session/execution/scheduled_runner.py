@@ -33,6 +33,7 @@ class ScheduledRunOps(Protocol):
 
         Create session, stage inputs, resolve blueprint, compile graph.
         Returns (session_id, params_ready_for_execution).
+        Raises ScheduledSessionSetupError on provisioning failure.
         """
         ...
 
@@ -64,7 +65,7 @@ class ScheduledSessionRunner:
         """Execute the full scheduled session lifecycle.
 
         Returns session_id. Re-raises ScheduledSessionCancelledException
-        after recording; raises ScheduledSessionSetupError if provision fails.
+        after recording; re-raises ScheduledSessionSetupError if provision fails.
         """
         session_id: Optional[str] = None
         outcome = RunOutcome.FAILED
@@ -77,13 +78,11 @@ class ScheduledSessionRunner:
             outcome = RunOutcome.CANCELLED
             failure_reason = "WorkflowCancelled"
             raise
-        except Exception as e:
-            failure_reason = f"{type(e).__name__}: {e}"
+        except ScheduledSessionSetupError as e:
+            failure_reason = e.reason or str(e)
+            raise
         finally:
             if session_id is not None:
                 await ops.record(session_id, outcome, failure_reason)
-
-        if session_id is None:
-            raise ScheduledSessionSetupError(failure_reason)
 
         return session_id

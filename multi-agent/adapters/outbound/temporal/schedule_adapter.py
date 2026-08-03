@@ -28,6 +28,7 @@ from mas.scheduling.ports import (
     BatchDescribeResult,
     ScheduleDescribeError,
     ScheduleEngine,
+    ScheduleEngineError,
     ScheduleInfo,
     ScheduleNotFoundError,
     ScheduleValidationError,
@@ -54,13 +55,19 @@ class TemporalScheduleAdapter(ScheduleEngine):
         except RPCError as exc:
             if exc.status == RPCStatusCode.INVALID_ARGUMENT:
                 raise ScheduleValidationError(str(exc)) from exc
-            raise
+            raise ScheduleEngineError(str(exc)) from exc
 
     def pause(self, engine_handle: str) -> None:
-        asyncio.run(self._pause_schedule(engine_handle))
+        try:
+            asyncio.run(self._pause_schedule(engine_handle))
+        except RPCError as exc:
+            raise ScheduleEngineError(str(exc)) from exc
 
     def resume(self, engine_handle: str) -> None:
-        asyncio.run(self._resume_schedule(engine_handle))
+        try:
+            asyncio.run(self._resume_schedule(engine_handle))
+        except RPCError as exc:
+            raise ScheduleEngineError(str(exc)) from exc
 
     def delete(self, engine_handle: str) -> None:
         try:
@@ -68,7 +75,7 @@ class TemporalScheduleAdapter(ScheduleEngine):
         except RPCError as exc:
             if exc.status == RPCStatusCode.NOT_FOUND:
                 raise ScheduleNotFoundError(engine_handle) from exc
-            raise
+            raise ScheduleEngineError(str(exc)) from exc
 
     def update_schedule(self, engine_handle: str, prompt: WorkflowSchedule) -> None:
         try:
@@ -76,10 +83,13 @@ class TemporalScheduleAdapter(ScheduleEngine):
         except RPCError as exc:
             if exc.status == RPCStatusCode.INVALID_ARGUMENT:
                 raise ScheduleValidationError(str(exc)) from exc
-            raise
+            raise ScheduleEngineError(str(exc)) from exc
 
     def trigger_now(self, engine_handle: str) -> None:
-        asyncio.run(self._trigger_schedule(engine_handle))
+        try:
+            asyncio.run(self._trigger_schedule(engine_handle))
+        except RPCError as exc:
+            raise ScheduleEngineError(str(exc)) from exc
 
     def describe(self, engine_handle: str) -> ScheduleInfo:
         try:

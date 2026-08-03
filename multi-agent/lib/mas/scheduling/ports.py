@@ -12,7 +12,15 @@ from pydantic import BaseModel, Field
 from mas.scheduling.models import WorkflowSchedule
 
 
-class ScheduleNotFoundError(Exception):
+class ScheduleEngineError(Exception):
+    """Base for all schedule-engine port failures.
+
+    Adapters must translate infrastructure errors into this hierarchy so
+    application services never catch bare ``Exception`` around engine calls.
+    """
+
+
+class ScheduleNotFoundError(ScheduleEngineError):
     """Raised when a schedule does not exist in the external orchestrator."""
 
     def __init__(self, schedule_id: str) -> None:
@@ -20,7 +28,7 @@ class ScheduleNotFoundError(Exception):
         super().__init__(f"Schedule not found: {schedule_id}")
 
 
-class ScheduleDescribeError(Exception):
+class ScheduleDescribeError(ScheduleEngineError):
     """Transient failure while describing a schedule (e.g. RPC timeout)."""
 
     def __init__(self, schedule_id: str) -> None:
@@ -28,7 +36,7 @@ class ScheduleDescribeError(Exception):
         super().__init__(f"Transient describe failure: {schedule_id}")
 
 
-class ScheduleValidationError(ValueError):
+class ScheduleValidationError(ScheduleEngineError, ValueError):
     """Raised when the external orchestrator rejects a schedule as malformed.
 
     Subclasses ValueError so it flows through the same clean 400 handling

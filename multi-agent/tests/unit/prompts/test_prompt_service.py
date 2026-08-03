@@ -19,7 +19,12 @@ from mas.scheduling.models import (
     WorkflowSchedule,
 )
 from mas.scheduling.noop import NoOpScheduleEngine
-from mas.scheduling.ports import ScheduleNotFoundError as EngineScheduleNotFoundError, ScheduleValidationError
+from mas.scheduling.ports import (
+    ScheduleDescribeError,
+    ScheduleEngineError,
+    ScheduleNotFoundError as EngineScheduleNotFoundError,
+    ScheduleValidationError,
+)
 from mas.scheduling.service import (
     MAX_ACTIVE_SCHEDULES_PER_BLUEPRINT,
     ScheduleLimitExceededError,
@@ -206,8 +211,8 @@ class TestServiceCreate:
         mock_repo.delete.assert_called_once()
 
     def test_temporal_fails_after_save(self, service, mock_schedule_port, mock_repo, identity_a):
-        mock_schedule_port.create_schedule.side_effect = RuntimeError("Temporal down")
-        with pytest.raises(RuntimeError):
+        mock_schedule_port.create_schedule.side_effect = ScheduleEngineError("Temporal down")
+        with pytest.raises(ScheduleEngineError):
             service.create(
                 identity=identity_a,
                 blueprint_id="bp-1",
@@ -215,6 +220,7 @@ class TestServiceCreate:
                 schedule={"interval": "PT60S"},
             )
         mock_repo.save.assert_called_once()
+        mock_repo.delete.assert_called_once()
 
     def test_source_shortcut_copy(self, service, identity_a):
         result = service.create(
@@ -846,7 +852,7 @@ class TestServiceReconciliation:
             engine_handle="sched-abc",
         )
         mock_repo.load.return_value = prompt
-        mock_schedule_port.describe.side_effect = RuntimeError("connection refused")
+        mock_schedule_port.describe.side_effect = ScheduleDescribeError("sched-abc")
 
         result = service.get(prompt.id, identity=identity_a)
         assert result.schedule_status == ScheduleStatus.ACTIVE

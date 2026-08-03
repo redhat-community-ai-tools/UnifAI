@@ -14,7 +14,10 @@ from temporalio.exceptions import ChildWorkflowError, is_cancelled_exception
 
 from mas.graph.state.graph_state import GraphState
 from mas.scheduling.models import RunOutcome
-from mas.session.domain.exceptions import ScheduledSessionCancelledException
+from mas.session.domain.exceptions import (
+    ScheduledSessionCancelledException,
+    ScheduledSessionSetupError,
+)
 from mas.session.execution.ports import ScheduledExecutionParams
 from mas.session.execution.scheduled_runner import ScheduledSessionRunner
 from temporal.models import (
@@ -57,13 +60,18 @@ class ScheduledSessionWorkflow:
         deduped_params = self._params.model_copy(
             update={"dedupe_key": self._dedupe_key}
         )
-        result: ProvisionResult = await workflow.execute_activity(
-            "provision_scheduled_session",
-            deduped_params,
-            start_to_close_timeout=_PROVISION_TIMEOUT,
-            retry_policy=_ACTIVITY_RETRY,
-            result_type=ProvisionResult,
-        )
+        try:
+            result: ProvisionResult = await workflow.execute_activity(
+                "provision_scheduled_session",
+                deduped_params,
+                start_to_close_timeout=_PROVISION_TIMEOUT,
+                retry_policy=_ACTIVITY_RETRY,
+                result_type=ProvisionResult,
+            )
+        except ScheduledSessionCancelledException:
+            raise
+        except Exception as e:
+            raise ScheduledSessionSetupError(f"{type(e).__name__}: {e}") from e
         return result.session_id, result.params.to_scheduled_execution_params()
 
     async def execute(self, params: ScheduledExecutionParams) -> RunOutcome:

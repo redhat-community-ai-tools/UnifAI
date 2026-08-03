@@ -66,11 +66,11 @@ export function getRecurrenceLabels(startDate: Date, timezone: "UTC" | "local"):
  * Returns `null` for anything outside that set.
  */
 export function normalizeCronWeekDay(token: string): number | null {
-  const num = parseInt(token, 10);
-  if (!isNaN(num)) {
-    if (num === 7) return 0;
-    if (num >= 0 && num <= 6) return num;
-    return null;
+  // Require a whole-token digit so compound dialects ("1-5", "1L", "5#3")
+  // are rejected instead of silently truncated by parseInt.
+  if (/^[0-7]$/.test(token)) {
+    const num = Number(token);
+    return num === 7 ? 0 : num;
   }
   const named = CRON_TO_DAY[token.toUpperCase()];
   return named !== undefined ? named : null;

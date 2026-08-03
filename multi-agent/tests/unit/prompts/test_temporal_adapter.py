@@ -284,7 +284,8 @@ class TestCreateUpdateErrorTranslation:
             with pytest.raises(ScheduleValidationError):
                 adapter.create_schedule(prompt)
 
-    def test_create_schedule_other_rpc_error_propagates(self):
+    def test_create_schedule_other_rpc_error_translated(self):
+        from mas.scheduling.ports import ScheduleEngineError
         from temporalio.service import RPCError, RPCStatusCode
 
         rpc_error = RPCError("unavailable", RPCStatusCode.UNAVAILABLE, b"")
@@ -297,7 +298,7 @@ class TestCreateUpdateErrorTranslation:
             "outbound.temporal.schedule_adapter.get_temporal_client",
             new_callable=AsyncMock, return_value=client,
         ):
-            with pytest.raises(RPCError):
+            with pytest.raises(ScheduleEngineError, match="unavailable"):
                 adapter.create_schedule(prompt)
 
     def test_update_schedule_invalid_argument_translated(self):

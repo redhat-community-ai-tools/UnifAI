@@ -19,7 +19,9 @@ from mas.scheduling.models import (
 )
 from mas.scheduling.ports import (
     BatchDescribeResult,
+    ScheduleDescribeError,
     ScheduleEngine,
+    ScheduleEngineError,
     ScheduleInfo,
     ScheduleNotFoundError as EngineScheduleNotFoundError,
 )
@@ -108,7 +110,7 @@ class WorkflowScheduleService:
 
         try:
             handle = self._schedule_engine.create_schedule(wf_schedule)
-        except Exception:
+        except ScheduleEngineError:
             self._repo.delete(wf_schedule.id)
             raise
         wf_schedule = wf_schedule.model_copy(update={"engine_handle": handle})
@@ -120,7 +122,7 @@ class WorkflowScheduleService:
                     "Engine schedule %s already absent during cleanup for schedule %s; no deletion needed",
                     handle, wf_schedule.id,
                 )
-            except Exception:
+            except ScheduleEngineError:
                 logger.exception(
                     "Leaked engine schedule %s after repo update failure for schedule %s",
                     handle, wf_schedule.id,
@@ -450,7 +452,7 @@ class WorkflowScheduleService:
             info = self._schedule_engine.describe(wf_schedule.engine_handle)
         except EngineScheduleNotFoundError:
             info = None
-        except Exception:
+        except ScheduleDescribeError:
             logger.debug(
                 "reconcile: describe failed for schedule %s, skipping", wf_schedule.id,
             )

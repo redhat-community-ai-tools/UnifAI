@@ -101,8 +101,9 @@ class TestScheduledSessionRunnerFailure:
     """Verify failure handling."""
 
     @pytest.mark.asyncio
-    async def test_execute_raises_records_failed(self):
-        ops = MockScheduledRunOps(execute_raises=RuntimeError("LLM timeout"))
+    async def test_execute_returns_failed_records_without_reason(self):
+        """Execute contract: return FAILED rather than raising."""
+        ops = MockScheduledRunOps(execute_result=RunOutcome.FAILED)
         runner = ScheduledSessionRunner()
 
         result = await runner.run(ops)
@@ -110,24 +111,38 @@ class TestScheduledSessionRunnerFailure:
         assert result == "sess-123"
         assert ops.calls == ["provision", "execute", "record"]
         assert ops.recorded_outcome == RunOutcome.FAILED
-        assert "RuntimeError" in ops.recorded_failure_reason
-        assert "LLM timeout" in ops.recorded_failure_reason
+        assert ops.recorded_failure_reason is None
+
+    @pytest.mark.asyncio
+    async def test_execute_unexpected_error_propagates_after_record(self):
+        ops = MockScheduledRunOps(execute_raises=RuntimeError("LLM timeout"))
+        runner = ScheduledSessionRunner()
+
+        with pytest.raises(RuntimeError, match="LLM timeout"):
+            await runner.run(ops)
+
+        assert ops.calls == ["provision", "execute", "record"]
+        assert ops.recorded_outcome == RunOutcome.FAILED
 
     @pytest.mark.asyncio
     async def test_provision_raises_no_record(self):
-        ops = MockScheduledRunOps(provision_raises=ValueError("blueprint deleted"))
+        ops = MockScheduledRunOps(
+            provision_raises=ScheduledSessionSetupError("blueprint deleted")
+        )
         runner = ScheduledSessionRunner()
 
         with pytest.raises(ScheduledSessionSetupError) as exc_info:
             await runner.run(ops)
 
         assert ops.calls == ["provision"]
-        assert "ValueError" in str(exc_info.value)
+        assert "blueprint deleted" in str(exc_info.value)
         assert ops.recorded_session_id is None
 
     @pytest.mark.asyncio
     async def test_provision_raises_setup_error_contains_reason(self):
-        ops = MockScheduledRunOps(provision_raises=KeyError("not found"))
+        ops = MockScheduledRunOps(
+            provision_raises=ScheduledSessionSetupError("KeyError: not found")
+        )
         runner = ScheduledSessionRunner()
 
         with pytest.raises(ScheduledSessionSetupError) as exc_info:
@@ -172,7 +187,9 @@ class TestScheduledSessionRunnerRecordGuard:
 
     @pytest.mark.asyncio
     async def test_no_record_when_no_session_id(self):
-        ops = MockScheduledRunOps(provision_raises=RuntimeError("boom"))
+        ops = MockScheduledRunOps(
+            provision_raises=ScheduledSessionSetupError("boom")
+        )
         runner = ScheduledSessionRunner()
 
         with pytest.raises(ScheduledSessionSetupError):
