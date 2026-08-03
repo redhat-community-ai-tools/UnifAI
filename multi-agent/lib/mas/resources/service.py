@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Tuple, Dict, Any, TYPE_CHECKING
+from typing import List, Optional, Tuple, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pydantic import BaseModel
@@ -9,7 +9,7 @@ from mas.core.identity import Identity
 from mas.resources.registry import ResourcesRegistry
 from mas.catalog.element_registry import ElementRegistry
 from mas.resources.models import Resource, ResourceQuery
-from mas.resources.builtin_models import identity_to_key
+from mas.resources.builtin_models import BuiltinUpdateRequest, identity_to_key
 from mas.resources.repository.builtin_user_config_repository import BuiltinUserConfigRepository
 from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
 from mas.core.ref import RefWalker
@@ -21,14 +21,12 @@ from mas.catalog.card_service import ElementCardService
 from mas.resources.resolver import DependencyResolver
 from mas.resources.field_encryption import ResourceFieldEncryption
 from mas.resources.builtin_service import BuiltinResourceService
+from mas.resources.ports import CredentialCleanupPort
 from mas.resources.errors import (
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
 )
 from mas.validation.service import ElementValidationService
-
-if TYPE_CHECKING:
-    from mas.core.auth.service import AuthService
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +43,7 @@ class ResourcesService:
             builtin_user_config_repo: Optional[BuiltinUserConfigRepository] = None,
             validation_service: Optional[ElementValidationService] = None,
             card_service: Optional[ElementCardService] = None,
-            auth_service: Optional["AuthService"] = None,
+            auth_service: Optional[CredentialCleanupPort] = None,
             encryption_key: str = "",
     ):
         self._store = resource_registry
@@ -562,9 +560,10 @@ class ResourcesService:
         Returns ``(resource, cascaded)`` — ``cascaded`` lists any aggregated
         elements newly promoted to public alongside it.
         """
-        return self.builtin.update_builtin_with_cascade(
-            rid, config=config, name=name, available_to_all=available_to_all,
+        update = BuiltinUpdateRequest(
+            config=config, name=name, available_to_all=available_to_all,
         )
+        return self.builtin.update_builtin_with_cascade(rid, update=update)
 
     def toggle_visibility_with_cascade(
         self, rid: str, *, available_to_all: bool,

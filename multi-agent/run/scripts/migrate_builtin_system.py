@@ -23,34 +23,76 @@ recoverable for non-public resources (it collapses to "draft"), and configurable
 is not restored since it is now derived at runtime rather than stored.
 
 Usage:
-    python -m run.scripts.migrate_builtin_system [--dry-run] [--reverse] [--mongodb-ip localhost] [--mongodb-port 27017]
+    python -m run.scripts.migrate_builtin_system [--dry-run] [--reverse] [--mongodb-ip localhost] [--mongodb-port 27017] [--encryption-key KEY]
 """
 import argparse
 import logging
+import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
 import pymongo
 
+from global_utils.utils.crypto import FieldCipher, FERNET_PREFIX
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool, reverse: bool = False) -> None:
+def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool, reverse: bool = False, encryption_key: str = "") -> None:
     client = pymongo.MongoClient(f"mongodb://{mongodb_ip}:{mongodb_port}/")
+    cipher = FieldCipher(encryption_key) if encryption_key else None
     try:
         if reverse:
             _run_reverse_migration_body(client, db_name, dry_run)
         else:
-            _run_migration_body(client, db_name, dry_run)
+            _run_migration_body(client, db_name, dry_run, cipher)
     finally:
         client.close()
 
 
-def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool) -> None:
+def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool, cipher=None) -> None:
     db = client[db_name]
     resources_col = db["resources"]
     user_configs_col = db["builtin_user_configs"]
+
+    sensitive_keys_cache: dict = {}
+
+    def _get_sensitive_keys(category: str, type_key: str) -> set:
+        """Resolve sensitive field names for a (category, type_key) pair."""
+        cache_key = (category, type_key)
+        if cache_key in sensitive_keys_cache:
+            return sensitive_keys_cache[cache_key]
+
+        keys: set = set()
+        if cipher:
+            try:
+                from mas.catalog.element_registry import ElementRegistry
+                from mas.core.enums import ResourceCategory
+                from mas.resources.field_encryption import ResourceFieldEncryption
+
+                registry = ElementRegistry()
+                registry.auto_discover()
+                field_enc = ResourceFieldEncryption(registry, cipher)
+                _, sensitive = field_enc.scan_schema_hints(category, type_key)
+                model_cls = registry.get_schema(ResourceCategory(category), type_key)
+                keys = sensitive | set(getattr(model_cls, "ENCRYPTED_FIELDS", ()))
+            except (KeyError, ImportError, Exception) as exc:
+                logger.debug("Could not resolve sensitive keys for %s/%s: %s", category, type_key, exc)
+        sensitive_keys_cache[cache_key] = keys
+        return keys
+
+    def _encrypt_fields(fields: dict, sensitive_keys: set) -> dict:
+        """Encrypt sensitive values, skipping already-encrypted ones."""
+        if not cipher or not sensitive_keys:
+            return fields
+        result = {}
+        for k, v in fields.items():
+            if k in sensitive_keys and v and isinstance(v, str) and not v.startswith(FERNET_PREFIX):
+                result[k] = cipher.encrypt(v)
+            else:
+                result[k] = v
+        return result
 
     now = datetime.now(timezone.utc)
 
@@ -95,6 +137,9 @@ def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool
             continue
 
         resource_id = doc["_id"]
+        category = doc.get("category", "")
+        type_key = doc.get("type", "")
+        sensitive_keys = _get_sensitive_keys(category, type_key)
         # Legacy per-resource allow-list of overridable field names. Only
         # migrate values for fields still on this list — carrying over
         # stale/no-longer-configurable keys would let them silently
@@ -109,6 +154,8 @@ def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool
                 if configurable_keys and field_name not in configurable_keys:
                     continue
                 fields[field_name] = value
+
+            fields = _encrypt_fields(fields, sensitive_keys)
 
             # ``_id`` must match ``config_id`` — MongoBuiltinUserConfigRepository
             # stores/looks up documents by ``_id`` = ``config_id`` (see
@@ -252,6 +299,11 @@ if __name__ == "__main__":
     parser.add_argument("--mongodb-ip", default="localhost")
     parser.add_argument("--mongodb-port", default="27017")
     parser.add_argument("--db-name", default="UnifAI")
+    parser.add_argument(
+        "--encryption-key",
+        default=os.environ.get("ENCRYPTION_KEY", ""),
+        help="Fernet encryption key for encrypting sensitive overlay fields (or set ENCRYPTION_KEY env var)",
+    )
     args = parser.parse_args()
 
     run_migration(
@@ -260,4 +312,5 @@ if __name__ == "__main__":
         mongodb_port=args.mongodb_port,
         dry_run=args.dry_run,
         reverse=args.reverse,
+        encryption_key=args.encryption_key,
     )

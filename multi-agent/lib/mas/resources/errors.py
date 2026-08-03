@@ -23,6 +23,8 @@ class ResourceInUseError(RuntimeError):
 
 
 class BuiltInWriteProtectedError(RuntimeError):
+    """Raised when a caller attempts to modify or delete a built-in system resource."""
+
     def __init__(self) -> None:
         super().__init__(
             "Built-in system resources cannot be modified or deleted."

@@ -123,7 +123,8 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
   };
 
   const signOutAction: SignOutAction | undefined = signOutActions.find(a => a.style === 'danger');
-  const isCardClickable = hasConfigFields;
+  const configureBlocked = isSignIn && signInStatus !== 'authenticated';
+  const isCardClickable = hasConfigFields && !configureBlocked;
 
   return (
     <motion.div
@@ -220,8 +221,9 @@ export const BuiltInElementCard: React.FC<BuiltInElementCardProps> = ({
               <Button
                 variant="outline"
                 size="sm"
-                className="flex-1 flex items-center justify-center gap-1.5 h-9 text-sm border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50"
+                className="flex-1 flex items-center justify-center gap-1.5 h-9 text-sm border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50 disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={() => setIsConfigModalOpen(true)}
+                disabled={isSignIn && signInStatus !== 'authenticated'}
               >
                 <Settings className="h-3.5 w-3.5" />
                 Configure

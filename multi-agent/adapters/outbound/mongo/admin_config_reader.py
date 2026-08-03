@@ -53,6 +53,7 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
         self._cache_ttl_seconds = cache_ttl_seconds
         self._cached_admins: Optional[set[str]] = None
         self._cached_at: float = 0.0
+        self._last_failure_at: float = 0.0
 
     def is_admin(self, username: str) -> bool:
         """Return *True* if *username* appears in the stored admin list."""
@@ -69,6 +70,11 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
         ):
             return self._cached_admins
 
+        # After a failure, back off for cache_ttl_seconds before retrying
+        # to avoid flooding logs and adding latency on the hot path.
+        if self._last_failure_at and (now - self._last_failure_at) < self._cache_ttl_seconds:
+            return self._cached_admins
+
         try:
             doc = self._col.find_one({"key": "admin_users"})
             admin_usernames = set()
@@ -76,8 +82,8 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
                 admin_usernames = {u.lower() for u in doc["value"].get("admin_usernames", [])}
             self._cached_admins = admin_usernames
             self._cached_at = now
+            self._last_failure_at = 0.0
         except pymongo.errors.PyMongoError:
             logger.warning("Could not read admin config from DB", exc_info=True)
-            # Serve the last known-good list (if any) rather than locking
-            # every admin out during a transient Mongo blip.
+            self._last_failure_at = now
         return self._cached_admins

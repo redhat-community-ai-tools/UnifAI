@@ -20,7 +20,7 @@ from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibili
 from mas.core.ref import RefWalker
 from mas.resources.models import Resource
 from mas.resources.registry import ResourcesRegistry
-from mas.resources.builtin_models import BuiltinUserConfig, identity_to_key
+from mas.resources.builtin_models import BuiltinUpdateRequest, BuiltinUserConfig, identity_to_key
 from mas.resources.errors import BuiltinConfigUnavailableError, BuiltinDependentsPublicError
 from mas.resources.field_encryption import ResourceFieldEncryption
 from mas.resources.repository.builtin_user_config_repository import BuiltinUserConfigRepository
@@ -555,9 +555,7 @@ class BuiltinResourceService:
         self,
         rid: str,
         *,
-        config: Optional[dict] = None,
-        name: Optional[str] = None,
-        available_to_all: Optional[bool] = None,
+        update: BuiltinUpdateRequest,
     ) -> "tuple[Resource, List[Resource]]":
         """Update a built-in resource (admin only).
 
@@ -572,6 +570,10 @@ class BuiltinResourceService:
         resource = self._store.get(rid)
         if resource.ownership != ResourceOwnership.BUILTIN:
             raise ValueError("Resource is not a built-in resource")
+
+        config = update.config
+        name = update.name
+        available_to_all = update.available_to_all
 
         if config is not None:
             model_cls = self.element_registry.get_schema(

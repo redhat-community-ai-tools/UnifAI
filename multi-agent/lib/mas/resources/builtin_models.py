@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from uuid import uuid4
 from pydantic import BaseModel, Field
 
@@ -9,6 +9,18 @@ from mas.core.identity import Identity
 def identity_to_key(identity: Identity) -> str:
     """Derive the storage key from an Identity object."""
     return f"{identity.type.value}:{identity.id}"
+
+
+class BuiltinUpdateRequest(BaseModel):
+    """Boundary DTO for admin update requests on built-in resources.
+
+    Carries the structured fields from the inbound layer into the service;
+    using a Pydantic model (rather than a bare dict) ensures validation and
+    type safety at the service boundary.
+    """
+    config: Optional[Dict[str, Any]] = None
+    name: Optional[str] = None
+    available_to_all: Optional[bool] = None
 
 
 class BuiltinUserConfig(BaseModel):
