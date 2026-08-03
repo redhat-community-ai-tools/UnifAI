@@ -11,11 +11,10 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import axios from "@/http/axiosAgentConfig";
 import { fetchResolvedBlueprint } from "@/api/blueprints";
+import { listUserSessions } from "@/api/sessions";
 import { useStreamingData } from "@/components/agentic-ai/StreamingDataContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useView } from "@/contexts/ViewContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { useToast } from "@/hooks/use-toast";
 import { useBlueprintValidation } from "@/hooks/use-blueprint-validation";
@@ -174,7 +173,6 @@ export function useSessionHub({
   // Contexts
   const { nodeListRef, clearStream } = useStreamingData();
   const { user } = useAuth();
-  const { selectedTeam } = useView();
   const { isTeam, userId: contextUserId, displayName, teamId } =
     useWorkspaceIdentity();
   const { toast } = useToast();
@@ -350,7 +348,6 @@ export function useSessionHub({
           const resolved = await fetchResolvedBlueprint(
             session.blueprintId,
             teamId,
-            isTeam ? (selectedTeam?.name ?? undefined) : undefined,
           );
           if (sessionSelectRequestId.current !== requestId) return;
           if (resolved) {
@@ -429,7 +426,6 @@ export function useSessionHub({
       validateSelectedBlueprint,
       teamId,
       isTeam,
-      selectedTeam?.name,
       loadSessionMessages,
       manualStreamControl,
     ],
@@ -441,13 +437,9 @@ export function useSessionHub({
     try {
       setIsLoading(true);
       setError(null);
-      const params = new URLSearchParams({ userId: contextUserId });
-      if (teamId) params.set("teamId", teamId);
-      const response = await axios.get(
-        `/sessions/session.user.list?${params.toString()}`,
-      );
+      const response = await listUserSessions({ userId: contextUserId, teamId });
       const sorted = sortSessionsByTimestamp(
-        transformApiDataToSessions(response.data),
+        transformApiDataToSessions(response),
       );
       setChatSessions(sorted);
 

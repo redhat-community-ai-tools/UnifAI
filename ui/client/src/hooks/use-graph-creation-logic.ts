@@ -1140,7 +1140,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         let blueprintId;
         
         if (isEditMode && editBlueprintId) {
-          response = await updateBlueprint(editBlueprintId, yamlString, USER_ID, teamId);
+          response = await updateBlueprint(editBlueprintId, yamlString, teamId);
           blueprintId = editBlueprintId;
         } else {
           if (!USER_ID) {
@@ -1152,7 +1152,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
             setIsSaving(false);
             return;
           }
-          response = await saveBlueprint(yamlString, USER_ID, teamId);
+          response = await saveBlueprint(yamlString, teamId);
           blueprintId = response.blueprint_id;
         }
 

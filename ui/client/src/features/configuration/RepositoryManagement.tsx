@@ -418,7 +418,8 @@ export default function RepositoryManagement() {
           <p className="text-sm text-gray-400 mt-1 max-w-2xl">
             Create and manage built-in resources that are available to all users.
             Add pre-configured LLMs, Agents, Providers, Tools, and more to the
-            shared repository.
+            shared repository. Fields marked with an <span className="text-amber-400 font-medium">Admin Only</span> label
+            are only visible to administrators in the configuration interface.
           </p>
         </div>
         <div className="flex items-center gap-2">

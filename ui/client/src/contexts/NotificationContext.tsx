@@ -60,20 +60,10 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     setError(null);
 
     try {
-      // Fetch both received and sent notifications in parallel
-      const sentTeamName =
-        viewMode === 'team' && selectedTeam
-          ? (
-              selectedTeam.name?.trim()
-              || teams.find((t) => t.id === selectedTeam.id)?.name?.trim()
-              || ''
-            )
-          : '';
+      const teamId = viewMode === 'team' && selectedTeam ? selectedTeam.id : undefined;
       const [receivedResponse, sentResponse] = await Promise.all([
-        listShares('received', userId),
-        viewMode === 'team' && selectedTeam
-          ? listShares('sent', selectedTeam.id, undefined, 0, 100, 'team', sentTeamName || undefined)
-          : listShares('sent', userId),
+        listShares('received', undefined, 0, 100, teamId),
+        listShares('sent', undefined, 0, 100, teamId),
       ]);
 
       setReceivedNotifications(receivedResponse.invites);

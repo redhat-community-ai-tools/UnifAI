@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 import { 
   FaTachometerAlt, FaCogs, FaFileAlt, 
-  FaChartLine, FaUserShield, FaCog, FaSignOutAlt,
+  FaChartLine, FaCog,
   FaRobot, FaFile, FaChevronLeft, FaChevronRight,
   FaInfoCircle, FaComment, FaPuzzlePiece,
 } from "react-icons/fa";

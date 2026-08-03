@@ -29,11 +29,15 @@ import argparse
 import logging
 import os
 from datetime import datetime, timezone
+from typing import Optional
 from uuid import uuid4
 
 import pymongo
 
 from global_utils.utils.crypto import FieldCipher, FERNET_PREFIX
+from mas.catalog.element_registry import ElementRegistry
+from mas.core.enums import ResourceCategory
+from mas.resources.field_encryption import ResourceFieldEncryption
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -51,7 +55,7 @@ def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: boo
         client.close()
 
 
-def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool, cipher=None) -> None:
+def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool, cipher: Optional[FieldCipher] = None) -> None:
     db = client[db_name]
     resources_col = db["resources"]
     user_configs_col = db["builtin_user_configs"]
@@ -67,18 +71,14 @@ def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool
         keys: set = set()
         if cipher:
             try:
-                from mas.catalog.element_registry import ElementRegistry
-                from mas.core.enums import ResourceCategory
-                from mas.resources.field_encryption import ResourceFieldEncryption
-
                 registry = ElementRegistry()
                 registry.auto_discover()
                 field_enc = ResourceFieldEncryption(registry, cipher)
                 _, sensitive = field_enc.scan_schema_hints(category, type_key)
                 model_cls = registry.get_schema(ResourceCategory(category), type_key)
                 keys = sensitive | set(getattr(model_cls, "ENCRYPTED_FIELDS", ()))
-            except (KeyError, ImportError, Exception) as exc:
-                logger.debug("Could not resolve sensitive keys for %s/%s: %s", category, type_key, exc)
+            except (KeyError, ImportError, ValueError) as exc:
+                logger.warning("Could not resolve sensitive keys for %s/%s: %s", category, type_key, exc)
         sensitive_keys_cache[cache_key] = keys
         return keys
 

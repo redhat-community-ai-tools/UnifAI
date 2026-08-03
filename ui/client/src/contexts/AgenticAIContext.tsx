@@ -691,7 +691,6 @@ return String(ref);
       // the session.
       const result = await validateBlueprintApi({
         ...request,
-        userId: request.userId || USER_ID,
         teamId: request.teamId || WORKSPACE_TEAM_ID,
       });
       
@@ -704,7 +703,7 @@ return String(ref);
       setBlueprintValidationStatus(blueprintId, 'invalid');
       throw error;
     }
-  }, [setBlueprintValidationStatus, cacheBlueprintResult, USER_ID, WORKSPACE_TEAM_ID]);
+  }, [setBlueprintValidationStatus, cacheBlueprintResult, WORKSPACE_TEAM_ID]);
 
   // ==================== Effects ====================
 

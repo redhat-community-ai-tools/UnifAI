@@ -87,24 +87,11 @@ export async function listAllResources(params: {
   ownership?: string;
 }): Promise<ResourceInstance[]> {
   const PAGE_SIZE = 1000;
-  // Not a business limit on how many resources a caller can have — pagination
-  // is driven entirely by `has_more` below. This only exists as a circuit
-  // breaker for a genuinely broken backend that never reports
-  // `has_more: false`, so a pagination bug degrades into a clear error
-  // instead of an infinite loop that hangs the tab.
-  const MAX_ITERATIONS = 100_000; // 100M resources — never expected in practice
   const resources: ResourceInstance[] = [];
   let offset = 0;
   let hasMore = true;
-  let iterations = 0;
 
   while (hasMore) {
-    if (++iterations > MAX_ITERATIONS) {
-      throw new Error(
-        `listAllResources: aborted after ${iterations - 1} pages without the server ` +
-        `reporting has_more=false — this indicates a pagination bug, not a large result set.`
-      );
-    }
     const page = await listResources({ ...params, limit: PAGE_SIZE, offset });
     resources.push(...page.resources);
     hasMore = !!page.pagination?.has_more && page.resources.length > 0;

@@ -21,6 +21,20 @@ import { useConfigFieldActions } from "@/hooks/use-config-field-actions";
 import { useResourceRefOptions } from "@/hooks/use-resource-ref-options";
 import { LoaderCircle, Check, Loader2 } from "lucide-react";
 
+/** Subset of JSON Schema property fields used in the builtin configure UI. */
+interface SchemaProperty {
+  type?: string;
+  default?: unknown;
+  anyOf?: { type?: string }[];
+  hints?: {
+    hidden?: boolean;
+    auth?: boolean;
+    read_only?: boolean;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 interface BuiltinConfigureModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -100,10 +114,10 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
 
   const configurableFields = useMemo(() => {
     if (!builtinSchema?.config_schema?.properties) return {};
-    const fields: Record<string, any> = {};
+    const fields: Record<string, SchemaProperty> = {};
     for (const [name, schema] of Object.entries(builtinSchema.config_schema.properties)) {
       if (!isUserConfigurable(schema)) continue;
-      fields[name] = schema;
+      fields[name] = schema as SchemaProperty;
     }
     return fields;
   }, [builtinSchema]);
@@ -111,7 +125,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
   useEffect(() => {
     if (!isOpen || Object.keys(configurableFields).length === 0) return;
 
-    const initialData: any = {};
+    const initialData: Record<string, unknown> = {};
 
     // Seed formData with ALL config values from the element so that
     // read-only fields (mcp_url, auth_method, transport_type, etc.) are
@@ -129,7 +143,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     // config.  When no overlay exists the field starts at its schema default
     // so that users never see the admin's base values (e.g. bearer tokens)
     // leaking through.
-    for (const [key, property] of Object.entries(configurableFields) as [string, any][]) {
+    for (const [key, property] of Object.entries(configurableFields)) {
       const overlayValue = userOverlay?.[key];
       const hasOverlay = overlayValue !== undefined && overlayValue !== null;
 
@@ -137,7 +151,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
         if (typeof overlayValue === "string" && overlayValue.startsWith("$ref:")) {
           initialData[key] = overlayValue.substring(5);
         } else if (Array.isArray(overlayValue)) {
-          initialData[key] = overlayValue.map((item: any) =>
+          initialData[key] = overlayValue.map((item: unknown) =>
             typeof item === "string" && item.startsWith("$ref:")
               ? item.substring(5)
               : item,
@@ -148,7 +162,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
       } else if (property.default !== undefined) {
         initialData[key] = property.default;
       } else if (property.type === "array" ||
-                 (property.anyOf && property.anyOf.some((o: any) => o.type === "array"))) {
+                 (property.anyOf && property.anyOf.some((o) => o.type === "array"))) {
         initialData[key] = [];
       } else if (property.type === "boolean") {
         initialData[key] = false;

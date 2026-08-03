@@ -46,6 +46,28 @@ export async function submitSession(params: SubmitSessionParams): Promise<Submit
 }
 
 /**
+ * List chat sessions for the current user/team.
+ */
+export async function listUserSessions(params: {
+  userId: string;
+  teamId?: string;
+}): Promise<any[]> {
+  const query = new URLSearchParams({ userId: params.userId });
+  if (params.teamId) query.set('teamId', params.teamId);
+  const response = await axios.get(`/sessions/session.user.list?${query.toString()}`);
+  return response.data;
+}
+
+/**
+ * Get the current execution status of a session.
+ */
+export async function getSessionStatus(sessionId: string): Promise<string> {
+  const query = new URLSearchParams({ sessionId });
+  const response = await axios.get(`/sessions/session.status.get?${query.toString()}`);
+  return response.data;
+}
+
+/**
  * Cancel Session Response
  */
 export interface CancelSessionResponse {

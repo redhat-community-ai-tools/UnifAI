@@ -134,7 +134,7 @@ export default function WorkflowsPanel({
   const fetchAvailableFlows = async (forceAutoSelect = false): Promise<void> => {
     const scopeAtStart = { contextUserId, teamId };
     try {
-      const summaries = await fetchBlueprintSummaries(contextUserId, teamId);
+      const summaries = await fetchBlueprintSummaries(teamId);
 
       if (
         workspaceScopeRef.current.contextUserId !== scopeAtStart.contextUserId ||
@@ -216,7 +216,6 @@ export default function WorkflowsPanel({
         const blueprint = await fetchResolvedBlueprint(
           selectedFlow.id,
           teamId,
-          isTeam ? selectedTeam!.name : undefined,
         );
         if (cancelled) return;
         if (blueprint) {
@@ -270,7 +269,7 @@ export default function WorkflowsPanel({
 
   const handleSavePromptShortcuts = async (prompts: PromptShortcutInput[]) => {
     if (!promptShortcutsFlow) return;
-    await setPromptShortcuts(promptShortcutsFlow.id, prompts, contextUserId, teamId);
+    await setPromptShortcuts(promptShortcutsFlow.id, prompts, teamId);
   };
 
   const handleDeleteConfirm = async () => {
@@ -587,7 +586,6 @@ export default function WorkflowsPanel({
         isOpen={promptShortcutsModalOpen}
         onClose={() => setPromptShortcutsModalOpen(false)}
         blueprintId={promptShortcutsFlow?.id || ""}
-        userId={contextUserId}
         teamId={teamId}
         onSave={handleSavePromptShortcuts}
       />
