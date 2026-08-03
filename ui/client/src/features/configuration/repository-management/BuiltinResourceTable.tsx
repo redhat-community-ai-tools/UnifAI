@@ -15,11 +15,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { motion } from "framer-motion";
 import {
   Plus,
@@ -31,11 +26,8 @@ import {
   Globe,
   FileText,
   LoaderCircle,
-  Info,
 } from "lucide-react";
-import { useState, useCallback } from "react";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
-import { getElementSpec } from "@/api/resources";
 import type { BuiltinEditLockResolved } from "@/api/resources";
 import type { ElementType } from "@/types/workspace";
 import { resolveEditLockStatus } from "@/lib/editLockStatus";
@@ -61,99 +53,6 @@ interface BuiltinResourceTableProps {
   onEditResource: (resource: ResourceItem) => void;
   onDeleteClick: (resource: ResourceItem) => void;
   onAddToCategory: (category: string) => void;
-}
-
-/**
- * On-demand popover showing which config keys are admin-defined vs.
- * user-configurable (self-assigned) for a built-in element. Lazily fetches
- * the element spec schema on first open. Only rendered in the repository
- * management admin view — regular user configuration tables don't show this.
- */
-function ConfigurableKeysInfo({ category, type }: { category: string; type: string }) {
-  const [fields, setFields] = useState<{ admin: string[]; user: string[] } | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-
-  const fetchFields = useCallback(async () => {
-    if (fields || loading) return;
-    setLoading(true);
-    setError(false);
-    try {
-      const spec = await getElementSpec(category, type);
-      const properties = spec?.config_schema?.properties || {};
-      const admin: string[] = [];
-      const user: string[] = [];
-      for (const [name, schema] of Object.entries(properties) as [string, any][]) {
-        const hints = schema?.hints || {};
-        if (hints.hidden) continue;
-        if (hints.auth) continue;
-        if (hints.read_only?.read_only === false) {
-          user.push(name);
-        } else {
-          admin.push(name);
-        }
-      }
-      setFields({ admin, user });
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [category, type, fields, loading]);
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 w-8 p-0 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10"
-          onClick={fetchFields}
-        >
-          <Info className="h-4 w-4" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent side="left" align="start" className="w-72 bg-[#1a1a2e] border-gray-700 text-sm">
-        {loading && (
-          <div className="flex items-center gap-2 text-gray-400">
-            <LoaderCircle className="h-4 w-4 animate-spin" /> Loading...
-          </div>
-        )}
-        {error && <p className="text-red-400 text-xs">Could not load schema</p>}
-        {fields && (
-          <div className="space-y-3">
-            {fields.admin.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-gray-400 mb-1">Admin-defined (configured for every user)</p>
-                <div className="flex flex-wrap gap-1">
-                  {fields.admin.map((k) => (
-                    <Badge key={k} variant="outline" className="text-[10px] border-gray-600 text-gray-300 font-mono">
-                      {k}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {fields.user.length > 0 && (
-              <div>
-                <p className="text-xs font-medium text-gray-400 mb-1">Self-assigned (user configures individually)</p>
-                <div className="flex flex-wrap gap-1">
-                  {fields.user.map((k) => (
-                    <Badge key={k} variant="outline" className="text-[10px] border-primary/40 text-primary/80 font-mono">
-                      {k}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {fields.admin.length === 0 && fields.user.length === 0 && (
-              <p className="text-xs text-gray-500">No configurable fields</p>
-            )}
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 /**
@@ -366,11 +265,6 @@ export function BuiltinResourceTable({
                                 </SimpleTooltip>
                               </div>
                               <div className="col-span-3 flex justify-end gap-1">
-                                <SimpleTooltip content={<p>Configurable keys info</p>}>
-                                  <span>
-                                    <ConfigurableKeysInfo category={cat.category} type={resource.type} />
-                                  </span>
-                                </SimpleTooltip>
                                 <SimpleTooltip content={<p>View details</p>}>
                                   <Button
                                     variant="ghost"

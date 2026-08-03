@@ -667,6 +667,22 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     />
   );
 
+  const renderConfigurabilityLabel = (fieldSchema: any): React.ReactNode => {
+    if (!builtinOnly) return null;
+    if (fieldSchema?.hints?.hidden) return null;
+    if (fieldSchema?.hints?.auth) return null;
+    const isConfigurable = fieldSchema?.hints?.read_only?.read_only === false;
+    return (
+      <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded font-medium ${
+        isConfigurable
+          ? "bg-primary/10 text-primary border border-primary/20"
+          : "bg-gray-500/10 text-gray-400 border border-gray-500/20"
+      }`}>
+        {isConfigurable ? "User-configurable" : "Admin-only"}
+      </span>
+    );
+  };
+
   const renderFormGuidelines = (): React.ReactNode => {
     switch (elementType.type) {
       case "openshell_sandbox":
@@ -765,14 +781,22 @@ export const ElementForm: React.FC<ElementFormProps> = ({
                 // Otherwise, maintain original order
                 return 0;
               })
-              .map(([fieldName, fieldSchema]) => (
-                <div key={fieldName}>
-                  {renderFormField(fieldName, fieldSchema)}
-                  {fieldName === "name" && nameError ? (
-                    <p className="text-destructive text-sm mt-1">{nameError}</p>
-                  ) : null}
-                </div>
-              ))}
+              .map(([fieldName, fieldSchema]) => {
+                const configurabilityLabel = renderConfigurabilityLabel(fieldSchema);
+                return (
+                  <div key={fieldName}>
+                    {configurabilityLabel && (
+                      <div className="flex items-center gap-2 mb-1">
+                        {configurabilityLabel}
+                      </div>
+                    )}
+                    {renderFormField(fieldName, fieldSchema)}
+                    {fieldName === "name" && nameError ? (
+                      <p className="text-destructive text-sm mt-1">{nameError}</p>
+                    ) : null}
+                  </div>
+                );
+              })}
           </div>
 
           <DialogFooter className="px-6 pb-6 pt-4 flex-shrink-0 border-t border-gray-800">
