@@ -57,6 +57,8 @@ interface FieldRendererProps {
   onPopulateResult: (fieldName: string, results: string[] | any, multiSelect: boolean) => void;
   onActionOutput?: (fieldName: string, output: any) => void;
   onEditRefElement?: (rid: string) => void;
+  /** Optional badge rendered inline with the field label. */
+  labelBadge?: React.ReactNode;
 }
 
 // Controlled number input with local state buffer to handle intermediate typing (e.g., "0.")
@@ -165,6 +167,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   onPopulateResult,
   onActionOutput,
   onEditRefElement,
+  labelBadge,
 }) => {
   // Check if this field has validation errors based on validation action result
   // Use useMemo to recalculate when fieldValidationStates changes after validation action
@@ -465,6 +468,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         {/* Label with badges */}
         <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
           {displayName} {isRequired && <span className="text-red-400">*</span>}
+          {labelBadge}
           {arrayMode === 'refItems' && category && (
             <Badge variant="outline" className="ml-2 text-xs">
               {category}
@@ -537,6 +541,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
       <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
         <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
           {fieldName} {isRequired && <span className="text-red-400">*</span>}
+          {labelBadge}
           {enumTitle && (
             <Badge variant="outline" className="ml-2 text-xs">
               {enumTitle}
@@ -637,6 +642,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
       <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
         <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
           {fieldName} {isRequired && <span className="text-red-400">*</span>}
+          {labelBadge}
           {isReadOnly && <Lock className="h-3.5 w-3.5 text-gray-500 ml-1" />}
           {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
         </Label>
@@ -708,6 +714,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
         <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
           <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
             {fieldName} {isRequired && <span className="text-red-400">*</span>}
+            {labelBadge}
             {category && (
               <Badge variant="outline" className="ml-2 text-xs">
                 {category}
@@ -832,8 +839,9 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
 
     return (
       <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
-        <Label htmlFor={fieldName} className="flex items-center">
+        <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
           {fieldName} {isRequired && <span className="text-red-400">*</span>}
+          {labelBadge}
           {isReadOnly && <Lock className="h-3.5 w-3.5 text-gray-500 ml-1" />}
           {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
         </Label>
@@ -904,9 +912,10 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
             className={hasFieldError ? 'border-red-500' : ''}
             disabled={isReadOnly}
           />
-          <Label htmlFor={fieldName} className="flex items-center">
+          <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
             {fieldName}{" "}
             {isRequired && <span className="text-red-400">*</span>}
+            {labelBadge}
             {isReadOnly && <Lock className="h-3.5 w-3.5 text-gray-500 ml-1" />}
             {hasFieldError && <XCircle className="h-4 w-4 text-red-500 inline-block ml-2" />}
           </Label>
@@ -939,6 +948,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
       <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
         <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
           {fieldName} {isRequired && <span className="text-red-400">*</span>}
+          {labelBadge}
           {isFloatField && (
             <Badge variant="outline" className="ml-2 text-xs">
               float
@@ -974,6 +984,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
       <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
         <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
           {fieldName} {isRequired && <span className="text-red-400">*</span>}
+          {labelBadge}
           {isSecret && (
             <Badge variant="outline" className="ml-2 text-xs">
               secret
@@ -1053,6 +1064,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
     <div key={fieldName} className={`space-y-2 ${isReadOnly ? "opacity-60" : ""}`}>
       <Label htmlFor={fieldName} className="flex items-center flex-wrap gap-1">
         {fieldName} {isRequired && <span className="text-red-400">*</span>}
+        {labelBadge}
         {isSecret && (
           <Badge variant="outline" className="ml-2 text-xs">
             secret

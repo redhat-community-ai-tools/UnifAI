@@ -32,6 +32,8 @@ interface ElementConfigFieldProps {
   >;
   /** Only relevant for forms that allow editing a $ref'd resource inline (`ElementForm`). */
   onEditRefElement?: (rid: string) => void;
+  /** Optional badge rendered inline with the field label (e.g., configurability indicator). */
+  labelBadge?: React.ReactNode;
 }
 
 /**
@@ -51,6 +53,7 @@ export const ElementConfigField: React.FC<ElementConfigFieldProps> = ({
   fieldHelpers,
   fieldActions,
   onEditRefElement,
+  labelBadge,
 }) => {
   const value = fieldActions.formData[fieldName] ?? "";
 
@@ -97,6 +100,7 @@ export const ElementConfigField: React.FC<ElementConfigFieldProps> = ({
       onPopulateResult={fieldActions.handlePopulateResult}
       onActionOutput={fieldActions.handleActionOutput}
       onEditRefElement={onEditRefElement}
+      labelBadge={labelBadge}
     />
   );
 };

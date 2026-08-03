@@ -26,9 +26,9 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import TermsApproval from '@/components/auth/TermsApproval';
 import SlackIntegration from "./features/slack/SlackIntegration";
 import SlackAddSourcePage from "./features/slack/SlackAddSourcePage";
-import GuidesPage from "./components/guides/GuidesPage";
 import PublicChat from "./components/agentic-ai/chat/PublicChat";
 import AgenticLayout from "./components/layout/AgenticLayout";
+import GuidesPage from "./components/guides/GuidesPage";
 import { Toaster } from "./components/ui/toaster";
 
 function AppRoutes() {
@@ -84,8 +84,8 @@ function AppRoutes() {
       <Route path="/slack/add-source" component={SlackAddSourcePage} />
       <Route path="/get-to-know" component={GetToKnow} />
       <Route path="/configuration" component={Configuration} />
-      <Route path="/guides" component={GuidesPage} />
       <Route path="/analytics" component={Analytics} />
+      <Route path="/guides" component={GuidesPage} />
       <Route component={NotFound} />
     </Switch>
   );

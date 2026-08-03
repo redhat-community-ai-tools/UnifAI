@@ -652,7 +652,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     }
   };
 
-  const renderFormField = (fieldName: string, fieldSchema: any) => (
+  const renderFormField = (fieldName: string, fieldSchema: any, configurabilityBadge?: React.ReactNode) => (
     <ElementConfigField
       fieldName={fieldName}
       fieldSchema={fieldSchema}
@@ -664,6 +664,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       fieldHelpers={{ isArrayWithRefItems, getArrayItemsSchema, extractCategoryFromField, resolveRef }}
       fieldActions={fieldActions}
       onEditRefElement={handleEditRefElement}
+      labelBadge={configurabilityBadge}
     />
   );
 
@@ -782,15 +783,13 @@ export const ElementForm: React.FC<ElementFormProps> = ({
                 return 0;
               })
               .map(([fieldName, fieldSchema]) => {
-                const configurabilityLabel = renderConfigurabilityLabel(fieldSchema);
+                const firstLevelFields = ['name', 'category', 'type', 'cfg_dict', 'version', 'created', 'updated', 'nested_refs', 'rid', 'user_id'];
+                const configurabilityLabel = firstLevelFields.includes(fieldName)
+                  ? null
+                  : renderConfigurabilityLabel(fieldSchema);
                 return (
                   <div key={fieldName}>
-                    {configurabilityLabel && (
-                      <div className="flex items-center gap-2 mb-1">
-                        {configurabilityLabel}
-                      </div>
-                    )}
-                    {renderFormField(fieldName, fieldSchema)}
+                    {renderFormField(fieldName, fieldSchema, configurabilityLabel)}
                     {fieldName === "name" && nameError ? (
                       <p className="text-destructive text-sm mt-1">{nameError}</p>
                     ) : null}
