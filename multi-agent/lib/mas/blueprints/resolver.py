@@ -127,7 +127,7 @@ class BlueprintResolver:
         visited.add(rid)
 
         try:
-            resource = self.resources_service.get_visible(rid, is_admin=is_admin)
+            resource = self.resources_service.get_visible(rid, identity=identity, is_admin=is_admin)
         except KeyError:
             if strict:
                 raise
