@@ -288,8 +288,8 @@ class ShareCloner:
 
             except ShareCloneError:
                 raise
-            except Exception as e:
-                logger.warning(f"Error processing resource {rid}: {e}")
+            except (KeyError, ValueError) as e:
+                logger.warning(f"Skipping resource {rid} (missing or invalid config): {e}")
                 continue
 
         logger.debug(f"Cached data for {len(closure_cache)} resources")

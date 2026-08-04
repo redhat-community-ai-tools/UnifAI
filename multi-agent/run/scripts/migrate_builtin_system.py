@@ -228,22 +228,24 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
     logger.info("Step 1: Restoring embedded user_configs from builtin_user_configs...")
 
     def _decrypt_fields(fields: dict, resource_id: str = "", identity_key: str = "") -> dict:
-        if not cipher:
-            for k, v in fields.items():
-                if isinstance(v, str) and v.startswith(FERNET_PREFIX):
-                    raise RuntimeError(
-                        f"Overlay {resource_id}/{identity_key} contains encrypted "
-                        f"field '{k}' but no --encryption-key was provided — "
-                        f"aborting to prevent writing ciphertext into legacy format"
-                    )
-            return fields
-        result = {}
-        for k, v in fields.items():
-            if isinstance(v, str) and v.startswith(FERNET_PREFIX):
-                result[k] = cipher.decrypt(v)
-            else:
-                result[k] = v
-        return result
+        def _walk(value):
+            if isinstance(value, str):
+                if value.startswith(FERNET_PREFIX):
+                    if not cipher:
+                        raise RuntimeError(
+                            f"Overlay {resource_id}/{identity_key} contains encrypted "
+                            f"value but no --encryption-key was provided — "
+                            f"aborting to prevent writing ciphertext into legacy format"
+                        )
+                    return cipher.decrypt(value)
+                return value
+            if isinstance(value, dict):
+                return {k: _walk(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [_walk(item) for item in value]
+            return value
+
+        return _walk(fields)
 
     user_configs_by_resource: dict = {}
     for cfg_doc in user_configs_col.find({}):
