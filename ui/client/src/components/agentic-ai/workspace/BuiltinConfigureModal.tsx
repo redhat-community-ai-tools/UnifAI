@@ -14,6 +14,7 @@ import {
   ElementInstance,
 } from "../../../types/workspace";
 import { ElementConfigField } from "./ElementConfigField";
+import { FieldValidation } from "./validation/FieldValidation";
 import { isUserConfigurable } from "@/lib/cardFields";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
 import { useElementFieldHelpers } from "@/hooks/use-element-field-helpers";
@@ -173,6 +174,24 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     setFormData(initialData);
   }, [configurableFields, isOpen, element?.config, userOverlay]);
 
+  // Non-configurable fields that carry a validation hint whose dependencies
+  // may reference user-configurable values (e.g. `mcp_url` validates using
+  // `credential_token`, propagated from the user-supplied `bearer_token`).
+  // Rendering invisible FieldValidation components for these ensures the
+  // connection is re-checked whenever a dependency changes.
+  const hiddenValidationFields = useMemo(() => {
+    if (!builtinSchema?.config_schema?.properties) return [];
+    const result: Array<{ fieldName: string; fieldSchema: any; hint: any }> = [];
+    for (const [name, schema] of Object.entries<any>(builtinSchema.config_schema.properties)) {
+      if (isUserConfigurable(schema)) continue;
+      const actionHint = (schema as any).hints?.action?.hint_type === "validate" ? (schema as any).hints.action : null;
+      const apiHint = (schema as any).hints?.api?.hint_type === "validate" ? (schema as any).hints.api : null;
+      const hint = actionHint || apiHint;
+      if (hint) result.push({ fieldName: name, fieldSchema: schema, hint });
+    }
+    return result;
+  }, [builtinSchema]);
+
   const {
     isFieldConditionallyVisible,
     isArrayWithRefItems,
@@ -275,8 +294,11 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
       if (!hasValidation) continue;
       if (fieldValidationStates[fieldName] !== true) return false;
     }
+    for (const { fieldName } of hiddenValidationFields) {
+      if (fieldValidationStates[fieldName] !== true) return false;
+    }
     return true;
-  }, [fieldEntries, fieldValidationStates]);
+  }, [fieldEntries, fieldValidationStates, hiddenValidationFields]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -313,6 +335,21 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
                 <div key={fieldName}>
                   {renderFormField(fieldName, fieldSchema as any)}
                 </div>
+              ))}
+              {hiddenValidationFields.map(({ fieldName, hint }) => (
+                <FieldValidation
+                  key={fieldName}
+                  fieldName={fieldName}
+                  fieldValue={formData[fieldName] ?? ""}
+                  validationHint={hint}
+                  elementActions={elementActions}
+                  selectedElementType={elementType}
+                  isRequired={false}
+                  configValues={formData}
+                  actionOutputs={fieldActions.actionOutputs}
+                  onValidationChange={fieldActions.handleValidationChange}
+                  onInputChange={fieldActions.handleInputChange}
+                />
               ))}
             </div>
 
