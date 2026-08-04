@@ -34,6 +34,8 @@ interface ElementConfigFieldProps {
   onEditRefElement?: (rid: string) => void;
   /** Optional badge rendered inline with the field label (e.g., configurability indicator). */
   labelBadge?: React.ReactNode;
+  /** When true, $ref dropdowns only show built-in resources (draft ones are hidden). */
+  builtinOnly?: boolean;
 }
 
 /**
@@ -54,6 +56,7 @@ export const ElementConfigField: React.FC<ElementConfigFieldProps> = ({
   fieldActions,
   onEditRefElement,
   labelBadge,
+  builtinOnly = false,
 }) => {
   const value = fieldActions.formData[fieldName] ?? "";
 
@@ -101,6 +104,7 @@ export const ElementConfigField: React.FC<ElementConfigFieldProps> = ({
       onActionOutput={fieldActions.handleActionOutput}
       onEditRefElement={onEditRefElement}
       labelBadge={labelBadge}
+      builtinOnly={builtinOnly}
     />
   );
 };

@@ -24,10 +24,12 @@ import { XCircle, Lock, Settings } from "lucide-react";
 import {getArrayDisplayText, getArrayFieldMode, getValidRefOptions,} from "./arrayFieldHelpers";
 import { getStringEnumFromRef } from "@/lib/schemaRefs";
 
-/** Builds the dropdown label for a ref option, flagging drafts so users can
- * see (and not select) built-ins that aren't published yet. */
-const getRefOptionLabel = (option: any): string =>
-  `${option.name} (${option.type})${option.visibility === "draft" ? " (Draft)" : ""}`;
+/** Builds the dropdown label for a ref option. In regular forms, marks
+ * built-in resources; in builtinOnly forms drafts are pre-filtered out. */
+const getRefOptionLabel = (option: any, builtinOnly: boolean): string => {
+  const suffix = !builtinOnly && option.ownership === "builtin" ? " (Built-in)" : "";
+  return `${option.name} (${option.type})${suffix}`;
+};
 
 interface FieldRendererProps {
   fieldName: string;
@@ -59,6 +61,8 @@ interface FieldRendererProps {
   onEditRefElement?: (rid: string) => void;
   /** Optional badge rendered inline with the field label. */
   labelBadge?: React.ReactNode;
+  /** When true, $ref dropdowns only show built-in resources (draft ones are hidden). */
+  builtinOnly?: boolean;
 }
 
 // Controlled number input with local state buffer to handle intermediate typing (e.g., "0.")
@@ -168,6 +172,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
   onActionOutput,
   onEditRefElement,
   labelBadge,
+  builtinOnly = false,
 }) => {
   // Check if this field has validation errors based on validation action result
   // Use useMemo to recalculate when fieldValidationStates changes after validation action
@@ -301,7 +306,10 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
     if (!arrayMode) return null;
 
     const category = arrayMode === 'refItems' ? extractCategoryFromField(fieldSchema) : null;
-    const validOptions = arrayMode === 'refItems' ? getValidRefOptions(refOptions, category) : [];
+    const allRefOptions = arrayMode === 'refItems' ? getValidRefOptions(refOptions, category) : [];
+    const validOptions = builtinOnly
+      ? allRefOptions.filter((opt: any) => opt.visibility !== "draft")
+      : allRefOptions;
     const displayFieldPath = populateHint?.display_field || populateHint?.label_field;
     const displayName = populateHint?.display_name || fieldName;
 
@@ -345,9 +353,8 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
                       <SelectItem
                         key={option.rid}
                         value={option.rid}
-                        disabled={option.visibility === "draft"}
                       >
-                        {getRefOptionLabel(option)}
+                        {getRefOptionLabel(option, builtinOnly)}
                       </SelectItem>
                     ))}
                     {validOptions.length === 0 && (
@@ -708,6 +715,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
     if (category) {
       const validOptions = (refOptions[category] || [])
         .filter((option: any) => option.rid && option.rid.trim() !== "")
+        .filter((option: any) => !builtinOnly || option.visibility !== "draft")
         .sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""));
 
       return (
@@ -755,9 +763,8 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
                   <SelectItem
                     key={option.rid}
                     value={option.rid}
-                    disabled={option.visibility === "draft"}
                   >
-                    {getRefOptionLabel(option)}
+                    {getRefOptionLabel(option, builtinOnly)}
                   </SelectItem>
                 ))}
                 {validOptions.length === 0 && (

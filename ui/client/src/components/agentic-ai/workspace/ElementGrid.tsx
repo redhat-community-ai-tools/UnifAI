@@ -15,11 +15,6 @@ import { BuiltInElementCard } from './BuiltInElementCard';
 import { RegularElementCard } from './RegularElementCard';
 import { getCardFields } from '@/lib/cardFields';
 
-/** Element types whose built-in instances are still worth live-validating —
- * e.g. an MCP server's reachability is meaningful even on a built-in card,
- * unlike most other built-ins which ship without live credentials. */
-const BUILTIN_VALIDATED_TYPES = new Set(['mcp_server']);
-
 interface ElementGridProps {
   elements: ElementInstance[];
   elementType: ElementType;
@@ -52,24 +47,9 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   const { viewMode, selectedTeam } = useView();
   const primaryLight = usePrimaryLightColor();
   const isTeamWorkspace = viewMode === "team" && !!selectedTeam;
-  const isBuiltinValidatedType = BUILTIN_VALIDATED_TYPES.has(elementType.type);
-  // Memoized on `elements` so this array is only recreated when the element
-  // list itself changes — not on every re-render (e.g. from lock polling or
-  // modal state) — otherwise the validation effect below would re-fire and
-  // re-trigger network calls on every unrelated render.
   const nonBuiltInElements = useMemo(
     () => elements.filter(el => el.ownership !== 'builtin'),
     [elements],
-  );
-  // Elements whose live validity should be probed and surfaced on their card.
-  // Built-ins are excluded by default: many ship without live credentials/
-  // connectivity configured in a given environment, so probing them surfaces
-  // "invalid" for resources that are actually fine, and that failure cascades
-  // to anything depending on them. Built-in MCP servers are the exception —
-  // their reachability is meaningful signal even without user configuration.
-  const elementsNeedingValidation = useMemo(
-    () => isBuiltinValidatedType ? elements : nonBuiltInElements,
-    [elements, nonBuiltInElements, isBuiltinValidatedType],
   );
   const resourceEditLocks = useTeamEditLockPoll(
     selectedTeam?.id,
@@ -85,11 +65,11 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   } = useAgenticAI();
 
   // Stable string key of the rid set — used as the effect dependency instead
-  // of the `elementsNeedingValidation` array so a re-render that produces an
-  // equivalent-but-new array (or object) doesn't re-trigger validation calls.
+  // of the `elements` array so a re-render that produces an equivalent-but-new
+  // array doesn't re-trigger validation calls.
   const validatedRidsKey = useMemo(
-    () => elementsNeedingValidation.map(el => el.rid).join(','),
-    [elementsNeedingValidation],
+    () => elements.map(el => el.rid).join(','),
+    [elements],
   );
 
   useEffect(() => {
@@ -152,7 +132,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
               onConfigureBuiltin={onConfigureBuiltin}
               index={index}
               primaryLight={primaryLight}
-              validationStatus={isBuiltinValidatedType ? getValidationStatus(element.rid) : undefined}
+              validationStatus={getValidationStatus(element.rid)}
               onValidationClick={() => handleValidationClick(element.rid)}
             />
           );

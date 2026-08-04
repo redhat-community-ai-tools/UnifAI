@@ -665,6 +665,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
       fieldActions={fieldActions}
       onEditRefElement={handleEditRefElement}
       labelBadge={configurabilityBadge}
+      builtinOnly={builtinOnly}
     />
   );
 
