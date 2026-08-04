@@ -485,14 +485,42 @@ class BuiltinResourceService:
         of skipping-and-continuing when a dependency belongs to a disabled
         category — the parent must not end up public while referencing a
         dependency that can never become visible to end users.
+
+        On partial failure (a mid-loop ``_store.update`` raises), all
+        already-promoted dependencies are reverted to their pre-promotion
+        ownership/visibility before re-raising — mirroring the rollback
+        pattern in ``ShareCloner._batch_create_resources``.
         """
         self._assert_cascade_promotable(rid)
+        targets = self.preview_cascade_targets(rid)
+        originals: List[tuple[Resource, ResourceOwnership, ResourceVisibility]] = []
         promoted: List[Resource] = []
-        for dep in self.preview_cascade_targets(rid):
-            dep.ownership = ResourceOwnership.BUILTIN
-            dep.visibility = ResourceVisibility.PUBLIC
-            self._store.update(dep)
-            promoted.append(dep)
+        try:
+            for dep in targets:
+                orig_ownership = dep.ownership
+                orig_visibility = dep.visibility
+                dep.ownership = ResourceOwnership.BUILTIN
+                dep.visibility = ResourceVisibility.PUBLIC
+                self._store.update(dep)
+                originals.append((dep, orig_ownership, orig_visibility))
+                promoted.append(dep)
+        except Exception:
+            logger.exception(
+                "Cascade promotion failed after promoting %d of %d "
+                "dependencies of '%s'; rolling back promoted deps",
+                len(promoted), len(targets), rid,
+            )
+            for dep, orig_own, orig_vis in reversed(originals):
+                try:
+                    dep.ownership = orig_own
+                    dep.visibility = orig_vis
+                    self._store.update(dep)
+                except Exception:
+                    logger.exception(
+                        "Failed to roll back promoted dependency '%s' — it may "
+                        "be left as PUBLIC and require manual cleanup", dep.rid,
+                    )
+            raise
         return promoted
 
     def _iter_transitive_deps(self, rid: str) -> List[Resource]:

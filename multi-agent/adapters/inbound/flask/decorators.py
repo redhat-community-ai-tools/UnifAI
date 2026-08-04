@@ -221,7 +221,17 @@ def with_identity(f: Callable) -> Callable:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Admin access (unchanged)
+# Admin access
+#
+# There is a single admin concept across the entire MAS service.  The
+# Mongo-backed ``admin_config_reader`` (managed via the admin panel) is
+# the primary source of truth; the static ``admin_allowed_users`` Flask
+# config acts as a bootstrap/fallback so that admin access works before
+# the first admin-panel save populates the Mongo document.
+#
+# All ``@require_admin_access`` surfaces — built-in resources, OAuth
+# client config, templates, statistics — share this unified gate
+# intentionally: an admin is an admin everywhere.
 # ──────────────────────────────────────────────────────────────────────────────
 
 G_ADMIN_STATUS_CACHE = "_admin_status_cache"
@@ -271,6 +281,10 @@ def require_admin_access(f):
     ``current_app.container.admin_config_reader`` (centralized admin
     config managed via the admin panel).  Falls back to the static
     ``admin_allowed_users`` Flask config.
+
+    All admin-gated surfaces (built-in resources, OAuth client config,
+    templates, statistics) share this single gate intentionally — there
+    is one admin concept across the MAS service.
 
     Does NOT inject ``identity`` into the wrapped function's kwargs.
     """

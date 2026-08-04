@@ -2,9 +2,13 @@
 
 Covers both branches of ``is_admin_user`` — the container-based
 ``admin_config_reader`` and the static ``admin_allowed_users`` Flask-config
-fallback — plus ``require_admin_access``'s exception handling, none of which
-were previously exercised (existing integration fixtures always set
-``admin_config_reader=None``, so only the fallback path ran).
+fallback — plus ``require_admin_access``'s exception handling.
+
+There is a single admin concept across the MAS service: the Mongo-backed
+``admin_config_reader`` is the primary source of truth and
+``admin_allowed_users`` is the bootstrap/fallback.  All admin-gated
+surfaces (built-in resources, OAuth client config, templates, statistics)
+share this unified gate intentionally.
 """
 from types import SimpleNamespace
 from unittest.mock import Mock

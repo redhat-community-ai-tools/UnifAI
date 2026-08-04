@@ -63,6 +63,20 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
         return username.lower() in admin_usernames
 
     def _get_admin_usernames(self) -> Optional[set[str]]:
+        """Fetch the admin username set from Mongo, with TTL caching.
+
+        Unlike the backend's ``AdminConfigService.is_admin()``, this
+        reader does **not** fall back to the template-defined default
+        when no ``admin_users`` document exists yet in MongoDB.  During
+        the bootstrap window (first deploy → first admin-panel save) the
+        Mongo document is absent, so this reader returns an empty set
+        and ``is_admin()`` returns False for everyone.  The static
+        ``admin_allowed_users`` Flask-config fallback in
+        ``decorators.is_admin_user`` covers this gap: any username in
+        that list is still granted admin access even before the Mongo
+        document is populated.  After the first admin-panel save writes
+        the document, MAS and the backend agree.
+        """
         now = time.monotonic()
         if (
             self._cached_admins is not None
