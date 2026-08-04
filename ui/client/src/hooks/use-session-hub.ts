@@ -12,7 +12,12 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { fetchResolvedBlueprint } from "@/api/blueprints";
-import { listUserSessions } from "@/api/sessions";
+import {
+  createSession,
+  deleteSession,
+  getSessionChat,
+  listUserSessions,
+} from "@/api/sessions";
 import { useStreamingData } from "@/components/agentic-ai/StreamingDataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
@@ -437,7 +442,7 @@ export function useSessionHub({
     try {
       setIsLoading(true);
       setError(null);
-      const response = await listUserSessions({ userId: contextUserId, teamId });
+      const response = await listUserSessions({ teamId });
       const sorted = sortSessionsByTimestamp(
         transformApiDataToSessions(response),
       );
@@ -455,7 +460,7 @@ export function useSessionHub({
     } finally {
       setIsLoading(false);
     }
-  }, [contextUserId, teamId, runId, transformApiDataToSessions]);
+  }, [teamId, runId, transformApiDataToSessions]);
 
   // ── Delete ─────────────────────────────────────────────────────────────
   const handleDeleteChat = useCallback(
@@ -471,7 +476,7 @@ export function useSessionHub({
     if (!chatToDelete) return;
     setIsDeleting(true);
     try {
-      await axios.delete(`/sessions/session.delete?sessionId=${chatToDelete.id}`);
+      await deleteSession(chatToDelete.id);
       setChatSessions((prev) => prev.filter((s) => s.id !== chatToDelete.id));
       if (selectedSession?.id === chatToDelete.id) {
         setSelectedSession(null);
@@ -502,18 +507,10 @@ export function useSessionHub({
     setIsCreatingSession(true);
     try {
       const graphId = selectedFlowForModal.id || `graph-${Date.now()}`;
-      await axios.post("/sessions/user.session.create", {
-        blueprintId: graphId,
-        userId: contextUserId,
-        ...(teamId ? { teamId } : {}),
-      });
-      const params = new URLSearchParams({ userId: contextUserId });
-      if (teamId) params.set("teamId", teamId);
-      const response = await axios.get(
-        `/sessions/session.user.list?${params.toString()}`,
-      );
+      await createSession({ blueprintId: graphId, teamId });
+      const freshSessions = await listUserSessions({ teamId });
       const sorted = sortSessionsByTimestamp(
-        transformApiDataToSessions(response.data),
+        transformApiDataToSessions(freshSessions),
       );
       setChatSessions(sorted);
       const newest = sorted.find((s) => s.blueprintId === graphId);
@@ -525,7 +522,7 @@ export function useSessionHub({
     } finally {
       setIsCreatingSession(false);
     }
-  }, [selectedFlowForModal, contextUserId, teamId, transformApiDataToSessions]);
+  }, [selectedFlowForModal, teamId, transformApiDataToSessions]);
 
   const handleCancelAddFlow = useCallback(() => {
     setShowAddFlowModal(false);
@@ -562,22 +559,12 @@ export function useSessionHub({
           sessionId: sessionPayload.sessionId,
           inputs: sessionPayload.inputs,
           scope: sessionPayload.scope || globalScope,
-          userId: (() => {
-            const raw = (sessionPayload.loggedInUser || "").trim();
-            if (isTeam && raw && raw === contextUserId) {
-              return user?.username || "default";
-            }
-            if (raw && raw !== "default") return raw;
-            return user?.username || "default";
-          })(),
         });
 
         await streamCompletePromise;
 
-        const session_response = await axios.get(
-          `/sessions/session.chat.get?sessionId=${sessionPayload.sessionId}`,
-        );
-        const { output, status, status_message } = session_response.data;
+        const sessionChat = await getSessionChat(sessionPayload.sessionId);
+        const { output, status, status_message } = sessionChat;
 
         if (status === "CANCELLED") {
           throw createSessionError(status_message || "Workflow was stopped.", "CANCELLED");
@@ -593,7 +580,7 @@ export function useSessionHub({
         throw err;
       }
     },
-    [sessionStream, globalScope, isTeam, contextUserId, user?.username],
+    [sessionStream, globalScope],
   );
 
   // ── Cancel ─────────────────────────────────────────────────────────────

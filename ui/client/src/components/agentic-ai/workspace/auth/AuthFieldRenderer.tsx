@@ -15,7 +15,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Lock, LogIn, Loader2 } from 'lucide-react';
-import axios from "../../../http/axiosAgentConfig";
+import axios from "../../../../http/axiosAgentConfig";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface AuthFieldRendererProps {

@@ -104,7 +104,7 @@ export default function AgenticTemplates() {
 
     setIsCreatingSession(true);
     try {
-      await createSession({ blueprintId: instantiationResult.blueprint_id, userId: user.username });
+      await createSession({ blueprintId: instantiationResult.blueprint_id });
       resetInstantiation();
       navigate('/agentic-chats');
     } catch (err) {

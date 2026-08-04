@@ -107,7 +107,7 @@ export const useWorkspaceData = () => {
             nested_refs: resource.nested_refs,
             contributed_by: resource.contributed_by,
             ownership: resource.ownership || 'custom',
-            visibility: resource.visibility || 'draft',
+            visibility: resource.visibility,
             userConfigured: resource.user_configured ?? false,
           }),
         );
@@ -175,7 +175,7 @@ export const useWorkspaceData = () => {
           type: resource.type,
           config: resource.cfg_dict,
           ownership: resource.ownership || 'custom',
-          visibility: resource.visibility || 'draft',
+          visibility: resource.visibility,
         }));
       } catch (err: any) {
         const errorMessage =

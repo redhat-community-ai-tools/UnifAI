@@ -9,7 +9,13 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { cancelSession, listUserSessions, getSessionStatus } from "@/api/sessions";
+import {
+  cancelSession,
+  getSessionState,
+  getSessionStatus,
+  listUserSessions,
+  submitSession,
+} from "@/api/sessions";
 import {
   joinSession as joinSessionApi,
   leaveSession as leaveSessionApi,
@@ -115,11 +121,10 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
         hub.setIsLiveRequest(true);
         setIsSubmitting(true);
 
-        await axios.post("/sessions/user.session.submit", {
+        await submitSession({
           sessionId: sessionPayload.sessionId,
           inputs: sessionPayload.inputs,
           scope: hub.globalScope,
-          userId: user?.username || "default",
         });
         setIsSubmitting(false);
         subscribeRemoteStream(sessionPayload.sessionId);
@@ -135,10 +140,8 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
           streamCompleteResolverRef.current = done;
           const statusPoll = setInterval(async () => {
             try {
-              const statusRes = await axios.get(
-                `/sessions/session.status.get?sessionId=${sessionPayload.sessionId}`,
-              );
-              if (statusRes.data !== "RUNNING" && statusRes.data !== "QUEUED") done();
+              const status = await getSessionStatus(sessionPayload.sessionId);
+              if (status !== "RUNNING" && status !== "QUEUED") done();
             } catch { /* ignore */ }
           }, 2000);
         });
@@ -152,16 +155,14 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
 
       let output: unknown;
       try {
-        const res = await axios.get(
-          `/sessions/session.state.get?sessionId=${sessionPayload.sessionId}`,
-        );
-        output = res.data.output;
+        const stateData = await getSessionState(sessionPayload.sessionId);
+        output = stateData.output;
       } catch (err) {
         console.error("Error fetching session state:", err);
       }
       return output;
     },
-    [hub.globalScope, user?.username, subscribeRemoteStream],
+    [hub.globalScope, subscribeRemoteStream],
   );
 
   const handleCancelSession = useCallback(async () => {
@@ -228,7 +229,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
     sessionListPollCounterRef.current += 1;
     if (sessionListPollCounterRef.current % 5 === 0) {
       try {
-        const listData = await listUserSessions({ userId: hub.contextUserId, teamId: hub.teamId });
+        const listData = await listUserSessions({ teamId: hub.teamId });
         const transformApiDataToSessions = (apiData: ChatSessionData[]) =>
           apiData.map((sd, i) => {
             const base = transformSessionData(sd, i);
@@ -268,7 +269,7 @@ export default function CollaborationHubView({ runId, teamMembers, teamName }: C
       const currentUser = user?.username || "default";
       setTypingUsers(allTyping.filter((u: string) => u !== currentUser));
     } catch { /* ignore */ }
-  }, [loadSessionMessages, fetchParticipants, user?.username, hub.contextUserId, hub.teamId]);
+  }, [loadSessionMessages, fetchParticipants, user?.username, hub.teamId]);
 
   const getSessionParticipantMembers = useCallback((sessionId: string): MemberDisplay[] => {
     const participants = sessionParticipants[sessionId];

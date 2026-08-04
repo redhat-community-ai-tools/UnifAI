@@ -8,7 +8,7 @@ import { ElementInstance, ElementType } from '../../../types/workspace';
 import { ValidationStatus } from '@/contexts/AgenticAIContext';
 import { CardField } from '@/lib/cardFields';
 import { CardFieldList } from './CardFieldList';
-import { ValidationStatusBadge } from './ValidationStatusBadge';
+import { ValidationStatusBadge } from './validation/ValidationStatusBadge';
 import { cn } from "@/lib/utils";
 
 interface RegularElementCardProps {

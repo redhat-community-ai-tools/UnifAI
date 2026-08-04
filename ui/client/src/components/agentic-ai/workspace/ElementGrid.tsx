@@ -10,7 +10,7 @@ import { resolveEditLockStatus } from "@/lib/editLockStatus";
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
 import { ElementValidationResult } from '../../../types/validation';
 import { ElementData } from './ElementData';
-import { ValidationResultModal } from './ValidationResultModal';
+import { ValidationResultModal } from './validation/ValidationResultModal';
 import { BuiltInElementCard } from './BuiltInElementCard';
 import { RegularElementCard } from './RegularElementCard';
 import { getCardFields } from '@/lib/cardFields';

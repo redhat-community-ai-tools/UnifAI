@@ -17,8 +17,8 @@ import { ElementInstance, ElementType, ElementSchema } from '../../../types/work
 import { ValidationStatus } from '@/contexts/AgenticAIContext';
 import { BuiltinConfigureModal } from './BuiltinConfigureModal';
 import { CardFieldList } from './CardFieldList';
-import { ValidationStatusBadge } from './ValidationStatusBadge';
-import { SignInStatusIndicator } from './SignInStatusIndicator';
+import { ValidationStatusBadge } from './validation/ValidationStatusBadge';
+import { SignInStatusIndicator } from './auth/SignInStatusIndicator';
 import { getCardFields, isUserConfigurable } from "@/lib/cardFields";
 import { isFieldConditionallyVisible } from "@/lib/schemaRefs";
 import { cn } from "@/lib/utils";

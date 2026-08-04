@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
-import axios from "../../../http/axiosAgentConfig";
+import axios from "../../../../http/axiosAgentConfig";
 import { executeAction } from '@/api/actions';
 import { useAuth } from "@/contexts/AuthContext";
 import { FieldValidationTwoFactorAuth } from './FieldValidationTwoFactorAuth';

@@ -2,7 +2,7 @@ import axios from '@/http/axiosAgentConfig';
 
 export interface CreateSessionParams {
   blueprintId: string;
-  userId: string;
+  teamId?: string;
 }
 
 export async function createSession(params: CreateSessionParams) {
@@ -18,7 +18,6 @@ export interface SubmitSessionParams {
   sessionId: string;
   inputs: Record<string, any>;
   scope?: 'public' | 'private';
-  userId: string;
 }
 
 /**
@@ -49,12 +48,12 @@ export async function submitSession(params: SubmitSessionParams): Promise<Submit
  * List chat sessions for the current user/team.
  */
 export async function listUserSessions(params: {
-  userId: string;
   teamId?: string;
-}): Promise<any[]> {
-  const query = new URLSearchParams({ userId: params.userId });
+} = {}): Promise<any[]> {
+  const query = new URLSearchParams();
   if (params.teamId) query.set('teamId', params.teamId);
-  const response = await axios.get(`/sessions/session.user.list?${query.toString()}`);
+  const qs = query.toString();
+  const response = await axios.get(`/sessions/session.user.list${qs ? `?${qs}` : ''}`);
   return response.data;
 }
 
@@ -199,6 +198,33 @@ export async function submitApprovalRule(params: SubmitApprovalRuleParams): Prom
     toolName: params.toolName ?? null,
     action: params.action,
   });
+  return response.data;
+}
+
+/**
+ * Delete a session by ID.
+ */
+export async function deleteSession(sessionId: string): Promise<void> {
+  await axios.delete(`/sessions/session.delete?sessionId=${sessionId}`);
+}
+
+/**
+ * Get the full chat data for a session (output, status, status_message, etc.).
+ */
+export async function getSessionChat(sessionId: string): Promise<{
+  output: string;
+  status: string;
+  status_message?: string;
+}> {
+  const response = await axios.get(`/sessions/session.chat.get?sessionId=${sessionId}`);
+  return response.data;
+}
+
+/**
+ * Get the final state of a session after execution completes.
+ */
+export async function getSessionState(sessionId: string): Promise<{ output: unknown }> {
+  const response = await axios.get(`/sessions/session.state.get?sessionId=${sessionId}`);
   return response.data;
 }
 
