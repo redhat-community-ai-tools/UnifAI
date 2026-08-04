@@ -28,6 +28,8 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
+import { ValidationStatusBadge } from "@/components/agentic-ai/workspace/validation/ValidationStatusBadge";
+import type { ValidationStatus } from "@/contexts/AgenticAIContext";
 import type { BuiltinEditLockResolved } from "@/api/resources";
 import type { ElementType } from "@/types/workspace";
 import { resolveEditLockStatus } from "@/lib/editLockStatus";
@@ -47,12 +49,14 @@ interface BuiltinResourceTableProps {
   isTogglingStatus: string | null;
   editLocks: Record<string, BuiltinEditLockResolved>;
   currentUsername: string;
+  getValidationStatus: (rid: string) => ValidationStatus;
   onTypeFilterChange: (category: string, value: string) => void;
   onToggleAvailableToAll: (rid: string) => void;
   onViewDetails: (resource: ResourceItem) => void;
   onEditResource: (resource: ResourceItem) => void;
   onDeleteClick: (resource: ResourceItem) => void;
   onAddToCategory: (category: string) => void;
+  onValidationClick: (rid: string) => void;
 }
 
 /**
@@ -71,12 +75,14 @@ export function BuiltinResourceTable({
   isTogglingStatus,
   editLocks,
   currentUsername,
+  getValidationStatus,
   onTypeFilterChange,
   onToggleAvailableToAll,
   onViewDetails,
   onEditResource,
   onDeleteClick,
   onAddToCategory,
+  onValidationClick,
 }: BuiltinResourceTableProps) {
   const getTypeName = (categoryKey: string, typeKey: string): string => {
     const cat = availableCategories.find((c) => c.category === categoryKey);
@@ -180,7 +186,8 @@ export function BuiltinResourceTable({
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="col-span-3 text-center">Available to All</div>
+                        <div className="col-span-1 text-center">Status</div>
+                        <div className="col-span-2 text-center">Available to All</div>
                         <div className="col-span-3 text-right">Actions</div>
                       </div>
                       {(() => {
@@ -238,7 +245,13 @@ export function BuiltinResourceTable({
                                   {getTypeName(cat.category, resource.type)}
                                 </Badge>
                               </div>
-                              <div className="col-span-3 flex justify-center">
+                              <div className="col-span-1 flex justify-center">
+                                <ValidationStatusBadge
+                                  status={getValidationStatus(resource.rid)}
+                                  onClick={() => onValidationClick(resource.rid)}
+                                />
+                              </div>
+                              <div className="col-span-2 flex justify-center">
                                 <SimpleTooltip
                                   content={
                                     <p>

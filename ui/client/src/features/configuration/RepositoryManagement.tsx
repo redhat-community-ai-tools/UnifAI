@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useToast } from "@/hooks/use-toast";
 import { useBuiltinEditLockPoll } from "@/hooks/use-builtin-edit-lock-poll";
 import { useBuiltinEditLockSession } from "@/hooks/use-builtin-edit-lock-session";
@@ -11,8 +12,10 @@ import { acquireBuiltinEditLock, previewBuiltinCascade, listBuiltins } from "@/a
 import type { ResourceDependencySummary } from "@/api/resources";
 import { ElementForm } from "@/components/agentic-ai/workspace/ElementForm";
 import { ElementData } from "@/components/agentic-ai/workspace/ElementData";
+import { ValidationResultModal } from "@/components/agentic-ai/workspace/validation/ValidationResultModal";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import type { ElementType, ElementInstance } from "@/types/workspace";
+import type { ElementValidationResult } from "@/types/validation";
 import { AddResourceWizardPanel } from "./repository-management/AddResourceWizardPanel";
 import { BuiltinResourceTable } from "./repository-management/BuiltinResourceTable";
 import { CascadeConfirmDialog } from "./repository-management/CascadeConfirmDialog";
@@ -72,12 +75,40 @@ export default function RepositoryManagement() {
   const { user } = useAuth();
   const currentUsername = user?.username ?? "";
 
+  const {
+    validateResources,
+    getValidationStatus,
+    getValidationResult,
+  } = useAgenticAI();
+
+  const [isValidationModalOpen, setIsValidationModalOpen] = useState(false);
+  const [selectedValidationResult, setSelectedValidationResult] =
+    useState<ElementValidationResult | null>(null);
+
   const allBuiltinRids = useMemo(
     () => Object.values(categoryResources).flat().map((r) => r.rid),
     [categoryResources],
   );
   const editLocks = useBuiltinEditLockPoll(allBuiltinRids, allBuiltinRids.length > 0);
   const { startLockHeartbeat, stopLockHeartbeat } = useBuiltinEditLockSession();
+
+  const allBuiltinRidsKey = useMemo(
+    () => allBuiltinRids.join(","),
+    [allBuiltinRids],
+  );
+  useEffect(() => {
+    if (allBuiltinRidsKey) {
+      validateResources(allBuiltinRidsKey.split(","));
+    }
+  }, [allBuiltinRidsKey, validateResources]);
+
+  const handleValidationClick = useCallback((rid: string) => {
+    const result = getValidationResult(rid);
+    if (result) {
+      setSelectedValidationResult(result);
+      setIsValidationModalOpen(true);
+    }
+  }, [getValidationResult]);
 
   const availableCategories = useMemo(
     () => categories.filter(
@@ -466,12 +497,14 @@ export default function RepositoryManagement() {
         isTogglingStatus={isTogglingStatus}
         editLocks={editLocks}
         currentUsername={currentUsername}
+        getValidationStatus={getValidationStatus}
         onTypeFilterChange={handleTypeFilterChange}
         onToggleAvailableToAll={toggleAvailableToAll}
         onViewDetails={handleViewDetails}
         onEditResource={handleEditResource}
         onDeleteClick={handleDeleteClick}
         onAddToCategory={handleAddToCategory}
+        onValidationClick={handleValidationClick}
       />
 
       {/* ElementForm Dialog (create & edit, including built-in configure) */}
@@ -515,6 +548,12 @@ export default function RepositoryManagement() {
         isConfirming={isApplyingCascade}
         onOpenChange={(open) => !open && setCascadePreview(null)}
         onConfirm={confirmCascade}
+      />
+
+      <ValidationResultModal
+        validationResult={selectedValidationResult}
+        isOpen={isValidationModalOpen}
+        onOpenChange={setIsValidationModalOpen}
       />
     </div>
   );
