@@ -18,6 +18,10 @@ from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibili
 logger = logging.getLogger(__name__)
 
 
+class ShareCloneError(RuntimeError):
+    """A domain rule prevents a resource from being shared."""
+
+
 @dataclass
 class ResourceCacheData:
     """Cached data for a resource."""
@@ -247,7 +251,7 @@ class ShareCloner:
 
                 if doc.ownership == ResourceOwnership.BUILTIN:
                     if doc.visibility != ResourceVisibility.PUBLIC:
-                        raise ValueError(
+                        raise ShareCloneError(
                             f"Cannot share: resource {rid} ({doc.name}) is a "
                             f"draft built-in and would be invisible to the recipient"
                         )
@@ -282,7 +286,9 @@ class ShareCloner:
                     if dep_rid not in visited_rids:
                         to_visit.add(dep_rid)
 
-            except (KeyError, Exception) as e:
+            except ShareCloneError:
+                raise
+            except Exception as e:
                 logger.warning(f"Error processing resource {rid}: {e}")
                 continue
 

@@ -34,6 +34,7 @@ from uuid import uuid4
 
 import pymongo
 
+from cryptography.fernet import InvalidToken
 from global_utils.utils.crypto import FieldCipher, FERNET_PREFIX
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.enums import ResourceCategory
@@ -226,8 +227,15 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
     # --- Step 1: Restore embedded user_configs from builtin_user_configs collection ---
     logger.info("Step 1: Restoring embedded user_configs from builtin_user_configs...")
 
-    def _decrypt_fields(fields: dict) -> dict:
+    def _decrypt_fields(fields: dict, resource_id: str = "", identity_key: str = "") -> dict:
         if not cipher:
+            for k, v in fields.items():
+                if isinstance(v, str) and v.startswith(FERNET_PREFIX):
+                    raise RuntimeError(
+                        f"Overlay {resource_id}/{identity_key} contains encrypted "
+                        f"field '{k}' but no --encryption-key was provided — "
+                        f"aborting to prevent writing ciphertext into legacy format"
+                    )
             return fields
         result = {}
         for k, v in fields.items():
@@ -243,8 +251,8 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
         identity_key = cfg_doc["identity_key"]
         fields = cfg_doc.get("fields", {})
         try:
-            fields = _decrypt_fields(fields)
-        except Exception as exc:
+            fields = _decrypt_fields(fields, resource_id, identity_key)
+        except InvalidToken as exc:
             raise RuntimeError(
                 f"Failed to decrypt overlay {resource_id}/{identity_key} — "
                 f"aborting before legacy data is modified: {exc}"
