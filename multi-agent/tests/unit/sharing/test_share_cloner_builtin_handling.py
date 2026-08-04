@@ -5,6 +5,7 @@ Verifies that:
 - DRAFT built-ins trigger ShareCloneError.
 - Mixed closures (custom depends on public built-in) succeed and only clone custom.
 """
+from typing import Any, Optional, Tuple
 from unittest.mock import create_autospec, MagicMock
 
 import pytest
@@ -18,7 +19,9 @@ from mas.core.identity import Identity
 from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
 
 
-def _build_cloner(resources_service=None):
+def _build_cloner(
+    resources_service: Optional[ResourcesService] = None,
+) -> Tuple[ShareCloner, ResourcesService, ElementRegistry]:
     resources_service = resources_service or create_autospec(ResourcesService, instance=True)
     bp_service = create_autospec(BlueprintService, instance=True)
     element_registry = create_autospec(ElementRegistry, instance=True)
@@ -38,7 +41,7 @@ def _make_builtin_resource(rid: str, visibility: ResourceVisibility) -> Resource
     )
 
 
-def _make_custom_resource(rid: str, owner: str = "alice", deps_cfg=None) -> Resource:
+def _make_custom_resource(rid: str, owner: str = "alice", deps_cfg: Optional[dict] = None) -> Resource:
     return Resource(
         rid=rid,
         identity=Identity.user(owner),
@@ -87,7 +90,7 @@ class TestComputeClosureBuiltinHandling:
         }[rid]
 
         class FakeSchema:
-            def __init__(self, **kwargs):
+            def __init__(self, **kwargs: Any) -> None:
                 pass
 
         element_registry.get_schema.return_value = FakeSchema

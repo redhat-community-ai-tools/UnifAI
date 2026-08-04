@@ -26,8 +26,10 @@ Usage:
     python -m run.scripts.migrate_builtin_system [--dry-run] [--reverse] [--mongodb-ip localhost] [--mongodb-port 27017] [--encryption-key KEY]
 """
 import argparse
+import binascii
 import logging
 import os
+from base64 import urlsafe_b64decode
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
@@ -42,6 +44,9 @@ from mas.resources.field_encryption import ResourceFieldEncryption
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+FERNET_VERSION_BYTE = 0x80
+FERNET_MIN_RAW_LENGTH = 73  # 1 (version) + 8 (timestamp) + 16 (IV) + 16 (min ciphertext) + 32 (HMAC)
 
 
 def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool, reverse: bool = False, encryption_key: str = "") -> None:
@@ -235,14 +240,19 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
         if len(value) < 100 or len(value) % 4 != 0:
             return False
         try:
-            from base64 import urlsafe_b64decode
             raw = urlsafe_b64decode(value)
-            return len(raw) >= 73 and raw[0] == 0x80
-        except Exception:
+            return len(raw) >= FERNET_MIN_RAW_LENGTH and raw[0] == FERNET_VERSION_BYTE
+        except (binascii.Error, ValueError):
             return False
 
     def _decrypt_fields(fields: dict, resource_id: str = "", identity_key: str = "") -> dict:
-        def _walk(value):
+        if not isinstance(fields, dict):
+            raise ValueError(
+                f"Overlay {resource_id}/{identity_key} has non-dict fields "
+                f"(got {type(fields).__name__}) — skipping to avoid data corruption"
+            )
+
+        def _walk(value: object) -> object:
             if isinstance(value, str):
                 if _is_fernet_token(value):
                     if not cipher:
@@ -265,9 +275,15 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
     for cfg_doc in user_configs_col.find({}):
         resource_id = cfg_doc["resource_id"]
         identity_key = cfg_doc["identity_key"]
-        fields = cfg_doc.get("fields", {})
+        raw_fields = cfg_doc.get("fields", {})
+        if not isinstance(raw_fields, dict):
+            raise ValueError(
+                f"Overlay {resource_id}/{identity_key} has non-dict fields "
+                f"(got {type(raw_fields).__name__}) — aborting before legacy "
+                f"data is modified"
+            )
         try:
-            fields = _decrypt_fields(fields, resource_id, identity_key)
+            fields = _decrypt_fields(raw_fields, resource_id, identity_key)
         except InvalidToken as exc:
             raise RuntimeError(
                 f"Failed to decrypt overlay {resource_id}/{identity_key} — "

@@ -82,10 +82,10 @@ def test_reverse_migration_passes_plaintext_fields_without_key() -> None:
 
     _run_reverse_migration_body(client, "TestDB", dry_run=False, cipher=None)
 
-    resources_col.update_one.assert_called()
-    call_args = resources_col.update_one.call_args
-    update_doc = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("update", {})
-    assert "user_configs" in str(update_doc) or "$set" in str(update_doc)
+    resources_col.update_one.assert_called_once_with(
+        {"_id": "res-abc"},
+        {"$set": {"user_configs": {"user@example.com": {"model_name": "gpt-4"}}}},
+    )
 
 
 def test_reverse_migration_passes_prefix_only_value_without_key() -> None:
@@ -117,3 +117,5 @@ def test_reverse_migration_raises_on_nested_encrypted_field_without_key() -> Non
         _run_reverse_migration_body(client, "TestDB", dry_run=False, cipher=None)
 
     resources_col.update_one.assert_not_called()
+    resources_col.update_many.assert_not_called()
+    user_configs_col.drop.assert_not_called()
