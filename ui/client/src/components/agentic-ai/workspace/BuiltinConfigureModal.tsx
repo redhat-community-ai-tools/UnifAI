@@ -22,17 +22,36 @@ import { useConfigFieldActions } from "@/hooks/use-config-field-actions";
 import { useResourceRefOptions } from "@/hooks/use-resource-ref-options";
 import { LoaderCircle, Check, Loader2 } from "lucide-react";
 
+/** A validation hint attached to a schema field via hints.action or hints.api. */
+interface ValidationHintDescriptor {
+  hint_type: string;
+  endpoint?: string;
+  action_uid?: string;
+  dependencies?: Record<string, string>;
+  field_mapping?: string;
+  method?: string;
+  on_success?: {
+    action_uid: string;
+    dependencies?: Record<string, string>;
+  };
+  [key: string]: unknown;
+}
+
 /** Subset of JSON Schema property fields used in the builtin configure UI. */
 interface SchemaProperty {
   type?: string;
   default?: unknown;
-  anyOf?: { type?: string }[];
+  $ref?: string;
+  anyOf?: Array<{ type?: string; $ref?: string; items?: { $ref?: string }; [key: string]: unknown }>;
   hints?: {
     hidden?: boolean;
     auth?: boolean;
-    read_only?: boolean;
+    read_only?: { read_only: boolean };
+    action?: ValidationHintDescriptor;
+    api?: ValidationHintDescriptor;
     [key: string]: unknown;
   };
+  items?: { $ref?: string; [key: string]: unknown };
   [key: string]: unknown;
 }
 
@@ -181,12 +200,13 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
   // connection is re-checked whenever a dependency changes.
   const hiddenValidationFields = useMemo(() => {
     if (!builtinSchema?.config_schema?.properties) return [];
-    const result: Array<{ fieldName: string; fieldSchema: any; hint: any }> = [];
-    for (const [name, schema] of Object.entries<any>(builtinSchema.config_schema.properties)) {
+    const result: Array<{ fieldName: string; fieldSchema: SchemaProperty; hint: ValidationHintDescriptor }> = [];
+    for (const [name, rawSchema] of Object.entries(builtinSchema.config_schema.properties)) {
+      const schema = rawSchema as SchemaProperty;
       if (isUserConfigurable(schema)) continue;
-      const actionHint = (schema as any).hints?.action?.hint_type === "validate" ? (schema as any).hints.action : null;
-      const apiHint = (schema as any).hints?.api?.hint_type === "validate" ? (schema as any).hints.api : null;
-      const hint = actionHint || apiHint;
+      const actionHint = schema.hints?.action?.hint_type === "validate" ? schema.hints.action : null;
+      const apiHint = schema.hints?.api?.hint_type === "validate" ? schema.hints.api : null;
+      const hint = actionHint ?? apiHint;
       if (hint) result.push({ fieldName: name, fieldSchema: schema, hint });
     }
     return result;
@@ -235,7 +255,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
           processedValue = `$ref:${value}`;
         } else if (
           fieldSchema.anyOf &&
-          fieldSchema.anyOf.some((option: any) => option.$ref) &&
+          fieldSchema.anyOf.some((option) => option.$ref) &&
           typeof value === "string" && value !== ""
         ) {
           processedValue = `$ref:${value}`;
@@ -267,7 +287,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     }
   };
 
-  const renderFormField = (fieldName: string, fieldSchema: any) => (
+  const renderFormField = (fieldName: string, fieldSchema: SchemaProperty) => (
     <ElementConfigField
       fieldName={fieldName}
       fieldSchema={fieldSchema}
@@ -282,15 +302,14 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
   );
 
   const fieldEntries = Object.entries(configurableFields).filter(
-    ([, schema]) => isFieldConditionallyVisible(schema as any)
+    ([, schema]) => isFieldConditionallyVisible(schema)
   );
 
   const allValidationsPassed = useMemo(() => {
     for (const [fieldName, fieldSchema] of fieldEntries) {
-      const s = fieldSchema as any;
       const hasValidation =
-        s.hints?.action?.hint_type === "validate" ||
-        s.hints?.api?.hint_type === "validate";
+        fieldSchema.hints?.action?.hint_type === "validate" ||
+        fieldSchema.hints?.api?.hint_type === "validate";
       if (!hasValidation) continue;
       if (fieldValidationStates[fieldName] !== true) return false;
     }
@@ -333,7 +352,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
               {fieldEntries.map(([fieldName, fieldSchema]) => (
                 <div key={fieldName}>
-                  {renderFormField(fieldName, fieldSchema as any)}
+                  {renderFormField(fieldName, fieldSchema)}
                 </div>
               ))}
               {hiddenValidationFields.map(({ fieldName, hint }) => (
