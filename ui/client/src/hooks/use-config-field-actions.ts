@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ItemValidationResult } from "@/components/agentic-ai/workspace/auth/FieldValidation";
+import { ItemValidationResult } from "@/components/agentic-ai/workspace/validation/FieldValidation";
 import { matchesCondition } from "@/lib/schemaRefs";
 
 export interface ConfigFieldActions {

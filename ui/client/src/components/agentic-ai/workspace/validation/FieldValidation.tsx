@@ -5,7 +5,7 @@ import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import axios from "../../../../http/axiosAgentConfig";
 import { executeAction } from '@/api/actions';
 import { useAuth } from "@/contexts/AuthContext";
-import { FieldValidationTwoFactorAuth } from './FieldValidationTwoFactorAuth';
+import { FieldValidationTwoFactorAuth } from '../auth/FieldValidationTwoFactorAuth';
 
 
 // Type guard to check if hint is an ApiHint (has endpoint) vs ActionHint (has action_uid)
