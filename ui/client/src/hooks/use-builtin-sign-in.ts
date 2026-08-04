@@ -113,11 +113,11 @@ export function useBuiltinSignIn({
     ).then(() => {
       // A validation badge cached "Invalid" from before the identifier was
       // known can now use the fast lookup path — re-run it to catch up.
-      onAuthChange();
+      stableOnAuthChange();
     }).catch(() => {
       persistedIdentifierRef.current = previous;
     });
-  }, [onConfigureBuiltin, element.rid, onAuthChange]);
+  }, [onConfigureBuiltin, element.rid, stableOnAuthChange]);
 
   // Resolves a dependency's value for *any* action (discovery, sign-out,
   // ...), not just the sign-in AuthHint — so it can't gate on the sign-in

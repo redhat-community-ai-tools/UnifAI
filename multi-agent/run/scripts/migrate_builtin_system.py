@@ -48,7 +48,7 @@ def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: boo
     cipher = FieldCipher(encryption_key) if encryption_key else None
     try:
         if reverse:
-            _run_reverse_migration_body(client, db_name, dry_run)
+            _run_reverse_migration_body(client, db_name, dry_run, cipher)
         else:
             _run_migration_body(client, db_name, dry_run, cipher)
     finally:
@@ -78,7 +78,11 @@ def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool
                 model_cls = registry.get_schema(ResourceCategory(category), type_key)
                 keys = sensitive | set(getattr(model_cls, "ENCRYPTED_FIELDS", ()))
             except (KeyError, ImportError, ValueError) as exc:
-                logger.warning("Could not resolve sensitive keys for %s/%s: %s", category, type_key, exc)
+                raise RuntimeError(
+                    f"Cannot resolve sensitive keys for {category}/{type_key} "
+                    f"while encryption is enabled — aborting to prevent "
+                    f"plaintext migration: {exc}"
+                ) from exc
         sensitive_keys_cache[cache_key] = keys
         return keys
 
@@ -214,7 +218,7 @@ def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool
     logger.info("Migration complete%s.", " (DRY RUN)" if dry_run else "")
 
 
-def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool) -> None:
+def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool, cipher: Optional[FieldCipher] = None) -> None:
     db = client[db_name]
     resources_col = db["resources"]
     user_configs_col = db["builtin_user_configs"]
@@ -222,11 +226,30 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
     # --- Step 1: Restore embedded user_configs from builtin_user_configs collection ---
     logger.info("Step 1: Restoring embedded user_configs from builtin_user_configs...")
 
+    def _decrypt_fields(fields: dict) -> dict:
+        if not cipher:
+            return fields
+        result = {}
+        for k, v in fields.items():
+            if isinstance(v, str) and v.startswith(FERNET_PREFIX):
+                result[k] = cipher.decrypt(v)
+            else:
+                result[k] = v
+        return result
+
     user_configs_by_resource: dict = {}
     for cfg_doc in user_configs_col.find({}):
         resource_id = cfg_doc["resource_id"]
         identity_key = cfg_doc["identity_key"]
-        user_configs_by_resource.setdefault(resource_id, {})[identity_key] = cfg_doc.get("fields", {})
+        fields = cfg_doc.get("fields", {})
+        try:
+            fields = _decrypt_fields(fields)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to decrypt overlay {resource_id}/{identity_key} — "
+                f"aborting before legacy data is modified: {exc}"
+            ) from exc
+        user_configs_by_resource.setdefault(resource_id, {})[identity_key] = fields
 
     total_configs = sum(len(v) for v in user_configs_by_resource.values())
     logger.info("  Found %d user config entries across %d resources.", total_configs, len(user_configs_by_resource))

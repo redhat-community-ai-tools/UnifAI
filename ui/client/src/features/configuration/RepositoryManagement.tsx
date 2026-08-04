@@ -312,15 +312,19 @@ export default function RepositoryManagement() {
 
   const handleSaveElement = async (elementData: any) => {
     if (!selectedElementType) return null;
+    const rid = editingElement?.rid;
     const result = await saveBuiltinElement(
       selectedElementType.category,
       selectedElementType.type,
       elementData,
       newElementAvailableToAll,
-      editingElement?.rid,
+      rid,
     );
     if (result) {
       reloadBuiltins();
+      if (rid) {
+        validateResources([rid]);
+      }
     }
     return result;
   };
@@ -406,10 +410,13 @@ export default function RepositoryManagement() {
       try {
         cascaded = await previewBuiltinCascade(rid);
       } catch {
-        // If the preview call itself fails, don't block the toggle on it —
-        // proceed with the mutation and rely on its own error handling /
-        // the post-mutation cascade disclaimer as a fallback.
-        cascaded = [];
+        setIsTogglingStatus(null);
+        toast({
+          title: "Preview failed",
+          description: "Could not preview cascade dependencies. Please try again.",
+          variant: "destructive",
+        });
+        return;
       } finally {
         setIsTogglingStatus(null);
       }
@@ -421,7 +428,7 @@ export default function RepositoryManagement() {
     }
 
     await applyToggle(rid, newValue);
-  }, [availableToAll, applyToggle, categoryResources]);
+  }, [availableToAll, applyToggle, categoryResources, toast]);
 
   const confirmCascade = useCallback(async () => {
     if (!cascadePreview) return;

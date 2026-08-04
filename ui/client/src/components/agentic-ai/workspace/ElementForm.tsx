@@ -460,6 +460,14 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     return result;
   }, [refEditState, saveRefElement, fetchResourcesForCategory, builtinOnly]);
 
+  const isRequiredValuePresent = (value: any): boolean => {
+    if (Array.isArray(value)) return value.length > 0;
+    if (value === undefined || value === null) return false;
+    if (value === "") return false;
+    if (typeof value === "string" && value.trim() === "") return false;
+    return true;
+  };
+
   // Check if all required fields are filled.
   // Validation hints (connection checks, ref validation) are informational —
   // they show status visually but do NOT block saving.
@@ -481,14 +489,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
         return true;
       }
       
-      const value = formData[field];
-      
-      // Basic value validation — just check if value exists
-      if (Array.isArray(value)) {
-        return value.length > 0;
-      }
-      return value !== undefined && value !== null && value !== "" && 
-                (typeof value !== "string" || value.trim() !== "");
+      return isRequiredValuePresent(formData[field]);
     });
 
     return allRequiredFieldsValid && !nameError;
@@ -517,11 +518,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
           return false;
         }
         
-        const value = formData[field];
-        if (Array.isArray(value)) {
-          return value.length === 0;
-        }
-        return !value || (typeof value === "string" && value.trim() === "");
+        return !isRequiredValuePresent(formData[field]);
       });
 
       if (missing.length > 0) {

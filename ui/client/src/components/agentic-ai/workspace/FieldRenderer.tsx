@@ -308,7 +308,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
     const category = arrayMode === 'refItems' ? extractCategoryFromField(fieldSchema) : null;
     const allRefOptions = arrayMode === 'refItems' ? getValidRefOptions(refOptions, category) : [];
     const validOptions = builtinOnly
-      ? allRefOptions.filter((opt: any) => opt.visibility !== "draft")
+      ? allRefOptions.filter((opt: any) => opt.ownership === "builtin" && opt.visibility === "public")
       : allRefOptions;
     const displayFieldPath = populateHint?.display_field || populateHint?.label_field;
     const displayName = populateHint?.display_name || fieldName;
@@ -715,7 +715,7 @@ export const FieldRenderer: React.FC<FieldRendererProps> = ({
     if (category) {
       const validOptions = (refOptions[category] || [])
         .filter((option: any) => option.rid && option.rid.trim() !== "")
-        .filter((option: any) => !builtinOnly || option.visibility !== "draft")
+        .filter((option: any) => !builtinOnly || (option.ownership === "builtin" && option.visibility === "public"))
         .sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""));
 
       return (

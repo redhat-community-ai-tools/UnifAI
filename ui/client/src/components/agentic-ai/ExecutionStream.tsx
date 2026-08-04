@@ -89,6 +89,8 @@ export default function ExecutionStream({
   
   // Create agent nodes from selected graph nodes on component mount
   useEffect(() => {
+    let cancelled = false;
+
     const getGraphNodes = async () => {
       const blueprintObjects = await fetchResolvedBlueprints(teamId);
       
@@ -102,6 +104,7 @@ export default function ExecutionStream({
   
     const fetchAndSetNodes = async () => {
       const nodeData = await getGraphNodes();
+      if (cancelled) return;
       
       const nodes = nodeData.map((node: { id: string; name: string; description: string | null }) => ({
         id: node.id,
@@ -115,7 +118,8 @@ export default function ExecutionStream({
     };
   
     fetchAndSetNodes();
-  }, [blueprintId]);
+    return () => { cancelled = true; };
+  }, [blueprintId, teamId]);
 
   // Set up polling interval to get real-time node data
   useEffect(() => {

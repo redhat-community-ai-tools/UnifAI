@@ -55,11 +55,13 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
         self._cached_at: float = 0.0
         self._last_failure_at: float = 0.0
 
-    def is_admin(self, username: str) -> bool:
-        """Return *True* if *username* appears in the stored admin list."""
+    def is_admin(self, username: str) -> "bool | None":
+        """Return *True*/*False* when the admin list is available, *None*
+        when Mongo is unreachable so the caller can fall back to the
+        static allowlist."""
         admin_usernames = self._get_admin_usernames()
         if admin_usernames is None:
-            return False
+            return None
         return username.lower() in admin_usernames
 
     def _get_admin_usernames(self) -> Optional[set[str]]:

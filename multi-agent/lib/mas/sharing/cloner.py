@@ -13,7 +13,7 @@ from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.ref import RefWalker, RefRemapper
 from mas.core.ref.models import Ref
-from mas.core.enums import ResourceCategory, ResourceOwnership
+from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
 
 logger = logging.getLogger(__name__)
 
@@ -246,8 +246,13 @@ class ShareCloner:
                 doc = self.resources.get(rid)
 
                 if doc.ownership == ResourceOwnership.BUILTIN:
+                    if doc.visibility != ResourceVisibility.PUBLIC:
+                        raise ValueError(
+                            f"Cannot share: resource {rid} ({doc.name}) is a "
+                            f"draft built-in and would be invisible to the recipient"
+                        )
                     logger.debug(
-                        f"Skipping built-in resource {rid} ({doc.name}) — kept by reference"
+                        f"Skipping public built-in resource {rid} ({doc.name}) — kept by reference"
                     )
                     continue
 

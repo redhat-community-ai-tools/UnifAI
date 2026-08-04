@@ -49,15 +49,16 @@ class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
         config.updated = datetime.now(timezone.utc)
         fields = config.model_dump(mode="json")
         fields.pop("config_id", None)
-        self.col.update_one(
+        doc = self.col.find_one_and_update(
             {"resource_id": config.resource_id, "identity_key": config.identity_key},
             {
                 "$set": fields,
                 "$setOnInsert": {"_id": config.config_id, "config_id": config.config_id},
             },
             upsert=True,
+            return_document=pymongo.ReturnDocument.AFTER,
         )
-        return config.config_id
+        return doc["config_id"]
 
     def get(self, resource_id: str, identity_key: str) -> Optional[BuiltinUserConfig]:
         raw = self.col.find_one({

@@ -298,6 +298,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
       refOptions={refOptions}
       fieldHelpers={{ isArrayWithRefItems, getArrayItemsSchema, extractCategoryFromField, resolveRef }}
       fieldActions={fieldActions}
+      builtinOnly
     />
   );
 

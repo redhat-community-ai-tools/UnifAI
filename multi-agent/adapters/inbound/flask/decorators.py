@@ -259,8 +259,9 @@ def is_admin_user(username: str) -> bool:
 
     container = getattr(current_app, "container", None)
     reader = getattr(container, "admin_config_reader", None) if container else None
-    if reader and reader.is_admin(username):
-        result = True
+    mongo_result = reader.is_admin(username) if reader else None
+    if mongo_result is not None:
+        result = mongo_result
     else:
         admin_allowed_users = current_app.config.get("admin_allowed_users", [])
         result = username.lower() in [u.lower() for u in admin_allowed_users]

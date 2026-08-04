@@ -15,6 +15,7 @@ import { useTemplates } from '@/hooks/use-templates';
 import { useAdminAccess } from '@/hooks/use-admin-access';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { useWorkspaceIdentity } from '@/hooks/use-workspace-identity';
 import { createSession } from '@/api/sessions';
 import { getTemplate, createTemplate, deleteTemplate } from '@/api/templates';
 import { TemplateListItem, TemplateFormData } from '@/types/templates';
@@ -30,6 +31,7 @@ export default function AgenticTemplates() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { isAdmin } = useAdminAccess();
+  const { teamId } = useWorkspaceIdentity();
 
   // Admin dialog state
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -104,7 +106,7 @@ export default function AgenticTemplates() {
 
     setIsCreatingSession(true);
     try {
-      await createSession({ blueprintId: instantiationResult.blueprint_id });
+      await createSession({ blueprintId: instantiationResult.blueprint_id, ...(teamId ? { teamId } : {}) });
       resetInstantiation();
       navigate('/agentic-chats');
     } catch (err) {
@@ -117,7 +119,7 @@ export default function AgenticTemplates() {
     } finally {
       setIsCreatingSession(false);
     }
-  }, [instantiationResult, user, resetInstantiation, navigate, toast]);
+  }, [instantiationResult, user, resetInstantiation, navigate, toast, teamId]);
 
   const handleCloseProgress = useCallback(() => {
     resetInstantiation();

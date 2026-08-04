@@ -103,7 +103,7 @@ Never raw `user_id` or `team_id` strings.
 
 ```python
 class Identity(BaseModel):
-    type: IdentityType   # USER | TEAM | SYSTEM
+    type: IdentityType   # USER | TEAM
     id: str
     display_name: str = ""
 ```

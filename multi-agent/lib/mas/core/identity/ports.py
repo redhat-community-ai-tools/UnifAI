@@ -57,6 +57,11 @@ class AdminConfigReaderPort(ABC):
     """
 
     @abstractmethod
-    def is_admin(self, username: str) -> bool:
-        """Return True if *username* is in the stored admin list."""
+    def is_admin(self, username: str) -> "bool | None":
+        """Check admin status for *username*.
+
+        Returns ``True``/``False`` when the admin list is available,
+        ``None`` when the backing store is unreachable so callers can
+        fall back to a static allowlist.
+        """
         ...
