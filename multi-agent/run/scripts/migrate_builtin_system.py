@@ -227,10 +227,24 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
     # --- Step 1: Restore embedded user_configs from builtin_user_configs collection ---
     logger.info("Step 1: Restoring embedded user_configs from builtin_user_configs...")
 
+    def _is_fernet_token(value: str) -> bool:
+        """Stricter check than prefix alone — validates structural properties
+        of a Fernet token to avoid false-positives on user-provided values."""
+        if not value.startswith(FERNET_PREFIX):
+            return False
+        if len(value) < 100 or len(value) % 4 != 0:
+            return False
+        try:
+            from base64 import urlsafe_b64decode
+            raw = urlsafe_b64decode(value)
+            return len(raw) >= 73 and raw[0] == 0x80
+        except Exception:
+            return False
+
     def _decrypt_fields(fields: dict, resource_id: str = "", identity_key: str = "") -> dict:
         def _walk(value):
             if isinstance(value, str):
-                if value.startswith(FERNET_PREFIX):
+                if _is_fernet_token(value):
                     if not cipher:
                         raise RuntimeError(
                             f"Overlay {resource_id}/{identity_key} contains encrypted "
