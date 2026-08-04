@@ -115,7 +115,8 @@ export interface StreamStatusResponse {
  */
 export async function getSessionStreamStatus(sessionId: string): Promise<StreamStatusResponse | null> {
   try {
-    const response = await axios.get(`/sessions/session.stream.status?sessionId=${sessionId}`, {
+    const query = new URLSearchParams({ sessionId });
+    const response = await axios.get(`/sessions/session.stream.status?${query.toString()}`, {
       timeout: 5000, // 5 second timeout to prevent hanging
     });
     return response.data;
@@ -205,7 +206,8 @@ export async function submitApprovalRule(params: SubmitApprovalRuleParams): Prom
  * Delete a session by ID.
  */
 export async function deleteSession(sessionId: string): Promise<void> {
-  await axios.delete(`/sessions/session.delete?sessionId=${sessionId}`);
+  const query = new URLSearchParams({ sessionId });
+  await axios.delete(`/sessions/session.delete?${query.toString()}`);
 }
 
 /**
@@ -216,7 +218,8 @@ export async function getSessionChat(sessionId: string): Promise<{
   status: string;
   status_message?: string;
 }> {
-  const response = await axios.get(`/sessions/session.chat.get?sessionId=${sessionId}`);
+  const query = new URLSearchParams({ sessionId });
+  const response = await axios.get(`/sessions/session.chat.get?${query.toString()}`);
   return response.data;
 }
 
@@ -224,7 +227,8 @@ export async function getSessionChat(sessionId: string): Promise<{
  * Get the final state of a session after execution completes.
  */
 export async function getSessionState(sessionId: string): Promise<{ output: unknown }> {
-  const response = await axios.get(`/sessions/session.state.get?sessionId=${sessionId}`);
+  const query = new URLSearchParams({ sessionId });
+  const response = await axios.get(`/sessions/session.state.get?${query.toString()}`);
   return response.data;
 }
 
@@ -239,8 +243,9 @@ export async function getSessionState(sessionId: string): Promise<{ output: unkn
  */
 export async function subscribeToSessionStream(sessionId: string): Promise<Response | null> {
   try {
+    const query = new URLSearchParams({ sessionId });
     const response = await fetch(
-      `/api2/sessions/session.subscribe?sessionId=${sessionId}`,
+      `/api2/sessions/session.subscribe?${query.toString()}`,
       {
         method: 'GET',
         headers: {
