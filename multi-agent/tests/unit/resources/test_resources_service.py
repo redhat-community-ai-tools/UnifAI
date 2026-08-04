@@ -549,3 +549,39 @@ class TestNestedDependencyCascade:
         reloaded_retriever = service.get(retriever.rid)
         assert reloaded_retriever.ownership == ResourceOwnership.CUSTOM
         assert reloaded_retriever.visibility == ResourceVisibility.DRAFT
+
+    def test_promote_parent_stays_draft_when_cascade_fails_midway(self, service, alice):
+        """Regression: if `_cascade_promote_dependencies` raises mid-loop
+        (e.g. a Mongo write error on the second dependency), the parent must
+        NOT end up PUBLIC while a dependency remains DRAFT — that would break
+        the cascade invariant."""
+        llm = _make_custom_resource(service, alice, name="cascade-fail-llm")
+        tool = _make_custom_resource(service, alice, name="cascade-fail-tool")
+        agent = _make_custom_resource(service, alice, name="cascade-fail-agent")
+        _link_nested(service, agent, llm.rid, tool.rid)
+
+        original_update = service._store.update
+        call_count = {"n": 0}
+
+        def failing_update(doc):
+            call_count["n"] += 1
+            # Let the parent's intermediate DRAFT save through, then fail on
+            # the first dependency write inside the cascade loop.
+            if doc.rid in (llm.rid, tool.rid) and doc.visibility == ResourceVisibility.PUBLIC:
+                raise RuntimeError("simulated Mongo write error")
+            return original_update(doc)
+
+        service._store.update = failing_update
+
+        with pytest.raises(RuntimeError, match="simulated Mongo write error"):
+            service.promote_with_cascade(agent.rid)
+
+        reloaded_agent = service.get(agent.rid)
+        assert reloaded_agent.visibility == ResourceVisibility.DRAFT
+        assert reloaded_agent.ownership == ResourceOwnership.BUILTIN
+
+        reloaded_llm = service.get(llm.rid)
+        assert reloaded_llm.visibility == ResourceVisibility.DRAFT
+
+        reloaded_tool = service.get(tool.rid)
+        assert reloaded_tool.visibility == ResourceVisibility.DRAFT

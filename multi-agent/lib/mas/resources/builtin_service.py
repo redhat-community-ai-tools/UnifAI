@@ -421,9 +421,11 @@ class BuiltinResourceService:
         self._assert_cascade_promotable(rid)
 
         resource.ownership = ResourceOwnership.BUILTIN
+        resource.visibility = ResourceVisibility.DRAFT
+        self._store.update(resource)
+        cascaded = self._cascade_promote_dependencies(rid)
         resource.visibility = ResourceVisibility.PUBLIC
         updated = self._store.update(resource)
-        cascaded = self._cascade_promote_dependencies(rid)
         return updated, cascaded
 
     def demote(self, rid: str) -> Resource:
