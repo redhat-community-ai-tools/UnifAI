@@ -287,7 +287,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     }
   };
 
-  const renderFormField = (fieldName: string, fieldSchema: SchemaProperty) => (
+  const renderFormField = (fieldName: string, fieldSchema: SchemaProperty): React.JSX.Element => (
     <ElementConfigField
       fieldName={fieldName}
       fieldSchema={fieldSchema}
