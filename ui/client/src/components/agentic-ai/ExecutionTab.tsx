@@ -28,6 +28,7 @@ export type SessionPayload = {
 
 type ExecutionTabProps = {
   runId: string | null;
+  onSessionChange?: (sessionId: string) => void;
 };
 
 /**
@@ -43,8 +44,8 @@ const SessionMessagesLoader: React.FC = () => (
   </div>
 );
 
-export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactElement {
-  const hub = useSessionHub({ runId });
+export default function ExecutionTab({ runId, onSessionChange }: ExecutionTabProps): React.ReactElement {
+  const hub = useSessionHub({ runId, onSessionChange });
 
   const [showExecutionStream, setShowExecutionStream] = useState(false);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(15);
@@ -282,6 +283,15 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
                           <span className="text-sm font-medium truncate">
                             {session.title}
                           </span>
+                          {session.fromSchedule && (
+                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 ${
+                              session.status === "COMPLETED" || session.status === "FAILED" || session.status === "CANCELLED"
+                                ? "bg-gray-500/20 text-gray-400"
+                                : "bg-blue-500/20 text-blue-400"
+                            }`}>
+                              Scheduled
+                            </span>
+                          )}
                         </div>
                         <UmamiTrack event={UmamiEvents.AGENT_CHAT_DELETE_CHAT_BUTTON} includeUserData={false}>
                           <Button

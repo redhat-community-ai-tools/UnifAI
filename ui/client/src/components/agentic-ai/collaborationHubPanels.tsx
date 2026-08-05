@@ -67,6 +67,15 @@ export function CollaborationHubSessionSidebar({
                 <div className="font-semibold text-xs text-white truncate flex-1">
                   {session.blueprintName || session.title}
                 </div>
+                {session.fromSchedule && (
+                  <span className={`mr-1 text-[10px] px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 ${
+                    session.status === "COMPLETED" || session.status === "FAILED" || session.status === "CANCELLED"
+                      ? "bg-gray-500/20 text-gray-400"
+                      : "bg-blue-500/20 text-blue-400"
+                  }`}>
+                    Scheduled
+                  </span>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"

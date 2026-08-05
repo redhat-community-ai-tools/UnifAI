@@ -326,6 +326,7 @@ A finding should only be MAJOR or CRITICAL if it is tagged `[NEW]` — meaning *
 - Do NOT approve if major duplication or architectural violations **introduced by this diff** exist.
 - Every finding MUST include the specific file path AND line number (e.g., `src/order/adapter/OrderController.py:45`). A review comment without a line reference is incomplete.
 - Do NOT assume correctness without verifying against the actual source code.
+- **Fix Convention Verification**: Before emitting a `**Fix →**` block, verify the proposed mechanism (e.g., adding logging, introducing a base class, changing a pattern) is already used in sibling files in the same architectural layer. If siblings don't use it, adjust the fix to match existing conventions or explicitly note the deviation.
 
 ## Output Format
 

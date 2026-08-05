@@ -95,7 +95,7 @@ to lazy-load engine implementations at runtime. No other dynamic or static cross
 ### 2. Identity Object — Always
 
 Every operation on user-owned data accepts `Identity` from `mas.core.identity.models`.
-Never raw `user_id` or `team_id` strings.
+Never raw `user_id` or `team_id` strings **inside the domain** (services, repositories, ExecutionContext).
 
 ```python
 class Identity(BaseModel):
@@ -106,6 +106,15 @@ class Identity(BaseModel):
 
 Identity flows: Flask decorator resolves Identity → service method(identity=...) → repository scopes by identity.
 All repositories that filter by owner accept `Identity`. `ExecutionContext` carries identity through execution runtime.
+
+**Wire contracts at the Flask / UI boundary (established dual pattern):**
+
+| Contract | Client → MAS | Prefer for |
+|----------|--------------|------------|
+| **New** | Session cookie + optional `teamId` (omit → personal workspace) | New endpoints and new UI API clients. Do not transfer `userId` + `identityType` onto new Flask schemas. |
+| **Legacy** | `userId` + `identityType=team\|user` | Existing blueprints/sessions/resources/etc. still use this; decorator still accepts it. |
+
+Both resolve to the same `Identity`. Coexistence is an intentional migration inconsistency — not a review finding. New code must use the new contract (see `references/adapters.md` → Workspace identity wire contracts).
 
 ### 3. Two-Phase Session Execution
 
@@ -149,7 +158,8 @@ No service instantiates its own infrastructure dependencies. No global state, no
 ### 8. Flask Endpoint Conventions
 
 - Service access: `current_app.container.<service>`
-- Auth decorators: `@with_require_identity_authorization`, `@with_authenticated_user`, `@with_identity`, `@require_admin_access`
+- Auth decorators: `@with_require_identity_authorization`, `@with_authenticated_user`, `@with_identity`, `@require_admin_access` (all session-backed; resolve workspace `Identity`)
+- Workspace wire: prefer session + optional `teamId`; legacy `userId`+`identityType` still present on older surfaces (see Rule 2 and `references/adapters.md`)
 - Route naming: RPC-style dot-separated (`user.session.create`, `blueprint.save`)
 - Streaming: `Response(generator(), mimetype="application/x-ndjson")` with `X-Accel-Buffering: no`
 - Endpoints are thin: parse request, call service, format response. No business logic.
@@ -167,6 +177,7 @@ No service instantiates its own infrastructure dependencies. No global state, no
 | Collaboration storage | `lib/mas/collaboration/ports.py` |
 
 All use `ABC` + `@abstractmethod`. Implementations live under `adapters/outbound/`.
+Ports are pure interfaces — no logging, no infrastructure imports, no concrete dependencies. Default method bodies (fallback implementations) are permitted but must stay infrastructure-free.
 
 ### 10. ExecutionContext Propagation
 

@@ -13,6 +13,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import axios from "@/http/axiosAgentConfig";
 import { fetchResolvedBlueprint } from "@/api/blueprints";
+import { fetchSessionChatById } from "@/api/sessions";
 import { useStreamingData } from "@/components/agentic-ai/StreamingDataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useView } from "@/contexts/ViewContext";
@@ -47,6 +48,11 @@ export interface UseSessionHubOptions {
    * CollaborationHubView which has its own submit path + remote-stream logic).
    */
   manualStreamControl?: boolean;
+  /**
+   * Called whenever the active session changes (sidebar click, initial load).
+   * The parent component can use this to update the browser URL for deep-linking.
+   */
+  onSessionChange?: (sessionId: string) => void;
 }
 
 export interface UseSessionHubReturn {
@@ -60,7 +66,7 @@ export interface UseSessionHubReturn {
   isLoading: boolean;
   error: string | null;
   isLoadingSessionMessages: boolean;
-  fetchChatSessions: () => Promise<void>;
+  fetchChatSessions: (options?: { skipRunId?: boolean }) => Promise<void>;
 
   // ── Session selection ───────────────────────────────────────────────────
   handleSessionSelect: (session: ChatSession) => Promise<void>;
@@ -147,6 +153,7 @@ type ChunkData = {
 export function useSessionHub({
   runId,
   manualStreamControl = false,
+  onSessionChange,
 }: UseSessionHubOptions): UseSessionHubReturn {
   // ── Session state ──────────────────────────────────────────────────────
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
@@ -254,6 +261,7 @@ export function useSessionHub({
               node,
               display_name,
               workplan,
+              isExpanded: false,
             };
             const idx = existing.workplans.findIndex(
               (wp: any) => wp.plan_id === plan_id || wp.owner_uid === snap.owner_uid,
@@ -326,6 +334,9 @@ export function useSessionHub({
   // Stable ref so fetchChatSessions can call it without a circular dep
   const handleSessionSelectRef = useRef<(session: ChatSession) => Promise<void>>(null!);
 
+  const onSessionChangeRef = useRef(onSessionChange);
+  onSessionChangeRef.current = onSessionChange;
+
   const handleSessionSelect = useCallback(
     async (session: ChatSession) => {
       const requestId = ++sessionSelectRequestId.current;
@@ -335,6 +346,8 @@ export function useSessionHub({
       setIsLoadingSessionMessages(true);
       setCurrentSessionMessages([]);
       setIsSharingDisabled(false);
+
+      onSessionChangeRef.current?.(session.id);
 
       // Cancel any existing stream subscription before switching
       sessionStream.cancelStream();
@@ -439,7 +452,7 @@ export function useSessionHub({
   handleSessionSelectRef.current = handleSessionSelect;
 
   // ── fetchChatSessions ──────────────────────────────────────────────────
-  const fetchChatSessions = useCallback(async () => {
+  const fetchChatSessions = useCallback(async (options?: { skipRunId?: boolean }) => {
     try {
       setIsLoading(true);
       setError(null);
@@ -451,11 +464,44 @@ export function useSessionHub({
       );
       setChatSessions(sorted);
 
-      if (sorted.length > 0) {
-        const target = runId
-          ? sorted.find((s) => s.id === runId) ?? sorted[0]
-          : sorted[0];
-        await handleSessionSelectRef.current(target);
+      const effectiveRunId = options?.skipRunId ? null : runId;
+      if (effectiveRunId) {
+        const target = sorted.find((s) => s.id === effectiveRunId);
+        if (target) {
+          await handleSessionSelectRef.current(target);
+        } else {
+          // Session not in the user's list — attempt a direct load.
+          try {
+            const chatData = await fetchSessionChatById(effectiveRunId);
+            const deepLinked: ChatSession = {
+              id: effectiveRunId,
+              blueprintId: "",
+              title: "Deep-linked session",
+              lastActive: "",
+              timestamp: new Date(),
+              preview: "",
+              messages: chatData?.messages ?? [],
+              blueprintExists: false,
+              status: chatData?.status,
+              statusMessage: chatData?.status_message,
+            };
+            await handleSessionSelectRef.current(deepLinked);
+          } catch (err: any) {
+            const status = err?.response?.status;
+            if (status === 403) {
+              setError("You don't have access to this session.");
+            } else if (status === 404) {
+              setError("Session not found.");
+            } else {
+              setError("Failed to load the requested session.");
+            }
+            if (sorted.length > 0) {
+              await handleSessionSelectRef.current(sorted[0]);
+            }
+          }
+        }
+      } else if (sorted.length > 0) {
+        await handleSessionSelectRef.current(sorted[0]);
       }
     } catch (err) {
       console.error("Error fetching chat sessions:", err);
@@ -620,13 +666,19 @@ export function useSessionHub({
   }, [selectedSession, sessionStream]);
 
   // ── Workspace-switch effect ────────────────────────────────────────────
+  // On the very first mount we still want to honor a deep-linked `runId`
+  // (e.g. a link from RunHistoryPanel). Only skip it on later re-runs, which
+  // happen when the user switches workspace (personal <-> team) and the old
+  // runId no longer applies to the new workspace's session list.
+  const hasMountedRef = useRef(false);
   useEffect(() => {
     sessionSelectRequestId.current += 1;
     sessionStream.cancelStream();
     clearStream();
     setSelectedSession(null);
     setCurrentSessionMessages([]);
-    fetchChatSessions();
+    fetchChatSessions({ skipRunId: hasMountedRef.current });
+    hasMountedRef.current = true;
   }, [contextUserId, identityType]);
 
   // ── Return ─────────────────────────────────────────────────────────────

@@ -1181,9 +1181,11 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         }
       } catch (error) {
         console.error("Error saving graph:", error);
+        const apiMessage =
+          (error as any)?.response?.data?.error;
         toast({
           title: "❌ Error Saving Workflow",
-          description: "Failed to save workflow to the server",
+          description: apiMessage || "Failed to save workflow to the server",
           variant: "destructive",
         });
         setIsSaving(false);
