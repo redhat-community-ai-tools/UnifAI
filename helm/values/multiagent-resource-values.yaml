@@ -2,11 +2,11 @@ multiagent_server:
   replicaCount: 1
   resources:
     limits:
-      cpu: '4'
-      memory: '6Gi'
+      cpu: '1'
+      memory: '2Gi'
     requests:
-      cpu: '2'
-      memory: '3Gi'
+      cpu: '1'
+      memory: '2Gi'
   image: 
     repository: images.paas.redhat.com/unifai/multiagent
     tag: "latest"
@@ -29,11 +29,11 @@ multiagent_temporal_worker:
   replicaCount: 1
   resources:
     limits:
-      cpu: '4'
-      memory: '6Gi'
+      cpu: '1'
+      memory: '2Gi'
     requests:
-      cpu: '2'
-      memory: '3Gi'
+      cpu: '1'
+      memory: '2Gi'
   image:
     repository: images.paas.redhat.com/unifai/multiagent
     tag: "latest"
