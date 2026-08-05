@@ -461,7 +461,12 @@ class AppContainer(metaclass=SingletonMeta):
         return LocalChannelFactory()
 
     @staticmethod
-    def _create_collaboration_service(cfg: AppConfig, session_repo, identity_provider, store=None):
+    def _create_collaboration_service(
+        cfg: AppConfig,
+        session_repo: MongoSessionRepository,
+        identity_provider: IdentityProvider,
+        store: RedisCollaborationStore | None = None,
+    ) -> CollaborationService | None:
         if store is None:
             return None
         return CollaborationService(

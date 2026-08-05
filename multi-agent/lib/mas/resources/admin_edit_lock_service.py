@@ -28,7 +28,7 @@ class AdminEditLockService:
     global namespace and skip team-membership checks entirely.
     """
 
-    def __init__(self, store: CollaborationStore, edit_lock_ttl: int = 180):
+    def __init__(self, store: CollaborationStore, edit_lock_ttl: int = 180) -> None:
         self._store = store
         self._edit_lock_ttl = edit_lock_ttl
 

@@ -294,7 +294,6 @@ fields behave correctly once an instance is promoted to built-in:
 2. Mark fields that should show on inventory cards with `CardHint(contexts=[...])`.
 3. Mark sensitive fields with `SecretHint` (encrypted at rest automatically —
    no extra wiring needed in `ResourceFieldEncryption`).
-4. Add a template to `builtin_templates.py` if it should ship as a seeded default.
 
 See `../recipes/` for the full per-element-type recipe; field hint conventions
 are also summarized in `references/elements.md`.

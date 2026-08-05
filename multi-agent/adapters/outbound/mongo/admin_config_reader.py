@@ -33,6 +33,11 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
                  admin-gated request otherwise triggers a read; a short TTL
                  keeps that off the hot path without making admin-list
                  changes take unreasonably long to propagate.
+        max_stale_seconds: Maximum age of a cached result before it is
+                 considered too stale to trust during an outage.  After
+                 this threshold the reader returns None (triggering the
+                 static-allowlist fallback) instead of serving arbitrarily
+                 old data.
     """
 
     def __init__(
@@ -42,7 +47,8 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
         db_name: str = "config",
         coll_name: str = "admin_config",
         cache_ttl_seconds: float = 30.0,
-    ):
+        max_stale_seconds: float = 300.0,
+    ) -> None:
         mongo_uri = f"mongodb://{mongodb_ip}:{mongodb_port}/"
         client = pymongo.MongoClient(
             mongo_uri,
@@ -51,6 +57,7 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
         )
         self._col = client[db_name][coll_name]
         self._cache_ttl_seconds = cache_ttl_seconds
+        self._max_stale_seconds = max_stale_seconds
         self._cached_admins: Optional[set[str]] = None
         self._cached_at: float = 0.0
         self._last_failure_at: float = 0.0
@@ -89,6 +96,8 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
         # After a failure, back off for cache_ttl_seconds before retrying
         # to avoid flooding logs and adding latency on the hot path.
         if self._last_failure_at and (now - self._last_failure_at) < self._cache_ttl_seconds:
+            if self._cached_admins is not None and (now - self._cached_at) > self._max_stale_seconds:
+                return None
             return self._cached_admins
 
         try:
@@ -102,4 +111,6 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
         except pymongo.errors.PyMongoError:
             logger.warning("Could not read admin config from DB", exc_info=True)
             self._last_failure_at = now
+            if self._cached_admins is not None and (now - self._cached_at) > self._max_stale_seconds:
+                return None
         return self._cached_admins

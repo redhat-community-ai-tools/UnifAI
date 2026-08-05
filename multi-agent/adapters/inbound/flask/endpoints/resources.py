@@ -1,6 +1,6 @@
 import logging
 
-from flask import Blueprint, jsonify, current_app, request, g
+from flask import Blueprint, Response, jsonify, current_app, request, g
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
@@ -16,6 +16,7 @@ from inbound.flask.decorators import (
     resolve_caller_scope,
     G_IDENTITY_USERNAME,
 )
+from mas.core.identity import Identity
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ def get_resource(identity, resource_id):
     "limit": fields.Int(required=False, load_default=50),
     "offset": fields.Int(required=False, load_default=0),
 })
-def list_resources(identity, category=None, type=None, ownership=None, limit=50, offset=0):
+def list_resources(identity: Identity, category: str | None = None, type: str | None = None, ownership: str | None = None, limit: int = 50, offset: int = 0) -> tuple[Response, int]:
     """
     Get resources with flexible filtering and pagination:
     - identity: scopes to user or team workspace
@@ -169,7 +170,7 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=50,
     "config": fields.Dict(required=True),
     "name": fields.Str(required=False),
 })
-def update_resource(identity, resource_id, config, name=None):
+def update_resource(identity: Identity, resource_id: str, config: dict, name: str | None = None) -> tuple[Response, int]:
     svc = current_app.container.resources_service
     try:
         caller = resolve_caller_scope(identity)
@@ -204,7 +205,7 @@ def update_resource(identity, resource_id, config, name=None):
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def delete_resource(identity, resource_id):
+def delete_resource(identity: Identity, resource_id: str) -> tuple[Response, int]:
     svc = current_app.container.resources_service
     try:
         caller = resolve_caller_scope(identity)
@@ -254,7 +255,7 @@ def get_resource_schema():
     "user_id": fields.Str(data_key="userId", load_default=""),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_resource(identity, resource_id, user_id, timeout_seconds):
+def validate_resource(identity: Identity, resource_id: str, user_id: str, timeout_seconds: float) -> tuple[Response, int]:
     """Validate a saved resource and its dependencies."""
     svc = current_app.container.resources_service
     authenticated_user = getattr(g, G_IDENTITY_USERNAME, "")
@@ -283,7 +284,7 @@ def validate_resource(identity, resource_id, user_id, timeout_seconds):
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
     "max_workers": fields.Int(data_key="maxWorkers", load_default=10),
 })
-def validate_resources(identity, resource_ids, user_id, timeout_seconds, max_workers):
+def validate_resources(identity: Identity, resource_ids: list[str], user_id: str, timeout_seconds: float, max_workers: int) -> tuple[Response, int]:
     """
     Validate multiple resources in parallel.
 
@@ -335,7 +336,7 @@ def validate_resources(identity, resource_ids, user_id, timeout_seconds, max_wor
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def get_resource_card(identity, resource_id):
+def get_resource_card(identity: Identity, resource_id: str) -> tuple[Response, int]:
     """
     Get the element card for a saved resource.
 
@@ -359,7 +360,7 @@ def get_resource_card(identity, resource_id):
 @from_body({
     "resource_ids": fields.List(fields.Str(), data_key="resourceIds", required=True),
 })
-def get_resource_cards(identity, resource_ids):
+def get_resource_cards(identity: Identity, resource_ids: list[str]) -> tuple[Response, int]:
     """
     Get element cards for multiple resources.
 

@@ -127,9 +127,17 @@ class MongoBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorReposito
         if type:
             base_match["type"] = type
 
+        identity_cond: Dict[str, Any] = identity_q(identity)
+
+        # For CUSTOM mode, scope to the caller's own resources before the
+        # $lookup so the join operates on a smaller working set.
+        pre_lookup_match: Dict[str, Any] = dict(base_match)
+        if ownership == ResourceOwnership.CUSTOM:
+            pre_lookup_match.update(identity_cond)
+
         pipeline: List[Dict[str, Any]] = []
-        if base_match:
-            pipeline.append({"$match": base_match})
+        if pre_lookup_match:
+            pipeline.append({"$match": pre_lookup_match})
         pipeline.append({
             "$lookup": {
                 "from": self.col.name,
@@ -140,13 +148,12 @@ class MongoBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorReposito
         })
         pipeline.append({"$addFields": {"_descriptor": {"$arrayElemAt": ["$_descriptor", 0]}}})
 
-        identity_cond: Dict[str, Any] = identity_q(identity)
         if ownership == ResourceOwnership.BUILTIN:
             cond: Dict[str, Any] = {"_descriptor": {"$ne": None}}
             if not is_admin:
                 cond["_descriptor.visibility"] = ResourceVisibility.PUBLIC.value
         elif ownership == ResourceOwnership.CUSTOM:
-            cond = {**identity_cond, "_descriptor": None}
+            cond = {"_descriptor": None}
         else:
             cond = {
                 "$or": [
@@ -156,17 +163,21 @@ class MongoBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorReposito
             }
         pipeline.append({"$match": cond})
 
-        count_result = list(self._resources_col.aggregate(pipeline + [{"$count": "total"}]))
-        total = count_result[0]["total"] if count_result else 0
-
         sort_direction = pymongo.DESCENDING if sort_order == "desc" else pymongo.ASCENDING
-        data_pipeline = pipeline + [
-            {"$sort": {sort_by: sort_direction}},
-            {"$skip": offset},
-        ]
-        if limit:
-            data_pipeline.append({"$limit": limit})
-        data_pipeline.append({"$project": {"_descriptor": 0}})
+        pipeline.append({
+            "$facet": {
+                "metadata": [{"$count": "total"}],
+                "data": [
+                    {"$sort": {sort_by: sort_direction}},
+                    {"$skip": offset},
+                    *([ {"$limit": limit} ] if limit else []),
+                    {"$project": {"_descriptor": 0}},
+                ],
+            }
+        })
 
-        docs = list(self._resources_col.aggregate(data_pipeline))
+        result = list(self._resources_col.aggregate(pipeline))
+        facet = result[0] if result else {"metadata": [], "data": []}
+        total = facet["metadata"][0]["total"] if facet["metadata"] else 0
+        docs = facet["data"]
         return [Resource(**doc) for doc in docs], total

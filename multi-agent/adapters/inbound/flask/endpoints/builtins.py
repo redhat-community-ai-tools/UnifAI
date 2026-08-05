@@ -35,13 +35,14 @@ from inbound.flask.endpoints._collaboration_shared import (
 )
 from mas.core.identity import Identity
 from mas.resources.builtin_models import BuiltinUpdateRequest
+from mas.resources.models import Resource
 
 logger = logging.getLogger(__name__)
 
 builtins_bp = Blueprint("builtins", __name__)
 
 
-def _resource_summaries(resources: list) -> list[dict]:
+def _resource_summaries(resources: list[Resource]) -> list[dict]:
     """Minimal {rid, name, category} summaries for cascade/dependent lists."""
     return [
         {
@@ -61,9 +62,9 @@ def _resource_summaries(resources: list) -> list[dict]:
 @require_admin_access
 @from_query({
     "category": fields.Str(required=False),
-    "type": fields.Str(required=False),
+    "resource_type": fields.Str(required=False, data_key="type"),
 })
-def list_builtins(category: str | None = None, type: str | None = None) -> tuple[Response, int]:
+def list_builtins(category: str | None = None, resource_type: str | None = None) -> tuple[Response, int]:
     """List all built-in resources (admin only).
 
     Returns all resources with ownership=builtin (public and draft),
@@ -73,7 +74,7 @@ def list_builtins(category: str | None = None, type: str | None = None) -> tuple
     svc = current_app.container.builtin_resource_service
     resources_svc = current_app.container.resources_service
     try:
-        resources = svc.find_all_builtins(category=category, type=type)
+        resources = svc.find_all_builtins(category=category, type=resource_type)
         return jsonify({
             "resources": [resources_svc.to_dict(doc) for doc in resources],
         }), 200
@@ -207,13 +208,13 @@ def preview_builtin_cascade(resource_id: str) -> tuple[Response, int]:
 @require_admin_access
 @from_body({
     "category": fields.Str(required=True),
-    "type": fields.Str(required=True),
+    "resource_type": fields.Str(required=True, data_key="type"),
     "name": fields.Str(required=True),
     "config": fields.Dict(required=True),
     "available_to_all": fields.Bool(data_key="availableToAll", load_default=False),
 })
 def create_builtin_resource(
-    category: str, type: str, name: str, config: dict,
+    category: str, resource_type: str, name: str, config: dict,
     available_to_all: bool = False,
 ) -> tuple[Response, int]:
     """Create a resource directly as built-in (admin only).
@@ -236,7 +237,7 @@ def create_builtin_resource(
         doc, cascaded = svc.create_builtin_with_cascade(
             identity=identity,
             category=category,
-            type=type,
+            type=resource_type,
             name=name,
             config=config,
             available_to_all=available_to_all,

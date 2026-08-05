@@ -41,7 +41,7 @@ lib/mas/core/
 **Identity:**
 ```python
 class Identity(BaseModel):   # frozen
-    type: IdentityType   # USER | TEAM | SYSTEM
+    type: IdentityType   # USER | TEAM
     id: str
     display_name: str = ""
 ```

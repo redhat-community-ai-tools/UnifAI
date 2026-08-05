@@ -289,7 +289,7 @@ def resolve_caller_scope(identity: Identity) -> CallerScope:
 _is_admin = is_admin_user
 
 
-def require_admin_access(f):
+def require_admin_access(f: Callable[..., Any]) -> Callable[..., Any]:
     """Gate an endpoint to admin users.
 
     Reads the authenticated username from the session (via
@@ -305,7 +305,7 @@ def require_admin_access(f):
     Does NOT inject ``identity`` into the wrapped function's kwargs.
     """
     @wraps(f)
-    def decorated_function(*args, **kwargs):
+    def decorated_function(*args: Any, **kwargs: Any) -> Any:
         try:
             kwargs.pop("identity", None)
 

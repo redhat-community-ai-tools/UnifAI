@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
+    """Mongo-backed per-identity overlay storage for built-in resource configs."""
+
     def __init__(
         self,
         mongodb_port: str = "27017",
@@ -49,15 +51,23 @@ class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
         config.updated = datetime.now(timezone.utc)
         fields = config.model_dump(mode="json")
         fields.pop("config_id", None)
-        doc = self.col.find_one_and_update(
-            {"resource_id": config.resource_id, "identity_key": config.identity_key},
-            {
-                "$set": fields,
-                "$setOnInsert": {"_id": config.config_id, "config_id": config.config_id},
-            },
-            upsert=True,
-            return_document=pymongo.ReturnDocument.AFTER,
-        )
+        filter_doc = {"resource_id": config.resource_id, "identity_key": config.identity_key}
+        update_doc = {
+            "$set": fields,
+            "$setOnInsert": {"_id": config.config_id, "config_id": config.config_id},
+        }
+        try:
+            doc = self.col.find_one_and_update(
+                filter_doc, update_doc,
+                upsert=True,
+                return_document=pymongo.ReturnDocument.AFTER,
+            )
+        except pymongo.errors.DuplicateKeyError:
+            doc = self.col.find_one_and_update(
+                filter_doc, update_doc,
+                upsert=True,
+                return_document=pymongo.ReturnDocument.AFTER,
+            )
         return doc["config_id"]
 
     def get(self, resource_id: str, identity_key: str) -> Optional[BuiltinUserConfig]:
