@@ -95,8 +95,11 @@ FERNET_MIN_RAW_LENGTH = 73  # 1 (version) + 8 (timestamp) + 16 (IV) + 16 (min ci
 FERNET_MIN_ENCODED_LENGTH = 100  # ceil(FERNET_MIN_RAW_LENGTH * 4/3), base64-encoded minimum
 
 
-def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool, reverse: bool = False, encryption_key: str = "") -> None:
-    client = pymongo.MongoClient(f"mongodb://{mongodb_ip}:{mongodb_port}/")
+def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool, reverse: bool = False, encryption_key: str = "", mongodb_uri: str = "") -> None:
+    if mongodb_uri:
+        client = pymongo.MongoClient(mongodb_uri)
+    else:
+        client = pymongo.MongoClient(f"mongodb://{mongodb_ip}:{mongodb_port}/")
     cipher = FieldCipher(encryption_key) if encryption_key else None
     try:
         if reverse:
@@ -412,6 +415,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--mongodb-ip", default="localhost")
     parser.add_argument("--mongodb-port", default="27017")
+    parser.add_argument(
+        "--mongodb-uri", default="",
+        help="Full MongoDB URI (e.g. mongodb+srv://user:pass@host/db?tls=true). "
+             "When provided, --mongodb-ip and --mongodb-port are ignored.",
+    )
     parser.add_argument("--db-name", default="UnifAI")
     parser.add_argument(
         "--encryption-key",
@@ -434,4 +442,5 @@ if __name__ == "__main__":
         dry_run=args.dry_run,
         reverse=args.reverse,
         encryption_key=encryption_key,
+        mongodb_uri=args.mongodb_uri,
     )

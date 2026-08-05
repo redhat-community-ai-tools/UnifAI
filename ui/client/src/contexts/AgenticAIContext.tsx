@@ -710,7 +710,7 @@ return String(ref);
   // Results were keyed only by rid; team view cached INVALID (wrong userId) until we
   // cleared. Also invalidate when switching team or user so ElementGrid re-validates.
   useEffect(() => {
-    const key = `${USER_ID}|${CREDENTIAL_USER_ID}`;
+    const key = `${USER_ID}|${CREDENTIAL_USER_ID}|${WORKSPACE_TEAM_ID}`;
     if (prevWorkspaceCredentialKeyRef.current === null) {
       prevWorkspaceCredentialKeyRef.current = key;
       return;
@@ -722,8 +722,10 @@ return String(ref);
     setValidationCache(new Map());
     setValidationStatusMap(new Map());
     setDependencyParentMap(new Map());
+    setBlueprintValidationCache(new Map());
+    setBlueprintValidationStatusMap(new Map());
     setValidationRevision((r) => r + 1);
-  }, [USER_ID, CREDENTIAL_USER_ID]);
+  }, [USER_ID, CREDENTIAL_USER_ID, WORKSPACE_TEAM_ID]);
 
   // Fetch resources when user changes or component mounts
   useEffect(() => {

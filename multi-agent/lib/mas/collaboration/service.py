@@ -6,6 +6,7 @@ that Temporal-backed sessions can be shared across team members through
 the existing Redis Streams channel infrastructure.
 """
 import logging
+from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 from mas.core.identity import IdentityType
@@ -23,7 +24,12 @@ from .ports import CollaborationStore
 
 logger = logging.getLogger(__name__)
 
-EDIT_LOCK_KINDS: frozenset[str] = frozenset({"resource", "blueprint", "builtin"})
+
+class EditLockKind(str, Enum):
+    """Discriminator for the type of entity being locked."""
+    RESOURCE = "resource"
+    BLUEPRINT = "blueprint"
+    BUILTIN = "builtin"
 
 
 class CollaborationService:
@@ -84,9 +90,11 @@ class CollaborationService:
 
         Raises ``ValueError`` if the kind is not recognised.
         """
-        if entity_kind not in EDIT_LOCK_KINDS:
+        try:
+            EditLockKind(entity_kind)
+        except ValueError:
             raise ValueError(
-                f"entityKind must be one of: {', '.join(sorted(EDIT_LOCK_KINDS))}"
+                f"entityKind must be one of: {', '.join(sorted(e.value for e in EditLockKind))}"
             )
 
     # ── Join / Leave ────────────────────────────────────────────────

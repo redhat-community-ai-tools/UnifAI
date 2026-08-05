@@ -270,7 +270,7 @@ class FakeBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorRepositor
 
             if category and doc.category != category:
                 continue
-            if type and doc.type != type:
+            if resource_type and doc.type != resource_type:
                 continue
             matches.append(doc.model_copy(deep=True))
 

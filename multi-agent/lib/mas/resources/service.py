@@ -11,7 +11,7 @@ from mas.catalog.element_registry import ElementRegistry
 from mas.resources.models import Resource
 from mas.resources.builtin_models import identity_to_key
 from mas.resources.repository.builtin_user_config_repository import BuiltinUserConfigRepository
-from mas.core.enums import ResourceCategory
+from mas.core.enums import ResourceCategory, ResourceOwnership
 from mas.core.ref import RefWalker
 from mas.core.dto import GroupedCount
 from mas.core.element_meta import ElementConfigMeta
@@ -558,9 +558,9 @@ class ResourcesService:
         data = resource.model_dump(mode="json")
         descriptor = self._builtin.get_descriptor(resource.rid)
         if descriptor is None:
-            data["ownership"] = "custom"
+            data["ownership"] = ResourceOwnership.CUSTOM.value
         else:
-            data["ownership"] = "builtin"
+            data["ownership"] = ResourceOwnership.BUILTIN.value
             data["visibility"] = descriptor.visibility.value
         return data
 
@@ -585,7 +585,7 @@ class ResourcesService:
         result = []
         for doc in resources:
             data = self.to_dict(doc)
-            if data["ownership"] == "builtin":
+            if data["ownership"] == ResourceOwnership.BUILTIN.value:
                 data["user_configured"] = doc.rid in configured_rids
             result.append(data)
         return result

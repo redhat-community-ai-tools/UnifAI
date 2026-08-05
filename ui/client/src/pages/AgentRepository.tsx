@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
-import { Plus, Info } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
 import { CategorySidebar } from '../components/agentic-ai/workspace/CategorySidebar';
@@ -162,18 +162,6 @@ export default function UserWorkspace() {
                       </p>
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          const guidesUrl = `/guides?section=agentic-inventory`;
-                          window.open(guidesUrl, '_blank');
-                        }}
-                        className="border-gray-700 hover:bg-background-dark"
-                        title="View guides"
-                      >
-                        <Info className="h-4 w-4" />
-                      </Button>
-
                       <UmamiTrack
                         event={UmamiEvents.AGENT_REPOSITORY_CREATE_NEW_BUTTON}
                         eventData={{ elementType: selectedElementType?.name }}

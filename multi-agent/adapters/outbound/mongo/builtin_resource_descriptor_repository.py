@@ -170,7 +170,7 @@ class MongoBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorReposito
                 "data": [
                     {"$sort": {sort_by: sort_direction}},
                     {"$skip": offset},
-                    *([ {"$limit": limit} ] if limit else []),
+                    *([ {"$limit": limit} ] if limit is not None else []),
                     {"$project": {"_descriptor": 0}},
                 ],
             }

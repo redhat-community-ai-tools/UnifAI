@@ -14,9 +14,10 @@ from typing import Optional, Tuple
 
 from mas.collaboration.models import TeamEditLockHolder
 from mas.collaboration.ports import CollaborationStore
+from mas.collaboration.service import EditLockKind
 
 ADMIN_LOCK_NAMESPACE = "__admin__"
-BUILTIN_LOCK_KIND = "builtin"
+BUILTIN_LOCK_KIND = EditLockKind.BUILTIN.value
 
 
 class AdminEditLockService:

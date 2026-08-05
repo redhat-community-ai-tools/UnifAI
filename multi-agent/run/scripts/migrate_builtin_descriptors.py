@@ -44,8 +44,11 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool, reverse: bool = False) -> None:
-    client = pymongo.MongoClient(f"mongodb://{mongodb_ip}:{mongodb_port}/")
+def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool, reverse: bool = False, mongodb_uri: str = "") -> None:
+    if mongodb_uri:
+        client = pymongo.MongoClient(mongodb_uri)
+    else:
+        client = pymongo.MongoClient(f"mongodb://{mongodb_ip}:{mongodb_port}/")
     try:
         if reverse:
             _run_reverse_migration_body(client, db_name, dry_run)
@@ -167,6 +170,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--mongodb-ip", default="localhost")
     parser.add_argument("--mongodb-port", default="27017")
+    parser.add_argument(
+        "--mongodb-uri", default="",
+        help="Full MongoDB URI (e.g. mongodb+srv://user:pass@host/db?tls=true). "
+             "When provided, --mongodb-ip and --mongodb-port are ignored.",
+    )
     parser.add_argument("--db-name", default="UnifAI")
     args = parser.parse_args()
 
@@ -176,4 +184,5 @@ if __name__ == "__main__":
         mongodb_port=args.mongodb_port,
         dry_run=args.dry_run,
         reverse=args.reverse,
+        mongodb_uri=args.mongodb_uri,
     )

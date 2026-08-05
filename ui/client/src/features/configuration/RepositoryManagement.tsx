@@ -216,7 +216,14 @@ export default function RepositoryManagement() {
     async (resource: ResourceItem) => {
       const categoryKey = resource.category!;
       const elType = resolveElementType(categoryKey, resource.type);
-      if (!elType) return;
+      if (!elType) {
+        toast({
+          title: "Error",
+          description: `Unable to resolve resource type "${resource.type}" for editing.`,
+          variant: "destructive",
+        });
+        return;
+      }
 
       let lockResult;
       try {
