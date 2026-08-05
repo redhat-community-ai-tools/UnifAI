@@ -13,6 +13,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import axios from "@/http/axiosAgentConfig";
 import { fetchResolvedBlueprint } from "@/api/blueprints";
+import { fetchSessionChatById } from "@/api/sessions";
 import { useStreamingData } from "@/components/agentic-ai/StreamingDataContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useView } from "@/contexts/ViewContext";
@@ -471,10 +472,7 @@ export function useSessionHub({
         } else {
           // Session not in the user's list — attempt a direct load.
           try {
-            const chatResp = await axios.get(
-              `/sessions/session.chat.get?sessionId=${effectiveRunId}`,
-            );
-            const chatData = chatResp.data;
+            const chatData = await fetchSessionChatById(effectiveRunId);
             const deepLinked: ChatSession = {
               id: effectiveRunId,
               blueprintId: "",

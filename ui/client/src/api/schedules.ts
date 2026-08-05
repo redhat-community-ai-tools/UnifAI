@@ -16,14 +16,14 @@ export interface ScheduleDefinitionInput {
 
 export interface CreateScheduleInput {
   blueprintId: string;
-  inputs: { user_prompt: string; [key: string]: any };
+  inputs: { user_prompt: string } & Record<string, unknown>;
   source?: string;
   schedule: ScheduleDefinitionInput;
 }
 
 export interface UpdateScheduleInput {
   scheduleId: string;
-  inputs?: { user_prompt?: string; [key: string]: any };
+  inputs?: { user_prompt?: string } & Record<string, unknown>;
   schedule?: ScheduleDefinitionInput;
 }
 
@@ -44,7 +44,7 @@ export interface WorkflowScheduleResponse {
   blueprint_id: string;
   blueprint_name?: string;
   identity: { type: string; id: string; display_name: string };
-  inputs: { user_prompt: string; [key: string]: any };
+  inputs: { user_prompt: string } & Record<string, unknown>;
   source: string;
   schedule: ScheduleDefinitionInput;
   schedule_status: string;
@@ -57,7 +57,7 @@ export interface ScheduleRunResponse {
   session_id: string;
   status: string;
   started_at: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 /**

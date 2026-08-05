@@ -108,6 +108,26 @@ export async function getSessionStreamStatus(sessionId: string): Promise<StreamS
   }
 }
 
+// ─── Session Chat (error-propagating) ─────────────────────────────────────────
+
+export interface SessionChatData {
+  messages: any[];
+  status?: string;
+  status_message?: string;
+}
+
+/**
+ * Fetch session chat data by ID.
+ * Unlike the swallowing variant in use-session-management, this propagates
+ * errors so callers can distinguish 403/404 from success.
+ */
+export async function fetchSessionChatById(sessionId: string): Promise<SessionChatData> {
+  const response = await axios.get('/sessions/session.chat.get', {
+    params: { sessionId },
+  });
+  return response.data;
+}
+
 // ─── HITL Approval ────────────────────────────────────────────────────────────
 
 export interface SubmitApprovalParams {
