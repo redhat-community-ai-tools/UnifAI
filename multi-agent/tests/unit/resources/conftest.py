@@ -27,6 +27,7 @@ from mas.resources.repository.builtin_resource_descriptor_repository import (
 from mas.validation.service import ElementValidationService
 from mas.catalog.card_service import ElementCardService
 
+from global_utils.utils.crypto import FieldCipher
 
 FAKE_CATEGORY = ResourceCategory.PROVIDER
 FAKE_TYPE = "fake_provider"
@@ -405,14 +406,15 @@ def builtin_service_without_config_repo(
 
 @pytest.fixture
 def service(resource_registry, element_registry, builtin_user_config_repo, builtin_service) -> ResourcesService:
+    field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
     return ResourcesService(
         resource_registry=resource_registry,
         element_registry=element_registry,
         builtin_service=builtin_service,
+        field_encryption=field_encryption,
         builtin_user_config_repo=builtin_user_config_repo,
         validation_service=Mock(spec=ElementValidationService),
         card_service=Mock(spec=ElementCardService),
-        encryption_key=TEST_ENCRYPTION_KEY,
     )
 
 
@@ -421,10 +423,13 @@ def service_without_config_repo(
     resource_registry, element_registry, builtin_service_without_config_repo,
 ) -> ResourcesService:
     """A service with no ``builtin_user_config_repo`` configured."""
+    from global_utils.utils.crypto import FieldCipher
+
+    field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
     return ResourcesService(
         resource_registry=resource_registry,
         element_registry=element_registry,
         builtin_service=builtin_service_without_config_repo,
+        field_encryption=field_encryption,
         builtin_user_config_repo=None,
-        encryption_key=TEST_ENCRYPTION_KEY,
     )

@@ -228,13 +228,15 @@ class AppContainer(metaclass=SingletonMeta):
 
         # ── Application services ─────────────────────────────────────
 
+        field_encryption = ResourceFieldEncryption(self.element_registry, field_cipher)
+
         # BuiltinResourceService is a first-class peer service (consumed
         # directly by builtins.py/ShareCloner), constructed before
         # ResourcesService so the latter can be handed the shared instance.
         self.builtin_resource_service = BuiltinResourceService(
             resource_registry=resource_registry,
             element_registry=self.element_registry,
-            field_encryption=ResourceFieldEncryption(self.element_registry, field_cipher),
+            field_encryption=field_encryption,
             descriptor_repo=self.builtin_resource_descriptor_repo,
             builtin_user_config_repo=self.builtin_user_config_repo,
         )
@@ -248,11 +250,11 @@ class AppContainer(metaclass=SingletonMeta):
             resource_registry=resource_registry,
             element_registry=self.element_registry,
             builtin_service=self.builtin_resource_service,
+            field_encryption=field_encryption,
             builtin_user_config_repo=self.builtin_user_config_repo,
             validation_service=self.validation_service,
             card_service=self.card_service,
             auth_service=self.auth_service,
-            encryption_key=cfg.credential_encryption_key,
             admin_lock_reader=self.admin_edit_lock_service,
         )
 

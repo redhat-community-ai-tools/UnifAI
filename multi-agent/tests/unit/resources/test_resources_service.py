@@ -141,12 +141,16 @@ class TestGuardWriteAccessAdminLock:
     ):
         from tests.unit.resources.conftest import TEST_ENCRYPTION_KEY
         from mas.resources.service import ResourcesService
+        from mas.resources.field_encryption import ResourceFieldEncryption
+        from global_utils.utils.crypto import FieldCipher
+
+        field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
         return ResourcesService(
             resource_registry=resource_registry,
             element_registry=element_registry,
             builtin_service=builtin_service,
+            field_encryption=field_encryption,
             builtin_user_config_repo=builtin_user_config_repo,
-            encryption_key=TEST_ENCRYPTION_KEY,
             admin_lock_reader=lock_reader,
         )
 

@@ -4,7 +4,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pydantic import BaseModel
 
-from global_utils.utils.crypto import FieldCipher
 from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity
 from mas.resources.registry import ResourcesRegistry
@@ -22,13 +21,12 @@ from mas.catalog.card_service import ElementCardService
 from mas.resources.resolver import DependencyResolver
 from mas.resources.field_encryption import ResourceFieldEncryption
 from mas.resources.builtin_service import BuiltinResourceService
-from mas.resources.ports import CredentialCleanupPort
+from mas.resources.ports import CredentialCleanupPort, AdminEditLockReader
 from mas.resources.errors import (
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
     ResourceLockedError,
 )
-from mas.resources.ports import AdminEditLockReader
 from mas.validation.service import ElementValidationService
 
 logger = logging.getLogger(__name__)
@@ -52,11 +50,11 @@ class ResourcesService:
             resource_registry: ResourcesRegistry,
             element_registry: ElementRegistry,
             builtin_service: BuiltinResourceService,
+            field_encryption: ResourceFieldEncryption,
             builtin_user_config_repo: Optional[BuiltinUserConfigRepository] = None,
             validation_service: Optional[ElementValidationService] = None,
             card_service: Optional[ElementCardService] = None,
             auth_service: Optional[CredentialCleanupPort] = None,
-            encryption_key: str = "",
             admin_lock_reader: Optional[AdminEditLockReader] = None,
     ):
         self._store = resource_registry
@@ -66,8 +64,7 @@ class ResourcesService:
         self._dependency_resolver = DependencyResolver(resource_registry=self._store)
         self._validation_service = validation_service
         self._auth_service = auth_service
-        self._cipher = FieldCipher(encryption_key) if encryption_key else None
-        self._fields = ResourceFieldEncryption(element_registry, self._cipher)
+        self._fields = field_encryption
         self._admin_lock_reader = admin_lock_reader
         # Built-in admin lifecycle + per-identity overlays live in their own
         # peer service, injected by the container so it's shared with

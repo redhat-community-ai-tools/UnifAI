@@ -78,7 +78,7 @@ class AdminEditLockReader(Protocol):
 
     ``ResourcesService.guard_write_access`` uses this to reject mutations
     when another admin holds the cooperative edit lock — satisfied
-    structurally by ``CollaborationService``.
+    structurally by ``AdminEditLockService``.
     """
 
     def get_admin_edit_lock(self, entity_id: str) -> Optional[TeamEditLockHolder]: ...

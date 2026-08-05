@@ -16,6 +16,7 @@ Existence of a ``BuiltinResourceDescriptor`` for a given ``rid`` *is* the
 ``Resource`` to check anymore.
 """
 import logging
+from collections import deque
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ValidationError as PydanticValidationError
@@ -652,9 +653,9 @@ class BuiltinResourceService:
         (breadth-first, excludes *rid* itself, no duplicates)."""
         visited = {rid}
         result: List[Resource] = []
-        queue = [rid]
-        while queue:
-            current = queue.pop(0)
+        q: deque[str] = deque([rid])
+        while q:
+            current = q.popleft()
             try:
                 resource = self._store.get(current)
             except KeyError:
@@ -668,7 +669,7 @@ class BuiltinResourceService:
                 except KeyError:
                     continue
                 result.append(dep)
-                queue.append(dep_rid)
+                q.append(dep_rid)
         return result
 
     def _ensure_no_public_dependents(self, resource: Resource) -> None:
@@ -686,9 +687,9 @@ class BuiltinResourceService:
         a chain of ``nested_refs``) and are themselves public built-ins."""
         visited = {rid}
         result: List[Resource] = []
-        queue = [rid]
-        while queue:
-            current = queue.pop(0)
+        q: deque[str] = deque([rid])
+        while q:
+            current = q.popleft()
             for parent_rid in self._store.list_nested_usage(current):
                 if parent_rid in visited:
                     continue
@@ -699,7 +700,7 @@ class BuiltinResourceService:
                     continue
                 if self._is_public_builtin(parent_rid):
                     result.append(parent)
-                queue.append(parent_rid)
+                q.append(parent_rid)
         return result
 
     def update_builtin_with_cascade(
