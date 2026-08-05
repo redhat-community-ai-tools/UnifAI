@@ -231,9 +231,9 @@ class TestUpdateBuiltinResource:
         assert resp.status_code == 200
 
     def test_blocked_when_locked_by_another_admin(
-        self, client, admin_headers, builtin_resource_service, collaboration_service,
+        self, client, admin_headers, builtin_resource_service, admin_edit_lock_service,
     ):
-        collaboration_service.get_admin_edit_lock.return_value = Mock(
+        admin_edit_lock_service.get_admin_edit_lock.return_value = Mock(
             user_id="other-admin", display_name="Other Admin",
         )
 
@@ -298,9 +298,9 @@ class TestToggleBuiltinVisibility:
         assert "cascaded_resources" not in resp.get_json()
 
     def test_blocked_when_locked_by_another_admin(
-        self, client, admin_headers, builtin_resource_service, collaboration_service,
+        self, client, admin_headers, builtin_resource_service, admin_edit_lock_service,
     ):
-        collaboration_service.get_admin_edit_lock.return_value = Mock(
+        admin_edit_lock_service.get_admin_edit_lock.return_value = Mock(
             user_id="other-admin", display_name="Other Admin",
         )
 
@@ -338,10 +338,10 @@ class TestToggleBuiltinVisibility:
 
 
 class TestAdminEditLocks:
-    def test_acquire_without_collaboration_service_returns_501(
+    def test_acquire_without_admin_edit_lock_service_returns_501(
         self, client, admin_headers, container,
     ):
-        container.collaboration_service = None
+        container.admin_edit_lock_service = None
 
         resp = client.post(
             "/api/resources/builtin.edit_lock.acquire",
@@ -351,17 +351,17 @@ class TestAdminEditLocks:
 
         assert resp.status_code == 501
 
-    def test_acquire_requires_admin(self, client, user_headers, collaboration_service):
+    def test_acquire_requires_admin(self, client, user_headers, admin_edit_lock_service):
         resp = client.post(
             "/api/resources/builtin.edit_lock.acquire",
             json={"entityId": "r1"},
             headers=user_headers,
         )
         assert resp.status_code == 403
-        collaboration_service.acquire_admin_edit_lock.assert_not_called()
+        admin_edit_lock_service.acquire.assert_not_called()
 
-    def test_acquire_success(self, client, admin_headers, collaboration_service):
-        collaboration_service.acquire_admin_edit_lock.return_value = (True, None)
+    def test_acquire_success(self, client, admin_headers, admin_edit_lock_service):
+        admin_edit_lock_service.acquire.return_value = (True, None)
 
         resp = client.post(
             "/api/resources/builtin.edit_lock.acquire",
@@ -373,11 +373,11 @@ class TestAdminEditLocks:
         assert resp.get_json()["acquired"] is True
 
     def test_acquire_unexpected_error_logged_and_returns_500(
-        self, client, admin_headers, collaboration_service,
+        self, client, admin_headers, admin_edit_lock_service,
     ):
         """Regression test: unexpected errors in edit-lock handlers must be
         logged (not silently swallowed) and still degrade to a 500."""
-        collaboration_service.acquire_admin_edit_lock.side_effect = RuntimeError("redis down")
+        admin_edit_lock_service.acquire.side_effect = RuntimeError("redis down")
 
         resp = client.post(
             "/api/resources/builtin.edit_lock.acquire",

@@ -1,16 +1,16 @@
-"""Shared collaboration-service helpers for Flask endpoint modules.
+"""Shared helpers for Flask endpoint modules that touch collaboration or
+admin edit lock services.
 
 ``collaboration_service_or_error`` and ``holder_to_json`` are generic
-helpers used by every collaboration surface (admin edit locks here, plus
-team edit locks and presence in ``collaboration/locks.py`` and
-``collaboration/presence.py``) — they were previously copy-pasted
-identically into each of those three modules.
+helpers used by team edit locks and presence (``collaboration/locks.py``
+and ``collaboration/presence.py``).
 
-``reject_if_locked_by_other`` is specific to the *admin* edit lock: it's
-used by ``builtins.py`` (admin-only built-in routes) whose endpoints go
-through ``BuiltinResourceService`` directly rather than through
-``ResourcesService.guard_write_access`` (which now handles the lock
-check internally for the generic CRUD path).
+``admin_edit_lock_service_or_error`` and ``reject_if_locked_by_other``
+are specific to the *admin* edit lock: used by ``builtins.py``
+(admin-only built-in routes) whose endpoints go through
+``BuiltinResourceService`` directly rather than through
+``ResourcesService.guard_write_access`` (which handles the lock check
+internally for the generic CRUD path).
 """
 from typing import Any, Optional
 
@@ -19,6 +19,7 @@ from flask import Response, current_app, g, jsonify
 from inbound.flask.decorators import G_IDENTITY_USERNAME
 from mas.collaboration.models import TeamEditLockHolder
 from mas.collaboration.service import CollaborationService
+from mas.resources.admin_edit_lock_service import AdminEditLockService
 
 
 def collaboration_service_or_error() -> tuple[
@@ -42,6 +43,19 @@ def collaboration_service_or_error() -> tuple[
     return svc, None
 
 
+def admin_edit_lock_service_or_error() -> tuple[
+    Optional[AdminEditLockService], Optional[tuple[Response, int]]
+]:
+    """Return ``(service, None)``, or ``(None, (response, 501))`` if the
+    admin edit lock service (Redis) isn't configured."""
+    svc = current_app.container.admin_edit_lock_service
+    if svc is None:
+        return None, (jsonify(
+            {"error": "Admin edit lock service not available - Redis is not configured"}
+        ), 501)
+    return svc, None
+
+
 def holder_to_json(holder: Optional[TeamEditLockHolder]) -> Optional[dict[str, Any]]:
     if holder is None:
         return None
@@ -60,13 +74,14 @@ def reject_if_locked_by_other(resource_id: str) -> Optional[tuple[Response, int]
     same resource anyway — without it the lock is advisory only.
     Returns a ``(response, 409)`` tuple to short-circuit the caller when
     another admin currently holds the lock, or ``None`` to proceed.
-    Requests are never blocked when collaboration/Redis isn't configured,
-    matching the acquire/release endpoints' 501 fallback behavior.
+    Requests are never blocked when the admin edit lock service (Redis)
+    isn't configured, matching the acquire/release endpoints' 501
+    fallback behavior.
     """
-    collab = current_app.container.collaboration_service
-    if collab is None:
+    lock_svc = current_app.container.admin_edit_lock_service
+    if lock_svc is None:
         return None
-    holder = collab.get_admin_edit_lock(resource_id)
+    holder = lock_svc.get_admin_edit_lock(resource_id)
     if holder is None:
         return None
     username = getattr(g, G_IDENTITY_USERNAME, "")

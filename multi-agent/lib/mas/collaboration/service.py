@@ -23,11 +23,7 @@ from .ports import CollaborationStore
 
 logger = logging.getLogger(__name__)
 
-BUILTIN_LOCK_KIND = "builtin"
-
-EDIT_LOCK_KINDS: frozenset[str] = frozenset({"resource", "blueprint", BUILTIN_LOCK_KIND})
-
-ADMIN_LOCK_NAMESPACE = "__admin__"
+EDIT_LOCK_KINDS: frozenset[str] = frozenset({"resource", "blueprint", "builtin"})
 
 
 class CollaborationService:
@@ -77,19 +73,8 @@ class CollaborationService:
     def check_team_membership(self, user_id: str, team_id: str) -> None:
         """Verify the user is a member of the team.
 
-        Raises ``PermissionError`` if the user is not a member, or if
-        ``team_id`` is the reserved ``ADMIN_LOCK_NAMESPACE`` sentinel —
-        team-facing callers (edit locks, team sessions) must never be able
-        to operate in the admin lock namespace just because an identity
-        provider happens to consider the caller a "member" of it (e.g.
-        ``DevIdentityProvider.is_member()`` always returns ``True``). Real
-        admin access to that namespace goes exclusively through
-        ``acquire_admin_edit_lock``/``release_admin_edit_lock``/etc., which
-        skip this check entirely and rely on ``@require_admin_access`` at
-        the endpoint layer instead.
+        Raises ``PermissionError`` if the user is not a member.
         """
-        if team_id == ADMIN_LOCK_NAMESPACE:
-            raise PermissionError("Access denied: reserved namespace")
         if not self._identity_provider.is_member(user_id, team_id):
             raise PermissionError("Access denied: you are not a member of this team")
 
@@ -315,43 +300,4 @@ class CollaborationService:
         self.validate_edit_lock_kind(entity_kind)
         return self._get_edit_locks_batch(team_id, entity_kind, entity_ids)
 
-    # ── Admin edit locks (built-in resources) ─────────────────────────
-    #
-    # Same lock primitive as team locks (see helpers above), fixed to a
-    # sentinel namespace/kind so all admin locks are globally visible and
-    # skip team-membership checks (admin-only access is enforced by the
-    # @require_admin_access endpoint decorator instead).
-
-    def acquire_admin_edit_lock(
-        self,
-        entity_id: str,
-        user_id: str,
-    ) -> Tuple[bool, Optional[TeamEditLockHolder]]:
-        return self._acquire_edit_lock(
-            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id, user_id,
-        )
-
-    def release_admin_edit_lock(
-        self,
-        entity_id: str,
-        user_id: str,
-    ) -> None:
-        self._release_edit_lock(
-            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id, user_id,
-        )
-
-    def renew_admin_edit_lock(
-        self,
-        entity_id: str,
-        user_id: str,
-    ) -> bool:
-        return self._renew_edit_lock(
-            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id, user_id,
-        )
-
-    def get_admin_edit_lock(
-        self,
-        entity_id: str,
-    ) -> Optional[TeamEditLockHolder]:
-        return self._get_edit_lock(ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id)
 

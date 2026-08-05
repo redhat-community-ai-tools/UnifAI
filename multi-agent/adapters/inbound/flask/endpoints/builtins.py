@@ -29,7 +29,7 @@ from inbound.flask.decorators import (
     G_IDENTITY_USERNAME,
 )
 from inbound.flask.endpoints._collaboration_shared import (
-    collaboration_service_or_error as _collab_service,
+    admin_edit_lock_service_or_error as _admin_lock_service,
     holder_to_json as _holder_to_json,
     reject_if_locked_by_other as _reject_if_locked_by_other,
 )
@@ -377,11 +377,11 @@ def toggle_builtin_visibility(resource_id, available_to_all):
 })
 def builtin_edit_lock_acquire(authenticated_user, entity_id):
     """Acquire an admin edit lock on a built-in resource."""
-    svc, err = _collab_service()
+    svc, err = _admin_lock_service()
     if err:
         return err
     try:
-        acquired, holder = svc.acquire_admin_edit_lock(
+        acquired, holder = svc.acquire(
             entity_id=entity_id,
             user_id=authenticated_user,
         )
@@ -402,11 +402,11 @@ def builtin_edit_lock_acquire(authenticated_user, entity_id):
 })
 def builtin_edit_lock_release(authenticated_user, entity_id):
     """Release an admin edit lock on a built-in resource."""
-    svc, err = _collab_service()
+    svc, err = _admin_lock_service()
     if err:
         return err
     try:
-        svc.release_admin_edit_lock(entity_id, authenticated_user)
+        svc.release(entity_id, authenticated_user)
         return jsonify({"success": True}), 200
     except Exception:
         logger.exception("Failed to release admin edit lock for entity '%s'", entity_id)
@@ -421,11 +421,11 @@ def builtin_edit_lock_release(authenticated_user, entity_id):
 })
 def builtin_edit_lock_heartbeat(authenticated_user, entity_id):
     """Renew an admin edit lock TTL on a built-in resource."""
-    svc, err = _collab_service()
+    svc, err = _admin_lock_service()
     if err:
         return err
     try:
-        renewed = svc.renew_admin_edit_lock(entity_id, authenticated_user)
+        renewed = svc.renew(entity_id, authenticated_user)
         return jsonify({"renewed": renewed}), 200
     except Exception:
         logger.exception("Failed to renew admin edit lock for entity '%s'", entity_id)

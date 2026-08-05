@@ -32,7 +32,8 @@ from mas.sharing.service import ShareService
 from mas.statistics.service import StatisticsService
 from mas.validation.service import ElementValidationService
 from mas.templates.service import TemplateService
-from mas.collaboration.service import CollaborationService, ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND
+from mas.collaboration.service import CollaborationService
+from mas.resources.admin_edit_lock_service import AdminEditLockService
 
 # Auth layer
 from mas.core.auth.service import AuthService, AuthStrategyRegistry
@@ -87,20 +88,6 @@ from global_utils.utils.util import get_redis_url
 
 
 logger = logging.getLogger(__name__)
-
-
-class _AdminLockReader:
-    """Wraps a ``CollaborationStore`` into the ``AdminEditLockReader`` port
-    that ``ResourcesService`` needs, without requiring the full
-    ``CollaborationService`` (which isn't available yet at wiring time)."""
-
-    def __init__(self, store):
-        self._store = store
-
-    def get_admin_edit_lock(self, entity_id):
-        return self._store.get_team_edit_lock(
-            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id,
-        )
 
 
 class AppContainer(metaclass=SingletonMeta):
@@ -252,7 +239,10 @@ class AppContainer(metaclass=SingletonMeta):
             builtin_user_config_repo=self.builtin_user_config_repo,
         )
 
-        admin_lock_reader = _AdminLockReader(self._collab_store) if self._collab_store else None
+        self.admin_edit_lock_service = AdminEditLockService(
+            store=self._collab_store,
+            edit_lock_ttl=cfg.collaboration_edit_lock_ttl_sec,
+        ) if self._collab_store else None
 
         self.resources_service = ResourcesService(
             resource_registry=resource_registry,
@@ -263,7 +253,7 @@ class AppContainer(metaclass=SingletonMeta):
             card_service=self.card_service,
             auth_service=self.auth_service,
             encryption_key=cfg.credential_encryption_key,
-            admin_lock_reader=admin_lock_reader,
+            admin_lock_reader=self.admin_edit_lock_service,
         )
 
         self.blueprint_resolver = BlueprintResolver(

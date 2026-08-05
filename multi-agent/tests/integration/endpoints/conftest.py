@@ -55,6 +55,11 @@ def builtin_resource_service():
 
 @pytest.fixture
 def collaboration_service():
+    return Mock()
+
+
+@pytest.fixture
+def admin_edit_lock_service():
     svc = Mock()
     # No admin edit lock held by default, so promote/update/toggle tests
     # that don't care about lock enforcement aren't spuriously rejected
@@ -65,11 +70,12 @@ def collaboration_service():
 
 
 @pytest.fixture
-def container(resources_service, builtin_resource_service, collaboration_service):
+def container(resources_service, builtin_resource_service, collaboration_service, admin_edit_lock_service):
     return SimpleNamespace(
         resources_service=resources_service,
         builtin_resource_service=builtin_resource_service,
         collaboration_service=collaboration_service,
+        admin_edit_lock_service=admin_edit_lock_service,
         admin_config_reader=None,
     )
 
