@@ -23,10 +23,16 @@ from mas.scheduling.service import (
 
 
 def _make_prompt(identity, **kwargs):
+    text = kwargs.pop("text", "test")
+    inputs = kwargs.pop("inputs", None)
+    if inputs is None:
+        inputs = {"user_prompt": text}
+    elif "user_prompt" not in inputs:
+        inputs = {**inputs, "user_prompt": text}
     return WorkflowSchedule(
         blueprint_id=kwargs.pop("blueprint_id", "bp-1"),
         identity=identity,
-        text=kwargs.pop("text", "test"),
+        inputs=inputs,
         schedule=ScheduleDefinition(interval=timedelta(minutes=15)),
         schedule_status=kwargs.pop("status", ScheduleStatus.ACTIVE),
         engine_handle=kwargs.pop("engine_handle", "sched-1"),
@@ -100,7 +106,7 @@ class TestPersonalMode:
         with pytest.raises(SchedulePermissionError):
             service.trigger(prompt.id, identity=user_b)
         with pytest.raises(SchedulePermissionError):
-            service.update(prompt.id, identity=user_b, text="hack")
+            service.update(prompt.id, identity=user_b, inputs={"user_prompt": "hack"})
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -157,7 +163,7 @@ class TestSecurity:
         with pytest.raises(SchedulePermissionError):
             service.get(prompt.id, identity=user_b)
         with pytest.raises(SchedulePermissionError):
-            service.update(prompt.id, identity=user_b, text="x")
+            service.update(prompt.id, identity=user_b, inputs={"user_prompt": "x"})
         with pytest.raises(SchedulePermissionError):
             service.pause(prompt.id, identity=user_b)
         with pytest.raises(SchedulePermissionError):
@@ -179,10 +185,10 @@ class TestSecurity:
         result = service.create(
             identity=user_a,
             blueprint_id="bp-1",
-            text=malicious,
+            inputs={"user_prompt": malicious},
             schedule={"interval": "PT60S"},
         )
-        assert result.text == malicious
+        assert result.user_prompt == malicious
 
     def test_list_enriched_blueprint_filter_bypasses_identity(self, service, user_a):
         """When blueprint_id is provided, list_enriched uses find_by_blueprint (no identity filter)."""

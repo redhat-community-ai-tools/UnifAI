@@ -1,5 +1,4 @@
 from mas.scheduling.models import (
-    Prompt,
     PromptSource,
     RunOutcome,
     RunStats,
@@ -22,7 +21,6 @@ from mas.scheduling.ports import (
 from mas.scheduling.noop import NoOpScheduleEngine
 
 __all__ = [
-    "Prompt",
     "PromptSource",
     "RunOutcome",
     "RunStats",

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import BaseModel, Field
 
 from mas.scheduling.models import RunOutcome as RunOutcome
 from mas.engine.domain.models import GraphDefinition
@@ -128,10 +128,9 @@ class CancelSessionParams(BaseModel):
 
 class ScheduledSessionParams(BaseModel):
     """Input to ScheduledSessionWorkflow (triggered by Temporal Schedule)."""
-    schedule_id: str = Field(validation_alias=AliasChoices("schedule_id", "prompt_id"))
+    schedule_id: str
     blueprint_id: str
     identity: Identity
-    text: str = ""
     inputs: Dict[str, Any] = Field(default_factory=dict)
     source: PromptSource = PromptSource.MANUAL
     dedupe_key: Optional[str] = None

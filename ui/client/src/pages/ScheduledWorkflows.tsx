@@ -438,9 +438,9 @@ export default function ScheduledWorkflows() {
       meta: { align: "left" as const, filterType: "text" as const },
     },
     {
-      accessorKey: "prompt.text",
+      accessorKey: "inputs.user_prompt",
       header: "Prompt",
-      cell: ({ row }) => <PromptCell text={row.original.prompt.text} />,
+      cell: ({ row }) => <PromptCell text={row.original.inputs.user_prompt} />,
       meta: { align: "left" as const, filterType: "text" as const },
     },
     {
@@ -569,7 +569,7 @@ export default function ScheduledWorkflows() {
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-300 whitespace-pre-wrap">{prompt.prompt.text}</p>
+                      <p className="text-sm text-gray-300 whitespace-pre-wrap">{prompt.inputs.user_prompt}</p>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

@@ -463,23 +463,47 @@ export function useSessionHub({
       );
       setChatSessions(sorted);
 
-      if (sorted.length > 0) {
-        const effectiveRunId = options?.skipRunId ? null : runId;
-        if (effectiveRunId) {
-          const target = sorted.find((s) => s.id === effectiveRunId);
-          if (target) {
-            await handleSessionSelectRef.current(target);
-          } else {
-            toast({
-              title: "Session not found",
-              description: "The requested session doesn't exist in this workspace. Showing the most recent session instead.",
-              variant: "destructive",
-            });
-            await handleSessionSelectRef.current(sorted[0]);
-          }
+      const effectiveRunId = options?.skipRunId ? null : runId;
+      if (effectiveRunId) {
+        const target = sorted.find((s) => s.id === effectiveRunId);
+        if (target) {
+          await handleSessionSelectRef.current(target);
         } else {
-          await handleSessionSelectRef.current(sorted[0]);
+          // Session not in the user's list — attempt a direct load.
+          try {
+            const chatResp = await axios.get(
+              `/sessions/session.chat.get?sessionId=${effectiveRunId}`,
+            );
+            const chatData = chatResp.data;
+            const deepLinked: ChatSession = {
+              id: effectiveRunId,
+              blueprintId: "",
+              title: "Deep-linked session",
+              lastActive: "",
+              timestamp: new Date(),
+              preview: "",
+              messages: chatData?.messages ?? [],
+              blueprintExists: false,
+              status: chatData?.status,
+              statusMessage: chatData?.status_message,
+            };
+            await handleSessionSelectRef.current(deepLinked);
+          } catch (err: any) {
+            const status = err?.response?.status;
+            if (status === 403) {
+              setError("You don't have access to this session.");
+            } else if (status === 404) {
+              setError("Session not found.");
+            } else {
+              setError("Failed to load the requested session.");
+            }
+            if (sorted.length > 0) {
+              await handleSessionSelectRef.current(sorted[0]);
+            }
+          }
         }
+      } else if (sorted.length > 0) {
+        await handleSessionSelectRef.current(sorted[0]);
       }
     } catch (err) {
       console.error("Error fetching chat sessions:", err);

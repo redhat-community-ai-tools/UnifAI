@@ -37,7 +37,7 @@ def _make_prompt(
         id="prompt-abc",
         blueprint_id="bp-1",
         identity=Identity.user("user-1"),
-        text="test",
+        inputs={"user_prompt": "test"},
         schedule=ScheduleDefinition(**sched_kwargs),
     )
 

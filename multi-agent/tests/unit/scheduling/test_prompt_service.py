@@ -50,10 +50,16 @@ def team_identity():
 
 
 def _make_prompt(identity, blueprint_id="bp-1", status=ScheduleStatus.ACTIVE, **kwargs):
+    text = kwargs.pop("text", "test prompt")
+    inputs = kwargs.pop("inputs", None)
+    if inputs is None:
+        inputs = {"user_prompt": text}
+    elif "user_prompt" not in inputs:
+        inputs = {**inputs, "user_prompt": text}
     return WorkflowSchedule(
         blueprint_id=blueprint_id,
         identity=identity,
-        text=kwargs.pop("text", "test prompt"),
+        inputs=inputs,
         schedule=kwargs.pop("schedule", ScheduleDefinition(interval=timedelta(minutes=15))),
         schedule_status=status,
         **kwargs,
@@ -116,7 +122,7 @@ class TestServiceCreate:
         result = service.create(
             identity=identity_a,
             blueprint_id="bp-1",
-            text="Generate report",
+            inputs={"user_prompt": "Generate report"},
             schedule={"interval": "PT900S"},
         )
         assert result.schedule_status == ScheduleStatus.ACTIVE
@@ -129,7 +135,7 @@ class TestServiceCreate:
         result = service.create(
             identity=identity_a,
             blueprint_id="bp-1",
-            text="Generate report",
+            inputs={"user_prompt": "Generate report"},
             schedule={"cron_expression": "0 * * * *"},
         )
         assert result.schedule.cron_expression == "0 * * * *"
@@ -141,7 +147,7 @@ class TestServiceCreate:
             service.create(
                 identity=identity_a,
                 blueprint_id="nonexistent",
-                text="x",
+                inputs={"user_prompt": "x"},
                 schedule={"interval": "PT60S"},
             )
         mock_blueprint_service.get_blueprint_draft_doc.side_effect = None
@@ -152,7 +158,7 @@ class TestServiceCreate:
             service.create(
                 identity=identity_a,
                 blueprint_id="bp-1",
-                text="x",
+                inputs={"user_prompt": "x"},
                 schedule={"interval": "PT60S"},
             )
 
@@ -162,7 +168,7 @@ class TestServiceCreate:
             service.create(
                 identity=identity_a,
                 blueprint_id="bp-1",
-                text="x",
+                inputs={"user_prompt": "x"},
                 schedule={"interval": "PT60S"},
             )
 
@@ -171,7 +177,7 @@ class TestServiceCreate:
         result = service.create(
             identity=identity_a,
             blueprint_id="bp-1",
-            text="x",
+            inputs={"user_prompt": "x"},
             schedule={"interval": "PT60S"},
         )
         assert result is not None
@@ -181,7 +187,7 @@ class TestServiceCreate:
             service.create(
                 identity=identity_a,
                 blueprint_id="bp-1",
-                text="x",
+                inputs={"user_prompt": "x"},
                 schedule={},
             )
 
@@ -190,7 +196,7 @@ class TestServiceCreate:
             service.create(
                 identity=identity_a,
                 blueprint_id="bp-1",
-                text="x",
+                inputs={"user_prompt": "x"},
                 source="invalid_source",
                 schedule={"interval": "PT60S"},
             )
@@ -205,7 +211,7 @@ class TestServiceCreate:
             svc.create(
                 identity=identity_a,
                 blueprint_id="bp-1",
-                text="x",
+                inputs={"user_prompt": "x"},
                 schedule={"interval": "PT60S"},
             )
         mock_repo.delete.assert_called_once()
@@ -216,7 +222,7 @@ class TestServiceCreate:
             service.create(
                 identity=identity_a,
                 blueprint_id="bp-1",
-                text="x",
+                inputs={"user_prompt": "x"},
                 schedule={"interval": "PT60S"},
             )
         mock_repo.save.assert_called_once()
@@ -226,7 +232,7 @@ class TestServiceCreate:
         result = service.create(
             identity=identity_a,
             blueprint_id="bp-1",
-            text="x",
+            inputs={"user_prompt": "x"},
             source="shortcut_copy",
             schedule={"interval": "PT60S"},
         )
@@ -238,7 +244,7 @@ class TestServiceCreate:
             service.create(
                 identity=identity_a,
                 blueprint_id="bp-1",
-                text="x",
+                inputs={"user_prompt": "x"},
                 schedule={"interval": "PT60S", "overlap_policy": "allow_all"},
             )
         mock_repo.save.assert_not_called()
@@ -249,10 +255,10 @@ class TestServiceCreate:
         result = service.create(
             identity=identity_a,
             blueprint_id="bp-1",
-            text=long_text,
+            inputs={"user_prompt": long_text},
             schedule={"interval": "PT60S"},
         )
-        assert result.text == long_text
+        assert result.user_prompt == long_text
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -266,14 +272,14 @@ class TestServiceUpdate:
         mock_repo.load.return_value = self.existing
 
     def test_update_text_only(self, service, mock_repo, mock_schedule_port, identity_a):
-        result = service.update(self.existing.id, identity=identity_a, text="new text")
-        assert result.text == "new text"
+        result = service.update(self.existing.id, identity=identity_a, inputs={"user_prompt": "new text"})
+        assert result.user_prompt == "new text"
         mock_schedule_port.delete.assert_not_called()
         mock_repo.update.assert_called_once()
 
     def test_update_inputs_only(self, service, mock_repo, identity_a):
         result = service.update(self.existing.id, identity=identity_a, inputs={"k": "v"})
-        assert result.inputs == {"k": "v"}
+        assert result.inputs == {"user_prompt": "test prompt", "k": "v"}
 
     def test_update_schedule_triggers_atomic_update(self, service, mock_schedule_port, identity_a):
         new_schedule = {"interval": "PT1800S"}
@@ -294,22 +300,21 @@ class TestServiceUpdate:
     def test_update_nonexistent_prompt(self, service, mock_repo, identity_a):
         mock_repo.load.side_effect = KeyError("not found")
         with pytest.raises(ScheduleNotFoundError):
-            service.update("bad-id", identity=identity_a, text="x")
+            service.update("bad-id", identity=identity_a, inputs={"user_prompt": "x"})
 
     def test_update_wrong_identity(self, service, identity_b):
         with pytest.raises(SchedulePermissionError):
-            service.update(self.existing.id, identity=identity_b, text="x")
+            service.update(self.existing.id, identity=identity_b, inputs={"user_prompt": "x"})
 
     def test_update_all_fields(self, service, mock_schedule_port, identity_a):
         result = service.update(
             self.existing.id,
             identity=identity_a,
-            text="new",
-            inputs={"a": 1},
+            inputs={"user_prompt": "new", "a": 1},
             schedule={"cron_expression": "0 6 * * *"},
         )
-        assert result.text == "new"
-        assert result.inputs == {"a": 1}
+        assert result.user_prompt == "new"
+        assert result.inputs == {"user_prompt": "new", "a": 1}
         mock_schedule_port.update_schedule.assert_called_once()
         mock_schedule_port.delete.assert_not_called()
 

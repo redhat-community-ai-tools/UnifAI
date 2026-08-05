@@ -29,18 +29,16 @@ schedules_bp = Blueprint("schedules", __name__)
 @with_require_identity_authorization
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
-    "text": fields.Str(data_key="text", required=True),
-    "inputs": fields.Dict(data_key="inputs", load_default=lambda: {}),
+    "inputs": fields.Dict(data_key="inputs", required=True),
     "source": fields.Str(data_key="source", load_default="manual"),
     "schedule": fields.Dict(data_key="schedule", required=True),
 })
-def create_schedule(identity, blueprint_id, text, inputs, source, schedule):
+def create_schedule(identity, blueprint_id, inputs, source, schedule):
     try:
         svc = current_app.container.schedule_service
         wf_schedule = svc.create(
             identity=identity,
             blueprint_id=blueprint_id,
-            text=text,
             inputs=inputs,
             source=source,
             schedule=schedule,
@@ -64,17 +62,15 @@ def create_schedule(identity, blueprint_id, text, inputs, source, schedule):
 @with_require_identity_authorization
 @from_body({
     "schedule_id": fields.Str(data_key="scheduleId", required=True),
-    "text": fields.Str(data_key="text", load_default=None),
     "inputs": fields.Dict(data_key="inputs", load_default=None),
     "schedule": fields.Dict(data_key="schedule", load_default=None),
 })
-def update_schedule(identity, schedule_id, text, inputs, schedule):
+def update_schedule(identity, schedule_id, inputs, schedule):
     try:
         svc = current_app.container.schedule_service
         wf_schedule = svc.update(
             schedule_id,
             identity=identity,
-            text=text,
             inputs=inputs,
             schedule=schedule,
         )

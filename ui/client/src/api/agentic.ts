@@ -25,33 +25,6 @@ export interface AgenticStats {
   resourcesByCategory: ResourceStats[];
 }
 
-export interface SessionDetail {
-  sessionId: string;
-  blueprintId: string;
-  blueprintName: string;
-  status: string;
-  meta: Record<string, any>;
-  createdAt: string | null;
-  completedAt: string | null;
-  chat: { messages: any[]; output: any };
-}
-
-// Fetch a single session by ID (deep-link)
-export async function fetchSessionById(
-  sessionId: string,
-  userId?: string,
-  identityType?: string,
-): Promise<SessionDetail> {
-  const response = await axios.get('/sessions/session.get', {
-    params: {
-      sessionId,
-      userId: userId || 'default',
-      identityType: identityType || 'user',
-    },
-  });
-  return response.data;
-}
-
 // Fetch active sessions
 export async function fetchActiveSessions(userId?: string, identityType?: string): Promise<string[]> {
   const userIdParam = userId || 'default';

@@ -33,10 +33,16 @@ def identity():
 
 
 def _make_schedule(identity, **kwargs):
+    text = kwargs.pop("text", "test prompt")
+    inputs = kwargs.pop("inputs", None)
+    if inputs is None:
+        inputs = {"user_prompt": text}
+    elif "user_prompt" not in inputs:
+        inputs = {**inputs, "user_prompt": text}
     return WorkflowSchedule(
         blueprint_id=kwargs.get("blueprint_id", "bp-1"),
         identity=identity,
-        text=kwargs.get("text", "test prompt"),
+        inputs=inputs,
         schedule=ScheduleDefinition(interval=timedelta(minutes=15)),
         schedule_status=kwargs.get("status", ScheduleStatus.ACTIVE),
         engine_handle=kwargs.get("engine_handle", "sched-1"),
@@ -110,7 +116,7 @@ class TestCreateEndpoint:
             "/api/schedules/schedule.create",
             json={
                 "blueprintId": "bp-1",
-                "text": "Generate report",
+                "inputs": {"user_prompt": "Generate report"},
                 "schedule": {"interval": "PT900S"},
             },
         )
@@ -122,7 +128,7 @@ class TestCreateEndpoint:
         mock_schedule_service.create.side_effect = BlueprintNotFoundError("bp-nope")
         resp = client.post(
             "/api/schedules/schedule.create",
-            json={"blueprintId": "bp-nope", "text": "x", "schedule": {"interval": "PT60S"}},
+            json={"blueprintId": "bp-nope", "inputs": {"user_prompt": "x"}, "schedule": {"interval": "PT60S"}},
         )
         assert resp.status_code == 404
         assert resp.get_json()["error_type"] == "BLUEPRINT_NOT_FOUND"
@@ -131,7 +137,7 @@ class TestCreateEndpoint:
         mock_schedule_service.create.side_effect = ScheduleLimitExceededError("bp-1", 10)
         resp = client.post(
             "/api/schedules/schedule.create",
-            json={"blueprintId": "bp-1", "text": "x", "schedule": {"interval": "PT60S"}},
+            json={"blueprintId": "bp-1", "inputs": {"user_prompt": "x"}, "schedule": {"interval": "PT60S"}},
         )
         assert resp.status_code == 409
         assert resp.get_json()["error_type"] == "LIMIT_EXCEEDED"
@@ -140,7 +146,7 @@ class TestCreateEndpoint:
         mock_schedule_service.create.side_effect = ValueError("bad schedule")
         resp = client.post(
             "/api/schedules/schedule.create",
-            json={"blueprintId": "bp-1", "text": "x", "schedule": {}},
+            json={"blueprintId": "bp-1", "inputs": {"user_prompt": "x"}, "schedule": {}},
         )
         assert resp.status_code == 400
         assert resp.get_json()["error_type"] == "VALIDATION_ERROR"
@@ -152,7 +158,7 @@ class TestCreateEndpoint:
             "/api/schedules/schedule.create",
             json={
                 "blueprintId": "bp-1",
-                "text": "x",
+                "inputs": {"user_prompt": "x"},
                 "source": "shortcut_copy",
                 "schedule": {"interval": "PT60S"},
             },
@@ -171,16 +177,16 @@ class TestUpdateEndpoint:
         mock_schedule_service.update.return_value = schedule
         resp = client.post(
             "/api/schedules/schedule.update",
-            json={"scheduleId": schedule.id, "text": "updated"},
+            json={"scheduleId": schedule.id, "inputs": {"user_prompt": "updated"}},
         )
         assert resp.status_code == 200
-        assert resp.get_json()["prompt"]["text"] == "updated"
+        assert resp.get_json()["inputs"]["user_prompt"] == "updated"
 
     def test_not_found(self, client, mock_schedule_service):
         mock_schedule_service.update.side_effect = ScheduleNotFoundError("bad-id")
         resp = client.post(
             "/api/schedules/schedule.update",
-            json={"scheduleId": "bad-id", "text": "x"},
+            json={"scheduleId": "bad-id", "inputs": {"user_prompt": "x"}},
         )
         assert resp.status_code == 404
 
@@ -188,7 +194,7 @@ class TestUpdateEndpoint:
         mock_schedule_service.update.side_effect = SchedulePermissionError("x", identity)
         resp = client.post(
             "/api/schedules/schedule.update",
-            json={"scheduleId": "x", "text": "y"},
+            json={"scheduleId": "x", "inputs": {"user_prompt": "y"}},
         )
         assert resp.status_code == 403
 

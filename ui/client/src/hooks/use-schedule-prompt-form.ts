@@ -102,7 +102,7 @@ export function useSchedulePromptForm({
     setError(null);
 
     if (editPrompt) {
-      setPromptText(editPrompt.prompt.text);
+      setPromptText(editPrompt.inputs.user_prompt ?? "");
       const parsed = parseScheduleToState(editPrompt.schedule);
       setStartDate(parsed.startDate);
       setTime(format(parsed.startDate, "HH:mm"));
@@ -244,14 +244,14 @@ export function useSchedulePromptForm({
       }
       if (isEditMode && editPrompt) {
         await updateSchedule(
-          { scheduleId: editPrompt.id, text: promptText, schedule },
+          { scheduleId: editPrompt.id, inputs: { user_prompt: promptText }, schedule },
           userId,
           identityType,
         );
       } else {
         const source = copiedFromShortcut ? "shortcut_copy" : "manual";
         await createSchedule(
-          { blueprintId, text: promptText, source, schedule },
+          { blueprintId, inputs: { user_prompt: promptText }, source, schedule },
           userId,
           identityType,
         );

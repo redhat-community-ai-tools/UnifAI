@@ -22,13 +22,17 @@ from mas.scheduling.models import (
 
 
 def _make_prompt(identity, blueprint_id="bp-1", status=ScheduleStatus.ACTIVE, **kwargs):
+    text = kwargs.pop("text", "test")
+    inputs = kwargs.pop("inputs", None)
+    if inputs is None:
+        inputs = {"user_prompt": text}
+    elif "user_prompt" not in inputs:
+        inputs = {**inputs, "user_prompt": text}
     return WorkflowSchedule(
         blueprint_id=blueprint_id,
         identity=identity,
-        text=kwargs.pop("text", "test"),
-        schedule=kwargs.pop(
-            "schedule", ScheduleDefinition(interval=timedelta(minutes=15))
-        ),
+        inputs=inputs,
+        schedule=kwargs.pop("schedule", ScheduleDefinition(interval=timedelta(minutes=15))),
         schedule_status=status,
         **kwargs,
     )
@@ -227,7 +231,7 @@ class TestRepoCRUD:
         repo.save(prompt)
         loaded = repo.load(prompt.id)
         assert loaded.id == prompt.id
-        assert loaded.text == prompt.text
+        assert loaded.user_prompt == prompt.user_prompt
         assert loaded.blueprint_id == prompt.blueprint_id
 
     def test_save_sets_timestamps(self, repo, in_memory_col, identity_a):
@@ -245,7 +249,7 @@ class TestRepoCRUD:
 
         import time
         time.sleep(0.01)
-        updated_prompt = prompt.model_copy(update={"text": "new text"})
+        updated_prompt = prompt.model_copy(update={"inputs": {"user_prompt": "new text"}})
         repo.update(updated_prompt)
         doc2 = in_memory_col.find_one({"id": prompt.id})
         assert doc2["updated_at"] >= original_updated

@@ -23,16 +23,14 @@ class TestScheduledSessionParams:
             schedule_id="p1",
             blueprint_id="bp-1",
             identity=identity,
-            text="hello",
-            inputs={"k": "v"},
+            inputs={"user_prompt": "hello", "k": "v"},
             source="shortcut_copy",
         )
         dumped = params.model_dump(mode="json")
         restored = ScheduledSessionParams(**dumped)
         assert restored.schedule_id == "p1"
         assert restored.identity.id == "user-1"
-        assert restored.text == "hello"
-        assert restored.inputs == {"k": "v"}
+        assert restored.inputs == {"user_prompt": "hello", "k": "v"}
         assert restored.source == "shortcut_copy"
 
 

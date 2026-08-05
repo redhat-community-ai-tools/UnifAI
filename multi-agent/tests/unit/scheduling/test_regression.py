@@ -129,7 +129,7 @@ class TestServiceWiring:
             svc.create(
                 identity=identity,
                 blueprint_id="bp-1",
-                text="hello",
+                inputs={"user_prompt": "hello"},
                 schedule={"interval": "PT60S"},
             )
 

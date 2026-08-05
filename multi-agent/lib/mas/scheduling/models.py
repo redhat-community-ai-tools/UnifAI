@@ -14,13 +14,14 @@ from zoneinfo import available_timezones
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mas.core.identity import Identity
-from mas.core.prompt import BasePrompt
 
 _MIN_INTERVAL = timedelta(minutes=1)
 
 _CRON_FIELD_RE = re.compile(r"^[A-Za-z0-9*/,-]+$")
 
 _VALID_TIMEZONES = frozenset(available_timezones())
+
+_USER_PROMPT_KEY = "user_prompt"
 
 
 def _is_valid_cron(expression: str) -> bool:
@@ -45,10 +46,6 @@ class ScheduleOverlapPolicy(str, Enum):
     SKIP = "skip"
     BUFFER_ONE = "buffer_one"
     CANCEL_OTHER = "cancel_other"
-
-
-class Prompt(BasePrompt):
-    """The content that will be executed on each schedule tick."""
 
 
 class ScheduleDefinition(BaseModel):
@@ -116,11 +113,10 @@ class WorkflowSchedule(BaseModel):
     blueprint to execute on a recurring schedule.
 
     Each tick produces a session.  The schedule is the configuration;
-    the prompt is the content; sessions are the output.
+    ``inputs.user_prompt`` is the content; sessions are the output.
     """
 
     id: str = Field(default_factory=lambda: str(uuid4()))
-    prompt: Prompt
     blueprint_id: str
     identity: Identity
     inputs: Dict[str, Any] = Field(default_factory=dict)
@@ -133,17 +129,18 @@ class WorkflowSchedule(BaseModel):
     credential_user_id: str = ""
 
     @property
-    def text(self) -> str:
-        """Convenience accessor for the prompt text."""
-        return self.prompt.text
+    def user_prompt(self) -> str:
+        """Convenience accessor for the prompt text in inputs."""
+        return str(self.inputs.get(_USER_PROMPT_KEY, ""))
 
-    @model_validator(mode="before")
-    @classmethod
-    def _backfill_prompt(cls, values: Any) -> Any:
-        """Handle legacy documents that stored text at the top level."""
-        if isinstance(values, dict):
-            if "prompt" not in values and "text" in values:
-                values["prompt"] = {"text": values.pop("text")}
-            if "temporal_schedule_id" in values:
-                values.setdefault("engine_handle", values.pop("temporal_schedule_id"))
-        return values
+    @model_validator(mode="after")
+    def _require_user_prompt(self) -> "WorkflowSchedule":
+        raw = self.inputs.get(_USER_PROMPT_KEY)
+        if not isinstance(raw, str):
+            raise ValueError("inputs.user_prompt is required")
+        stripped = raw.strip()
+        if not stripped:
+            raise ValueError("inputs.user_prompt must not be empty")
+        if stripped != raw:
+            self.inputs[_USER_PROMPT_KEY] = stripped
+        return self

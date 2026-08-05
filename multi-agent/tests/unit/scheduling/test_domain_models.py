@@ -203,7 +203,7 @@ class TestWorkflowSchedule:
         p = WorkflowSchedule(
             blueprint_id="bp-1",
             identity=identity,
-            text="test prompt",
+            inputs={"user_prompt": "test prompt"},
             schedule=schedule,
         )
         UUID(p.id)
@@ -211,18 +211,18 @@ class TestWorkflowSchedule:
         assert p.completed_at is None
         assert p.run_stats.total_runs == 0
 
-    def test_inherits_base_prompt_text_validation(self, identity, schedule):
+    def test_requires_non_empty_user_prompt(self, identity, schedule):
         with pytest.raises(ValidationError, match="must not be empty"):
             WorkflowSchedule(
                 blueprint_id="bp-1",
                 identity=identity,
-                text="",
+                inputs={"user_prompt": ""},
                 schedule=schedule,
             )
 
     def test_default_source_is_manual(self, identity, schedule):
         p = WorkflowSchedule(
-            blueprint_id="bp-1", identity=identity, text="x", schedule=schedule,
+            blueprint_id="bp-1", identity=identity, inputs={"user_prompt": "x"}, schedule=schedule,
         )
         assert p.source == PromptSource.MANUAL
 
@@ -230,24 +230,23 @@ class TestWorkflowSchedule:
         p = WorkflowSchedule(
             blueprint_id="bp-1",
             identity=identity,
-            text="x",
+            inputs={"user_prompt": "x"},
             schedule=schedule,
             source=PromptSource.SHORTCUT_COPY,
         )
         assert p.source == PromptSource.SHORTCUT_COPY
 
-    def test_empty_inputs_default(self, identity, schedule):
-        p = WorkflowSchedule(
-            blueprint_id="bp-1", identity=identity, text="x", schedule=schedule,
-        )
-        assert p.inputs == {}
+    def test_missing_user_prompt_rejected(self, identity, schedule):
+        with pytest.raises(ValidationError, match="user_prompt"):
+            WorkflowSchedule(
+                blueprint_id="bp-1", identity=identity, inputs={}, schedule=schedule,
+            )
 
     def test_complex_inputs(self, identity, schedule):
-        inputs = {"key": [1, 2, 3], "nested": {"a": "b"}}
+        inputs = {"user_prompt": "x", "key": [1, 2, 3], "nested": {"a": "b"}}
         p = WorkflowSchedule(
             blueprint_id="bp-1",
             identity=identity,
-            text="x",
             schedule=schedule,
             inputs=inputs,
         )
@@ -255,22 +254,22 @@ class TestWorkflowSchedule:
 
     def test_model_dump_json_roundtrip(self, identity, schedule):
         p = WorkflowSchedule(
-            blueprint_id="bp-1", identity=identity, text="hello", schedule=schedule,
+            blueprint_id="bp-1", identity=identity, inputs={"user_prompt": "hello"}, schedule=schedule,
         )
         dumped = p.model_dump(mode="json")
         reconstructed = WorkflowSchedule(**dumped)
         assert reconstructed.id == p.id
-        assert reconstructed.text == p.text
+        assert reconstructed.user_prompt == p.user_prompt
         assert reconstructed.blueprint_id == p.blueprint_id
         assert reconstructed.run_stats.total_runs == 0
 
     def test_identity_field_required(self, schedule):
         with pytest.raises(ValidationError):
-            WorkflowSchedule(blueprint_id="bp-1", text="x", schedule=schedule)
+            WorkflowSchedule(blueprint_id="bp-1", inputs={"user_prompt": "x"}, schedule=schedule)
 
     def test_run_stats_defaults_to_empty(self, identity, schedule):
         p = WorkflowSchedule(
-            blueprint_id="bp-1", identity=identity, text="x", schedule=schedule,
+            blueprint_id="bp-1", identity=identity, inputs={"user_prompt": "x"}, schedule=schedule,
         )
         assert p.run_stats.total_runs == 0
         assert p.run_stats.recent_statuses == []

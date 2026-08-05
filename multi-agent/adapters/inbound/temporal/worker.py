@@ -62,7 +62,6 @@ async def run_worker(
 
     schedule_activities = ScheduleActivities(
         session_service=container.session_service,
-        input_projector=container.input_projector,
         session_manager=container.session_manager,
         schedule_service=container.schedule_service,
     )

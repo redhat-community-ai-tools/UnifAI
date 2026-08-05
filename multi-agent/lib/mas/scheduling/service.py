@@ -9,7 +9,6 @@ from mas.blueprints.exceptions import BlueprintNotFoundError
 from mas.blueprints.service import BlueprintService
 from mas.core.identity import Identity
 from mas.scheduling.models import (
-    Prompt,
     PromptSource,
     RunOutcome,
     RunStats,
@@ -77,8 +76,7 @@ class WorkflowScheduleService:
         *,
         identity: Identity,
         blueprint_id: str,
-        text: str,
-        inputs: Optional[Dict[str, Any]] = None,
+        inputs: Dict[str, Any],
         source: str = "manual",
         schedule: Dict[str, Any],
         credential_user_id: str = "",
@@ -98,10 +96,9 @@ class WorkflowScheduleService:
         schedule_def = ScheduleDefinition(**schedule)
 
         wf_schedule = WorkflowSchedule(
-            prompt=Prompt(text=text),
             blueprint_id=blueprint_id,
             identity=identity,
-            inputs=inputs or {},
+            inputs=inputs,
             source=prompt_source,
             schedule=schedule_def,
             credential_user_id=credential_user_id,
@@ -136,17 +133,14 @@ class WorkflowScheduleService:
         schedule_id: str,
         *,
         identity: Identity,
-        text: Optional[str] = None,
         inputs: Optional[Dict[str, Any]] = None,
         schedule: Optional[Dict[str, Any]] = None,
     ) -> WorkflowSchedule:
         wf_schedule = self._load_and_verify(schedule_id, identity)
 
         updates: Dict[str, Any] = {}
-        if text is not None:
-            updates["prompt"] = Prompt(text=text)
         if inputs is not None:
-            updates["inputs"] = inputs
+            updates["inputs"] = {**wf_schedule.inputs, **inputs}
 
         schedule_changed = False
         if schedule is not None:
@@ -380,6 +374,17 @@ class WorkflowScheduleService:
     ) -> None:
         """Record a completed run in the schedule's embedded run_stats."""
         self._repo.record_run(schedule_id, session_id, status, started_at)
+
+    def record_outcome(
+        self,
+        schedule_id: str,
+        session_id: str,
+        outcome: RunOutcome,
+        started_at: datetime,
+    ) -> None:
+        """Record a run outcome and mark the schedule completed if exhausted."""
+        self.record_run(schedule_id, session_id, outcome, started_at)
+        self.mark_completed(schedule_id)
 
     def get(self, schedule_id: str, *, identity: Identity) -> WorkflowSchedule:
         wf_schedule = self._load_and_verify(schedule_id, identity)
