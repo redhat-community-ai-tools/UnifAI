@@ -42,12 +42,12 @@ def _fake_dependency(rid: str = "dep-1", name: str = "Dependency", category: str
 class TestAdminGating:
     """/builtins.list and other admin-only routes must reject non-admins."""
 
-    def test_non_admin_gets_403(self, client, user_headers, builtin_resource_service):
+    def test_non_admin_gets_403(self, client, user_headers, builtin_resource_service) -> None:
         resp = client.get("/api/resources/builtins.list", headers=user_headers)
         assert resp.status_code == 403
         builtin_resource_service.find_all_builtins.assert_not_called()
 
-    def test_admin_gets_200(self, client, admin_headers, builtin_resource_service, resources_service):
+    def test_admin_gets_200(self, client, admin_headers, builtin_resource_service, resources_service) -> None:
         builtin_resource_service.find_all_builtins.return_value = [_fake_resource_dump()]
 
         resp = client.get("/api/resources/builtins.list", headers=admin_headers)
@@ -55,13 +55,13 @@ class TestAdminGating:
         assert resp.status_code == 200
         assert resp.get_json()["resources"] == [resources_service.to_dict.return_value]
 
-    def test_no_auth_header_gets_401(self, client):
+    def test_no_auth_header_gets_401(self, client) -> None:
         resp = client.get("/api/resources/builtins.list")
         assert resp.status_code == 401
 
 
 class TestGetBuiltinSchema:
-    def test_success(self, client, user_headers, builtin_resource_service):
+    def test_success(self, client, user_headers, builtin_resource_service) -> None:
         builtin_resource_service.get_builtin_schema.return_value = {"properties": {}}
 
         resp = client.get(
@@ -71,7 +71,7 @@ class TestGetBuiltinSchema:
 
         assert resp.status_code == 200
 
-    def test_draft_builtin_not_visible_returns_404(self, client, user_headers, builtin_resource_service):
+    def test_draft_builtin_not_visible_returns_404(self, client, user_headers, builtin_resource_service) -> None:
         builtin_resource_service.get_builtin_schema.side_effect = KeyError("r1")
 
         resp = client.get(
@@ -81,7 +81,7 @@ class TestGetBuiltinSchema:
 
         assert resp.status_code == 404
 
-    def test_not_a_builtin_returns_400(self, client, user_headers, builtin_resource_service):
+    def test_not_a_builtin_returns_400(self, client, user_headers, builtin_resource_service) -> None:
         builtin_resource_service.get_builtin_schema.side_effect = ValueError("not a built-in")
 
         resp = client.get(
@@ -93,7 +93,7 @@ class TestGetBuiltinSchema:
 
 
 class TestConfigureBuiltin:
-    def test_success(self, client, user_headers, builtin_resource_service):
+    def test_success(self, client, user_headers, builtin_resource_service) -> None:
         builtin_resource_service.configure_builtin.return_value = _fake_resource_dump()
 
         resp = client.patch(
@@ -104,7 +104,7 @@ class TestConfigureBuiltin:
 
         assert resp.status_code == 200
 
-    def test_unavailable_repo_returns_503(self, client, user_headers, builtin_resource_service):
+    def test_unavailable_repo_returns_503(self, client, user_headers, builtin_resource_service) -> None:
         """Regression test: configure_builtin without a configured overlay
         repo must surface as 503, not a generic 500 or AttributeError."""
         builtin_resource_service.configure_builtin.side_effect = BuiltinConfigUnavailableError()
@@ -117,7 +117,7 @@ class TestConfigureBuiltin:
 
         assert resp.status_code == 503
 
-    def test_draft_builtin_returns_404(self, client, user_headers, builtin_resource_service):
+    def test_draft_builtin_returns_404(self, client, user_headers, builtin_resource_service) -> None:
         builtin_resource_service.configure_builtin.side_effect = KeyError("r1")
 
         resp = client.patch(
@@ -133,7 +133,7 @@ class TestCascadePreview:
     """Read-only preview so the UI can confirm *before* promoting/toggling,
     instead of only disclaiming the cascade after the mutation happened."""
 
-    def test_requires_admin(self, client, user_headers, builtin_resource_service):
+    def test_requires_admin(self, client, user_headers, builtin_resource_service) -> None:
         resp = client.get(
             "/api/resources/builtin.cascade-preview?resourceId=r1",
             headers=user_headers,
@@ -141,7 +141,7 @@ class TestCascadePreview:
         assert resp.status_code == 403
         builtin_resource_service.preview_cascade_targets.assert_not_called()
 
-    def test_admin_success_lists_cascaded_resources(self, client, admin_headers, builtin_resource_service):
+    def test_admin_success_lists_cascaded_resources(self, client, admin_headers, builtin_resource_service) -> None:
         builtin_resource_service.preview_cascade_targets.return_value = [
             _fake_dependency(rid="llm-1", name="My LLM", category="llms"),
         ]
@@ -156,7 +156,7 @@ class TestCascadePreview:
             {"rid": "llm-1", "name": "My LLM", "category": "llms"},
         ]
 
-    def test_not_found_returns_404(self, client, admin_headers, builtin_resource_service):
+    def test_not_found_returns_404(self, client, admin_headers, builtin_resource_service) -> None:
         builtin_resource_service.preview_cascade_targets.side_effect = KeyError("r1")
 
         resp = client.get(
@@ -168,7 +168,7 @@ class TestCascadePreview:
 
 
 class TestCreateBuiltinResource:
-    def test_requires_admin(self, client, user_headers, builtin_resource_service):
+    def test_requires_admin(self, client, user_headers, builtin_resource_service) -> None:
         resp = client.post(
             "/api/resources/builtin.create",
             json={"category": "provider", "type": "mcp", "name": "n", "config": {}},
@@ -177,7 +177,7 @@ class TestCreateBuiltinResource:
         assert resp.status_code == 403
         builtin_resource_service.create_builtin_with_cascade.assert_not_called()
 
-    def test_admin_success(self, client, admin_headers, builtin_resource_service):
+    def test_admin_success(self, client, admin_headers, builtin_resource_service) -> None:
         builtin_resource_service.create_builtin_with_cascade.return_value = (_fake_resource_dump(), [])
 
         resp = client.post(
@@ -188,7 +188,7 @@ class TestCreateBuiltinResource:
 
         assert resp.status_code == 201
 
-    def test_available_to_all_reports_cascaded_dependencies(self, client, admin_headers, builtin_resource_service):
+    def test_available_to_all_reports_cascaded_dependencies(self, client, admin_headers, builtin_resource_service) -> None:
         builtin_resource_service.create_builtin_with_cascade.return_value = (
             _fake_resource_dump(),
             [_fake_dependency(rid="llm-2", name="Backing LLM", category="llms")],
@@ -210,7 +210,7 @@ class TestCreateBuiltinResource:
 
 
 class TestUpdateBuiltinResource:
-    def test_requires_admin(self, client, user_headers, builtin_resource_service):
+    def test_requires_admin(self, client, user_headers, builtin_resource_service) -> None:
         resp = client.put(
             "/api/resources/builtin.update",
             json={"resourceId": "r1", "name": "renamed"},
@@ -219,7 +219,7 @@ class TestUpdateBuiltinResource:
         assert resp.status_code == 403
         builtin_resource_service.update_builtin_with_cascade.assert_not_called()
 
-    def test_admin_success(self, client, admin_headers, builtin_resource_service):
+    def test_admin_success(self, client, admin_headers, builtin_resource_service) -> None:
         builtin_resource_service.update_builtin_with_cascade.return_value = (_fake_resource_dump(), [])
 
         resp = client.put(
@@ -232,7 +232,7 @@ class TestUpdateBuiltinResource:
 
     def test_blocked_when_locked_by_another_admin(
         self, client, admin_headers, builtin_resource_service, admin_edit_lock_service,
-    ):
+    ) -> None:
         admin_edit_lock_service.get_admin_edit_lock.return_value = Mock(
             user_id="other-admin", display_name="Other Admin",
         )
@@ -248,7 +248,7 @@ class TestUpdateBuiltinResource:
 
 
 class TestToggleBuiltinVisibility:
-    def test_requires_admin(self, client, user_headers, builtin_resource_service):
+    def test_requires_admin(self, client, user_headers, builtin_resource_service) -> None:
         resp = client.patch(
             "/api/resources/builtin.toggle",
             json={"resourceId": "r1", "availableToAll": True},
@@ -256,7 +256,7 @@ class TestToggleBuiltinVisibility:
         )
         assert resp.status_code == 403
 
-    def test_admin_success(self, client, admin_headers, builtin_resource_service):
+    def test_admin_success(self, client, admin_headers, builtin_resource_service) -> None:
         builtin_resource_service.toggle_visibility_with_cascade.return_value = (_fake_resource_dump(), [])
 
         resp = client.patch(
@@ -268,7 +268,7 @@ class TestToggleBuiltinVisibility:
         assert resp.status_code == 200
         builtin_resource_service.toggle_visibility_with_cascade.assert_called_once_with("r1", available_to_all=True)
 
-    def test_turning_on_reports_cascaded_dependencies(self, client, admin_headers, builtin_resource_service):
+    def test_turning_on_reports_cascaded_dependencies(self, client, admin_headers, builtin_resource_service) -> None:
         builtin_resource_service.toggle_visibility_with_cascade.return_value = (
             _fake_resource_dump(),
             [_fake_dependency(rid="provider-1", name="My MCP Provider", category="providers")],
@@ -285,7 +285,7 @@ class TestToggleBuiltinVisibility:
             {"rid": "provider-1", "name": "My MCP Provider", "category": "providers"},
         ]
 
-    def test_turning_off_reports_no_cascade(self, client, admin_headers, builtin_resource_service):
+    def test_turning_off_reports_no_cascade(self, client, admin_headers, builtin_resource_service) -> None:
         builtin_resource_service.toggle_visibility_with_cascade.return_value = (_fake_resource_dump(), [])
 
         resp = client.patch(
@@ -299,7 +299,7 @@ class TestToggleBuiltinVisibility:
 
     def test_blocked_when_locked_by_another_admin(
         self, client, admin_headers, builtin_resource_service, admin_edit_lock_service,
-    ):
+    ) -> None:
         admin_edit_lock_service.get_admin_edit_lock.return_value = Mock(
             user_id="other-admin", display_name="Other Admin",
         )
@@ -313,7 +313,7 @@ class TestToggleBuiltinVisibility:
         assert resp.status_code == 409
         builtin_resource_service.toggle_visibility_with_cascade.assert_not_called()
 
-    def test_turning_off_blocked_by_public_dependents(self, client, admin_headers, builtin_resource_service):
+    def test_turning_off_blocked_by_public_dependents(self, client, admin_headers, builtin_resource_service) -> None:
         """A leaf still used by a public 'available to all' agent can't be
         demoted — the admin must demote the agent(s) or repoint them first."""
         error = BuiltinDependentsPublicError(
@@ -340,7 +340,7 @@ class TestToggleBuiltinVisibility:
 class TestAdminEditLocks:
     def test_acquire_without_admin_edit_lock_service_returns_501(
         self, client, admin_headers, container,
-    ):
+    ) -> None:
         container.admin_edit_lock_service = None
 
         resp = client.post(
@@ -351,7 +351,7 @@ class TestAdminEditLocks:
 
         assert resp.status_code == 501
 
-    def test_acquire_requires_admin(self, client, user_headers, admin_edit_lock_service):
+    def test_acquire_requires_admin(self, client, user_headers, admin_edit_lock_service) -> None:
         resp = client.post(
             "/api/resources/builtin.edit_lock.acquire",
             json={"entityId": "r1"},
@@ -360,7 +360,7 @@ class TestAdminEditLocks:
         assert resp.status_code == 403
         admin_edit_lock_service.acquire.assert_not_called()
 
-    def test_acquire_success(self, client, admin_headers, admin_edit_lock_service):
+    def test_acquire_success(self, client, admin_headers, admin_edit_lock_service) -> None:
         admin_edit_lock_service.acquire.return_value = (True, None)
 
         resp = client.post(
@@ -374,7 +374,7 @@ class TestAdminEditLocks:
 
     def test_acquire_unexpected_error_logged_and_returns_500(
         self, client, admin_headers, admin_edit_lock_service,
-    ):
+    ) -> None:
         """Regression test: unexpected errors in edit-lock handlers must be
         logged (not silently swallowed) and still degrade to a 500."""
         admin_edit_lock_service.acquire.side_effect = RuntimeError("redis down")

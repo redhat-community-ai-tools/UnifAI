@@ -14,7 +14,7 @@ export interface ResourceInstance {
   type: string;
   name: string;
   version: number;
-  cfg_dict: any;
+  cfg_dict: Record<string, unknown>;
   nested_refs: string[];
   contributed_by?: string;
   created: string;

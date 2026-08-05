@@ -10,6 +10,7 @@ and resolves auth credentials via ``core/auth`` before probing.
 import logging
 from concurrent.futures import CancelledError
 from typing import List
+from urllib.parse import urlparse
 
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.elements.common.validator import (
@@ -111,8 +112,12 @@ class McpProviderValidator(BaseElementValidator):
                         # a failure here must not fail the whole validation
                         # — fall through and let the real connection probe
                         # below determine (and report) the actual outcome.
+                        _parsed = urlparse(config.mcp_url)
+                        _safe_host = f"{_parsed.scheme}://{_parsed.hostname}" + (
+                            f":{_parsed.port}" if _parsed.port else ""
+                        )
                         logger.warning(
-                            "Auth rediscovery failed for %s: %s", config.mcp_url, e,
+                            "Auth rediscovery failed for %s: %s", _safe_host, e,
                         )
                         detection = None
                     identifier_changed = (

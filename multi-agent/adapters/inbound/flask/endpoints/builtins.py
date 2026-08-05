@@ -10,7 +10,7 @@ clients.
 """
 import logging
 
-from flask import Blueprint, jsonify, current_app, g
+from flask import Blueprint, Response, jsonify, current_app, g
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
@@ -33,6 +33,7 @@ from inbound.flask.endpoints._collaboration_shared import (
     holder_to_json as _holder_to_json,
     reject_if_locked_by_other as _reject_if_locked_by_other,
 )
+from mas.core.identity import Identity
 from mas.resources.builtin_models import BuiltinUpdateRequest
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 builtins_bp = Blueprint("builtins", __name__)
 
 
-def _resource_summaries(resources) -> list:
+def _resource_summaries(resources: list) -> list[dict]:
     """Minimal {rid, name, category} summaries for cascade/dependent lists."""
     return [
         {
@@ -62,7 +63,7 @@ def _resource_summaries(resources) -> list:
     "category": fields.Str(required=False),
     "type": fields.Str(required=False),
 })
-def list_builtins(category=None, type=None):
+def list_builtins(category: str | None = None, type: str | None = None) -> tuple[Response, int]:
     """List all built-in resources (admin only).
 
     Returns all resources with ownership=builtin (public and draft),
@@ -88,7 +89,7 @@ def list_builtins(category=None, type=None):
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def get_builtin_schema(identity, resource_id):
+def get_builtin_schema(identity: Identity, resource_id: str) -> tuple[Response, int]:
     """Get the element schema for a built-in resource with readOnly annotations.
 
     Returns the same config_schema as /catalog/element.spec.get but with
@@ -119,7 +120,7 @@ def get_builtin_schema(identity, resource_id):
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def get_builtin_user_config(identity, resource_id):
+def get_builtin_user_config(identity: Identity, resource_id: str) -> tuple[Response, int]:
     """Get the current user's overlay config for a built-in resource.
 
     Returns the user's saved configurable-field overrides (decrypted),
@@ -149,7 +150,7 @@ def get_builtin_user_config(identity, resource_id):
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "config": fields.Dict(required=True),
 })
-def configure_builtin(identity, resource_id, config):
+def configure_builtin(identity: Identity, resource_id: str, config: dict) -> tuple[Response, int]:
     """Save per-user/team configuration overlay for a built-in resource.
 
     The identity is the caller's resolved Identity object (user or team).
@@ -180,7 +181,7 @@ def configure_builtin(identity, resource_id, config):
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def preview_builtin_cascade(resource_id):
+def preview_builtin_cascade(resource_id: str) -> tuple[Response, int]:
     """Preview which resources would be newly promoted to public if
     *resource_id* were made available to all (admin only).
 
@@ -212,9 +213,9 @@ def preview_builtin_cascade(resource_id):
     "available_to_all": fields.Bool(data_key="availableToAll", load_default=False),
 })
 def create_builtin_resource(
-    category, type, name, config,
-    available_to_all=False,
-):
+    category: str, type: str, name: str, config: dict,
+    available_to_all: bool = False,
+) -> tuple[Response, int]:
     """Create a resource directly as built-in (admin only).
 
     The creating admin's identity is preserved on the resource document
@@ -260,9 +261,9 @@ def create_builtin_resource(
     "available_to_all": fields.Bool(data_key="availableToAll", load_default=None),
 })
 def update_builtin_resource(
-    resource_id, config=None, name=None,
-    available_to_all=None,
-):
+    resource_id: str, config: dict | None = None, name: str | None = None,
+    available_to_all: bool | None = None,
+) -> tuple[Response, int]:
     """Update a built-in/admin resource (admin only).
 
     Allows updating config, name, and availableToAll status.
@@ -309,7 +310,7 @@ def update_builtin_resource(
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "available_to_all": fields.Bool(data_key="availableToAll", required=True),
 })
-def toggle_builtin_visibility(resource_id, available_to_all):
+def toggle_builtin_visibility(resource_id: str, available_to_all: bool) -> tuple[Response, int]:
     """Toggle visibility between public and draft (admin only).
 
     When toggled on (public), the resource becomes visible to all users.
@@ -375,7 +376,7 @@ def toggle_builtin_visibility(resource_id, available_to_all):
 @from_body({
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def builtin_edit_lock_acquire(authenticated_user, entity_id):
+def builtin_edit_lock_acquire(authenticated_user: str, entity_id: str) -> tuple[Response, int]:
     """Acquire an admin edit lock on a built-in resource."""
     svc, err = _admin_lock_service()
     if err:
@@ -400,7 +401,7 @@ def builtin_edit_lock_acquire(authenticated_user, entity_id):
 @from_body({
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def builtin_edit_lock_release(authenticated_user, entity_id):
+def builtin_edit_lock_release(authenticated_user: str, entity_id: str) -> tuple[Response, int]:
     """Release an admin edit lock on a built-in resource."""
     svc, err = _admin_lock_service()
     if err:
@@ -419,7 +420,7 @@ def builtin_edit_lock_release(authenticated_user, entity_id):
 @from_body({
     "entity_id": fields.Str(data_key="entityId", required=True),
 })
-def builtin_edit_lock_heartbeat(authenticated_user, entity_id):
+def builtin_edit_lock_heartbeat(authenticated_user: str, entity_id: str) -> tuple[Response, int]:
     """Renew an admin edit lock TTL on a built-in resource."""
     svc, err = _admin_lock_service()
     if err:

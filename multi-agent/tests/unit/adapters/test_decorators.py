@@ -14,10 +14,12 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from flask import Flask, jsonify
+from flask import Flask, g, jsonify
 from flask.testing import FlaskClient
 
-from inbound.flask.decorators import is_admin_user, require_admin_access
+from mas.core.identity import Identity, IdentityType
+
+from inbound.flask.decorators import is_admin_user, require_admin_access, resolve_caller_scope, G_IDENTITY_USERNAME
 
 
 ADMIN_USER = "Admin-Alice"
@@ -102,3 +104,42 @@ class TestRequireAdminAccess:
 
         assert resp.status_code == 403
         assert resp.get_json()["error_type"] == "ACCESS_DENIED"
+
+
+class TestResolveCallerScope:
+    """``resolve_caller_scope`` must bundle the identity with the correct
+    admin flag derived from ``g.identity_username``."""
+
+    def _identity(self, username: str = "alice") -> Identity:
+        return Identity(type=IdentityType.USER, id=username, display_name=username)
+
+    def test_admin_user_gets_is_admin_true(self) -> None:
+        app = _make_app(admin_config_reader=None, admin_allowed_users=[ADMIN_USER])
+        identity = self._identity(ADMIN_USER)
+
+        with app.test_request_context():
+            setattr(g, G_IDENTITY_USERNAME, ADMIN_USER)
+            scope = resolve_caller_scope(identity)
+
+        assert scope.identity is identity
+        assert scope.is_admin is True
+
+    def test_non_admin_user_gets_is_admin_false(self) -> None:
+        app = _make_app(admin_config_reader=None, admin_allowed_users=[ADMIN_USER])
+        identity = self._identity(OTHER_USER)
+
+        with app.test_request_context():
+            setattr(g, G_IDENTITY_USERNAME, OTHER_USER)
+            scope = resolve_caller_scope(identity)
+
+        assert scope.identity is identity
+        assert scope.is_admin is False
+
+    def test_missing_username_on_g_defaults_to_non_admin(self) -> None:
+        app = _make_app(admin_config_reader=None, admin_allowed_users=[ADMIN_USER])
+        identity = self._identity("unknown")
+
+        with app.test_request_context():
+            scope = resolve_caller_scope(identity)
+
+        assert scope.is_admin is False
