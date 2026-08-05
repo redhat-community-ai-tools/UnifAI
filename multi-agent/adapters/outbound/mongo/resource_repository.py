@@ -1,3 +1,4 @@
+import logging
 from typing import List, Dict, Any
 import pymongo
 from mas.resources.models import Resource, ResourceQuery
@@ -5,6 +6,8 @@ from mas.resources.repository.base import ResourceRepository
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 from outbound.mongo.helpers import identity_q
+
+logger = logging.getLogger(__name__)
 
 
 class MongoResourceRepository(ResourceRepository):
@@ -15,23 +18,25 @@ class MongoResourceRepository(ResourceRepository):
         mongo_uri = f"mongodb://{mongodb_ip}:{mongodb_port}/"
         self._client = pymongo.MongoClient(mongo_uri)
         self.col = self._client[db_name][coll_name]
-        self.col.create_index("nested_refs")
-        self.col.create_index(
-            [("identity.type", 1), ("identity.id", 1),
-             ("category", 1), ("type", 1), ("name", 1)],
-            name="uq_identity_cat_type_name",
-            unique=True)
-        self.col.create_index(
-            [("identity.type", 1), ("identity.id", 1), ("created", -1)],
-            background=True)
-        # One compound index per sortable field (see ResourceQuery.sort_by's
-        # allowlist) scoped by identity, matching the identity+created index
-        # above — keeps identity-scoped listings/sorts index-backed instead
-        # of falling back to an in-memory sort as the collection grows.
-        for sort_field in ("updated", "name", "type", "category"):
+        try:
+            self.col.create_index("nested_refs")
             self.col.create_index(
-                [("identity.type", 1), ("identity.id", 1), (sort_field, 1)],
+                [("identity.type", 1), ("identity.id", 1),
+                 ("category", 1), ("type", 1), ("name", 1)],
+                name="uq_identity_cat_type_name",
+                unique=True)
+            self.col.create_index(
+                [("identity.type", 1), ("identity.id", 1), ("created", -1)],
                 background=True)
+            for sort_field in ("updated", "name", "type", "category"):
+                self.col.create_index(
+                    [("identity.type", 1), ("identity.id", 1), (sort_field, 1)],
+                    background=True)
+        except pymongo.errors.PyMongoError:
+            logger.warning(
+                "Could not create indexes on '%s' — MongoDB may be unreachable",
+                coll_name, exc_info=True,
+            )
 
     # ---------- CRUD ----------
     def save(self, doc: Resource) -> str:

@@ -1,7 +1,7 @@
 from typing import Literal, Optional
 from pydantic import Field
 from mas.elements.nodes.common.base_config import NodeBaseConfig
-from mas.core.field_hints import CardHint
+from mas.core.field_hints import CardHint, CardContext
 from .identifiers import Identifier
 
 
@@ -13,5 +13,5 @@ class BranchChooserNodeConfig(NodeBaseConfig):
     default_branch: Optional[str] = Field(
         None,
         description="Default branch name to use if no target branches are available",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )

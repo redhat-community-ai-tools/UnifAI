@@ -2,6 +2,8 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from pydantic import ValidationError
+
 from mas.blueprints.models.blueprint import BlueprintSpec, BlueprintDraft, BlueprintDocument, BlueprintSummary
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.blueprints.resolver import BlueprintResolver
@@ -210,7 +212,7 @@ class BlueprintService:
         for doc in docs:
             try:
                 resolved_docs.append(self._resolve_doc(doc, caller=caller))
-            except Exception as e:
+            except (KeyError, ValidationError) as e:
                 logger.warning(
                     "Skipping blueprint '%s': resolution failed — %s",
                     doc.blueprint_id, e,

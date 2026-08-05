@@ -1,7 +1,7 @@
 from typing import Literal, Dict, Any, Optional
 from pydantic import Field, Extra
 from pydantic import BaseModel
-from mas.core.field_hints import SecretHint, CardHint
+from mas.core.field_hints import SecretHint, CardHint, CardContext
 from .identifiers import Identifier
 
 
@@ -12,7 +12,7 @@ class GoogleGenAIConfig(BaseModel):
     model_name: str = Field(
         default="gemini-3.5-flash",
         description="The Gemini model ID to use (e.g., gemini-3.5-flash, gemini-2.5-pro)",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
 
     api_key: str = Field(
@@ -29,13 +29,13 @@ class GoogleGenAIConfig(BaseModel):
         ge=0.0,
         le=2.0,
         description="Sampling temperature (0.0 to 2.0)",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
 
     max_tokens: Optional[int] = Field(
         default=8192,
         description="Maximum number of tokens to generate (None for model default)",
-        json_schema_extra=CardHint(contexts=["builtin", "custom"]).to_hints(),
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
 
     top_p: Optional[float] = Field(

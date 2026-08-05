@@ -89,10 +89,6 @@ class ActionHint(BaseModel):
                     "Skipped when any required dependency value is empty.",
     )
 
-    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
-        """Override to return clean dict for json_schema_extra"""
-        return super().model_dump(**kwargs)
-    
     def to_hints(self) -> dict[str, Any]:
         """Return the proper structure for json_schema_extra hints"""
         return {
@@ -155,10 +151,6 @@ class ApiHint(BaseModel):
         description="Whether the endpoint supports search filtering"
     )
 
-    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
-        """Override to return clean dict for json_schema_extra"""
-        return super().model_dump(**kwargs)
-    
     def to_hints(self) -> dict[str, Any]:
         """Return the proper structure for json_schema_extra hints"""
         return {
@@ -178,10 +170,6 @@ class HiddenHint(BaseModel):
         description="Optional reason why field is hidden"
     )
 
-    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
-        """Override to return clean dict for json_schema_extra"""
-        return super().model_dump(**kwargs)
-    
     def to_hints(self) -> dict[str, Any]:
         """Return the proper structure for json_schema_extra hints"""
         return {
@@ -210,10 +198,6 @@ class SecretHint(BaseModel):
         description="Whether to show eye icon to reveal secret temporarily"
     )
 
-    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
-        """Override to return clean dict for json_schema_extra"""
-        return super().model_dump(**kwargs)
-    
     def to_hints(self) -> dict[str, Any]:
         """Return the proper structure for json_schema_extra hints"""
         return {
@@ -247,9 +231,6 @@ class AuthHint(BaseModel):
         default_factory=dict,
         description="Config field → action input field mapping",
     )
-
-    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
-        return super().model_dump(**kwargs)
 
     def to_hints(self) -> dict[str, Any]:
         return {
@@ -292,9 +273,6 @@ class FileUploadHint(BaseModel):
         description="Format to validate on the backend (e.g. 'pem')",
     )
 
-    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
-        return super().model_dump(**kwargs)
-
     def to_hints(self) -> dict[str, Any]:
         return {
             "hints": {
@@ -329,9 +307,6 @@ class ConditionalHint(BaseModel):
                     "Values can be scalars (exact match) or operator objects like {\"not_in\": [...]}.",
     )
 
-    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
-        return super().model_dump(**kwargs)
-
     def to_hints(self) -> dict[str, Any]:
         return {
             "hints": {
@@ -361,9 +336,6 @@ class PropagateHint(BaseModel):
         default=None,
         description="Fixed value to write. If None, copies the source field's value.",
     )
-
-    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
-        return super().model_dump(**kwargs)
 
     def to_hints(self) -> dict[str, Any]:
         return {

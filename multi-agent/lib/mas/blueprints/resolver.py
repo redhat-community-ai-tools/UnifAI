@@ -137,13 +137,13 @@ class BlueprintResolver:
 
         try:
             resource = self.resources_service.get_visible(rid, caller=session.caller)
+            obj = self.resources_service.resolve_resource(resource, session.caller)
         except KeyError:
             if session.strict:
                 raise
             session.broken_refs[rid] = f"Referenced resource not found: {rid}"
             return
 
-        obj = self.resources_service.resolve_resource(resource, session.caller)
         cat = resource.category.value if hasattr(resource.category, "value") else resource.category
         name = name if name is not None else resource.name
 
