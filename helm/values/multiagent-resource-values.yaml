@@ -2,8 +2,8 @@ multiagent_server:
   replicaCount: 1
   resources:
     limits:
-      cpu: '1'
-      memory: '2Gi'
+      cpu: '2'
+      memory: '4Gi'
     requests:
       cpu: '1'
       memory: '2Gi'
@@ -29,8 +29,8 @@ multiagent_temporal_worker:
   replicaCount: 1
   resources:
     limits:
-      cpu: '1'
-      memory: '2Gi'
+      cpu: '2'
+      memory: '4Gi'
     requests:
       cpu: '1'
       memory: '2Gi'
@@ -43,7 +43,7 @@ multiagent_temporal_worker:
   env:
     BACKEND_ENV: "production" #options - production development
     ROLE: "temporal-worker" # options are flask celery debug
-    WORKER_THREADS: "100"
+    WORKER_THREADS: "50"
     SHARED_STORAGE: "/app/shared"
     GOOGLE_APPLICATION_CREDENTIALS: "/opt/app-root/src/config/gcp/gcp-sa-key.json"
     LANGFUSE_ENABLED: true

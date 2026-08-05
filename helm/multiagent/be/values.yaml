@@ -100,11 +100,11 @@ ingress:
 
 resources: 
   limits:
-    cpu: '4'
-    memory: '6Gi'
-  requests:
     cpu: '2'
-    memory: '3Gi'
+    memory: '4Gi'
+  requests:
+    cpu: '1'
+    memory: '2Gi'
 
 ##### currently the liveness/readyness probes are set manually in the deployment file and taking the port from the service in this file.
 # This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
@@ -132,17 +132,17 @@ autoscaling:
   enabled: true
   minReplicas: 1
   maxReplicas: 6
-  targetMemoryUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 75
   targetCPUUtilizationPercentage: 75
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 30
+      stabilizationWindowSeconds: 60
       maxPodsPerMinute: 1
-      periodSeconds: 30
+      periodSeconds: 60
     scaleDown:
-      stabilizationWindowSeconds: 120
+      stabilizationWindowSeconds: 60
       maxPodsPerPeriod: 1
-      periodSeconds: 120
+      periodSeconds: 60
 
 # Additional volumes on the output Deployment definition.
 volumes:
