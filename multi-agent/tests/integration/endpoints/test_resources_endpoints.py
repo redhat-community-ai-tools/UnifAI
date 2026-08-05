@@ -296,4 +296,4 @@ class TestResourceCards:
         assert resp.status_code == 200
         _, kwargs = resources_service.get_cards.call_args
         assert kwargs["rids"] == ["r1"]
-        assert kwargs["is_admin"] is False
+        assert kwargs["caller"].is_admin is False

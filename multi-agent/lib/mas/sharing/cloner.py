@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from mas.core.identity import Identity
 from mas.resources.models import Resource
-from mas.resources.service import ResourcesService
+from mas.resources.ports import ResourceClonePort
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintResource, StepDef
 from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
@@ -93,7 +93,7 @@ class ShareCloner:
     """
 
     def __init__(self,
-                 resources_service: ResourcesService,
+                 resources_service: ResourceClonePort,
                  blueprint_service: BlueprintService,
                  element_registry: ElementRegistry):
         self.resources = resources_service

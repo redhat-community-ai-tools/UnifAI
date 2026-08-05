@@ -10,6 +10,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from mas.core.caller_scope import CallerScope
 from mas.core.enums import ResourceOwnership, ResourceVisibility
 from mas.resources.errors import (
     BuiltInWriteProtectedError,
@@ -77,7 +78,7 @@ def _link_nested(service, parent: Resource, *child_rids: str) -> Resource:
 class TestGuardWriteAccess:
     def test_owner_may_write_own_custom_resource(self, service, alice):
         doc = _make_custom_resource(service, alice)
-        resolved = service.guard_write_access(doc.rid, identity=alice, is_admin=False)
+        resolved = service.guard_write_access(doc.rid, CallerScope(identity=alice, is_admin=False))
         assert resolved.rid == doc.rid
 
     def test_other_user_is_denied_on_custom_resource(self, service, alice, bob):
@@ -85,17 +86,17 @@ class TestGuardWriteAccess:
         to pass the write guard for someone else's custom resource."""
         doc = _make_custom_resource(service, alice)
         with pytest.raises(ResourceAccessDeniedError):
-            service.guard_write_access(doc.rid, identity=bob, is_admin=False)
+            service.guard_write_access(doc.rid, CallerScope(identity=bob, is_admin=False))
 
     def test_admin_bypasses_ownership_check(self, service, alice, admin_identity):
         doc = _make_custom_resource(service, alice)
-        resolved = service.guard_write_access(doc.rid, identity=admin_identity, is_admin=True)
+        resolved = service.guard_write_access(doc.rid, CallerScope(identity=admin_identity, is_admin=True))
         assert resolved.rid == doc.rid
 
     def test_builtin_resource_blocked_for_non_admin_even_if_owner(self, service, admin_identity):
         doc = _make_builtin_resource(service, admin_identity)
         with pytest.raises(BuiltInWriteProtectedError):
-            service.guard_write_access(doc.rid, identity=admin_identity, is_admin=False)
+            service.guard_write_access(doc.rid, CallerScope(identity=admin_identity, is_admin=False))
 
     def test_team_identity_ownership_matches_by_type_and_id(self, service):
         from mas.core.identity import Identity
@@ -104,12 +105,12 @@ class TestGuardWriteAccess:
         doc = _make_custom_resource(service, team)
         # Same team id, different display_name still matches.
         other_ref = Identity.team("team-a", display_name="Renamed Team")
-        resolved = service.guard_write_access(doc.rid, identity=other_ref, is_admin=False)
+        resolved = service.guard_write_access(doc.rid, CallerScope(identity=other_ref, is_admin=False))
         assert resolved.rid == doc.rid
 
         different_team = Identity.team("team-b")
         with pytest.raises(ResourceAccessDeniedError):
-            service.guard_write_access(doc.rid, identity=different_team, is_admin=False)
+            service.guard_write_access(doc.rid, CallerScope(identity=different_team, is_admin=False))
 
 
 # ────────────────────────────── visibility guards ──────────────────────────────
@@ -118,16 +119,16 @@ class TestVisibilityGuards:
     def test_get_visible_blocks_draft_builtin_for_non_admin(self, service, admin_identity):
         doc = _make_builtin_resource(service, admin_identity, available_to_all=False)
         with pytest.raises(KeyError):
-            service.get_visible(doc.rid, is_admin=False)
+            service.get_visible(doc.rid, caller=CallerScope(is_admin=False))
 
     def test_get_visible_allows_draft_builtin_for_admin(self, service, admin_identity):
         doc = _make_builtin_resource(service, admin_identity, available_to_all=False)
-        resolved = service.get_visible(doc.rid, is_admin=True)
+        resolved = service.get_visible(doc.rid, caller=CallerScope(is_admin=True))
         assert resolved.rid == doc.rid
 
     def test_get_visible_allows_public_builtin_for_anyone(self, service, admin_identity):
         doc = _make_builtin_resource(service, admin_identity, available_to_all=True)
-        resolved = service.get_visible(doc.rid, is_admin=False)
+        resolved = service.get_visible(doc.rid, caller=CallerScope(is_admin=False))
         assert resolved.rid == doc.rid
 
     def test_validate_resource_blocks_probing_draft_builtins(self, service, admin_identity, alice):
@@ -135,36 +136,36 @@ class TestVisibilityGuards:
         a draft built-in's existence/schema via the validation endpoint."""
         doc = _make_builtin_resource(service, admin_identity, available_to_all=False)
         with pytest.raises(KeyError):
-            service.validate_resource(doc.rid, identity=alice, is_admin=False)
+            service.validate_resource(doc.rid, CallerScope(identity=alice, is_admin=False))
 
     def test_get_cards_blocks_draft_builtin_for_non_admin(self, service, admin_identity):
         doc = _make_builtin_resource(service, admin_identity, available_to_all=False)
         with pytest.raises(KeyError):
-            service.get_cards([doc.rid], is_admin=False)
+            service.get_cards([doc.rid], caller=CallerScope(is_admin=False))
 
     def test_validate_resource_blocks_non_owner_on_custom_resource(self, service, alice, bob):
-        """Regression test: validate_resource must forward ``identity`` into
-        ``get_visible`` so a non-owner cannot validate someone else's custom
-        resource just by knowing its rid."""
+        """Regression test: validate_resource must forward ``caller.identity``
+        into ``get_visible`` so a non-owner cannot validate someone else's
+        custom resource just by knowing its rid."""
         doc = _make_custom_resource(service, alice)
         with pytest.raises(KeyError):
-            service.validate_resource(doc.rid, identity=bob, is_admin=False)
+            service.validate_resource(doc.rid, CallerScope(identity=bob, is_admin=False))
 
     def test_get_cards_blocks_non_owner_on_custom_resource(self, service, alice, bob):
-        """Regression test: get_cards must forward ``identity`` into
+        """Regression test: get_cards must forward ``caller.identity`` into
         ``get_visible`` so a non-owner cannot build a card for someone
         else's custom resource just by knowing its rid."""
         doc = _make_custom_resource(service, alice)
         with pytest.raises(KeyError):
-            service.get_cards([doc.rid], identity=bob, is_admin=False)
+            service.get_cards([doc.rid], caller=CallerScope(identity=bob, is_admin=False))
 
     def test_resolve_blocks_non_owner_on_custom_resource(self, service, alice, bob):
-        """Regression test: resolve() must forward ``identity`` into
+        """Regression test: resolve() must forward ``caller.identity`` into
         ``get_visible`` so a non-owner cannot resolve/decrypt someone
         else's custom resource just by knowing its rid."""
         doc = _make_custom_resource(service, alice, bearer_token="alices-secret")
         with pytest.raises(KeyError):
-            service.resolve(doc.rid, identity=bob, is_admin=False)
+            service.resolve(doc.rid, CallerScope(identity=bob, is_admin=False))
 
 
 # ────────────────────────────── encryption ──────────────────────────────
@@ -226,9 +227,9 @@ class TestBuiltinOverlay:
         doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
         service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
 
-        resolved_for_alice = service.resolve(doc.rid, identity=alice)
-        resolved_for_bob = service.resolve(doc.rid, identity=bob)
-        resolved_no_identity = service.resolve(doc.rid, identity=None)
+        resolved_for_alice = service.resolve(doc.rid, CallerScope(identity=alice))
+        resolved_for_bob = service.resolve(doc.rid, CallerScope(identity=bob))
+        resolved_no_identity = service.resolve(doc.rid, CallerScope(identity=None))
 
         assert resolved_for_alice.bearer_token == "alices-secret"
         # Bob never configured his own overlay — he must NOT silently inherit
@@ -249,7 +250,7 @@ class TestBuiltinOverlay:
         one yet."""
         doc = _make_builtin_resource(service, admin_identity, bearer_token="admins-own-secret")
 
-        resolved = service.resolve(doc.rid, identity=alice)
+        resolved = service.resolve(doc.rid, CallerScope(identity=alice))
 
         assert resolved.bearer_token is None
 
@@ -282,7 +283,7 @@ class TestBuiltinOverlay:
 
         service._card_service.build_all_cards.side_effect = fake_build_all_cards
 
-        service.get_cards([doc.rid], identity=alice, is_admin=False)
+        service.get_cards([doc.rid], caller=CallerScope(identity=alice, is_admin=False))
 
         built = captured["configs"][0]
         assert built.config.bearer_token == "alices-secret"
@@ -314,7 +315,7 @@ class TestBuiltinRequiredSecretValidation:
         doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
         captured = self._capture_ordered_configs(service, is_valid=False)
 
-        service.validate_resource(doc.rid, identity=bob)
+        service.validate_resource(doc.rid, CallerScope(identity=bob))
 
         built = next(c for c in captured["configs"] if c.rid == doc.rid)
         assert built.validation_override_error is not None
@@ -327,7 +328,7 @@ class TestBuiltinRequiredSecretValidation:
         service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
         captured = self._capture_ordered_configs(service, is_valid=True)
 
-        service.validate_resource(doc.rid, identity=alice)
+        service.validate_resource(doc.rid, CallerScope(identity=alice))
 
         built = next(c for c in captured["configs"] if c.rid == doc.rid)
         assert built.validation_override_error is None
@@ -335,12 +336,13 @@ class TestBuiltinRequiredSecretValidation:
     def test_validate_resource_not_flagged_without_identity(
         self, service, admin_identity,
     ):
-        """``identity=None`` (schema-only tooling) skips the overlay concept
-        entirely, same as ``resolve()`` — it must not be flagged either."""
+        """``caller.identity=None`` (schema-only tooling) skips the overlay
+        concept entirely, same as ``resolve()`` — it must not be flagged
+        either."""
         doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
         captured = self._capture_ordered_configs(service, is_valid=True)
 
-        service.validate_resource(doc.rid, identity=None)
+        service.validate_resource(doc.rid, CallerScope(identity=None))
 
         built = next(c for c in captured["configs"] if c.rid == doc.rid)
         assert built.validation_override_error is None
@@ -352,7 +354,7 @@ class TestBuiltinRequiredSecretValidation:
         doc = _make_custom_resource(service, alice, bearer_token=None)
         captured = self._capture_ordered_configs(service, is_valid=True)
 
-        service.validate_resource(doc.rid, identity=alice)
+        service.validate_resource(doc.rid, CallerScope(identity=alice))
 
         built = next(c for c in captured["configs"] if c.rid == doc.rid)
         assert built.validation_override_error is None

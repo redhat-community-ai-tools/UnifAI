@@ -25,7 +25,8 @@ from flask import current_app, g, jsonify, request, session
 
 from global_utils.constants import INTERNAL_AUTH_HEADER
 from global_utils.flask.decorators import validate_session, G_IDENTITY_SESSION
-from mas.core.identity import resolve_identity
+from mas.core.caller_scope import CallerScope
+from mas.core.identity import Identity, resolve_identity
 from mas.core.identity.ports import IdentityProvider
 
 logger = logging.getLogger(__name__)
@@ -268,6 +269,20 @@ def is_admin_user(username: str) -> bool:
 
     cache[username] = result
     return result
+
+
+def resolve_caller_scope(identity: Identity) -> CallerScope:
+    """Bundle the caller's resolved ``identity`` with their admin status into
+    one immutable ``CallerScope``.
+
+    This is the single place endpoints should build a ``CallerScope`` to pass
+    into ``ResourcesService``/``BlueprintService``/``BlueprintResolver``,
+    instead of separately threading ``identity`` and
+    ``is_admin_user(username)`` through every service call. Reuses
+    ``is_admin_user``'s per-request cache on ``g``.
+    """
+    username = getattr(g, G_IDENTITY_USERNAME, "")
+    return CallerScope(identity=identity, is_admin=is_admin_user(username))
 
 
 # Backward-compat alias for any remaining internal call sites within this module.

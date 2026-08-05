@@ -17,7 +17,7 @@ from mas.blueprints.exceptions import (
 from inbound.flask.decorators import (
     with_require_identity_authorization,
     with_authenticated_user,
-    is_admin_user,
+    resolve_caller_scope,
     G_IDENTITY_USERNAME,
 )
 
@@ -131,20 +131,17 @@ def available_blueprint_summaries(identity):
 def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, sort_desc=True):
     try:
         svc = current_app.container.blueprint_service
-        username = getattr(g, G_IDENTITY_USERNAME, "")
-        is_admin = is_admin_user(username)
+        caller = resolve_caller_scope(identity)
 
         # Single blueprint by ID
         if blueprint_id:
-            resolved = svc.get_resolved_doc(
-                blueprint_id=blueprint_id, identity=identity, is_admin=is_admin,
-            )
+            resolved = svc.get_resolved_doc(blueprint_id=blueprint_id, caller=caller)
             return jsonify(resolved.model_dump(mode="json")), 200
 
         # Paginated list
         total = svc.count(identity=identity)
         items = svc.list_resolved_docs(
-            identity=identity, skip=skip, limit=limit, sort_desc=sort_desc, is_admin=is_admin,
+            skip=skip, limit=limit, sort_desc=sort_desc, caller=caller,
         )
         return jsonify({
             "items": [item.model_dump(mode="json") for item in items],
@@ -408,11 +405,10 @@ def validate_blueprint(
     try:
         result = svc.validate_blueprint(
             blueprint_id=blueprint_id,
-            identity=identity,
+            caller=resolve_caller_scope(identity),
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,
-            is_admin=is_admin_user(authenticated_user),
         )
         return jsonify(result.model_dump()), 200
     except BlueprintNotFoundError as e:

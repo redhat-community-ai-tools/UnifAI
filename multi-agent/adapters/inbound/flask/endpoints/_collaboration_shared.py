@@ -25,8 +25,8 @@ from flask import Response, current_app, g, jsonify
 from inbound.flask.decorators import G_IDENTITY_USERNAME
 from mas.collaboration.models import TeamEditLockHolder
 from mas.collaboration.service import CollaborationService
+from mas.core.caller_scope import CallerScope
 from mas.core.enums import ResourceOwnership
-from mas.core.identity import Identity
 from mas.resources.models import Resource
 from mas.resources.service import ResourcesService
 
@@ -93,8 +93,7 @@ def guard_write_access_with_lock(
     resources_service: ResourcesService,
     resource_id: str,
     *,
-    identity: Identity,
-    is_admin: bool,
+    caller: CallerScope,
 ) -> tuple[Optional[Resource], Optional[tuple[Response, int]]]:
     """Authorize a mutation and enforce the admin edit lock in one call.
 
@@ -104,9 +103,7 @@ def guard_write_access_with_lock(
     another admin currently holds the edit lock. Returns
     ``(resource, None)`` to proceed.
     """
-    resource = resources_service.guard_write_access(
-        resource_id, identity=identity, is_admin=is_admin,
-    )
+    resource = resources_service.guard_write_access(resource_id, caller)
     if resource.ownership == ResourceOwnership.BUILTIN:
         lock_error = reject_if_locked_by_other(resource_id)
         if lock_error:

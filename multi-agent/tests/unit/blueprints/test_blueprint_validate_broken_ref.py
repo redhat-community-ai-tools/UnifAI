@@ -10,7 +10,7 @@ uncaught, and the Flask endpoint's generic ``except KeyError`` handler
 mislabeled it as "Blueprint not found: '<the missing resource's rid>'",
 even though the blueprint itself existed and was visible to the caller.
 """
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import pytest
 from pydantic import BaseModel
@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintDocument, BlueprintResource
 from mas.blueprints.resolver import BlueprintResolver
 from mas.blueprints.service import BlueprintService
+from mas.core.caller_scope import CallerScope
 from mas.core.element_meta import ElementConfigMeta
 from mas.core.identity import Identity
 from mas.core.ref.models import ProviderRef
@@ -34,10 +35,10 @@ class _FakeResourcesService:
     def get(self, rid: str) -> Resource:
         raise KeyError(rid)
 
-    def get_visible(self, rid: str, *, identity: Optional[Identity] = None, is_admin: bool = False) -> Resource:
+    def get_visible(self, rid: str, *, caller: CallerScope = CallerScope()) -> Resource:
         raise KeyError(rid)
 
-    def resolve_resource(self, resource: Resource, identity: Optional[Identity] = None) -> BaseModel:  # pragma: no cover
+    def resolve_resource(self, resource: Resource, caller: CallerScope = CallerScope()) -> BaseModel:  # pragma: no cover
         raise AssertionError("resolve_resource should not run when get() fails")
 
 
@@ -50,22 +51,22 @@ class _OwnershipCheckingResourcesService:
         self._resource = resource
         self._config = config
 
-    def get_visible(self, rid: str, *, identity: Optional[Identity] = None, is_admin: bool = False) -> Resource:
+    def get_visible(self, rid: str, *, caller: CallerScope = CallerScope()) -> Resource:
         if rid != self._resource.rid:
             raise KeyError(rid)
-        if is_admin:
+        if caller.is_admin:
             return self._resource
         if (
-            identity is not None
+            caller.identity is not None
             and (
-                self._resource.identity.type != identity.type
-                or self._resource.identity.id != identity.id
+                self._resource.identity.type != caller.identity.type
+                or self._resource.identity.id != caller.identity.id
             )
         ):
             raise KeyError(rid)
         return self._resource
 
-    def resolve_resource(self, resource: Resource, identity: Optional[Identity] = None) -> BaseModel:
+    def resolve_resource(self, resource: Resource, caller: CallerScope = CallerScope()) -> BaseModel:
         return self._config
 
 
@@ -172,7 +173,7 @@ class TestBlueprintResolverOwnershipGuard:
         draft = _draft_with_missing_provider_ref(resource.rid)
 
         with pytest.raises(KeyError):
-            resolver.resolve(draft, identity=caller)
+            resolver.resolve(draft, caller=CallerScope(identity=caller))
 
     def test_foreign_owned_rid_reported_as_broken_in_tolerant(self):
         owner = Identity(type="user", id="owner-alice")
@@ -183,7 +184,7 @@ class TestBlueprintResolverOwnershipGuard:
         resolver = BlueprintResolver(svc)
         draft = _draft_with_missing_provider_ref(resource.rid)
 
-        spec, broken_refs = resolver.resolve_tolerant(draft, identity=caller)
+        spec, broken_refs = resolver.resolve_tolerant(draft, caller=CallerScope(identity=caller))
 
         assert spec.providers == []
         assert resource.rid in broken_refs
@@ -196,7 +197,7 @@ class TestBlueprintResolverOwnershipGuard:
         resolver = BlueprintResolver(svc)
         draft = _draft_with_missing_provider_ref(resource.rid)
 
-        spec, broken_refs = resolver.resolve_tolerant(draft, identity=owner)
+        spec, broken_refs = resolver.resolve_tolerant(draft, caller=CallerScope(identity=owner))
 
         assert len(spec.providers) == 1
         resolved_rid = spec.providers[0].rid
@@ -212,7 +213,9 @@ class TestBlueprintResolverOwnershipGuard:
         resolver = BlueprintResolver(svc)
         draft = _draft_with_missing_provider_ref(resource.rid)
 
-        spec, broken_refs = resolver.resolve_tolerant(draft, identity=caller, is_admin=True)
+        spec, broken_refs = resolver.resolve_tolerant(
+            draft, caller=CallerScope(identity=caller, is_admin=True),
+        )
 
         assert len(spec.providers) == 1
         assert broken_refs == {}

@@ -12,7 +12,7 @@ from mas.resources.errors import (
 from inbound.flask.decorators import (
     with_require_identity_authorization,
     with_authenticated_user,
-    is_admin_user,
+    resolve_caller_scope,
     G_IDENTITY_USERNAME,
 )
 from inbound.flask.endpoints._collaboration_shared import guard_write_access_with_lock
@@ -109,12 +109,8 @@ def get_resource(identity, resource_id):
     """Get a single resource by ID."""
     svc = current_app.container.resources_service
     try:
-        username = getattr(g, G_IDENTITY_USERNAME, "")
-        doc = svc.get_visible(
-            resource_id,
-            identity=identity,
-            is_admin=is_admin_user(username),
-        )
+        caller = resolve_caller_scope(identity)
+        doc = svc.get_visible(resource_id, caller=caller)
         return jsonify(doc.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
@@ -142,15 +138,14 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=50,
     """
     svc = current_app.container.resources_service
     try:
-        username = getattr(g, G_IDENTITY_USERNAME, "")
+        caller = resolve_caller_scope(identity)
         resources_data, total_count = svc.find_resources(
-            identity=identity,
             category=category,
             type=type,
             ownership=ownership,
             limit=limit,
             offset=offset,
-            is_admin=is_admin_user(username),
+            caller=caller,
         )
         return jsonify({
             "resources": resources_data,
@@ -177,10 +172,8 @@ def list_resources(identity, category=None, type=None, ownership=None, limit=50,
 def update_resource(identity, resource_id, config, name=None):
     svc = current_app.container.resources_service
     try:
-        username = getattr(g, G_IDENTITY_USERNAME, "")
-        _, lock_error = guard_write_access_with_lock(
-            svc, resource_id, identity=identity, is_admin=is_admin_user(username),
-        )
+        caller = resolve_caller_scope(identity)
+        _, lock_error = guard_write_access_with_lock(svc, resource_id, caller=caller)
         if lock_error:
             return lock_error
         doc = svc.update(resource_id, config=config, name=name)
@@ -205,10 +198,8 @@ def update_resource(identity, resource_id, config, name=None):
 def delete_resource(identity, resource_id):
     svc = current_app.container.resources_service
     try:
-        username = getattr(g, G_IDENTITY_USERNAME, "")
-        _, lock_error = guard_write_access_with_lock(
-            svc, resource_id, identity=identity, is_admin=is_admin_user(username),
-        )
+        caller = resolve_caller_scope(identity)
+        _, lock_error = guard_write_access_with_lock(svc, resource_id, caller=caller)
         if lock_error:
             return lock_error
         svc.delete(resource_id)
@@ -253,11 +244,10 @@ def validate_resource(identity, resource_id, user_id, timeout_seconds):
     try:
         result = svc.validate_resource(
             rid=resource_id,
-            identity=identity,
+            caller=resolve_caller_scope(identity),
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,
-            is_admin=is_admin_user(authenticated_user),
         )
         return jsonify(result.model_dump()), 200
     except KeyError as e:
@@ -310,12 +300,11 @@ def validate_resources(identity, resource_ids, user_id, timeout_seconds, max_wor
     try:
         results = svc.validate_resources(
             rids=resource_ids,
-            identity=identity,
+            caller=resolve_caller_scope(identity),
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             max_workers=max_workers,
             credential_user_id=authenticated_user,
-            is_admin=is_admin_user(authenticated_user),
         )
         return jsonify([r.model_dump() for r in results]), 200
     except RuntimeError as e:
@@ -338,8 +327,7 @@ def get_resource_card(identity, resource_id):
     """
     svc = current_app.container.resources_service
     try:
-        username = getattr(g, G_IDENTITY_USERNAME, "")
-        card = svc.get_card(rid=resource_id, identity=identity, is_admin=is_admin_user(username))
+        card = svc.get_card(rid=resource_id, caller=resolve_caller_scope(identity))
         return jsonify(card.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
@@ -368,10 +356,7 @@ def get_resource_cards(identity, resource_ids):
         return jsonify({}), 200
 
     try:
-        username = getattr(g, G_IDENTITY_USERNAME, "")
-        cards = svc.get_cards(
-            rids=resource_ids, identity=identity, is_admin=is_admin_user(username),
-        )
+        cards = svc.get_cards(rids=resource_ids, caller=resolve_caller_scope(identity))
         return jsonify({
             rid: card.model_dump(mode="json")
             for rid, card in cards.items()

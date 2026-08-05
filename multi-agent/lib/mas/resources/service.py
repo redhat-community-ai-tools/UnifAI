@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pydantic import BaseModel
 
 from global_utils.utils.crypto import FieldCipher
+from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity
 from mas.resources.registry import ResourcesRegistry
 from mas.catalog.element_registry import ElementRegistry
@@ -139,24 +140,24 @@ class ResourcesService:
         return self._store.get(rid)
 
     def get_visible(
-        self, rid: str, *, identity: Optional[Identity] = None, is_admin: bool = False,
+        self, rid: str, *, caller: CallerScope = CallerScope(),
     ) -> Resource:
         """Get a resource by ID, enforcing draft-builtin visibility and ownership.
 
         Draft built-ins are only visible to admins. Non-admin callers
         receive a KeyError (404) for draft built-ins.
 
-        When ``identity`` is provided, a custom resource owned by a
+        When ``caller.identity`` is set, a custom resource owned by a
         different identity is likewise hidden (KeyError) from non-admin
         callers — otherwise any authenticated caller could read another
         user's or team's private resource just by guessing/enumerating its
-        rid. ``identity`` is optional (defaults to no ownership check) since
-        several internal callers (dependency resolution, card building,
-        blueprint validation) intentionally look up resources without
-        scoping to a single identity.
+        rid. ``caller.identity`` may be ``None`` (defaults to no ownership
+        check) since several internal callers (dependency resolution, card
+        building, blueprint validation) intentionally look up resources
+        without scoping to a single identity.
         """
         resource = self._store.get(rid)
-        if is_admin:
+        if caller.is_admin:
             return resource
         if (
             resource.ownership == ResourceOwnership.BUILTIN
@@ -164,45 +165,45 @@ class ResourcesService:
         ):
             raise KeyError(rid)
         if (
-            identity is not None
+            caller.identity is not None
             and resource.ownership != ResourceOwnership.BUILTIN
             and (
-                resource.identity.type != identity.type
-                or resource.identity.id != identity.id
+                resource.identity.type != caller.identity.type
+                or resource.identity.id != caller.identity.id
             )
         ):
             raise KeyError(rid)
         return resource
 
-    def find_resources(self, identity: Identity, category: Optional[str] = None,
+    def find_resources(self, category: Optional[str] = None,
                        type: Optional[str] = None, ownership: Optional[str] = None,
                        limit: int = 50, offset: int = 0,
-                       is_admin: bool = False) -> Tuple[List[dict], int]:
-        """Find resources with optional filtering and pagination.
+                       caller: CallerScope = CallerScope()) -> Tuple[List[dict], int]:
+        """Find resources with optional filtering and pagination, scoped to ``caller.identity``.
 
         Returns serialized resource dicts. Built-ins include a
         ``user_configured`` flag indicating whether the caller has an overlay.
         Draft built-ins are only included when ``ownership=builtin`` is
-        requested by an admin caller.
+        requested by an admin caller (``caller.is_admin``).
         """
         category_enum = ResourceCategory(category) if category else None
         ownership_enum = ResourceOwnership(ownership) if ownership else None
 
         query = ResourceQuery(
-            identity=identity,
+            identity=caller.identity,
             category=category_enum,
             type=type,
             ownership=ownership_enum,
             limit=limit,
             offset=offset,
-            is_admin=is_admin,
+            is_admin=caller.is_admin,
         )
         resources, total = self._store.find_resources(query)
-        return self._serialize_with_user_configured(resources, identity), total
+        return self._serialize_with_user_configured(resources, caller.identity), total
 
     # ---------- resolve ----------
     def resolve(
-        self, rid: str, identity: Optional[Identity] = None, is_admin: bool = False,
+        self, rid: str, caller: CallerScope = CallerScope(),
     ) -> BaseModel:
         """Resolve a resource by rid into its validated config model.
 
@@ -210,13 +211,13 @@ class ResourcesService:
         a non-admin caller cannot resolve (and thereby decrypt) a draft
         built-in's config just by knowing its rid.
         """
-        resource = self.get_visible(rid, identity=identity, is_admin=is_admin)
-        return self.resolve_resource(resource, identity=identity)
+        resource = self.get_visible(rid, caller=caller)
+        return self.resolve_resource(resource, caller=caller)
 
-    def resolve_resource(self, resource: Resource, identity: Optional[Identity] = None) -> BaseModel:
+    def resolve_resource(self, resource: Resource, caller: CallerScope = CallerScope()) -> BaseModel:
         """Resolve an already-fetched ``Resource`` into its validated config model.
 
-        Same behavior as ``resolve(rid, identity)`` but skips the redundant
+        Same behavior as ``resolve(rid, caller)`` but skips the redundant
         ``_store.get()`` lookup when the caller already has the ``Resource``
         in hand (e.g. blueprint resolution, which needs the resource itself
         for category/type/name before resolving its config).
@@ -226,13 +227,13 @@ class ResourcesService:
         # rather than ciphertext.
         config = self._store.raw_config_for(resource)
 
-        if resource.ownership == ResourceOwnership.BUILTIN and identity:
+        if resource.ownership == ResourceOwnership.BUILTIN and caller.identity:
             # A caller-supplied credential (below) must always win over the
             # resource's shared base value for per-user secret fields — see
             # `strip_unconfigured_secrets` for why the base value can't be
             # trusted as a fallback.
             config = self.builtin.strip_unconfigured_secrets(resource, config)
-            overlay = self.builtin.resolve_overlay(resource, identity)
+            overlay = self.builtin.resolve_overlay(resource, caller.identity)
             if overlay:
                 config.update(overlay)
 
@@ -275,16 +276,15 @@ class ResourcesService:
     def validate_resource(
         self,
         rid: str,
-        identity: Optional[Identity] = None,
+        caller: CallerScope = CallerScope(),
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
-        is_admin: bool = False,
     ) -> ElementValidationResult:
         """
         Validate a saved resource and all its transitive dependencies.
 
-        When ``identity`` is provided, built-in overlay configs are merged
+        When ``caller.identity`` is set, built-in overlay configs are merged
         into the validation context so user-specific settings participate.
         Draft built-ins are only visible to admins — non-admin callers get
         a ``KeyError`` (404) rather than being able to probe draft resources
@@ -292,15 +292,13 @@ class ResourcesService:
         """
         self._ensure_validation_service()
 
-        self.get_visible(rid, identity=identity, is_admin=is_admin)
+        self.get_visible(rid, caller=caller)
 
         ordered_rids = self._dependency_resolver.resolve_with_deps(rid)
         if not ordered_rids:
             raise KeyError(f"Resource not found: {rid}")
 
-        ordered_configs = self._build_configs_from_rids(
-            ordered_rids, identity=identity, is_admin=is_admin,
-        )
+        ordered_configs = self._build_configs_from_rids(ordered_rids, caller=caller)
 
         return self._validate_and_get(
             ordered_configs, rid, timeout_seconds,
@@ -310,12 +308,11 @@ class ResourcesService:
     def validate_resources(
         self,
         rids: List[str],
-        identity: Optional[Identity] = None,
+        caller: CallerScope = CallerScope(),
         user_id: str = "",
         timeout_seconds: float = 10.0,
         max_workers: int = 10,
         credential_user_id: str = "",
-        is_admin: bool = False,
     ) -> List[ElementValidationResult]:
         """
         Validate multiple resources in parallel.
@@ -331,23 +328,22 @@ class ResourcesService:
         if len(rids) == 1:
             return [
                 self._validate_resource_safe(
-                    rids[0], identity, user_id, timeout_seconds, credential_user_id, is_admin,
+                    rids[0], caller, user_id, timeout_seconds, credential_user_id,
                 ),
             ]
 
         return self._validate_in_parallel(
-            rids, identity, user_id, timeout_seconds, max_workers, credential_user_id, is_admin,
+            rids, caller, user_id, timeout_seconds, max_workers, credential_user_id,
         )
 
     def _validate_in_parallel(
         self,
         rids: List[str],
-        identity: Optional[Identity],
+        caller: CallerScope,
         user_id: str,
         timeout_seconds: float,
         max_workers: int,
         credential_user_id: str = "",
-        is_admin: bool = False,
     ) -> List[ElementValidationResult]:
         """Execute validations concurrently with order preservation."""
         results: List[Optional[ElementValidationResult]] = [None] * len(rids)
@@ -356,7 +352,7 @@ class ResourcesService:
             future_to_index = {
                 executor.submit(
                     self._validate_resource_safe,
-                    rid, identity, user_id, timeout_seconds, credential_user_id, is_admin,
+                    rid, caller, user_id, timeout_seconds, credential_user_id,
                 ): idx
                 for idx, rid in enumerate(rids)
             }
@@ -370,21 +366,19 @@ class ResourcesService:
     def _validate_resource_safe(
         self,
         rid: str,
-        identity: Optional[Identity] = None,
+        caller: CallerScope = CallerScope(),
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
-        is_admin: bool = False,
     ) -> ElementValidationResult:
         """Validate a single resource with exception handling."""
         try:
             return self.validate_resource(
                 rid=rid,
-                identity=identity,
+                caller=caller,
                 user_id=user_id,
                 timeout_seconds=timeout_seconds,
                 credential_user_id=credential_user_id,
-                is_admin=is_admin,
             )
         except KeyError:
             return ElementValidationResult.create_error(
@@ -437,8 +431,7 @@ class ResourcesService:
     def get_cards(
         self,
         rids: List[str],
-        identity: Optional[Identity] = None,
-        is_admin: bool = False,
+        caller: CallerScope = CallerScope(),
     ) -> Dict[str, ElementCard]:
         """
         Get element cards for a list of resources and their dependencies.
@@ -446,25 +439,24 @@ class ResourcesService:
         Enforces draft-builtin visibility on each requested rid (raises
         ``KeyError`` for a non-admin caller requesting a draft built-in).
         Resolves all transitive dependencies and builds cards for all
-        elements in dependency order. When ``identity`` is provided, each
+        elements in dependency order. When ``caller.identity`` is set, each
         built-in dependency's card reflects the caller's configured overlay
         rather than always showing the resource's raw defaults.
         """
         self._ensure_card_service()
 
         for rid in rids:
-            self.get_visible(rid, identity=identity, is_admin=is_admin)
+            self.get_visible(rid, caller=caller)
 
         all_rids = self._dependency_resolver.resolve_all_with_deps(rids)
-        configs = self._build_configs_from_rids(all_rids, identity=identity, is_admin=is_admin)
+        configs = self._build_configs_from_rids(all_rids, caller=caller)
 
         return self._card_service.build_all_cards(configs)
 
     def get_card(
         self,
         rid: str,
-        identity: Optional[Identity] = None,
-        is_admin: bool = False,
+        caller: CallerScope = CallerScope(),
     ) -> ElementCard:
         """
         Get element card for a single resource.
@@ -472,7 +464,7 @@ class ResourcesService:
         Resolves all transitive dependencies and builds cards,
         returning only the card for the requested resource.
         """
-        cards = self.get_cards([rid], identity=identity, is_admin=is_admin)
+        cards = self.get_cards([rid], caller=caller)
         if rid not in cards:
             raise KeyError(f"Resource not found: {rid}")
         return cards[rid]
@@ -583,7 +575,7 @@ class ResourcesService:
         return self.builtin.preview_cascade_targets(rid)
 
     def guard_write_access(
-        self, rid: str, identity: Identity, is_admin: bool,
+        self, rid: str, caller: CallerScope,
     ) -> Resource:
         """Authorize a mutation (update/delete) on a resource.
 
@@ -596,13 +588,14 @@ class ResourcesService:
         it (e.g. ``update``) can avoid a second lookup.
         """
         resource = self._store.get(rid)
-        if is_admin:
+        if caller.is_admin:
             return resource
         if resource.ownership == ResourceOwnership.BUILTIN:
             raise BuiltInWriteProtectedError()
         if (
-            resource.identity.type != identity.type
-            or resource.identity.id != identity.id
+            caller.identity is None
+            or resource.identity.type != caller.identity.type
+            or resource.identity.id != caller.identity.id
         ):
             raise ResourceAccessDeniedError(rid)
         return resource
@@ -651,7 +644,7 @@ class ResourcesService:
             raise RuntimeError("CardService not configured")
 
     def _build_configs_from_rids(
-        self, rids: List[str], identity: Optional[Identity] = None, is_admin: bool = False,
+        self, rids: List[str], caller: CallerScope = CallerScope(),
     ) -> List[ElementConfigMeta]:
         """Build ElementConfigMeta list from saved resource rids.
 
@@ -678,11 +671,11 @@ class ResourcesService:
         """
         configs: List[ElementConfigMeta] = []
         for rid in rids:
-            resource = self.get_visible(rid, identity=identity, is_admin=is_admin)
-            config = self.resolve_resource(resource, identity=identity)
+            resource = self.get_visible(rid, caller=caller)
+            config = self.resolve_resource(resource, caller=caller)
 
             override_error = None
-            if resource.ownership == ResourceOwnership.BUILTIN and identity:
+            if resource.ownership == ResourceOwnership.BUILTIN and caller.identity:
                 missing = self.builtin.find_missing_required_overlay_fields(resource, config)
                 if missing:
                     override_error = (

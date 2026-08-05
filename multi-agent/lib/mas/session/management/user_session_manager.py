@@ -15,6 +15,7 @@ from mas.session.domain.status import SessionStatus
 from mas.blueprints.service import BlueprintService
 from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
 from mas.session.domain.exceptions import BlueprintNotFoundError
+from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity
 
 logger = logging.getLogger(__name__)
@@ -107,11 +108,12 @@ class UserSessionManager:
         if not self.blueprint_exists(record.blueprint_id):
             raise BlueprintNotFoundError(record.blueprint_id, session_id=run_id)
 
-        # identity=record.identity ensures built-in resources resolve with
-        # the session owner's configured overlay (from /builtin.configure)
-        # rather than always falling back to raw defaults.
+        # caller.identity=record.identity ensures built-in resources resolve
+        # with the session owner's configured overlay (from
+        # /builtin.configure) rather than always falling back to raw
+        # defaults.
         blueprint_spec = self._bp_service.load_resolved(
-            record.blueprint_id, identity=record.identity,
+            record.blueprint_id, caller=CallerScope(identity=record.identity),
         )
         return self._factory.build_session(record, blueprint_spec)
 
