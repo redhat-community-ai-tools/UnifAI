@@ -557,45 +557,150 @@ def element_card():
 # =============================================================================
 
 def pytest_addoption(parser):
-    """Add custom command line options."""
+    """Add custom command line options.
+
+    Idempotent: pytest may load this conftest more than once (e.g. after a
+    manual pod copy / importlib), and re-adding the same flag raises ValueError.
+    """
+
+    def _addoption(*opts, **attrs):
+        try:
+            parser.addoption(*opts, **attrs)
+        except ValueError as exc:
+            if "already added" not in str(exc):
+                raise
+
     # E2E Stress Test Options
-    parser.addoption(
+    _addoption(
         "--stress-sessions",
         action="store",
         type=int,
         default=20,
         help="Number of sessions to create in stress test (default: 20)"
     )
-    parser.addoption(
+    _addoption(
         "--stress-concurrent",
         action="store",
         type=int,
         default=10,
-        help="Number of concurrent executions in stress test (default: 10)"
+        help="Max concurrent submit+poll workers in stress test (default: 10)"
     )
-    parser.addoption(
+    _addoption(
+        "--stress-ramp-start",
+        action="store",
+        type=int,
+        default=None,
+        help=(
+            "Initial in-flight concurrency when ramp-up is enabled "
+            "(default: 1 in StressTestConfig). Requires --stress-ramp-interval > 0."
+        ),
+    )
+    _addoption(
+        "--stress-ramp-step",
+        action="store",
+        type=int,
+        default=None,
+        help="How many in-flight slots to add each ramp step (default: 1)",
+    )
+    _addoption(
+        "--stress-ramp-interval",
+        action="store",
+        type=float,
+        default=None,
+        help=(
+            "Seconds between concurrency increases. "
+            "0/unset disables ramp-up (submit up to --stress-concurrent immediately)."
+        ),
+    )
+    _addoption(
         "--stress-base-url",
         action="store",
-        default="http://localhost:8002",
-        help="Base URL for API server in stress tests (default: http://localhost:8002)"
+        default=None,
+        help="Base URL for API server in stress tests (overrides StressTestConfig.base_url)"
     )
-    parser.addoption(
+    _addoption(
         "--blueprint-path",
         action="store",
         default=None,
         help="Path to YAML blueprint file for stress testing (e.g., run/blueprint_mcp_agent.yml)"
     )
-    parser.addoption(
+    _addoption(
+        "--blueprint-id",
+        action="store",
+        default=None,
+        help=(
+            "Use an existing online blueprint by ID (skips blueprint create/delete). "
+            "Takes precedence over --blueprint-path and the default stress blueprint."
+        ),
+    )
+    _addoption(
         "--input-text",
         action="store",
         default="What is 2+2?",
         help="Input text for stress test execution (default: 'What is 2+2?')"
     )
-    parser.addoption(
+    _addoption(
+        "--llm-ref",
+        action="store",
+        default=None,
+        help=(
+            "Use an existing catalog LLM rid "
+            "(with or without $ref: prefix). Ignored when --create-llm is set."
+        ),
+    )
+    _addoption(
+        "--create-llm",
+        action="store_true",
+        default=False,
+        help=(
+            "Force-create a temporary catalog LLM (already the StressTestConfig default). "
+            "Prefer editing StressTestConfig for type/model; only the API key is required."
+        ),
+    )
+    _addoption(
+        "--llm-api-key",
+        action="store",
+        default=None,
+        help="API key used when creating an LLM (or set STRESS_LLM_API_KEY / LLM_API_KEY)",
+    )
+    _addoption(
+        "--llm-type",
+        action="store",
+        default=None,
+        help="Optional override of StressTestConfig.llm_type (google_genai|openai)",
+    )
+    _addoption(
+        "--llm-model",
+        action="store",
+        default=None,
+        help="Optional override of StressTestConfig.llm_model",
+    )
+    _addoption(
+        "--llm-base-url",
+        action="store",
+        default=None,
+        help="Optional override of StressTestConfig.llm_base_url (openai type)",
+    )
+    _addoption(
+        "--llm-name",
+        action="store",
+        default=None,
+        help="Optional override of StressTestConfig.llm_name",
+    )
+    _addoption(
         "--use-streaming",
         action="store_true",
         default=False,
         help="Use streaming execution mode (prevents gateway timeouts for high-load tests)"
+    )
+    _addoption(
+        "--stress-no-cleanup",
+        action="store_true",
+        default=False,
+        help=(
+            "Keep stress-test sessions (chats) after the run instead of deleting them. "
+            "Also skips deleting blueprints this test created."
+        ),
     )
 
 
