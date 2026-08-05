@@ -430,25 +430,3 @@ def builtin_edit_lock_heartbeat(authenticated_user, entity_id):
     except Exception:
         logger.exception("Failed to renew admin edit lock for entity '%s'", entity_id)
         return jsonify({"error": "Internal server error"}), 500
-
-
-@builtins_bp.route("/builtin.edit_lock.statuses", methods=["POST"])
-@require_admin_access
-@from_body({
-    "entity_ids": fields.List(fields.Str(), data_key="entityIds", required=True),
-})
-def builtin_edit_lock_statuses(entity_ids):
-    """Get lock holders for multiple built-in resources (admin only)."""
-    svc, err = _collab_service()
-    if err:
-        return err
-    try:
-        batch = svc.get_admin_edit_locks_batch(entity_ids)
-        locks = {
-            entity_id: _holder_to_json(holder) if holder is not None else None
-            for entity_id, holder in batch.items()
-        }
-        return jsonify({"locks": locks}), 200
-    except Exception:
-        logger.exception("Failed to fetch admin edit lock statuses for %s", entity_ids)
-        return jsonify({"error": "Internal server error"}), 500

@@ -65,7 +65,6 @@ QueryClientProvider → ThemeProvider → AuthProvider → SharedProvider
 | `useTemplates` | Templates | List, detail, schema, validate, materialize |
 | `useWorkspaceData` | Inventory | Category-based element CRUD |
 | `useBuiltinEditLockSession` | Repository Mgmt | Owns heartbeat/release lifecycle for one held admin edit-lock |
-| `useBuiltinEditLockPoll` | Repository Mgmt | Polls lock-holder status for built-in resources (admin panel) |
 
 ## Nginx Path Routing (production)
 
@@ -160,13 +159,14 @@ Team mode adds edit locks — one editor per blueprint at a time.
 
 ### 8. Admin Edit Locks (Repository Management)
 
-The Repository Management panel (built-in resource admin) mirrors the team edit-lock
-pattern from #7, but for admins editing shared built-ins instead of team members
-editing a shared blueprint: `useBuiltinEditLockSession` (heartbeat/release for a held
-lock) + `useBuiltinEditLockPoll` (poll other admins' lock status) against the
-`builtin.edit_lock.*` endpoints. One admin edits a given built-in at a time; acquiring
-is cooperative client-side, but the mutating endpoints reject with 409 if another
-admin holds the lock, so it is a real server-enforced guard.
+The Repository Management panel (built-in resource admin) uses **on-demand** lock
+checking: when an admin clicks Edit, `acquireBuiltinEditLock` attempts to take the
+lock — if another admin holds it, a toast is shown and editing is blocked.
+`useBuiltinEditLockSession` manages the heartbeat/release lifecycle for the held lock.
+Unlike team edit-locks (#7), there is no continuous polling for admin built-in locks;
+conflict detection happens only at the moment of interaction. The mutating endpoints
+also reject with 409 if another admin holds the lock, so it is a real server-enforced
+guard.
 
 ---
 

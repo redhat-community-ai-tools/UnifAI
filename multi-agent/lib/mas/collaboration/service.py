@@ -355,10 +355,3 @@ class CollaborationService:
     ) -> Optional[TeamEditLockHolder]:
         return self._get_edit_lock(ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id)
 
-    def get_admin_edit_locks_batch(
-        self,
-        entity_ids: list[str],
-    ) -> Dict[str, Optional[TeamEditLockHolder]]:
-        return self._get_edit_locks_batch(
-            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_ids,
-        )

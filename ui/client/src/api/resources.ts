@@ -277,8 +277,6 @@ export interface BuiltinEditLockHolder {
   displayName: string;
 }
 
-export type BuiltinEditLockResolved = BuiltinEditLockHolder | null | "unknown";
-
 export async function acquireBuiltinEditLock(entityId: string): Promise<
   { acquired: true } | { acquired: false; lockedBy: BuiltinEditLockHolder }
 > {
@@ -319,20 +317,3 @@ export async function heartbeatBuiltinEditLock(entityId: string): Promise<void> 
   }
 }
 
-export async function fetchBuiltinEditLockStatuses(
-  entityIds: string[],
-): Promise<Record<string, BuiltinEditLockResolved>> {
-  if (entityIds.length === 0) return {};
-  const unknownMap = (): Record<string, BuiltinEditLockResolved> =>
-    Object.fromEntries(entityIds.map((id) => [id, "unknown" as const]));
-  try {
-    const { data } = await axios.post<{
-      locks: Record<string, BuiltinEditLockHolder | null>;
-    }>("/resources/builtin.edit_lock.statuses", { entityIds });
-    return (data.locks ?? {}) as Record<string, BuiltinEditLockResolved>;
-  } catch (e: unknown) {
-    const status = (e as { response?: { status?: number } })?.response?.status;
-    if (status === 501) return {};
-    return unknownMap();
-  }
-}

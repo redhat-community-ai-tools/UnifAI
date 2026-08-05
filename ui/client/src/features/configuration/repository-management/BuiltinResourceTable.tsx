@@ -19,7 +19,6 @@ import { motion } from "framer-motion";
 import {
   Plus,
   PackagePlus,
-  Lock,
   Eye,
   Settings,
   Trash2,
@@ -30,9 +29,7 @@ import {
 import SimpleTooltip from "@/components/shared/SimpleTooltip";
 import { ValidationStatusBadge } from "@/components/agentic-ai/workspace/validation/ValidationStatusBadge";
 import type { ValidationStatus } from "@/contexts/AgenticAIContext";
-import type { BuiltinEditLockResolved } from "@/api/resources";
 import type { ElementType } from "@/types/workspace";
-import { resolveEditLockStatus } from "@/lib/editLockStatus";
 import { DROPDOWN_BG, getCategoryMeta, type ResourceItem } from "./types";
 
 interface CategoryOption {
@@ -47,8 +44,6 @@ interface BuiltinResourceTableProps {
   typeFilters: Record<string, string>;
   availableToAll: Record<string, boolean>;
   isTogglingStatus: string | null;
-  editLocks: Record<string, BuiltinEditLockResolved>;
-  currentUsername: string;
   getValidationStatus: (rid: string) => ValidationStatus;
   onTypeFilterChange: (category: string, value: string) => void;
   onToggleAvailableToAll: (rid: string) => void;
@@ -73,8 +68,6 @@ export function BuiltinResourceTable({
   typeFilters,
   availableToAll,
   isTogglingStatus,
-  editLocks,
-  currentUsername,
   getValidationStatus,
   onTypeFilterChange,
   onToggleAvailableToAll,
@@ -200,12 +193,6 @@ export function BuiltinResourceTable({
                           );
                         }
                         return filtered.map((resource, idx) => {
-                          const { lockedByOther, lockUnknown, lockedByLabel } = resolveEditLockStatus(
-                            editLocks[resource.rid],
-                            currentUsername,
-                            "another admin",
-                          );
-
                           return (
                             <motion.div
                               key={resource.rid}
@@ -230,11 +217,6 @@ export function BuiltinResourceTable({
                                   >
                                     {resource.visibility === "public" ? "Public" : "Draft"}
                                   </Badge>
-                                )}
-                                {lockedByOther && (
-                                  <SimpleTooltip content={<p>Being edited by {lockedByLabel}</p>}>
-                                    <Lock className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
-                                  </SimpleTooltip>
                                 )}
                               </div>
                               <div className="col-span-2">
@@ -268,7 +250,6 @@ export function BuiltinResourceTable({
                                       <Switch
                                         checked={availableToAll[resource.rid] ?? false}
                                         onCheckedChange={() => onToggleAvailableToAll(resource.rid)}
-                                        disabled={lockedByOther || lockUnknown}
                                       />
                                     )}
                                     {availableToAll[resource.rid] && (
@@ -288,29 +269,14 @@ export function BuiltinResourceTable({
                                     <Eye className="h-4 w-4" />
                                   </Button>
                                 </SimpleTooltip>
-                                <SimpleTooltip
-                                  content={
-                                    lockedByOther ? (
-                                      <p>Locked by {lockedByLabel}</p>
-                                    ) : lockUnknown ? (
-                                      <p>Lock status unknown — try again shortly</p>
-                                    ) : (
-                                      <p>Edit configuration</p>
-                                    )
-                                  }
-                                >
+                                <SimpleTooltip content={<p>Edit configuration</p>}>
                                   <Button
                                     variant="ghost"
                                     size="sm"
                                     className="h-8 w-8 p-0 text-gray-500 hover:text-white hover:bg-white/10"
                                     onClick={() => onEditResource(resource)}
-                                    disabled={lockedByOther || lockUnknown}
                                   >
-                                    {lockedByOther ? (
-                                      <Lock className="h-4 w-4 text-amber-400" />
-                                    ) : (
-                                      <Settings className="h-4 w-4" />
-                                    )}
+                                    <Settings className="h-4 w-4" />
                                   </Button>
                                 </SimpleTooltip>
                                 <SimpleTooltip content={<p>Delete this resource</p>}>
@@ -319,7 +285,6 @@ export function BuiltinResourceTable({
                                     size="sm"
                                     className="h-8 w-8 p-0 text-gray-500 hover:text-red-400 hover:bg-red-500/10"
                                     onClick={() => onDeleteClick(resource)}
-                                    disabled={lockedByOther || lockUnknown}
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>

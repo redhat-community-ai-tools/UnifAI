@@ -3,10 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
-import { useAuth } from "@/contexts/AuthContext";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useToast } from "@/hooks/use-toast";
-import { useBuiltinEditLockPoll } from "@/hooks/use-builtin-edit-lock-poll";
 import { useBuiltinEditLockSession } from "@/hooks/use-builtin-edit-lock-session";
 import { acquireBuiltinEditLock, previewBuiltinCascade, listBuiltins } from "@/api/resources";
 import type { ResourceDependencySummary } from "@/api/resources";
@@ -72,9 +70,6 @@ export default function RepositoryManagement() {
   } | null>(null);
   const [isApplyingCascade, setIsApplyingCascade] = useState(false);
 
-  const { user } = useAuth();
-  const currentUsername = user?.username ?? "";
-
   const {
     validateResources,
     getValidationStatus,
@@ -85,13 +80,12 @@ export default function RepositoryManagement() {
   const [selectedValidationResult, setSelectedValidationResult] =
     useState<ElementValidationResult | null>(null);
 
+  const { startLockHeartbeat, stopLockHeartbeat } = useBuiltinEditLockSession();
+
   const allBuiltinRids = useMemo(
     () => Object.values(categoryResources).flat().map((r) => r.rid),
     [categoryResources],
   );
-  const editLocks = useBuiltinEditLockPoll(allBuiltinRids, allBuiltinRids.length > 0);
-  const { startLockHeartbeat, stopLockHeartbeat } = useBuiltinEditLockSession();
-
   const allBuiltinRidsKey = useMemo(
     () => allBuiltinRids.join(","),
     [allBuiltinRids],
@@ -502,8 +496,6 @@ export default function RepositoryManagement() {
         typeFilters={typeFilters}
         availableToAll={availableToAll}
         isTogglingStatus={isTogglingStatus}
-        editLocks={editLocks}
-        currentUsername={currentUsername}
         getValidationStatus={getValidationStatus}
         onTypeFilterChange={handleTypeFilterChange}
         onToggleAvailableToAll={toggleAvailableToAll}
