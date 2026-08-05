@@ -3,10 +3,8 @@
 Verifies route wiring, auth, and exception -> HTTP status-code mapping
 against a mocked ``resources_service`` (see ``conftest.py``).
 """
-from typing import Any
 from unittest.mock import Mock
 
-from mas.core.enums import ResourceOwnership
 from mas.resources.errors import (
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
@@ -14,12 +12,14 @@ from mas.resources.errors import (
 )
 
 
-def _fake_resource_dump(**overrides: Any) -> Mock:
-    base = {"rid": "r1", "name": "thing", "category": "provider", "type": "mcp"}
-    base.update(overrides)
-    doc = Mock()
-    doc.model_dump.return_value = base
-    return doc
+def _fake_resource_dump() -> Mock:
+    """A stand-in for a ``Resource`` returned by the service. Endpoints now
+    serialize via ``resources_service.to_dict(doc)`` rather than
+    ``doc.model_dump()`` — see the ``resources_service`` fixture, which
+    stubs ``to_dict`` with a stable default dict (overridden per-test via
+    ``resources_service.to_dict.return_value = {...}`` when a test cares
+    about the exact payload)."""
+    return Mock()
 
 
 class TestSaveResource:
@@ -122,7 +122,7 @@ class TestUpdateResource:
         assert resp.status_code == 404
 
     def test_update_builtin_blocked_when_locked_by_another_admin(
-        self, client, admin_headers, resources_service, collaboration_service,
+        self, client, admin_headers, resources_service, builtin_resource_service, collaboration_service,
     ):
         """Regression test: an admin bypasses ``guard_write_access``'s
         ownership check on a built-in resource (admins bypass both checks),
@@ -130,7 +130,7 @@ class TestUpdateResource:
         ``builtin.update`` - the lock was previously only enforced on the
         built-in-specific routes, not this generic CRUD path."""
         builtin_doc = Mock()
-        builtin_doc.ownership = ResourceOwnership.BUILTIN
+        builtin_resource_service.is_builtin.return_value = True
         resources_service.guard_write_access.return_value = builtin_doc
 
         holder = Mock(user_id="other-admin", display_name="Other Admin")
@@ -146,12 +146,12 @@ class TestUpdateResource:
         resources_service.update.assert_not_called()
 
     def test_update_builtin_allowed_when_lock_held_by_self(
-        self, client, admin_headers, resources_service, collaboration_service,
+        self, client, admin_headers, resources_service, builtin_resource_service, collaboration_service,
     ):
         from tests.integration.endpoints.conftest import ADMIN_USER
 
         builtin_doc = Mock()
-        builtin_doc.ownership = ResourceOwnership.BUILTIN
+        builtin_resource_service.is_builtin.return_value = True
         resources_service.guard_write_access.return_value = builtin_doc
         resources_service.update.return_value = _fake_resource_dump()
 
@@ -167,12 +167,12 @@ class TestUpdateResource:
         assert resp.status_code == 200
 
     def test_update_custom_resource_ignores_lock_check(
-        self, client, admin_headers, resources_service, collaboration_service,
+        self, client, admin_headers, resources_service, builtin_resource_service, collaboration_service,
     ):
         """The lock check is scoped to built-in resources only - a custom
         resource must not consult the admin edit lock at all."""
         custom_doc = Mock()
-        custom_doc.ownership = ResourceOwnership.CUSTOM
+        builtin_resource_service.is_builtin.return_value = False
         resources_service.guard_write_access.return_value = custom_doc
         resources_service.update.return_value = _fake_resource_dump()
 
@@ -198,12 +198,12 @@ class TestDeleteResource:
         resources_service.delete.assert_called_once_with("r1")
 
     def test_delete_builtin_blocked_when_locked_by_another_admin(
-        self, client, admin_headers, resources_service, collaboration_service,
+        self, client, admin_headers, resources_service, builtin_resource_service, collaboration_service,
     ):
         """Regression test: same lock-bypass fix as resource.update, for
         the generic delete path."""
         builtin_doc = Mock()
-        builtin_doc.ownership = ResourceOwnership.BUILTIN
+        builtin_resource_service.is_builtin.return_value = True
         resources_service.guard_write_access.return_value = builtin_doc
 
         holder = Mock(user_id="other-admin", display_name="Other Admin")

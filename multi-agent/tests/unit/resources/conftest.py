@@ -3,8 +3,8 @@
 Uses lightweight in-memory fakes for the repository ports instead of Mongo,
 and a minimal fake element schema (with real ``SecretHint``/``ReadOnlyHint``
 schema hints) instead of the full element catalog, so these tests exercise
-the actual encryption/overlay/visibility logic in ``ResourcesService``
-without any infrastructure dependencies.
+the actual encryption/overlay/visibility logic in ``ResourcesService`` /
+``BuiltinResourceService`` without any infrastructure dependencies.
 """
 from typing import Any, ClassVar, Dict, List, Optional, Tuple
 from unittest.mock import Mock
@@ -18,7 +18,12 @@ from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, CardContext
 from mas.resources.models import Resource, ResourceQuery
 from mas.resources.registry import ResourcesRegistry
 from mas.resources.service import ResourcesService
-from mas.resources.builtin_models import BuiltinUserConfig
+from mas.resources.builtin_service import BuiltinResourceService
+from mas.resources.builtin_models import BuiltinResourceDescriptor, BuiltinUserConfig
+from mas.resources.field_encryption import ResourceFieldEncryption
+from mas.resources.repository.builtin_resource_descriptor_repository import (
+    BuiltinResourceDescriptorRepository,
+)
 from mas.validation.service import ElementValidationService
 from mas.catalog.card_service import ElementCardService
 
@@ -84,6 +89,11 @@ class FakeResourceRepository:
     caller already holds (e.g. before calling ``update()``) would silently
     also mutate the "persisted" copy, masking bugs in code that compares
     a doc's new state against what's actually stored.
+
+    Carries no ownership/visibility knowledge — that lives entirely in
+    ``FakeBuiltinResourceDescriptorRepository`` below, which is handed this
+    same instance so its joined queries see the same underlying docs a real
+    Mongo ``$lookup`` would.
     """
 
     def __init__(self) -> None:
@@ -121,38 +131,17 @@ class FakeResourceRepository:
 
     def _matches_query(self, doc: Resource, query: ResourceQuery) -> bool:
         """Mirror ``MongoResourceRepository._build_resource_filter`` semantics
-        so tests exercise the same identity/category/type/ownership filtering
-        a real query would apply, instead of always returning every document.
-        """
-        if query.ownership == ResourceOwnership.BUILTIN:
-            if doc.ownership != ResourceOwnership.BUILTIN:
-                return False
-            if not query.is_admin and doc.visibility != ResourceVisibility.PUBLIC:
-                return False
-            if query.category and doc.category != query.category:
-                return False
-            if query.type and doc.type != query.type:
-                return False
-            return True
-
+        (plain identity+category+type — no ownership/visibility, which are
+        no longer part of ``ResourceQuery``)."""
         identity_match = (
             doc.identity.type == query.identity.type
             and doc.identity.id == query.identity.id
         )
-        builtin_match = (
-            doc.ownership == ResourceOwnership.BUILTIN
-            and doc.visibility == ResourceVisibility.PUBLIC
-        )
-
         if query.category and doc.category != query.category:
             return False
         if query.type and doc.type != query.type:
             return False
-
-        if query.ownership == ResourceOwnership.CUSTOM:
-            return identity_match and doc.ownership == ResourceOwnership.CUSTOM
-
-        return identity_match or builtin_match
+        return identity_match
 
     def find_resources(self, query: ResourceQuery) -> List[Resource]:
         return [
@@ -193,16 +182,100 @@ class FakeResourceRepository:
     def delete_by_identity(self, identity: Identity) -> int:
         return 0
 
+
+class FakeBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorRepository):
+    """In-memory stand-in for ``BuiltinResourceDescriptorRepository``.
+
+    Shares the same ``FakeResourceRepository`` instance as the
+    ``ResourcesRegistry`` under test, so its joined queries
+    (``find_all_builtins``/``find_visible_for_identity``) see the same
+    underlying ``Resource`` docs a real Mongo ``$lookup`` against the
+    ``resources`` collection would.
+    """
+
+    def __init__(self, resource_repo: FakeResourceRepository) -> None:
+        self._resource_repo = resource_repo
+        self._descriptors: Dict[str, BuiltinResourceDescriptor] = {}
+
+    def get(self, rid: str) -> Optional[BuiltinResourceDescriptor]:
+        descriptor = self._descriptors.get(rid)
+        return descriptor.model_copy(deep=True) if descriptor else None
+
+    def save(self, descriptor: BuiltinResourceDescriptor) -> str:
+        self._descriptors[descriptor.rid] = descriptor.model_copy(deep=True)
+        return descriptor.rid
+
+    def delete(self, rid: str) -> None:
+        self._descriptors.pop(rid, None)
+
+    def find_all_rids(self) -> List[str]:
+        return list(self._descriptors.keys())
+
     def find_all_builtins(
-        self, category: Optional[str] = None, resource_type: Optional[str] = None,
+        self,
+        category: Optional[str] = None,
+        resource_type: Optional[str] = None,
     ) -> List[Resource]:
-        return [
-            d.model_copy(deep=True)
-            for d in self._docs.values()
-            if d.ownership == ResourceOwnership.BUILTIN
-            and (category is None or d.category == category)
-            and (resource_type is None or d.type == resource_type)
-        ]
+        result = []
+        for rid in self._descriptors:
+            try:
+                doc = self._resource_repo.get(rid)
+            except KeyError:
+                continue
+            if category and doc.category != category:
+                continue
+            if resource_type and doc.type != resource_type:
+                continue
+            result.append(doc)
+        return result
+
+    def find_visible_for_identity(
+        self,
+        *,
+        identity: Optional[Identity],
+        category: Optional[str],
+        type: Optional[str],
+        ownership: Optional[ResourceOwnership],
+        is_admin: bool,
+        limit: int,
+        offset: int,
+        sort_by: str,
+        sort_order: str,
+    ) -> Tuple[List[Resource], int]:
+        matches: List[Resource] = []
+        for doc in self._resource_repo._docs.values():
+            descriptor = self._descriptors.get(doc.rid)
+            is_builtin_doc = descriptor is not None
+
+            if ownership == ResourceOwnership.BUILTIN:
+                if not is_builtin_doc:
+                    continue
+                if not is_admin and descriptor.visibility != ResourceVisibility.PUBLIC:
+                    continue
+            elif ownership == ResourceOwnership.CUSTOM:
+                if is_builtin_doc:
+                    continue
+                if identity is None or doc.identity.type != identity.type or doc.identity.id != identity.id:
+                    continue
+            else:
+                identity_match = (
+                    identity is not None
+                    and doc.identity.type == identity.type
+                    and doc.identity.id == identity.id
+                )
+                builtin_public = is_builtin_doc and descriptor.visibility == ResourceVisibility.PUBLIC
+                if not (identity_match or builtin_public):
+                    continue
+
+            if category and doc.category != category:
+                continue
+            if type and doc.type != type:
+                continue
+            matches.append(doc.model_copy(deep=True))
+
+        total = len(matches)
+        matches.sort(key=lambda d: getattr(d, sort_by), reverse=(sort_order == "desc"))
+        return matches[offset:offset + limit], total
 
 
 class FakeBlueprintRepository:
@@ -276,21 +349,66 @@ def builtin_user_config_repo() -> FakeBuiltinUserConfigRepository:
 
 
 @pytest.fixture
-def resource_registry(element_registry) -> ResourcesRegistry:
+def resource_repo() -> FakeResourceRepository:
+    return FakeResourceRepository()
+
+
+@pytest.fixture
+def resource_registry(resource_repo, element_registry) -> ResourcesRegistry:
     from global_utils.utils.crypto import FieldCipher
 
     return ResourcesRegistry(
-        repo=FakeResourceRepository(),
+        repo=resource_repo,
         bp_repo=FakeBlueprintRepository(),
         cipher=FieldCipher(TEST_ENCRYPTION_KEY),
     )
 
 
 @pytest.fixture
-def service(resource_registry, element_registry, builtin_user_config_repo) -> ResourcesService:
+def builtin_resource_descriptor_repo(resource_repo) -> FakeBuiltinResourceDescriptorRepository:
+    return FakeBuiltinResourceDescriptorRepository(resource_repo)
+
+
+@pytest.fixture
+def builtin_service(
+    resource_registry, element_registry, builtin_resource_descriptor_repo, builtin_user_config_repo,
+) -> BuiltinResourceService:
+    from global_utils.utils.crypto import FieldCipher
+
+    field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
+    return BuiltinResourceService(
+        resource_registry=resource_registry,
+        element_registry=element_registry,
+        field_encryption=field_encryption,
+        descriptor_repo=builtin_resource_descriptor_repo,
+        builtin_user_config_repo=builtin_user_config_repo,
+    )
+
+
+@pytest.fixture
+def builtin_service_without_config_repo(
+    resource_registry, element_registry, builtin_resource_descriptor_repo,
+) -> BuiltinResourceService:
+    """A ``BuiltinResourceService`` with no ``builtin_user_config_repo``
+    configured — pairs with ``service_without_config_repo`` below."""
+    from global_utils.utils.crypto import FieldCipher
+
+    field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
+    return BuiltinResourceService(
+        resource_registry=resource_registry,
+        element_registry=element_registry,
+        field_encryption=field_encryption,
+        descriptor_repo=builtin_resource_descriptor_repo,
+        builtin_user_config_repo=None,
+    )
+
+
+@pytest.fixture
+def service(resource_registry, element_registry, builtin_user_config_repo, builtin_service) -> ResourcesService:
     return ResourcesService(
         resource_registry=resource_registry,
         element_registry=element_registry,
+        builtin_service=builtin_service,
         builtin_user_config_repo=builtin_user_config_repo,
         validation_service=Mock(spec=ElementValidationService),
         card_service=Mock(spec=ElementCardService),
@@ -299,11 +417,14 @@ def service(resource_registry, element_registry, builtin_user_config_repo) -> Re
 
 
 @pytest.fixture
-def service_without_config_repo(resource_registry, element_registry) -> ResourcesService:
+def service_without_config_repo(
+    resource_registry, element_registry, builtin_service_without_config_repo,
+) -> ResourcesService:
     """A service with no ``builtin_user_config_repo`` configured."""
     return ResourcesService(
         resource_registry=resource_registry,
         element_registry=element_registry,
+        builtin_service=builtin_service_without_config_repo,
         builtin_user_config_repo=None,
         encryption_key=TEST_ENCRYPTION_KEY,
     )

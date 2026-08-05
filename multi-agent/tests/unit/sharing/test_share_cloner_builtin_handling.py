@@ -5,30 +5,44 @@ Verifies that:
 - DRAFT built-ins trigger ShareCloneError.
 - Mixed closures (custom depends on public built-in) succeed and only clone custom.
 """
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from unittest.mock import create_autospec, MagicMock
 
 import pytest
 
 from mas.sharing.cloner import ShareCloner, CloneContext, ShareCloneError
+from mas.resources.builtin_models import BuiltinResourceDescriptor
 from mas.resources.models import Resource
 from mas.resources.service import ResourcesService
 from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.identity import Identity
-from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
+from mas.core.enums import ResourceCategory, ResourceVisibility
 
 
 def _build_cloner(
     resources_service: Optional[ResourcesService] = None,
-) -> Tuple[ShareCloner, ResourcesService, ElementRegistry]:
+    descriptors: Optional[Dict[str, BuiltinResourceDescriptor]] = None,
+) -> Tuple[ShareCloner, ResourcesService, ElementRegistry, MagicMock]:
     resources_service = resources_service or create_autospec(ResourcesService, instance=True)
     bp_service = create_autospec(BlueprintService, instance=True)
     element_registry = create_autospec(ElementRegistry, instance=True)
-    return ShareCloner(resources_service, bp_service, element_registry), resources_service, element_registry
+
+    descriptors = descriptors or {}
+    builtin_resource_service = MagicMock()
+    builtin_resource_service.get_descriptor.side_effect = lambda rid: descriptors.get(rid)
+
+    cloner = ShareCloner(
+        resources_service, bp_service, element_registry,
+        builtin_resource_service=builtin_resource_service,
+    )
+    return cloner, resources_service, element_registry, builtin_resource_service
 
 
-def _make_builtin_resource(rid: str, visibility: ResourceVisibility) -> Resource:
+def _make_builtin_resource(rid: str) -> Resource:
+    """A built-in resource — built-in-ness is signaled by a separate
+    ``BuiltinResourceDescriptor``, seeded on the fake ``builtin_resource_service``
+    (see ``_build_cloner``), not by any field on ``Resource`` itself."""
     return Resource(
         rid=rid,
         identity=Identity.user("system"),
@@ -36,8 +50,6 @@ def _make_builtin_resource(rid: str, visibility: ResourceVisibility) -> Resource
         type="fake_provider",
         name=f"builtin-{rid}",
         cfg_dict={},
-        ownership=ResourceOwnership.BUILTIN,
-        visibility=visibility,
     )
 
 
@@ -57,8 +69,12 @@ class TestComputeClosureBuiltinHandling:
 
     def test_public_builtin_skipped_no_error(self) -> None:
         """A PUBLIC built-in dependency is silently skipped (not cloned)."""
-        cloner, resources_service, element_registry = _build_cloner()
-        public_builtin = _make_builtin_resource("builtin-1", ResourceVisibility.PUBLIC)
+        public_builtin = _make_builtin_resource("builtin-1")
+        cloner, resources_service, element_registry, _builtin_svc = _build_cloner(
+            descriptors={"builtin-1": BuiltinResourceDescriptor(
+                rid="builtin-1", visibility=ResourceVisibility.PUBLIC,
+            )},
+        )
         resources_service.get.return_value = public_builtin
 
         ctx = CloneContext(sender_id="alice", recipient_id="bob")
@@ -68,8 +84,12 @@ class TestComputeClosureBuiltinHandling:
 
     def test_draft_builtin_raises_share_clone_error(self) -> None:
         """A DRAFT built-in triggers ShareCloneError."""
-        cloner, resources_service, element_registry = _build_cloner()
-        draft_builtin = _make_builtin_resource("builtin-draft", ResourceVisibility.DRAFT)
+        draft_builtin = _make_builtin_resource("builtin-draft")
+        cloner, resources_service, element_registry, _builtin_svc = _build_cloner(
+            descriptors={"builtin-draft": BuiltinResourceDescriptor(
+                rid="builtin-draft", visibility=ResourceVisibility.DRAFT,
+            )},
+        )
         resources_service.get.return_value = draft_builtin
 
         ctx = CloneContext(sender_id="alice", recipient_id="bob")
@@ -79,11 +99,14 @@ class TestComputeClosureBuiltinHandling:
 
     def test_mixed_closure_clones_only_custom(self) -> None:
         """Custom resource depending on a public built-in: only custom is cloned."""
-        cloner, resources_service, element_registry = _build_cloner()
-
         custom = _make_custom_resource("custom-1", owner="alice")
-        public_builtin = _make_builtin_resource("builtin-pub", ResourceVisibility.PUBLIC)
+        public_builtin = _make_builtin_resource("builtin-pub")
 
+        cloner, resources_service, element_registry, _builtin_svc = _build_cloner(
+            descriptors={"builtin-pub": BuiltinResourceDescriptor(
+                rid="builtin-pub", visibility=ResourceVisibility.PUBLIC,
+            )},
+        )
         resources_service.get.side_effect = lambda rid: {
             "custom-1": custom,
             "builtin-pub": public_builtin,

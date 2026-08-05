@@ -26,7 +26,6 @@ from inbound.flask.decorators import G_IDENTITY_USERNAME
 from mas.collaboration.models import TeamEditLockHolder
 from mas.collaboration.service import CollaborationService
 from mas.core.caller_scope import CallerScope
-from mas.core.enums import ResourceOwnership
 from mas.resources.models import Resource
 from mas.resources.service import ResourcesService
 
@@ -104,7 +103,7 @@ def guard_write_access_with_lock(
     ``(resource, None)`` to proceed.
     """
     resource = resources_service.guard_write_access(resource_id, caller)
-    if resource.ownership == ResourceOwnership.BUILTIN:
+    if current_app.container.builtin_resource_service.is_builtin(resource.rid):
         lock_error = reject_if_locked_by_other(resource_id)
         if lock_error:
             return None, lock_error

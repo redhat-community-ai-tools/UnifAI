@@ -23,6 +23,7 @@ from mas.session.execution import SessionLifecycle, ForegroundSessionRunner, Ses
 from mas.session.service import SessionService
 from mas.resources.registry import ResourcesRegistry
 from mas.resources.service import ResourcesService
+from mas.resources.field_encryption import ResourceFieldEncryption
 from mas.graph.service import GraphService
 from mas.graph.validation.service import GraphValidationService
 from mas.actions.service import ActionsService
@@ -67,6 +68,10 @@ from outbound.mongo import (
     MongoAdminConfigReader,
 )
 from outbound.mongo.builtin_user_config_repository import MongoBuiltinUserConfigRepository
+from outbound.mongo.builtin_resource_descriptor_repository import (
+    MongoBuiltinResourceDescriptorRepository,
+)
+from mas.resources.builtin_service import BuiltinResourceService
 # Auth layer — adapters
 from outbound.mongo.auth_token_repository import MongoCredentialStore
 from outbound.redis.auth_pending_store import RedisFlowStateStore
@@ -202,6 +207,13 @@ class AppContainer(metaclass=SingletonMeta):
             db_name=cfg.mongo_db,
         )
 
+        self.builtin_resource_descriptor_repo = MongoBuiltinResourceDescriptorRepository(
+            mongodb_ip=cfg.mongodb_ip,
+            mongodb_port=cfg.mongodb_port,
+            db_name=cfg.mongo_db,
+            resources_coll_name=cfg.resources_coll,
+        )
+
         field_cipher = FieldCipher(cfg.credential_encryption_key) if cfg.credential_encryption_key else None
 
         resource_registry = ResourcesRegistry(
@@ -212,9 +224,21 @@ class AppContainer(metaclass=SingletonMeta):
 
         # ── Application services ─────────────────────────────────────
 
+        # BuiltinResourceService is a first-class peer service (consumed
+        # directly by builtins.py/ShareCloner), constructed before
+        # ResourcesService so the latter can be handed the shared instance.
+        self.builtin_resource_service = BuiltinResourceService(
+            resource_registry=resource_registry,
+            element_registry=self.element_registry,
+            field_encryption=ResourceFieldEncryption(self.element_registry, field_cipher),
+            descriptor_repo=self.builtin_resource_descriptor_repo,
+            builtin_user_config_repo=self.builtin_user_config_repo,
+        )
+
         self.resources_service = ResourcesService(
             resource_registry=resource_registry,
             element_registry=self.element_registry,
+            builtin_service=self.builtin_resource_service,
             builtin_user_config_repo=self.builtin_user_config_repo,
             validation_service=self.validation_service,
             card_service=self.card_service,
@@ -340,7 +364,8 @@ class AppContainer(metaclass=SingletonMeta):
         self.share_cloner = ShareCloner(
             resources_service=self.resources_service,
             blueprint_service=self.blueprint_service,
-            element_registry=self.element_registry
+            element_registry=self.element_registry,
+            builtin_resource_service=self.builtin_resource_service,
         )
         self.share_service = ShareService(
             share_repository=self.share_repo,

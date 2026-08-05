@@ -1,14 +1,19 @@
-"""Built-in resource lifecycle: admin CRUD, schema exposure, and per-identity
-configuration overlays.
+"""Built-in resource lifecycle: descriptor CRUD, visibility gating, per-identity
+configuration overlays, and admin cascade promote/demote.
 
 Split out of ``ResourcesService`` (which had grown to own base CRUD,
 validation, card building, *and* the entire built-in admin/overlay
-lifecycle) so each service stays within a single responsibility. This is an
-internal collaborator, not an independent public API: external callers
-(Flask endpoints, ``BlueprintResolver``, tests) go through
-``ResourcesService``, which composes this class and delegates its built-in
-methods to it — the "Service as Public API" pattern is preserved at the
-``ResourcesService`` facade.
+lifecycle) so each service stays within a single responsibility. Unlike the
+original split, this is now a **peer service**, not an internal-only
+collaborator: ``builtins.py`` injects it directly for the admin/overlay
+surface, while ``ResourcesService`` composes it only for the small set of
+generic-CRUD helper methods it needs (``get_descriptor``, ``is_builtin``,
+``resolve_config``, ``validation_override_error``, ``cleanup_on_delete``) —
+see ``resources.md`` for the up-to-date architecture description.
+
+Existence of a ``BuiltinResourceDescriptor`` for a given ``rid`` *is* the
+"this resource is a built-in" signal — there is no ``ownership`` field on
+``Resource`` to check anymore.
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -20,9 +25,17 @@ from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibili
 from mas.core.ref import RefWalker
 from mas.resources.models import Resource
 from mas.resources.registry import ResourcesRegistry
-from mas.resources.builtin_models import BuiltinUpdateRequest, BuiltinUserConfig, identity_to_key
+from mas.resources.builtin_models import (
+    BuiltinResourceDescriptor,
+    BuiltinUpdateRequest,
+    BuiltinUserConfig,
+    identity_to_key,
+)
 from mas.resources.errors import BuiltinConfigUnavailableError, BuiltinDependentsPublicError
 from mas.resources.field_encryption import ResourceFieldEncryption
+from mas.resources.repository.builtin_resource_descriptor_repository import (
+    BuiltinResourceDescriptorRepository,
+)
 from mas.resources.repository.builtin_user_config_repository import BuiltinUserConfigRepository
 from mas.catalog.element_registry import ElementRegistry
 
@@ -43,18 +56,20 @@ AUTH_METADATA_OVERLAY_FIELDS = frozenset({"server_identifier", "scheme_type"})
 
 
 class BuiltinResourceService:
-    """Admin lifecycle + per-identity overlays for built-in resources."""
+    """Descriptor lifecycle + admin CRUD + per-identity overlays for built-ins."""
 
     def __init__(
         self,
         resource_registry: ResourcesRegistry,
         element_registry: ElementRegistry,
         field_encryption: ResourceFieldEncryption,
+        descriptor_repo: BuiltinResourceDescriptorRepository,
         builtin_user_config_repo: Optional[BuiltinUserConfigRepository] = None,
     ) -> None:
         self._store = resource_registry
         self.element_registry = element_registry
         self._fields = field_encryption
+        self._descriptor_repo = descriptor_repo
         self._builtin_user_config_repo = builtin_user_config_repo
 
     def _auth_metadata_keys(self, resource: Resource) -> set:
@@ -67,7 +82,129 @@ class BuiltinResourceService:
             return set()
         return AUTH_METADATA_OVERLAY_FIELDS & schema.get("properties", {}).keys()
 
+    # ---------- Core built-in-awareness (used by ResourcesService) ----------
+
+    def get_descriptor(self, rid: str) -> Optional[BuiltinResourceDescriptor]:
+        """Return the built-in descriptor for *rid*, or ``None`` if it's not a built-in."""
+        return self._descriptor_repo.get(rid)
+
+    def is_builtin(self, rid: str) -> bool:
+        """Whether *rid* is a built-in resource (has a descriptor)."""
+        return self.get_descriptor(rid) is not None
+
+    def is_visible_to(self, rid: str, is_admin: bool) -> bool:
+        """Draft-gate: whether *rid* is visible to a caller with *is_admin*.
+
+        Non-built-ins are always "visible" from this method's perspective
+        (the draft-gate simply doesn't apply) — callers combine this with
+        their own identity-ownership checks for custom resources.
+        """
+        descriptor = self.get_descriptor(rid)
+        if descriptor is None:
+            return True
+        return is_admin or descriptor.visibility == ResourceVisibility.PUBLIC
+
+    def resolve_config(
+        self, resource: Resource, base_config: Dict[str, Any], identity: Optional[Identity],
+    ) -> Dict[str, Any]:
+        """Merge a caller's per-identity overlay into *base_config*.
+
+        No-ops (returns *base_config* unchanged) for non-builtins or when
+        *identity* is unset — see ``strip_unconfigured_secrets``/
+        ``resolve_overlay`` for why a caller-supplied credential must
+        always win over the resource's shared base value.
+        """
+        if identity is None or not self.is_builtin(resource.rid):
+            return base_config
+        config = self.strip_unconfigured_secrets(resource, base_config)
+        overlay = self.resolve_overlay(resource, identity)
+        if overlay:
+            config.update(overlay)
+        return config
+
+    def validation_override_error(
+        self, resource: Resource, config: BaseModel, identity: Optional[Identity],
+    ) -> Optional[str]:
+        """Human-readable validation-blocking error for a built-in missing a
+        required per-identity secret, or ``None`` if validation may proceed.
+
+        No-ops for non-builtins or when *identity* is unset — see
+        ``find_missing_required_overlay_fields`` for the underlying check.
+        """
+        if identity is None or not self.is_builtin(resource.rid):
+            return None
+        missing = self.find_missing_required_overlay_fields(resource, config)
+        if not missing:
+            return None
+        return (
+            f"Requires your own {', '.join(missing)} — configure it for "
+            f"'{resource.name}' in your inventory before it can be validated."
+        )
+
+    def _set_visibility(self, rid: str, visibility: ResourceVisibility) -> BuiltinResourceDescriptor:
+        """Create or update the descriptor for *rid* with the given visibility.
+
+        Preserves ``created``/other fields on an existing descriptor rather
+        than overwriting them, so admin promote/demote/cascade cycles don't
+        reset the descriptor's creation timestamp each time.
+        """
+        descriptor = self.get_descriptor(rid) or BuiltinResourceDescriptor(rid=rid)
+        descriptor.visibility = visibility
+        self._descriptor_repo.save(descriptor)
+        return descriptor
+
+    def cleanup_on_delete(self, rid: str) -> None:
+        """Purge built-in-specific state for a resource being deleted.
+
+        No-ops for non-builtins. Removes the descriptor itself (so it
+        doesn't outlive the ``Resource`` it describes) and any per-identity
+        overlays.
+        """
+        if not self.is_builtin(rid):
+            return
+        self._descriptor_repo.delete(rid)
+        if self._builtin_user_config_repo:
+            self._builtin_user_config_repo.delete_all_for_resource(rid)
+
     # ---------- Listing / schema ----------
+
+    def find_visible(
+        self,
+        *,
+        identity: Optional[Identity],
+        category: Optional[str],
+        type: Optional[str],
+        ownership: Optional[str],
+        is_admin: bool,
+        limit: int,
+        offset: int,
+        sort_by: str,
+        sort_order: str,
+    ) -> "tuple[List[Resource], int]":
+        """Paginated resources visible to *identity*, merging built-in
+        descriptor metadata with the base ``resources`` collection.
+
+        Backs ``ResourcesService.find_resources()`` (the generic
+        ``/resources.list`` listing) — *ownership* is the raw query-string
+        filter value ("builtin"/"custom"/``None``); this is the only place
+        that needs to know it maps onto ``ResourceOwnership``, so
+        ``ResourcesService`` itself stays free of that enum. Raises
+        ``ValueError`` for an unrecognized *ownership* string. See
+        ``BuiltinResourceDescriptorRepository.find_visible_for_identity``
+        for the three ``ownership`` modes.
+        """
+        ownership_enum = ResourceOwnership(ownership) if ownership else None
+        return self._descriptor_repo.find_visible_for_identity(
+            identity=identity,
+            category=category,
+            type=type,
+            ownership=ownership_enum,
+            is_admin=is_admin,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
 
     def find_all_builtins(
         self,
@@ -75,7 +212,7 @@ class BuiltinResourceService:
         type: Optional[str] = None,
     ) -> List[Resource]:
         """Return all built-in resources (public and draft), for admin listing."""
-        return self._store.find_all_builtins(category=category, resource_type=type)
+        return self._descriptor_repo.find_all_builtins(category=category, resource_type=type)
 
     def get_builtin_schema(self, rid: str, *, is_admin: bool = False) -> dict:
         """Return the element JSON schema with readOnly annotations for a built-in resource.
@@ -85,12 +222,10 @@ class BuiltinResourceService:
         Draft built-ins are only accessible to admins.
         """
         resource = self._store.get(rid)
-        if resource.ownership != ResourceOwnership.BUILTIN:
+        descriptor = self.get_descriptor(rid)
+        if descriptor is None:
             raise ValueError("Resource is not a built-in resource")
-        if (
-            resource.visibility != ResourceVisibility.PUBLIC
-            and not is_admin
-        ):
+        if descriptor.visibility != ResourceVisibility.PUBLIC and not is_admin:
             raise KeyError(rid)
 
         schema = self.element_registry.get_schema_json(
@@ -123,9 +258,10 @@ class BuiltinResourceService:
         Draft built-ins are not configurable by end users.
         """
         resource = self._store.get(rid)
-        if resource.ownership != ResourceOwnership.BUILTIN:
+        descriptor = self.get_descriptor(rid)
+        if descriptor is None:
             raise ValueError("Resource is not a built-in resource")
-        if resource.visibility != ResourceVisibility.PUBLIC:
+        if descriptor.visibility != ResourceVisibility.PUBLIC:
             raise KeyError(rid)
 
         if not self._builtin_user_config_repo:
@@ -157,9 +293,10 @@ class BuiltinResourceService:
         Draft built-ins are not configurable by end users.
         """
         resource = self._store.get(rid)
-        if resource.ownership != ResourceOwnership.BUILTIN:
+        descriptor = self.get_descriptor(rid)
+        if descriptor is None:
             raise ValueError("Resource is not a built-in resource")
-        if resource.visibility != ResourceVisibility.PUBLIC:
+        if descriptor.visibility != ResourceVisibility.PUBLIC:
             raise KeyError(rid)
 
         configurable_keys, sensitive_keys = self._fields.scan_schema_hints(
@@ -238,10 +375,10 @@ class BuiltinResourceService:
         user who never configured their own credential, making that user's
         resource appear "valid" while actually authenticating as the admin.
 
-        Called before merging the overlay in ``ResourcesService.resolve()`` so
-        a caller with their own overlay value still gets it (the overlay merge
-        happens after this), while a caller without one gets the field's
-        schema default (``None``/empty) instead of the admin's value.
+        Called before merging the overlay in ``resolve_config`` so a caller
+        with their own overlay value still gets it (the overlay merge happens
+        after this), while a caller without one gets the field's schema
+        default (``None``/empty) instead of the admin's value.
         """
         configurable_keys, sensitive_keys = self._fields.scan_schema_hints(
             resource.category, resource.type
@@ -294,8 +431,8 @@ class BuiltinResourceService:
     def resolve_overlay(self, resource: Resource, identity: Identity) -> Dict[str, Any]:
         """Resolve the effective config overlay for a built-in resource.
 
-        Used by ``ResourcesService.resolve()`` to merge a caller's overlay
-        into the resource's base config at runtime.
+        Used by ``resolve_config`` to merge a caller's overlay into the
+        resource's base config at runtime.
 
         Uses ReadOnlyHint from the Pydantic schema to identify configurable
         fields, then looks up the single overlay document keyed by
@@ -374,16 +511,14 @@ class BuiltinResourceService:
             name=name,
             cfg_dict=cfg_dict,
             nested_refs=nested_refs,
-            ownership=ResourceOwnership.BUILTIN,
-            visibility=ResourceVisibility.DRAFT,
         )
         created = self._store.create(doc)
+        self._set_visibility(created.rid, ResourceVisibility.DRAFT)
 
         cascaded: List[Resource] = []
         if available_to_all:
             cascaded = self._cascade_promote_dependencies(created.rid)
-            created.visibility = ResourceVisibility.PUBLIC
-            created = self._store.update(created)
+            self._set_visibility(created.rid, ResourceVisibility.PUBLIC)
         return created, cascaded
 
     def promote_with_cascade(self, rid: str) -> "tuple[Resource, List[Resource]]":
@@ -401,13 +536,6 @@ class BuiltinResourceService:
         what got swept along, for the caller to surface a disclaimer.
         """
         resource = self._store.get(rid)
-        if resource.ownership not in (
-            ResourceOwnership.CUSTOM,
-            ResourceOwnership.BUILTIN,
-        ):
-            raise ValueError(
-                f"Cannot promote resource with ownership '{resource.ownership}'"
-            )
         cat_enum = ResourceCategory(resource.category)
         if cat_enum in ResourceCategory.builtin_disabled_categories():
             raise ValueError(
@@ -420,13 +548,10 @@ class BuiltinResourceService:
         # users can't see.
         self._assert_cascade_promotable(rid)
 
-        resource.ownership = ResourceOwnership.BUILTIN
-        resource.visibility = ResourceVisibility.DRAFT
-        self._store.update(resource)
+        self._set_visibility(rid, ResourceVisibility.DRAFT)
         cascaded = self._cascade_promote_dependencies(rid)
-        resource.visibility = ResourceVisibility.PUBLIC
-        updated = self._store.update(resource)
-        return updated, cascaded
+        self._set_visibility(rid, ResourceVisibility.PUBLIC)
+        return resource, cascaded
 
     def demote(self, rid: str) -> Resource:
         """Demote a public built-in to draft (admin-only visibility).
@@ -437,11 +562,11 @@ class BuiltinResourceService:
         be left referencing a building block end users can no longer see.
         """
         resource = self._store.get(rid)
-        if resource.ownership != ResourceOwnership.BUILTIN:
+        if self.get_descriptor(rid) is None:
             raise ValueError("Resource is not a built-in resource")
         self._ensure_no_public_dependents(resource)
-        resource.visibility = ResourceVisibility.DRAFT
-        return self._store.update(resource)
+        self._set_visibility(rid, ResourceVisibility.DRAFT)
+        return resource
 
     # ---------- Nested-dependency cascade helpers ----------
 
@@ -456,11 +581,12 @@ class BuiltinResourceService:
         """
         return [
             dep for dep in self._iter_transitive_deps(rid)
-            if not (
-                dep.ownership == ResourceOwnership.BUILTIN
-                and dep.visibility == ResourceVisibility.PUBLIC
-            )
+            if not self._is_public_builtin(dep.rid)
         ]
+
+    def _is_public_builtin(self, rid: str) -> bool:
+        descriptor = self.get_descriptor(rid)
+        return descriptor is not None and descriptor.visibility == ResourceVisibility.PUBLIC
 
     def _assert_cascade_promotable(self, rid: str) -> None:
         """Raise if cascade-promoting *rid*'s dependencies would require
@@ -486,23 +612,20 @@ class BuiltinResourceService:
         category — the parent must not end up public while referencing a
         dependency that can never become visible to end users.
 
-        On partial failure (a mid-loop ``_store.update`` raises), all
-        already-promoted dependencies are reverted to their pre-promotion
-        ownership/visibility before re-raising — mirroring the rollback
+        On partial failure (a mid-loop ``_descriptor_repo.save`` raises),
+        all already-promoted dependencies are reverted to their
+        pre-promotion state before re-raising — mirroring the rollback
         pattern in ``ShareCloner._batch_create_resources``.
         """
         self._assert_cascade_promotable(rid)
         targets = self.preview_cascade_targets(rid)
-        originals: List[tuple[Resource, ResourceOwnership, ResourceVisibility]] = []
+        originals: List[tuple[str, Optional[BuiltinResourceDescriptor]]] = []
         promoted: List[Resource] = []
         try:
             for dep in targets:
-                orig_ownership = dep.ownership
-                orig_visibility = dep.visibility
-                dep.ownership = ResourceOwnership.BUILTIN
-                dep.visibility = ResourceVisibility.PUBLIC
-                self._store.update(dep)
-                originals.append((dep, orig_ownership, orig_visibility))
+                orig_descriptor = self.get_descriptor(dep.rid)
+                self._set_visibility(dep.rid, ResourceVisibility.PUBLIC)
+                originals.append((dep.rid, orig_descriptor))
                 promoted.append(dep)
         except Exception:
             logger.exception(
@@ -510,15 +633,16 @@ class BuiltinResourceService:
                 "dependencies of '%s'; rolling back promoted deps",
                 len(promoted), len(targets), rid,
             )
-            for dep, orig_own, orig_vis in reversed(originals):
+            for dep_rid, orig_descriptor in reversed(originals):
                 try:
-                    dep.ownership = orig_own
-                    dep.visibility = orig_vis
-                    self._store.update(dep)
+                    if orig_descriptor is None:
+                        self._descriptor_repo.delete(dep_rid)
+                    else:
+                        self._descriptor_repo.save(orig_descriptor)
                 except Exception:
                     logger.exception(
                         "Failed to roll back promoted dependency '%s' — it may "
-                        "be left as PUBLIC and require manual cleanup", dep.rid,
+                        "be left as PUBLIC and require manual cleanup", dep_rid,
                     )
             raise
         return promoted
@@ -573,10 +697,7 @@ class BuiltinResourceService:
                     parent = self._store.get(parent_rid)
                 except KeyError:
                     continue
-                if (
-                    parent.ownership == ResourceOwnership.BUILTIN
-                    and parent.visibility == ResourceVisibility.PUBLIC
-                ):
+                if self._is_public_builtin(parent_rid):
                     result.append(parent)
                 queue.append(parent_rid)
         return result
@@ -598,7 +719,8 @@ class BuiltinResourceService:
         aggregates this resource.
         """
         resource = self._store.get(rid)
-        if resource.ownership != ResourceOwnership.BUILTIN:
+        descriptor = self.get_descriptor(rid)
+        if descriptor is None:
             raise ValueError("Resource is not a built-in resource")
 
         config = update.config
@@ -619,23 +741,22 @@ class BuiltinResourceService:
             resource.name = name
 
         ends_public = available_to_all is True or (
-            available_to_all is None and resource.visibility == ResourceVisibility.PUBLIC
+            available_to_all is None and descriptor.visibility == ResourceVisibility.PUBLIC
         )
-        if available_to_all is False and resource.visibility == ResourceVisibility.PUBLIC:
+        if available_to_all is False and descriptor.visibility == ResourceVisibility.PUBLIC:
             self._ensure_no_public_dependents(resource)
 
         # Persist config/name changes first — cascade validation below reads dependencies
         # via fresh store lookups, so it must see any newly-added refs. Force DRAFT during
         # this intermediate save so a rejected cascade never leaves this resource public
         # while referencing an invisible dependency.
-        resource.visibility = ResourceVisibility.DRAFT
         updated = self._store.update(resource)
+        self._set_visibility(rid, ResourceVisibility.DRAFT)
 
         cascaded: List[Resource] = []
         if ends_public:
             cascaded = self._cascade_promote_dependencies(rid)
-            updated.visibility = ResourceVisibility.PUBLIC
-            updated = self._store.update(updated)
+            self._set_visibility(rid, ResourceVisibility.PUBLIC)
         return updated, cascaded
 
     def toggle_visibility_with_cascade(

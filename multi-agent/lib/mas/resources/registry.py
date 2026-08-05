@@ -125,13 +125,3 @@ class ResourcesRegistry:
         Performs efficient server-side grouping via the repository.
         """
         return self._repo.group_count(identity, group_by, filter)
-
-    # ---------- built-in resources ----------
-
-    def find_all_builtins(
-        self,
-        category: str | None = None,
-        resource_type: str | None = None,
-    ) -> List[Resource]:
-        """Return all built-in resources (public and draft)."""
-        return self._repo.find_all_builtins(category=category, resource_type=resource_type)

@@ -33,6 +33,7 @@ from inbound.flask.endpoints._collaboration_shared import (
     holder_to_json as _holder_to_json,
     reject_if_locked_by_other as _reject_if_locked_by_other,
 )
+from mas.resources.builtin_models import BuiltinUpdateRequest
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +69,12 @@ def list_builtins(category=None, type=None):
     regardless of the caller's identity. Used by the Repository Management
     admin panel.
     """
-    svc = current_app.container.resources_service
+    svc = current_app.container.builtin_resource_service
+    resources_svc = current_app.container.resources_service
     try:
         resources = svc.find_all_builtins(category=category, type=type)
         return jsonify({
-            "resources": [doc.model_dump(mode="json") for doc in resources],
+            "resources": [resources_svc.to_dict(doc) for doc in resources],
         }), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -94,7 +96,7 @@ def get_builtin_schema(identity, resource_id):
     Fields with ReadOnlyHint(read_only=False) remain editable, all others get readOnly=true.
     Draft built-ins are only visible to admins.
     """
-    svc = current_app.container.resources_service
+    svc = current_app.container.builtin_resource_service
     try:
         username = getattr(g, G_IDENTITY_USERNAME, "")
         schema = svc.get_builtin_schema(resource_id, is_admin=is_admin_user(username))
@@ -123,7 +125,7 @@ def get_builtin_user_config(identity, resource_id):
     Returns the user's saved configurable-field overrides (decrypted),
     or null if the user has not configured this resource.
     """
-    svc = current_app.container.resources_service
+    svc = current_app.container.builtin_resource_service
     try:
         config = svc.get_user_config(
             rid=resource_id,
@@ -152,14 +154,14 @@ def configure_builtin(identity, resource_id, config):
 
     The identity is the caller's resolved Identity object (user or team).
     """
-    svc = current_app.container.resources_service
+    svc = current_app.container.builtin_resource_service
     try:
         doc = svc.configure_builtin(
             rid=resource_id,
             identity=identity,
             config=config,
         )
-        return jsonify(doc.model_dump(mode="json")), 200
+        return jsonify(current_app.container.resources_service.to_dict(doc)), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except BuiltinConfigUnavailableError as e:
@@ -187,7 +189,7 @@ def preview_builtin_cascade(resource_id):
     *before* the promote/toggle mutation happens, instead of only
     disclaiming the side effect afterward in a success toast.
     """
-    svc = current_app.container.resources_service
+    svc = current_app.container.builtin_resource_service
     try:
         cascaded = svc.preview_cascade_targets(resource_id)
         return jsonify({"cascaded_resources": _resource_summaries(cascaded)}), 200
@@ -228,7 +230,7 @@ def create_builtin_resource(
     ``cascaded_resources``.
     """
     identity = getattr(g, G_IDENTITY)
-    svc = current_app.container.resources_service
+    svc = current_app.container.builtin_resource_service
     try:
         doc, cascaded = svc.create_builtin_with_cascade(
             identity=identity,
@@ -238,7 +240,7 @@ def create_builtin_resource(
             config=config,
             available_to_all=available_to_all,
         )
-        response = doc.model_dump(mode="json")
+        response = current_app.container.resources_service.to_dict(doc)
         if cascaded:
             response["cascaded_resources"] = _resource_summaries(cascaded)
         return jsonify(response), 201
@@ -277,15 +279,13 @@ def update_builtin_resource(
     lock_error = _reject_if_locked_by_other(resource_id)
     if lock_error:
         return lock_error
-    svc = current_app.container.resources_service
+    svc = current_app.container.builtin_resource_service
     try:
-        doc, cascaded = svc.update_builtin_with_cascade(
-            resource_id,
-            config=config,
-            name=name,
-            available_to_all=available_to_all,
+        update = BuiltinUpdateRequest(
+            config=config, name=name, available_to_all=available_to_all,
         )
-        response = doc.model_dump(mode="json")
+        doc, cascaded = svc.update_builtin_with_cascade(resource_id, update=update)
+        response = current_app.container.resources_service.to_dict(doc)
         if cascaded:
             response["cascaded_resources"] = _resource_summaries(cascaded)
         return jsonify(response), 200
@@ -329,10 +329,10 @@ def toggle_builtin_visibility(resource_id, available_to_all):
     lock_error = _reject_if_locked_by_other(resource_id)
     if lock_error:
         return lock_error
-    svc = current_app.container.resources_service
+    svc = current_app.container.builtin_resource_service
     try:
         doc, cascaded = svc.toggle_visibility_with_cascade(resource_id, available_to_all=available_to_all)
-        response = doc.model_dump(mode="json")
+        response = current_app.container.resources_service.to_dict(doc)
         if cascaded:
             response["cascaded_resources"] = _resource_summaries(cascaded)
         return jsonify(response), 200

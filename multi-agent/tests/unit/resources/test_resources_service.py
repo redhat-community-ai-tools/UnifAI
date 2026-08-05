@@ -1,17 +1,26 @@
-"""Unit tests for ResourcesService covering the security/correctness fixes:
+"""Unit tests for ResourcesService/BuiltinResourceService covering the
+security/correctness fixes:
 
 - IDOR guard on update/delete (guard_write_access)
 - Draft-builtin visibility enforcement (get_visible / validate_resource / get_cards)
 - Secret encryption consistency (schema-hint-only secrets)
 - resolve() decrypting cfg_dict while merging the builtin overlay
 - configure_builtin() failing loudly when no repo is configured
+
+Generic CRUD/visibility/validation behavior is exercised on ``service``
+(``ResourcesService``); the built-in admin/overlay lifecycle
+(create/promote/demote/configure/schema) is exercised directly on
+``builtin_service`` (``BuiltinResourceService``), which is the sole owner
+of that concept now — see ``resources.md``. Both fixtures share the same
+underlying fake stores (see ``conftest.py``), so state mutated through one
+is visible through the other within a test.
 """
 from unittest.mock import Mock
 
 import pytest
 
 from mas.core.caller_scope import CallerScope
-from mas.core.enums import ResourceOwnership, ResourceVisibility
+from mas.core.enums import ResourceVisibility
 from mas.resources.errors import (
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
@@ -19,7 +28,7 @@ from mas.resources.errors import (
     BuiltinDependentsPublicError,
 )
 from mas.resources.models import Resource
-from mas.resources.builtin_models import identity_to_key
+from mas.resources.builtin_models import BuiltinUpdateRequest, identity_to_key
 
 from tests.unit.resources.conftest import FAKE_CATEGORY, FAKE_TYPE
 
@@ -36,8 +45,10 @@ def _make_custom_resource(service, identity, name="custom-1", bearer_token=None)
     )
 
 
-def _make_builtin_resource(service, admin_identity, name="builtin-1", available_to_all=True, bearer_token="s3cr3t") -> Resource:
-    resource, _ = service.create_builtin_with_cascade(
+def _make_builtin_resource(
+    builtin_service, admin_identity, name="builtin-1", available_to_all=True, bearer_token="s3cr3t",
+) -> Resource:
+    resource, _ = builtin_service.create_builtin_with_cascade(
         identity=admin_identity,
         category=FAKE_CATEGORY,
         type=FAKE_TYPE,
@@ -93,8 +104,8 @@ class TestGuardWriteAccess:
         resolved = service.guard_write_access(doc.rid, CallerScope(identity=admin_identity, is_admin=True))
         assert resolved.rid == doc.rid
 
-    def test_builtin_resource_blocked_for_non_admin_even_if_owner(self, service, admin_identity):
-        doc = _make_builtin_resource(service, admin_identity)
+    def test_builtin_resource_blocked_for_non_admin_even_if_owner(self, service, builtin_service, admin_identity):
+        doc = _make_builtin_resource(builtin_service, admin_identity)
         with pytest.raises(BuiltInWriteProtectedError):
             service.guard_write_access(doc.rid, CallerScope(identity=admin_identity, is_admin=False))
 
@@ -116,30 +127,30 @@ class TestGuardWriteAccess:
 # ────────────────────────────── visibility guards ──────────────────────────────
 
 class TestVisibilityGuards:
-    def test_get_visible_blocks_draft_builtin_for_non_admin(self, service, admin_identity):
-        doc = _make_builtin_resource(service, admin_identity, available_to_all=False)
+    def test_get_visible_blocks_draft_builtin_for_non_admin(self, service, builtin_service, admin_identity):
+        doc = _make_builtin_resource(builtin_service, admin_identity, available_to_all=False)
         with pytest.raises(KeyError):
             service.get_visible(doc.rid, caller=CallerScope(is_admin=False))
 
-    def test_get_visible_allows_draft_builtin_for_admin(self, service, admin_identity):
-        doc = _make_builtin_resource(service, admin_identity, available_to_all=False)
+    def test_get_visible_allows_draft_builtin_for_admin(self, service, builtin_service, admin_identity):
+        doc = _make_builtin_resource(builtin_service, admin_identity, available_to_all=False)
         resolved = service.get_visible(doc.rid, caller=CallerScope(is_admin=True))
         assert resolved.rid == doc.rid
 
-    def test_get_visible_allows_public_builtin_for_anyone(self, service, admin_identity):
-        doc = _make_builtin_resource(service, admin_identity, available_to_all=True)
+    def test_get_visible_allows_public_builtin_for_anyone(self, service, builtin_service, admin_identity):
+        doc = _make_builtin_resource(builtin_service, admin_identity, available_to_all=True)
         resolved = service.get_visible(doc.rid, caller=CallerScope(is_admin=False))
         assert resolved.rid == doc.rid
 
-    def test_validate_resource_blocks_probing_draft_builtins(self, service, admin_identity, alice):
+    def test_validate_resource_blocks_probing_draft_builtins(self, service, builtin_service, admin_identity, alice):
         """Regression test: validate_resource must not let a non-admin probe
         a draft built-in's existence/schema via the validation endpoint."""
-        doc = _make_builtin_resource(service, admin_identity, available_to_all=False)
+        doc = _make_builtin_resource(builtin_service, admin_identity, available_to_all=False)
         with pytest.raises(KeyError):
             service.validate_resource(doc.rid, CallerScope(identity=alice, is_admin=False))
 
-    def test_get_cards_blocks_draft_builtin_for_non_admin(self, service, admin_identity):
-        doc = _make_builtin_resource(service, admin_identity, available_to_all=False)
+    def test_get_cards_blocks_draft_builtin_for_non_admin(self, service, builtin_service, admin_identity):
+        doc = _make_builtin_resource(builtin_service, admin_identity, available_to_all=False)
         with pytest.raises(KeyError):
             service.get_cards([doc.rid], caller=CallerScope(is_admin=False))
 
@@ -171,11 +182,11 @@ class TestVisibilityGuards:
 # ────────────────────────────── encryption ──────────────────────────────
 
 class TestEncryption:
-    def test_create_builtin_encrypts_schema_hint_only_secret_field(self, service, admin_identity):
+    def test_create_builtin_encrypts_schema_hint_only_secret_field(self, service, builtin_service, admin_identity):
         """bearer_token has no ENCRYPTED_FIELDS entry on the fake config class
         (mirroring the real McpProviderConfig) — it is only marked via
         SecretHint. The base cfg_dict must still be encrypted at rest."""
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="super-secret")
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="super-secret")
 
         raw = service.get(doc.rid)
         stored = raw.cfg_dict["bearer_token"]
@@ -185,10 +196,10 @@ class TestEncryption:
         # end-to-end by test_resolve_decrypts_cfg_dict below).
         assert service._fields._cipher.decrypt(stored) == "super-secret"
 
-    def test_resolve_decrypts_cfg_dict(self, service, admin_identity):
+    def test_resolve_decrypts_cfg_dict(self, service, builtin_service, admin_identity):
         """Regression test: resolve() must return plaintext secrets to
         downstream elements, not ciphertext."""
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="super-secret")
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="super-secret")
 
         resolved_config = service.resolve(doc.rid)
         assert resolved_config.bearer_token == "super-secret"
@@ -197,35 +208,39 @@ class TestEncryption:
 # ────────────────────────────── builtin overlay ──────────────────────────────
 
 class TestBuiltinOverlay:
-    def test_configure_builtin_raises_when_repo_unavailable(self, service_without_config_repo, admin_identity, alice):
-        doc = _make_builtin_resource(service_without_config_repo, admin_identity)
+    def test_configure_builtin_raises_when_repo_unavailable(
+        self, builtin_service_without_config_repo, admin_identity, alice,
+    ):
+        doc = _make_builtin_resource(builtin_service_without_config_repo, admin_identity)
         with pytest.raises(BuiltinConfigUnavailableError):
-            service_without_config_repo.configure_builtin(
+            builtin_service_without_config_repo.configure_builtin(
                 doc.rid, identity=alice, config={"bearer_token": "mine"},
             )
 
-    def test_configure_builtin_rejects_invalid_field_type(self, service, admin_identity, alice):
+    def test_configure_builtin_rejects_invalid_field_type(self, builtin_service, admin_identity, alice):
         """An overlay value that fails Pydantic validation against the
         element's config model must be rejected at configure-time, not
         silently persisted and only discovered later at resolve()."""
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="default-secret")
         with pytest.raises(ValueError):
-            service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": 12345})
+            builtin_service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": 12345})
 
         # Nothing should have been persisted from the rejected attempt.
-        assert service.get_user_config(doc.rid, identity=alice) is None
+        assert builtin_service.get_user_config(doc.rid, identity=alice) is None
 
-    def test_configure_builtin_round_trips_through_get_user_config(self, service, admin_identity, alice):
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
+    def test_configure_builtin_round_trips_through_get_user_config(self, builtin_service, admin_identity, alice):
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="default-secret")
 
-        service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
+        builtin_service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
 
-        user_config = service.get_user_config(doc.rid, identity=alice)
+        user_config = builtin_service.get_user_config(doc.rid, identity=alice)
         assert user_config["bearer_token"] == "alices-secret"
 
-    def test_configure_builtin_overlay_takes_priority_in_resolve(self, service, admin_identity, alice, bob):
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
-        service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
+    def test_configure_builtin_overlay_takes_priority_in_resolve(
+        self, service, builtin_service, admin_identity, alice, bob,
+    ):
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="default-secret")
+        builtin_service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
 
         resolved_for_alice = service.resolve(doc.rid, CallerScope(identity=alice))
         resolved_for_bob = service.resolve(doc.rid, CallerScope(identity=bob))
@@ -241,39 +256,39 @@ class TestBuiltinOverlay:
         assert resolved_no_identity.bearer_token == "default-secret"
 
     def test_resolve_strips_unconfigured_secret_even_without_any_overlays(
-        self, service, admin_identity, alice,
+        self, service, builtin_service, admin_identity, alice,
     ):
         """Regression test: a per-user secret field baked into a built-in's
         shared base config (e.g. an admin's own bearer token, saved while
         testing connectivity before promoting it) must never leak to a user
         who has no overlay of their own — even when *nobody* has configured
         one yet."""
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="admins-own-secret")
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="admins-own-secret")
 
         resolved = service.resolve(doc.rid, CallerScope(identity=alice))
 
         assert resolved.bearer_token is None
 
-    def test_configure_builtin_encrypts_encrypted_fields_only_secret(self, service, admin_identity, alice):
+    def test_configure_builtin_encrypts_encrypted_fields_only_secret(self, builtin_service, admin_identity, alice):
         """``api_key`` is sensitive only via ``ENCRYPTED_FIELDS`` (no
         ``SecretHint``, like some real element configs). Regression test:
         the per-identity overlay must encrypt it at rest just like the base
         ``cfg_dict`` does via ``encrypt_fields``, not silently store it in
         plaintext because schema-hint scanning alone doesn't see it."""
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="default-secret")
 
-        service.configure_builtin(doc.rid, identity=alice, config={"api_key": "alices-api-key"})
+        builtin_service.configure_builtin(doc.rid, identity=alice, config={"api_key": "alices-api-key"})
 
-        stored = service._builtin_user_config_repo.get(doc.rid, identity_to_key(alice))
+        stored = builtin_service._builtin_user_config_repo.get(doc.rid, identity_to_key(alice))
         assert stored.fields["api_key"] != "alices-api-key"
         assert stored.fields["api_key"].startswith("gAAAAAB")
 
-        user_config = service.get_user_config(doc.rid, identity=alice)
+        user_config = builtin_service.get_user_config(doc.rid, identity=alice)
         assert user_config["api_key"] == "alices-api-key"
 
-    def test_get_cards_passes_identity_through_for_overlay(self, service, admin_identity, alice):
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
-        service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
+    def test_get_cards_passes_identity_through_for_overlay(self, service, builtin_service, admin_identity, alice):
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="default-secret")
+        builtin_service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
 
         captured = {}
 
@@ -310,9 +325,9 @@ class TestBuiltinRequiredSecretValidation:
         return captured
 
     def test_validate_resource_flags_missing_secret_for_caller_without_overlay(
-        self, service, admin_identity, bob,
+        self, service, builtin_service, admin_identity, bob,
     ):
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="default-secret")
         captured = self._capture_ordered_configs(service, is_valid=False)
 
         service.validate_resource(doc.rid, CallerScope(identity=bob))
@@ -322,10 +337,10 @@ class TestBuiltinRequiredSecretValidation:
         assert "bearer_token" in built.validation_override_error
 
     def test_validate_resource_does_not_flag_when_caller_has_overlay(
-        self, service, admin_identity, alice,
+        self, service, builtin_service, admin_identity, alice,
     ):
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
-        service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="default-secret")
+        builtin_service.configure_builtin(doc.rid, identity=alice, config={"bearer_token": "alices-secret"})
         captured = self._capture_ordered_configs(service, is_valid=True)
 
         service.validate_resource(doc.rid, CallerScope(identity=alice))
@@ -334,12 +349,12 @@ class TestBuiltinRequiredSecretValidation:
         assert built.validation_override_error is None
 
     def test_validate_resource_not_flagged_without_identity(
-        self, service, admin_identity,
+        self, service, builtin_service, admin_identity,
     ):
         """``caller.identity=None`` (schema-only tooling) skips the overlay
         concept entirely, same as ``resolve()`` — it must not be flagged
         either."""
-        doc = _make_builtin_resource(service, admin_identity, bearer_token="default-secret")
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="default-secret")
         captured = self._capture_ordered_configs(service, is_valid=True)
 
         service.validate_resource(doc.rid, CallerScope(identity=None))
@@ -368,19 +383,19 @@ class TestCardVisibilityHint:
     consumers use to know which fields to render on inventory cards for
     built-in vs. custom elements."""
 
-    def test_card_hint_present_on_builtin_schema(self, service, admin_identity):
-        doc = _make_builtin_resource(service, admin_identity)
-        schema = service.get_builtin_schema(doc.rid, is_admin=True)
+    def test_card_hint_present_on_builtin_schema(self, builtin_service, admin_identity):
+        doc = _make_builtin_resource(builtin_service, admin_identity)
+        schema = builtin_service.get_builtin_schema(doc.rid, is_admin=True)
 
         endpoint_hints = schema["properties"]["endpoint"]["hints"]
         assert endpoint_hints["card"] == {"contexts": ["custom"]}
 
-    def test_card_hint_untouched_by_read_only_annotation(self, service, admin_identity):
+    def test_card_hint_untouched_by_read_only_annotation(self, builtin_service, admin_identity):
         """``get_builtin_schema`` adds ``read_only`` hints to non-configurable
         fields but must not strip or overwrite any pre-existing ``card`` hint
         while doing so."""
-        doc = _make_builtin_resource(service, admin_identity)
-        schema = service.get_builtin_schema(doc.rid, is_admin=True)
+        doc = _make_builtin_resource(builtin_service, admin_identity)
+        schema = builtin_service.get_builtin_schema(doc.rid, is_admin=True)
 
         endpoint_hints = schema["properties"]["endpoint"]["hints"]
         # `endpoint` has no ReadOnlyHint(read_only=False), so it becomes
@@ -392,25 +407,25 @@ class TestCardVisibilityHint:
 # ────────────────────────────── promote/demote lifecycle ──────────────────────────────
 
 class TestPromoteDemote:
-    def test_promote_custom_to_public_builtin(self, service, alice):
+    def test_promote_custom_to_public_builtin(self, service, builtin_service, alice):
         doc = _make_custom_resource(service, alice)
-        promoted, _ = service.promote_with_cascade(doc.rid)
-        assert promoted.ownership == ResourceOwnership.BUILTIN
-        assert promoted.visibility == ResourceVisibility.PUBLIC
+        promoted, _ = builtin_service.promote_with_cascade(doc.rid)
+        assert builtin_service.is_builtin(promoted.rid)
+        assert builtin_service.get_descriptor(promoted.rid).visibility == ResourceVisibility.PUBLIC
 
-    def test_demote_sets_draft_visibility(self, service, admin_identity):
-        doc = _make_builtin_resource(service, admin_identity, available_to_all=True)
-        demoted = service.demote(doc.rid)
-        assert demoted.visibility == ResourceVisibility.DRAFT
+    def test_demote_sets_draft_visibility(self, builtin_service, admin_identity):
+        doc = _make_builtin_resource(builtin_service, admin_identity, available_to_all=True)
+        demoted = builtin_service.demote(doc.rid)
+        assert builtin_service.get_descriptor(demoted.rid).visibility == ResourceVisibility.DRAFT
 
-    def test_toggle_visibility_delegates_to_promote_and_demote(self, service, alice, admin_identity):
+    def test_toggle_visibility_delegates_to_promote_and_demote(self, service, builtin_service, alice, admin_identity):
         custom = _make_custom_resource(service, alice)
-        toggled_on, _ = service.toggle_visibility_with_cascade(custom.rid, available_to_all=True)
-        assert toggled_on.visibility == ResourceVisibility.PUBLIC
-        assert toggled_on.ownership == ResourceOwnership.BUILTIN
+        toggled_on, _ = builtin_service.toggle_visibility_with_cascade(custom.rid, available_to_all=True)
+        assert builtin_service.get_descriptor(toggled_on.rid).visibility == ResourceVisibility.PUBLIC
+        assert builtin_service.is_builtin(toggled_on.rid)
 
-        toggled_off, _ = service.toggle_visibility_with_cascade(toggled_on.rid, available_to_all=False)
-        assert toggled_off.visibility == ResourceVisibility.DRAFT
+        toggled_off, _ = builtin_service.toggle_visibility_with_cascade(toggled_on.rid, available_to_all=False)
+        assert builtin_service.get_descriptor(toggled_off.rid).visibility == ResourceVisibility.DRAFT
 
 
 # ────────────────────────────── nested-dependency cascade ──────────────────────────────
@@ -421,94 +436,93 @@ class TestNestedDependencyCascade:
     cascade to those leaves, and demoting a leaf that a public agent still
     uses must be blocked."""
 
-    def test_promote_cascades_to_not_yet_public_nested_refs(self, service, alice, admin_identity):
+    def test_promote_cascades_to_not_yet_public_nested_refs(self, service, builtin_service, alice, admin_identity):
         llm = _make_custom_resource(service, alice, name="my-llm")
         agent = _make_custom_resource(service, alice, name="my-agent")
         _link_nested(service, agent, llm.rid)
 
-        service.promote_with_cascade(agent.rid)
+        builtin_service.promote_with_cascade(agent.rid)
 
-        promoted_llm = service.get(llm.rid)
-        assert promoted_llm.ownership == ResourceOwnership.BUILTIN
-        assert promoted_llm.visibility == ResourceVisibility.PUBLIC
+        assert builtin_service.is_builtin(llm.rid)
+        assert builtin_service.get_descriptor(llm.rid).visibility == ResourceVisibility.PUBLIC
 
-    def test_promote_cascades_transitively_through_a_chain(self, service, alice):
+    def test_promote_cascades_transitively_through_a_chain(self, service, builtin_service, alice):
         provider = _make_custom_resource(service, alice, name="my-provider")
         tool = _make_custom_resource(service, alice, name="my-tool")
         agent = _make_custom_resource(service, alice, name="my-agent-2")
         _link_nested(service, tool, provider.rid)
         _link_nested(service, agent, tool.rid)
 
-        service.promote_with_cascade(agent.rid)
+        builtin_service.promote_with_cascade(agent.rid)
 
-        assert service.get(tool.rid).visibility == ResourceVisibility.PUBLIC
-        assert service.get(provider.rid).visibility == ResourceVisibility.PUBLIC
+        assert builtin_service.get_descriptor(tool.rid).visibility == ResourceVisibility.PUBLIC
+        assert builtin_service.get_descriptor(provider.rid).visibility == ResourceVisibility.PUBLIC
 
-    def test_promote_does_not_touch_already_public_nested_refs(self, service, alice, admin_identity):
-        llm = _make_builtin_resource(service, admin_identity, name="shared-llm", available_to_all=True)
+    def test_promote_does_not_touch_already_public_nested_refs(self, service, builtin_service, alice, admin_identity):
+        llm = _make_builtin_resource(builtin_service, admin_identity, name="shared-llm", available_to_all=True)
         agent = _make_custom_resource(service, alice, name="agent-using-shared-llm")
         _link_nested(service, agent, llm.rid)
 
-        service.promote_with_cascade(agent.rid)
+        builtin_service.promote_with_cascade(agent.rid)
 
         # No-op: still public, version unchanged by the cascade.
         assert service.get(llm.rid).version == llm.version
 
-    def test_preview_cascade_targets_lists_not_yet_public_deps(self, service, alice):
+    def test_preview_cascade_targets_lists_not_yet_public_deps(self, service, builtin_service, alice):
         llm = _make_custom_resource(service, alice, name="preview-llm")
         agent = _make_custom_resource(service, alice, name="preview-agent")
         _link_nested(service, agent, llm.rid)
 
-        targets = service.preview_cascade_targets(agent.rid)
+        targets = builtin_service.preview_cascade_targets(agent.rid)
 
         assert [t.rid for t in targets] == [llm.rid]
 
-    def test_demote_blocked_when_public_agent_still_uses_it(self, service, alice):
+    def test_demote_blocked_when_public_agent_still_uses_it(self, service, builtin_service, alice):
         llm = _make_custom_resource(service, alice, name="blocked-llm")
         agent = _make_custom_resource(service, alice, name="blocking-agent")
         _link_nested(service, agent, llm.rid)
-        service.promote_with_cascade(agent.rid)  # cascades llm to public too
+        builtin_service.promote_with_cascade(agent.rid)  # cascades llm to public too
 
         with pytest.raises(BuiltinDependentsPublicError) as exc_info:
-            service.demote(llm.rid)
+            builtin_service.demote(llm.rid)
 
         assert "blocking-agent" in str(exc_info.value)
         assert [d.rid for d in exc_info.value.dependents] == [agent.rid]
 
-    def test_demote_allowed_once_dependent_agent_is_demoted(self, service, alice):
+    def test_demote_allowed_once_dependent_agent_is_demoted(self, service, builtin_service, alice):
         llm = _make_custom_resource(service, alice, name="unblocked-llm")
         agent = _make_custom_resource(service, alice, name="unblocking-agent")
         _link_nested(service, agent, llm.rid)
-        service.promote_with_cascade(agent.rid)
+        builtin_service.promote_with_cascade(agent.rid)
 
-        service.demote(agent.rid)
-        demoted_llm = service.demote(llm.rid)
+        builtin_service.demote(agent.rid)
+        demoted_llm = builtin_service.demote(llm.rid)
 
-        assert demoted_llm.visibility == ResourceVisibility.DRAFT
+        assert builtin_service.get_descriptor(demoted_llm.rid).visibility == ResourceVisibility.DRAFT
 
-    def test_demote_blocked_transitively_through_a_chain(self, service, alice):
+    def test_demote_blocked_transitively_through_a_chain(self, service, builtin_service, alice):
         provider = _make_custom_resource(service, alice, name="chain-provider")
         tool = _make_custom_resource(service, alice, name="chain-tool")
         agent = _make_custom_resource(service, alice, name="chain-agent")
         _link_nested(service, tool, provider.rid)
         _link_nested(service, agent, tool.rid)
-        service.promote_with_cascade(agent.rid)  # cascades tool + provider to public
+        builtin_service.promote_with_cascade(agent.rid)  # cascades tool + provider to public
 
         with pytest.raises(BuiltinDependentsPublicError) as exc_info:
-            service.demote(provider.rid)
+            builtin_service.demote(provider.rid)
 
         assert {d.rid for d in exc_info.value.dependents} == {tool.rid, agent.rid}
 
-    def test_demote_not_blocked_by_unrelated_draft_agent(self, service, alice):
+    def test_demote_not_blocked_by_unrelated_draft_agent(self, service, builtin_service, alice):
         llm = _make_custom_resource(service, alice, name="free-llm")
         draft_agent = _make_custom_resource(service, alice, name="draft-agent")
         _link_nested(service, draft_agent, llm.rid)
-        service.promote_with_cascade(llm.rid)  # llm becomes public on its own; agent stays custom/draft
+        builtin_service.promote_with_cascade(llm.rid)  # llm becomes public on its own; agent stays custom/draft
 
-        demoted = service.demote(llm.rid)
-        assert demoted.visibility == ResourceVisibility.DRAFT
+        demoted = builtin_service.demote(llm.rid)
+        assert builtin_service.get_descriptor(demoted.rid).visibility == ResourceVisibility.DRAFT
 
-    def test_promote_rejects_cascade_through_disabled_category_dependency(self, service, alice):
+    def test_promote_rejects_cascade_through_disabled_category_dependency(self, service, builtin_service, alice):
         """Regression test: a dependency in a `builtin_disabled_categories()`
         category (e.g. a retriever) must reject the whole promotion instead
         of being silently skipped — leaving the parent public while it still
@@ -519,71 +533,67 @@ class TestNestedDependencyCascade:
         _link_nested(service, agent, retriever.rid)
 
         with pytest.raises(ValueError, match="is not supported as a built-in resource"):
-            service.promote_with_cascade(agent.rid)
+            builtin_service.promote_with_cascade(agent.rid)
 
-        reloaded_agent = service.get(agent.rid)
-        assert reloaded_agent.ownership == ResourceOwnership.CUSTOM
-        assert reloaded_agent.visibility == ResourceVisibility.DRAFT
-
-        reloaded_retriever = service.get(retriever.rid)
-        assert reloaded_retriever.ownership == ResourceOwnership.CUSTOM
-        assert reloaded_retriever.visibility == ResourceVisibility.DRAFT
+        # The whole promotion is rejected before any mutation happens — the
+        # agent and its retriever dependency never become built-ins.
+        assert builtin_service.get_descriptor(agent.rid) is None
+        assert builtin_service.get_descriptor(retriever.rid) is None
 
     def test_update_builtin_rejects_cascade_through_disabled_category_dependency(
-        self, service, alice, admin_identity,
+        self, service, builtin_service, alice, admin_identity,
     ):
         """Same guarantee via `update_builtin_with_cascade` (toggling an
         existing draft built-in to "available to all"): no public resource
         should ever be published if a dependency can't cascade."""
         retriever = _make_disabled_category_resource(service, alice)
         builtin_doc = _make_builtin_resource(
-            service, admin_identity, name="draft-builtin-with-retriever-dep",
+            builtin_service, admin_identity, name="draft-builtin-with-retriever-dep",
             available_to_all=False,
         )
         _link_nested(service, builtin_doc, retriever.rid)
 
         with pytest.raises(ValueError, match="is not supported as a built-in resource"):
-            service.update_builtin_with_cascade(builtin_doc.rid, available_to_all=True)
+            builtin_service.update_builtin_with_cascade(
+                builtin_doc.rid, update=BuiltinUpdateRequest(available_to_all=True),
+            )
 
-        reloaded_builtin = service.get(builtin_doc.rid)
-        assert reloaded_builtin.visibility == ResourceVisibility.DRAFT
+        assert builtin_service.get_descriptor(builtin_doc.rid).visibility == ResourceVisibility.DRAFT
+        assert builtin_service.get_descriptor(retriever.rid) is None
 
-        reloaded_retriever = service.get(retriever.rid)
-        assert reloaded_retriever.ownership == ResourceOwnership.CUSTOM
-        assert reloaded_retriever.visibility == ResourceVisibility.DRAFT
-
-    def test_promote_parent_stays_draft_when_cascade_fails_midway(self, service, alice):
+    def test_promote_parent_stays_draft_when_cascade_fails_midway(
+        self, service, builtin_service, builtin_resource_descriptor_repo, alice,
+    ):
         """Regression: if `_cascade_promote_dependencies` raises mid-loop
         (e.g. a Mongo write error on the second dependency), the parent must
-        NOT end up PUBLIC while a dependency remains DRAFT — that would break
-        the cascade invariant."""
+        NOT end up PUBLIC while a dependency remains non-built-in — that
+        would break the cascade invariant."""
         llm = _make_custom_resource(service, alice, name="cascade-fail-llm")
         tool = _make_custom_resource(service, alice, name="cascade-fail-tool")
         agent = _make_custom_resource(service, alice, name="cascade-fail-agent")
         _link_nested(service, agent, llm.rid, tool.rid)
 
-        original_update = service._store.update
+        original_save = builtin_resource_descriptor_repo.save
         call_count = {"n": 0}
 
-        def failing_update(doc):
+        def failing_save(descriptor):
             call_count["n"] += 1
             # Let the parent's intermediate DRAFT save through, then fail on
-            # the first dependency write inside the cascade loop.
-            if doc.rid in (llm.rid, tool.rid) and doc.visibility == ResourceVisibility.PUBLIC:
+            # the first dependency's descriptor write inside the cascade loop.
+            if descriptor.rid in (llm.rid, tool.rid) and descriptor.visibility == ResourceVisibility.PUBLIC:
                 raise RuntimeError("simulated Mongo write error")
-            return original_update(doc)
+            return original_save(descriptor)
 
-        service._store.update = failing_update
+        builtin_service._descriptor_repo.save = failing_save
 
         with pytest.raises(RuntimeError, match="simulated Mongo write error"):
-            service.promote_with_cascade(agent.rid)
+            builtin_service.promote_with_cascade(agent.rid)
 
-        reloaded_agent = service.get(agent.rid)
-        assert reloaded_agent.visibility == ResourceVisibility.DRAFT
-        assert reloaded_agent.ownership == ResourceOwnership.BUILTIN
+        # The parent already became a (draft) built-in before the cascade
+        # ran, and that intermediate state survives the failed cascade.
+        assert builtin_service.get_descriptor(agent.rid).visibility == ResourceVisibility.DRAFT
 
-        reloaded_llm = service.get(llm.rid)
-        assert reloaded_llm.visibility == ResourceVisibility.DRAFT
-
-        reloaded_tool = service.get(tool.rid)
-        assert reloaded_tool.visibility == ResourceVisibility.DRAFT
+        # Neither dependency was ever actually promoted (the failing write
+        # is never persisted).
+        assert builtin_service.get_descriptor(llm.rid) is None
+        assert builtin_service.get_descriptor(tool.rid) is None

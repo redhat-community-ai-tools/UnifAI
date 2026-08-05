@@ -10,7 +10,7 @@ from unittest.mock import Mock
 import pytest
 from pydantic import BaseModel, Field
 
-from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
+from mas.core.enums import ResourceCategory
 from mas.core.field_hints import SecretHint, ReadOnlyHint, ConditionalHint, combine_hints
 from mas.core.identity import Identity
 from mas.resources.builtin_service import BuiltinResourceService
@@ -54,6 +54,7 @@ def builtin_service() -> BuiltinResourceService:
         resource_registry=Mock(),
         element_registry=registry,
         field_encryption=fields,
+        descriptor_repo=Mock(),
         builtin_user_config_repo=Mock(),
     )
 
@@ -65,8 +66,6 @@ def _builtin_resource() -> Resource:
         type=TYPE_KEY,
         name="fake-builtin",
         cfg_dict={"auth_method": "access_token"},
-        ownership=ResourceOwnership.BUILTIN,
-        visibility=ResourceVisibility.PUBLIC,
     )
 
 

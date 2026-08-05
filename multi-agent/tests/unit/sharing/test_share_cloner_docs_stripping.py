@@ -39,7 +39,12 @@ class TestShareClonerDocsRagStripping:
         bp_service = create_autospec(BlueprintService, instance=True)
         element_registry = create_autospec(ElementRegistry, instance=True)
         element_registry.get_schema.return_value = DocsRagRetrieverConfig
-        return ShareCloner(resources_service, bp_service, element_registry)
+        # Not exercised by these docs-stripping tests (they call
+        # `_clone_single_resource` directly on pre-computed cache data), but
+        # the constructor now requires it.
+        builtin_resource_service = MagicMock()
+        builtin_resource_service.get_descriptor.return_value = None
+        return ShareCloner(resources_service, bp_service, element_registry, builtin_resource_service)
 
     def _build_cache_data(self, resource, cfg_model):
         return ResourceCacheData(

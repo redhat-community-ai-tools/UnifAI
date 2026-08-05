@@ -33,7 +33,11 @@ def _build_cloner() -> Tuple[ShareCloner, MagicMock]:
     resources_service = create_autospec(ResourcesService, instance=True)
     bp_service = create_autospec(BlueprintService, instance=True)
     element_registry = create_autospec(ElementRegistry, instance=True)
-    return ShareCloner(resources_service, bp_service, element_registry), resources_service
+    # Not exercised by these batch-rollback tests (they operate purely on
+    # already-computed docs), but the constructor now requires it.
+    builtin_resource_service = MagicMock()
+    builtin_resource_service.get_descriptor.return_value = None
+    return ShareCloner(resources_service, bp_service, element_registry, builtin_resource_service), resources_service
 
 
 class TestBatchCreateResourcesRollback:

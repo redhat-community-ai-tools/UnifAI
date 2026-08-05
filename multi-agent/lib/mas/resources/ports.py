@@ -4,12 +4,13 @@ Ports (interfaces) for external dependencies of the resources domain.
 Services and adapters depend on these ABCs rather than concrete
 implementations, keeping the dependency arrows pointing inward.
 """
-from typing import Protocol, runtime_checkable
+from typing import Optional, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
 from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity
+from mas.resources.builtin_models import BuiltinResourceDescriptor
 from mas.resources.models import Resource
 
 
@@ -55,3 +56,16 @@ class ResourceClonePort(Protocol):
     ) -> bool: ...
 
     def delete(self, rid: str) -> None: ...
+
+
+@runtime_checkable
+class BuiltinDescriptorReader(Protocol):
+    """Narrow read port for checking whether a resource is a built-in.
+
+    ``ShareCloner`` needs only this single fact about a resource (never
+    the full ``BuiltinResourceService`` admin/overlay/cascade surface) to
+    decide whether to clone it or keep it shared by reference — satisfied
+    structurally by ``BuiltinResourceService``.
+    """
+
+    def get_descriptor(self, rid: str) -> Optional[BuiltinResourceDescriptor]: ...

@@ -85,12 +85,3 @@ class ResourceRepository(ABC):
     def delete_by_identity(self, identity: Identity) -> int:
         """Delete all resources owned by *identity*.  Returns the count of deleted documents."""
         ...
-
-    @abstractmethod
-    def find_all_builtins(
-        self,
-        category: str | None = None,
-        resource_type: str | None = None,
-    ) -> List[Resource]:
-        """Return all built-in resources, optionally filtered by category/type."""
-        ...

@@ -93,7 +93,7 @@ def save_resource(identity, category=None, type=None, name=None, config=None):
                          type=type,
                          name=name,
                          config=config)
-        return jsonify(doc.model_dump(mode="json")), 201
+        return jsonify(svc.to_dict(doc)), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -111,7 +111,7 @@ def get_resource(identity, resource_id):
     try:
         caller = resolve_caller_scope(identity)
         doc = svc.get_visible(resource_id, caller=caller)
-        return jsonify(doc.model_dump(mode="json")), 200
+        return jsonify(svc.to_dict(doc)), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except Exception as e:
@@ -177,7 +177,7 @@ def update_resource(identity, resource_id, config, name=None):
         if lock_error:
             return lock_error
         doc = svc.update(resource_id, config=config, name=name)
-        return jsonify(doc.model_dump(mode="json")), 200
+        return jsonify(svc.to_dict(doc)), 200
     except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceAccessDeniedError as e:

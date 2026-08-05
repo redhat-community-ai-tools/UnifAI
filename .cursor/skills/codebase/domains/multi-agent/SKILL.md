@@ -150,9 +150,18 @@ Required `ClassVar` fields on every spec: `category`, `type_key`, `name`, `descr
 Each domain component exposes one service class. All access from outside the component goes through that service — never through repositories or internal modules directly.
 
 A service can still be split into internal collaborators for SRP as it grows — e.g.
-`ResourcesService` composes `BuiltinResourceService` and `ResourceFieldEncryption` — as
-long as the outward-facing facade class is the only one external callers import. See
-"Established Patterns" in `references/resources.md`.
+`ResourcesService` composes `ResourceFieldEncryption` internally — as long as the
+outward-facing facade class is the only one external callers import.
+
+A domain can also expose **two** peer facades when it genuinely owns two
+separable concepts: `ResourcesService` (base resource CRUD/validation/cards)
+and `BuiltinResourceService` (built-in descriptor lifecycle, admin CRUD +
+cascade, per-identity overlays) are both public — `builtins.py`/`ShareCloner`
+inject `BuiltinResourceService` directly rather than through `ResourcesService`.
+`ResourcesService` still composes `BuiltinResourceService` internally, but only
+for the small set of built-in-awareness helpers its own CRUD needs, never as a
+pass-through for the admin/overlay surface. See "Established Patterns" in
+`references/resources.md`.
 
 ### 7. Composition Root Wiring
 
@@ -223,6 +232,7 @@ Immutable — mutations produce new copies via `with_scope()`, `mark_active()`, 
 | `AuthStrategy` | `OAuth2Strategy` / `ApiKeyStrategy` | httpx / in-proc |
 | `BaseGraphBuilder` | `TemporalBuilder` / `LangGraphBuilder` | Temporal / LangGraph |
 | `BuiltinUserConfigRepository` | `MongoBuiltinUserConfigRepository` | MongoDB |
+| `BuiltinResourceDescriptorRepository` | `MongoBuiltinResourceDescriptorRepository` | MongoDB, `$lookup`-joined to `resources` |
 | `AdminConfigReaderPort` | `MongoAdminConfigReader` | MongoDB (backend's `config` DB, read-only — see `references/adapters.md` Established Patterns) |
 
 ## MongoDB Collections
@@ -231,7 +241,8 @@ Immutable — mutations produce new copies via `with_scope()`, `mark_active()`, 
 |------------|-----------|---------|
 | blueprints | blueprint_id, identity, spec_dict, rid_refs | Unique on blueprint_id |
 | workflow_sessions | run_id, identity, blueprint_id, graph_state, status | Compound identity+time index |
-| resources | rid, identity, category, type, name, cfg_dict, ownership, visibility | Unique on identity+category+type+name |
+| resources | rid, identity, category, type, name, cfg_dict | Unique on identity+category+type+name. No built-in-related fields — see `builtin_resource_descriptors` |
+| builtin_resource_descriptors | rid, visibility, parent_builtin_id, created, updated | One doc per built-in resource, joined to `resources` by `rid`; existence = "this resource is a built-in" |
 | builtin_user_configs | config_id, resource_id, identity_key, fields (encrypted) | Unique on resource_id+identity_key — one overlay doc per built-in per identity |
 | shares | share_id, sender/recipient_identity, status | TTL auto-expiry on expires_at |
 | templates | template_id, draft, placeholders, metadata | Text search on name+description |

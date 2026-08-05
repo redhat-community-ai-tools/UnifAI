@@ -7,13 +7,13 @@ from pydantic import BaseModel
 
 from mas.core.identity import Identity
 from mas.resources.models import Resource
-from mas.resources.ports import ResourceClonePort
+from mas.resources.ports import BuiltinDescriptorReader, ResourceClonePort
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintResource, StepDef
 from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.ref import RefWalker, RefRemapper
 from mas.core.ref.models import Ref
-from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
+from mas.core.enums import ResourceCategory, ResourceVisibility
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +95,12 @@ class ShareCloner:
     def __init__(self,
                  resources_service: ResourceClonePort,
                  blueprint_service: BlueprintService,
-                 element_registry: ElementRegistry):
+                 element_registry: ElementRegistry,
+                 builtin_resource_service: BuiltinDescriptorReader):
         self.resources = resources_service
         self.blueprints = blueprint_service
         self.elements = element_registry
+        self.builtin = builtin_resource_service
 
     @staticmethod
     def _recipient_identity(ctx: CloneContext) -> Identity:
@@ -249,8 +251,9 @@ class ShareCloner:
                 # Load and validate resource
                 doc = self.resources.get(rid)
 
-                if doc.ownership == ResourceOwnership.BUILTIN:
-                    if doc.visibility != ResourceVisibility.PUBLIC:
+                descriptor = self.builtin.get_descriptor(rid)
+                if descriptor is not None:
+                    if descriptor.visibility != ResourceVisibility.PUBLIC:
                         raise ShareCloneError(
                             f"Cannot share: resource {rid} ({doc.name}) is a "
                             f"draft built-in and would be invisible to the recipient"

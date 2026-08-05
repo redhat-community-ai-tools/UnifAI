@@ -24,6 +24,9 @@ is not restored since it is now derived at runtime rather than stored.
 
 Usage:
     python -m run.scripts.migrate_builtin_system [--dry-run] [--reverse] [--mongodb-ip localhost] [--mongodb-port 27017] [--encryption-key KEY]
+
+The encryption key is auto-discovered from the app config (``AppConfig.credential_encryption_key``)
+when ``--encryption-key`` is not explicitly provided, so you rarely need to pass it manually.
 """
 import argparse
 import binascii
@@ -44,6 +47,48 @@ from mas.resources.field_encryption import ResourceFieldEncryption
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def _auto_discover_encryption_key() -> str:
+    """Try to load the encryption key from the same sources the app uses.
+
+    Resolution order (first non-empty wins):
+    1. ``AppConfig().credential_encryption_key`` (pydantic-settings: env +
+       .env + yaml + json — same loader the running app uses).
+    2. ``$CREDENTIAL_ENCRYPTION_KEY`` env var (direct check, in case
+       pydantic-settings didn't load it).
+    3. ``credential_encryption_key`` from ``.env`` in CWD (direct dotenv
+       read, in case the env var isn't exported but .env has it).
+    4. ``$ENCRYPTION_KEY`` env var (legacy / backward-compat name).
+
+    Returns ``""`` if nothing is found.
+    """
+    try:
+        from config.app_config import AppConfig
+        key = AppConfig().credential_encryption_key
+        if key:
+            logger.info("Auto-discovered encryption key from AppConfig.")
+            return key
+    except Exception:
+        pass
+    for var in ("CREDENTIAL_ENCRYPTION_KEY", "ENCRYPTION_KEY"):
+        key = os.environ.get(var, "")
+        if key:
+            logger.info("Using encryption key from $%s.", var)
+            return key
+    try:
+        from pathlib import Path
+        from dotenv import dotenv_values
+        env_path = Path(".env")
+        if env_path.exists():
+            vals = dotenv_values(env_path)
+            key = vals.get("credential_encryption_key", "")
+            if key:
+                logger.info("Auto-discovered encryption key from .env file.")
+                return key
+    except Exception:
+        pass
+    return ""
 
 FERNET_VERSION_BYTE = 0x80
 FERNET_MIN_RAW_LENGTH = 73  # 1 (version) + 8 (timestamp) + 16 (IV) + 16 (min ciphertext) + 32 (HMAC)
@@ -245,7 +290,10 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
         except (binascii.Error, ValueError):
             return False
 
+    encrypted_passthrough_count = 0
+
     def _decrypt_fields(fields: dict, resource_id: str = "", identity_key: str = "") -> dict:
+        nonlocal encrypted_passthrough_count
         if not isinstance(fields, dict):
             raise ValueError(
                 f"Overlay {resource_id}/{identity_key} has non-dict fields "
@@ -253,14 +301,18 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
             )
 
         def _walk(value: object) -> object:
+            nonlocal encrypted_passthrough_count
             if isinstance(value, str):
                 if _is_fernet_token(value):
                     if not cipher:
-                        raise RuntimeError(
-                            f"Overlay {resource_id}/{identity_key} contains encrypted "
-                            f"value but no --encryption-key was provided — "
-                            f"aborting to prevent writing ciphertext into legacy format"
+                        encrypted_passthrough_count += 1
+                        logger.warning(
+                            "  Overlay %s/%s contains encrypted value but no "
+                            "--encryption-key was provided — carrying ciphertext "
+                            "through as-is (best-effort reverse)",
+                            resource_id, identity_key,
                         )
+                        return value
                     return cipher.decrypt(value)
                 return value
             if isinstance(value, dict):
@@ -293,6 +345,13 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
 
     total_configs = sum(len(v) for v in user_configs_by_resource.values())
     logger.info("  Found %d user config entries across %d resources.", total_configs, len(user_configs_by_resource))
+
+    if encrypted_passthrough_count:
+        logger.warning(
+            "  %d encrypted value(s) will be carried through as ciphertext "
+            "(provide --encryption-key to decrypt them during reverse migration).",
+            encrypted_passthrough_count,
+        )
 
     if not dry_run:
         for resource_id, user_configs in user_configs_by_resource.items():
@@ -364,10 +423,17 @@ if __name__ == "__main__":
     parser.add_argument("--db-name", default="UnifAI")
     parser.add_argument(
         "--encryption-key",
-        default=os.environ.get("ENCRYPTION_KEY", ""),
-        help="Fernet encryption key for encrypting sensitive overlay fields (or set ENCRYPTION_KEY env var)",
+        default=None,
+        help=(
+            "Fernet encryption key for encrypting/decrypting sensitive overlay "
+            "fields.  When omitted, the key is auto-discovered from AppConfig "
+            "(credential_encryption_key) or $CREDENTIAL_ENCRYPTION_KEY / "
+            "$ENCRYPTION_KEY env vars."
+        ),
     )
     args = parser.parse_args()
+
+    encryption_key = args.encryption_key if args.encryption_key is not None else _auto_discover_encryption_key()
 
     run_migration(
         db_name=args.db_name,
@@ -375,5 +441,5 @@ if __name__ == "__main__":
         mongodb_port=args.mongodb_port,
         dry_run=args.dry_run,
         reverse=args.reverse,
-        encryption_key=args.encryption_key,
+        encryption_key=encryption_key,
     )

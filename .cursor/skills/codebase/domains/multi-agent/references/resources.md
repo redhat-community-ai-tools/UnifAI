@@ -8,14 +8,26 @@ definitions that combine inline configs and resource refs into an executable spe
 
 ```text
    BLUEPRINTS                          RESOURCES
-   BlueprintService                    ResourcesService (facade)
-      │ resolve(draft, caller) ──────►   │
-      ▼                                   ├─ CRUD, validation, cards  (own methods)
-   BlueprintResolver                      └─ .builtin → BuiltinResourceService
-      │ walks Refs via _ResolveSession           (admin lifecycle + per-identity overlays)
-      ▼                                        └─ uses ResourceFieldEncryption
-   resources_service.resolve(rid, caller)          (schema-hint scan + encrypt/decrypt)
+   BlueprintService                    ResourcesService (facade)         BuiltinResourceService (peer facade)
+      │ resolve(draft, caller) ──────►   │                                  │
+      ▼                                   ├─ CRUD, validation, cards          ├─ descriptor CRUD, visibility gating
+   BlueprintResolver                      ├─ get_descriptor/is_builtin/         admin promote/demote/toggle + cascade
+      │ walks Refs via _ResolveSession    │  resolve_config/cleanup_on_delete   per-identity overlay get/save/resolve
+      ▼                                   │  ──────► self._builtin (peer) ◄──┘  schema exposure
+   resources_service.resolve(rid, caller)  └─ uses ResourceFieldEncryption   └─ uses ResourceFieldEncryption
+                                                                                  builtin_resource_descriptor_repo
 ```
+
+`ResourcesService` and `BuiltinResourceService` are **both** public facades,
+constructed as peers in `bootstrap/container.py` and injected independently
+into whatever needs them — `ResourcesService` composes `BuiltinResourceService`
+internally only for the handful of generic-CRUD helper methods it needs
+(`get_descriptor`, `is_builtin`, `is_visible_to`, `resolve_config`,
+`validation_override_error`, `cleanup_on_delete`), never for the admin/overlay
+surface. Flask's `builtins.py`, `ShareCloner`, and tests that need the admin
+lifecycle inject/consume `BuiltinResourceService` directly — `ResourcesService`
+carries zero pass-through methods and zero knowledge of the
+`ResourceOwnership`/`ResourceVisibility` enums.
 
 `CallerScope` (`mas/core/caller_scope.py`) is a single frozen dataclass —
 `CallerScope(identity: Optional[Identity], is_admin: bool)` — bundling "who is
@@ -25,28 +37,30 @@ new caller attribute (e.g. a feature flag) only means adding a field to
 `CallerScope`, not touching every intermediate method signature (Open/Closed).
 
 `BlueprintResolver` and `ShareCloner` depend on narrow read-only Protocols —
-`ResourceReader` (`get_visible`, `resolve_resource`) and `ResourceClonePort`
-(`get`, `save_resource`, `exists_by_name`, `delete`), both in
-`mas/resources/ports.py` — rather than the full `ResourcesService` (Dependency
-Inversion). `ResourcesService` satisfies both structurally (no inheritance
-needed, `typing.Protocol`); `bootstrap/container.py` still injects the one
-concrete `ResourcesService` instance into both.
+`ResourceReader` (`get_visible`, `resolve_resource`), `ResourceClonePort`
+(`get`, `save_resource`, `exists_by_name`, `delete`), and `BuiltinDescriptorReader`
+(`get_descriptor`) — all in `mas/resources/ports.py` — rather than the full
+`ResourcesService`/`BuiltinResourceService` (Dependency Inversion).
+`ResourcesService`/`BuiltinResourceService` satisfy these structurally (no
+inheritance needed, `typing.Protocol`); `bootstrap/container.py` injects the
+one concrete instance of each into every consumer that needs it.
 
 ### Structure
 
 ```text
 lib/mas/resources/
-├── models.py                    Resource, ResourceQuery
+├── models.py                    Resource, ResourceQuery — zero built-in-related fields/knowledge
 ├── registry.py                  ResourcesRegistry — thin persistence wrapper (uniqueness, in-use checks)
-├── service.py                   ResourcesService — the public facade (see below)
-├── builtin_service.py           BuiltinResourceService — admin lifecycle + overlays (internal collaborator)
-├── builtin_models.py            BuiltinUserConfig, identity_to_key()
-├── field_encryption.py          ResourceFieldEncryption — schema-hint scan + encrypt/decrypt (internal collaborator)
-├── ports.py                     CredentialCleanupPort, ResourceReader, ResourceClonePort (narrow Protocols)
+├── service.py                   ResourcesService — the public facade for base CRUD (see below)
+├── builtin_service.py           BuiltinResourceService — peer facade for descriptor lifecycle + admin/overlays
+├── builtin_models.py            BuiltinResourceDescriptor, BuiltinUpdateRequest, BuiltinUserConfig, identity_to_key()
+├── field_encryption.py          ResourceFieldEncryption — schema-hint scan + encrypt/decrypt (shared collaborator)
+├── ports.py                     CredentialCleanupPort, ResourceReader, ResourceClonePort, BuiltinDescriptorReader (narrow Protocols)
 ├── errors.py                    Resource*Error, BuiltIn*Error, Builtin*Error
 ├── resolver.py                  DependencyResolver (nested_refs / cascade helpers used by registry)
 └── repository/
-    ├── base.py                  ResourceRepository (ABC)
+    ├── base.py                  ResourceRepository (ABC) — no built-in-related methods
+    ├── builtin_resource_descriptor_repository.py   BuiltinResourceDescriptorRepository (ABC) — descriptor CRUD + $lookup-joined reads
     └── builtin_user_config_repository.py   BuiltinUserConfigRepository (ABC)
 
 lib/mas/blueprints/
@@ -63,11 +77,12 @@ lib/mas/core/
 | Class | Role |
 |-------|------|
 | `CallerScope` | Frozen `(identity: Optional[Identity], is_admin: bool)` value object. Resolved once per request (`resolve_caller_scope()` in `adapters/inbound/flask/decorators.py`) and passed as a single `caller` parameter into `ResourcesService`/`BlueprintService`/`BlueprintResolver` instead of two separately-threaded parameters. |
-| `ResourcesService` | Public facade. ALL external access (Flask endpoints, `BlueprintResolver`, `ShareCloner`, tests) goes through this — never through `ResourcesRegistry` or `BuiltinResourceService` directly. |
-| `BuiltinResourceService` (`self.builtin` on `ResourcesService`) | Owns built-in admin CRUD, promote/demote/toggle + cascade, per-identity overlay get/save/resolve, schema exposure. `ResourcesService` delegates its `*_builtin*` methods here as thin one-liners. Deliberately **not** on `CallerScope` — `get_builtin_schema(rid, is_admin=...)` keeps its own separate `is_admin` param since it's already the "built-in admin boundary" the rest of this refactor routes around. |
-| `ResourceFieldEncryption` (`self._fields` on both services) | Single owner of schema-hint scanning (`scan_schema_hints`) and encrypt/decrypt, shared by base CRUD and built-in overlays so behavior never drifts between the two paths. |
-| `ResourcesRegistry` | Thin persistence wrapper: uniqueness guard, in-use checks, built-in URL collision check. Not the public API. |
-| `ResourceReader` / `ResourceClonePort` (`resources/ports.py`) | Narrow read-only Protocols. `BlueprintResolver` depends on `ResourceReader` (`get_visible`, `resolve_resource`); `ShareCloner` depends on `ResourceClonePort` (`get`, `save_resource`, `exists_by_name`, `delete`) — two separate Protocols (Interface Segregation) since `ShareCloner` never resolves configs the way `BlueprintResolver` does. `ResourcesService` satisfies both structurally. |
+| `ResourcesService` | Public facade for base resource CRUD/validation/cards. ALL external access to those concerns (Flask `resources.py`, `BlueprintResolver`, `ShareCloner`, tests) goes through this — never through `ResourcesRegistry` directly. Composes `BuiltinResourceService` (`self._builtin`, internal attribute) only for the small set of built-in-awareness helpers its own CRUD methods need; has no admin/overlay pass-through methods and never touches `ResourceOwnership`/`ResourceVisibility` directly. |
+| `BuiltinResourceService` | Peer public facade — sole owner of `BuiltinResourceDescriptor`'s full lifecycle: descriptor CRUD, visibility gating (`is_builtin`, `is_visible_to`), admin create/promote/demote/toggle + cascade, per-identity overlay get/save/resolve, schema exposure. Flask `builtins.py` injects it directly (`container.builtin_resource_service`) rather than going through `ResourcesService`. Deliberately **not** on `CallerScope` — `get_builtin_schema(rid, is_admin=...)` keeps its own separate `is_admin` param since it's already the "built-in admin boundary" the rest of this refactor routes around. |
+| `ResourceFieldEncryption` (`self._fields` on both services) | Single owner of schema-hint scanning (`scan_schema_hints`) and encrypt/decrypt, shared by base CRUD and built-in overlays so behavior never drifts between the two paths. `bootstrap/container.py` constructs one instance and injects it into both services. |
+| `ResourcesRegistry` | Thin persistence wrapper: uniqueness guard, in-use checks. Not the public API. Shared by both `ResourcesService` and `BuiltinResourceService` (same `resources` collection, no built-in-related fields on the documents it stores). |
+| `BuiltinResourceDescriptorRepository` (`resources/repository/builtin_resource_descriptor_repository.py`) | Storage port for `BuiltinResourceDescriptor` — CRUD by `rid`, plus `$lookup`-joined reads (`find_all_builtins`, `find_visible_for_identity`) that combine descriptor metadata with the base `resources` collection, since `Resource` itself carries nothing to filter/sort on for those queries. |
+| `ResourceReader` / `ResourceClonePort` / `BuiltinDescriptorReader` (`resources/ports.py`) | Narrow read-only Protocols. `BlueprintResolver` depends on `ResourceReader` (`get_visible`, `resolve_resource`); `ShareCloner` depends on `ResourceClonePort` (`get`, `save_resource`, `exists_by_name`, `delete`) and `BuiltinDescriptorReader` (`get_descriptor`) — separate Protocols (Interface Segregation) since each consumer needs a different narrow slice. `ResourcesService`/`BuiltinResourceService` satisfy these structurally. |
 | `BlueprintResolver` | Walks a `BlueprintDraft`'s Refs via a private `_ResolveSession` (bundles `caller` + per-call mutable state), resolves external refs via `ResourceReader.get_visible()`/`resolve_resource()` (built-in overlay aware when `caller.identity` is set), builds the executable `BlueprintSpec`. |
 
 ## Built-in Resources System
@@ -81,17 +96,40 @@ override the small set of fields the admin marked as user-configurable
 ### Ownership & Visibility
 
 ```python
-class ResourceOwnership(str, Enum):   # lib/mas/core/enums.py
+class ResourceOwnership(str, Enum):   # lib/mas/core/enums.py — query-filter value only, never a Resource field
     BUILTIN = "builtin"
     CUSTOM = "custom"
 
 class ResourceVisibility(str, Enum):  # lib/mas/core/enums.py
     DRAFT = "draft"     # admin-only visibility
     PUBLIC = "public"   # visible to all end users
+
+
+class BuiltinResourceDescriptor(BaseModel):   # lib/mas/resources/builtin_models.py
+    """Stored in its own `builtin_resource_descriptors` collection, joined to
+    `resources` by `rid`. Existence of a descriptor for a given `rid` *is*
+    the "this resource is a built-in" signal — there is no `ownership` field
+    to keep in sync with that existence."""
+    rid: str
+    visibility: ResourceVisibility = ResourceVisibility.DRAFT
+    parent_builtin_id: Optional[str] = None
+    created: datetime
+    updated: datetime
 ```
 
-Every `Resource` has both fields (default `CUSTOM` / `DRAFT`). Non-admin callers
-never see `DRAFT` built-ins — enforced at `ResourcesService.get_visible()`,
+`Resource` (`resources/models.py`) carries **no** built-in-related fields at
+all — `ownership`, `visibility`, and `parent_builtin_id` live exclusively on
+`BuiltinResourceDescriptor`, owned end-to-end by `BuiltinResourceService`
+(`get_descriptor`, `is_builtin`, `is_visible_to`, `_set_visibility`,
+`cleanup_on_delete`) and persisted via `BuiltinResourceDescriptorRepository`.
+A resource with no matching descriptor is a plain custom resource. `ownership`
+as a query-filter *value* (`"builtin"`/`"custom"` on `/resources.list`) and as
+a serialized *response field* (via `ResourcesService.to_dict()`, stamped back
+on from the descriptor) still exist — only the underlying storage model
+changed, not the HTTP/JSON API contract.
+
+Non-admin callers never see `DRAFT` built-ins — enforced at
+`ResourcesService.get_visible()` (via `BuiltinResourceService.is_visible_to()`),
 `BuiltinResourceService.get_builtin_schema()`/`get_user_config()`/`configure_builtin()`,
 and the `builtins.list`/`get_builtin_schema` endpoints via `is_admin`.
 
@@ -261,11 +299,17 @@ are also summarized in `references/elements.md`.
 
 ### Adding a New Built-in Admin Operation
 
-1. Add the method to `BuiltinResourceService` (not `ResourcesService` directly).
-2. Add a thin delegate on `ResourcesService` (`return self.builtin.<method>(...)`).
-3. Add the Flask route in `adapters/inbound/flask/endpoints/builtins.py` (NOT `resources.py`).
-4. If it mutates an existing built-in, call `_reject_if_locked_by_other(resource_id)` first.
-5. If it can affect `nested_refs` visibility, decide whether it needs cascade
+1. Add the method to `BuiltinResourceService` — it's the sole owner of the
+   admin/overlay surface now, with no thin delegate needed on
+   `ResourcesService` (that would reintroduce the pass-through methods this
+   split deliberately removed).
+2. Add the Flask route in `adapters/inbound/flask/endpoints/builtins.py`
+   (NOT `resources.py`), calling `current_app.container.builtin_resource_service`
+   directly. Serialize the returned `Resource` via
+   `current_app.container.resources_service.to_dict(doc)` if the response
+   needs the `ownership`/`visibility` JSON fields.
+3. If it mutates an existing built-in, call `_reject_if_locked_by_other(resource_id)` first.
+4. If it can affect `nested_refs` visibility, decide whether it needs cascade
    handling (`*_with_cascade` + `cascaded_resources` in the response).
 
 ## Cross-Component Contracts
@@ -275,7 +319,11 @@ are also summarized in `references/elements.md`.
 - `Resource.identity: Identity` — for built-ins this is the identity of the
   admin who created the resource via `create_builtin_with_cascade()` (see
   "Seeding" above); there is no separate `SYSTEM` identity type.
-- `ResourceOwnership`, `ResourceVisibility` live in `mas.core.enums` alongside `ResourceCategory`.
+- `ResourceOwnership`, `ResourceVisibility` live in `mas.core.enums` alongside
+  `ResourceCategory` — but `ResourceOwnership` is now only ever a query-filter
+  *value* (`"builtin"`/`"custom"`) or a serialized response field, never a
+  `Resource` attribute; `ResourceVisibility` lives on `BuiltinResourceDescriptor`
+  (`resources/builtin_models.py`), not on `Resource`.
 - Field hints (`ReadOnlyHint`, `CardHint`, `SecretHint`, ...) live in `mas.core.field_hints`.
 - `CallerScope` lives in `mas.core.caller_scope` (domain layer, not Flask) —
   "who is calling and what can they see" is a domain concept threaded through
@@ -300,16 +348,20 @@ are also summarized in `references/elements.md`.
 
 ### Resources → Sharing (Clone Exclusion)
 
-- `ShareCloner` checks `doc.ownership == ResourceOwnership.BUILTIN` before adding
-  a resource to a share's clone closure — built-ins are excluded, not cloned.
+- `ShareCloner` checks `self.builtin.get_descriptor(rid) is not None` (a
+  `BuiltinDescriptorReader`, satisfied by `BuiltinResourceService`) before
+  adding a resource to a share's clone closure — built-ins are excluded, not
+  cloned; a `DRAFT` built-in raises `ShareCloneError` instead (it would be
+  invisible to the recipient either way).
 
 ### Machine-Checkable Invariants
 
 | ID | Rule | Violating Pattern | Severity |
 |----|------|--------------------|----------|
-| INV-R01 | All resource mutation goes through `ResourcesService`, never `ResourcesRegistry` directly, from outside `lib/mas/resources/` | `from mas.resources.registry import ResourcesRegistry` in `adapters/`, other domain components, or tests exercising the public API | MAJOR |
-| INV-R02 | Built-in resources are never mutated by non-admin end users | Missing `guard_write_access()` / `@require_admin_access` call on a code path that can write `ownership=BUILTIN` resources | CRITICAL |
+| INV-R01 | All resource mutation goes through `ResourcesService`/`BuiltinResourceService`, never `ResourcesRegistry` directly, from outside `lib/mas/resources/` | `from mas.resources.registry import ResourcesRegistry` in `adapters/`, other domain components, or tests exercising the public API | MAJOR |
+| INV-R02 | Built-in resources are never mutated by non-admin end users | Missing `guard_write_access()` / `@require_admin_access` call on a code path that can write a `BuiltinResourceDescriptor` | CRITICAL |
 | INV-R03 | Sensitive config fields (`SecretHint` or `ENCRYPTED_FIELDS`) are encrypted before persistence | `cfg_dict`/overlay `fields` assignment bypassing `ResourceFieldEncryption.encrypt_fields()`/`encrypt_config_fields()` | CRITICAL |
+| INV-R04 | `Resource`/`ResourceQuery` never regain `ownership`/`visibility`/`parent_builtin_id`/`is_admin` fields | Adding those fields back onto `resources/models.py` instead of `BuiltinResourceDescriptor` | MAJOR |
 
 ## Established Patterns
 
@@ -317,22 +369,24 @@ These patterns are established and reviewers MUST NOT flag them as violations:
 
 | Pattern | Where it exists | Why it's acceptable |
 |---------|-----------------|---------------------|
-| `ResourcesService` composes internal collaborators (`BuiltinResourceService`, `ResourceFieldEncryption`) instead of one large class | `resources/service.py`, `builtin_service.py`, `field_encryption.py` | "Service as Public API" is preserved — external callers only ever see `ResourcesService`; splitting internals by responsibility (base CRUD vs. built-in lifecycle vs. encryption) avoids one service owning too much without breaking the facade rule |
-| `BlueprintResolver` takes a `ResourceReader` Protocol, `ShareCloner` takes a `ResourceClonePort` Protocol (not the full `ResourcesService`) | `blueprints/resolver.py`, `sharing/cloner.py`, `resources/ports.py` | Dependency Inversion — each consumer depends only on the narrow slice of behavior it actually calls; `ResourcesService` satisfies both structurally, no inheritance or container changes needed |
+| `ResourcesService` and `BuiltinResourceService` are two separate public facades sharing the same underlying `ResourcesRegistry`/`ResourceFieldEncryption`, rather than one large class or a strict internal-only sub-service | `resources/service.py`, `builtin_service.py`, `field_encryption.py`, `bootstrap/container.py` | "Service as Public API" is preserved for each concept separately — base CRUD callers only ever see `ResourcesService`, built-in admin/overlay callers only ever see `BuiltinResourceService`; `ResourcesService` still composes the latter internally for the few CRUD-path checks it needs, but never re-exposes its admin surface |
+| `BlueprintResolver` takes a `ResourceReader` Protocol, `ShareCloner` takes `ResourceClonePort` + `BuiltinDescriptorReader` Protocols (not the full services) | `blueprints/resolver.py`, `sharing/cloner.py`, `resources/ports.py` | Dependency Inversion — each consumer depends only on the narrow slice of behavior it actually calls; `ResourcesService`/`BuiltinResourceService` satisfy these structurally, no inheritance or container changes needed |
 | `caller: CallerScope = CallerScope()` threaded through resources/blueprint resolve/validate/card methods | `resources/service.py`, `blueprints/service.py`, `blueprints/resolver.py` | Backward compatible — omitting it reproduces pre-overlay, non-admin behavior; tooling that has no caller identity still works. Replaces separately threading `identity`+`is_admin` through ~15+ method signatures (Shotgun Surgery) |
 | `BlueprintResolver` collapses per-call walk state into a private `_ResolveSession(caller, bucket, visited, broken_refs, strict)` dataclass instead of threading 5-8 individual parameters through `_stash_inline`/`_walk_live`/`_scan_nested` | `blueprints/resolver.py` | New per-call state (e.g. a future cycle-detection counter) is one field on `_ResolveSession`, not a new parameter on three methods |
 | Admin edit locks reuse `CollaborationService`'s team-lock store with a fixed namespace (`__admin__`) and new lock kind (`"builtin"`) | `collaboration/service.py`, `endpoints/builtins.py` | Avoids a parallel locking mechanism; team-membership checks are skipped because `@require_admin_access` already gates the endpoint |
+| `ResourcesService.to_dict()`/`to_dicts()` stamp `ownership`/`visibility`/`user_configured` back onto the serialized JSON by querying `BuiltinResourceService.get_descriptor()` per resource | `resources/service.py` | Preserves the existing HTTP/JSON API contract even though `Resource` itself no longer carries those fields; accepted as one lookup per resource rather than a batched/joined variant since listing endpoints already get the joined query from `BuiltinResourceDescriptorRepository.find_visible_for_identity()` |
 
 ## Change Impact
 
 | If you change... | Also update... | Why |
 |-----------------|----------------|-----|
 | `ReadOnlyHint`/`CardHint`/`SecretHint` semantics | `ResourceFieldEncryption.scan_schema_hints()`, `BuiltinResourceService.get_builtin_schema()`, UI `lib/cardFields.ts` | Single hint contract consumed by both backend schema exposure and UI rendering |
-| `ResourceOwnership`/`ResourceVisibility` enums | `ResourcesRegistry`/`BuiltinResourceService` visibility checks, `builtin_disabled_categories()`, UI ownership-scoped rendering | Discovery/authorization/UI all branch on these values |
+| `ResourceOwnership`/`ResourceVisibility` enums or `BuiltinResourceDescriptor` shape | `BuiltinResourceDescriptorRepository` (ABC + Mongo adapter), `BuiltinResourceService` visibility checks, `builtin_disabled_categories()`, UI ownership-scoped rendering, `run/scripts/migrate_builtin_descriptors.py` | Discovery/authorization/UI/migration all branch on these values |
 | `BlueprintResolver`/`BlueprintService` resolution signatures | Every caller (Flask endpoints, tests) must thread `caller: CallerScope` correctly | Built-in overlays silently fall back to raw defaults if `caller.identity` is dropped along the chain |
-| `CallerScope` fields | `ResourceReader`/`ResourceClonePort` Protocol signatures (`resources/ports.py`) if the new field affects what those consumers need, `resolve_caller_scope()` in `adapters/inbound/flask/decorators.py` | `CallerScope` is constructed once at the Flask boundary and passed by reference everywhere else — the boundary is the only place that needs to change to populate a new field |
+| `CallerScope` fields | `ResourceReader`/`ResourceClonePort`/`BuiltinDescriptorReader` Protocol signatures (`resources/ports.py`) if the new field affects what those consumers need, `resolve_caller_scope()` in `adapters/inbound/flask/decorators.py` | `CallerScope` is constructed once at the Flask boundary and passed by reference everywhere else — the boundary is the only place that needs to change to populate a new field |
 | `BuiltinUserConfig` document shape | `MongoBuiltinUserConfigRepository`, `builtin_models.identity_to_key()` | Storage key format (`"<type>:<id>"`) must stay consistent between writer and reader |
 | Cascade promote/demote logic | `preview_cascade_targets`, `_cascade_promote_dependencies`, `_find_public_dependents`, endpoint `cascaded_resources` reporting | All four must agree on what "transitively depends on" means |
+| `ResourcesService.to_dict()`/`to_dicts()` output shape | Flask `resources.py`/`builtins.py` handlers that `jsonify()` it directly, UI `types/workspace.ts` / `resources.ts` consumers | It's the sole place the `ownership`/`visibility`/`user_configured` JSON contract is assembled now that `Resource` doesn't carry those fields |
 
 ## Boundaries
 

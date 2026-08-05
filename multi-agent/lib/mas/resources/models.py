@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Annotated
 from uuid import uuid4
 from pydantic import BaseModel, Field, field_validator
-from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
+from mas.core.enums import ResourceCategory
 from mas.core.field_hints import HiddenHint
 from mas.core.identity import Identity
 
@@ -12,8 +12,16 @@ class Resource(BaseModel):
     One persisted element in the user's Library.
 
     cfg_dict is plain JSON; we do NOT store the Pydantic instance.
-    For built-in resources (ownership=builtin), per-user configuration
-    lives in the separate builtin_user_configs collection.
+
+    Built-in-specific metadata (ownership, visibility, parent_builtin_id)
+    does NOT live here — it lives in the separate
+    ``builtin_resource_descriptors`` collection, joined by ``rid``. See
+    ``BuiltinResourceDescriptor`` (``mas.resources.builtin_models``) and
+    ``BuiltinResourceService``, which owns that descriptor's full
+    lifecycle. A resource with no matching descriptor is a plain custom
+    resource — existence of a descriptor *is* the "this resource is a
+    built-in" signal, so ``Resource`` carries zero built-in-related
+    fields or knowledge.
     """
     rid: str = Field(default_factory=lambda: uuid4().hex, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     identity: Identity = Field(json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
@@ -26,21 +34,21 @@ class Resource(BaseModel):
     contributed_by: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     created: datetime = Field(default_factory=datetime.utcnow, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
     updated: datetime = Field(default_factory=datetime.utcnow, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
-    ownership: ResourceOwnership = Field(default=ResourceOwnership.CUSTOM, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
-    visibility: ResourceVisibility = Field(default=ResourceVisibility.DRAFT, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
-    parent_builtin_id: Optional[str] = Field(default=None, json_schema_extra=HiddenHint(reason="UI hint to hide this value").to_hints())
 
 
 class ResourceQuery(BaseModel):
-    """Query object for finding resources with pagination and filtering."""
+    """Query object for finding resources with pagination and filtering.
+
+    Purely identity/category/type/pagination/sort — no ownership/is_admin
+    concept. Listing that needs to reason about built-in visibility (the
+    ``ownership`` query filter on ``/resources.list``) is handled by
+    ``BuiltinResourceService`` via the joined
+    ``BuiltinResourceDescriptorRepository`` reads, not by this query object
+    or the base ``ResourceRepository``.
+    """
     identity: Identity = Field(..., description="Owner identity to filter resources")
     category: Optional[ResourceCategory] = Field(None, description="Resource category filter")
     type: Optional[str] = Field(None, description="Resource type filter")
-    ownership: Optional[ResourceOwnership] = Field(None, description="Filter by ownership type")
-    is_admin: bool = Field(
-        False,
-        description="Caller admin status — non-admins never see draft built-ins",
-    )
 
     limit: Annotated[int, Field(50, ge=1, le=1000, description="Number of results to return")]
     offset: Annotated[int, Field(0, ge=0, description="Number of results to skip")]

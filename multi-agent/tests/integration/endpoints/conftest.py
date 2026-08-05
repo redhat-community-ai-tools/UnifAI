@@ -28,13 +28,32 @@ def _auth_headers(username: str) -> dict:
     return {"X-Authenticated-User": username}
 
 
+_DEFAULT_RESOURCE_DICT = {"rid": "r1", "name": "thing", "category": "provider", "type": "mcp"}
+
+
 @pytest.fixture
 def resources_service():
+    svc = Mock()
+    # `to_dict`/`to_dicts` are the serialization boundary now that endpoints
+    # no longer call `doc.model_dump()` directly (see `service.to_dict()`).
+    # Default to a stable dict so `jsonify(...)` in handlers under test
+    # doesn't choke on serializing a bare Mock; tests that care about the
+    # exact payload shape override `.to_dict.return_value` explicitly.
+    svc.to_dict.return_value = dict(_DEFAULT_RESOURCE_DICT)
+    return svc
+
+
+@pytest.fixture
+def builtin_resource_service():
     svc = Mock()
     # Cascade preview defaults to "nothing to cascade" so existing
     # promote/toggle/update tests that don't care about the nested-ref
     # cascade disclaimer aren't tripped up by iterating a bare Mock.
     svc.preview_cascade_targets.return_value = []
+    # Non-built-in by default, so the generic resource.update/resource.delete
+    # lock-check tests (`_collaboration_shared.guard_write_access_with_lock`)
+    # don't spuriously consult the admin edit lock unless a test opts in.
+    svc.is_builtin.return_value = False
     return svc
 
 
@@ -50,9 +69,10 @@ def collaboration_service():
 
 
 @pytest.fixture
-def container(resources_service, collaboration_service):
+def container(resources_service, builtin_resource_service, collaboration_service):
     return SimpleNamespace(
         resources_service=resources_service,
+        builtin_resource_service=builtin_resource_service,
         collaboration_service=collaboration_service,
         admin_config_reader=None,
     )

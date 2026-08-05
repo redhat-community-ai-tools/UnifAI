@@ -9,10 +9,10 @@ from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity
 from mas.resources.registry import ResourcesRegistry
 from mas.catalog.element_registry import ElementRegistry
-from mas.resources.models import Resource, ResourceQuery
-from mas.resources.builtin_models import BuiltinUpdateRequest, identity_to_key
+from mas.resources.models import Resource
+from mas.resources.builtin_models import identity_to_key
 from mas.resources.repository.builtin_user_config_repository import BuiltinUserConfigRepository
-from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
+from mas.core.enums import ResourceCategory
 from mas.core.ref import RefWalker
 from mas.core.dto import GroupedCount
 from mas.core.element_meta import ElementConfigMeta
@@ -35,12 +35,21 @@ class ResourcesService:
     """
     Public facade. Performs schema validation via ElementRegistry
     and delegates storage to ResourcesRegistry.
+
+    Built-in-awareness (is this resource a built-in? what's its
+    visibility? what's the caller's config overlay?) is never decided
+    here directly — it's delegated through the small helper methods on
+    the injected ``BuiltinResourceService`` (``self._builtin``), which is
+    the sole owner of the ``ResourceOwnership``/``ResourceVisibility``
+    concepts. This class carries zero knowledge of those enums; see
+    ``resources.md`` for the full rationale.
     """
 
     def __init__(
             self,
             resource_registry: ResourcesRegistry,
             element_registry: ElementRegistry,
+            builtin_service: BuiltinResourceService,
             builtin_user_config_repo: Optional[BuiltinUserConfigRepository] = None,
             validation_service: Optional[ElementValidationService] = None,
             card_service: Optional[ElementCardService] = None,
@@ -57,14 +66,12 @@ class ResourcesService:
         self._cipher = FieldCipher(encryption_key) if encryption_key else None
         self._fields = ResourceFieldEncryption(element_registry, self._cipher)
         # Built-in admin lifecycle + per-identity overlays live in their own
-        # collaborator (see module docstring there); ResourcesService remains
-        # the sole public facade and delegates to it below.
-        self.builtin = BuiltinResourceService(
-            resource_registry=resource_registry,
-            element_registry=element_registry,
-            field_encryption=self._fields,
-            builtin_user_config_repo=builtin_user_config_repo,
-        )
+        # peer service, injected by the container so it's shared with
+        # ``builtins.py``/``ShareCloner`` rather than constructed here.
+        # Internal attribute (not part of the public surface) — external
+        # callers needing the built-in admin/overlay API go through
+        # ``container.builtin_resource_service`` directly.
+        self._builtin = builtin_service
 
     # ---------- CRUD ----------
     def create(self, *, identity: Identity, category, type, name, config) -> Resource:
@@ -125,11 +132,7 @@ class ResourcesService:
     def delete(self, rid: str) -> None:
         doc = self._store.get(rid)
         self._store.delete(rid)
-        if (
-            doc.ownership == ResourceOwnership.BUILTIN
-            and self._builtin_user_config_repo
-        ):
-            self._builtin_user_config_repo.delete_all_for_resource(rid)
+        self._builtin.cleanup_on_delete(rid)
         server_id = doc.cfg_dict.get("server_identifier", "")
         if server_id:
             self._cleanup_orphaned_credential(doc.identity, server_id)
@@ -159,14 +162,11 @@ class ResourcesService:
         resource = self._store.get(rid)
         if caller.is_admin:
             return resource
-        if (
-            resource.ownership == ResourceOwnership.BUILTIN
-            and resource.visibility != ResourceVisibility.PUBLIC
-        ):
+        if not self._builtin.is_visible_to(rid, caller.is_admin):
             raise KeyError(rid)
         if (
             caller.identity is not None
-            and resource.ownership != ResourceOwnership.BUILTIN
+            and not self._builtin.is_builtin(rid)
             and (
                 resource.identity.type != caller.identity.type
                 or resource.identity.id != caller.identity.id
@@ -187,19 +187,19 @@ class ResourcesService:
         requested by an admin caller (``caller.is_admin``).
         """
         category_enum = ResourceCategory(category) if category else None
-        ownership_enum = ResourceOwnership(ownership) if ownership else None
 
-        query = ResourceQuery(
+        resources, total = self._builtin.find_visible(
             identity=caller.identity,
-            category=category_enum,
+            category=category_enum.value if category_enum else None,
             type=type,
-            ownership=ownership_enum,
+            ownership=ownership,
+            is_admin=caller.is_admin,
             limit=limit,
             offset=offset,
-            is_admin=caller.is_admin,
+            sort_by="created",
+            sort_order="desc",
         )
-        resources, total = self._store.find_resources(query)
-        return self._serialize_with_user_configured(resources, caller.identity), total
+        return self.to_dicts(resources, identity=caller.identity), total
 
     # ---------- resolve ----------
     def resolve(
@@ -226,16 +226,10 @@ class ResourcesService:
         # elements (e.g. sandboxes, MCP clients) receive plaintext secrets
         # rather than ciphertext.
         config = self._store.raw_config_for(resource)
-
-        if resource.ownership == ResourceOwnership.BUILTIN and caller.identity:
-            # A caller-supplied credential (below) must always win over the
-            # resource's shared base value for per-user secret fields — see
-            # `strip_unconfigured_secrets` for why the base value can't be
-            # trusted as a fallback.
-            config = self.builtin.strip_unconfigured_secrets(resource, config)
-            overlay = self.builtin.resolve_overlay(resource, caller.identity)
-            if overlay:
-                config.update(overlay)
+        # For a built-in, merges the caller's per-identity overlay in; a
+        # no-op for a plain custom resource or an anonymous caller. See
+        # `BuiltinResourceService.resolve_config`.
+        config = self._builtin.resolve_config(resource, config, caller.identity)
 
         model_cls = self.element_registry.get_schema(
             ResourceCategory(resource.category), resource.type)
@@ -469,110 +463,15 @@ class ResourcesService:
             raise KeyError(f"Resource not found: {rid}")
         return cards[rid]
 
-    # ---------- Built-in Resource Operations ----------
+    # ---------- Write-access guard ----------
     #
-    # Thin delegates onto ``BuiltinResourceService`` (``self.builtin``), which
-    # owns the actual admin CRUD / overlay lifecycle. Kept here so external
-    # callers (Flask endpoints, tests) continue to go through the single
-    # ``ResourcesService`` facade per the "Service as Public API" pattern —
-    # only the internal implementation is split out.
-
-    def find_all_builtins(
-        self,
-        category: Optional[str] = None,
-        type: Optional[str] = None,
-    ) -> List[Resource]:
-        """Return all built-in resources (public and draft), for admin listing."""
-        return self.builtin.find_all_builtins(category=category, type=type)
-
-    def get_builtin_schema(self, rid: str, *, is_admin: bool = False) -> dict:
-        """Return the element JSON schema with readOnly annotations for a built-in resource."""
-        return self.builtin.get_builtin_schema(rid, is_admin=is_admin)
-
-    def get_user_config(
-        self,
-        rid: str,
-        identity: Identity,
-    ) -> Dict[str, Any] | None:
-        """Return the user's current overlay for a built-in resource, or None."""
-        return self.builtin.get_user_config(rid, identity)
-
-    def configure_builtin(
-        self,
-        rid: str,
-        identity: Identity,
-        config: Dict[str, Any],
-    ) -> Resource:
-        """Save per-user/team configuration for a built-in resource."""
-        return self.builtin.configure_builtin(rid, identity, config)
-
-    def create_builtin_with_cascade(
-        self,
-        *,
-        identity: Identity,
-        category: str,
-        type: str,
-        name: str,
-        config: dict,
-        available_to_all: bool = False,
-    ) -> Tuple[Resource, List[Resource]]:
-        """Create a resource directly as built-in (admin only).
-
-        Returns ``(resource, cascaded)`` — ``cascaded`` lists any aggregated
-        elements (LLMs, providers, tools, etc.) that were newly promoted to
-        public alongside it, for the caller to surface a disclaimer.
-        """
-        return self.builtin.create_builtin_with_cascade(
-            identity=identity, category=category, type=type, name=name,
-            config=config, available_to_all=available_to_all,
-        )
-
-    def promote_with_cascade(self, rid: str) -> Tuple[Resource, List[Resource]]:
-        """Make a resource a public built-in (admin only).
-
-        Returns ``(resource, cascaded)`` — ``cascaded`` lists any aggregated
-        elements newly promoted to public alongside it.
-        """
-        return self.builtin.promote_with_cascade(rid)
-
-    def demote(self, rid: str) -> Resource:
-        """Demote a public built-in to draft (admin-only visibility)."""
-        return self.builtin.demote(rid)
-
-    def update_builtin_with_cascade(
-        self,
-        rid: str,
-        *,
-        config: Optional[dict] = None,
-        name: Optional[str] = None,
-        available_to_all: Optional[bool] = None,
-    ) -> Tuple[Resource, List[Resource]]:
-        """Update a built-in resource (admin only).
-
-        Returns ``(resource, cascaded)`` — ``cascaded`` lists any aggregated
-        elements newly promoted to public alongside it.
-        """
-        update = BuiltinUpdateRequest(
-            config=config, name=name, available_to_all=available_to_all,
-        )
-        return self.builtin.update_builtin_with_cascade(rid, update=update)
-
-    def toggle_visibility_with_cascade(
-        self, rid: str, *, available_to_all: bool,
-    ) -> Tuple[Resource, List[Resource]]:
-        """Set visibility of a built-in resource (admin only).
-
-        Returns ``(resource, cascaded)`` — ``cascaded`` lists any aggregated
-        elements newly promoted to public alongside it (empty when demoting).
-        """
-        return self.builtin.toggle_visibility_with_cascade(rid, available_to_all=available_to_all)
-
-    def preview_cascade_targets(self, rid: str) -> List[Resource]:
-        """Resources that would be newly promoted if *rid* were promoted.
-
-        Read-only preview — does not mutate anything.
-        """
-        return self.builtin.preview_cascade_targets(rid)
+    # Generic — used by resources.py/_collaboration_shared.py for the base
+    # resource.update/resource.delete routes (admins use these to mutate
+    # built-in resources too). The admin-only built-in lifecycle
+    # (find_all_builtins, create/promote/demote/update/toggle, schema and
+    # per-identity overlay access) lives entirely on the peer
+    # ``BuiltinResourceService`` now — see ``container.builtin_resource_service``
+    # and ``endpoints/builtins.py``, which inject/consume it directly.
 
     def guard_write_access(
         self, rid: str, caller: CallerScope,
@@ -590,7 +489,7 @@ class ResourcesService:
         resource = self._store.get(rid)
         if caller.is_admin:
             return resource
-        if resource.ownership == ResourceOwnership.BUILTIN:
+        if self._builtin.is_builtin(rid):
             raise BuiltInWriteProtectedError()
         if (
             caller.identity is None
@@ -612,23 +511,49 @@ class ResourcesService:
         if remaining == 0:
             self._auth_service.delete_credential(identity.id, server_id)
 
-    # ---------- Helpers ----------
-    def _serialize_with_user_configured(
+    # ---------- Serialization ----------
+    def to_dict(self, resource: Resource) -> dict:
+        """Serialize a single resource to a JSON-ready dict.
+
+        The HTTP/JSON API contract keeps returning ``ownership``/
+        ``visibility`` fields even though ``Resource`` itself no longer
+        carries them (they moved to ``BuiltinResourceDescriptor``) — this
+        stamps them back on from ``self._builtin.get_descriptor(...)`` so
+        every caller (Flask endpoints, tests) sees an unchanged shape.
+        Does not include ``user_configured`` — see ``to_dicts`` for the
+        batch-computed variant used by listing endpoints.
+        """
+        data = resource.model_dump(mode="json")
+        descriptor = self._builtin.get_descriptor(resource.rid)
+        if descriptor is None:
+            data["ownership"] = "custom"
+        else:
+            data["ownership"] = "builtin"
+            data["visibility"] = descriptor.visibility.value
+        return data
+
+    def to_dicts(
         self,
         resources: List[Resource],
-        identity: Identity,
+        *,
+        identity: Optional[Identity] = None,
     ) -> List[dict]:
-        """Serialize resources and attach ``user_configured`` for built-ins."""
+        """Serialize resources, additionally attaching ``user_configured``
+        for built-ins when *identity* is given.
+
+        Precomputes the set of built-ins *identity* has configured in a
+        single query rather than one lookup per resource.
+        """
         configured_rids: set = set()
-        if self._builtin_user_config_repo:
+        if identity is not None and self._builtin_user_config_repo:
             key = identity_to_key(identity)
             for cfg in self._builtin_user_config_repo.find_by_identity(key):
                 configured_rids.add(cfg.resource_id)
 
         result = []
         for doc in resources:
-            data = doc.model_dump(mode="json")
-            if doc.ownership == ResourceOwnership.BUILTIN:
+            data = self.to_dict(doc)
+            if data["ownership"] == "builtin":
                 data["user_configured"] = doc.rid in configured_rids
             result.append(data)
         return result
@@ -674,15 +599,12 @@ class ResourcesService:
             resource = self.get_visible(rid, caller=caller)
             config = self.resolve_resource(resource, caller=caller)
 
-            override_error = None
-            if resource.ownership == ResourceOwnership.BUILTIN and caller.identity:
-                missing = self.builtin.find_missing_required_overlay_fields(resource, config)
-                if missing:
-                    override_error = (
-                        f"Requires your own {', '.join(missing)} — configure it for "
-                        f"'{resource.name}' in your inventory before it can be validated."
-                    )
-            elif resource.ownership != ResourceOwnership.BUILTIN:
+            if self._builtin.is_builtin(rid):
+                override_error = self._builtin.validation_override_error(
+                    resource, config, caller.identity
+                )
+            else:
+                override_error = None
                 missing = self._fields.find_missing_conditionally_required_secrets(
                     resource.category, resource.type, config
                 )
