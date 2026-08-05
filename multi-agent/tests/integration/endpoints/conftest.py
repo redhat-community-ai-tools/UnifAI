@@ -50,10 +50,6 @@ def builtin_resource_service():
     # promote/toggle/update tests that don't care about the nested-ref
     # cascade disclaimer aren't tripped up by iterating a bare Mock.
     svc.preview_cascade_targets.return_value = []
-    # Non-built-in by default, so the generic resource.update/resource.delete
-    # lock-check tests (`_collaboration_shared.guard_write_access_with_lock`)
-    # don't spuriously consult the admin edit lock unless a test opts in.
-    svc.is_builtin.return_value = False
     return svc
 
 

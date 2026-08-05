@@ -220,7 +220,8 @@ cascade list isn't needed) so behavior never silently diverges between a
 
 `ResourcesService.guard_write_access(rid, caller)` is the single authorization
 gate for resource mutation:
-- Admins (`caller.is_admin`) bypass all checks.
+- Admins (`caller.is_admin`) bypass ownership checks but are still subject
+  to the admin edit lock for built-in resources (`ResourceLockedError`).
 - Built-in resources: `BuiltInWriteProtectedError` for non-admins (regular
   `resource.update`/`resource.delete` endpoints call this before mutating —
   built-ins are only mutated via the `builtins_bp` admin routes).
@@ -249,11 +250,12 @@ acquire_admin_edit_lock/release_admin_edit_lock/renew_admin_edit_lock/get_admin_
 ```
 
 No team-membership checks are needed (`@require_admin_access` at the endpoint
-gates it instead). `builtin.update` and `builtin.toggle` (plus the generic
-`resource.update`/`resource.delete` routes admins also use on built-ins)
-call `reject_if_locked_by_other()` — the lock is a real, server-enforced
-guard, not just a UI hint. `builtin.create` has no lock check (no entity id
-exists yet). Note: `promote_with_cascade()` still exists as a service-layer
+gates it instead). `builtin.update` and `builtin.toggle` call
+`reject_if_locked_by_other()` at the adapter layer; the generic
+`resource.update`/`resource.delete` routes enforce the same lock via
+`ResourcesService.guard_write_access()`, which raises `ResourceLockedError`
+(the lock check is a domain operation inside the service, not an adapter
+concern). `builtin.create` has no lock check (no entity id exists yet). Note: `promote_with_cascade()` still exists as a service-layer
 method (used internally by `toggle_visibility_with_cascade` when turning a
 draft built-in public) — there is no dedicated `resource.promote` HTTP
 endpoint; it was removed as unused (no UI caller).

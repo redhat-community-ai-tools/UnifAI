@@ -8,6 +8,7 @@ from typing import Optional, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
+from mas.collaboration.models import TeamEditLockHolder
 from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity
 from mas.resources.builtin_models import BuiltinResourceDescriptor
@@ -69,3 +70,15 @@ class BuiltinDescriptorReader(Protocol):
     """
 
     def get_descriptor(self, rid: str) -> Optional[BuiltinResourceDescriptor]: ...
+
+
+@runtime_checkable
+class AdminEditLockReader(Protocol):
+    """Narrow read port for checking whether a built-in resource is locked.
+
+    ``ResourcesService.guard_write_access`` uses this to reject mutations
+    when another admin holds the cooperative edit lock — satisfied
+    structurally by ``CollaborationService``.
+    """
+
+    def get_admin_edit_lock(self, entity_id: str) -> Optional[TeamEditLockHolder]: ...

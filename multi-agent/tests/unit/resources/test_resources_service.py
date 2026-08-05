@@ -19,11 +19,13 @@ from unittest.mock import Mock
 
 import pytest
 
+from mas.collaboration.models import TeamEditLockHolder
 from mas.core.caller_scope import CallerScope
 from mas.core.enums import ResourceVisibility
 from mas.resources.errors import (
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
+    ResourceLockedError,
     BuiltinConfigUnavailableError,
     BuiltinDependentsPublicError,
 )
@@ -122,6 +124,95 @@ class TestGuardWriteAccess:
         different_team = Identity.team("team-b")
         with pytest.raises(ResourceAccessDeniedError):
             service.guard_write_access(doc.rid, CallerScope(identity=different_team, is_admin=False))
+
+
+class TestGuardWriteAccessAdminLock:
+    """The admin edit lock check is now part of ``guard_write_access`` —
+    an admin mutating a built-in resource must be rejected with
+    ``ResourceLockedError`` if another admin holds the cooperative lock."""
+
+    @pytest.fixture
+    def lock_reader(self):
+        return Mock()
+
+    @pytest.fixture
+    def service_with_lock(
+        self, resource_registry, element_registry, builtin_user_config_repo, builtin_service, lock_reader,
+    ):
+        from tests.unit.resources.conftest import TEST_ENCRYPTION_KEY
+        from mas.resources.service import ResourcesService
+        return ResourcesService(
+            resource_registry=resource_registry,
+            element_registry=element_registry,
+            builtin_service=builtin_service,
+            builtin_user_config_repo=builtin_user_config_repo,
+            encryption_key=TEST_ENCRYPTION_KEY,
+            admin_lock_reader=lock_reader,
+        )
+
+    def test_admin_blocked_when_builtin_locked_by_another(
+        self, service_with_lock, lock_reader, builtin_service, admin_identity,
+    ):
+        doc = _make_builtin_resource(builtin_service, admin_identity)
+        lock_reader.get_admin_edit_lock.return_value = TeamEditLockHolder(
+            user_id="other-admin", display_name="Other Admin",
+        )
+
+        with pytest.raises(ResourceLockedError) as exc_info:
+            service_with_lock.guard_write_access(
+                doc.rid, CallerScope(identity=admin_identity, is_admin=True),
+                username="admin",
+            )
+        assert exc_info.value.locked_by_user_id == "other-admin"
+
+    def test_admin_allowed_when_builtin_locked_by_self(
+        self, service_with_lock, lock_reader, builtin_service, admin_identity,
+    ):
+        doc = _make_builtin_resource(builtin_service, admin_identity)
+        lock_reader.get_admin_edit_lock.return_value = TeamEditLockHolder(
+            user_id="admin", display_name="Admin",
+        )
+
+        resolved = service_with_lock.guard_write_access(
+            doc.rid, CallerScope(identity=admin_identity, is_admin=True),
+            username="admin",
+        )
+        assert resolved.rid == doc.rid
+
+    def test_admin_allowed_when_no_lock_held(
+        self, service_with_lock, lock_reader, builtin_service, admin_identity,
+    ):
+        doc = _make_builtin_resource(builtin_service, admin_identity)
+        lock_reader.get_admin_edit_lock.return_value = None
+
+        resolved = service_with_lock.guard_write_access(
+            doc.rid, CallerScope(identity=admin_identity, is_admin=True),
+            username="admin",
+        )
+        assert resolved.rid == doc.rid
+
+    def test_custom_resource_skips_lock_check(
+        self, service_with_lock, lock_reader, admin_identity,
+    ):
+        doc = _make_custom_resource(service_with_lock, admin_identity)
+
+        service_with_lock.guard_write_access(
+            doc.rid, CallerScope(identity=admin_identity, is_admin=True),
+            username="admin",
+        )
+        lock_reader.get_admin_edit_lock.assert_not_called()
+
+    def test_no_lock_reader_skips_lock_check(
+        self, service, builtin_service, admin_identity,
+    ):
+        """When ``admin_lock_reader`` is None (Redis not configured), the
+        lock check is a no-op — admins can always mutate built-ins."""
+        doc = _make_builtin_resource(builtin_service, admin_identity)
+        resolved = service.guard_write_access(
+            doc.rid, CallerScope(identity=admin_identity, is_admin=True),
+            username="admin",
+        )
+        assert resolved.rid == doc.rid
 
 
 # ────────────────────────────── visibility guards ──────────────────────────────

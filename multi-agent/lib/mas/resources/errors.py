@@ -81,6 +81,24 @@ class BuiltinDependentsPublicError(RuntimeError):
         return self.__str__()
 
 
+class ResourceLockedError(RuntimeError):
+    """Raised when a mutation targets a built-in resource whose admin edit
+    lock is currently held by a different admin."""
+
+    def __init__(self, locked_by_user_id: str, locked_by_display_name: str = "") -> None:
+        self.locked_by_user_id = locked_by_user_id
+        self.locked_by_display_name = locked_by_display_name or locked_by_user_id
+        super().__init__(
+            f"Resource is currently locked for editing by {self.locked_by_display_name}."
+        )
+
+    def __str__(self) -> str:
+        return self.args[0]
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
 class BuiltinConfigUnavailableError(RuntimeError):
     """Raised when a built-in overlay write is attempted without a configured repo."""
 

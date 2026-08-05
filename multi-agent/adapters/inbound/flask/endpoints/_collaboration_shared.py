@@ -7,16 +7,10 @@ team edit locks and presence in ``collaboration/locks.py`` and
 identically into each of those three modules.
 
 ``reject_if_locked_by_other`` is specific to the *admin* edit lock: it's
-shared by ``builtins.py`` (admin-only built-in routes) and ``resources.py``
-(the generic resource CRUD routes, which admins also use to mutate
-built-in resources via ``guard_write_access``) so both enforce the same
-cooperative lock instead of only the former.
-
-``guard_write_access_with_lock`` combines the ownership/admin check with
-the cooperative lock check for the generic resource CRUD routes —
-``resources.py``'s ``update_resource`` and ``delete_resource`` both need
-"authorize the mutation, then reject if a built-in is locked by another
-admin" and previously duplicated that combination inline.
+used by ``builtins.py`` (admin-only built-in routes) whose endpoints go
+through ``BuiltinResourceService`` directly rather than through
+``ResourcesService.guard_write_access`` (which now handles the lock
+check internally for the generic CRUD path).
 """
 from typing import Any, Optional
 
@@ -25,9 +19,6 @@ from flask import Response, current_app, g, jsonify
 from inbound.flask.decorators import G_IDENTITY_USERNAME
 from mas.collaboration.models import TeamEditLockHolder
 from mas.collaboration.service import CollaborationService
-from mas.core.caller_scope import CallerScope
-from mas.resources.models import Resource
-from mas.resources.service import ResourcesService
 
 
 def collaboration_service_or_error() -> tuple[
@@ -86,25 +77,3 @@ def reject_if_locked_by_other(resource_id: str) -> Optional[tuple[Response, int]
                  f"{holder.display_name or holder.user_id}.",
         "lockedBy": holder_to_json(holder),
     }), 409
-
-
-def guard_write_access_with_lock(
-    resources_service: ResourcesService,
-    resource_id: str,
-    *,
-    caller: CallerScope,
-) -> tuple[Optional[Resource], Optional[tuple[Response, int]]]:
-    """Authorize a mutation and enforce the admin edit lock in one call.
-
-    Runs ``ResourcesService.guard_write_access`` (ownership/admin checks —
-    raises on failure, same as calling it directly) and, for built-in
-    resources, also rejects the request with ``(response, 409)`` if
-    another admin currently holds the edit lock. Returns
-    ``(resource, None)`` to proceed.
-    """
-    resource = resources_service.guard_write_access(resource_id, caller)
-    if current_app.container.builtin_resource_service.is_builtin(resource.rid):
-        lock_error = reject_if_locked_by_other(resource_id)
-        if lock_error:
-            return None, lock_error
-    return resource, None

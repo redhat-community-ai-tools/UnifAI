@@ -9,6 +9,7 @@ from mas.resources.errors import (
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
     ResourceInUseError,
+    ResourceLockedError,
 )
 
 
@@ -122,19 +123,14 @@ class TestUpdateResource:
         assert resp.status_code == 404
 
     def test_update_builtin_blocked_when_locked_by_another_admin(
-        self, client, admin_headers, resources_service, builtin_resource_service, collaboration_service,
+        self, client, admin_headers, resources_service,
     ):
-        """Regression test: an admin bypasses ``guard_write_access``'s
-        ownership check on a built-in resource (admins bypass both checks),
-        but must still be rejected by the admin edit lock here just like on
-        ``builtin.update`` - the lock was previously only enforced on the
-        built-in-specific routes, not this generic CRUD path."""
-        builtin_doc = Mock()
-        builtin_resource_service.is_builtin.return_value = True
-        resources_service.guard_write_access.return_value = builtin_doc
-
-        holder = Mock(user_id="other-admin", display_name="Other Admin")
-        collaboration_service.get_admin_edit_lock.return_value = holder
+        """Regression test: ``guard_write_access`` now enforces the admin
+        edit lock internally for built-in resources, raising
+        ``ResourceLockedError`` when another admin holds the lock."""
+        resources_service.guard_write_access.side_effect = ResourceLockedError(
+            locked_by_user_id="other-admin", locked_by_display_name="Other Admin",
+        )
 
         resp = client.put(
             "/api/resources/resource.update",
@@ -143,37 +139,16 @@ class TestUpdateResource:
         )
 
         assert resp.status_code == 409
+        body = resp.get_json()
+        assert body["lockedBy"]["userId"] == "other-admin"
         resources_service.update.assert_not_called()
 
-    def test_update_builtin_allowed_when_lock_held_by_self(
-        self, client, admin_headers, resources_service, builtin_resource_service, collaboration_service,
+    def test_update_succeeds_when_lock_held_by_self(
+        self, client, admin_headers, resources_service,
     ):
-        from tests.integration.endpoints.conftest import ADMIN_USER
-
-        builtin_doc = Mock()
-        builtin_resource_service.is_builtin.return_value = True
-        resources_service.guard_write_access.return_value = builtin_doc
-        resources_service.update.return_value = _fake_resource_dump()
-
-        holder = Mock(user_id=ADMIN_USER, display_name="Admin Alice")
-        collaboration_service.get_admin_edit_lock.return_value = holder
-
-        resp = client.put(
-            "/api/resources/resource.update",
-            json={"resourceId": "r1", "config": {}},
-            headers=admin_headers,
-        )
-
-        assert resp.status_code == 200
-
-    def test_update_custom_resource_ignores_lock_check(
-        self, client, admin_headers, resources_service, builtin_resource_service, collaboration_service,
-    ):
-        """The lock check is scoped to built-in resources only - a custom
-        resource must not consult the admin edit lock at all."""
-        custom_doc = Mock()
-        builtin_resource_service.is_builtin.return_value = False
-        resources_service.guard_write_access.return_value = custom_doc
+        """No lock error means the lock is held by the caller (or no lock
+        exists) — ``guard_write_access`` returns normally."""
+        resources_service.guard_write_access.return_value = _fake_resource_dump()
         resources_service.update.return_value = _fake_resource_dump()
 
         resp = client.put(
@@ -183,7 +158,6 @@ class TestUpdateResource:
         )
 
         assert resp.status_code == 200
-        collaboration_service.get_admin_edit_lock.assert_not_called()
 
 
 class TestDeleteResource:
@@ -198,16 +172,13 @@ class TestDeleteResource:
         resources_service.delete.assert_called_once_with("r1")
 
     def test_delete_builtin_blocked_when_locked_by_another_admin(
-        self, client, admin_headers, resources_service, builtin_resource_service, collaboration_service,
+        self, client, admin_headers, resources_service,
     ):
-        """Regression test: same lock-bypass fix as resource.update, for
-        the generic delete path."""
-        builtin_doc = Mock()
-        builtin_resource_service.is_builtin.return_value = True
-        resources_service.guard_write_access.return_value = builtin_doc
-
-        holder = Mock(user_id="other-admin", display_name="Other Admin")
-        collaboration_service.get_admin_edit_lock.return_value = holder
+        """Regression test: ``guard_write_access`` enforces the admin edit
+        lock for built-in resources, raising ``ResourceLockedError``."""
+        resources_service.guard_write_access.side_effect = ResourceLockedError(
+            locked_by_user_id="other-admin", locked_by_display_name="Other Admin",
+        )
 
         resp = client.delete(
             "/api/resources/resource.delete?resourceId=r1",
@@ -215,6 +186,8 @@ class TestDeleteResource:
         )
 
         assert resp.status_code == 409
+        body = resp.get_json()
+        assert body["lockedBy"]["userId"] == "other-admin"
         resources_service.delete.assert_not_called()
 
     def test_delete_idor_denied_returns_403(self, client, user_headers, resources_service):

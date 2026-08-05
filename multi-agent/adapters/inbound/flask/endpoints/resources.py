@@ -6,6 +6,7 @@ from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 from mas.resources.errors import (
     ResourceInUseError,
+    ResourceLockedError,
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
 )
@@ -15,7 +16,6 @@ from inbound.flask.decorators import (
     resolve_caller_scope,
     G_IDENTITY_USERNAME,
 )
-from inbound.flask.endpoints._collaboration_shared import guard_write_access_with_lock
 
 logger = logging.getLogger(__name__)
 
@@ -173,11 +173,20 @@ def update_resource(identity, resource_id, config, name=None):
     svc = current_app.container.resources_service
     try:
         caller = resolve_caller_scope(identity)
-        _, lock_error = guard_write_access_with_lock(svc, resource_id, caller=caller)
-        if lock_error:
-            return lock_error
+        svc.guard_write_access(
+            resource_id, caller,
+            username=getattr(g, G_IDENTITY_USERNAME, ""),
+        )
         doc = svc.update(resource_id, config=config, name=name)
         return jsonify(svc.to_dict(doc)), 200
+    except ResourceLockedError as e:
+        return jsonify({
+            "error": str(e),
+            "lockedBy": {
+                "userId": e.locked_by_user_id,
+                "displayName": e.locked_by_display_name,
+            },
+        }), 409
     except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceAccessDeniedError as e:
@@ -199,17 +208,25 @@ def delete_resource(identity, resource_id):
     svc = current_app.container.resources_service
     try:
         caller = resolve_caller_scope(identity)
-        _, lock_error = guard_write_access_with_lock(svc, resource_id, caller=caller)
-        if lock_error:
-            return lock_error
+        svc.guard_write_access(
+            resource_id, caller,
+            username=getattr(g, G_IDENTITY_USERNAME, ""),
+        )
         svc.delete(resource_id)
         return jsonify({"status": "deleted"}), 200
+    except ResourceLockedError as e:
+        return jsonify({
+            "error": str(e),
+            "lockedBy": {
+                "userId": e.locked_by_user_id,
+                "displayName": e.locked_by_display_name,
+            },
+        }), 409
     except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceAccessDeniedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceInUseError as e:
-        # The resource is referenced by blueprints or other resources
         return jsonify({"error": str(e),
                         "blueprints": e.by_blueprints,
                         "resources": e.by_resources}), 400

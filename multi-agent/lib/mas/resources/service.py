@@ -26,7 +26,9 @@ from mas.resources.ports import CredentialCleanupPort
 from mas.resources.errors import (
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
+    ResourceLockedError,
 )
+from mas.resources.ports import AdminEditLockReader
 from mas.validation.service import ElementValidationService
 
 logger = logging.getLogger(__name__)
@@ -55,6 +57,7 @@ class ResourcesService:
             card_service: Optional[ElementCardService] = None,
             auth_service: Optional[CredentialCleanupPort] = None,
             encryption_key: str = "",
+            admin_lock_reader: Optional[AdminEditLockReader] = None,
     ):
         self._store = resource_registry
         self.element_registry = element_registry
@@ -65,6 +68,7 @@ class ResourcesService:
         self._auth_service = auth_service
         self._cipher = FieldCipher(encryption_key) if encryption_key else None
         self._fields = ResourceFieldEncryption(element_registry, self._cipher)
+        self._admin_lock_reader = admin_lock_reader
         # Built-in admin lifecycle + per-identity overlays live in their own
         # peer service, injected by the container so it's shared with
         # ``builtins.py``/``ShareCloner`` rather than constructed here.
@@ -465,31 +469,44 @@ class ResourcesService:
 
     # ---------- Write-access guard ----------
     #
-    # Generic — used by resources.py/_collaboration_shared.py for the base
-    # resource.update/resource.delete routes (admins use these to mutate
-    # built-in resources too). The admin-only built-in lifecycle
+    # Generic — used by resources.py for the base resource.update/
+    # resource.delete routes (admins use these to mutate built-in resources
+    # too). Includes the admin edit-lock check for built-in resources so
+    # the adapter layer never inspects resource ownership to decide whether
+    # an additional check is needed.  The admin-only built-in lifecycle
     # (find_all_builtins, create/promote/demote/update/toggle, schema and
     # per-identity overlay access) lives entirely on the peer
     # ``BuiltinResourceService`` now — see ``container.builtin_resource_service``
     # and ``endpoints/builtins.py``, which inject/consume it directly.
 
     def guard_write_access(
-        self, rid: str, caller: CallerScope,
+        self, rid: str, caller: CallerScope, *, username: str = "",
     ) -> Resource:
         """Authorize a mutation (update/delete) on a resource.
+
+        ``username`` is the authenticated individual user (e.g. ``"alice"``),
+        only needed for the admin edit-lock comparison.  The adapter reads it
+        from the request context and passes it here — ``CallerScope`` carries
+        only the domain-level identity + access level.
 
         Raises:
             BuiltInWriteProtectedError: resource is built-in and caller is not admin.
             ResourceAccessDeniedError: resource is a custom resource owned by a
                 different identity (user or team) and caller is not admin.
+            ResourceLockedError: resource is a built-in whose admin edit lock is
+                held by a different admin (409 at the HTTP layer).
 
-        Admins bypass both checks. Returns the resource so callers that need
-        it (e.g. ``update``) can avoid a second lookup.
+        Admins bypass ownership checks but are still subject to the admin
+        edit lock for built-in resources.  Returns the resource so callers
+        that need it (e.g. ``update``) can avoid a second lookup.
         """
         resource = self._store.get(rid)
+        is_builtin = self._builtin.is_builtin(rid)
         if caller.is_admin:
+            if is_builtin:
+                self._check_admin_edit_lock(rid, username)
             return resource
-        if self._builtin.is_builtin(rid):
+        if is_builtin:
             raise BuiltInWriteProtectedError()
         if (
             caller.identity is None
@@ -498,6 +515,24 @@ class ResourcesService:
         ):
             raise ResourceAccessDeniedError(rid)
         return resource
+
+    def _check_admin_edit_lock(self, rid: str, username: str) -> None:
+        """Raise ``ResourceLockedError`` if another admin holds the edit lock.
+
+        No-ops when the collaboration service (Redis) isn't configured,
+        matching the cooperative lock's 501 fallback behavior.
+        """
+        if self._admin_lock_reader is None:
+            return
+        holder = self._admin_lock_reader.get_admin_edit_lock(rid)
+        if holder is None:
+            return
+        if holder.user_id.casefold() == username.casefold():
+            return
+        raise ResourceLockedError(
+            locked_by_user_id=holder.user_id,
+            locked_by_display_name=holder.display_name,
+        )
 
     # ---------- Internal Helpers ----------
 

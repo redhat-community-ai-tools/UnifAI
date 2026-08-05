@@ -32,7 +32,7 @@ from mas.sharing.service import ShareService
 from mas.statistics.service import StatisticsService
 from mas.validation.service import ElementValidationService
 from mas.templates.service import TemplateService
-from mas.collaboration.service import CollaborationService
+from mas.collaboration.service import CollaborationService, ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND
 
 # Auth layer
 from mas.core.auth.service import AuthService, AuthStrategyRegistry
@@ -67,6 +67,7 @@ from outbound.mongo import (
     MongoTemplateRepository,
     MongoAdminConfigReader,
 )
+from outbound.redis import RedisCollaborationStore
 from outbound.mongo.builtin_user_config_repository import MongoBuiltinUserConfigRepository
 from outbound.mongo.builtin_resource_descriptor_repository import (
     MongoBuiltinResourceDescriptorRepository,
@@ -86,6 +87,20 @@ from global_utils.utils.util import get_redis_url
 
 
 logger = logging.getLogger(__name__)
+
+
+class _AdminLockReader:
+    """Wraps a ``CollaborationStore`` into the ``AdminEditLockReader`` port
+    that ``ResourcesService`` needs, without requiring the full
+    ``CollaborationService`` (which isn't available yet at wiring time)."""
+
+    def __init__(self, store):
+        self._store = store
+
+    def get_admin_edit_lock(self, entity_id):
+        return self._store.get_team_edit_lock(
+            ADMIN_LOCK_NAMESPACE, BUILTIN_LOCK_KIND, entity_id,
+        )
 
 
 class AppContainer(metaclass=SingletonMeta):
@@ -132,6 +147,7 @@ class AppContainer(metaclass=SingletonMeta):
 
         redis_url = get_redis_url()
         pending_store = None
+        self._collab_store = None
         if redis_url:
             import redis as redis_lib
             redis_client = redis_lib.Redis.from_url(redis_url, socket_timeout=30)
@@ -139,6 +155,7 @@ class AppContainer(metaclass=SingletonMeta):
                 redis_client=redis_client,
                 encryption_key=cfg.credential_encryption_key,
             )
+            self._collab_store = RedisCollaborationStore(redis_url=redis_url)
 
         # Detection
         oauth2_detection = OAuth2DetectionStrategy()
@@ -235,6 +252,8 @@ class AppContainer(metaclass=SingletonMeta):
             builtin_user_config_repo=self.builtin_user_config_repo,
         )
 
+        admin_lock_reader = _AdminLockReader(self._collab_store) if self._collab_store else None
+
         self.resources_service = ResourcesService(
             resource_registry=resource_registry,
             element_registry=self.element_registry,
@@ -244,6 +263,7 @@ class AppContainer(metaclass=SingletonMeta):
             card_service=self.card_service,
             auth_service=self.auth_service,
             encryption_key=cfg.credential_encryption_key,
+            admin_lock_reader=admin_lock_reader,
         )
 
         self.blueprint_resolver = BlueprintResolver(
@@ -390,7 +410,7 @@ class AppContainer(metaclass=SingletonMeta):
         )
 
         self.collaboration_service = self._create_collaboration_service(
-            cfg, self.session_repo, self.identity_provider
+            cfg, self.session_repo, self.identity_provider, self._collab_store,
         )
 
         self._initialized = True
@@ -449,19 +469,16 @@ class AppContainer(metaclass=SingletonMeta):
         return LocalChannelFactory()
 
     @staticmethod
-    def _create_collaboration_service(cfg: AppConfig, session_repo, identity_provider):
-        redis_url = get_redis_url()
-        if redis_url:
-            from outbound.redis import RedisCollaborationStore
-            store = RedisCollaborationStore(redis_url=redis_url)
-            return CollaborationService(
-                store=store,
-                session_repo=session_repo,
-                identity_provider=identity_provider,
-                presence_ttl=cfg.collaboration_presence_ttl,
-                edit_lock_ttl=cfg.collaboration_edit_lock_ttl_sec,
-            )
-        return None
+    def _create_collaboration_service(cfg: AppConfig, session_repo, identity_provider, store=None):
+        if store is None:
+            return None
+        return CollaborationService(
+            store=store,
+            session_repo=session_repo,
+            identity_provider=identity_provider,
+            presence_ttl=cfg.collaboration_presence_ttl,
+            edit_lock_ttl=cfg.collaboration_edit_lock_ttl_sec,
+        )
 
     @staticmethod
     def _create_background_engine(engine_name: str):
