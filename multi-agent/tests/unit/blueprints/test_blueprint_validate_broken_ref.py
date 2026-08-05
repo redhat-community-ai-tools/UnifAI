@@ -96,6 +96,8 @@ def _draft_with_missing_provider_ref(missing_rid: str) -> BlueprintDraft:
 
 
 class TestBlueprintResolverTolerance:
+    """Verifies BlueprintResolver handles missing resource refs gracefully."""
+
     def test_resolve_raises_for_missing_referenced_resource(self):
         resolver = BlueprintResolver(_FakeResourcesService())
         draft = _draft_with_missing_provider_ref("missing-provider")
@@ -115,6 +117,8 @@ class TestBlueprintResolverTolerance:
 
 
 class TestValidateBlueprintSurfacesBrokenRefs:
+    """Verifies validate_blueprint reports broken refs as failing elements."""
+
     def test_validate_blueprint_reports_broken_ref_as_failing_element(self):
         blueprint_id = "bp-1"
         doc = BlueprintDocument(

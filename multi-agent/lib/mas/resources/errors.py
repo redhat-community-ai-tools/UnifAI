@@ -1,4 +1,28 @@
-class ResourceInUseError(RuntimeError):
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, List
+
+if TYPE_CHECKING:
+    from mas.resources.models import Resource
+
+
+class ResourceError(RuntimeError):
+    """Shared base for resource-domain errors.
+
+    Provides the ``__str__``/``__repr__`` implementations that every
+    subclass used to duplicate: ``str()`` returns the message stored by
+    ``super().__init__(msg)``, and ``repr()`` mirrors ``str()`` for
+    log-friendliness.
+    """
+
+    def __str__(self) -> str:
+        return self.args[0]
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
+
+class ResourceInUseError(ResourceError):
     def __init__(self, *, by_blueprints: list[str], by_resources: list[str]):
         self.by_blueprints = by_blueprints
         self.by_resources = by_resources
@@ -15,14 +39,8 @@ class ResourceInUseError(RuntimeError):
 
         super().__init__(msg)
 
-    def __str__(self) -> str:
-        return self.args[0]
 
-    def __repr__(self) -> str:
-        return self.__str__()
-
-
-class BuiltInWriteProtectedError(RuntimeError):
+class BuiltInWriteProtectedError(ResourceError):
     """Raised when a caller attempts to modify or delete a built-in system resource."""
 
     def __init__(self) -> None:
@@ -30,14 +48,8 @@ class BuiltInWriteProtectedError(RuntimeError):
             "Built-in system resources cannot be modified or deleted."
         )
 
-    def __str__(self) -> str:
-        return self.args[0]
 
-    def __repr__(self) -> str:
-        return self.__str__()
-
-
-class ResourceAccessDeniedError(RuntimeError):
+class ResourceAccessDeniedError(ResourceError):
     """Raised when a caller tries to mutate a resource owned by a different identity."""
 
     def __init__(self, rid: str) -> None:
@@ -46,20 +58,14 @@ class ResourceAccessDeniedError(RuntimeError):
             f"You do not have permission to modify resource '{rid}'."
         )
 
-    def __str__(self) -> str:
-        return self.args[0]
 
-    def __repr__(self) -> str:
-        return self.__str__()
-
-
-class BuiltinDependentsPublicError(RuntimeError):
+class BuiltinDependentsPublicError(ResourceError):
     """Raised when demoting a built-in would strand a public built-in that
     still references it (e.g. an "available to all" agent using an LLM,
     provider, or tool that would suddenly become invisible to end users).
     """
 
-    def __init__(self, *, resource_name: str, category: str, dependents: list) -> None:
+    def __init__(self, *, resource_name: str, category: str, dependents: List["Resource"]) -> None:
         self.resource_name = resource_name
         self.category = category
         self.dependents = dependents
@@ -74,14 +80,8 @@ class BuiltinDependentsPublicError(RuntimeError):
             f"those resources."
         )
 
-    def __str__(self) -> str:
-        return self.args[0]
 
-    def __repr__(self) -> str:
-        return self.__str__()
-
-
-class ResourceLockedError(RuntimeError):
+class ResourceLockedError(ResourceError):
     """Raised when a mutation targets a built-in resource whose admin edit
     lock is currently held by a different admin."""
 
@@ -92,23 +92,11 @@ class ResourceLockedError(RuntimeError):
             f"Resource is currently locked for editing by {self.locked_by_display_name}."
         )
 
-    def __str__(self) -> str:
-        return self.args[0]
 
-    def __repr__(self) -> str:
-        return self.__str__()
-
-
-class BuiltinConfigUnavailableError(RuntimeError):
+class BuiltinConfigUnavailableError(ResourceError):
     """Raised when a built-in overlay write is attempted without a configured repo."""
 
     def __init__(self) -> None:
         super().__init__(
             "Built-in user configuration storage is not available."
         )
-
-    def __str__(self) -> str:
-        return self.args[0]
-
-    def __repr__(self) -> str:
-        return self.__str__()

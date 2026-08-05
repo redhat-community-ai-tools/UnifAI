@@ -2,6 +2,11 @@
 Migration script: extract built-in metadata off ``resources`` documents into
 the separate ``builtin_resource_descriptors`` collection.
 
+**Prerequisite:** ``migrate_builtin_system.py`` must have been run first —
+it creates the ``ownership``/``visibility`` fields on ``resources`` documents
+that this script reads.  Running this script before that one will silently
+find zero built-in resources and produce an empty descriptor collection.
+
 Follow-up to ``migrate_builtin_system.py`` (which introduced the
 ``ownership``/``visibility`` fields directly on ``resources`` documents —
 left untouched, historical). This script decouples that concept: the
@@ -111,13 +116,15 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
 
     if not dry_run:
         for doc in descriptor_docs:
+            update_fields = {
+                "ownership": "builtin",
+                "visibility": doc.get("visibility", "draft"),
+            }
+            if doc.get("parent_builtin_id") is not None:
+                update_fields["parent_builtin_id"] = doc["parent_builtin_id"]
             resources_col.update_one(
                 {"_id": doc["_id"]},
-                {"$set": {
-                    "ownership": "builtin",
-                    "visibility": doc.get("visibility", "draft"),
-                    "parent_builtin_id": doc.get("parent_builtin_id"),
-                }},
+                {"$set": update_fields},
             )
         builtin_rids = {doc["_id"] for doc in descriptor_docs}
         result = resources_col.update_many(

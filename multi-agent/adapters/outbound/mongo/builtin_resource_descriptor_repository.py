@@ -105,7 +105,7 @@ class MongoBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorReposito
         *,
         identity: Optional[Identity],
         category: Optional[str],
-        type: Optional[str],
+        resource_type: Optional[str],
         ownership: Optional[ResourceOwnership],
         is_admin: bool,
         limit: int,
@@ -124,8 +124,8 @@ class MongoBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorReposito
         base_match: Dict[str, Any] = {}
         if category:
             base_match["category"] = category
-        if type:
-            base_match["type"] = type
+        if resource_type:
+            base_match["type"] = resource_type
 
         identity_cond: Dict[str, Any] = identity_q(identity)
 

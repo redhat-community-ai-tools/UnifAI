@@ -74,7 +74,7 @@ def list_builtins(category: str | None = None, resource_type: str | None = None)
     svc = current_app.container.builtin_resource_service
     resources_svc = current_app.container.resources_service
     try:
-        resources = svc.find_all_builtins(category=category, type=resource_type)
+        resources = svc.find_all_builtins(category=category, resource_type=resource_type)
         return jsonify({
             "resources": [resources_svc.to_dict(doc) for doc in resources],
         }), 200
@@ -237,7 +237,7 @@ def create_builtin_resource(
         doc, cascaded = svc.create_builtin_with_cascade(
             identity=identity,
             category=category,
-            type=resource_type,
+            resource_type=resource_type,
             name=name,
             config=config,
             available_to_all=available_to_all,

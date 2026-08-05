@@ -235,7 +235,7 @@ class FakeBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorRepositor
         *,
         identity: Optional[Identity],
         category: Optional[str],
-        type: Optional[str],
+        resource_type: Optional[str],
         ownership: Optional[ResourceOwnership],
         is_admin: bool,
         limit: int,

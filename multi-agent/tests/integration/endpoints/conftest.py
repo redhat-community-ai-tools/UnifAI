@@ -16,6 +16,7 @@ from unittest.mock import Mock
 
 import pytest
 from flask import Flask
+from flask.testing import FlaskClient
 
 from inbound.flask.endpoints import register_all_endpoints
 
@@ -24,7 +25,7 @@ ADMIN_USER = "admin-alice"
 NON_ADMIN_USER = "bob"
 
 
-def _auth_headers(username: str) -> dict:
+def _auth_headers(username: str) -> dict[str, str]:
     return {"X-Authenticated-User": username}
 
 
@@ -32,7 +33,7 @@ _DEFAULT_RESOURCE_DICT = {"rid": "r1", "name": "thing", "category": "provider", 
 
 
 @pytest.fixture
-def resources_service():
+def resources_service() -> Mock:
     svc = Mock()
     # `to_dict`/`to_dicts` are the serialization boundary now that endpoints
     # no longer call `doc.model_dump()` directly (see `service.to_dict()`).
@@ -44,7 +45,7 @@ def resources_service():
 
 
 @pytest.fixture
-def builtin_resource_service():
+def builtin_resource_service() -> Mock:
     svc = Mock()
     # Cascade preview defaults to "nothing to cascade" so existing
     # promote/toggle/update tests that don't care about the nested-ref
@@ -54,12 +55,12 @@ def builtin_resource_service():
 
 
 @pytest.fixture
-def collaboration_service():
+def collaboration_service() -> Mock:
     return Mock()
 
 
 @pytest.fixture
-def admin_edit_lock_service():
+def admin_edit_lock_service() -> Mock:
     svc = Mock()
     # No admin edit lock held by default, so promote/update/toggle tests
     # that don't care about lock enforcement aren't spuriously rejected
@@ -70,7 +71,12 @@ def admin_edit_lock_service():
 
 
 @pytest.fixture
-def container(resources_service, builtin_resource_service, collaboration_service, admin_edit_lock_service):
+def container(
+    resources_service: Mock,
+    builtin_resource_service: Mock,
+    collaboration_service: Mock,
+    admin_edit_lock_service: Mock,
+) -> SimpleNamespace:
     return SimpleNamespace(
         resources_service=resources_service,
         builtin_resource_service=builtin_resource_service,
@@ -81,7 +87,7 @@ def container(resources_service, builtin_resource_service, collaboration_service
 
 
 @pytest.fixture
-def app(container):
+def app(container: SimpleNamespace) -> Flask:
     flask_app = Flask(__name__)
     flask_app.secret_key = "test-secret"
     flask_app.config["admin_allowed_users"] = [ADMIN_USER]
@@ -91,15 +97,15 @@ def app(container):
 
 
 @pytest.fixture
-def client(app):
+def client(app: Flask) -> FlaskClient:
     return app.test_client()
 
 
 @pytest.fixture
-def admin_headers():
+def admin_headers() -> dict[str, str]:
     return _auth_headers(ADMIN_USER)
 
 
 @pytest.fixture
-def user_headers():
+def user_headers() -> dict[str, str]:
     return _auth_headers(NON_ADMIN_USER)

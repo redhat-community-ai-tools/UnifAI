@@ -34,6 +34,8 @@ def _make_app(*, admin_config_reader=None, admin_allowed_users=None) -> Flask:
 
 
 class TestIsAdminUser:
+    """Verifies is_admin_user resolves admin status from reader and allowed_users fallback."""
+
     def test_reader_true_grants_admin_even_if_not_in_allowed_users(self):
         reader = Mock()
         reader.is_admin.return_value = True
@@ -61,6 +63,8 @@ class TestIsAdminUser:
 
 
 class TestRequireAdminAccess:
+    """Verifies require_admin_access decorator grants, denies, and handles errors."""
+
     def _build_client(self, *, admin_config_reader=None, admin_allowed_users=None) -> FlaskClient:
         app = _make_app(
             admin_config_reader=admin_config_reader,

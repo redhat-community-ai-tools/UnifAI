@@ -24,6 +24,8 @@ def _fake_resource_dump() -> Mock:
 
 
 class TestSaveResource:
+    """Verifies /resource.save creates a resource and returns 201."""
+
     def test_save_success_returns_201(self, client, user_headers, resources_service):
         resources_service.create.return_value = _fake_resource_dump()
 
@@ -50,6 +52,8 @@ class TestSaveResource:
 
 
 class TestGetResource:
+    """Verifies /resource.get retrieves a resource with visibility enforcement."""
+
     def test_get_success(self, client, user_headers, resources_service):
         resources_service.get_visible.return_value = _fake_resource_dump()
 
@@ -73,6 +77,8 @@ class TestGetResource:
 
 
 class TestUpdateResource:
+    """Verifies /resource.update enforces write-access guards and lock checks."""
+
     def test_update_success(self, client, user_headers, resources_service):
         resources_service.update.return_value = _fake_resource_dump()
 
@@ -161,6 +167,8 @@ class TestUpdateResource:
 
 
 class TestDeleteResource:
+    """Verifies /resource.delete enforces write-access, in-use, and lock guards."""
+
     def test_delete_success(self, client, user_headers, resources_service):
         resp = client.delete(
             "/api/resources/resource.delete?resourceId=r1",
@@ -217,6 +225,8 @@ class TestDeleteResource:
 
 
 class TestValidateResource:
+    """Verifies /resource.validate resolves dependencies and returns validation results."""
+
     def test_validate_not_found_returns_404(self, client, user_headers, resources_service):
         resources_service.validate_resource.side_effect = KeyError("r1")
 
@@ -244,6 +254,8 @@ class TestValidateResource:
 
 
 class TestResourceCards:
+    """Verifies /resources.cards builds element cards with identity-scoped overlays."""
+
     def test_empty_resource_ids_short_circuits(self, client, user_headers, resources_service):
         resp = client.post(
             "/api/resources/resources.cards",

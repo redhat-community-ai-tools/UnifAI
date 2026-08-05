@@ -48,6 +48,9 @@ class TestTeamEditLocks:
             "team-eng-42", "resource", "some-rid", "alice",
         )
         assert renewed is True
+        service._store.renew_team_edit_lock.assert_called_once_with(
+            "team-eng-42", "resource", "some-rid", "alice", "alice", ttl=180,
+        )
 
     def test_get_team_edit_lock_delegates_to_store(self, service):
         service._store.get_team_edit_lock.return_value = None
@@ -55,6 +58,9 @@ class TestTeamEditLocks:
             "team-eng-42", "resource", "some-rid", "alice",
         )
         assert holder is None
+        service._store.get_team_edit_lock.assert_called_once_with(
+            "team-eng-42", "resource", "some-rid",
+        )
 
     def test_invalid_entity_kind_raises_value_error(self, service):
         with pytest.raises(ValueError, match="entityKind"):

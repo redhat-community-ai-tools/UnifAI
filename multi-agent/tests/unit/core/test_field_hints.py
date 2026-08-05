@@ -23,11 +23,11 @@ from mas.core.field_hints import (
 
 class TestCardHint:
     def test_to_hints_shape(self):
-        hint = CardHint(contexts=["custom"])
+        hint = CardHint(contexts=[CardContext.CUSTOM])
         assert hint.to_hints() == {"hints": {"card": {"contexts": ["custom"]}}}
 
     def test_supports_both_contexts(self):
-        hint = CardHint(contexts=["builtin", "custom"])
+        hint = CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM])
         assert hint.to_hints()["hints"]["card"]["contexts"] == ["builtin", "custom"]
 
     def test_contexts_is_required(self):
@@ -57,7 +57,7 @@ class TestCombineHintsWithCardHint:
     def test_combines_with_other_hints(self):
         combined = combine_hints(
             ConditionalHint(visible_when={"auth_method": "access_token"}),
-            CardHint(contexts=["custom"]),
+            CardHint(contexts=[CardContext.CUSTOM]),
         )
         assert combined["hints"]["conditional"]["visible_when"] == {"auth_method": "access_token"}
         assert combined["hints"]["card"]["contexts"] == ["custom"]
@@ -69,7 +69,7 @@ class TestCombineHintsWithCardHint:
         documents that both hints can be attached and read back together."""
         combined = combine_hints(
             SecretHint(allow_reveal=True),
-            CardHint(contexts=["builtin", "custom"]),
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]),
         )
         assert "secret" in combined["hints"]
         assert "card" in combined["hints"]

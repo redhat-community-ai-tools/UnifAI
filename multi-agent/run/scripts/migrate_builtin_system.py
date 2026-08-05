@@ -92,6 +92,7 @@ def _auto_discover_encryption_key() -> str:
 
 FERNET_VERSION_BYTE = 0x80
 FERNET_MIN_RAW_LENGTH = 73  # 1 (version) + 8 (timestamp) + 16 (IV) + 16 (min ciphertext) + 32 (HMAC)
+FERNET_MIN_ENCODED_LENGTH = 100  # ceil(FERNET_MIN_RAW_LENGTH * 4/3), base64-encoded minimum
 
 
 def run_migration(db_name: str, mongodb_ip: str, mongodb_port: str, dry_run: bool, reverse: bool = False, encryption_key: str = "") -> None:
@@ -113,6 +114,14 @@ def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool
 
     sensitive_keys_cache: dict = {}
 
+    if cipher:
+        registry = ElementRegistry()
+        registry.auto_discover()
+        field_enc = ResourceFieldEncryption(registry, cipher)
+    else:
+        registry = None
+        field_enc = None
+
     def _get_sensitive_keys(category: str, type_key: str) -> set:
         """Resolve sensitive field names for a (category, type_key) pair."""
         cache_key = (category, type_key)
@@ -120,11 +129,8 @@ def _run_migration_body(client: pymongo.MongoClient, db_name: str, dry_run: bool
             return sensitive_keys_cache[cache_key]
 
         keys: set = set()
-        if cipher:
+        if field_enc and registry:
             try:
-                registry = ElementRegistry()
-                registry.auto_discover()
-                field_enc = ResourceFieldEncryption(registry, cipher)
                 _, sensitive = field_enc.scan_schema_hints(category, type_key)
                 model_cls = registry.get_schema(ResourceCategory(category), type_key)
                 keys = sensitive | set(getattr(model_cls, "ENCRYPTED_FIELDS", ()))
@@ -282,7 +288,7 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
         of a Fernet token to avoid false-positives on user-provided values."""
         if not value.startswith(FERNET_PREFIX):
             return False
-        if len(value) < 100 or len(value) % 4 != 0:
+        if len(value) < FERNET_MIN_ENCODED_LENGTH or len(value) % 4 != 0:
             return False
         try:
             raw = urlsafe_b64decode(value)
@@ -290,10 +296,7 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
         except (binascii.Error, ValueError):
             return False
 
-    encrypted_passthrough_count = 0
-
     def _decrypt_fields(fields: dict, resource_id: str = "", identity_key: str = "") -> dict:
-        nonlocal encrypted_passthrough_count
         if not isinstance(fields, dict):
             raise ValueError(
                 f"Overlay {resource_id}/{identity_key} has non-dict fields "
@@ -301,18 +304,14 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
             )
 
         def _walk(value: object) -> object:
-            nonlocal encrypted_passthrough_count
             if isinstance(value, str):
                 if _is_fernet_token(value):
                     if not cipher:
-                        encrypted_passthrough_count += 1
-                        logger.warning(
-                            "  Overlay %s/%s contains encrypted value but no "
-                            "--encryption-key was provided — carrying ciphertext "
-                            "through as-is (best-effort reverse)",
-                            resource_id, identity_key,
+                        raise RuntimeError(
+                            f"Overlay {resource_id}/{identity_key} contains "
+                            f"encrypted value but no --encryption-key was "
+                            f"provided — aborting reverse migration"
                         )
-                        return value
                     return cipher.decrypt(value)
                 return value
             if isinstance(value, dict):
@@ -345,13 +344,6 @@ def _run_reverse_migration_body(client: pymongo.MongoClient, db_name: str, dry_r
 
     total_configs = sum(len(v) for v in user_configs_by_resource.values())
     logger.info("  Found %d user config entries across %d resources.", total_configs, len(user_configs_by_resource))
-
-    if encrypted_passthrough_count:
-        logger.warning(
-            "  %d encrypted value(s) will be carried through as ciphertext "
-            "(provide --encryption-key to decrypt them during reverse migration).",
-            encrypted_passthrough_count,
-        )
 
     if not dry_run:
         for resource_id, user_configs in user_configs_by_resource.items():

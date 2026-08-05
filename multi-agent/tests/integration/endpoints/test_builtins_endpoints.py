@@ -40,7 +40,7 @@ def _fake_dependency(rid: str = "dep-1", name: str = "Dependency", category: str
 
 
 class TestAdminGating:
-    """/builtins.list and other admin-only routes must reject non-admins."""
+    """Admin gating rejects non-admin callers from /builtins.list and related routes."""
 
     def test_non_admin_gets_403(self, client, user_headers, builtin_resource_service) -> None:
         resp = client.get("/api/resources/builtins.list", headers=user_headers)
@@ -61,6 +61,8 @@ class TestAdminGating:
 
 
 class TestGetBuiltinSchema:
+    """Verifies /builtin.schema returns annotated JSON schema for built-in resources."""
+
     def test_success(self, client, user_headers, builtin_resource_service) -> None:
         builtin_resource_service.get_builtin_schema.return_value = {"properties": {}}
 
@@ -93,6 +95,8 @@ class TestGetBuiltinSchema:
 
 
 class TestConfigureBuiltin:
+    """Verifies /builtin.configure saves per-identity overlays for built-in resources."""
+
     def test_success(self, client, user_headers, builtin_resource_service) -> None:
         builtin_resource_service.configure_builtin.return_value = _fake_resource_dump()
 
@@ -168,6 +172,8 @@ class TestCascadePreview:
 
 
 class TestCreateBuiltinResource:
+    """Verifies /builtin.create creates a built-in resource with optional cascade."""
+
     def test_requires_admin(self, client, user_headers, builtin_resource_service) -> None:
         resp = client.post(
             "/api/resources/builtin.create",
@@ -210,6 +216,8 @@ class TestCreateBuiltinResource:
 
 
 class TestUpdateBuiltinResource:
+    """Verifies /builtin.update mutates config, name, and visibility with lock enforcement."""
+
     def test_requires_admin(self, client, user_headers, builtin_resource_service) -> None:
         resp = client.put(
             "/api/resources/builtin.update",
@@ -248,6 +256,8 @@ class TestUpdateBuiltinResource:
 
 
 class TestToggleBuiltinVisibility:
+    """Verifies /builtin.toggle promotes/demotes visibility with cascade and lock checks."""
+
     def test_requires_admin(self, client, user_headers, builtin_resource_service) -> None:
         resp = client.patch(
             "/api/resources/builtin.toggle",
@@ -255,6 +265,7 @@ class TestToggleBuiltinVisibility:
             headers=user_headers,
         )
         assert resp.status_code == 403
+        builtin_resource_service.toggle_visibility_with_cascade.assert_not_called()
 
     def test_admin_success(self, client, admin_headers, builtin_resource_service) -> None:
         builtin_resource_service.toggle_visibility_with_cascade.return_value = (_fake_resource_dump(), [])
@@ -338,6 +349,8 @@ class TestToggleBuiltinVisibility:
 
 
 class TestAdminEditLocks:
+    """Verifies /builtin.edit_lock acquire/release routes and graceful 501 fallback."""
+
     def test_acquire_without_admin_edit_lock_service_returns_501(
         self, client, admin_headers, container,
     ) -> None:

@@ -174,7 +174,7 @@ class BuiltinResourceService:
         *,
         identity: Optional[Identity],
         category: Optional[str],
-        type: Optional[str],
+        resource_type: Optional[str],
         ownership: Optional[str],
         is_admin: bool,
         limit: int,
@@ -198,7 +198,7 @@ class BuiltinResourceService:
         return self._descriptor_repo.find_visible_for_identity(
             identity=identity,
             category=category,
-            type=type,
+            resource_type=resource_type,
             ownership=ownership_enum,
             is_admin=is_admin,
             limit=limit,
@@ -210,10 +210,10 @@ class BuiltinResourceService:
     def find_all_builtins(
         self,
         category: Optional[str] = None,
-        type: Optional[str] = None,
+        resource_type: Optional[str] = None,
     ) -> List[Resource]:
         """Return all built-in resources (public and draft), for admin listing."""
-        return self._descriptor_repo.find_all_builtins(category=category, resource_type=type)
+        return self._descriptor_repo.find_all_builtins(category=category, resource_type=resource_type)
 
     def get_builtin_schema(self, rid: str, *, is_admin: bool = False) -> dict:
         """Return the element JSON schema with readOnly annotations for a built-in resource.
@@ -474,7 +474,7 @@ class BuiltinResourceService:
         *,
         identity: Identity,
         category: str,
-        type: str,
+        resource_type: str,
         name: str,
         config: dict,
         available_to_all: bool = False,
@@ -498,17 +498,17 @@ class BuiltinResourceService:
                 f"Category '{category}' is not supported for built-in resources"
             )
 
-        model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
+        model_cls = self.element_registry.get_schema(ResourceCategory(category), resource_type)
         cfg_model = model_cls(**config)
         nested_refs = list(RefWalker.external_rids(cfg_model))
         cfg_dict = self._fields.encrypt_fields(
-            cfg_model.model_dump(mode="json"), model_cls, category=category, type_key=type
+            cfg_model.model_dump(mode="json"), model_cls, category=category, type_key=resource_type
         )
 
         doc = Resource(
             identity=identity,
             category=category,
-            type=type,
+            type=resource_type,
             name=name,
             cfg_dict=cfg_dict,
             nested_refs=nested_refs,
@@ -625,8 +625,8 @@ class BuiltinResourceService:
         try:
             for dep in targets:
                 orig_descriptor = self.get_descriptor(dep.rid)
-                self._set_visibility(dep.rid, ResourceVisibility.PUBLIC)
                 originals.append((dep.rid, orig_descriptor))
+                self._set_visibility(dep.rid, ResourceVisibility.PUBLIC)
                 promoted.append(dep)
         except Exception:
             logger.exception(

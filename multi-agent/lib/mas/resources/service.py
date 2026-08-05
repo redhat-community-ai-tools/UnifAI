@@ -56,7 +56,7 @@ class ResourcesService:
             card_service: Optional[ElementCardService] = None,
             auth_service: Optional[CredentialCleanupPort] = None,
             admin_lock_reader: Optional[AdminEditLockReader] = None,
-    ):
+    ) -> None:
         self._store = resource_registry
         self.element_registry = element_registry
         self._builtin_user_config_repo = builtin_user_config_repo
@@ -192,7 +192,7 @@ class ResourcesService:
         resources, total = self._builtin.find_visible(
             identity=caller.identity,
             category=category_enum.value if category_enum else None,
-            type=type,
+            resource_type=type,
             ownership=ownership,
             is_admin=caller.is_admin,
             limit=limit,

@@ -53,7 +53,7 @@ def _make_builtin_resource(
     resource, _ = builtin_service.create_builtin_with_cascade(
         identity=admin_identity,
         category=FAKE_CATEGORY,
-        type=FAKE_TYPE,
+        resource_type=FAKE_TYPE,
         name=name,
         config={"bearer_token": bearer_token, "endpoint": "https://b.example"},
         available_to_all=available_to_all,
