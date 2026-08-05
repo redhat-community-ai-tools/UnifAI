@@ -275,6 +275,7 @@ export function BuiltinResourceTable({
                                     size="sm"
                                     className="h-8 w-8 p-0 text-gray-500 hover:text-white hover:bg-white/10"
                                     onClick={() => onEditResource(resource)}
+                                    aria-label="Edit configuration"
                                   >
                                     <Settings className="h-4 w-4" />
                                   </Button>
