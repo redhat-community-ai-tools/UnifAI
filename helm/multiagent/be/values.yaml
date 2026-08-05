@@ -132,15 +132,15 @@ autoscaling:
   enabled: true
   minReplicas: 1
   maxReplicas: 6
-  targetMemoryUtilizationPercentage: 80
-  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 60
+  targetCPUUtilizationPercentage: 75
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 120
+      stabilizationWindowSeconds: 30
       maxPodsPerMinute: 1
-      periodSeconds: 120
+      periodSeconds: 30
     scaleDown:
-      stabilizationWindowSeconds: 300
+      stabilizationWindowSeconds: 120
       maxPodsPerPeriod: 1
       periodSeconds: 120
 
