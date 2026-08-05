@@ -61,7 +61,7 @@ export function CascadeConfirmDialog({
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
-            onClick={onConfirm}
+            onClick={(e) => { e.preventDefault(); onConfirm(); }}
             disabled={isConfirming}
             className="bg-primary hover:bg-primary/80"
           >

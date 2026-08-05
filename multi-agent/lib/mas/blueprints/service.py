@@ -347,10 +347,12 @@ class BlueprintService:
         Useful for UI validation before creating a blueprint.
         """
         self._ensure_validation_service()
-        spec = self.resolve_draft_dict(draft_dict, caller=caller)
+        draft = BlueprintDraft(**draft_dict)
+        spec, broken_refs = self._resolver.resolve_tolerant(draft, caller=caller)
         return self._validate_spec(
             spec, "draft", timeout_seconds,
             user_id=user_id, credential_user_id=credential_user_id,
+            broken_refs=broken_refs,
         )
 
     # ────────── Card Building ──────────

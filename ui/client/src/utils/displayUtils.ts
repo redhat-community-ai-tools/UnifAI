@@ -108,6 +108,8 @@ export const simplifyConfigForDisplay = (config: any): any => {
   return result;
 };
 
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 /**
  * Strip fields marked `hints.hidden` (see `field_hints.py#HiddenHint`) out of
  * a config object before it's rendered in a "Full Configuration" details
@@ -138,6 +140,7 @@ export const filterHiddenFieldsInConfig = (
 
   const filtered: any = {};
   for (const [key, value] of Object.entries(config)) {
+    if (UNSAFE_KEYS.has(key)) continue;
     const rawFieldSchema = resolvedSchema?.properties?.[key];
     const fieldSchema = rawFieldSchema?.$ref
       ? resolveSchemaRef(root, rawFieldSchema.$ref) ?? rawFieldSchema
@@ -145,9 +148,6 @@ export const filterHiddenFieldsInConfig = (
     if (fieldSchema?.hints?.hidden?.hint_type === 'hidden') continue;
 
     if (value !== null && typeof value === 'object') {
-      // Recurse with the field's own (resolved) schema — not the parent's —
-      // so nested object/array properties are evaluated against their own
-      // `properties`/`items` rather than the outer schema's.
       filtered[key] = filterHiddenFieldsInConfig(value, fieldSchema, root);
     } else {
       filtered[key] = value;
@@ -163,8 +163,6 @@ export const filterHiddenFieldsInConfig = (
  * fields, dropping locked admin-only setup (e.g. an MCP server's
  * `mcp_url`) that a regular user was never meant to see.
  */
-const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
-
 export const filterToFieldNames = (config: any, allowed: Set<string>): any => {
   if (!config || typeof config !== 'object' || Array.isArray(config)) {
     return config;

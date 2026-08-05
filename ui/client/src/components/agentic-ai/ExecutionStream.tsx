@@ -103,18 +103,25 @@ export default function ExecutionStream({
     }
   
     const fetchAndSetNodes = async () => {
-      const nodeData = await getGraphNodes();
-      if (cancelled) return;
-      
-      const nodes = nodeData.map((node: { id: string; name: string; description: string | null }) => ({
-        id: node.id,
-        name: node.name,
-        description: node.description,
-        icon: getRandomAgentIcon(),
-      })) || null;
+      try {
+        const nodeData = await getGraphNodes();
+        if (cancelled) return;
+        
+        const nodes = nodeData.map((node: { id: string; name: string; description: string | null }) => ({
+          id: node.id,
+          name: node.name,
+          description: node.description,
+          icon: getRandomAgentIcon(),
+        })) || null;
 
-      setAgentNodes(nodes);
-      setSelectedNode(nodes && nodes.length > 0 ? nodes[0] : null);
+        setAgentNodes(nodes);
+        setSelectedNode(nodes && nodes.length > 0 ? nodes[0] : null);
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Failed to fetch blueprint nodes:", err);
+        setAgentNodes(null);
+        setSelectedNode(null);
+      }
     };
   
     fetchAndSetNodes();

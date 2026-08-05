@@ -98,9 +98,11 @@ function AdminConfigTabs() {
 
   if (isLoading) return <TabsSkeleton />;
   if (isError) return <ErrorState message={(error as Error)?.message} />;
-  if (!config || config.categories.length === 0) return null;
+  if (!config) return null;
 
-  const defaultTab = config.categories[0].key;
+  const REPO_TAB = "__repository_management__";
+  const categories = config.categories ?? [];
+  const defaultTab = categories.length > 0 ? categories[0].key : REPO_TAB;
 
   return (
     <motion.div
@@ -110,7 +112,7 @@ function AdminConfigTabs() {
     >
       <Tabs defaultValue={defaultTab} className="w-full">
         <TabsList className="mb-6">
-          {config.categories.map((category) => (
+          {categories.map((category) => (
             <TabsTrigger
               key={category.key}
               value={category.key}
@@ -120,14 +122,14 @@ function AdminConfigTabs() {
             </TabsTrigger>
           ))}
           <TabsTrigger
-            value="__repository_management__"
+            value={REPO_TAB}
             className="data-[state=active]:bg-primary data-[state=active]:text-white"
           >
             Repository Management
           </TabsTrigger>
         </TabsList>
 
-        {config.categories.map((category) => (
+        {categories.map((category) => (
           <TabsContent key={category.key} value={category.key}>
             <div className="space-y-8">
               {category.description && (
@@ -148,7 +150,7 @@ function AdminConfigTabs() {
           </TabsContent>
         ))}
 
-        <TabsContent value="__repository_management__">
+        <TabsContent value={REPO_TAB}>
           <AgenticAIProvider>
             <RepositoryManagement />
           </AgenticAIProvider>

@@ -293,6 +293,14 @@ export default function RepositoryManagement() {
   const handleViewDetails = (resource: ResourceItem) => {
     const categoryKey = resource.category!;
     const elType = resolveElementType(categoryKey, resource.type);
+    if (!elType) {
+      toast({
+        title: "Error",
+        description: `Unable to resolve resource type "${resource.type}" for details view.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setDetailsElement({
       rid: resource.rid,
       name: resource.name,

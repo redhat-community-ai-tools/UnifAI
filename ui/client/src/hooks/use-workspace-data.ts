@@ -518,6 +518,15 @@ export const useWorkspaceData = () => {
             name: elementData.name,
             availableToAll,
           });
+          if (result) {
+            addOrUpdateResource({
+              rid: result.rid || rid,
+              name: result.name || elementData.name,
+              category: result.category || category,
+              type: result.type || type,
+            });
+            revalidateResourceAndAncestors(result.rid || rid);
+          }
           const cascadeNote = describeCascadedResources(result);
           toast({
             title: "Success",
@@ -536,6 +545,15 @@ export const useWorkspaceData = () => {
             config: cfg_dict,
             availableToAll,
           });
+          if (result) {
+            addOrUpdateResource({
+              rid: result.rid,
+              name: result.name || elementData.name,
+              category: result.category || category,
+              type: result.type || type,
+            });
+            revalidateResourceAndAncestors(result.rid);
+          }
           const cascadeNote = describeCascadedResources(result);
           toast({
             title: "Success",
@@ -560,7 +578,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast, teamId],
+    [toast, teamId, addOrUpdateResource, revalidateResourceAndAncestors],
   );
 
   // Toggle available_to_all status for a resource (admin only)
@@ -611,6 +629,7 @@ export const useWorkspaceData = () => {
         setError(null);
 
         await resourcesApi.deleteResource(rid);
+        removeResource(rid);
 
         toast({ title: "Success", description: "Built-in resource deleted successfully" });
         return true;
@@ -629,7 +648,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast],
+    [toast, removeResource],
   );
 
   // Initialize categories on mount

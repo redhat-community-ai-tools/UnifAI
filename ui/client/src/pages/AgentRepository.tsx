@@ -56,6 +56,7 @@ export default function UserWorkspace() {
 
   useEffect(() => {
     if (selectedElementType) {
+      setResourceFilter("all");
       fetchElementInstances(selectedElementType.category, selectedElementType.type);
     }
   }, [selectedElementType, fetchElementInstances, viewMode, selectedTeam?.id]);

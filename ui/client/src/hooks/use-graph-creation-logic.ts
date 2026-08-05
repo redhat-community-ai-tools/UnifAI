@@ -584,61 +584,59 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     setNodeId(3);
   }, [stableDeleteNode, stableAttachCondition, stableRemoveCondition]);
 
-  const loadBuildingBlocks = useCallback(async () => {
-    if (!isTeam && !user?.username) {
-      setIsLoadingBlocks(false);
-      return;
-    }
-    if (!USER_ID) {
-      setIsLoadingBlocks(false);
-      return;
-    }
-    try {
-      setIsLoadingBlocks(true);
-      // Building blocks must reflect the workspace's *complete* resource
-      // set, not just a single page — page through via offset/has_more so
-      // this stays correct even past the endpoint's per-request cap.
-      const resources = await listAllResources({
-        teamId,
-      });
-      const allBlocks = resources.map(transformResourceToBlock);
-
-      setAllBlocksData(allBlocks);
-
-      const orchestratorBlocks = allBlocks.filter(
-        (block: BuildingBlock) =>
-          block.workspaceData?.category === "nodes" &&
-          block.workspaceData?.type === "orchestrator_node",
-      );
-      setOrchestratorsData(orchestratorBlocks);
-
-      const nodeBlocks = allBlocks.filter(
-        (block: BuildingBlock) =>
-          block.workspaceData?.category === "nodes" &&
-          block.workspaceData?.type !== "orchestrator_node",
-      );
-      setBuildingBlocksData(nodeBlocks);
-
-      const conditionBlocks = allBlocks.filter(
-        (block: BuildingBlock) =>
-          block.workspaceData?.category === "conditions",
-      );
-      setConditionsData(conditionBlocks);
-    } catch (error) {
-      console.error("Error loading workspace resources:", error);
-      toast({
-        title: "❌ Error Loading Resources",
-        description: "Failed to load workspace resources from server",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingBlocks(false);
-    }
-  }, [toast, teamId, isTeam, user?.username]);
-
   useEffect(() => {
-    loadBuildingBlocks();
-  }, [loadBuildingBlocks]);
+    let stale = false;
+    const load = async () => {
+      if (!isTeam && !user?.username) {
+        setIsLoadingBlocks(false);
+        return;
+      }
+      if (!USER_ID) {
+        setIsLoadingBlocks(false);
+        return;
+      }
+      try {
+        setIsLoadingBlocks(true);
+        const resources = await listAllResources({ teamId });
+        if (stale) return;
+        const allBlocks = resources.map(transformResourceToBlock);
+
+        setAllBlocksData(allBlocks);
+        setOrchestratorsData(
+          allBlocks.filter(
+            (block: BuildingBlock) =>
+              block.workspaceData?.category === "nodes" &&
+              block.workspaceData?.type === "orchestrator_node",
+          ),
+        );
+        setBuildingBlocksData(
+          allBlocks.filter(
+            (block: BuildingBlock) =>
+              block.workspaceData?.category === "nodes" &&
+              block.workspaceData?.type !== "orchestrator_node",
+          ),
+        );
+        setConditionsData(
+          allBlocks.filter(
+            (block: BuildingBlock) =>
+              block.workspaceData?.category === "conditions",
+          ),
+        );
+      } catch (error) {
+        if (stale) return;
+        console.error("Error loading workspace resources:", error);
+        toast({
+          title: "❌ Error Loading Resources",
+          description: "Failed to load workspace resources from server",
+          variant: "destructive",
+        });
+      } finally {
+        if (!stale) setIsLoadingBlocks(false);
+      }
+    };
+    load();
+    return () => { stale = true; };
+  }, [toast, teamId, isTeam, user?.username, USER_ID]);
 
   useEffect(() => {
     if (!editBlueprintId) {
