@@ -265,6 +265,7 @@ export function BuiltinResourceTable({
                                     size="sm"
                                     className="h-8 w-8 p-0 text-gray-500 hover:text-blue-400 hover:bg-blue-500/10"
                                     onClick={() => onViewDetails(resource)}
+                                    aria-label="View details"
                                   >
                                     <Eye className="h-4 w-4" />
                                   </Button>
@@ -286,6 +287,7 @@ export function BuiltinResourceTable({
                                     size="sm"
                                     className="h-8 w-8 p-0 text-gray-500 hover:text-red-400 hover:bg-red-500/10"
                                     onClick={() => onDeleteClick(resource)}
+                                    aria-label="Delete this resource"
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>

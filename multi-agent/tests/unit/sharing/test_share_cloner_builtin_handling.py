@@ -70,7 +70,7 @@ class TestComputeClosureBuiltinHandling:
     def test_public_builtin_skipped_no_error(self) -> None:
         """A PUBLIC built-in dependency is silently skipped (not cloned)."""
         public_builtin = _make_builtin_resource("builtin-1")
-        cloner, resources_service, element_registry, _builtin_svc = _build_cloner(
+        cloner, resources_service, _element_registry, _builtin_svc = _build_cloner(
             descriptors={"builtin-1": BuiltinResourceDescriptor(
                 rid="builtin-1", visibility=ResourceVisibility.PUBLIC,
             )},
@@ -85,7 +85,7 @@ class TestComputeClosureBuiltinHandling:
     def test_draft_builtin_raises_share_clone_error(self) -> None:
         """A DRAFT built-in triggers ShareCloneError."""
         draft_builtin = _make_builtin_resource("builtin-draft")
-        cloner, resources_service, element_registry, _builtin_svc = _build_cloner(
+        cloner, resources_service, _element_registry, _builtin_svc = _build_cloner(
             descriptors={"builtin-draft": BuiltinResourceDescriptor(
                 rid="builtin-draft", visibility=ResourceVisibility.DRAFT,
             )},
@@ -125,5 +125,4 @@ class TestComputeClosureBuiltinHandling:
             ctx = CloneContext(sender_id="alice", recipient_id="bob")
             result = cloner._compute_closure({"custom-1"}, ctx)
 
-        assert "custom-1" in result
-        assert "builtin-pub" not in result
+        assert set(result) == {"custom-1"}

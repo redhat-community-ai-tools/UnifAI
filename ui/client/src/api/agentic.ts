@@ -1,6 +1,6 @@
 import axios from '../http/axiosAgentConfig';
 import { normalizeCategory } from '@/constants/resources';
-import { listAllResources } from '@/api/resources';
+import { listAllResources, ResourceInstance } from '@/api/resources';
 
 export interface Session {
   session_id: string;
@@ -50,12 +50,12 @@ export async function fetchBlueprintSessionCounts(teamId?: string): Promise<Reco
 // offset/has_more pagination loop, instead of duplicating it here.
 
 // Fetch all resources for a user
-export async function fetchAllResources(teamId?: string): Promise<any[]> {
+export async function fetchAllResources(teamId?: string): Promise<ResourceInstance[]> {
   return listAllResources({ teamId });
 }
 
 // Fetch resources by category
-export async function fetchResourcesByCategory(category: string, teamId?: string): Promise<any[]> {
+export async function fetchResourcesByCategory(category: string, teamId?: string): Promise<ResourceInstance[]> {
   return listAllResources({ teamId, category });
 }
 

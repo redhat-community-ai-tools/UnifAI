@@ -296,16 +296,17 @@ class FakeBuiltinUserConfigRepository:
         return f"{resource_id}::{identity_key}"
 
     def save(self, config: BuiltinUserConfig) -> str:
-        self._configs[self._key(config.resource_id, config.identity_key)] = config
+        self._configs[self._key(config.resource_id, config.identity_key)] = config.model_copy(deep=True)
         return config.config_id
 
     def get(self, resource_id: str, identity_key: str) -> Optional[BuiltinUserConfig]:
-        return self._configs.get(self._key(resource_id, identity_key))
+        cfg = self._configs.get(self._key(resource_id, identity_key))
+        return cfg.model_copy(deep=True) if cfg else None
 
     def get_by_id(self, config_id: str) -> BuiltinUserConfig:
         for cfg in self._configs.values():
             if cfg.config_id == config_id:
-                return cfg
+                return cfg.model_copy(deep=True)
         raise KeyError(config_id)
 
     def delete(self, resource_id: str, identity_key: str) -> None:
@@ -318,7 +319,7 @@ class FakeBuiltinUserConfigRepository:
         return len(keys)
 
     def find_by_identity(self, identity_key: str) -> List[BuiltinUserConfig]:
-        return [v for v in self._configs.values() if v.identity_key == identity_key]
+        return [v.model_copy(deep=True) for v in self._configs.values() if v.identity_key == identity_key]
 
 
 TEST_ENCRYPTION_KEY = "g67-nhpC145BVaYc0Wy4-OYTVIDv_huAmAZbvu92IQA="
@@ -356,8 +357,6 @@ def resource_repo() -> FakeResourceRepository:
 
 @pytest.fixture
 def resource_registry(resource_repo, element_registry) -> ResourcesRegistry:
-    from global_utils.utils.crypto import FieldCipher
-
     return ResourcesRegistry(
         repo=resource_repo,
         bp_repo=FakeBlueprintRepository(),
@@ -374,8 +373,6 @@ def builtin_resource_descriptor_repo(resource_repo) -> FakeBuiltinResourceDescri
 def builtin_service(
     resource_registry, element_registry, builtin_resource_descriptor_repo, builtin_user_config_repo,
 ) -> BuiltinResourceService:
-    from global_utils.utils.crypto import FieldCipher
-
     field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
     return BuiltinResourceService(
         resource_registry=resource_registry,
@@ -392,8 +389,6 @@ def builtin_service_without_config_repo(
 ) -> BuiltinResourceService:
     """A ``BuiltinResourceService`` with no ``builtin_user_config_repo``
     configured — pairs with ``service_without_config_repo`` below."""
-    from global_utils.utils.crypto import FieldCipher
-
     field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
     return BuiltinResourceService(
         resource_registry=resource_registry,
@@ -423,8 +418,6 @@ def service_without_config_repo(
     resource_registry, element_registry, builtin_service_without_config_repo,
 ) -> ResourcesService:
     """A service with no ``builtin_user_config_repo`` configured."""
-    from global_utils.utils.crypto import FieldCipher
-
     field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
     return ResourcesService(
         resource_registry=resource_registry,

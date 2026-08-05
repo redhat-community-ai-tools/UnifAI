@@ -246,7 +246,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
       cacheValidationResult(rid, errorResult);
       return errorResult;
     }
-  }, [CREDENTIAL_USER_ID, IS_TEAM_WORKSPACE, WORKSPACE_TEAM_ID, cacheValidationResult, createErrorResult, updateDependencyParentMap]);
+  }, [CREDENTIAL_USER_ID, WORKSPACE_TEAM_ID, cacheValidationResult, createErrorResult, updateDependencyParentMap]);
 
   // ==================== Resource Mapping Functions ====================
 

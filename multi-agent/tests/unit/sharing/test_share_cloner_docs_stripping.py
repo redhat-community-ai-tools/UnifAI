@@ -44,7 +44,7 @@ class TestShareClonerDocsRagStripping:
         # the constructor now requires it.
         builtin_resource_service = MagicMock()
         builtin_resource_service.get_descriptor.return_value = None
-        return ShareCloner(resources_service, bp_service, element_registry, builtin_resource_service)
+        return ShareCloner(resources_service, bp_service, element_registry, builtin_resource_service=builtin_resource_service)
 
     def _build_cache_data(self, resource, cfg_model):
         return ResourceCacheData(

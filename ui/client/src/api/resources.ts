@@ -87,15 +87,18 @@ export async function listAllResources(params: {
   ownership?: string;
 }): Promise<ResourceInstance[]> {
   const PAGE_SIZE = 1000;
+  const MAX_PAGES = 50;
   const resources: ResourceInstance[] = [];
   let offset = 0;
   let hasMore = true;
+  let pages = 0;
 
-  while (hasMore) {
+  while (hasMore && pages < MAX_PAGES) {
     const page = await listResources({ ...params, limit: PAGE_SIZE, offset });
     resources.push(...page.resources);
     hasMore = !!page.pagination?.has_more && page.resources.length > 0;
     if (hasMore) offset += page.resources.length;
+    pages++;
   }
 
   return resources;

@@ -155,7 +155,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
             primaryLight={primaryLight}
             validationStatus={getValidationStatus(element.rid)}
             lockedByOther={isTeamWorkspace && lockedByOther}
-            lockUnknown={lockUnknown}
+            lockUnknown={isTeamWorkspace && lockUnknown}
             lockedByLabel={lockedByLabel}
             onViewDetails={() => handleViewDetails(element)}
             onShare={() => handleShareElement(element)}

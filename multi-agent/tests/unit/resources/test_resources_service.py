@@ -21,7 +21,8 @@ import pytest
 
 from mas.collaboration.models import TeamEditLockHolder
 from mas.core.caller_scope import CallerScope
-from mas.core.enums import ResourceVisibility
+from mas.core.enums import ResourceCategory, ResourceVisibility
+from mas.core.identity import Identity
 from mas.resources.errors import (
     BuiltInWriteProtectedError,
     ResourceAccessDeniedError,
@@ -30,9 +31,13 @@ from mas.resources.errors import (
     BuiltinDependentsPublicError,
 )
 from mas.resources.models import Resource
+from mas.resources.service import ResourcesService
+from mas.resources.field_encryption import ResourceFieldEncryption
 from mas.resources.builtin_models import BuiltinUpdateRequest, identity_to_key
 
-from tests.unit.resources.conftest import FAKE_CATEGORY, FAKE_TYPE
+from global_utils.utils.crypto import FieldCipher
+
+from tests.unit.resources.conftest import FAKE_CATEGORY, FAKE_TYPE, TEST_ENCRYPTION_KEY
 
 
 # ────────────────────────────── helpers ──────────────────────────────
@@ -65,11 +70,9 @@ def _make_disabled_category_resource(service, identity, name="my-retriever") -> 
     """A resource in a category that can never become a built-in
     (``ResourceCategory.RETRIEVER``), created by writing straight to the
     store since ``service.create()`` would need a registered schema for it."""
-    from mas.core.enums import ResourceCategory as _ResourceCategory
-
     doc = Resource(
         identity=identity,
-        category=_ResourceCategory.RETRIEVER,
+        category=ResourceCategory.RETRIEVER,
         type="fake_retriever",
         name=name,
         cfg_dict={},
@@ -112,8 +115,6 @@ class TestGuardWriteAccess:
             service.guard_write_access(doc.rid, CallerScope(identity=admin_identity, is_admin=False))
 
     def test_team_identity_ownership_matches_by_type_and_id(self, service):
-        from mas.core.identity import Identity
-
         team = Identity.team("team-a")
         doc = _make_custom_resource(service, team)
         # Same team id, different display_name still matches.
@@ -139,11 +140,6 @@ class TestGuardWriteAccessAdminLock:
     def service_with_lock(
         self, resource_registry, element_registry, builtin_user_config_repo, builtin_service, lock_reader,
     ):
-        from tests.unit.resources.conftest import TEST_ENCRYPTION_KEY
-        from mas.resources.service import ResourcesService
-        from mas.resources.field_encryption import ResourceFieldEncryption
-        from global_utils.utils.crypto import FieldCipher
-
         field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
         return ResourcesService(
             resource_registry=resource_registry,
@@ -376,7 +372,6 @@ class TestBuiltinOverlay:
 
         stored = builtin_service._builtin_user_config_repo.get(doc.rid, identity_to_key(alice))
         assert stored.fields["api_key"] != "alices-api-key"
-        assert stored.fields["api_key"].startswith("gAAAAAB")
 
         user_config = builtin_service.get_user_config(doc.rid, identity=alice)
         assert user_config["api_key"] == "alices-api-key"

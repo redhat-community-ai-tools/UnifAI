@@ -86,7 +86,7 @@ export function AddResourceWizardPanel({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300">
+                  <label htmlFor="wizard-resource-category" className="text-sm font-medium text-gray-300">
                     Resource Category
                   </label>
                   {/* Keyed on the value: when the wizard stays open across two
@@ -102,7 +102,7 @@ export function AddResourceWizardPanel({
                     value={selectedCategoryKey}
                     onValueChange={onCategoryChange}
                   >
-                    <SelectTrigger className="bg-background-dark border-gray-700">
+                    <SelectTrigger id="wizard-resource-category" className="bg-background-dark border-gray-700">
                       <SelectValue placeholder="Choose a category..." />
                     </SelectTrigger>
                     <SelectContent className={DROPDOWN_BG}>
@@ -130,7 +130,7 @@ export function AddResourceWizardPanel({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300">
+                  <label htmlFor="wizard-resource-type" className="text-sm font-medium text-gray-300">
                     Resource Type
                   </label>
                   {/* Same Radix Select remount workaround as the category
@@ -143,7 +143,7 @@ export function AddResourceWizardPanel({
                     onValueChange={onTypeChange}
                     disabled={!selectedCategoryKey}
                   >
-                    <SelectTrigger className="bg-background-dark border-gray-700">
+                    <SelectTrigger id="wizard-resource-type" className="bg-background-dark border-gray-700">
                       <SelectValue
                         placeholder={
                           selectedCategoryKey

@@ -10,10 +10,11 @@ from typing import Any, Dict
 from pydantic import BaseModel, Field
 
 from mas.core.field_hints import SecretHint, ReadOnlyHint, ConditionalHint, combine_hints
+from mas.core.enums import ResourceCategory
 from mas.resources.field_encryption import ResourceFieldEncryption
 
 
-CATEGORY = "providers"
+CATEGORY = ResourceCategory.PROVIDER
 TYPE_KEY = "fake_auth_provider"
 
 

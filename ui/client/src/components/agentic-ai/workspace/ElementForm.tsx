@@ -76,6 +76,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
     handleValidationChange,
     handlePopulateResult,
     handleActionOutput,
+    resetTransientState,
   } = fieldActions;
   const [refEditState, setRefEditState] = useState<{
     element: ElementInstance;
@@ -258,6 +259,7 @@ export const ElementForm: React.FC<ElementFormProps> = ({
   // Initialize form data
   useEffect(() => {
     if (elementSchema && isOpen) {
+      resetTransientState();
       const initialData: any = {};
 
       // Set default values from combined schema, excluding hidden fields

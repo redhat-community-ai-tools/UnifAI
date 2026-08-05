@@ -130,7 +130,8 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
     })();
 
     return () => { cancelled = true; };
-  }, [isOpen, element?.rid]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, element?.rid, fetchBuiltinSchema, fetchBuiltinUserConfig, fetchElementActions]);
 
   const configurableFields = useMemo(() => {
     if (!builtinSchema?.config_schema?.properties) return {};

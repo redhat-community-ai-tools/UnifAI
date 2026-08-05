@@ -10,6 +10,7 @@ import time
 import pytest
 
 from global_utils.utils.crypto import FERNET_PREFIX
+from run.scripts.migrate_builtin_system import _run_reverse_migration_body
 
 
 def _fake_fernet_token() -> str:
@@ -55,8 +56,6 @@ def _make_mock_db(overlay_fields: Mapping[str, object]) -> Tuple[MagicMock, Magi
 
 
 def test_reverse_migration_raises_on_encrypted_field_without_key() -> None:
-    from run.scripts.migrate_builtin_system import _run_reverse_migration_body
-
     overlay_fields = {"api_key": _fake_fernet_token()}
     db, resources_col, user_configs_col = _make_mock_db(overlay_fields)
 
@@ -72,8 +71,6 @@ def test_reverse_migration_raises_on_encrypted_field_without_key() -> None:
 
 
 def test_reverse_migration_passes_plaintext_fields_without_key() -> None:
-    from run.scripts.migrate_builtin_system import _run_reverse_migration_body
-
     overlay_fields = {"model_name": "gpt-4"}
     db, resources_col, user_configs_col = _make_mock_db(overlay_fields)
 
@@ -91,8 +88,6 @@ def test_reverse_migration_passes_plaintext_fields_without_key() -> None:
 def test_reverse_migration_passes_prefix_only_value_without_key() -> None:
     """A user value that happens to start with FERNET_PREFIX but is too short /
     structurally invalid must NOT trigger a false-positive abort."""
-    from run.scripts.migrate_builtin_system import _run_reverse_migration_body
-
     overlay_fields = {"api_key": f"{FERNET_PREFIX}shortvalue"}
     db, resources_col, user_configs_col = _make_mock_db(overlay_fields)
 
@@ -105,8 +100,6 @@ def test_reverse_migration_passes_prefix_only_value_without_key() -> None:
 
 def test_reverse_migration_raises_on_nested_encrypted_field_without_key() -> None:
     """Nested encrypted values must also trigger the abort."""
-    from run.scripts.migrate_builtin_system import _run_reverse_migration_body
-
     overlay_fields = {"headers": {"Authorization": _fake_fernet_token()}}
     db, resources_col, user_configs_col = _make_mock_db(overlay_fields)
 

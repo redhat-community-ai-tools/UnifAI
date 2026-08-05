@@ -39,8 +39,13 @@ export const FieldValidationTwoFactorAuth: React.FC<FieldValidationTwoFactorAuth
   const handleSignIn = useCallback(() => {
     if (!authUrl) return;
     popupAuthUrlRef.current = authUrl;
-    popupRef.current = window.open(authUrl, 'oauth_signin', 'width=600,height=700,scrollbars=yes');
-  }, [authUrl]);
+    const popup = window.open(authUrl, 'oauth_signin', 'width=600,height=700,scrollbars=yes');
+    if (!popup) {
+      onAuthError('Popup was blocked by the browser. Please allow popups for this site.');
+      return;
+    }
+    popupRef.current = popup;
+  }, [authUrl, onAuthError]);
 
   // Listen for OAuth callback postMessage from popup
   useEffect(() => {
