@@ -123,6 +123,8 @@ class MongoBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorReposito
         """
         if limit < 0:
             raise ValueError(f"limit must be non-negative, got {limit}")
+        if offset < 0:
+            raise ValueError(f"offset must be non-negative, got {offset}")
 
         base_match: Dict[str, Any] = {}
         if category:
