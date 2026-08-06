@@ -52,6 +52,8 @@ export const transformSessionData = (
   const timestamp = new Date(activityTimestamp);
   const lastActive = formatRelativeTimestamp(activityTimestamp);
   const preview = fromSharedLink ? 'From chat experience' : 'Click to load messages...';
+  const rawCost = sessionData.metadata?.total_cost;
+  const totalCost = typeof rawCost === 'number' ? rawCost : null;
 
   return {
     id,
@@ -60,12 +62,13 @@ export const transformSessionData = (
     lastActive,
     timestamp,
     preview,
-    messages: [], // Messages will be loaded separately when session is selected
+    messages: [],
     blueprintExists,
     fromSharedLink,
     hitlEnabled,
     fromSchedule,
     status,
+    totalCost,
   };
 };
 
