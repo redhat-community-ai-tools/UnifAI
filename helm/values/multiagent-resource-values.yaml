@@ -2,11 +2,11 @@ multiagent_server:
   replicaCount: 1
   resources:
     limits:
-      cpu: '4'
-      memory: '10Gi'
+      cpu: '2'
+      memory: '4Gi'
     requests:
-      cpu: '4'
-      memory: '10Gi'
+      cpu: '1'
+      memory: '2Gi'
   image: 
     repository: images.paas.redhat.com/unifai/multiagent
     tag: "latest"
@@ -26,14 +26,14 @@ multiagent_server:
     VERSION: ""
 
 multiagent_temporal_worker:
-  replicaCount: 2
+  replicaCount: 1
   resources:
     limits:
-      cpu: '4'
-      memory: '16Gi'
-    requests:
       cpu: '2'
-      memory: '8Gi'
+      memory: '4Gi'
+    requests:
+      cpu: '1'
+      memory: '2Gi'
   image:
     repository: images.paas.redhat.com/unifai/multiagent
     tag: "latest"
@@ -43,7 +43,7 @@ multiagent_temporal_worker:
   env:
     BACKEND_ENV: "production" #options - production development
     ROLE: "temporal-worker" # options are flask celery debug
-    WORKER_THREADS: "100"
+    WORKER_THREADS: "50"
     SHARED_STORAGE: "/app/shared"
     GOOGLE_APPLICATION_CREDENTIALS: "/opt/app-root/src/config/gcp/gcp-sa-key.json"
     LANGFUSE_ENABLED: true
