@@ -585,13 +585,6 @@ export function useSessionHub({
 
   // ── Execution ──────────────────────────────────────────────────────────
 
-  type SessionPayload = {
-    sessionId: string;
-    inputs: { user_prompt: string };
-    scope?: "public" | "private";
-    loggedInUser?: string;
-  };
-
   const triggerExecution = useCallback(
     async (sessionPayload: SessionPayload): Promise<string> => {
       try {

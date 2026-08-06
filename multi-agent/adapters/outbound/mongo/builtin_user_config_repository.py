@@ -68,14 +68,14 @@ class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
                 upsert=True,
                 return_document=pymongo.ReturnDocument.AFTER,
             )
-        except pymongo.errors.PyMongoError as exc:
-            logger.error(
-                "Mongo error saving BuiltinUserConfig for resource=%s, identity=%s: %s",
-                config.resource_id, config.identity_key, exc,
+        except pymongo.errors.PyMongoError:
+            logger.exception(
+                "Mongo error saving BuiltinUserConfig for resource=%s",
+                config.resource_id,
             )
             raise RuntimeError(
                 f"Failed to save BuiltinUserConfig for resource={config.resource_id}"
-            ) from exc
+            )
         return doc["config_id"]
 
     def get(self, resource_id: str, identity_key: str) -> Optional[BuiltinUserConfig]:
