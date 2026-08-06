@@ -297,7 +297,11 @@ export default function ScheduledWorkflows() {
     [prompts, expandedPromptId],
   );
 
-  const { data: resolvedSpec } = useQuery({
+  const {
+    data: resolvedSpec,
+    isError: isResolvedSpecError,
+    refetch: refetchResolvedSpec,
+  } = useQuery({
     queryKey: ["resolved-blueprint", scopeKey, expandedPrompt?.blueprint_id],
     queryFn: () => fetchResolvedBlueprint(expandedPrompt!.blueprint_id, teamId),
     enabled: !!expandedPrompt,
@@ -592,14 +596,23 @@ export default function ScheduledWorkflows() {
                       <div>
                         <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Workflow Graph</h4>
                         <div className="rounded-lg border border-gray-800 overflow-hidden" style={{ height: 300 }}>
-                          <GraphDisplay
-                            blueprintId={prompt.blueprint_id}
-                            specDict={resolvedSpec?.spec_dict}
-                            height="100%"
-                            showBackground={false}
-                            interactive={false}
-                            centerInView
-                          />
+                          {isResolvedSpecError ? (
+                            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                              <p className="text-sm mb-2">Failed to load workflow graph</p>
+                              <Button variant="outline" size="sm" onClick={() => refetchResolvedSpec()}>
+                                <RotateCw className="w-3.5 h-3.5 mr-1.5" /> Retry
+                              </Button>
+                            </div>
+                          ) : (
+                            <GraphDisplay
+                              blueprintId={prompt.blueprint_id}
+                              specDict={resolvedSpec?.spec_dict}
+                              height="100%"
+                              showBackground={false}
+                              interactive={false}
+                              centerInView
+                            />
+                          )}
                         </div>
                       </div>
                     </div>
