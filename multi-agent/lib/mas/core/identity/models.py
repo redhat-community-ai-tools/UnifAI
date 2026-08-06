@@ -44,6 +44,10 @@ class Identity(BaseModel):
     def is_team(self) -> bool:
         return self.type == IdentityType.TEAM
 
+    def owns(self, other: "Identity") -> bool:
+        """Stable ownership check — ignores mutable display_name."""
+        return self.type == other.type and self.id == other.id
+
     @classmethod
     def user(cls, user_id: str, display_name: str = "") -> "Identity":
         return cls(type=IdentityType.USER, id=user_id,

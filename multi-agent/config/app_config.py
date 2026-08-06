@@ -14,6 +14,7 @@ class AppConfig(SharedConfig):
     templates_coll: str = "templates"
     credentials_coll: str = "credentials"
     server_configs_coll: str = "server_configs"
+    workflow_schedules_coll: str = "workflow_schedules"
     hostname: str = "0.0.0.0"
     port: str = "8002"
     version: str = "1.0.0"

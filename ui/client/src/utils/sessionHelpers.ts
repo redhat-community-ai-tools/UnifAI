@@ -46,10 +46,14 @@ export const transformSessionData = (
   const blueprintExists = sessionData.blueprint_exists;
   const fromSharedLink = sessionData.metadata?.source === 'public_link';
   const hitlEnabled = sessionData.metadata?.hitl_enabled === true;
+  const fromSchedule = sessionData.metadata?.source === 'schedule';
+  const status = sessionData.status;
   const activityTimestamp = sessionData.last_active_at || sessionData.started_at;
   const timestamp = new Date(activityTimestamp);
   const lastActive = formatRelativeTimestamp(activityTimestamp);
   const preview = fromSharedLink ? 'From chat experience' : 'Click to load messages...';
+  const rawCost = sessionData.metadata?.total_cost;
+  const totalCost = typeof rawCost === 'number' ? rawCost : null;
 
   return {
     id,
@@ -58,10 +62,13 @@ export const transformSessionData = (
     lastActive,
     timestamp,
     preview,
-    messages: [], // Messages will be loaded separately when session is selected
+    messages: [],
     blueprintExists,
     fromSharedLink,
     hitlEnabled,
+    fromSchedule,
+    status,
+    totalCost,
   };
 };
 

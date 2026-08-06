@@ -45,8 +45,8 @@ Outer ring of the hexagon. Translates between external technologies and domain p
 
 1. Create/edit module in `adapters/inbound/flask/endpoints/<name>.py`
 2. Create `Blueprint("<name>", __name__)`
-3. Decorator stack: `@route` → `@with_require_identity_authorization` → `@from_body`
-4. Handler: `current_app.container.<service>.<method>(identity, **kwargs)`
+3. Decorator stack: `@route` → `@with_require_identity_authorization` → `@from_body` / `@from_query`
+4. Handler: `current_app.container.<service>.<method>(identity, **kwargs)` — do **not** add `userId` / `identityType` fields; team workspace is optional `teamId` on the wire (decorator reads it; keep it out of business schemas unless the endpoint is team-only like edit locks)
 5. Register blueprint in `endpoints/__init__.py`
 
 ### New Technology Directory Template
@@ -66,12 +66,25 @@ outbound/<technology>/
 Decorator stack order:
 ```
 @bp.route("/api/<service>.<action>", methods=["POST"])
-@with_require_identity_authorization     # resolves Identity
-@from_body({"field": fields.Str()})      # parses request body
+@with_require_identity_authorization     # resolves Identity from session + optional teamId
+@from_body({"field": fields.Str()})      # parses request body (business fields only)
 def handler(identity, **kwargs):         # receives both
     svc = current_app.container.<service>_service
     return jsonify(svc.<action>(identity=identity, **kwargs))
 ```
+
+#### Workspace identity wire contracts
+
+`@with_require_identity_authorization` / `@require_session_identity` always validates the Redis-backed session (cookie `session_id` → `identity:session:<uuid>`). Workspace ownership is then resolved as:
+
+| Contract | Wire shape | When to use |
+|----------|------------|-------------|
+| **New (preferred)** | Session cookie + optional `teamId` (query or JSON body). Omit `teamId` → personal workspace from session username. | All **new** endpoints and UI API clients. Do **not** declare `userId` / `identityType` on new Flask schemas. |
+| **Legacy** | `userId` + `identityType=team\|user` (when team, `userId` is the team id) | Existing blueprints/sessions/resources/etc. callers still send this. Decorator maps it via `_extract_team_id` for backward compatibility. |
+
+**Established inconsistency:** Both contracts coexist. Schedules and collaboration edit-locks use the new `teamId` shape; most older endpoints still receive legacy `userId` + `identityType` from the UI. Reviewers MUST NOT flag either as wrong while both are supported — flag only if **new** code adds or extends the legacy pair instead of `teamId`.
+
+UI clients may keep accepting hook fields (`userId` + `identityType` from `useWorkspaceIdentity`) locally, but for new MAS calls they should map team view → wire `teamId` (and omit both for user view) before the request leaves the API layer (see `ui/client/src/api/schedules.ts`).
 
 Streaming pattern:
 ```python
@@ -124,6 +137,8 @@ These patterns are established and reviewers MUST NOT flag them as violations:
 | Secondary composition wiring in Temporal worker | `adapters/inbound/temporal/worker.py` | Temporal worker builds `NodeExecutor`, `GraphNodeActivities`, `LifecycleHandler` from container parts — separate entry point needs its own wiring |
 | Shared-link read endpoint (`blueprint.info.get`) without `@with_require_identity_authorization` | `adapters/inbound/flask/endpoints/blueprints.py` | Serves the PublicChat shared-link flow, which requires unauthenticated access. Authorization is enforced via `usageScope` validation (only `"public"` blueprints are usable). Reviewers should verify the shared-link validation path, not the identity auth decorator. |
 | Single-ID blueprint **write** endpoints (`blueprint.update`, `remove.blueprint`, `blueprint.metadata.set`, `blueprint.prompt-shortcuts.set`) | `adapters/inbound/flask/endpoints/blueprints.py` | These are authorization-sensitive entry points. Reviewers SHOULD verify that `@with_require_identity_authorization` (or equivalent ownership check) is present at the adapter boundary. Absence of auth on these write endpoints is a finding, not an established pattern. |
+| Dual workspace wire contracts (new `teamId` vs legacy `userId`+`identityType`) | Decorator: `adapters/inbound/flask/decorators.py` (`_extract_team_id`). New: `endpoints/schedules.py`, `endpoints/collaboration/locks.py`. Legacy UI still hits blueprints/sessions/resources/etc. | Intentional migration in progress. Both resolve to the same `Identity` object. Do not flag coexistence; do flag **new** code that reintroduces or extends the legacy pair instead of optional `teamId`. |
+| Unconditional unique index on `(identity.type, identity.id, spec_dict.name)` without try/except | `MongoBlueprintRepository.__init__` (`adapters/outbound/mongo/blueprint_repository.py`) | Duplicates are cleared by the one-shot `scripts/migrate_duplicate_blueprint_names.py` run manually before deploy. Index create is expected to fail loud if migration was skipped. Do not flag missing try/except or missing Helm/CI wiring. |
 
 ## Rules
 

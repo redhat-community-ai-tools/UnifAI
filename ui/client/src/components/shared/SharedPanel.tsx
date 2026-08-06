@@ -16,6 +16,7 @@ import { ShareInvite, shareToTeam, formatShareSenderLabel } from '@/api/shares';
 import { getEffectiveMemberCount } from '@/api/teams';
 import UserDirectorySearch from '@/components/shared/UserDirectorySearch';
 import type { DirectoryUser } from '@/api/directory';
+import { formatRelativeTime } from '@/utils/dateTimeUtils';
 
 interface SharedPanelProps {
   isOpen: boolean;
@@ -151,16 +152,8 @@ export default function SharedPanel({ isOpen, onClose }: SharedPanelProps) {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-    if (diffInMinutes < 1) return 'Just now';
-    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
-    if (diffInMinutes < 10080) return `${Math.floor(diffInMinutes / 1440)}d ago`;
-    return date.toLocaleDateString();
-  };
+  const formatDate = (dateString: string) =>
+    formatRelativeTime(dateString, { justNowLabel: 'Just now', capDays: 7 });
 
   const getStatusBadge = (status: ShareInvite['status']) => {
     switch (status) {
