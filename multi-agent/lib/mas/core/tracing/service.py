@@ -65,3 +65,12 @@ class TracingService(ABC):
 
     @abstractmethod
     def flush(self) -> None: ...
+
+    def get_session_cost(self, session_id: str) -> Optional[float]:
+        """Fetch the total USD cost for a session from the tracing backend.
+
+        Returns a float (>= 0) when the session exists in the tracing
+        backend, or None when it does not.  Non-abstract so existing
+        subclasses aren't forced to implement it.
+        """
+        return None

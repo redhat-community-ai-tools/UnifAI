@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
+from mas.core.tracing import TracingService
 from mas.session.management.user_session_manager import UserSessionManager
 from mas.session.execution.foreground_runner import ForegroundSessionRunner
 from mas.session.execution.input_projector import SessionInputProjector
@@ -39,11 +40,13 @@ class SessionService:
         foreground_runner: ForegroundSessionRunner,
         input_projector: SessionInputProjector,
         background_engine: Optional[BackgroundSessionEngine] = None,
+        tracing_service: Optional[TracingService] = None,
     ):
         self._manager = manager
         self._foreground = foreground_runner
         self._projector = input_projector
         self._engine = background_engine
+        self._tracing = tracing_service
 
     def create(
         self,
@@ -362,11 +365,17 @@ class SessionService:
     def list_user_sessions(self, identity: Identity) -> list:
         """
         List all sessions created by a user (metadata only, no messages).
+
+        For terminal sessions that have been traced but whose cost hasn't
+        been persisted yet, fetches the cost from the tracing backend and
+        caches it in Mongo so subsequent calls don't need the API.
         """
         docs = self._manager.list_docs(identity)
         items = []
 
         for doc in docs:
+            self._backfill_cost(doc)
+
             blueprint_id = doc.get("blueprint_id", "")
             blueprint_exists = self._manager.blueprint_exists(blueprint_id) if blueprint_id else False
             bp_metadata = self._manager.get_blueprint_metadata(blueprint_id) if blueprint_exists else {}
@@ -381,6 +390,40 @@ class SessionService:
             items.append(item.model_dump())
 
         return items
+
+    def _backfill_cost(self, doc: Dict[str, Any]) -> None:
+        """Fetch session cost from the tracing backend and cache in Mongo.
+
+        Stores ``cost_updated_at`` alongside ``total_cost`` so we can
+        detect staleness: when ``last_active_at`` is newer than the
+        stored timestamp, the session had new activity and the cost is
+        re-fetched.  Sessions not found in Langfuse get ``total_cost: None``
+        to avoid repeated lookups.
+        """
+        if self._tracing is None or not self._tracing.enabled:
+            return
+        status = doc.get("status", "")
+        if status not in ({"COMPLETED", "FAILED"}):
+            return
+        meta = doc.get("metadata", {})
+        last_active = doc.get("run_context", {}).get("last_active_at", "")
+        cost_updated = meta.get("cost_updated_at", "")
+        if "total_cost" in meta and (not last_active or cost_updated >= last_active):
+            return
+        session_id = doc.get("run_id", "")
+        if not session_id:
+            return
+        try:
+            cost = self._tracing.get_session_cost(session_id)
+            meta["total_cost"] = cost
+            meta["cost_updated_at"] = last_active or datetime.utcnow().isoformat()
+            doc["metadata"] = meta
+            record = self._manager.get_record(session_id)
+            record.metadata.total_cost = cost
+            record.metadata.cost_updated_at = meta["cost_updated_at"]
+            self._manager.save_record(record)
+        except Exception:
+            logger.debug("Cost backfill failed for session %s", session_id, exc_info=True)
 
     def get_user_blueprints(self, identity: Identity) -> List[str]:
         """

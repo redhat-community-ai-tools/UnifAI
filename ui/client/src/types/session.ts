@@ -22,6 +22,7 @@ export interface ChatSession {
   hitlEnabled?: boolean;
   status?: string;
   statusMessage?: string;
+  totalCost?: number | null;
 }
 
 // Types for the API response
