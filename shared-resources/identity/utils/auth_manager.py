@@ -388,11 +388,9 @@ class AuthManager:
             # Add admin permission based on config (checks admin_allowed_users)
             user['is_admin'] = self._check_admin_permission(user)
 
-            session_data = self._get_server_session() or {}
             return jsonify({
                 'user': user,
                 'authenticated': True,
-                'access_token': session_data.get('access_token'),
             })
         
         @self.app.route('/api/auth/user/groups')
