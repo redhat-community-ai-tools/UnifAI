@@ -94,20 +94,9 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if or .Values.affinity .Values.podAntiAffinity.enabled }}
+      {{- with .Values.affinity }}
       affinity:
-        {{- if .Values.affinity }}
-        {{- toYaml .Values.affinity | nindent 8 }}
-        {{- else if .Values.podAntiAffinity.enabled }}
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    {{- include "multiagent-temporal-worker.selectorLabels" . | nindent 20 }}
-                topologyKey: kubernetes.io/hostname
-        {{- end }}
+        {{- tpl (toYaml .) $ | nindent 8 }}
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:

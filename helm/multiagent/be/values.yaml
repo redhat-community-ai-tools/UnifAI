@@ -162,11 +162,17 @@ volumeMounts:
     mountPath: /opt/app-root/src/config/gcp
     readOnly: true
 
-podAntiAffinity:
-  enabled: true
-
 nodeSelector: {}
 
 tolerations: []
 
-affinity: {}
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: '{{ include "multiagent.name" . }}'
+              app.kubernetes.io/instance: '{{ .Release.Name }}'
+          topologyKey: kubernetes.io/hostname
