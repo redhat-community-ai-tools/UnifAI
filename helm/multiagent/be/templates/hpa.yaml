@@ -1,0 +1,47 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "multiagent.fullname" . }}
+  labels:
+    {{- include "multiagent.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "multiagent.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+  {{- if .Values.autoscaling.behavior }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.autoscaling.behavior.scaleUp.stabilizationWindowSeconds | default 120 }}
+      policies:
+        - type: Pods
+          value: {{ .Values.autoscaling.behavior.scaleUp.maxPodsPerMinute | default 1 }}
+          periodSeconds: {{ .Values.autoscaling.behavior.scaleUp.periodSeconds | default 60 }}
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.autoscaling.behavior.scaleDown.stabilizationWindowSeconds | default 300 }}
+      policies:
+        - type: Pods
+          value: {{ .Values.autoscaling.behavior.scaleDown.maxPodsPerPeriod | default 1 }}
+          periodSeconds: {{ .Values.autoscaling.behavior.scaleDown.periodSeconds | default 120 }}
+  {{- end }}
+{{- end }}
