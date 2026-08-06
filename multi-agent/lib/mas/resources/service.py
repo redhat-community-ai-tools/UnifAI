@@ -8,10 +8,8 @@ from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity
 from mas.resources.registry import ResourcesRegistry
 from mas.catalog.element_registry import ElementRegistry
-from mas.resources.models import Resource
-from mas.resources.builtin_models import identity_to_key
-from mas.resources.repository.builtin_user_config_repository import BuiltinUserConfigRepository
-from mas.core.enums import ResourceCategory, ResourceOwnership
+from mas.resources.models import Resource, ResourceQuery
+from mas.core.enums import ResourceCategory
 from mas.core.ref import RefWalker
 from mas.core.dto import GroupedCount
 from mas.core.element_meta import ElementConfigMeta
@@ -20,59 +18,38 @@ from mas.elements.common.card import ElementCard
 from mas.catalog.card_service import ElementCardService
 from mas.resources.resolver import DependencyResolver
 from mas.resources.field_encryption import ResourceFieldEncryption
-from mas.resources.builtin_service import BuiltinResourceService
-from mas.resources.ports import CredentialCleanupPort, AdminEditLockReader
-from mas.resources.errors import (
-    BuiltInWriteProtectedError,
-    ResourceAccessDeniedError,
-    ResourceLockedError,
-)
+from mas.resources.ports import CredentialCleanupPort
+from mas.resources.errors import ResourceAccessDeniedError
 from mas.validation.service import ElementValidationService
 
 logger = logging.getLogger(__name__)
 
-class ResourcesService:
-    """
-    Public facade. Performs schema validation via ElementRegistry
-    and delegates storage to ResourcesRegistry.
+class CoreResourceService:
+    """Pure resource CRUD, validation, card building, and encryption.
 
-    Built-in-awareness (is this resource a built-in? what's its
-    visibility? what's the caller's config overlay?) is never decided
-    here directly — it's delegated through the small helper methods on
-    the injected ``BuiltinResourceService`` (``self._builtin``), which is
-    the sole owner of the ``ResourceOwnership``/``ResourceVisibility``
-    concepts. This class carries zero knowledge of those enums; see
-    ``resources.md`` for the full rationale.
+    Has zero awareness of built-ins, overlays, visibility gating,
+    or admin locks.  Does not import anything from ``builtin_models``,
+    ``builtin_service``, ``ResourceOwnership``, or ``ResourceVisibility``.
+
+    If the built-in feature is removed, this class doesn't change.
     """
 
     def __init__(
             self,
             resource_registry: ResourcesRegistry,
             element_registry: ElementRegistry,
-            builtin_service: BuiltinResourceService,
             field_encryption: ResourceFieldEncryption,
-            builtin_user_config_repo: Optional[BuiltinUserConfigRepository] = None,
             validation_service: Optional[ElementValidationService] = None,
             card_service: Optional[ElementCardService] = None,
             auth_service: Optional[CredentialCleanupPort] = None,
-            admin_lock_reader: Optional[AdminEditLockReader] = None,
     ) -> None:
         self._store = resource_registry
         self.element_registry = element_registry
-        self._builtin_user_config_repo = builtin_user_config_repo
         self._card_service = card_service
         self._dependency_resolver = DependencyResolver(resource_registry=self._store)
         self._validation_service = validation_service
         self._auth_service = auth_service
         self._fields = field_encryption
-        self._admin_lock_reader = admin_lock_reader
-        # Built-in admin lifecycle + per-identity overlays live in their own
-        # peer service, injected by the container so it's shared with
-        # ``builtins.py``/``ShareCloner`` rather than constructed here.
-        # Internal attribute (not part of the public surface) — external
-        # callers needing the built-in admin/overlay API go through
-        # ``container.builtin_resource_service`` directly.
-        self._builtin = builtin_service
 
     # ---------- CRUD ----------
     def create(self, *, identity: Identity, category, type, name, config) -> Resource:
@@ -95,10 +72,8 @@ class ResourcesService:
         return self._store.create(doc)
 
     def save_resource(self, resource: Resource) -> Resource:
-        """
-        Save a pre-built Resource directly.
+        """Save a pre-built Resource directly.
 
-        Use this when you already have a validated Resource object.
         Skips schema validation since the Resource is already built.
         """
         return self._store.create(resource)
@@ -131,9 +106,9 @@ class ResourcesService:
         return result
 
     def delete(self, rid: str) -> None:
+        """Delete a resource.  No descriptor/overlay cleanup."""
         doc = self._store.get(rid)
         self._store.delete(rid)
-        self._builtin.cleanup_on_delete(rid)
         server_id = doc.cfg_dict.get("server_identifier", "")
         if server_id:
             self._cleanup_orphaned_credential(doc.identity, server_id)
@@ -146,28 +121,19 @@ class ResourcesService:
     def get_visible(
         self, rid: str, *, caller: CallerScope = CallerScope(),
     ) -> Resource:
-        """Get a resource by ID, enforcing draft-builtin visibility and ownership.
+        """Get a resource, enforcing identity-based ownership only.
 
-        Draft built-ins are only visible to admins. Non-admin callers
-        receive a KeyError (404) for draft built-ins.
-
-        When ``caller.identity`` is set, a custom resource owned by a
-        different identity is likewise hidden (KeyError) from non-admin
-        callers — otherwise any authenticated caller could read another
-        user's or team's private resource just by guessing/enumerating its
-        rid. ``caller.identity`` may be ``None`` (defaults to no ownership
-        check) since several internal callers (dependency resolution, card
-        building, blueprint validation) intentionally look up resources
-        without scoping to a single identity.
+        When ``caller.identity`` is set, a resource owned by a different
+        identity is hidden (``KeyError``) from non-admin callers.
+        ``caller.identity`` may be ``None`` (no ownership check) since
+        several internal callers intentionally look up resources without
+        scoping to a single identity.
         """
         resource = self._store.get(rid)
         if caller.is_admin:
             return resource
-        if not self._builtin.is_visible_to(rid, caller.is_admin):
-            raise KeyError(rid)
         if (
             caller.identity is not None
-            and not self._builtin.is_builtin(rid)
             and (
                 resource.identity.type != caller.identity.type
                 or resource.identity.id != caller.identity.id
@@ -176,62 +142,47 @@ class ResourcesService:
             raise KeyError(rid)
         return resource
 
-    def find_resources(self, category: Optional[str] = None,
-                       type: Optional[str] = None, ownership: Optional[str] = None,
-                       limit: int = 50, offset: int = 0,
-                       caller: CallerScope = CallerScope()) -> Tuple[List[dict], int]:
-        """Find resources with optional filtering and pagination, scoped to ``caller.identity``.
+    def find_resources(
+        self,
+        category: Optional[str] = None,
+        type: Optional[str] = None,
+        ownership: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        caller: CallerScope = CallerScope(),
+    ) -> Tuple[List[dict], int]:
+        """List the caller's own resources.  No built-in merging.
 
-        Returns serialized resource dicts. Built-ins include a
-        ``user_configured`` flag indicating whether the caller has an overlay.
-        Draft built-ins are only included when ``ownership=builtin`` is
-        requested by an admin caller (``caller.is_admin``).
+        ``ownership`` is accepted but ignored — it's a built-in concept.
         """
-        category_enum = ResourceCategory(category) if category else None
+        if caller.identity is None:
+            return [], 0
 
-        resources, total = self._builtin.find_visible(
+        category_enum = ResourceCategory(category) if category else None
+        query = ResourceQuery(
             identity=caller.identity,
-            category=category_enum.value if category_enum else None,
-            resource_type=type,
-            ownership=ownership,
-            is_admin=caller.is_admin,
+            category=category_enum,
+            type=type,
             limit=limit,
             offset=offset,
-            sort_by="created",
-            sort_order="desc",
         )
-        return self.to_dicts(resources, identity=caller.identity), total
+        resources, total = self._store.find_resources(query)
+        return self.to_dicts(resources), total
 
     # ---------- resolve ----------
     def resolve(
         self, rid: str, caller: CallerScope = CallerScope(),
     ) -> BaseModel:
-        """Resolve a resource by rid into its validated config model.
-
-        Enforces the same draft-builtin visibility as ``get_visible`` —
-        a non-admin caller cannot resolve (and thereby decrypt) a draft
-        built-in's config just by knowing its rid.
-        """
+        """Resolve a resource by rid into its validated config model."""
         resource = self.get_visible(rid, caller=caller)
         return self.resolve_resource(resource, caller=caller)
 
     def resolve_resource(self, resource: Resource, caller: CallerScope = CallerScope()) -> BaseModel:
         """Resolve an already-fetched ``Resource`` into its validated config model.
 
-        Same behavior as ``resolve(rid, caller)`` but skips the redundant
-        ``_store.get()`` lookup when the caller already has the ``Resource``
-        in hand (e.g. blueprint resolution, which needs the resource itself
-        for category/type/name before resolving its config).
+        Decrypts config and returns the Pydantic model.  No overlay merge.
         """
-        # raw_config_for() decrypts ENCRYPTED_FIELDS values so downstream
-        # elements (e.g. sandboxes, MCP clients) receive plaintext secrets
-        # rather than ciphertext.
         config = self._store.raw_config_for(resource)
-        # For a built-in, merges the caller's per-identity overlay in; a
-        # no-op for a plain custom resource or an anonymous caller. See
-        # `BuiltinResourceService.resolve_config`.
-        config = self._builtin.resolve_config(resource, config, caller.identity)
-
         model_cls = self.element_registry.get_schema(
             ResourceCategory(resource.category), resource.type)
         return model_cls(**config)
@@ -243,7 +194,7 @@ class ResourcesService:
     def exists_by_name(
         self, identity: Identity, category: str, type_: str, name: str,
     ) -> bool:
-        """Whether a resource with *name* already exists for *identity* (name-conflict check)."""
+        """Whether a resource with *name* already exists for *identity*."""
         return self._store.exists_by_name(identity, category, type_, name)
 
     @staticmethod
@@ -261,10 +212,7 @@ class ResourcesService:
         group_by: List[str],
         filter: Dict[str, Any] = None,
     ) -> List[GroupedCount]:
-        """
-        Group resources by specified fields and return counts.
-        Performs efficient server-side grouping via the registry.
-        """
+        """Group resources by specified fields and return counts."""
         return self._store.group_count(identity, group_by, filter)
 
     # ---------- Validation ----------
@@ -276,15 +224,7 @@ class ResourcesService:
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
     ) -> ElementValidationResult:
-        """
-        Validate a saved resource and all its transitive dependencies.
-
-        When ``caller.identity`` is set, built-in overlay configs are merged
-        into the validation context so user-specific settings participate.
-        Draft built-ins are only visible to admins — non-admin callers get
-        a ``KeyError`` (404) rather than being able to probe draft resources
-        through the validation endpoint.
-        """
+        """Validate a saved resource and all its transitive dependencies."""
         self._ensure_validation_service()
 
         self.get_visible(rid, caller=caller)
@@ -309,12 +249,7 @@ class ResourcesService:
         max_workers: int = 10,
         credential_user_id: str = "",
     ) -> List[ElementValidationResult]:
-        """
-        Validate multiple resources in parallel.
-
-        Uses a thread pool for concurrent validation while preserving
-        the order of results to match the input order.
-        """
+        """Validate multiple resources in parallel."""
         self._ensure_validation_service()
 
         if not rids:
@@ -394,12 +329,7 @@ class ResourcesService:
         name: Optional[str] = None,
         timeout_seconds: float = 10.0,
     ) -> ElementValidationResult:
-        """
-        Validate an inline config before saving.
-
-        This validates a resource config without requiring it to be saved first.
-        Useful for UI validation before creating a resource.
-        """
+        """Validate an inline config before saving."""
         self._ensure_validation_service()
 
         category_enum = ResourceCategory(category)
@@ -428,16 +358,7 @@ class ResourcesService:
         rids: List[str],
         caller: CallerScope = CallerScope(),
     ) -> Dict[str, ElementCard]:
-        """
-        Get element cards for a list of resources and their dependencies.
-
-        Enforces draft-builtin visibility on each requested rid (raises
-        ``KeyError`` for a non-admin caller requesting a draft built-in).
-        Resolves all transitive dependencies and builds cards for all
-        elements in dependency order. When ``caller.identity`` is set, each
-        built-in dependency's card reflects the caller's configured overlay
-        rather than always showing the resource's raw defaults.
-        """
+        """Get element cards for a list of resources and their dependencies."""
         self._ensure_card_service()
 
         for rid in rids:
@@ -453,58 +374,28 @@ class ResourcesService:
         rid: str,
         caller: CallerScope = CallerScope(),
     ) -> ElementCard:
-        """
-        Get element card for a single resource.
-
-        Resolves all transitive dependencies and builds cards,
-        returning only the card for the requested resource.
-        """
+        """Get element card for a single resource."""
         cards = self.get_cards([rid], caller=caller)
         if rid not in cards:
             raise KeyError(f"Resource not found: {rid}")
         return cards[rid]
 
     # ---------- Write-access guard ----------
-    #
-    # Generic — used by resources.py for the base resource.update/
-    # resource.delete routes (admins use these to mutate built-in resources
-    # too). Includes the admin edit-lock check for built-in resources so
-    # the adapter layer never inspects resource ownership to decide whether
-    # an additional check is needed.  The admin-only built-in lifecycle
-    # (find_all_builtins, create/promote/demote/update/toggle, schema and
-    # per-identity overlay access) lives entirely on the peer
-    # ``BuiltinResourceService`` now — see ``container.builtin_resource_service``
-    # and ``endpoints/builtins.py``, which inject/consume it directly.
 
     def guard_write_access(
         self, rid: str, caller: CallerScope, *, username: str = "",
     ) -> Resource:
-        """Authorize a mutation (update/delete) on a resource.
+        """Identity-based ownership check only.
 
-        ``username`` is the authenticated individual user (e.g. ``"alice"``),
-        only needed for the admin edit-lock comparison.  The adapter reads it
-        from the request context and passes it here — ``CallerScope`` carries
-        only the domain-level identity + access level.
+        No built-in protection, no admin edit lock check.
 
         Raises:
-            BuiltInWriteProtectedError: resource is built-in and caller is not admin.
-            ResourceAccessDeniedError: resource is a custom resource owned by a
-                different identity (user or team) and caller is not admin.
-            ResourceLockedError: resource is a built-in whose admin edit lock is
-                held by a different admin (409 at the HTTP layer).
-
-        Admins bypass ownership checks but are still subject to the admin
-        edit lock for built-in resources.  Returns the resource so callers
-        that need it (e.g. ``update``) can avoid a second lookup.
+            ResourceAccessDeniedError: resource is owned by a different
+                identity and caller is not admin.
         """
         resource = self._store.get(rid)
-        is_builtin = self._builtin.is_builtin(rid)
         if caller.is_admin:
-            if is_builtin:
-                self._check_admin_edit_lock(rid, username)
             return resource
-        if is_builtin:
-            raise BuiltInWriteProtectedError()
         if (
             caller.identity is None
             or resource.identity.type != caller.identity.type
@@ -512,24 +403,6 @@ class ResourcesService:
         ):
             raise ResourceAccessDeniedError(rid)
         return resource
-
-    def _check_admin_edit_lock(self, rid: str, username: str) -> None:
-        """Raise ``ResourceLockedError`` if another admin holds the edit lock.
-
-        No-ops when the collaboration service (Redis) isn't configured,
-        matching the cooperative lock's 501 fallback behavior.
-        """
-        if self._admin_lock_reader is None:
-            return
-        holder = self._admin_lock_reader.get_admin_edit_lock(rid)
-        if holder is None:
-            return
-        if holder.user_id.casefold() == username.casefold():
-            return
-        raise ResourceLockedError(
-            locked_by_user_id=holder.user_id,
-            locked_by_display_name=holder.display_name,
-        )
 
     # ---------- Internal Helpers ----------
 
@@ -547,22 +420,10 @@ class ResourcesService:
     def to_dict(self, resource: Resource) -> dict:
         """Serialize a single resource to a JSON-ready dict.
 
-        The HTTP/JSON API contract keeps returning ``ownership``/
-        ``visibility`` fields even though ``Resource`` itself no longer
-        carries them (they moved to ``BuiltinResourceDescriptor``) — this
-        stamps them back on from ``self._builtin.get_descriptor(...)`` so
-        every caller (Flask endpoints, tests) sees an unchanged shape.
-        Does not include ``user_configured`` — see ``to_dicts`` for the
-        batch-computed variant used by listing endpoints.
+        No ownership/visibility stamping — see ``BuiltinAwareResourceService``
+        for the decorated version that stamps descriptor metadata.
         """
-        data = resource.model_dump(mode="json")
-        descriptor = self._builtin.get_descriptor(resource.rid)
-        if descriptor is None:
-            data["ownership"] = ResourceOwnership.CUSTOM.value
-        else:
-            data["ownership"] = ResourceOwnership.BUILTIN.value
-            data["visibility"] = descriptor.visibility.value
-        return data
+        return resource.model_dump(mode="json")
 
     def to_dicts(
         self,
@@ -570,25 +431,12 @@ class ResourcesService:
         *,
         identity: Optional[Identity] = None,
     ) -> List[dict]:
-        """Serialize resources, additionally attaching ``user_configured``
-        for built-ins when *identity* is given.
+        """Serialize resources.
 
-        Precomputes the set of built-ins *identity* has configured in a
-        single query rather than one lookup per resource.
+        ``identity`` is accepted but unused — the built-in-aware decorator
+        uses it to attach ``user_configured`` flags.
         """
-        configured_rids: set = set()
-        if identity is not None and self._builtin_user_config_repo:
-            key = identity_to_key(identity)
-            for cfg in self._builtin_user_config_repo.find_by_identity(key):
-                configured_rids.add(cfg.resource_id)
-
-        result = []
-        for doc in resources:
-            data = self.to_dict(doc)
-            if data["ownership"] == ResourceOwnership.BUILTIN.value:
-                data["user_configured"] = doc.rid in configured_rids
-            result.append(data)
-        return result
+        return [self.to_dict(doc) for doc in resources]
 
     def _ensure_validation_service(self) -> None:
         """Raise if validation service not configured."""
@@ -605,46 +453,23 @@ class ResourcesService:
     ) -> List[ElementConfigMeta]:
         """Build ElementConfigMeta list from saved resource rids.
 
-        Enforces draft-builtin visibility on every rid — including
-        transitive dependencies, not just the originally requested one —
-        via ``get_visible`` so a non-admin caller can't reach a draft
-        built-in's (decrypted) config through a dependency chain.
-
-        For a built-in resource, also checks whether the resolved config is
-        still missing a required per-identity secret (e.g. an MCP bearer
-        token nobody configured for this caller) — see
-        ``BuiltinResourceService.find_missing_required_overlay_fields``.
-        For a custom resource, the equivalent check is scoped to the schema
-        itself rather than an overlay — see
-        ``ResourceFieldEncryption.find_missing_conditionally_required_secrets``
-        — since the caller's own resource simply has the field left empty
-        (e.g. they picked "access token" auth but never filled in a bearer
-        token). Either way, the config is flagged with
-        ``validation_override_error`` so validation fails deterministically
-        instead of letting the element's validator probe a connection it
-        was never meant to make (which could accidentally "succeed"
-        against a server that happens to tolerate unauthenticated
-        requests).
+        Checks whether the resolved config is missing a required secret —
+        see ``ResourceFieldEncryption.find_missing_conditionally_required_secrets``.
         """
         configs: List[ElementConfigMeta] = []
         for rid in rids:
             resource = self.get_visible(rid, caller=caller)
             config = self.resolve_resource(resource, caller=caller)
 
-            if self._builtin.is_builtin(rid):
-                override_error = self._builtin.validation_override_error(
-                    resource, config, caller.identity
+            override_error = None
+            missing = self._fields.find_missing_conditionally_required_secrets(
+                resource.category, resource.type, config
+            )
+            if missing:
+                override_error = (
+                    f"{', '.join(missing)} is required for '{resource.name}' — "
+                    f"set it in the resource's configuration before it can be validated."
                 )
-            else:
-                override_error = None
-                missing = self._fields.find_missing_conditionally_required_secrets(
-                    resource.category, resource.type, config
-                )
-                if missing:
-                    override_error = (
-                        f"{', '.join(missing)} is required for '{resource.name}' — "
-                        f"set it in the resource's configuration before it can be validated."
-                    )
 
             configs.append(ElementConfigMeta(
                 rid=rid,
@@ -678,4 +503,3 @@ class ResourcesService:
         )
         results = self._validation_service.validate_ordered(ordered_configs, context)
         return results[target_rid]
-

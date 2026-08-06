@@ -31,7 +31,8 @@ from mas.resources.errors import (
     BuiltinDependentsPublicError,
 )
 from mas.resources.models import Resource
-from mas.resources.service import ResourcesService
+from mas.resources.service import CoreResourceService
+from mas.resources.builtin_aware_service import BuiltinAwareResourceService
 from mas.resources.field_encryption import ResourceFieldEncryption
 from mas.resources.builtin_models import BuiltinUpdateRequest, identity_to_key
 
@@ -138,14 +139,18 @@ class TestGuardWriteAccessAdminLock:
 
     @pytest.fixture
     def service_with_lock(
-        self, resource_registry, element_registry, builtin_user_config_repo, builtin_service, lock_reader,
+        self, resource_registry, element_registry, builtin_user_config_repo,
+        builtin_resource_descriptor_repo, lock_reader,
     ):
         field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
-        return ResourcesService(
+        core = CoreResourceService(
             resource_registry=resource_registry,
             element_registry=element_registry,
-            builtin_service=builtin_service,
             field_encryption=field_encryption,
+        )
+        return BuiltinAwareResourceService(
+            core,
+            descriptor_repo=builtin_resource_descriptor_repo,
             builtin_user_config_repo=builtin_user_config_repo,
             admin_lock_reader=lock_reader,
         )

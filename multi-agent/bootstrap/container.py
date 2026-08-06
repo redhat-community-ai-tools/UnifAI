@@ -28,7 +28,8 @@ from mas.session.management import UserSessionManager
 from mas.session.execution import SessionLifecycle, ForegroundSessionRunner, SessionInputProjector
 from mas.session.service import SessionService
 from mas.resources.registry import ResourcesRegistry
-from mas.resources.service import ResourcesService
+from mas.resources.service import CoreResourceService
+from mas.resources.builtin_aware_service import BuiltinAwareResourceService
 from mas.resources.field_encryption import ResourceFieldEncryption
 from mas.graph.service import GraphService
 from mas.graph.validation.service import GraphValidationService
@@ -256,15 +257,22 @@ class AppContainer(metaclass=SingletonMeta):
             edit_lock_ttl=cfg.collaboration_edit_lock_ttl_sec,
         ) if self._collab_store else None
 
-        self.resources_service = ResourcesService(
+        # 1. Always build the core service (pure, no built-in deps)
+        core_resource_service = CoreResourceService(
             resource_registry=resource_registry,
             element_registry=self.element_registry,
-            builtin_service=self.builtin_resource_service,
             field_encryption=field_encryption,
-            builtin_user_config_repo=self.builtin_user_config_repo,
             validation_service=self.validation_service,
             card_service=self.card_service,
             auth_service=self.auth_service,
+        )
+
+        # 2. Wrap with built-in policies.  If the built-in feature were
+        #    removed: self.resources_service = core_resource_service
+        self.resources_service = BuiltinAwareResourceService(
+            core_resource_service,
+            descriptor_repo=self.builtin_resource_descriptor_repo,
+            builtin_user_config_repo=self.builtin_user_config_repo,
             admin_lock_reader=self.admin_edit_lock_service,
         )
 

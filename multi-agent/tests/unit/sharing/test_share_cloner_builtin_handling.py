@@ -13,7 +13,7 @@ import pytest
 from mas.sharing.cloner import ShareCloner, CloneContext, ShareCloneError
 from mas.resources.builtin_models import BuiltinResourceDescriptor
 from mas.resources.models import Resource
-from mas.resources.service import ResourcesService
+from mas.resources.service import CoreResourceService
 from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.identity import Identity
@@ -21,10 +21,10 @@ from mas.core.enums import ResourceCategory, ResourceVisibility
 
 
 def _build_cloner(
-    resources_service: Optional[ResourcesService] = None,
+    resources_service: Optional[CoreResourceService] = None,
     descriptors: Optional[Dict[str, BuiltinResourceDescriptor]] = None,
-) -> Tuple[ShareCloner, ResourcesService, ElementRegistry, MagicMock]:
-    resources_service = resources_service or create_autospec(ResourcesService, instance=True)
+) -> Tuple[ShareCloner, CoreResourceService, ElementRegistry, MagicMock]:
+    resources_service = resources_service or create_autospec(CoreResourceService, instance=True)
     bp_service = create_autospec(BlueprintService, instance=True)
     element_registry = create_autospec(ElementRegistry, instance=True)
 

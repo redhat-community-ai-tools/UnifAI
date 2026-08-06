@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 from mas.sharing.cloner import ShareCloner
 from mas.resources.models import Resource
-from mas.resources.service import ResourcesService
+from mas.resources.service import CoreResourceService
 from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.identity import Identity
@@ -30,7 +30,7 @@ def _make_resource(rid: str) -> Resource:
 
 
 def _build_cloner() -> Tuple[ShareCloner, MagicMock]:
-    resources_service = create_autospec(ResourcesService, instance=True)
+    resources_service = create_autospec(CoreResourceService, instance=True)
     bp_service = create_autospec(BlueprintService, instance=True)
     element_registry = create_autospec(ElementRegistry, instance=True)
     # Not exercised by these batch-rollback tests (they operate purely on

@@ -17,8 +17,9 @@ from mas.core.identity import Identity
 from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, CardContext, combine_hints
 from mas.resources.models import Resource, ResourceQuery
 from mas.resources.registry import ResourcesRegistry
-from mas.resources.service import ResourcesService
+from mas.resources.service import CoreResourceService
 from mas.resources.builtin_service import BuiltinResourceService
+from mas.resources.builtin_aware_service import BuiltinAwareResourceService
 from mas.resources.builtin_models import BuiltinResourceDescriptor, BuiltinUserConfig
 from mas.resources.field_encryption import ResourceFieldEncryption
 from mas.resources.repository.builtin_resource_descriptor_repository import (
@@ -400,29 +401,38 @@ def builtin_service_without_config_repo(
 
 
 @pytest.fixture
-def service(resource_registry, element_registry, builtin_user_config_repo, builtin_service) -> ResourcesService:
+def service(
+    resource_registry, element_registry, builtin_user_config_repo,
+    builtin_resource_descriptor_repo,
+) -> BuiltinAwareResourceService:
     field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
-    return ResourcesService(
+    core = CoreResourceService(
         resource_registry=resource_registry,
         element_registry=element_registry,
-        builtin_service=builtin_service,
         field_encryption=field_encryption,
-        builtin_user_config_repo=builtin_user_config_repo,
         validation_service=Mock(spec=ElementValidationService),
         card_service=Mock(spec=ElementCardService),
+    )
+    return BuiltinAwareResourceService(
+        core,
+        descriptor_repo=builtin_resource_descriptor_repo,
+        builtin_user_config_repo=builtin_user_config_repo,
     )
 
 
 @pytest.fixture
 def service_without_config_repo(
-    resource_registry, element_registry, builtin_service_without_config_repo,
-) -> ResourcesService:
+    resource_registry, element_registry, builtin_resource_descriptor_repo,
+) -> BuiltinAwareResourceService:
     """A service with no ``builtin_user_config_repo`` configured."""
     field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
-    return ResourcesService(
+    core = CoreResourceService(
         resource_registry=resource_registry,
         element_registry=element_registry,
-        builtin_service=builtin_service_without_config_repo,
         field_encryption=field_encryption,
+    )
+    return BuiltinAwareResourceService(
+        core,
+        descriptor_repo=builtin_resource_descriptor_repo,
         builtin_user_config_repo=None,
     )

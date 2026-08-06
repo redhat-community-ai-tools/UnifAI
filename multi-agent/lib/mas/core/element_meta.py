@@ -9,7 +9,7 @@ Used by:
 - Any service that needs to process element configs
 """
 
-from typing import List, Any
+from typing import List, Any, Optional
 
 from pydantic import BaseModel, Field, ConfigDict
 
@@ -33,7 +33,7 @@ class ElementConfigMeta(BaseModel):
     name: str
     config: Any
     dependency_rids: List[str] = Field(default_factory=list)
-    validation_override_error: str | None = Field(
+    validation_override_error: Optional[str] = Field(
         default=None,
         description=(
             "When set, ElementValidationService.validate() skips the "
