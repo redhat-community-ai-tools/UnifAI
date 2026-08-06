@@ -31,6 +31,7 @@ from mas.resources.errors import (
     BuiltinDependentsPublicError,
 )
 from mas.resources.models import Resource
+from mas.resources.registry import ResourcesRegistry
 from mas.resources.service import CoreResourceService
 from mas.resources.builtin_aware_service import BuiltinAwareResourceService
 from mas.resources.field_encryption import ResourceFieldEncryption
@@ -134,14 +135,18 @@ class TestGuardWriteAccessAdminLock:
     ``ResourceLockedError`` if another admin holds the cooperative lock."""
 
     @pytest.fixture
-    def lock_reader(self):
+    def lock_reader(self) -> Mock:
         return Mock()
 
     @pytest.fixture
     def service_with_lock(
-        self, resource_registry, element_registry, builtin_user_config_repo,
-        builtin_resource_descriptor_repo, lock_reader,
-    ):
+        self,
+        resource_registry: ResourcesRegistry,
+        element_registry: "FakeElementRegistry",
+        builtin_user_config_repo: "FakeBuiltinUserConfigRepository",
+        builtin_resource_descriptor_repo: "FakeBuiltinResourceDescriptorRepository",
+        lock_reader: Mock,
+    ) -> BuiltinAwareResourceService:
         field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
         core = CoreResourceService(
             resource_registry=resource_registry,

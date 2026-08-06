@@ -78,7 +78,7 @@ class CoreResourceService:
         """
         return self._store.create(resource)
 
-    def update(self, rid: str, *, config: dict, name: str = None) -> Resource:
+    def update(self, rid: str, *, config: dict, name: Optional[str] = None) -> Resource:
         doc = self._store.get(rid)
         old_server_id = doc.cfg_dict.get("server_identifier", "")
 
@@ -315,10 +315,11 @@ class CoreResourceService:
                 rid=rid,
                 error=f"Resource not found: {rid}"
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("Unexpected error validating resource %s", rid)
             return ElementValidationResult.create_error(
                 rid=rid,
-                error=f"Validation failed: {str(e)}"
+                error="Validation failed due to an internal error.",
             )
 
     def validate_config(

@@ -63,19 +63,28 @@ class MongoBuiltinUserConfigRepository(BuiltinUserConfigRepositoryPort):
                 return_document=pymongo.ReturnDocument.AFTER,
             )
         except pymongo.errors.DuplicateKeyError:
-            doc = self.col.find_one_and_update(
-                filter_doc, update_doc,
-                upsert=True,
-                return_document=pymongo.ReturnDocument.AFTER,
-            )
-        except pymongo.errors.PyMongoError:
+            try:
+                doc = self.col.find_one_and_update(
+                    filter_doc, update_doc,
+                    upsert=True,
+                    return_document=pymongo.ReturnDocument.AFTER,
+                )
+            except pymongo.errors.PyMongoError as e:
+                logger.exception(
+                    "Mongo error on retry saving BuiltinUserConfig for resource=%s",
+                    config.resource_id,
+                )
+                raise RuntimeError(
+                    f"Failed to save BuiltinUserConfig for resource={config.resource_id}"
+                ) from e
+        except pymongo.errors.PyMongoError as e:
             logger.exception(
                 "Mongo error saving BuiltinUserConfig for resource=%s",
                 config.resource_id,
             )
             raise RuntimeError(
                 f"Failed to save BuiltinUserConfig for resource={config.resource_id}"
-            )
+            ) from e
         return doc["config_id"]
 
     def get(self, resource_id: str, identity_key: str) -> Optional[BuiltinUserConfig]:

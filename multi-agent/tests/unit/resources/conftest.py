@@ -402,8 +402,10 @@ def builtin_service_without_config_repo(
 
 @pytest.fixture
 def service(
-    resource_registry, element_registry, builtin_user_config_repo,
-    builtin_resource_descriptor_repo,
+    resource_registry: ResourcesRegistry,
+    element_registry: FakeElementRegistry,
+    builtin_user_config_repo: FakeBuiltinUserConfigRepository,
+    builtin_resource_descriptor_repo: FakeBuiltinResourceDescriptorRepository,
 ) -> BuiltinAwareResourceService:
     field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))
     core = CoreResourceService(
@@ -422,7 +424,9 @@ def service(
 
 @pytest.fixture
 def service_without_config_repo(
-    resource_registry, element_registry, builtin_resource_descriptor_repo,
+    resource_registry: ResourcesRegistry,
+    element_registry: FakeElementRegistry,
+    builtin_resource_descriptor_repo: FakeBuiltinResourceDescriptorRepository,
 ) -> BuiltinAwareResourceService:
     """A service with no ``builtin_user_config_repo`` configured."""
     field_encryption = ResourceFieldEncryption(element_registry, FieldCipher(TEST_ENCRYPTION_KEY))

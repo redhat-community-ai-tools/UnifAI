@@ -46,8 +46,8 @@ class StatisticsService:
         self,
         blueprint_service: BlueprintService,
         session_service: SessionService,
-        resources_service: CoreResourceService
-    ):
+        resources_service: CoreResourceService,
+    ) -> None:
         """
         Initialize the StatisticsService.
 

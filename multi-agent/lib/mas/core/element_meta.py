@@ -38,10 +38,10 @@ class ElementConfigMeta(BaseModel):
         description=(
             "When set, ElementValidationService.validate() skips the "
             "element's real validator entirely and fails immediately with "
-            "this message. Lets a caller (e.g. ResourcesService, for a "
-            "built-in resource missing a required per-identity credential "
-            "overlay) veto validation up front without teaching the "
-            "generic validation service about resource/built-in concepts."
+            "this message. Lets a caller (e.g. BuiltinAwareResourceService, "
+            "for a built-in resource missing a required per-identity "
+            "credential overlay) veto validation up front without teaching "
+            "the generic validation service about resource/built-in concepts."
         ),
     )
 

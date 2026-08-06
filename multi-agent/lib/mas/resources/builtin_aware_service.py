@@ -79,7 +79,7 @@ class BuiltinAwareResourceService:
         self._user_configs = builtin_user_config_repo
         self._admin_lock_reader = admin_lock_reader
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         """Delegate any attribute not found on the decorator to the inner service."""
         return getattr(self._inner, name)
 
@@ -93,7 +93,7 @@ class BuiltinAwareResourceService:
     # Methods already overridden or re-implemented below are NOT repeated
     # here — only the pure pass-through ones.
 
-    def create(self, *, identity: Identity, category, type, name, config) -> Resource:
+    def create(self, *, identity: Identity, category: str, type: str, name: str, config: dict) -> Resource:
         return self._inner.create(
             identity=identity, category=category, type=type, name=name, config=config,
         )
@@ -101,7 +101,7 @@ class BuiltinAwareResourceService:
     def save_resource(self, resource: Resource) -> Resource:
         return self._inner.save_resource(resource)
 
-    def update(self, rid: str, *, config: dict, name: str = None) -> Resource:
+    def update(self, rid: str, *, config: dict, name: Optional[str] = None) -> Resource:
         return self._inner.update(rid, config=config, name=name)
 
     def get(self, rid: str) -> Resource:
@@ -340,9 +340,10 @@ class BuiltinAwareResourceService:
             return ElementValidationResult.create_error(
                 rid=rid, error=f"Resource not found: {rid}",
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("Unexpected error validating resource %s", rid)
             return ElementValidationResult.create_error(
-                rid=rid, error=f"Validation failed: {str(e)}",
+                rid=rid, error="Validation failed due to an internal error.",
             )
 
     def validate_config(

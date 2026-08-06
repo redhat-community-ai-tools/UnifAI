@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import { getPromptShortcuts, PromptShortcut } from "@/api/blueprints";
 import {
@@ -124,21 +124,29 @@ export function useSchedulePromptForm({
     }
   }, [isOpen, editPrompt]);
 
+  const shortcutScopeRef = useRef(0);
+
   useEffect(() => {
+    shortcutScopeRef.current += 1;
     setShortcuts([]);
     setShortcutsLoading(false);
   }, [blueprintId, teamId]);
 
   const loadShortcuts = useCallback(async () => {
     if (shortcuts.length > 0 || shortcutsLoading) return;
+    const scope = shortcutScopeRef.current;
     setShortcutsLoading(true);
     try {
       const result = await getPromptShortcuts(blueprintId, teamId);
+      if (scope !== shortcutScopeRef.current) return;
       setShortcuts(result.prompts);
     } catch {
+      if (scope !== shortcutScopeRef.current) return;
       setShortcuts([]);
     } finally {
-      setShortcutsLoading(false);
+      if (scope === shortcutScopeRef.current) {
+        setShortcutsLoading(false);
+      }
     }
   }, [blueprintId, teamId, shortcuts.length, shortcutsLoading]);
 
