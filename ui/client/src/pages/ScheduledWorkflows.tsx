@@ -256,7 +256,7 @@ function ActionsCell({
 const QUERY_KEY_PREFIX = "scheduled-prompts" as const;
 
 export default function ScheduledWorkflows() {
-  const { teamId } = useWorkspaceIdentity();
+  const { teamId, userId } = useWorkspaceIdentity();
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -279,12 +279,13 @@ export default function ScheduledWorkflows() {
   const [expandedPromptId, setExpandedPromptId] = useState<string | null>(null);
 
 
+  const scopeKey = teamId ?? userId;
   const queryKey = useMemo(
-    () => [QUERY_KEY_PREFIX, teamId] as const,
-    [teamId],
+    () => [QUERY_KEY_PREFIX, scopeKey] as const,
+    [scopeKey],
   );
 
-  const { data: prompts = [], isLoading } = useQuery<WorkflowScheduleResponse[]>({
+  const { data: prompts = [], isLoading, isError, refetch } = useQuery<WorkflowScheduleResponse[]>({
     queryKey,
     queryFn: () => listSchedules(teamId),
     refetchInterval: 30_000,
@@ -297,7 +298,7 @@ export default function ScheduledWorkflows() {
   );
 
   const { data: resolvedSpec } = useQuery({
-    queryKey: ["resolved-blueprint", expandedPrompt?.blueprint_id],
+    queryKey: ["resolved-blueprint", scopeKey, expandedPrompt?.blueprint_id],
     queryFn: () => fetchResolvedBlueprint(expandedPrompt!.blueprint_id, teamId),
     enabled: !!expandedPrompt,
     staleTime: 5 * 60_000,
@@ -539,7 +540,15 @@ export default function ScheduledWorkflows() {
               </div>
             </div>
 
-            {isLoading ? (
+            {isError ? (
+              <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+                <Clock className="w-6 h-6 mb-3 text-red-400" />
+                <p className="mb-2">Failed to load scheduled workflows</p>
+                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                  <RotateCw className="w-3.5 h-3.5 mr-1.5" /> Retry
+                </Button>
+              </div>
+            ) : isLoading ? (
               <div className="flex flex-col items-center justify-center py-20 text-gray-500">
                 <Clock className="w-6 h-6 mb-3 animate-spin" />
                 Loading scheduled workflows…

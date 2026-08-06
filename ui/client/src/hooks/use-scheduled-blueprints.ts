@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { listSchedules } from "@/api/schedules";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 
 /**
  * Returns the set of blueprint IDs that have at least one active scheduled prompt
@@ -9,8 +10,11 @@ import { listSchedules } from "@/api/schedules";
 export function useScheduledBlueprints(
   teamId?: string,
 ): Set<string> {
+  const { userId } = useWorkspaceIdentity();
+  const scopeKey = teamId ?? userId;
+
   const { data = new Set<string>() } = useQuery({
-    queryKey: ["scheduled-prompts", teamId],
+    queryKey: ["scheduled-prompts", scopeKey],
     queryFn: () => listSchedules(teamId),
     select: (prompts) =>
       new Set(
@@ -30,8 +34,11 @@ export function useScheduledBlueprints(
 export function useScheduledBlueprintCounts(
   teamId?: string,
 ): Map<string, number> {
+  const { userId } = useWorkspaceIdentity();
+  const scopeKey = teamId ?? userId;
+
   const { data = new Map<string, number>() } = useQuery({
-    queryKey: ["scheduled-prompts", teamId],
+    queryKey: ["scheduled-prompts", scopeKey],
     queryFn: () => listSchedules(teamId),
     select: (prompts) => {
       const counts = new Map<string, number>();

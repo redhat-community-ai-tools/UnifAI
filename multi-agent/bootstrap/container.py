@@ -10,7 +10,13 @@ points (run/dev.py, run/wsgi.py, inbound/temporal/__main__.py, …)
 create an AppContainer and pass it — or individual services from it —
 into the layers that need them.
 """
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mas.scheduling.ports import ScheduleEngine
 
 from mas.catalog.element_registry import ElementRegistry
 from mas.catalog.service import CatalogService
@@ -502,7 +508,7 @@ class AppContainer(metaclass=SingletonMeta):
         return None
 
     @staticmethod
-    def _create_schedule_adapter(engine_name: str) -> "ScheduleEngine":
+    def _create_schedule_adapter(engine_name: str) -> ScheduleEngine:
         if engine_name == "temporal":
             from outbound.temporal.schedule_adapter import TemporalScheduleAdapter
             return TemporalScheduleAdapter()
@@ -512,7 +518,7 @@ class AppContainer(metaclass=SingletonMeta):
     @staticmethod
     def _build_identity_auth_provider(
         cfg: AppConfig, identity_client: IdentityClient
-    ) -> "IdentityProvider":
+    ) -> IdentityProvider:
         """Build the IdentityProvider adapter based on configuration.
 
         - "pod"  → production HTTP adapter (requires Identity pod)

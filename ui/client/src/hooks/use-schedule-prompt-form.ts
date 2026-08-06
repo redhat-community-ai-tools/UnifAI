@@ -124,6 +124,11 @@ export function useSchedulePromptForm({
     }
   }, [isOpen, editPrompt]);
 
+  useEffect(() => {
+    setShortcuts([]);
+    setShortcutsLoading(false);
+  }, [blueprintId, teamId]);
+
   const loadShortcuts = useCallback(async () => {
     if (shortcuts.length > 0 || shortcutsLoading) return;
     setShortcutsLoading(true);
