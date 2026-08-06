@@ -306,6 +306,7 @@ class AppContainer(metaclass=SingletonMeta):
             foreground_runner=foreground_runner,
             input_projector=self.input_projector,
             background_engine=background_engine,
+            tracing_service=self.tracing_service,
         )
 
         self.redis_kv_store = RedisKVStore(build_redis_client())

@@ -181,3 +181,14 @@ class LangfuseTracingService(TracingService):
 
     def flush(self) -> None:
         self._client.flush()
+
+    # ── cost lookup ──────────────────────────────────────────────
+
+    def get_session_cost(self, session_id: str) -> Optional[float]:
+        trace_id = self._client.create_trace_id(seed=session_id)
+        try:
+            trace = self._client.api.trace.get(trace_id, fields="core,metrics")
+            return float(trace.total_cost or 0)
+        except Exception:
+            logger.debug("Trace for session %s not found in Langfuse", session_id)
+            return None
