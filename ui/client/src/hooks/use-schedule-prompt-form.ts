@@ -20,8 +20,7 @@ import {
 interface UseSchedulePromptFormArgs {
   isOpen: boolean;
   blueprintId: string;
-  userId?: string;
-  identityType?: string;
+  teamId?: string;
   editPrompt?: WorkflowScheduleResponse | null;
   onClose: (saved?: boolean) => void;
 }
@@ -33,8 +32,7 @@ interface UseSchedulePromptFormArgs {
 export function useSchedulePromptForm({
   isOpen,
   blueprintId,
-  userId,
-  identityType,
+  teamId,
   editPrompt,
   onClose,
 }: UseSchedulePromptFormArgs) {
@@ -130,14 +128,14 @@ export function useSchedulePromptForm({
     if (shortcuts.length > 0 || shortcutsLoading) return;
     setShortcutsLoading(true);
     try {
-      const result = await getPromptShortcuts(blueprintId, userId, identityType);
+      const result = await getPromptShortcuts(blueprintId, teamId);
       setShortcuts(result.prompts);
     } catch {
       setShortcuts([]);
     } finally {
       setShortcutsLoading(false);
     }
-  }, [blueprintId, userId, identityType, shortcuts.length, shortcutsLoading]);
+  }, [blueprintId, teamId, shortcuts.length, shortcutsLoading]);
 
   const handlePromptTextChange = useCallback((text: string) => {
     setPromptText(text);
@@ -245,15 +243,13 @@ export function useSchedulePromptForm({
       if (isEditMode && editPrompt) {
         await updateSchedule(
           { scheduleId: editPrompt.id, inputs: { user_prompt: promptText }, schedule },
-          userId,
-          identityType,
+          teamId,
         );
       } else {
         const source = copiedFromShortcut ? "shortcut_copy" : "manual";
         await createSchedule(
           { blueprintId, inputs: { user_prompt: promptText }, source, schedule },
-          userId,
-          identityType,
+          teamId,
         );
       }
       onClose(true);
@@ -265,7 +261,7 @@ export function useSchedulePromptForm({
     }
   }, [
     promptText, combinedDateTime, timezone, recurrence, customRecurrence, overlapPolicy,
-    isEditMode, editPrompt, userId, identityType, copiedFromShortcut, blueprintId, onClose,
+    isEditMode, editPrompt, teamId, copiedFromShortcut, blueprintId, onClose,
   ]);
 
   return {

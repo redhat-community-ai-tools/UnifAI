@@ -256,7 +256,7 @@ function ActionsCell({
 const QUERY_KEY_PREFIX = "scheduled-prompts" as const;
 
 export default function ScheduledWorkflows() {
-  const { userId, identityType } = useWorkspaceIdentity();
+  const { teamId } = useWorkspaceIdentity();
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -268,7 +268,7 @@ export default function ScheduledWorkflows() {
   // Workflow picker state (AddFlowModal)
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedFlowForPicker, setSelectedFlowForPicker] = useState<FlowObject | null>(null);
-  const scheduleCounts = useScheduledBlueprintCounts(userId, identityType);
+  const scheduleCounts = useScheduledBlueprintCounts(teamId);
   const isPickerFlowAtLimit = selectedFlowForPicker
     ? (scheduleCounts.get(selectedFlowForPicker.id) ?? 0) >= MAX_ACTIVE_SCHEDULES_PER_WORKFLOW
     : false;
@@ -280,13 +280,13 @@ export default function ScheduledWorkflows() {
 
 
   const queryKey = useMemo(
-    () => [QUERY_KEY_PREFIX, userId, identityType] as const,
-    [userId, identityType],
+    () => [QUERY_KEY_PREFIX, teamId] as const,
+    [teamId],
   );
 
   const { data: prompts = [], isLoading } = useQuery<WorkflowScheduleResponse[]>({
     queryKey,
-    queryFn: () => listSchedules(userId, identityType),
+    queryFn: () => listSchedules(teamId),
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
@@ -298,7 +298,7 @@ export default function ScheduledWorkflows() {
 
   const { data: resolvedSpec } = useQuery({
     queryKey: ["resolved-blueprint", expandedPrompt?.blueprint_id],
-    queryFn: () => fetchResolvedBlueprint(expandedPrompt!.blueprint_id, userId, identityType),
+    queryFn: () => fetchResolvedBlueprint(expandedPrompt!.blueprint_id, teamId),
     enabled: !!expandedPrompt,
     staleTime: 5 * 60_000,
   });
@@ -332,21 +332,21 @@ export default function ScheduledWorkflows() {
   const handleTrigger = useCallback(
     async (id: string) => {
       try {
-        await triggerSchedule(id, userId, identityType);
+        await triggerSchedule(id, teamId);
         toast({ title: "Triggered", description: "Schedule run started" });
         invalidate();
       } catch {
         toast({ title: "Error", description: "Failed to trigger schedule", variant: "destructive" });
       }
     },
-    [userId, identityType, toast, invalidate],
+    [teamId, toast, invalidate],
   );
 
   const handlePause = useCallback(
     async (id: string) => {
       optimisticUpdate(id, { schedule_status: ScheduleStatus.Paused });
       try {
-        await pauseSchedule(id, userId, identityType);
+        await pauseSchedule(id, teamId);
         toast({ title: "Paused", description: "Schedule paused" });
         invalidate();
       } catch {
@@ -354,14 +354,14 @@ export default function ScheduledWorkflows() {
         invalidate();
       }
     },
-    [userId, identityType, toast, invalidate, optimisticUpdate],
+    [teamId, toast, invalidate, optimisticUpdate],
   );
 
   const handleResume = useCallback(
     async (id: string) => {
       optimisticUpdate(id, { schedule_status: ScheduleStatus.Active });
       try {
-        await resumeSchedule(id, userId, identityType);
+        await resumeSchedule(id, teamId);
         toast({ title: "Resumed", description: "Schedule resumed" });
         invalidate();
       } catch {
@@ -369,7 +369,7 @@ export default function ScheduledWorkflows() {
         invalidate();
       }
     },
-    [userId, identityType, toast, invalidate, optimisticUpdate],
+    [teamId, toast, invalidate, optimisticUpdate],
   );
 
   const handleDeleteConfirmed = useCallback(
@@ -377,7 +377,7 @@ export default function ScheduledWorkflows() {
       if (!deleteTarget) return;
       optimisticUpdate(deleteTarget, { schedule_status: ScheduleStatus.Completed });
       try {
-        await deleteSchedule(deleteTarget, userId, identityType);
+        await deleteSchedule(deleteTarget, teamId);
         toast({ title: "Deleted", description: "Scheduled prompt removed" });
         invalidate();
       } catch {
@@ -387,7 +387,7 @@ export default function ScheduledWorkflows() {
         setDeleteTarget(null);
       }
     },
-    [deleteTarget, userId, identityType, toast, invalidate, optimisticUpdate],
+    [deleteTarget, teamId, toast, invalidate, optimisticUpdate],
   );
 
   const handleEdit = useCallback((prompt: WorkflowScheduleResponse) => {
@@ -577,8 +577,7 @@ export default function ScheduledWorkflows() {
                         <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Run History</h4>
                         <RunHistoryPanel
                           promptId={prompt.id}
-                          userId={userId}
-                          identityType={identityType}
+                          teamId={teamId}
                         />
                       </div>
                       <div>
@@ -626,8 +625,7 @@ export default function ScheduledWorkflows() {
           onClose={closeScheduleModal}
           blueprintId={selectedBlueprint.id}
           blueprintName={selectedBlueprint.name}
-          userId={userId}
-          identityType={identityType}
+          teamId={teamId}
           editPrompt={editPrompt}
         />
       )}

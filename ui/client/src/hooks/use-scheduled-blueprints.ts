@@ -7,12 +7,11 @@ import { listSchedules } from "@/api/schedules";
  * ScheduledWorkflows so cross-component invalidation works automatically.
  */
 export function useScheduledBlueprints(
-  userId: string,
-  identityType: string,
+  teamId?: string,
 ): Set<string> {
   const { data = new Set<string>() } = useQuery({
-    queryKey: ["scheduled-prompts", userId, identityType],
-    queryFn: () => listSchedules(userId, identityType),
+    queryKey: ["scheduled-prompts", teamId],
+    queryFn: () => listSchedules(teamId),
     select: (prompts) =>
       new Set(
         prompts
@@ -29,12 +28,11 @@ export function useScheduledBlueprints(
  * Shares the same query cache as useScheduledBlueprints / ScheduledWorkflows.
  */
 export function useScheduledBlueprintCounts(
-  userId: string,
-  identityType: string,
+  teamId?: string,
 ): Map<string, number> {
   const { data = new Map<string, number>() } = useQuery({
-    queryKey: ["scheduled-prompts", userId, identityType],
-    queryFn: () => listSchedules(userId, identityType),
+    queryKey: ["scheduled-prompts", teamId],
+    queryFn: () => listSchedules(teamId),
     select: (prompts) => {
       const counts = new Map<string, number>();
       for (const p of prompts) {
