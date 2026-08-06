@@ -37,7 +37,7 @@ class ResourceMaterializer:
 
     UNIQUE_SUFFIX_LENGTH = 8
 
-    def __init__(self, resources_service: CoreResourceService):
+    def __init__(self, resources_service: CoreResourceService) -> None:
         self._resources = resources_service
 
     def materialize(self, draft: BlueprintDraft, identity: Identity) -> MaterializationResult:

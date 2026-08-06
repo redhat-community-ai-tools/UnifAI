@@ -121,7 +121,7 @@ class MongoBuiltinResourceDescriptorRepository(BuiltinResourceDescriptorReposito
         default/custom modes must include the identity's own non-built-in
         resources, which have no descriptor to anchor on at all.
         """
-        if limit is not None and limit < 0:
+        if limit < 0:
             raise ValueError(f"limit must be non-negative, got {limit}")
 
         base_match: Dict[str, Any] = {}

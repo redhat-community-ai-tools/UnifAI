@@ -52,7 +52,7 @@ class CoreResourceService:
         self._fields = field_encryption
 
     # ---------- CRUD ----------
-    def create(self, *, identity: Identity, category, type, name, config) -> Resource:
+    def create(self, *, identity: Identity, category: str, type: str, name: str, config: dict) -> Resource:
         model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
         cfg_model = model_cls(**config)
 

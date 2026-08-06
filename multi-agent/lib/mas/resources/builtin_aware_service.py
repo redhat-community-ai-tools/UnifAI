@@ -81,7 +81,11 @@ class BuiltinAwareResourceService:
 
     def __getattr__(self, name: str) -> Any:
         """Delegate any attribute not found on the decorator to the inner service."""
-        return getattr(self._inner, name)
+        try:
+            inner = self.__dict__["_inner"]
+        except KeyError:
+            raise AttributeError(name) from None
+        return getattr(inner, name)
 
     # ── Protocol-required delegations ────────────────────────────────────
     #
