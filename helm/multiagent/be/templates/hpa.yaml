@@ -36,7 +36,7 @@ spec:
       policies:
         - type: Pods
           value: {{ .Values.autoscaling.behavior.scaleUp.maxPodsPerMinute | default 1 }}
-          periodSeconds: 60
+          periodSeconds: {{ .Values.autoscaling.behavior.scaleUp.periodSeconds | default 60 }}
     scaleDown:
       stabilizationWindowSeconds: {{ .Values.autoscaling.behavior.scaleDown.stabilizationWindowSeconds | default 300 }}
       policies:
