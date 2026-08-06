@@ -46,6 +46,8 @@ export const transformSessionData = (
   const blueprintExists = sessionData.blueprint_exists;
   const fromSharedLink = sessionData.metadata?.source === 'public_link';
   const hitlEnabled = sessionData.metadata?.hitl_enabled === true;
+  const fromSchedule = sessionData.metadata?.source === 'schedule';
+  const status = sessionData.status;
   const activityTimestamp = sessionData.last_active_at || sessionData.started_at;
   const timestamp = new Date(activityTimestamp);
   const lastActive = formatRelativeTimestamp(activityTimestamp);
@@ -62,6 +64,8 @@ export const transformSessionData = (
     blueprintExists,
     fromSharedLink,
     hitlEnabled,
+    fromSchedule,
+    status,
   };
 };
 

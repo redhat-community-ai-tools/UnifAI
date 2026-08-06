@@ -15,7 +15,7 @@ import { useAuth, User } from '@/contexts/AuthContext';
 import { useView, TeamInfo } from '@/contexts/ViewContext';
 import { getEffectiveMemberCount } from '@/api/teams';
 import { useAdminAccess } from '@/hooks/use-admin-access';
-import { Users, ChevronDown, User as UserIcon, Settings, Plus, Loader2 } from "lucide-react";
+import { Users, ChevronDown, User as UserIcon, Settings, Plus, Loader2, Clock } from "lucide-react";
 import TeamSettingsModal from "@/components/teams/TeamSettingsModal";
 
 export default function Sidebar() {
@@ -285,7 +285,15 @@ export default function Sidebar() {
             icon={<FaComment className="sidebar-icon" />} 
             label={viewMode === 'team' ? 'Collaboration Hub' : 'Agentic Chats'}
             to="/agentic-chats"
-            isActive={location === '/agentic-chats'}
+            isActive={location === '/agentic-chats' || location.startsWith('/agentic-chats/')}
+            status={null}
+            isCollapsed={isCollapsed}
+          />
+          <NavItem 
+            icon={<Clock size={14} className="sidebar-icon" />} 
+            label="Scheduled Workflows"
+            to="/scheduled-workflows"
+            isActive={location === '/scheduled-workflows'}
             status={null}
             isCollapsed={isCollapsed}
           />
@@ -425,6 +433,7 @@ function NavItem({ icon, label, to, isActive, status, isCollapsed, disabled = fa
             initial={false}
             animate={{ opacity: isCollapsed ? 0 : 1 }}
             transition={{ duration: 0.2 }}
+            className="whitespace-nowrap truncate"
           >
             {label}
           </motion.span>

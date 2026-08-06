@@ -55,6 +55,14 @@ class UserSessionManager:
         except KeyError:
             return {}
 
+    def get_blueprint_name(self, blueprint_id: str) -> str:
+        """Get blueprint display name, falling back to blueprint_id if not found."""
+        try:
+            doc = self._bp_service.get_blueprint_draft_doc(blueprint_id)
+            return doc.spec_dict.get("name", blueprint_id)
+        except KeyError:
+            return blueprint_id
+
     # ---- Create (lightweight — no graph compilation) ----
 
     def create_session(
@@ -62,13 +70,24 @@ class UserSessionManager:
             identity: Identity,
             blueprint_id: str,
             metadata: SessionMeta = None,
+            *,
+            run_id: str | None = None,
     ) -> str:
-        """Create a session record and return its run_id."""
+        """Create a session record and return its run_id.
+
+        When *run_id* is supplied the caller is requesting idempotent
+        creation (e.g. a Temporal activity retry).  The session repo
+        uses ``upsert=True`` so a duplicate write for the same
+        ``run_id`` harmlessly replaces the existing document.
+        """
         if not self.blueprint_exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
 
         session_meta = metadata or SessionMeta()
-        run_id = str(uuid.uuid4())
+        if session_meta.source == "schedule" and not session_meta.title:
+            bp_name = self.get_blueprint_name(blueprint_id)
+            session_meta.title = f"{bp_name} — {datetime.utcnow().strftime('%b %d %H:%M UTC')}"
+        run_id = run_id or str(uuid.uuid4())
         ctx = ExecutionContext(
             session_id=run_id,
             identity=identity,
@@ -124,6 +143,10 @@ class UserSessionManager:
     def list_docs(self, identity: Identity) -> List[Mapping[str, Any]]:
         """Raw documents for bulk listing (chat history, etc.)."""
         return self._repo.list_docs(identity)
+
+    def find_by_schedule_id(self, schedule_id: str, *, limit: int = 20) -> List[Mapping[str, Any]]:
+        """Return recent session documents triggered by a given schedule/prompt ID."""
+        return self._repo.find_by_schedule_id(schedule_id, limit=limit)
 
     def delete_session(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""

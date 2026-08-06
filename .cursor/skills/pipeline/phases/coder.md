@@ -47,8 +47,10 @@ If reusable logic exists, USE IT. Do NOT duplicate.
 
 The `multi-agent` module uses a structured `Identity` object for resource ownership instead of flat `user_id` strings. When writing code in `multi-agent/`:
 
-- Use `Identity` (`from mas.core.identity import Identity`) for all ownership and scoping of blueprints, resources, sessions, shares, and templates.
-- At the API boundary (Flask adapters), resolve raw `userId` + `identityType` params into an `Identity` object using `resolve_identity()` or the `@with_require_identity_authorization` decorator. Never pass flat `user_id` deeper than the adapter layer.
+- Use `Identity` (`from mas.core.identity import Identity`) for all ownership and scoping of blueprints, resources, sessions, shares, schedules, and templates.
+- At the API boundary (Flask adapters), resolve workspace identity via `@with_require_identity_authorization` / `@require_session_identity` (or `resolve_identity()`). Never pass flat `user_id` deeper than the adapter layer. Two wire contracts exist — prefer the **new** one for all new endpoints and UI API clients:
+  - **New (preferred):** Session cookie proves the human user. Optional `teamId` (query or JSON body) selects team workspace; omit `teamId` for personal workspace. Do **not** send or declare `userId` + `identityType` on new Flask endpoints. UI clients may still accept hook fields (`userId` + `identityType`) locally, but must map team view to wire `teamId` (and omit both for user view) before calling MAS.
+  - **Legacy (existing callers only):** `userId` + `identityType=team|user` (when `identityType=team`, `userId` is the team id). The decorator still accepts this for backward compatibility; do not extend it to new surfaces.
 - Use the `identity_q()` helper for MongoDB queries scoped to an owner.
 - `user_id` remains correct for human-specific concerns: OAuth credentials (`credential_user_id`), collaboration participants, and auth headers.
 

@@ -158,6 +158,7 @@ class ShareCloner:
                 identity=recipient,
                 draft_dict=new_draft.model_dump(mode="json"),
                 metadata=bp_metadata or None,
+                skip_name_check=True,
             )
 
             logger.info(f"Blueprint clone completed: {new_blueprint_id}, {resources_cloned} resources cloned")
@@ -383,23 +384,35 @@ class ShareCloner:
         else:
             base_name = f"{preferred_name} (from {ctx.sender_label})"
 
-        current_name = base_name
+        return self._find_unique_name(
+            base_name,
+            exists_fn=lambda name: self.resources.exists_by_name(identity, category, type_, name),
+        )
 
+    def _resolve_blueprint_name_conflict(
+            self, identity: Identity, preferred_name: str,
+    ) -> str:
+        """Find a unique blueprint name for *identity*, appending a counter if needed."""
+        return self._find_unique_name(
+            preferred_name,
+            exists_fn=lambda name: self.blueprints.name_exists_for_identity(identity, name),
+        )
+
+    @staticmethod
+    def _find_unique_name(base_name: str, *, exists_fn) -> str:
+        """Return *base_name* (or *base_name (N)*) that doesn't already exist."""
+        if not exists_fn(base_name):
+            return base_name
         for counter in range(2, 101):
-            existing = self.resources.exists_by_name(identity, category, type_, current_name)
-            if not existing:
-                return current_name
-
-            current_name = f"{base_name} ({counter})"
-
-        # Fallback to UUID if too many conflicts
+            candidate = f"{base_name} ({counter})"
+            if not exists_fn(candidate):
+                return candidate
         return f"{base_name} ({uuid4().hex[:8]})"
 
     def _clone_blueprint_draft(self, draft: BlueprintDraft, rid_mapping: Dict[str, str],
                                ctx: CloneContext) -> BlueprintDraft:
         """Clone a BlueprintDraft with proper ref replacement and new step UIDs."""
 
-        # Clone resource categories using ResourceCategory enum
         resource_fields = {
             category.value: [
                 self._clone_resource_with_refs(res, rid_mapping)
@@ -409,9 +422,12 @@ class ShareCloner:
         }
 
         if ctx.is_team_contribution:
-            clone_name = draft.name
+            base_name = draft.name
         else:
-            clone_name = f"{draft.name} (from {ctx.sender_label})"
+            base_name = f"{draft.name} (from {ctx.sender_label})"
+
+        recipient = self._recipient_identity(ctx)
+        clone_name = self._resolve_blueprint_name_conflict(recipient, base_name)
 
         return BlueprintDraft(
             plan=self._clone_plan(draft.plan, rid_mapping),

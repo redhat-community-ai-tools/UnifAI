@@ -4,7 +4,6 @@ from uuid import uuid4
 import re
 
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
     RootModel,
@@ -16,7 +15,7 @@ from pydantic import (
     model_validator,
 )
 
-
+from mas.core.prompt import BasePrompt
 from mas.blueprints.exceptions import PromptShortcutsValidationError
 
 MAX_PROMPT_SHORTCUTS = 3
@@ -39,21 +38,17 @@ def _short_id() -> str:
     return uuid4().hex[:8]
 
 
-class PromptShortcutItem(BaseModel):
+class PromptShortcutItem(BasePrompt):
     """
     A single manual prompt shortcut on a blueprint.
 
     - `id`:   Stable 8-char hex identifier (auto-assigned if omitted).
     - `text`: The full prompt text inserted into the textarea on click.
-              No character limit.
-
-    Scheduling will be modeled separately on a future ``Prompt`` type that can
-    reference or copy shortcut content; it does not belong on this model.
+              No character limit.  Inherited from BasePrompt.
     """
     model_config = ConfigDict(frozen=True)
 
     id: str = Field(default_factory=_short_id)
-    text: str
 
     _HEX8_RE: ClassVar[re.Pattern[str]] = re.compile(r"^[0-9a-f]{8}$")
 
@@ -63,14 +58,6 @@ class PromptShortcutItem(BaseModel):
         if not cls._HEX8_RE.match(v):
             raise ValueError("id must be exactly 8 lowercase hex characters")
         return v
-
-    @field_validator("text")
-    @classmethod
-    def validate_text(cls, v: str) -> str:
-        stripped = v.strip()
-        if not stripped:
-            raise ValueError("Prompt text must not be empty")
-        return stripped
 
 
 class PromptShortcuts(RootModel[tuple[PromptShortcutItem, ...]]):

@@ -7,6 +7,7 @@ from .auth_token_repository import MongoCredentialStore
 from .admin_config_reader import MongoAdminConfigReader
 from .builtin_user_config_repository import MongoBuiltinUserConfigRepository
 from .builtin_resource_descriptor_repository import MongoBuiltinResourceDescriptorRepository
+from .workflow_schedule_repository import MongoWorkflowScheduleRepository
 
 __all__ = [
     "MongoSessionRepository",
@@ -18,4 +19,5 @@ __all__ = [
     "MongoAdminConfigReader",
     "MongoBuiltinUserConfigRepository",
     "MongoBuiltinResourceDescriptorRepository",
+    "MongoWorkflowScheduleRepository",
 ]
