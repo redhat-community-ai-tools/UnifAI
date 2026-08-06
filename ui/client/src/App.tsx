@@ -9,6 +9,7 @@ import AgentRepository from "@/pages/AgentRepository";
 import AgenticChats from "@/pages/AgenticChats";
 
 import AgenticTemplates from "@/pages/AgenticTemplates";
+import ScheduledWorkflows from "@/pages/ScheduledWorkflows";
 import GetToKnow from "@/pages/GetToKnow";
 import Analytics from "@/pages/Analytics";
 import NotFound from "@/pages/not-found";
@@ -38,13 +39,15 @@ function AppRoutes() {
   const [isAgenticAI] = useRoute("/agentic-ai");
   const [isInventory] = useRoute("/inventory");
   const [isAgenticChats] = useRoute("/agentic-chats");
+  const [isAgenticChatsSession] = useRoute("/agentic-chats/:sessionId");
   const [isTemplates] = useRoute("/templates");
+  const [isScheduledWorkflows] = useRoute("/scheduled-workflows");
   const [isRagOverview] = useRoute("/rag-overview");
   const [isSlack] = useRoute("/slack");
   const [isDocuments] = useRoute("/documents");
   const [isSlackAddSource] = useRoute("/slack/add-source");
 
-  const isAgenticRoute = isAgenticOverview || isAgenticAI || isInventory || isAgenticChats || isTemplates;
+  const isAgenticRoute = isAgenticOverview || isAgenticAI || isInventory || isAgenticChats || isAgenticChatsSession || isTemplates || isScheduledWorkflows;
   const isTeamBlockedRagRoute =
     viewMode === "team" &&
     (isRagOverview || isSlack || isDocuments || isSlackAddSource);
@@ -65,7 +68,9 @@ function AppRoutes() {
             <Route path="/agentic-overview" component={AgenticOverview} />
             <Route path="/agentic-ai" component={AgenticWorkflows} />
             <Route path="/inventory" component={AgentRepository} />
+            <Route path="/agentic-chats/:sessionId" component={AgenticChats} />
             <Route path="/agentic-chats" component={AgenticChats} />
+            <Route path="/scheduled-workflows" component={ScheduledWorkflows} />
             <Route path="/templates" component={AgenticTemplates} />
           </Switch>
         </AgenticLayout>

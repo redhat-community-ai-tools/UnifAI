@@ -4,12 +4,20 @@ from datetime import datetime
 from mas.session.management.user_session_manager import UserSessionManager
 from mas.session.execution.foreground_runner import ForegroundSessionRunner
 from mas.session.execution.input_projector import SessionInputProjector
-from mas.session.execution.ports import BackgroundSessionEngine, SubmitSessionRequest
+from mas.session.execution.ports import (
+    BackgroundSessionEngine,
+    ScheduledExecutionParams,
+    SubmitSessionRequest,
+)
+from mas.core.execution_context import ExecutionContext
 from mas.session.domain.status import SessionStatus
 from mas.session.domain.workflow_session import WorkflowSession
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.dto import SessionListItem
-from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
+from mas.session.domain.models import (
+    SessionChat, SessionMeta, ScheduleRunSummary,
+    TimeSeriesPoint, SystemAnalyticsData,
+)
 from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
@@ -42,15 +50,21 @@ class SessionService:
         identity: Identity,
         blueprint_id: str,
         metadata: Dict[str, Any] | SessionMeta | None = None,
+        *,
+        run_id: str | None = None,
     ) -> str:
         """
         Create a new session record and return its run_id.
         Lightweight — no graph compilation or blueprint resolution.
+
+        When *run_id* is supplied the session is created with that
+        deterministic key, making the call safe under activity retries.
         """
         return self._manager.create_session(
             identity=identity,
             blueprint_id=blueprint_id,
             metadata=SessionMeta.model_validate(metadata or {}),
+            run_id=run_id,
         )
 
     # ---- Two-phase execution entry points ----
@@ -149,6 +163,101 @@ class SessionService:
             return False
         return True
 
+    # ---- Scheduled execution ----
+
+    def prepare_for_scheduled_execution(
+        self,
+        *,
+        identity: Identity,
+        blueprint_id: str,
+        inputs: Dict[str, Any],
+        metadata: SessionMeta | None = None,
+        logged_in_user: str = "",
+        run_id: str | None = None,
+    ) -> tuple[str, "WorkflowSession"]:
+        """Create a session, stage inputs, and return the hydrated WorkflowSession.
+
+        Same staging as submit(), without starting background execution.
+        """
+        session_id = self.create(
+            identity=identity,
+            blueprint_id=blueprint_id,
+            metadata=metadata,
+            run_id=run_id,
+        )
+        record = self._manager.get_record(session_id)
+        self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
+
+        session = self._manager.get_session(session_id)
+        return session_id, session
+
+    def provision_scheduled_session(
+        self,
+        *,
+        identity: Identity,
+        blueprint_id: str,
+        inputs: Dict[str, Any],
+        schedule_id: str,
+        credential_user_id: str = "",
+        dedupe_key: str | None = None,
+    ) -> str:
+        """Provision a session for a scheduled run.
+
+        When dedupe_key is set and a session with that id already exists,
+        returns it unchanged. Otherwise creates a new session with schedule
+        metadata and staged inputs.
+        """
+        if dedupe_key:
+            try:
+                self._manager.get_record(dedupe_key)
+            except KeyError:
+                pass
+            else:
+                return dedupe_key
+
+        metadata = SessionMeta(
+            source="schedule",
+            schedule_id=schedule_id,
+            prompt_text=(inputs.get("user_prompt") or ""),
+        )
+        session_id, _ = self.prepare_for_scheduled_execution(
+            identity=identity,
+            blueprint_id=blueprint_id,
+            inputs=inputs,
+            metadata=metadata,
+            logged_in_user=credential_user_id,
+            run_id=dedupe_key,
+        )
+        return session_id
+
+    def build_scheduled_execution_params(
+        self,
+        session_id: str,
+        *,
+        engine_name: str,
+        engine_handle: str | None,
+    ) -> ScheduledExecutionParams:
+        """Build ScheduledExecutionParams for a provisioned session.
+
+        Loads the session and constructs an ExecutionContext with the given
+        engine_name and engine_handle.
+        """
+        session = self._manager.get_session(session_id)
+        exec_context = ExecutionContext(
+            session_id=session_id,
+            identity=session.record.identity,
+            scope="public",
+            engine_name=engine_name,
+            engine_handle=engine_handle,
+            tags=session.record.run_context.tags,
+        )
+        return ScheduledExecutionParams(
+            run_id=session_id,
+            execution_context=exec_context,
+            graph_state=session.graph_state,
+            graph_definition=session.executable_graph.graph_definition,
+        )
+
     # ---- Private staging ----
 
     _BUSY_STATUSES = frozenset({"QUEUED", "RUNNING"})
@@ -236,6 +345,19 @@ class SessionService:
         Get only messages and output for a session (lightweight, projected from DB).
         """
         return self._manager.get_chat(run_id)
+
+    def get_runs_by_schedule(self, schedule_id: str, *, limit: int = 20) -> List[ScheduleRunSummary]:
+        """Return formatted run history for a given schedule/prompt ID."""
+        docs = self._manager.find_by_schedule_id(schedule_id, limit=limit)
+        return [
+            ScheduleRunSummary(
+                session_id=d.get("run_id", ""),
+                status=SessionStatus(d["status"]) if d.get("status") in SessionStatus.__members__ else SessionStatus.PENDING,
+                started_at=d.get("run_context", {}).get("started_at"),
+                metadata=SessionMeta.model_validate(d.get("metadata") or {}),
+            )
+            for d in docs
+        ]
 
     def list_user_sessions(self, identity: Identity) -> list:
         """

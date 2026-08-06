@@ -10,6 +10,7 @@ from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
     BlueprintAccessDeniedError,
     BlueprintSaveError,
+    BlueprintDuplicateNameError,
     BlueprintMetadataError,
     InvalidMetadataKeysError,
     PromptShortcutsValidationError,
@@ -54,10 +55,13 @@ class BlueprintService:
 
     # ────────── Write ──────────
     def save_draft(self, *, identity: Identity, draft_dict: dict,
-                   metadata: Optional[Dict[str, Any]] = None) -> str:
+                   metadata: Optional[Dict[str, Any]] = None,
+                   skip_name_check: bool = False) -> str:
         if metadata:
             validate_metadata_keys(metadata)
         draft_bp = BlueprintDraft(**draft_dict)
+        if not skip_name_check and self._repo.name_exists_for_identity(identity, draft_bp.name):
+            raise BlueprintDuplicateNameError(draft_bp.name)
         rid_refs = list(RefWalker.external_rids(draft_bp))
         return self._repo.save(identity=identity, spec=draft_bp,
                                rid_refs=rid_refs, metadata=metadata or {})
@@ -86,6 +90,13 @@ class BlueprintService:
                 draft_dict = {**draft_dict, "prompt_shortcuts": existing.to_storage()}
 
         draft = BlueprintDraft(**draft_dict)
+        new_name = draft.name
+        old_name = doc.spec_dict.get("name")
+        if new_name != old_name and self._repo.name_exists_for_identity(
+            identity, new_name, exclude_blueprint_id=blueprint_id,
+        ):
+            raise BlueprintDuplicateNameError(new_name)
+
         rid_refs = list(RefWalker.external_rids(draft))
         return self._repo.update(
             blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs,
@@ -108,6 +119,14 @@ class BlueprintService:
 
     def exists(self, blueprint_id: str) -> bool:
         return self._repo.exists(blueprint_id)
+
+    def name_exists_for_identity(
+        self, identity: Identity, name: str,
+        *, exclude_blueprint_id: str | None = None,
+    ) -> bool:
+        return self._repo.name_exists_for_identity(
+            identity, name, exclude_blueprint_id=exclude_blueprint_id,
+        )
 
     def delete(self, blueprint_id: str) -> bool:
         return self._repo.delete(blueprint_id)

@@ -33,6 +33,10 @@ from mas.validation.service import ElementValidationService
 from mas.templates.service import TemplateService
 from mas.collaboration.service import CollaborationService
 
+# Workflow scheduling
+from mas.scheduling.service import WorkflowScheduleService
+from outbound.mongo.workflow_schedule_repository import MongoWorkflowScheduleRepository
+
 # Auth layer
 from mas.core.auth.service import AuthService, AuthStrategyRegistry
 from mas.core.auth.discovery import AuthDetector
@@ -354,6 +358,19 @@ class AppContainer(metaclass=SingletonMeta):
             cfg, self.session_repo, self.identity_provider
         )
 
+        # ── Workflow scheduling ─────────────────────────────────────────
+        self.schedule_repo = MongoWorkflowScheduleRepository(
+            db_name=cfg.mongo_db,
+            coll_name=cfg.workflow_schedules_coll,
+        )
+        schedule_engine = self._create_schedule_adapter(cfg.engine_name)
+        self.schedule_service = WorkflowScheduleService(
+            schedule_repo=self.schedule_repo,
+            schedule_engine=schedule_engine,
+            blueprint_service=self.blueprint_service,
+            session_service=self.session_service,
+        )
+
         self._initialized = True
 
     @staticmethod
@@ -430,6 +447,14 @@ class AppContainer(metaclass=SingletonMeta):
             from outbound.temporal.session_engine import TemporalSessionEngine
             return TemporalSessionEngine()
         return None
+
+    @staticmethod
+    def _create_schedule_adapter(engine_name: str) -> "ScheduleEngine":
+        if engine_name == "temporal":
+            from outbound.temporal.schedule_adapter import TemporalScheduleAdapter
+            return TemporalScheduleAdapter()
+        from mas.scheduling.noop import NoOpScheduleEngine
+        return NoOpScheduleEngine()
 
     @staticmethod
     def _build_identity_auth_provider(

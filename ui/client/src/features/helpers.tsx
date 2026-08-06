@@ -2,6 +2,7 @@ import { FaFileAlt, FaFileWord, FaFilePdf, FaFileExcel, FaFilePowerpoint, FaMark
 import { PIPELINE_STATUS, PipelineStatus } from "@/constants/pipelineStatus";
 import { EmbedChannel, Document } from "@/types";
 import { InlineLoader } from "@/components/shared/InlineLoader";
+import { formatDateTime } from "@/utils/dateTimeUtils";
 
 export const getFileIcon = (type: string) => {
     switch (type) {
@@ -37,15 +38,7 @@ export const fileByColors: Record<string, string> = {
 
 export function formatDate(dateStr: string): string {
   if (!dateStr) return '';
-  const date = new Date(dateStr);
-  return date.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
+  return formatDateTime(dateStr);
 }
 
 // Helper function to check if a pipeline is actively processing

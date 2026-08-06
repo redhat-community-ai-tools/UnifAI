@@ -10,13 +10,20 @@ natively handles model_dump/model_validate for all Pydantic fields.
 Shared by both inbound (worker/activities/workflows) and outbound
 (executor/submitter) Temporal adapters.
 """
+from __future__ import annotations
+
 from typing import Any, Dict, Optional
+
 from pydantic import BaseModel, Field
 
+from mas.scheduling.models import RunOutcome as RunOutcome
 from mas.engine.domain.models import GraphDefinition
 from mas.graph.models.step_context import StepContext
 from mas.graph.state.graph_state import GraphState
 from mas.core.execution_context import ExecutionContext
+from mas.core.identity import Identity
+from mas.scheduling.models import PromptSource
+from mas.session.execution.ports import ScheduledExecutionParams
 
 
 # ── Workflow params ──────────────────────────────────────────────────
@@ -43,6 +50,32 @@ class SessionWorkflowParams(BaseModel):
     run_id: str
     execution_context: ExecutionContext = Field(default_factory=ExecutionContext)
     graph_execution_params: GraphExecutionParams = Field(default_factory=GraphExecutionParams)
+
+    def to_scheduled_execution_params(self) -> ScheduledExecutionParams:
+        """Map transport DTO → domain VO for ScheduledRunOps."""
+        gep = self.graph_execution_params
+        return ScheduledExecutionParams(
+            run_id=self.run_id,
+            execution_context=self.execution_context,
+            graph_state=gep.state,
+            graph_definition=gep.graph_definition,
+        )
+
+    @classmethod
+    def from_scheduled_execution_params(
+        cls, params: ScheduledExecutionParams,
+    ) -> SessionWorkflowParams:
+        """Map domain VO → transport DTO for SessionWorkflow."""
+        return cls(
+            run_id=params.run_id,
+            execution_context=params.execution_context,
+            graph_execution_params=GraphExecutionParams(
+                state=params.graph_state,
+                graph_definition=params.graph_definition,
+                session_id=params.run_id,
+                execution_context=params.execution_context,
+            ),
+        )
 
 
 # ── Activity params ──────────────────────────────────────────────────
@@ -89,3 +122,33 @@ class FailSessionParams(BaseModel):
 class CancelSessionParams(BaseModel):
     """Input to the cancel_session activity."""
     run_id: str
+
+
+# ── Scheduled session params ─────────────────────────────────────────
+
+class ScheduledSessionParams(BaseModel):
+    """Input to ScheduledSessionWorkflow (triggered by Temporal Schedule)."""
+    schedule_id: str
+    blueprint_id: str
+    identity: Identity
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+    source: PromptSource = PromptSource.MANUAL
+    dedupe_key: Optional[str] = None
+    credential_user_id: str = ""
+
+
+# ── Consolidated scheduled session params ─────────────────────────────
+
+class ProvisionResult(BaseModel):
+    """Output of the provision_scheduled_session activity."""
+    session_id: str
+    params: SessionWorkflowParams
+
+
+class RecordOutcomeParams(BaseModel):
+    """Input to the record_scheduled_outcome activity."""
+    schedule_id: str
+    session_id: str
+    outcome: RunOutcome
+    started_at: str
+    failure_reason: Optional[str] = None

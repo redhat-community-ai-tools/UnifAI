@@ -33,12 +33,12 @@ class FormHandler:
 
     # ── Open modal ───────────────────────────────────────────────
 
-    def open_form(self, client, trigger_id: str, user_name: str, user_id: str):
+    def open_form(self, client, trigger_id: str, user_name: str, user_id: str, channel_id: str):
         workflows = self._fetch_workflows(user_name)
         view = self._build_view(
             scope=_SCOPE_PERSONAL,
             workflows=workflows,
-            metadata={"user_name": user_name, "user_id": user_id},
+            metadata={"user_name": user_name, "user_id": user_id, "channel_id": channel_id},
         )
         client.views_open(trigger_id=trigger_id, view=view)
 
@@ -96,6 +96,8 @@ class FormHandler:
         meta = json.loads(body["view"].get("private_metadata", "{}"))
         user_name = meta.get("user_name", "")
         user_id = body["user"]["id"]
+        channel_id = meta.get("channel_id", "")
+        reply_channel = self._resolve_reply_channel(client, channel_id, user_id)
 
         values = body["view"]["state"]["values"]
 
@@ -114,10 +116,10 @@ class FormHandler:
         prompt = (prompt_val.get("value") or "").strip()
 
         if not selected_wf:
-            self._post_error(client, user_id, "Please select a workflow.")
+            self._post_error(client, reply_channel, "Please select a workflow.")
             return
         if not prompt:
-            self._post_error(client, user_id, "Please enter a prompt.")
+            self._post_error(client, reply_channel, "Please enter a prompt.")
             return
 
         wf_label = selected_wf
@@ -128,12 +130,12 @@ class FormHandler:
 
         scope_label = f" (team `{team_uid}`)" if team_uid else ""
         client.chat_postMessage(
-            channel=user_id,
+            channel=reply_channel,
             text=f":hourglass: Running *{wf_label}*{scope_label} with your question...",
         )
 
         def reply_fn(text):
-            client.chat_postMessage(channel=user_id, text=text)
+            client.chat_postMessage(channel=reply_channel, text=text)
 
         self._executor.run_new_session(
             user_name=user_name,
@@ -292,5 +294,15 @@ class FormHandler:
         return name
 
     @staticmethod
-    def _post_error(client, channel_id, text):
-        client.chat_postMessage(channel=channel_id, text=f":x: {text}")
+    def _resolve_reply_channel(client, channel_id: str, user_id: str) -> str:
+        if channel_id:
+            try:
+                client.conversations_info(channel=channel_id)
+                return channel_id
+            except Exception:
+                pass
+        return user_id
+
+    @staticmethod
+    def _post_error(client, channel, text):
+        client.chat_postMessage(channel=channel, text=f":x: {text}")
