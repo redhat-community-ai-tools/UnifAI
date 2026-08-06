@@ -82,6 +82,6 @@ releases:
 
   - name: unifai-logging
     chart: ./shared-resources/logging
-    #wait: true
+    # currently wait: true is commentd out as the logging pod isn't implemented yet, this comment will stay here as a placeholder so we won't forget it.
     values:
      - {{- toYaml .Values.logging | nindent 8 }}
