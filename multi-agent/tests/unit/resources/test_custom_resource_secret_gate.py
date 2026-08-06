@@ -42,7 +42,7 @@ class FakeAuthProviderConfig(BaseModel):
 class FakeElementRegistry:
     """Fake ``ElementRegistry`` exposing a single registered element's schema."""
 
-    def get_schema_json(self, category: str, type_key: str) -> Dict[str, Any]:
+    def get_schema_json(self, category: ResourceCategory, type_key: str) -> Dict[str, Any]:
         if (category, type_key) != (CATEGORY, TYPE_KEY):
             raise KeyError((category, type_key))
         return FakeAuthProviderConfig.model_json_schema()
