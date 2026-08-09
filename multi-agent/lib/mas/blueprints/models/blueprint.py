@@ -127,6 +127,25 @@ class BlueprintDraft(BaseModel):
     class Config:
         extra = Extra.forbid
 
+    @classmethod
+    def from_stored_dict(cls, spec_dict: Dict[str, Any]) -> "BlueprintDraft":
+        """Build a draft from a persisted ``spec_dict``, tolerating fields that
+        have since been removed from the schema (e.g. the ``auths`` resource
+        category, dropped when auth elements were removed from blueprints).
+
+        Documents saved while a now-removed field was still part of the model
+        keep that field baked into their stored ``spec_dict`` forever unless
+        migrated — and ``Extra.forbid`` means a straight ``BlueprintDraft(**
+        spec_dict)`` call rejects them outright. Unlike ``BlueprintDraft(**...)
+        ``, which is used for freshly-submitted drafts (save/update/validate)
+        and should stay strict to catch real client bugs, this entry point is
+        only for re-hydrating what we ourselves previously stored, so
+        silently dropping unrecognized top-level keys is the correct/forward
+        -compatible behavior rather than a bug being hidden.
+        """
+        known_fields = set(cls.model_fields)
+        return cls(**{k: v for k, v in spec_dict.items() if k in known_fields})
+
 
 class BlueprintSpec(BaseModel):
     """What the graph-builder composer consumes – every $ref resolved."""

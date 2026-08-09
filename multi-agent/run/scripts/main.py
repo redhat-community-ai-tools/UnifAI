@@ -7,7 +7,7 @@ from mas.session.execution import SessionLifecycle, ForegroundSessionRunner
 from outbound.channels import LocalChannelFactory
 from mas.blueprints.service import BlueprintService
 from outbound.mongo import MongoBlueprintRepository
-from mas.resources.service import ResourcesService
+from mas.resources.service import CoreResourceService
 from mas.resources.registry import ResourcesRegistry
 from outbound.mongo import MongoResourceRepository
 from mas.blueprints.resolver import BlueprintResolver

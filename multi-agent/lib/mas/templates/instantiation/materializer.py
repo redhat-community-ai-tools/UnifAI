@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from mas.core.identity import Identity
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintResource, StepDef
-from mas.resources.service import ResourcesService
+from mas.resources.service import CoreResourceService
 from mas.resources.models import Resource
 from mas.core.ref import RefRemapper
 from mas.core.ref.models import Ref
@@ -37,7 +37,7 @@ class ResourceMaterializer:
 
     UNIQUE_SUFFIX_LENGTH = 8
 
-    def __init__(self, resources_service: ResourcesService):
+    def __init__(self, resources_service: CoreResourceService) -> None:
         self._resources = resources_service
 
     def materialize(self, draft: BlueprintDraft, identity: Identity) -> MaterializationResult:

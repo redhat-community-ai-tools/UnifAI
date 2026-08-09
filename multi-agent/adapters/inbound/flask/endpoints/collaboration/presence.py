@@ -3,24 +3,16 @@ Flask collaboration endpoints — session presence, join/leave, and typing.
 """
 import logging
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, jsonify
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 
 from inbound.flask.decorators import with_authenticated_user
+from inbound.flask.endpoints._collaboration_shared import collaboration_service_or_error as _collab_service
 
 logger = logging.getLogger(__name__)
 
 collaboration_bp = Blueprint("collaboration", __name__)
-
-
-def _collab_service():
-    svc = current_app.container.collaboration_service
-    if svc is None:
-        return None, (jsonify(
-            {"error": "Collaboration service not available - Redis is not configured"}
-        ), 501)
-    return svc, None
 
 
 # ── Join / Leave / Heartbeat ────────────────────────────────────────

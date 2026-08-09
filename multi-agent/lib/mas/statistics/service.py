@@ -3,7 +3,7 @@ from typing import Dict, List, Set, TypedDict, Optional
 from datetime import datetime, timezone
 from mas.blueprints.service import BlueprintService
 from mas.session.service import SessionService
-from mas.resources.service import ResourcesService
+from mas.resources.service import CoreResourceService
 from mas.core.identity import Identity, IdentityFieldKey
 from mas.core.dto import GroupedCount
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
@@ -46,8 +46,8 @@ class StatisticsService:
         self,
         blueprint_service: BlueprintService,
         session_service: SessionService,
-        resources_service: ResourcesService
-    ):
+        resources_service: CoreResourceService,
+    ) -> None:
         """
         Initialize the StatisticsService.
 

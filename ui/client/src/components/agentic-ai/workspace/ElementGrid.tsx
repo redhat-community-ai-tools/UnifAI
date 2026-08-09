@@ -1,32 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { motion } from 'framer-motion';
-import { 
-  Settings, 
-  Trash2, 
-  LoaderCircle,
-  FileText,
-  Database,
-  Eye,
-  Users,
-  Check,
-  AlertTriangle
-} from 'lucide-react';
-import SimpleTooltip from '@/components/shared/SimpleTooltip';
+import React, { useState, useEffect, useMemo } from 'react';
+import { LoaderCircle, Database } from 'lucide-react';
 import { useShared } from '@/contexts/SharedContext';
 import { useAgenticAI } from '@/contexts/AgenticAIContext';
 import { useAuth } from "@/contexts/AuthContext";
 import { useView } from "@/contexts/ViewContext";
+import { usePrimaryLightColor } from "@/hooks/use-primary-light-color";
 import { useTeamEditLockPoll } from "@/hooks/use-team-edit-lock-poll";
+import { resolveEditLockStatus } from "@/lib/editLockStatus";
 import { ElementInstance, ElementType, ElementSchema } from '../../../types/workspace';
 import { ElementValidationResult } from '../../../types/validation';
 import { ElementData } from './ElementData';
-import { ValidationResultModal } from './ValidationResultModal';
-import { formatConfigValue } from '../../../utils/maskSecretFields';
-import { getDisplayValueFromItem } from '../../../utils/displayUtils';
-import { cn } from "@/lib/utils";
+import { ValidationResultModal } from './validation/ValidationResultModal';
+import { BuiltInElementCard } from './BuiltInElementCard';
+import { RegularElementCard } from './RegularElementCard';
+import { getCardFields } from '@/lib/cardFields';
 
 interface ElementGridProps {
   elements: ElementInstance[];
@@ -34,6 +21,11 @@ interface ElementGridProps {
   isLoading: boolean;
   onEditElement: (element: ElementInstance) => void;
   onDeleteElement: (rid: string) => void;
+  onConfigureBuiltin?: (
+    rid: string,
+    config: Record<string, any>,
+    options?: { silent?: boolean },
+  ) => Promise<any>;
   elementSchema?: ElementSchema | null;
 }
 
@@ -43,6 +35,7 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   isLoading,
   onEditElement,
   onDeleteElement,
+  onConfigureBuiltin,
   elementSchema
 }) => {
   const [selectedElement, setSelectedElement] = useState<ElementInstance | null>(null);
@@ -52,27 +45,38 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   const { openShareForItem } = useShared();
   const { user } = useAuth();
   const { viewMode, selectedTeam } = useView();
+  const primaryLight = usePrimaryLightColor();
   const isTeamWorkspace = viewMode === "team" && !!selectedTeam;
+  const nonBuiltInElements = useMemo(
+    () => elements.filter(el => el.ownership !== 'builtin'),
+    [elements],
+  );
   const resourceEditLocks = useTeamEditLockPoll(
     selectedTeam?.id,
     "resource",
-    elements.map((el) => el.rid),
+    nonBuiltInElements.map((el) => el.rid),
     isTeamWorkspace,
   );
   const { 
-    getResourceName, 
     getValidationResult, 
     getValidationStatus,
-    validateResources 
+    validateResources,
+    resolveRefsInConfig,
   } = useAgenticAI();
 
-  // Trigger validation for all elements when they change
+  // Stable string key of the rid set — used as the effect dependency instead
+  // of the `elements` array so a re-render that produces an equivalent-but-new
+  // array doesn't re-trigger validation calls.
+  const validatedRidsKey = useMemo(
+    () => elements.map(el => el.rid).join(','),
+    [elements],
+  );
+
   useEffect(() => {
-    if (elements.length > 0) {
-      const rids = elements.map(el => el.rid);
-      validateResources(rids);
+    if (validatedRidsKey) {
+      validateResources(validatedRidsKey.split(','));
     }
-  }, [elements, validateResources]);
+  }, [validatedRidsKey, validateResources]);
 
   const handleViewDetails = (element: ElementInstance) => {
     setSelectedElement(element);
@@ -93,49 +97,6 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
       setSelectedValidationResult(result);
       setIsValidationModalOpen(true);
     }
-  };
-
-  // Render validation status icon
-  const renderValidationStatus = (rid: string) => {
-    const status = getValidationStatus(rid);
-
-    if (status === 'loading') {
-      return (
-        <SimpleTooltip content={<p>Validating resource...</p>}>
-          <div className="flex items-center justify-center w-8 h-8">
-            <LoaderCircle className="h-4 w-4 animate-spin text-gray-400" />
-          </div>
-        </SimpleTooltip>
-      );
-    }
-
-    if (status === 'valid') {
-      return (
-        <SimpleTooltip content={<p>Resource is valid - Click for details</p>}>
-          <button 
-            className="flex items-center justify-center w-8 h-8 rounded-md bg-green-500/10 hover:bg-green-500/20 transition-colors cursor-pointer"
-            onClick={() => handleValidationClick(rid)}
-          >
-            <Check className="h-4 w-4 text-green-500" />
-          </button>
-        </SimpleTooltip>
-      );
-    }
-
-    if (status === 'invalid') {
-      return (
-        <SimpleTooltip content={<p>Resource is invalid - Click for details</p>}>
-          <button 
-            className="flex items-center justify-center w-8 h-8 rounded-md bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors cursor-pointer"
-            onClick={() => handleValidationClick(rid)}
-          >
-            <AlertTriangle className="h-4 w-4 text-yellow-500" />
-          </button>
-        </SimpleTooltip>
-      );
-    }
-
-    return null;
   };
 
   if (isLoading) {
@@ -159,181 +120,52 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {elements.map((element, index) => {
-        const lockHolder = resourceEditLocks[element.rid];
-        const lockUnknown = lockHolder === "unknown";
-        const lockedByOther =
-          isTeamWorkspace &&
-          !lockUnknown &&
-          !!lockHolder &&
-          !!user?.username &&
-          lockHolder.userId !== user.username;
-        const lockedByLabel = lockUnknown
-          ? "unknown"
-          : lockHolder?.displayName?.trim() || lockHolder?.userId || "another teammate";
+        if (element.ownership === 'builtin') {
+          return (
+            <BuiltInElementCard
+              key={element.rid}
+              element={element}
+              elementType={elementType}
+              elementSchema={elementSchema}
+              onConfigureBuiltin={onConfigureBuiltin}
+              index={index}
+              primaryLight={primaryLight}
+              validationStatus={getValidationStatus(element.rid)}
+              onValidationClick={() => handleValidationClick(element.rid)}
+            />
+          );
+        }
+
+        const cardFields = getCardFields(elementSchema, resolveRefsInConfig(element.config), 'custom');
+        const { lockedByOther, lockUnknown, lockedByLabel } = resolveEditLockStatus(
+          resourceEditLocks[element.rid],
+          user?.username ?? "",
+          "another teammate",
+        );
 
         return (
-        <motion.div
-          key={element.rid}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: index * 0.1 }}
-        >
-          <Card className="bg-background-card shadow-card border-gray-800 h-full flex flex-col">
-            <CardHeader className="py-4 px-6 border-b border-gray-800">
-              <div className="flex justify-between items-start">
-                <div className="flex items-center">
-                  <FileText className="h-5 w-5 mr-2 text-primary" />
-                  <CardTitle className="text-lg font-heading">
-                    {element.name || `${elementType.name} Instance`}
-                  </CardTitle>
-                </div>
-                <div className="flex items-center gap-1">
-                  {renderValidationStatus(element.rid)}
-                  <SimpleTooltip content={<p>Share this resource</p>}>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="text-gray-400 hover:text-blue-400 hover:bg-blue-500/10"
-                      onClick={() => handleShareElement(element)}
-                    >
-                      <Users className="h-4 w-4" />
-                    </Button>
-                  </SimpleTooltip>
-                  <SimpleTooltip content={<p>Delete this resource</p>}>
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="text-gray-400 hover:text-red-400"
-                      onClick={() => onDeleteElement(element.rid)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </SimpleTooltip>
-                </div>
-              </div>
-            </CardHeader>
-            
-            <CardContent className="p-4 flex-grow">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-xs text-gray-500">ID:</span>
-                  <span className="text-xs font-mono text-gray-300">
-                    {element.rid.slice(0, 8)}...
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-xs text-gray-500">Type:</span>
-                  <Badge variant="outline" className="text-xs">
-                    {elementType.type}
-                  </Badge>
-                </div>
-                {element.version && (
-                  <div className="flex justify-between">
-                    <span className="text-xs text-gray-500">Version:</span>
-                    <span className="text-xs text-gray-300">v{element.version}</span>
-                  </div>
-                )}
-                {element.updated && (
-                  <div className="flex justify-between">
-                    <span className="text-xs text-gray-500">Last Updated:</span>
-                    <span className="text-xs text-gray-300">
-                      {new Date(element.updated).toLocaleDateString()}
-                    </span>
-                  </div>
-                )}
-                {element.contributed_by && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs text-gray-500">Contributed by:</span>
-                    <span className="inline-flex items-center gap-1 text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded-full">
-                      <Users className="h-2.5 w-2.5" />
-                      {element.contributed_by}
-                    </span>
-                  </div>
-                )}
-                {element.config && (
-                  <div className="mt-3">
-                    <span className="text-xs text-gray-500">Configuration:</span>
-                    <div className="text-xs text-gray-300 mt-1 space-y-1">
-                      {Object.keys(element.config).slice(0, 3).map((key) => {
-                        const fieldSchema = elementSchema?.config_schema?.properties?.[key];
-                        const rawValue = element.config[key];
-                        const displayValue = Array.isArray(rawValue)
-                          ? rawValue.map((item: any) => getDisplayValueFromItem(item, getResourceName)).join(', ')
-                          : getDisplayValueFromItem(rawValue, getResourceName);
-                        return (
-                          <div key={key} className="flex justify-between">
-                            <span className="truncate">{key}:</span>
-                            <span className="text-gray-400 ml-2 truncate max-w-24" title={displayValue}>
-                              {formatConfigValue(displayValue, fieldSchema)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                      {Object.keys(element.config).length > 3 && (
-                        <div className="text-gray-500 text-center">
-                          +{Object.keys(element.config).length - 3} more...
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-
-            <CardFooter className="px-6 py-3 border-t border-gray-800 bg-background-dark">
-              <div className="flex gap-2 w-full">
-                <SimpleTooltip
-                  collisionPadding={12}
-                  content={
-                    lockUnknown ? (
-                      <p>Could not verify edit lock — try again shortly</p>
-                    ) : lockedByOther ? (
-                      <p>Currently being edited by {lockedByLabel}</p>
-                    ) : (
-                      <p>Configure this element</p>
-                    )
-                  }
-                >
-                  <span
-                    className={cn(
-                      "flex flex-1",
-                      (lockedByOther || lockUnknown) && "cursor-not-allowed",
-                    )}
-                  >
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={cn(
-                        "flex flex-1 items-center justify-center gap-2",
-                        (lockedByOther || lockUnknown) && "pointer-events-none",
-                      )}
-                      onClick={() => onEditElement(element)}
-                      disabled={lockedByOther || lockUnknown}
-                    >
-                      <Settings className="h-3 w-3" />
-                      Configure
-                    </Button>
-                  </span>
-                </SimpleTooltip>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="flex-1 flex items-center justify-center gap-2"
-                  onClick={() => handleViewDetails(element)}
-                >
-                  <Eye className="h-3 w-3" />
-                  Details
-                </Button>
-              </div>
-            </CardFooter>
-          </Card>
-        </motion.div>
+          <RegularElementCard
+            key={element.rid}
+            element={element}
+            elementType={elementType}
+            index={index}
+            cardFields={cardFields}
+            primaryLight={primaryLight}
+            validationStatus={getValidationStatus(element.rid)}
+            lockedByOther={isTeamWorkspace && lockedByOther}
+            lockUnknown={isTeamWorkspace && lockUnknown}
+            lockedByLabel={lockedByLabel}
+            onViewDetails={() => handleViewDetails(element)}
+            onShare={() => handleShareElement(element)}
+            onDelete={() => onDeleteElement(element.rid)}
+            onEdit={() => onEditElement(element)}
+            onValidationClick={() => handleValidationClick(element.rid)}
+          />
         );
       })}
-      
-      {/* Element Details Modal */}
+
       <ElementData
         element={selectedElement}
         elementType={elementType}
@@ -342,7 +174,6 @@ export const ElementGrid: React.FC<ElementGridProps> = ({
         elementSchema={elementSchema}
       />
 
-      {/* Validation Result Modal */}
       <ValidationResultModal
         validationResult={selectedValidationResult}
         isOpen={isValidationModalOpen}

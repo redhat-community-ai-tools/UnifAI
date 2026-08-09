@@ -4,9 +4,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { BuildingBlock } from '@/types/graph';
 import { FileText } from 'lucide-react';
 import { maskSecretFieldsInConfig } from '../utils/maskSecretFields';
-import { simplifyConfigForDisplay } from '../utils/displayUtils';
+import { filterHiddenFieldsInConfig, filterToFieldNames, simplifyConfigForDisplay } from '../utils/displayUtils';
+import { getBuiltinVisibleFieldNames } from '@/lib/cardFields';
 import { ElementSchema } from '../types/workspace';
-import axios from '../http/axiosAgentConfig';
+import { getResource, getBuiltinSchema, getElementSpec } from '@/api/resources';
 import { useAgenticAI } from '@/contexts/AgenticAIContext';
 
 interface ResourceDetailsModalProps {
@@ -21,28 +22,113 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
   element
 }) => {
   const [elementSchema, setElementSchema] = useState<ElementSchema | null>(null);
+  // Looked up here since the `BuildingBlock` passed in doesn't carry ownership info.
+  const [ownership, setOwnership] = useState<'builtin' | 'custom' | null>(null);
+  // Gates config rendering until the async lookup below settles, so secret
+  // masking / hidden-field filtering (which depend on elementSchema/ownership)
+  // can't be bypassed by a render that happens before they resolve.
+  const [schemaResolved, setSchemaResolved] = useState(false);
+  // RID the above state was resolved for. `schemaResolved` alone isn't
+  // enough to gate rendering: state setters from the effect only take
+  // effect on the *next* render, so if `element` swaps to a new resource
+  // before that render happens, a render could otherwise compute
+  // `displayableConfig` from the new element's config using the previous
+  // resource's `ownership`/`elementSchema` — applying the wrong filter.
+  const [resolvedRid, setResolvedRid] = useState<string | null>(null);
   const { getResourceName, resolveRefsInConfig } = useAgenticAI();
 
-  // Fetch schema when modal opens and element is available
+  // Built-ins use `/resources/builtin.schema` instead of the plain
+  // `/catalog/element.spec.get` schema so locked fields (e.g. `mcp_url`)
+  // are correctly marked read-only rather than leaking into the allowlist below.
   useEffect(() => {
-    if (isOpen && element?.workspaceData) {
-      const fetchSchema = async () => {
-        try {
-          // Fetch the element-specific schema
-          const response = await axios.get<ElementSchema>(
-            `/catalog/element.spec.get?category=${element.workspaceData?.category}&type=${element.workspaceData?.type}`
-          );
-          setElementSchema(response.data);
-        } catch (error) {
-          console.error('Error fetching element schema:', error);
-          setElementSchema(null);
-        }
-      };
-      fetchSchema();
-    } else {
+    const rid = element?.workspaceData?.rid;
+    const category = element?.workspaceData?.category;
+    const type = element?.workspaceData?.type;
+    if (!isOpen || !rid || !category || !type) {
       setElementSchema(null);
+      setOwnership(null);
+      setSchemaResolved(false);
+      setResolvedRid(null);
+      return;
     }
-  }, [isOpen, element?.workspaceData?.category, element?.workspaceData?.type]);
+
+    let cancelled = false;
+    setSchemaResolved(false);
+
+    (async () => {
+      // Ownership gates which filter (builtin-allowlist vs. hidden-fields-only)
+      // is safe to apply below — an unresolvable rid must NOT fall back to the
+      // weaker non-builtin filter (it could leak locked built-in fields), so
+      // failure here leaves `ownership`/`elementSchema` null, which suppresses
+      // config rendering entirely (see `displayableConfig` below).
+      let resolvedOwnership: 'builtin' | 'custom' | null = null;
+      try {
+        const resource = await getResource(rid);
+        resolvedOwnership = resource.ownership ?? 'custom';
+      } catch (error) {
+        console.error('Error resolving resource ownership:', error);
+        if (!cancelled) {
+          setOwnership(null);
+          setElementSchema(null);
+          setSchemaResolved(true);
+          setResolvedRid(rid);
+        }
+        return;
+      }
+      if (cancelled) return;
+      setOwnership(resolvedOwnership);
+
+      try {
+        if (resolvedOwnership === 'builtin') {
+          const configSchema = await getBuiltinSchema(rid);
+          if (!cancelled) {
+            setElementSchema({ category, name: '', type, description: '', tags: [], config_schema: configSchema });
+          }
+        } else {
+          const spec = await getElementSpec(category, type);
+          if (!cancelled) setElementSchema(spec);
+        }
+      } catch (error) {
+        console.error('Error fetching element schema:', error);
+        if (!cancelled) setElementSchema(null);
+      } finally {
+        if (!cancelled) {
+          setSchemaResolved(true);
+          setResolvedRid(rid);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isOpen, element?.workspaceData?.rid, element?.workspaceData?.category, element?.workspaceData?.type]);
+
+  // Built-ins only surface configurable + card-visible fields; other ownerships
+  // just drop `hints.hidden` bookkeeping fields. `ownership` must be
+  // definitively resolved (not null) — an unresolved lookup fails closed
+  // rather than defaulting to the weaker non-builtin filter. `resolvedRid`
+  // must also match the *current* element's rid — otherwise a render that
+  // happens after `element` swaps to a new resource but before the effect
+  // above has re-run/settled would apply the previous resource's
+  // ownership/schema filter to the new resource's config. For non-builtins,
+  // `elementSchema` must also be present — without it, `filterHiddenFieldsInConfig`
+  // can't strip `hints.hidden` fields, so rendering must fail closed rather
+  // than leak raw (potentially secret-bearing) config.
+  const displayableConfig = schemaResolved
+    && ownership
+    && resolvedRid === element?.workspaceData?.rid
+    && element?.workspaceData?.config
+    && (ownership === 'builtin' || !!elementSchema?.config_schema)
+    ? (() => {
+        const resolved = simplifyConfigForDisplay(resolveRefsInConfig(element.workspaceData.config));
+        return ownership === 'builtin'
+          ? filterToFieldNames(resolved, getBuiltinVisibleFieldNames(elementSchema, resolved))
+          : filterHiddenFieldsInConfig(resolved, elementSchema?.config_schema);
+      })()
+    : null;
+
+  const visibleConfig = displayableConfig
+    ? maskSecretFieldsInConfig(displayableConfig, elementSchema?.config_schema)
+    : null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -104,19 +190,12 @@ const ResourceDetailsModal: React.FC<ResourceDetailsModalProps> = ({
               )}
 
               {/* Configuration */}
-              {element.workspaceData.config && (
+              {visibleConfig && Object.keys(visibleConfig).length > 0 && (
                 <div>
                   <label className="text-sm font-medium text-gray-400">Full Configuration</label>
                   <div className="mt-2 bg-gray-900 p-4 rounded-md">
                     <pre className="text-xs text-gray-300 whitespace-pre-wrap overflow-x-auto">
-                      {JSON.stringify(
-                        maskSecretFieldsInConfig(
-                          simplifyConfigForDisplay(resolveRefsInConfig(element.workspaceData.config)), 
-                          elementSchema?.config_schema
-                        ), 
-                        null, 
-                        2
-                      )}
+                      {JSON.stringify(visibleConfig, null, 2)}
                     </pre>
                   </div>
                 </div>

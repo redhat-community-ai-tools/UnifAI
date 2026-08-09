@@ -1,6 +1,8 @@
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+from pydantic import ValidationError
 
 from mas.blueprints.models.blueprint import BlueprintSpec, BlueprintDraft, BlueprintDocument, BlueprintSummary
 from mas.blueprints.repository.repository import BlueprintRepository
@@ -16,10 +18,11 @@ from mas.blueprints.exceptions import (
     PromptShortcutsValidationError,
 )
 from mas.blueprints.models.prompt_shortcuts import PromptShortcuts
+from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity
 from mas.core.ref import RefWalker
 from mas.elements.common.card import ElementCard
-from mas.elements.common.validator import ValidationContext
+from mas.elements.common.validator import ValidationContext, ElementValidationResult
 from mas.catalog.card_service import ElementCardService
 from mas.validation.models import BlueprintValidationResult
 from mas.validation.service import ElementValidationService
@@ -69,7 +72,7 @@ class BlueprintService:
     # ────────── Single-blueprint reads (ID is globally unique) ──────────
     def load_draft(self, blueprint_id: str) -> BlueprintDraft:
         doc = self._repo.load(blueprint_id)
-        return BlueprintDraft(**doc.spec_dict)
+        return BlueprintDraft.from_stored_dict(doc.spec_dict)
 
     def get_blueprint_draft_doc(self, blueprint_id: str) -> BlueprintDocument:
         """Get blueprint document with metadata for sharing operations."""
@@ -102,16 +105,42 @@ class BlueprintService:
             blueprint_id=blueprint_id, spec=draft, rid_refs=rid_refs,
         )
 
-    def load_resolved(self, blueprint_id: str) -> BlueprintSpec:
-        return self._resolver.resolve(self.load_draft(blueprint_id))
+    def load_resolved(
+        self, blueprint_id: str, caller: CallerScope = CallerScope(),
+    ) -> BlueprintSpec:
+        """Resolve a saved blueprint's refs into an executable spec.
+
+        ``caller.identity`` should be the session/caller owner so built-in
+        resources resolve with that identity's ``builtin_user_configs``
+        overlay applied. Without it, built-ins resolve to their raw
+        defaults.
+        """
+        return self._resolver.resolve(self.load_draft(blueprint_id), caller=caller)
+
+    def load_resolved_tolerant(
+        self, blueprint_id: str, caller: CallerScope = CallerScope(),
+    ) -> Tuple[BlueprintSpec, Dict[str, str]]:
+        """Like ``load_resolved``, but reports broken external refs instead of raising.
+
+        Used by validation, where a stale/deleted referenced resource should
+        show up as a failing element rather than crash the whole request.
+        """
+        return self._resolver.resolve_tolerant(self.load_draft(blueprint_id), caller=caller)
 
     def load_draft_from_dict(self, draft_dict: dict) -> BlueprintDraft:
-        """Load a BlueprintDraft from a dictionary without saving to database."""
-        return BlueprintDraft(**draft_dict)
+        """Load a BlueprintDraft from a dictionary without saving to database.
 
-    def resolve_draft_dict(self, draft_dict: dict) -> BlueprintSpec:
+        Used for re-hydrating an already-*stored* ``spec_dict`` (e.g. sharing/
+        cloning an existing blueprint), so — like ``load_draft`` — it tolerates
+        legacy fields no longer in the schema rather than rejecting them.
+        """
+        return BlueprintDraft.from_stored_dict(draft_dict)
+
+    def resolve_draft_dict(
+        self, draft_dict: dict, caller: CallerScope = CallerScope(),
+    ) -> BlueprintSpec:
         """Resolve a draft dictionary directly to BlueprintSpec without saving to database."""
-        return self._resolver.resolve(BlueprintDraft(**draft_dict))
+        return self._resolver.resolve(BlueprintDraft(**draft_dict), caller=caller)
 
     def to_dict(self, blueprint_id: str) -> Dict[str, Any]:
         """Draft -> JSON-serialisable dict (no meta)."""
@@ -162,44 +191,77 @@ class BlueprintService:
         """
         return self._repo.list_docs(identity=identity, **pg)
 
-    def _resolve_doc(self, doc: BlueprintDocument) -> BlueprintDocument:
-        """Resolve a single document's spec_dict from draft to fully resolved form."""
-        draft = BlueprintDraft(**doc.spec_dict)
-        resolved_dict = self._resolver.resolve(draft).model_dump(mode="json")
+    def _resolve_doc(
+        self, doc: BlueprintDocument, caller: CallerScope = CallerScope(),
+    ) -> BlueprintDocument:
+        """Resolve a single document's spec_dict from draft to fully resolved form.
+
+        Uses tolerant resolution — same rationale as ``validate_blueprint``:
+        a stale/deleted referenced resource shouldn't make the whole document
+        unviewable. The broken ref is simply left out of the resolved spec's
+        resource lists (the referencing element's own config still carries
+        the dangling ``$ref:...``, which is exactly how ``blueprint.validate``
+        surfaces it as a failing/unvalidated element); only logged here.
+        """
+        draft = BlueprintDraft.from_stored_dict(doc.spec_dict)
+        spec, broken_refs = self._resolver.resolve_tolerant(draft, caller=caller)
+        if broken_refs:
+            logger.warning(
+                "Blueprint '%s' has broken resource ref(s), resolved with gaps — %s",
+                doc.blueprint_id, broken_refs,
+            )
+        resolved_dict = spec.model_dump(mode="json")
         shortcuts = draft.model_dump(mode="json").get("prompt_shortcuts")
         if shortcuts is not None:
             resolved_dict["prompt_shortcuts"] = shortcuts
         return doc.model_copy(update={"spec_dict": resolved_dict})
 
     def list_resolved_docs(
-            self, *, identity: Optional[Identity] = None, **pg
+            self, *, caller: CallerScope = CallerScope(), **pg
     ) -> List[BlueprintDocument]:
         """
         Return documents with resolved spec_dict instead of draft spec_dict.
+
+        ``caller.identity`` is used both to scope the listing (via the
+        repository) and to resolve each document's built-in overlays.
         """
-        docs = self._repo.list_docs(identity=identity, **pg)
+        docs = self._repo.list_docs(identity=caller.identity, **pg)
         resolved_docs = []
 
         for doc in docs:
             try:
-                resolved_docs.append(self._resolve_doc(doc))
-            except Exception as e:
-                print(f"Skipping blueprint '{doc.blueprint_id}': resolution failed — {e}")
+                resolved_docs.append(self._resolve_doc(doc, caller=caller))
+            except (KeyError, ValidationError) as e:
+                logger.warning(
+                    "Skipping blueprint '%s': resolution failed — %s",
+                    doc.blueprint_id, e,
+                )
                 continue
 
         return resolved_docs
 
-    def get_resolved_doc(self, blueprint_id: str) -> BlueprintDocument:
+    def get_resolved_doc(
+        self, blueprint_id: str, caller: CallerScope = CallerScope(),
+    ) -> BlueprintDocument:
         """
         Return a single document with its spec_dict resolved.
 
         Raises:
             BlueprintNotFoundError: If the blueprint does not exist.
+
+        Note: refs to resources that no longer exist (or, for a non-admin
+        caller, a draft built-in) do NOT raise — see
+        ``_resolve_doc``/``resolve_tolerant``. The document still resolves;
+        the reference is simply omitted from the resolved spec's resource
+        lists rather than the dangling ``$ref:...`` being left in place.
         """
         if not self.exists(blueprint_id):
             raise BlueprintNotFoundError(blueprint_id)
-        doc = self._repo.load(blueprint_id)
-        return self._resolve_doc(doc)
+        try:
+            doc = self._repo.load(blueprint_id)
+        except KeyError as exc:
+            raise BlueprintNotFoundError(blueprint_id) from exc
+        return self._resolve_doc(doc, caller=caller)
 
     def count(self, *, identity: Optional[Identity] = None) -> int:
         return self._repo.count(identity=identity)
@@ -257,6 +319,7 @@ class BlueprintService:
     def validate_blueprint(
         self,
         blueprint_id: str,
+        caller: CallerScope = CallerScope(),
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
@@ -266,6 +329,7 @@ class BlueprintService:
         
         Args:
             blueprint_id: Blueprint ID to validate
+            caller: Caller identity/admin status, used to resolve built-in overlays
             user_id: Logged-in user (for auth-aware validators)
             timeout_seconds: Timeout for network checks
             
@@ -274,18 +338,23 @@ class BlueprintService:
             
         Raises:
             RuntimeError: If validation service not configured
-            KeyError: If blueprint not found
+            KeyError: If the blueprint itself does not exist
+
+        Note: refs to resources that no longer exist do NOT raise — they
+        show up as failing elements in the returned result instead.
         """
         self._ensure_validation_service()
-        spec = self.load_resolved(blueprint_id)
+        spec, broken_refs = self.load_resolved_tolerant(blueprint_id, caller=caller)
         return self._validate_spec(
             spec, blueprint_id, timeout_seconds,
             user_id=user_id, credential_user_id=credential_user_id,
+            broken_refs=broken_refs,
         )
 
     def validate_draft(
         self,
         draft_dict: dict,
+        caller: CallerScope = CallerScope(),
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
@@ -297,33 +366,37 @@ class BlueprintService:
         Useful for UI validation before creating a blueprint.
         """
         self._ensure_validation_service()
-        spec = self.resolve_draft_dict(draft_dict)
+        draft = BlueprintDraft(**draft_dict)
+        spec, broken_refs = self._resolver.resolve_tolerant(draft, caller=caller)
         return self._validate_spec(
             spec, "draft", timeout_seconds,
             user_id=user_id, credential_user_id=credential_user_id,
+            broken_refs=broken_refs,
         )
 
     # ────────── Card Building ──────────
     def get_blueprint_cards(
         self,
         blueprint_id: str,
+        caller: CallerScope = CallerScope(),
     ) -> Dict[str, ElementCard]:
         """
         Get element cards for all elements in a saved blueprint.
         """
         self._ensure_card_service()
-        spec = self.load_resolved(blueprint_id)
+        spec = self.load_resolved(blueprint_id, caller=caller)
         return self._build_cards_from_spec(spec)
 
     def get_draft_cards(
         self,
-        draft_dict: dict
+        draft_dict: dict,
+        caller: CallerScope = CallerScope(),
     ) -> Dict[str, ElementCard]:
         """
         Get element cards for a blueprint draft.
         """
         self._ensure_card_service()
-        spec = self.resolve_draft_dict(draft_dict)
+        spec = self.resolve_draft_dict(draft_dict, caller=caller)
         return self._build_cards_from_spec(spec)
 
     # ────────── Helpers ──────────
@@ -344,8 +417,13 @@ class BlueprintService:
         timeout_seconds: float,
         user_id: str = "",
         credential_user_id: str = "",
+        broken_refs: Optional[Dict[str, str]] = None,
     ) -> BlueprintValidationResult:
-        """Collect configs from spec, validate, and build result."""
+        """Collect configs from spec, validate, and build result.
+
+        ``broken_refs`` (rid -> reason) are refs that couldn't be resolved;
+        each is reported as its own failing element result.
+        """
         configs = self._config_collector.collect(spec)
         context = ValidationContext(
             timeout_seconds=timeout_seconds,
@@ -354,6 +432,8 @@ class BlueprintService:
             auth_service=self._auth_service,
         )
         results = self._validation_service.validate_ordered(configs, context)
+        for rid, reason in (broken_refs or {}).items():
+            results[rid] = ElementValidationResult.create_error(rid=rid, error=reason)
         return BlueprintValidationResult(
             blueprint_id=blueprint_id,
             is_valid=all(r.is_valid for r in results.values()),

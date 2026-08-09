@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import { getPromptShortcuts, PromptShortcut } from "@/api/blueprints";
 import {
@@ -20,8 +20,7 @@ import {
 interface UseSchedulePromptFormArgs {
   isOpen: boolean;
   blueprintId: string;
-  userId?: string;
-  identityType?: string;
+  teamId?: string;
   editPrompt?: WorkflowScheduleResponse | null;
   onClose: (saved?: boolean) => void;
 }
@@ -33,8 +32,7 @@ interface UseSchedulePromptFormArgs {
 export function useSchedulePromptForm({
   isOpen,
   blueprintId,
-  userId,
-  identityType,
+  teamId,
   editPrompt,
   onClose,
 }: UseSchedulePromptFormArgs) {
@@ -126,18 +124,31 @@ export function useSchedulePromptForm({
     }
   }, [isOpen, editPrompt]);
 
+  const shortcutScopeRef = useRef(0);
+
+  useEffect(() => {
+    shortcutScopeRef.current += 1;
+    setShortcuts([]);
+    setShortcutsLoading(false);
+  }, [blueprintId, teamId]);
+
   const loadShortcuts = useCallback(async () => {
     if (shortcuts.length > 0 || shortcutsLoading) return;
+    const scope = shortcutScopeRef.current;
     setShortcutsLoading(true);
     try {
-      const result = await getPromptShortcuts(blueprintId, userId, identityType);
+      const result = await getPromptShortcuts(blueprintId, teamId);
+      if (scope !== shortcutScopeRef.current) return;
       setShortcuts(result.prompts);
     } catch {
+      if (scope !== shortcutScopeRef.current) return;
       setShortcuts([]);
     } finally {
-      setShortcutsLoading(false);
+      if (scope === shortcutScopeRef.current) {
+        setShortcutsLoading(false);
+      }
     }
-  }, [blueprintId, userId, identityType, shortcuts.length, shortcutsLoading]);
+  }, [blueprintId, teamId, shortcuts.length, shortcutsLoading]);
 
   const handlePromptTextChange = useCallback((text: string) => {
     setPromptText(text);
@@ -245,15 +256,13 @@ export function useSchedulePromptForm({
       if (isEditMode && editPrompt) {
         await updateSchedule(
           { scheduleId: editPrompt.id, inputs: { user_prompt: promptText }, schedule },
-          userId,
-          identityType,
+          teamId,
         );
       } else {
         const source = copiedFromShortcut ? "shortcut_copy" : "manual";
         await createSchedule(
           { blueprintId, inputs: { user_prompt: promptText }, source, schedule },
-          userId,
-          identityType,
+          teamId,
         );
       }
       onClose(true);
@@ -265,7 +274,7 @@ export function useSchedulePromptForm({
     }
   }, [
     promptText, combinedDateTime, timezone, recurrence, customRecurrence, overlapPolicy,
-    isEditMode, editPrompt, userId, identityType, copiedFromShortcut, blueprintId, onClose,
+    isEditMode, editPrompt, teamId, copiedFromShortcut, blueprintId, onClose,
   ]);
 
   return {
