@@ -34,6 +34,7 @@ from mas.resources.models import Resource
 from mas.resources.registry import ResourcesRegistry
 from mas.resources.service import CoreResourceService
 from mas.resources.builtin_aware_service import BuiltinAwareResourceService
+from mas.resources.builtin_service import BuiltinResourceService
 from mas.resources.field_encryption import ResourceFieldEncryption
 from mas.resources.builtin_models import BuiltinUpdateRequest, identity_to_key
 
@@ -338,8 +339,11 @@ class TestBuiltinOverlay:
         assert user_config["bearer_token"] == "alices-secret"
 
     def test_configure_builtin_auth_metadata_round_trips_through_get_user_config(
-        self, builtin_service, admin_identity, alice,
-    ):
+        self,
+        builtin_service: BuiltinResourceService,
+        admin_identity: Identity,
+        alice: Identity,
+    ) -> None:
         """Regression test: `server_identifier`/`scheme_type` (hidden,
         non-user-configurable) are written to the identity's overlay by
         `configure_builtin()` right after a sign-in flow resolves the real
@@ -358,8 +362,12 @@ class TestBuiltinOverlay:
         assert user_config["server_identifier"] == "https://issuer.example"
 
     def test_to_dict_merges_overlay_tool_names_for_inventory_card(
-        self, service, builtin_service, admin_identity, alice,
-    ):
+        self,
+        service: BuiltinAwareResourceService,
+        builtin_service: BuiltinResourceService,
+        admin_identity: Identity,
+        alice: Identity,
+    ) -> None:
         """Regression test: inventory cards read ``cfg_dict`` from list/configure
         serialization. Without merging the caller's overlay, a user-selected
         ``tool_names`` list never reaches the card and the schema's
