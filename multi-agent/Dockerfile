@@ -40,6 +40,10 @@ ARG CERT_NAME="Current-IT-Root-CAs.pem"
 RUN curl -fSL "$CERT_URL" -o /etc/pki/ca-trust/source/anchors/$CERT_NAME && \
     update-ca-trust extract
 
+    # Trust self-signed AAP MCP certificate (lab)
+COPY multi-agent/certs/aap-mcp.crt /etc/pki/ca-trust/source/anchors/aap-mcp.crt
+RUN update-ca-trust extract
+
 # Ensure the CA bundle is readable by all users
 RUN chmod 644 /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 
