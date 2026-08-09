@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
 from mas.core.identity import Identity
-from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, CardContext, combine_hints
+from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, CardContext, HiddenHint, combine_hints
 from mas.resources.models import Resource, ResourceQuery
 from mas.resources.registry import ResourcesRegistry
 from mas.resources.service import CoreResourceService
@@ -63,6 +63,20 @@ class FakeProviderConfig(BaseModel):
         default="https://example.com",
         json_schema_extra=combine_hints(
             CardHint(contexts=[CardContext.CUSTOM]),
+        ),
+    )
+    server_identifier: str = Field(
+        default="",
+        json_schema_extra=HiddenHint(reason="Set automatically by connection validation").to_hints(),
+    )
+    tool_names: Optional[List[str]] = Field(
+        default_factory=list,
+        json_schema_extra=combine_hints(
+            ReadOnlyHint(read_only=False),
+            CardHint(
+                contexts=[CardContext.BUILTIN, CardContext.CUSTOM],
+                empty_text="All tools",
+            ),
         ),
     )
 

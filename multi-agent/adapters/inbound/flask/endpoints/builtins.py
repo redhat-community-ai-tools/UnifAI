@@ -163,7 +163,13 @@ def configure_builtin(identity: Identity, resource_id: str, config: dict) -> tup
             identity=identity,
             config=config,
         )
-        return jsonify(current_app.container.resources_service.to_dict(doc)), 200
+        # Pass identity so the response's cfg_dict includes this caller's
+        # overlay (e.g. freshly saved tool_names) — matches list/get
+        # serialization and lets the UI refresh the inventory card without
+        # a full refetch.
+        return jsonify(
+            current_app.container.resources_service.to_dict(doc, identity=identity)
+        ), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except BuiltinConfigUnavailableError as e:

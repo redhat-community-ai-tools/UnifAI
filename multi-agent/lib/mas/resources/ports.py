@@ -67,7 +67,9 @@ class ResourceServicePort(Protocol):
 
     def delete(self, rid: str) -> None: ...
 
-    def to_dict(self, resource: Resource) -> dict: ...
+    def to_dict(
+        self, resource: Resource, *, identity: Optional[Identity] = ...,
+    ) -> dict: ...
 
 
 @runtime_checkable

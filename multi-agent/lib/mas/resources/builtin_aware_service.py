@@ -216,15 +216,41 @@ class BuiltinAwareResourceService:
             raise ResourceAccessDeniedError(rid)
         return resource
 
-    def to_dict(self, resource: Resource) -> dict:
-        """Serialize, stamping ownership/visibility from descriptor."""
+    def to_dict(
+        self,
+        resource: Resource,
+        *,
+        identity: Optional[Identity] = None,
+    ) -> dict:
+        """Serialize, stamping ownership/visibility from descriptor.
+
+        When *identity* is provided for a built-in, the caller's per-identity
+        overlay is merged into ``cfg_dict`` (same keys ``resolve_resource``
+        uses) so inventory cards/list responses reflect user-configured
+        values like MCP ``tool_names`` instead of only the shared base
+        config (which would otherwise always render the card's
+        ``empty_text`` fallback, e.g. "All tools").
+        """
         data = resource.model_dump(mode="json")
         descriptor = self._descriptors.get(resource.rid)
         if descriptor is None:
             data["ownership"] = ResourceOwnership.CUSTOM.value
-        else:
-            data["ownership"] = ResourceOwnership.BUILTIN.value
-            data["visibility"] = descriptor.visibility.value
+            return data
+
+        data["ownership"] = ResourceOwnership.BUILTIN.value
+        data["visibility"] = descriptor.visibility.value
+
+        if identity is not None:
+            data["cfg_dict"] = self._strip_and_merge_overlay(
+                resource, dict(data.get("cfg_dict") or {}), identity,
+            )
+            if self._user_configs:
+                key = identity_to_key(identity)
+                data["user_configured"] = (
+                    self._user_configs.get(resource.rid, key) is not None
+                )
+            else:
+                data["user_configured"] = False
         return data
 
     def to_dicts(
@@ -233,7 +259,12 @@ class BuiltinAwareResourceService:
         *,
         identity: Optional[Identity] = None,
     ) -> List[dict]:
-        """Serialize resources, attaching ``user_configured`` for built-ins."""
+        """Serialize resources, attaching ``user_configured`` for built-ins.
+
+        Batches the ``user_configured`` lookup via ``find_by_identity`` so a
+        list of N built-ins is one query rather than N; overlay merge into
+        each ``cfg_dict`` still goes through ``to_dict(identity=...)``.
+        """
         configured_rids: set = set()
         if identity is not None and self._user_configs:
             key = identity_to_key(identity)
@@ -242,7 +273,7 @@ class BuiltinAwareResourceService:
 
         result = []
         for doc in resources:
-            data = self.to_dict(doc)
+            data = self.to_dict(doc, identity=identity)
             if data.get("ownership") == ResourceOwnership.BUILTIN.value:
                 data["user_configured"] = doc.rid in configured_rids
             result.append(data)

@@ -457,6 +457,25 @@ export const useWorkspaceData = () => {
           config,
         });
 
+        // Response cfg_dict is overlay-merged for this caller — refresh the
+        // local inventory instance so cards (e.g. MCP tool_names) update
+        // immediately instead of keeping the shared base config's empty
+        // "All tools" fallback until the next full refetch.
+        if (result?.cfg_dict) {
+          setElementInstances((prev) =>
+            prev.map((el) =>
+              el.rid === resourceId
+                ? {
+                    ...el,
+                    config: result.cfg_dict,
+                    userConfigured: result.user_configured ?? true,
+                    updated: result.updated ?? el.updated,
+                  }
+                : el,
+            ),
+          );
+        }
+
         // The resource's validation status may have flipped (e.g. a
         // previously-missing token is now set) — the cached badge on the
         // card would otherwise keep showing the pre-save status forever.

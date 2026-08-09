@@ -191,6 +191,23 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
         initialData[key] = "";
       }
     }
+
+    // Auth-metadata fields (`server_identifier`, `scheme_type`) are hidden
+    // (not in `configurableFields`) but still live on this identity's
+    // overlay — discovered/persisted per-user by the sign-in flow, not part
+    // of the shared base config. Without this, hidden validations (e.g.
+    // `mcp_url`'s connection check) would only ever see the base config's
+    // empty/stale identifier and fall back to an unauthenticated probe even
+    // for an already-signed-in user.
+    if (userOverlay) {
+      for (const [key, value] of Object.entries(userOverlay)) {
+        if (key in configurableFields) continue;
+        if (value !== undefined && value !== null) {
+          initialData[key] = value;
+        }
+      }
+    }
+
     setFormData(initialData);
   }, [configurableFields, isOpen, element?.config, userOverlay]);
 
@@ -198,9 +215,19 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
   // may reference user-configurable values (e.g. `mcp_url` validates using
   // `credential_token`, propagated from the user-supplied `bearer_token`).
   // Rendering invisible FieldValidation components for these ensures the
-  // connection is re-checked whenever a dependency changes.
+  // connection is re-checked whenever a dependency changes — and Save is
+  // gated on their success.
+  //
+  // Sign-in is the exception: OAuth credentials are acquired on the card,
+  // not in this modal, so the form never has a `credential_token` for the
+  // hidden `mcp_url` probe to consume. Gating Save on that probe leaves the
+  // button permanently disabled after a successful card sign-in (users can
+  // still pick tool_names via populate, which binds/rediscovers on its own).
   const hiddenValidationFields = useMemo(() => {
     if (!builtinSchema?.config_schema?.properties) return [];
+    const authMethod = formData?.auth_method ?? element?.config?.auth_method;
+    if (authMethod === "sign_in") return [];
+
     const result: Array<{ fieldName: string; fieldSchema: SchemaProperty; hint: ValidationHintDescriptor }> = [];
     for (const [name, rawSchema] of Object.entries(builtinSchema.config_schema.properties)) {
       const schema = rawSchema as SchemaProperty;
@@ -211,7 +238,7 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
       if (hint) result.push({ fieldName: name, fieldSchema: schema, hint });
     }
     return result;
-  }, [builtinSchema]);
+  }, [builtinSchema, formData?.auth_method, element?.config?.auth_method]);
 
   const {
     isFieldConditionallyVisible,

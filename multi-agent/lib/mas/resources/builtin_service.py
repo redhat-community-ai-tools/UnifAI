@@ -255,7 +255,15 @@ class BuiltinResourceService:
         """Return the user's current overlay for a built-in resource, or None.
 
         Decrypts sensitive fields so the UI can display masked values.
-        Only returns fields that are marked as user-configurable.
+        Returns fields marked as user-configurable, plus any auth-metadata
+        fields (``AUTH_METADATA_OVERLAY_FIELDS``) present on this identity's
+        overlay — mirrors the ``allowed_keys`` set ``configure_builtin()``
+        writes with, so a signed-in resource's discovered
+        ``server_identifier``/``scheme_type`` actually round-trips back to
+        the UI instead of silently vanishing after being persisted (leaving
+        later hidden validations to fall back to an unauthenticated probe
+        against a stale/empty identifier, per the comment on
+        ``AUTH_METADATA_OVERLAY_FIELDS``).
         Draft built-ins are not configurable by end users.
         """
         resource = self._store.get(rid)
@@ -279,7 +287,8 @@ class BuiltinResourceService:
         model_cls = self.element_registry.get_schema(
             ResourceCategory(resource.category), resource.type
         )
-        filtered = {k: v for k, v in user_config.fields.items() if k in configurable_keys}
+        allowed_keys = configurable_keys | self._auth_metadata_keys(resource)
+        filtered = {k: v for k, v in user_config.fields.items() if k in allowed_keys}
         return self._fields.decrypt_config_fields(filtered, sensitive_keys, model_cls)
 
     def configure_builtin(

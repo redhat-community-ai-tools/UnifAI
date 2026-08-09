@@ -418,11 +418,18 @@ class CoreResourceService:
             self._auth_service.delete_credential(identity.id, server_id)
 
     # ---------- Serialization ----------
-    def to_dict(self, resource: Resource) -> dict:
+    def to_dict(
+        self,
+        resource: Resource,
+        *,
+        identity: Optional[Identity] = None,
+    ) -> dict:
         """Serialize a single resource to a JSON-ready dict.
 
         No ownership/visibility stamping — see ``BuiltinAwareResourceService``
-        for the decorated version that stamps descriptor metadata.
+        for the decorated version that stamps descriptor metadata and merges
+        per-identity overlays. ``identity`` is accepted for signature
+        compatibility with that decorator and ignored here.
         """
         return resource.model_dump(mode="json")
 
@@ -435,9 +442,9 @@ class CoreResourceService:
         """Serialize resources.
 
         ``identity`` is accepted but unused — the built-in-aware decorator
-        uses it to attach ``user_configured`` flags.
+        uses it to attach ``user_configured`` flags and merge overlays.
         """
-        return [self.to_dict(doc) for doc in resources]
+        return [self.to_dict(doc, identity=identity) for doc in resources]
 
     def _ensure_validation_service(self) -> None:
         """Raise if validation service not configured."""

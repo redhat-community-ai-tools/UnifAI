@@ -337,6 +337,46 @@ class TestBuiltinOverlay:
         user_config = builtin_service.get_user_config(doc.rid, identity=alice)
         assert user_config["bearer_token"] == "alices-secret"
 
+    def test_configure_builtin_auth_metadata_round_trips_through_get_user_config(
+        self, builtin_service, admin_identity, alice,
+    ):
+        """Regression test: `server_identifier`/`scheme_type` (hidden,
+        non-user-configurable) are written to the identity's overlay by
+        `configure_builtin()` right after a sign-in flow resolves the real
+        auth server — but `get_user_config()` used to filter the overlay
+        down to `configurable_keys` only, silently dropping them from what
+        the UI sees. Without them, hidden validations for an
+        already-signed-in user would keep falling back to an
+        unauthenticated probe against a stale/empty identifier."""
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="default-secret")
+
+        builtin_service.configure_builtin(
+            doc.rid, identity=alice, config={"server_identifier": "https://issuer.example"},
+        )
+
+        user_config = builtin_service.get_user_config(doc.rid, identity=alice)
+        assert user_config["server_identifier"] == "https://issuer.example"
+
+    def test_to_dict_merges_overlay_tool_names_for_inventory_card(
+        self, service, builtin_service, admin_identity, alice,
+    ):
+        """Regression test: inventory cards read ``cfg_dict`` from list/configure
+        serialization. Without merging the caller's overlay, a user-selected
+        ``tool_names`` list never reaches the card and the schema's
+        ``empty_text`` ("All tools") is shown instead."""
+        doc = _make_builtin_resource(builtin_service, admin_identity, bearer_token="default-secret")
+        builtin_service.configure_builtin(
+            doc.rid, identity=alice, config={"tool_names": ["search", "fetch"]},
+        )
+
+        serialized = service.to_dict(doc, identity=alice)
+        assert serialized["cfg_dict"]["tool_names"] == ["search", "fetch"]
+        assert serialized["user_configured"] is True
+
+        # Without identity, keep the shared base (empty tool_names).
+        base_serialized = service.to_dict(doc)
+        assert base_serialized["cfg_dict"].get("tool_names") in (None, [])
+
     def test_configure_builtin_overlay_takes_priority_in_resolve(
         self, service, builtin_service, admin_identity, alice, bob,
     ):
