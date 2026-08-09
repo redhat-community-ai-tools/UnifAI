@@ -105,9 +105,10 @@ logging:
     className: aws-efs-tier-c1
     accessModes:
       - ReadWriteMany
+    # keepPvc → helm.sh/resource-policy: keep (Helm will not delete the PVC on uninstall).
+    # PV reclaim after PVC deletion is controlled by the StorageClass (className), not the PVC.
     keepPvc: true
-    annotations:
-      kubernetes.io/reclaimPolicy: Delete
+    annotations: {}
     labels:
       paas.redhat.com/appcode: TAG-001
 

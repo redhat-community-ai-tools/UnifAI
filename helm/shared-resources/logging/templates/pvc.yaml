@@ -7,13 +7,14 @@ metadata:
     {{- with .Values.storage.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- if or .Values.storage.keepPvc .Values.storage.annotations }}
+  {{- $extraAnnotations := .Values.storage.annotations | default dict }}
+  {{- if or .Values.storage.keepPvc (not (empty $extraAnnotations)) }}
   annotations:
   {{- if .Values.storage.keepPvc }}
     "helm.sh/resource-policy": keep
   {{- end }}
-  {{- with .Values.storage.annotations }}
-    {{- toYaml . | nindent 4 }}
+  {{- if not (empty $extraAnnotations) }}
+    {{- toYaml $extraAnnotations | nindent 4 }}
   {{- end }}
   {{- end }}
 spec:
