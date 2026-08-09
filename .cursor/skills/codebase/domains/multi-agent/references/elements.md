@@ -85,12 +85,41 @@ See full recipes in `../recipes/` for detailed step-by-step guides:
 Quick checklist (all element types):
 1. Create package: `elements/<category>/<name>/`
 2. Create `identifiers.py` with type_key constant
-3. Create `config.py` — Pydantic config with `type: Literal[Identifier.TYPE]`
+3. Create `config.py` — Pydantic config with `type: Literal[Identifier.TYPE]`. Tag
+   secret, user-overridable-on-builtin, and card-visible fields with field hints
+   (see "Field Hints on Config Fields" below).
 4. Create implementation — extend the category's base class
 5. Create `<name>_factory.py` — `BaseFactory` subclass with `create()` method
 6. Create `spec/spec.py` — `BaseElementSpec` subclass with all ClassVars set
 7. Add config to the category's `types.py` union type
 8. Auto-discovered at startup — no manual registration needed
+
+### Field Hints on Config Fields
+
+Config fields declare UI/schema behavior via `mas.core.field_hints` hints in
+`json_schema_extra` (combine multiple with `combine_hints(...)`). Two hints
+matter beyond pure UI rendering — they drive the built-in resources system
+(see `references/resources.md`):
+
+| Hint | Effect |
+|------|--------|
+| `ReadOnlyHint(read_only=False)` | Field stays editable per-identity when this element is promoted to a built-in. Omit for fields that should be admin-locked once built-in (the default). |
+| `CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM])` | Opts the field into inventory-card display, independently for built-in vs. custom-owned instances. Use `empty_text=` when an empty value still means something (e.g. `tool_names=[]` meaning "all tools"). |
+| `SecretHint` | Encrypts the field at rest and masks it in the UI. Never shown on a card even if also `CardHint`-tagged. |
+
+These are opt-in and additive — existing config fields without them keep
+working exactly as before (read-only if ever built-in, never on a card).
+See `nodes/custom_agent/config.py` and `providers/mcp_server_client/config.py`
+for representative usage. A config class can also declare an `ENCRYPTED_FIELDS: ClassVar[set[str]]`
+(e.g. `openshell_sandbox`) as an explicit second path to at-rest encryption —
+`ResourceFieldEncryption` encrypts the union of `SecretHint`-tagged fields and `ENCRYPTED_FIELDS`.
+
+**Naming note:** "Builtin Tools" below (`elements/tools/builtin/`) is an unrelated,
+pre-existing concept — auto-injected tool implementations (delegation, retriever,
+time) wired directly into a node's `_create_builtin_tools()`. Don't confuse it with
+**built-in resources** (`ResourceOwnership.BUILTIN`) — admin-published, shared
+library items of any element category, covered by the hints above and documented
+fully in `references/resources.md`.
 
 ### Adding a New Builtin Tool
 

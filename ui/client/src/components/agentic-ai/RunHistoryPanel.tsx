@@ -20,16 +20,15 @@ function runStatusTone(status: string): StatusTone {
 
 interface RunHistoryPanelProps {
   promptId: string;
-  userId: string;
-  identityType: string;
+  teamId?: string;
 }
 
-export default function RunHistoryPanel({ promptId, userId, identityType }: RunHistoryPanelProps) {
+export default function RunHistoryPanel({ promptId, teamId }: RunHistoryPanelProps) {
   const [, navigate] = useLocation();
 
   const { data: runs = [], isLoading, isError } = useQuery<ScheduleRunResponse[]>({
-    queryKey: ["prompt-runs", promptId, userId, identityType],
-    queryFn: () => getScheduleRuns(promptId, userId, identityType, 8),
+    queryKey: ["prompt-runs", promptId, teamId],
+    queryFn: () => getScheduleRuns(promptId, teamId, 8),
     staleTime: 5_000,
     refetchInterval: 10_000,
   });

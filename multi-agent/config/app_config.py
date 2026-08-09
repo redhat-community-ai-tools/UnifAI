@@ -18,7 +18,8 @@ class AppConfig(SharedConfig):
     hostname: str = "0.0.0.0"
     port: str = "8002"
     version: str = "1.0.0"
-    admin_allowed_users: list = Field(default_factory=list)  # user_ids (usernames) for admin access
+    admin_allowed_users: list[str] = Field(default_factory=list)  # user_ids (usernames) for admin access
+    admin_config_db: str = "config"  # MongoDB database used by the backend admin config panel
     secret_key: str = ""
 
     # Session cookie — must match Identity so Flask never re-signs with different attributes

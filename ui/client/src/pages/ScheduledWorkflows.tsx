@@ -256,7 +256,7 @@ function ActionsCell({
 const QUERY_KEY_PREFIX = "scheduled-prompts" as const;
 
 export default function ScheduledWorkflows() {
-  const { userId, identityType } = useWorkspaceIdentity();
+  const { teamId, userId } = useWorkspaceIdentity();
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -268,7 +268,7 @@ export default function ScheduledWorkflows() {
   // Workflow picker state (AddFlowModal)
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedFlowForPicker, setSelectedFlowForPicker] = useState<FlowObject | null>(null);
-  const scheduleCounts = useScheduledBlueprintCounts(userId, identityType);
+  const scheduleCounts = useScheduledBlueprintCounts(teamId);
   const isPickerFlowAtLimit = selectedFlowForPicker
     ? (scheduleCounts.get(selectedFlowForPicker.id) ?? 0) >= MAX_ACTIVE_SCHEDULES_PER_WORKFLOW
     : false;
@@ -279,14 +279,15 @@ export default function ScheduledWorkflows() {
   const [expandedPromptId, setExpandedPromptId] = useState<string | null>(null);
 
 
+  const scopeKey = teamId ?? userId;
   const queryKey = useMemo(
-    () => [QUERY_KEY_PREFIX, userId, identityType] as const,
-    [userId, identityType],
+    () => [QUERY_KEY_PREFIX, scopeKey] as const,
+    [scopeKey],
   );
 
-  const { data: prompts = [], isLoading } = useQuery<WorkflowScheduleResponse[]>({
+  const { data: prompts = [], isLoading, isError, refetch } = useQuery<WorkflowScheduleResponse[]>({
     queryKey,
-    queryFn: () => listSchedules(userId, identityType),
+    queryFn: () => listSchedules(teamId),
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
@@ -296,9 +297,13 @@ export default function ScheduledWorkflows() {
     [prompts, expandedPromptId],
   );
 
-  const { data: resolvedSpec } = useQuery({
-    queryKey: ["resolved-blueprint", expandedPrompt?.blueprint_id],
-    queryFn: () => fetchResolvedBlueprint(expandedPrompt!.blueprint_id, userId, identityType),
+  const {
+    data: resolvedSpec,
+    isError: isResolvedSpecError,
+    refetch: refetchResolvedSpec,
+  } = useQuery({
+    queryKey: ["resolved-blueprint", scopeKey, expandedPrompt?.blueprint_id],
+    queryFn: () => fetchResolvedBlueprint(expandedPrompt!.blueprint_id, teamId),
     enabled: !!expandedPrompt,
     staleTime: 5 * 60_000,
   });
@@ -332,21 +337,21 @@ export default function ScheduledWorkflows() {
   const handleTrigger = useCallback(
     async (id: string) => {
       try {
-        await triggerSchedule(id, userId, identityType);
+        await triggerSchedule(id, teamId);
         toast({ title: "Triggered", description: "Schedule run started" });
         invalidate();
       } catch {
         toast({ title: "Error", description: "Failed to trigger schedule", variant: "destructive" });
       }
     },
-    [userId, identityType, toast, invalidate],
+    [teamId, toast, invalidate],
   );
 
   const handlePause = useCallback(
     async (id: string) => {
       optimisticUpdate(id, { schedule_status: ScheduleStatus.Paused });
       try {
-        await pauseSchedule(id, userId, identityType);
+        await pauseSchedule(id, teamId);
         toast({ title: "Paused", description: "Schedule paused" });
         invalidate();
       } catch {
@@ -354,14 +359,14 @@ export default function ScheduledWorkflows() {
         invalidate();
       }
     },
-    [userId, identityType, toast, invalidate, optimisticUpdate],
+    [teamId, toast, invalidate, optimisticUpdate],
   );
 
   const handleResume = useCallback(
     async (id: string) => {
       optimisticUpdate(id, { schedule_status: ScheduleStatus.Active });
       try {
-        await resumeSchedule(id, userId, identityType);
+        await resumeSchedule(id, teamId);
         toast({ title: "Resumed", description: "Schedule resumed" });
         invalidate();
       } catch {
@@ -369,7 +374,7 @@ export default function ScheduledWorkflows() {
         invalidate();
       }
     },
-    [userId, identityType, toast, invalidate, optimisticUpdate],
+    [teamId, toast, invalidate, optimisticUpdate],
   );
 
   const handleDeleteConfirmed = useCallback(
@@ -377,7 +382,7 @@ export default function ScheduledWorkflows() {
       if (!deleteTarget) return;
       optimisticUpdate(deleteTarget, { schedule_status: ScheduleStatus.Completed });
       try {
-        await deleteSchedule(deleteTarget, userId, identityType);
+        await deleteSchedule(deleteTarget, teamId);
         toast({ title: "Deleted", description: "Scheduled prompt removed" });
         invalidate();
       } catch {
@@ -387,7 +392,7 @@ export default function ScheduledWorkflows() {
         setDeleteTarget(null);
       }
     },
-    [deleteTarget, userId, identityType, toast, invalidate, optimisticUpdate],
+    [deleteTarget, teamId, toast, invalidate, optimisticUpdate],
   );
 
   const handleEdit = useCallback((prompt: WorkflowScheduleResponse) => {
@@ -539,7 +544,15 @@ export default function ScheduledWorkflows() {
               </div>
             </div>
 
-            {isLoading ? (
+            {isError ? (
+              <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+                <Clock className="w-6 h-6 mb-3 text-red-400" />
+                <p className="mb-2">Failed to load scheduled workflows</p>
+                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                  <RotateCw className="w-3.5 h-3.5 mr-1.5" /> Retry
+                </Button>
+              </div>
+            ) : isLoading ? (
               <div className="flex flex-col items-center justify-center py-20 text-gray-500">
                 <Clock className="w-6 h-6 mb-3 animate-spin" />
                 Loading scheduled workflows…
@@ -577,21 +590,29 @@ export default function ScheduledWorkflows() {
                         <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Run History</h4>
                         <RunHistoryPanel
                           promptId={prompt.id}
-                          userId={userId}
-                          identityType={identityType}
+                          teamId={teamId}
                         />
                       </div>
                       <div>
                         <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Workflow Graph</h4>
                         <div className="rounded-lg border border-gray-800 overflow-hidden" style={{ height: 300 }}>
-                          <GraphDisplay
-                            blueprintId={prompt.blueprint_id}
-                            specDict={resolvedSpec?.spec_dict}
-                            height="100%"
-                            showBackground={false}
-                            interactive={false}
-                            centerInView
-                          />
+                          {isResolvedSpecError ? (
+                            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                              <p className="text-sm mb-2">Failed to load workflow graph</p>
+                              <Button variant="outline" size="sm" onClick={() => refetchResolvedSpec()}>
+                                <RotateCw className="w-3.5 h-3.5 mr-1.5" /> Retry
+                              </Button>
+                            </div>
+                          ) : (
+                            <GraphDisplay
+                              blueprintId={prompt.blueprint_id}
+                              specDict={resolvedSpec?.spec_dict}
+                              height="100%"
+                              showBackground={false}
+                              interactive={false}
+                              centerInView
+                            />
+                          )}
                         </div>
                       </div>
                     </div>
@@ -626,8 +647,7 @@ export default function ScheduledWorkflows() {
           onClose={closeScheduleModal}
           blueprintId={selectedBlueprint.id}
           blueprintName={selectedBlueprint.name}
-          userId={userId}
-          identityType={identityType}
+          teamId={teamId}
           editPrompt={editPrompt}
         />
       )}

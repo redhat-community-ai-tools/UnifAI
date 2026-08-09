@@ -10,6 +10,7 @@ and resolves auth credentials via ``core/auth`` before probing.
 import logging
 from concurrent.futures import CancelledError
 from typing import List
+from urllib.parse import urlparse
 
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.elements.common.validator import (
@@ -91,6 +92,48 @@ class McpProviderValidator(BaseElementValidator):
                 auth_cred = context.auth_service.bind(
                     lookup_user, lookup_id, scheme_type=scheme_type,
                 )
+                # The saved `server_identifier` can be empty or stale (e.g. it
+                # was never persisted back to the resource after sign-in, or
+                # fell back to the raw mcp_url) even though the user is
+                # genuinely signed in — OAuth credentials are stored under the
+                # real issuer, not the MCP URL. Rediscover the issuer the same
+                # way the sign-in status widget (auth.discovery) does before
+                # concluding the resource is unauthenticated.
+                if auth_cred is None and is_sign_in:
+                    try:
+                        detection = await context.auth_service.discover(str(config.mcp_url))
+                    except (CancelledError, TimeoutError):
+                        # Real budget exhaustion — let it propagate so the
+                        # outer handler reports it as a timeout, not a
+                        # misleading "connection failed".
+                        raise
+                    except Exception as e:
+                        # This rediscovery is a best-effort auxiliary check;
+                        # a failure here must not fail the whole validation
+                        # — fall through and let the real connection probe
+                        # below determine (and report) the actual outcome.
+                        _parsed = urlparse(config.mcp_url)
+                        _safe_host = f"{_parsed.scheme}://{_parsed.hostname}" + (
+                            f":{_parsed.port}" if _parsed.port else ""
+                        )
+                        logger.warning(
+                            "Auth rediscovery failed for %s: %s", _safe_host, e,
+                        )
+                        detection = None
+                    identifier_changed = (
+                        detection and detection.server_identifier
+                        and detection.server_identifier != lookup_id
+                    )
+                    protocol_changed = (
+                        detection and detection.protocol_type
+                        and detection.protocol_type != scheme_type
+                    )
+                    if detection and detection.server_identifier and (identifier_changed or protocol_changed):
+                        auth_cred = context.auth_service.bind(
+                            lookup_user,
+                            detection.server_identifier,
+                            scheme_type=detection.protocol_type or scheme_type,
+                        )
 
         try:
             await self._factory.create_async(config, auth_credential=auth_cred)

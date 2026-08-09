@@ -83,6 +83,11 @@ class <Name>ProviderConfig(ProviderBaseConfig):
 `ProviderBaseConfig` provides `Config` with `extra = Extra.forbid` and
 `arbitrary_types_allowed = True`.
 
+Annotate credential/token fields with `SecretHint` (encrypted at rest, masked in UI).
+If a field should stay user-configurable or appear on a card once this provider is
+promoted to a built-in resource, see "Field Hints on Config Fields" in `../references/elements.md`
+— `providers/mcp_server_client/config.py` is the reference implementation for this.
+
 ---
 
 ## Step 3: Provider Implementation

@@ -41,8 +41,7 @@ interface SchedulePromptModalProps {
   onClose: (saved?: boolean) => void;
   blueprintId: string;
   blueprintName: string;
-  userId?: string;
-  identityType?: string;
+  teamId?: string;
   editPrompt?: WorkflowScheduleResponse | null;
 }
 
@@ -51,8 +50,7 @@ export default function SchedulePromptModal({
   onClose,
   blueprintId,
   blueprintName,
-  userId,
-  identityType,
+  teamId,
   editPrompt,
 }: SchedulePromptModalProps) {
   const {
@@ -85,7 +83,7 @@ export default function SchedulePromptModal({
     isSaving,
     error,
     handleSubmit,
-  } = useSchedulePromptForm({ isOpen, blueprintId, userId, identityType, editPrompt, onClose });
+  } = useSchedulePromptForm({ isOpen, blueprintId, teamId, editPrompt, onClose });
 
   return (
     <>

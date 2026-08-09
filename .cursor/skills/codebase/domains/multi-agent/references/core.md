@@ -27,7 +27,8 @@ lib/mas/core/
 │   └── factory.py            ChannelFactory (ABC)
 ├── execution_context.py      ExecutionContext (frozen Pydantic)
 ├── element_deps.py           ElementDeps dataclass
-├── enums.py                  ResourceCategory, EngineType
+├── enums.py                  ResourceCategory, ResourceOwnership, ResourceVisibility, EngineType, ...
+├── field_hints.py            UI/schema hints: ReadOnlyHint, CardHint, SecretHint, HiddenHint, ActionHint, ...
 ├── auth/
 │   ├── service.py            AuthService, AuthStrategyRegistry
 │   ├── ports.py              AuthStrategy, HttpClient (ABCs)
@@ -76,6 +77,7 @@ This is the SOLE mechanism for passing infrastructure into elements. Populated b
 | Port | Location | Adapter |
 |------|----------|---------|
 | `IdentityProvider` | `identity/ports.py` | `IdentityPodProvider` / `DevProvider` / `NoOpProvider` |
+| `AdminConfigReaderPort` | `identity/ports.py` | `MongoAdminConfigReader` — reads the backend's `admin_config` collection read-only (see `references/adapters.md` Established Patterns) |
 | `ChannelFactory` | `channels/factory.py` | `RedisChannelFactory` / `LocalChannelFactory` |
 | `AuthService` | `auth/service.py` | — (uses strategy pattern internally) |
 | `AuthStrategy` | `auth/ports.py` | `OAuth2Strategy` / `ApiKeyStrategy` |
@@ -85,8 +87,17 @@ This is the SOLE mechanism for passing infrastructure into elements. Populated b
 | Enum | Values | Used For |
 |------|--------|----------|
 | `ResourceCategory` | NODE, LLM, TOOL, PROVIDER, RETRIEVER, CONDITION, AUTH | Element spec declarations |
-| `IdentityType` | USER, TEAM, SYSTEM, API_KEY | Identity scoping |
+| `ResourceOwnership` | BUILTIN, CUSTOM | Built-in vs. user-owned resources — see `references/resources.md` |
+| `ResourceVisibility` | DRAFT, PUBLIC | Built-in admin-only vs. all-users visibility — see `references/resources.md` |
+| `IdentityType` | USER, TEAM | Identity scoping — there is no `SYSTEM` or `API_KEY` type. Built-in resources are owned by the creating admin's own (user) identity — see `references/resources.md`. |
 | `EngineType` | LANGGRAPH, TEMPORAL | Graph engine selection |
+
+Field hints (`ReadOnlyHint`, `CardHint`, `SecretHint`, `HiddenHint`, `ActionHint`, `ApiHint`,
+`AuthHint`, `ConditionalHint`, `PropagateHint`, `FileUploadHint`) are Pydantic models in
+`field_hints.py` combined via `combine_hints(...)` into a config field's `json_schema_extra`.
+They drive UI rendering (which field type, masking, conditional visibility) and, for
+built-in resources, configurability (`ReadOnlyHint`) and card display (`CardHint`) — see
+`references/resources.md` and `references/elements.md`.
 
 ## How to Extend
 

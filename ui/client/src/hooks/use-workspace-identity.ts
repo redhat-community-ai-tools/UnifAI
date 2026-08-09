@@ -9,8 +9,8 @@ export interface WorkspaceIdentity {
   userId: string;
   /** Display name: team name in team view, else the user's name. */
   displayName: string;
-  /** Identity type discriminator for API calls. */
-  identityType: "team" | "user";
+  /** Team id when in team mode, undefined when in user mode (backend reads identity from session cookie). */
+  teamId: string | undefined;
   /**
    * The logged-in user's username — always the human, even in team view.
    * Use for credential/OAuth lookups where the key is per-member, not per-team.
@@ -25,7 +25,7 @@ export interface WorkspaceIdentity {
  * ```
  * const isTeam = viewMode === "team" && !!selectedTeam;
  * const contextUserId = isTeam ? selectedTeam!.id : (user?.username || "default");
- * const identityType = isTeam ? "team" : "user";
+ * const teamId = isTeam ? selectedTeam!.id : undefined;
  * ```
  */
 export function useWorkspaceIdentity(): WorkspaceIdentity {
@@ -38,7 +38,7 @@ export function useWorkspaceIdentity(): WorkspaceIdentity {
       isTeam,
       userId: isTeam ? selectedTeam!.id : (user?.username || "default"),
       displayName: isTeam ? selectedTeam!.name : (user?.name || "User"),
-      identityType: isTeam ? "team" : "user",
+      teamId: isTeam ? selectedTeam!.id : undefined,
       credentialUserId: user?.username || "default",
     };
   }, [viewMode, selectedTeam, user?.username, user?.name]);

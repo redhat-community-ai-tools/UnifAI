@@ -49,7 +49,7 @@ export default function AgenticWorkflows() {
   const { toast } = useToast();
   const { cacheBlueprintValidationResults } = useAgenticAI();
   const { selectedTeam } = useView();
-  const { isTeam: isTeamWorkspace, userId: contextUserId, displayName: userDisplayName, identityType } = useWorkspaceIdentity();
+  const { isTeam: isTeamWorkspace, userId: contextUserId, teamId } = useWorkspaceIdentity();
   const [, navigate] = useLocation();
   
   // Handle validation changes from the flow graph
@@ -90,8 +90,7 @@ export default function AgenticWorkflows() {
       const selectedBlueprint = {
         blueprintId: graphId,
         userId: contextUserId,
-        displayName: userDisplayName,
-        identityType,
+        ...(teamId ? { teamId } : {}),
         hitlEnabled: hitlEnabled || undefined,
       };
 

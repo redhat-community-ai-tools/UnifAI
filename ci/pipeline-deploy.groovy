@@ -118,6 +118,18 @@ def updateGlobalConfigYaml(String filePath) {
     }
 }
 
+def updateBackendSlackSocket(String filePath, boolean enabled) {
+    echo "🔄 Loading values from: ${filePath}"
+    def values = readYaml file: filePath
+
+    values.unifai_backend = values.unifai_backend ?: [:]
+    values.unifai_backend.slackSocket = values.unifai_backend.slackSocket ?: [:]
+    values.unifai_backend.slackSocket.enabled = enabled
+
+    writeYaml file: filePath, data: values, overwrite: true
+    echo "🏷 Set slackSocket.enabled=${enabled} in ${filePath} (deploy_location=${params.deploy_location})"
+}
+
 def updateValuesYaml(String filePath , String version) {
     echo "🔄 Loading values from: ${filePath}"
     echo "📝 Overwriting YAML file: ${filePath}"
@@ -310,6 +322,13 @@ pipeline {
                                         def version = params.BACKEND_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/backend/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/backend-resource-values.yaml", version)
+                                        // Slack Socket Mode sidecar depends on a bot token that is only valid
+                                        // in PRODUCTION today; skip it entirely on other deploy targets so a
+                                        // Slack auth failure can't take the whole backend pod's readiness down.
+                                        updateBackendSlackSocket(
+                                            "${buildParams.DevRoot}/${params.BRANCH}/helm/values/backend-resource-values.yaml",
+                                            params.deploy_location == 'PRODUCTION'
+                                        )
                                         deployModules('backend')
                                         break
 

@@ -83,9 +83,7 @@ export const loadGuide = async (url: string): Promise<Guide | null> => {
 export const loadGuidesForSection = async (section: string, category?: string): Promise<GuidesByCategory> => {
   // Define guide paths - in production, this could be dynamic or come from an API
   const guidePaths: { [key: string]: string[] } = {
-    "agentic-inventory": [
-      "/guides/agentic-inventory/providers/google-mcp-provider.yaml",
-    ],
+    "agentic-inventory": [],
     "agentic-ai-workflows": [],
   };
   

@@ -7,6 +7,7 @@
  * containing the display string value. This is the explicit marker that identifies
  * a display object. Example: { id: "abc123", name: "My Doc", _display: "My Doc" }
  */
+import { resolveSchemaRef } from '@/lib/schemaRefs';
 
 /**
  * Check if an object is marked as a display object.
@@ -105,4 +106,72 @@ export const simplifyConfigForDisplay = (config: any): any => {
     result[key] = simplifyConfigForDisplay(value);
   }
   return result;
+};
+
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Strip fields marked `hints.hidden` (see `field_hints.py#HiddenHint`) out of
+ * a config object before it's rendered in a "Full Configuration" details
+ * dump. These are internal/auth-flow bookkeeping fields (e.g.
+ * `server_identifier`, `scheme_type`, `credential_token`) that every other
+ * config-consuming surface (form population, validation, save payloads —
+ * see `ElementForm.tsx`, `BuiltinConfigureModal.tsx`) already treats as
+ * "never shown to the user", so the raw JSON dump must honor the same
+ * contract instead of leaking them back in.
+ */
+export const filterHiddenFieldsInConfig = (
+  config: any,
+  schema?: any,
+  rootSchema?: any,
+): any => {
+  if (config === null || typeof config !== 'object') {
+    return config;
+  }
+
+  // `rootSchema` carries `$defs` for `$ref` resolution and is threaded through
+  // recursive calls (it's only the top-level `config_schema` that has them).
+  const root = rootSchema ?? schema;
+  const resolvedSchema = schema?.$ref ? resolveSchemaRef(root, schema.$ref) ?? schema : schema;
+
+  if (Array.isArray(config)) {
+    return config.map((item) => filterHiddenFieldsInConfig(item, resolvedSchema?.items, root));
+  }
+
+  const filtered: any = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (UNSAFE_KEYS.has(key)) continue;
+    const rawFieldSchema = resolvedSchema?.properties?.[key];
+    const fieldSchema = rawFieldSchema?.$ref
+      ? resolveSchemaRef(root, rawFieldSchema.$ref) ?? rawFieldSchema
+      : rawFieldSchema;
+    if (fieldSchema?.hints?.hidden?.hint_type === 'hidden') continue;
+
+    if (value !== null && typeof value === 'object') {
+      filtered[key] = filterHiddenFieldsInConfig(value, fieldSchema, root);
+    } else {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+};
+
+/**
+ * Keep only the given top-level field names on a config object. Used
+ * alongside `getBuiltinVisibleFieldNames` to reduce a built-in element's
+ * "Full Configuration" dump down to just its configurable + card-visible
+ * fields, dropping locked admin-only setup (e.g. an MCP server's
+ * `mcp_url`) that a regular user was never meant to see.
+ */
+export const filterToFieldNames = (config: any, allowed: Set<string>): any => {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    return config;
+  }
+
+  const filtered: any = {};
+  for (const key of Object.keys(config)) {
+    if (UNSAFE_KEYS.has(key)) continue;
+    if (allowed.has(key)) filtered[key] = config[key];
+  }
+  return filtered;
 };

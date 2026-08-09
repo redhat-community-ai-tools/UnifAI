@@ -1,3 +1,4 @@
+import logging
 from typing import List, Dict, Any
 import pymongo
 from mas.resources.models import Resource, ResourceQuery
@@ -5,6 +6,8 @@ from mas.resources.repository.base import ResourceRepository
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 from outbound.mongo.helpers import identity_q
+
+logger = logging.getLogger(__name__)
 
 
 class MongoResourceRepository(ResourceRepository):
@@ -15,15 +18,25 @@ class MongoResourceRepository(ResourceRepository):
         mongo_uri = f"mongodb://{mongodb_ip}:{mongodb_port}/"
         self._client = pymongo.MongoClient(mongo_uri)
         self.col = self._client[db_name][coll_name]
-        self.col.create_index("nested_refs")
-        self.col.create_index(
-            [("identity.type", 1), ("identity.id", 1),
-             ("category", 1), ("type", 1), ("name", 1)],
-            name="uq_identity_cat_type_name",
-            unique=True)
-        self.col.create_index(
-            [("identity.type", 1), ("identity.id", 1), ("created", -1)],
-            background=True)
+        try:
+            self.col.create_index("nested_refs")
+            self.col.create_index(
+                [("identity.type", 1), ("identity.id", 1),
+                 ("category", 1), ("type", 1), ("name", 1)],
+                name="uq_identity_cat_type_name",
+                unique=True)
+            self.col.create_index(
+                [("identity.type", 1), ("identity.id", 1), ("created", -1)],
+                background=True)
+            for sort_field in ("updated", "name", "type", "category"):
+                self.col.create_index(
+                    [("identity.type", 1), ("identity.id", 1), (sort_field, 1)],
+                    background=True)
+        except pymongo.errors.PyMongoError:
+            logger.warning(
+                "Could not create indexes on '%s' — MongoDB may be unreachable",
+                coll_name, exc_info=True,
+            )
 
     # ---------- CRUD ----------
     def save(self, doc: Resource) -> str:
@@ -67,13 +80,15 @@ class MongoResourceRepository(ResourceRepository):
 
     # ---------- queries ----------
     def find_resources(self, query: ResourceQuery) -> List[Resource]:
-        """Find resources based on query criteria with pagination."""
-        filter_dict = identity_q(query.identity)
+        """Find resources owned by ``query.identity``, with pagination.
 
-        if query.category:
-            filter_dict["category"] = query.category.value
-        if query.type:
-            filter_dict["type"] = query.type
+        Plain identity+category+type filter — no built-in/ownership
+        knowledge. Listings that need to merge in public built-ins or
+        filter by ownership go through
+        ``BuiltinResourceDescriptorRepository.find_visible_for_identity``
+        instead (see ``BuiltinResourceService``).
+        """
+        filter_dict = self._build_resource_filter(query)
 
         # Build cursor with filtering
         cursor = self.col.find(filter_dict)
@@ -92,14 +107,17 @@ class MongoResourceRepository(ResourceRepository):
 
     def count_resources(self, query: ResourceQuery) -> int:
         """Count resources matching query criteria."""
-        filter_dict = identity_q(query.identity)
-
-        if query.category:
-            filter_dict["category"] = query.category.value
-        if query.type:
-            filter_dict["type"] = query.type
-
+        filter_dict = self._build_resource_filter(query)
         return self.col.count_documents(filter_dict)
+
+    def _build_resource_filter(self, query: ResourceQuery) -> Dict[str, Any]:
+        """Build a plain identity+category+type MongoDB filter from a ResourceQuery."""
+        f: Dict[str, Any] = identity_q(query.identity)
+        if query.category:
+            f["category"] = query.category.value
+        if query.type:
+            f["type"] = query.type
+        return f
 
     def count(self, identity: Identity, filter: dict | None = None) -> int:
         # Identity keys must not be overridden by caller-supplied filter.

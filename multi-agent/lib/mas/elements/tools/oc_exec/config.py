@@ -1,7 +1,7 @@
 from typing import Literal
 from pydantic import Field
 from mas.elements.tools.common.base_config import BaseToolConfig
-from mas.core.field_hints import SecretHint
+from mas.core.field_hints import SecretHint, CardHint, CardContext
 from .identifiers import Identifier
 
 
@@ -12,7 +12,8 @@ class OcExecToolConfig(BaseToolConfig):
     
     server: str = Field(
         ..., 
-        description="OpenShift API server URL (e.g., https://api.cluster.example.com:6443)"
+        description="OpenShift API server URL (e.g., https://api.cluster.example.com:6443)",
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
     
     token: str = Field(

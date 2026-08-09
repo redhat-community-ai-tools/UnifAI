@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { InstantiationStatus, MaterializeResponse } from '@/types/templates';
 import { ElementValidationResult } from '@/types/validation';
-import { ValidationResultModal } from '../workspace/ValidationResultModal';
+import { ValidationResultModal } from '../workspace/validation/ValidationResultModal';
 
 interface InstantiationProgressProps {
   status: InstantiationStatus;
