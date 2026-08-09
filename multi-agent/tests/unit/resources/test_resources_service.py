@@ -625,6 +625,10 @@ class TestNestedDependencyCascade:
 
         assert [t.rid for t in targets] == [llm.rid]
 
+    def test_preview_cascade_targets_raises_for_missing_rid(self, builtin_service):
+        with pytest.raises(KeyError):
+            builtin_service.preview_cascade_targets("does-not-exist")
+
     def test_demote_blocked_when_public_agent_still_uses_it(self, service, builtin_service, alice):
         llm = _make_custom_resource(service, alice, name="blocked-llm")
         agent = _make_custom_resource(service, alice, name="blocking-agent")

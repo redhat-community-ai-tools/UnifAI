@@ -42,19 +42,6 @@ from mas.catalog.element_registry import ElementRegistry
 
 logger = logging.getLogger(__name__)
 
-# Hidden fields that the auth/validation layer writes automatically (e.g.
-# ``McpProviderConfig.server_identifier`` / ``scheme_type``, populated by
-# ``auth.discovery`` once a sign-in flow resolves the real OAuth issuer).
-# They carry ``HiddenHint`` rather than ``ReadOnlyHint(read_only=False)``, so
-# they're intentionally excluded from ``scan_schema_hints``'s configurable
-# set — but a signed-in built-in resource still needs them persisted onto
-# its per-identity overlay, or every later validation falls back to an
-# unauthenticated probe against a stale/empty identifier. Mirrors the
-# equivalent special case in ``ElementForm.tsx`` for regular (non-builtin)
-# resources, which always includes these two hidden fields in its save
-# payload for the same reason.
-AUTH_METADATA_OVERLAY_FIELDS = frozenset({"server_identifier", "scheme_type"})
-
 
 class BuiltinResourceService:
     """Descriptor lifecycle + admin CRUD + per-identity overlays for built-ins."""
@@ -72,16 +59,6 @@ class BuiltinResourceService:
         self._fields = field_encryption
         self._descriptor_repo = descriptor_repo
         self._builtin_user_config_repo = builtin_user_config_repo
-
-    def _auth_metadata_keys(self, resource: Resource) -> set:
-        """Auth-metadata fields that actually exist on this element's schema."""
-        try:
-            schema = self.element_registry.get_schema_json(
-                ResourceCategory(resource.category), resource.type
-            )
-        except KeyError:
-            return set()
-        return AUTH_METADATA_OVERLAY_FIELDS & schema.get("properties", {}).keys()
 
     # ---------- Core built-in-awareness (used by ResourcesService) ----------
 
@@ -256,14 +233,14 @@ class BuiltinResourceService:
 
         Decrypts sensitive fields so the UI can display masked values.
         Returns fields marked as user-configurable, plus any auth-metadata
-        fields (``AUTH_METADATA_OVERLAY_FIELDS``) present on this identity's
-        overlay — mirrors the ``allowed_keys`` set ``configure_builtin()``
-        writes with, so a signed-in resource's discovered
-        ``server_identifier``/``scheme_type`` actually round-trips back to
-        the UI instead of silently vanishing after being persisted (leaving
-        later hidden validations to fall back to an unauthenticated probe
-        against a stale/empty identifier, per the comment on
-        ``AUTH_METADATA_OVERLAY_FIELDS``).
+        fields (``field_encryption.AUTH_METADATA_OVERLAY_FIELDS``) present
+        on this identity's overlay — mirrors the ``allowed_keys`` set
+        ``configure_builtin()`` writes with, so a signed-in resource's
+        discovered ``server_identifier``/``scheme_type`` actually
+        round-trips back to the UI instead of silently vanishing after
+        being persisted (leaving later hidden validations to fall back to
+        an unauthenticated probe against a stale/empty identifier, per the
+        comment on ``AUTH_METADATA_OVERLAY_FIELDS``).
         Draft built-ins are not configurable by end users.
         """
         resource = self._store.get(rid)
@@ -287,7 +264,9 @@ class BuiltinResourceService:
         model_cls = self.element_registry.get_schema(
             ResourceCategory(resource.category), resource.type
         )
-        allowed_keys = configurable_keys | self._auth_metadata_keys(resource)
+        allowed_keys = configurable_keys | self._fields.auth_metadata_keys(
+            resource.category, resource.type
+        )
         filtered = {k: v for k, v in user_config.fields.items() if k in allowed_keys}
         return self._fields.decrypt_config_fields(filtered, sensitive_keys, model_cls)
 
@@ -312,7 +291,9 @@ class BuiltinResourceService:
         configurable_keys, sensitive_keys = self._fields.scan_schema_hints(
             resource.category, resource.type
         )
-        allowed_keys = configurable_keys | self._auth_metadata_keys(resource)
+        allowed_keys = configurable_keys | self._fields.auth_metadata_keys(
+            resource.category, resource.type
+        )
         if not allowed_keys:
             raise ValueError("No configurable fields defined for this element type")
 
@@ -461,7 +442,9 @@ class BuiltinResourceService:
         configurable_keys, sensitive_keys = self._fields.scan_schema_hints(
             resource.category, resource.type
         )
-        allowed_keys = configurable_keys | self._auth_metadata_keys(resource)
+        allowed_keys = configurable_keys | self._fields.auth_metadata_keys(
+            resource.category, resource.type
+        )
         if not allowed_keys:
             return {}
 
@@ -588,7 +571,11 @@ class BuiltinResourceService:
         isn't already a public built-in. Read-only — used to build the
         "these will also be made available to all" disclaimer before/while
         toggling a resource on.
+
+        Raises ``KeyError`` when *rid* itself is missing so the Flask
+        cascade-preview endpoint can return 404 instead of an empty list.
         """
+        self._store.get(rid)  # raise KeyError if root rid does not exist
         return [
             dep for dep in self._iter_transitive_deps(rid)
             if not self._is_public_builtin(dep.rid)

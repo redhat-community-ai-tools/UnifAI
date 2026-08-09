@@ -13,6 +13,19 @@ from global_utils.utils.crypto import FieldCipher
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.enums import ResourceCategory
 
+# Hidden fields that the auth/validation layer writes automatically (e.g.
+# ``McpProviderConfig.server_identifier`` / ``scheme_type``, populated by
+# ``auth.discovery`` once a sign-in flow resolves the real OAuth issuer).
+# They carry ``HiddenHint`` rather than ``ReadOnlyHint(read_only=False)``, so
+# they're intentionally excluded from ``scan_schema_hints``'s configurable
+# set — but a signed-in built-in resource still needs them persisted onto
+# its per-identity overlay, or every later validation falls back to an
+# unauthenticated probe against a stale/empty identifier. Mirrors the
+# equivalent special case in ``ElementForm.tsx`` for regular (non-builtin)
+# resources, which always includes these two hidden fields in its save
+# payload for the same reason.
+AUTH_METADATA_OVERLAY_FIELDS = frozenset({"server_identifier", "scheme_type"})
+
 
 class ResourceFieldEncryption:
     """Encrypts/decrypts sensitive resource-config fields at rest.
@@ -24,6 +37,10 @@ class ResourceFieldEncryption:
     This keeps encryption behavior identical whether a field is written via
     the base ``cfg_dict`` (create/update/create_builtin/update_builtin) or
     via a per-identity built-in overlay (``configure_builtin``).
+
+    Also owns the auth-metadata overlay allow-list
+    (``AUTH_METADATA_OVERLAY_FIELDS`` / ``auth_metadata_keys``) so overlay
+    persistence and ``to_dict()`` / ``resolve_resource()`` never drift.
     """
 
     def __init__(self, element_registry: ElementRegistry, cipher: Optional[FieldCipher]) -> None:
@@ -53,6 +70,20 @@ class ResourceFieldEncryption:
             if "secret" in hints:
                 sensitive.add(field_name)
         return configurable, sensitive
+
+    def auth_metadata_keys(self, category: str, type_key: str) -> set:
+        """Auth-metadata fields that actually exist on this element's schema.
+
+        Intersects ``AUTH_METADATA_OVERLAY_FIELDS`` with the schema's property
+        keys so overlay write/read paths only admit fields the element defines.
+        """
+        try:
+            schema = self._element_registry.get_schema_json(
+                ResourceCategory(category), type_key
+            )
+        except KeyError:
+            return set()
+        return AUTH_METADATA_OVERLAY_FIELDS & schema.get("properties", {}).keys()
 
     def find_missing_conditionally_required_secrets(
         self,

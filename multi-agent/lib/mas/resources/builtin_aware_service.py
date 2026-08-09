@@ -47,8 +47,6 @@ from mas.resources.repository.builtin_resource_descriptor_repository import (
 from mas.resources.repository.builtin_user_config_repository import BuiltinUserConfigRepository
 from mas.resources.service import CoreResourceService
 
-AUTH_METADATA_OVERLAY_FIELDS = frozenset({"server_identifier", "scheme_type"})
-
 logger = logging.getLogger(__name__)
 
 
@@ -470,15 +468,6 @@ class BuiltinAwareResourceService:
 
     # ── Built-in overlay helpers ─────────────────────────────────────────
 
-    def _auth_metadata_keys(self, resource: Resource) -> set:
-        try:
-            schema = self._inner.element_registry.get_schema_json(
-                ResourceCategory(resource.category), resource.type
-            )
-        except KeyError:
-            return set()
-        return AUTH_METADATA_OVERLAY_FIELDS & schema.get("properties", {}).keys()
-
     def _strip_and_merge_overlay(
         self,
         resource: Resource,
@@ -510,7 +499,9 @@ class BuiltinAwareResourceService:
         if not self._user_configs:
             return {}
 
-        allowed_keys = configurable_keys | self._auth_metadata_keys(resource)
+        allowed_keys = configurable_keys | self._inner._fields.auth_metadata_keys(
+            resource.category, resource.type
+        )
         if not allowed_keys:
             return {}
 

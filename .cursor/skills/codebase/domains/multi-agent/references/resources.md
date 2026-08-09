@@ -79,7 +79,7 @@ lib/mas/core/
 | `CallerScope` | Frozen `(identity: Optional[Identity], is_admin: bool)` value object. Resolved once per request (`resolve_caller_scope()` in `adapters/inbound/flask/decorators.py`) and passed as a single `caller` parameter into `ResourcesService`/`BlueprintService`/`BlueprintResolver` instead of two separately-threaded parameters. |
 | `ResourcesService` | Public facade for base resource CRUD/validation/cards. ALL external access to those concerns (Flask `resources.py`, `BlueprintResolver`, `ShareCloner`, tests) goes through this — never through `ResourcesRegistry` directly. Composes `BuiltinResourceService` (`self._builtin`, internal attribute) only for the small set of built-in-awareness helpers its own CRUD methods need; has no admin/overlay pass-through methods and never touches `ResourceOwnership`/`ResourceVisibility` directly. |
 | `BuiltinResourceService` | Peer public facade — sole owner of `BuiltinResourceDescriptor`'s full lifecycle: descriptor CRUD, visibility gating (`is_builtin`, `is_visible_to`), admin create/promote/demote/toggle + cascade, per-identity overlay get/save/resolve, schema exposure. Flask `builtins.py` injects it directly (`container.builtin_resource_service`) rather than going through `ResourcesService`. Deliberately **not** on `CallerScope` — `get_builtin_schema(rid, is_admin=...)` keeps its own separate `is_admin` param since it's already the "built-in admin boundary" the rest of this refactor routes around. |
-| `ResourceFieldEncryption` (`self._fields` on both services) | Single owner of schema-hint scanning (`scan_schema_hints`) and encrypt/decrypt, shared by base CRUD and built-in overlays so behavior never drifts between the two paths. `bootstrap/container.py` constructs one instance and injects it into both services. |
+| `ResourceFieldEncryption` (`self._fields` on both services) | Single owner of schema-hint scanning (`scan_schema_hints`), auth-metadata overlay allow-list (`AUTH_METADATA_OVERLAY_FIELDS` / `auth_metadata_keys`), and encrypt/decrypt — shared by base CRUD and built-in overlays so behavior never drifts between the two paths. `bootstrap/container.py` constructs one instance and injects it into both services. |
 | `ResourcesRegistry` | Thin persistence wrapper: uniqueness guard, in-use checks. Not the public API. Shared by both `ResourcesService` and `BuiltinResourceService` (same `resources` collection, no built-in-related fields on the documents it stores). |
 | `BuiltinResourceDescriptorRepository` (`resources/repository/builtin_resource_descriptor_repository.py`) | Storage port for `BuiltinResourceDescriptor` — CRUD by `rid`, plus `$lookup`-joined reads (`find_all_builtins`, `find_visible_for_identity`) that combine descriptor metadata with the base `resources` collection, since `Resource` itself carries nothing to filter/sort on for those queries. |
 | `ResourceReader` / `ResourceClonePort` / `BuiltinDescriptorReader` (`resources/ports.py`) | Narrow read-only Protocols. `BlueprintResolver` depends on `ResourceReader` (`get_visible`, `resolve_resource`); `ShareCloner` depends on `ResourceClonePort` (`get`, `save_resource`, `exists_by_name`, `delete`) and `BuiltinDescriptorReader` (`get_descriptor`) — separate Protocols (Interface Segregation) since each consumer needs a different narrow slice. `ResourcesService`/`BuiltinResourceService` satisfy these structurally. |
@@ -152,7 +152,11 @@ schema, via `mas.core.field_hints` hints — never hardcoded in service/UI logic
 `ResourceFieldEncryption.scan_schema_hints(category, type_key)` does a single
 pass over the JSON schema to return `(configurable_keys, sensitive_keys)` —
 the shared source of truth consumed by `get_builtin_schema()`, `get_user_config()`,
-`configure_builtin()`, and `resolve_overlay()`. On the UI side,
+`configure_builtin()`, and `resolve_overlay()`. Auth-metadata fields that carry
+`HiddenHint` rather than `ReadOnlyHint(read_only=False)`
+(`server_identifier` / `scheme_type`) are admitted via
+`ResourceFieldEncryption.auth_metadata_keys()` so overlay persistence and
+`to_dict()` / `resolve_resource()` stay aligned. On the UI side,
 `lib/cardFields.ts#getCardFields()` interprets the same `hints.card`/`hints.secret`/
 `hints.hidden`/`hints.conditional` structure generically — see `domains/ui/SKILL.md`.
 
@@ -195,8 +199,9 @@ LLM is still `DRAFT` would leave end users referencing a building block they
 can't see — so promotion/creation/update cascades:
 
 - `preview_cascade_targets(rid)` — read-only BFS over `nested_refs`, returns every
-  transitive dependency not already a public built-in. Used for a "these will
-  also become available to all" confirmation dialog *before* mutating.
+  transitive dependency not already a public built-in. Raises `KeyError` when
+  *rid* itself is missing (Flask cascade-preview maps that to 404). Used for a
+  "these will also become available to all" confirmation dialog *before* mutating.
 - `_cascade_promote_dependencies(rid)` — same walk, but promotes each dependency.
   Rejects the whole cascade (raises `ValueError` via `_assert_cascade_promotable()`)
   if any transitive dependency belongs to `builtin_disabled_categories()`, instead
