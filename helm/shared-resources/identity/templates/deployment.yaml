@@ -34,7 +34,7 @@ spec:
       {{- end }}
       containers:
         - name: backend
-          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag | default .Chart.AppVersion}}"
           imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
           ports:
             - name: {{ .Values.backend.service.name }}
@@ -54,12 +54,30 @@ spec:
           - secretRef:
               name: {{ .Values.globalSecretName }}
           env:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: APP_VERSION
+            value: "{{ .Values.backend.image.tag | default .Chart.AppVersion }}"
           {{- range $key, $value := .Values.backend.env }}
-            - name: "{{ $key }}"
-              value: "{{ $value }}"
+          {{- if and (ne $key "POD_NAME") (ne $key "APP_VERSION") }}
+          - name: {{ $key | quote }}
+            value: {{ $value | quote }}
+          {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.env }}
-            - name: "{{ $key }}"
-              value: "{{ $value }}"
+          {{- if and (ne $key "POD_NAME") (ne $key "APP_VERSION") }}
+          - name: {{ $key | quote }}
+            value: {{ $value | quote }}
           {{- end }}
+          {{- end }}
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
 

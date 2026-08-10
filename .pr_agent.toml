@@ -2,8 +2,8 @@
 response_language = "en-US"
 
 [github_app]
-pr_commands = ["/agentic_describe", "/agentic_review", "/improve"]
-push_commands = ["/agentic_review", "/improve"]
+pr_commands = ["/agentic_describe", "/agentic_review"]
+push_commands = ["/agentic_review"]
 handle_push_trigger = true
 
 [config]
