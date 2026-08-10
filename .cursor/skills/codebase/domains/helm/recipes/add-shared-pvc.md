@@ -32,3 +32,12 @@ Use when introducing a new shared volume or wiring additional consumers to an ex
 | Missing helmfile `needs:` from an app module to a `shared-resources` PVC | Cross-helmfile `needs:` is unsupported; fresh-install order is enforced in CI |
 | Hardcoded `claimName` equal to the producer’s default PVC name | Established cross-chart contract; values are not shared across helmfiles |
 | Module shared-storage release listed alongside its consumers in one helmfile | Same pattern as existing rag / multiagent charts |
+| Missing retention/cleanup when a change only wires a shared PVC and mounts | Lifecycle may follow in a later change; Risks & Follow-ups / INFO, not MAJOR for that gap alone |
+
+## Flag These
+
+| Do flag | Why |
+|---------|-----|
+| Consumer `claimName` ≠ producer PVC name | Scheduling failure |
+| Image tag uses `default .Chart.AppVersion` but `APP_VERSION` env does not | `subPathExpr` path drift |
+| New platform PVC only under an app helmfile when multiple modules need it | Wrong placement vs `shared-resources` |

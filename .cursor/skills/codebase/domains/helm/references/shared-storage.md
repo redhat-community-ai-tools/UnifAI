@@ -24,6 +24,7 @@ For adding or extending a shared PVC: `../recipes/add-shared-pvc.md`
 | Platform PVC in `shared-resources`; mounts in other helmfiles | Platform shared-storage charts + consumer values | Cross-helmfile `needs:` unsupported; CI orders fresh installs |
 | Hardcoded consumer `claimName` = default producer name | Consumer chart values | Values files are not cross-templated |
 | Module PVC chart co-located with consumers | Module helmfiles (rag, multiagent) | One apply creates and mounts |
+| Mount wiring without retention/cleanup in the same change | Consumer mounts on shared claims | Ops lifecycle may ship later; not a MAJOR for that gap alone on a storage+mount PR |
 
 ## Boundaries
 
