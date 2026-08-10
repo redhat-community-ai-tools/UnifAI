@@ -49,8 +49,10 @@ spec:
           - name: APP_VERSION
             value: "{{ .Values.image.tag | default .Chart.AppVersion }}"
           {{- range $key, $value := .Values.env }}
-          - name: "{{ $key }}"
-            value: "{{ $value }}"
+          {{- if and (ne $key "POD_NAME") (ne $key "APP_VERSION") }}
+          - name: {{ $key | quote }}
+            value: {{ $value | quote }}
+          {{- end }}
           {{- end }}
 
           envFrom:
@@ -87,9 +89,9 @@ spec:
           - name: ROLE
             value: "slack-socket"
           {{- range $key, $value := .Values.env }}
-          {{- if ne $key "ROLE" }}
-          - name: "{{ $key }}"
-            value: "{{ $value }}"
+          {{- if and (ne $key "ROLE") (ne $key "POD_NAME") (ne $key "APP_VERSION") }}
+          - name: {{ $key | quote }}
+            value: {{ $value | quote }}
           {{- end }}
           {{- end }}
           envFrom:
