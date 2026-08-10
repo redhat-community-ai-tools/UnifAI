@@ -563,7 +563,7 @@ def pytest_addoption(parser):
     manual pod copy / importlib), and re-adding the same flag raises ValueError.
     """
 
-    def _addoption(*opts, **attrs):
+    def _addoption(*opts: str, **attrs: object) -> None:
         try:
             parser.addoption(*opts, **attrs)
         except ValueError as exc:
@@ -661,7 +661,10 @@ def pytest_addoption(parser):
         "--llm-api-key",
         action="store",
         default=None,
-        help="API key used when creating an LLM (or set STRESS_LLM_API_KEY / LLM_API_KEY)",
+        help=(
+            "API key used when creating an LLM. "
+            "Prefer STRESS_LLM_API_KEY or LLM_API_KEY instead of this flag."
+        ),
     )
     _addoption(
         "--llm-type",

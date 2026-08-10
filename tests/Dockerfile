@@ -10,7 +10,7 @@ RUN microdnf install -y bash curl tar gzip shadow-utils procps-ng \
 
 # Create the 'default' user (UID 1001, group 0) matching the full s2i convention.
 # The minimal image only sets USER 1001 without a named entry in /etc/passwd.
-RUN useradd -u 1001 -r -g 0 -d ${HOME} -s /sbin/nologin -c "Default Application User" default || true
+RUN id -u default >/dev/null 2>&1 || useradd -u 1001 -r -g 0 -d ${HOME} -s /sbin/nologin -c "Default Application User" default
 
 USER default
 RUN pwd
