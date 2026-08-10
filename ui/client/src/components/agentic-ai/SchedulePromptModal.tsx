@@ -143,6 +143,7 @@ export default function SchedulePromptModal({
                 <div className="flex items-center bg-background-dark border border-gray-700 rounded-md p-0.5 gap-0.5">
                   <button
                     type="button"
+                    aria-pressed={timezone === "UTC"}
                     onClick={() => handleTimezoneChange("UTC")}
                     className={`h-5 text-[10px] px-1.5 rounded font-medium transition-colors ${
                       timezone === "UTC"
@@ -154,6 +155,7 @@ export default function SchedulePromptModal({
                   </button>
                   <button
                     type="button"
+                    aria-pressed={timezone === "local"}
                     onClick={() => handleTimezoneChange("local")}
                     className={`h-5 text-[10px] px-1.5 rounded font-medium transition-colors ${
                       timezone === "local"
