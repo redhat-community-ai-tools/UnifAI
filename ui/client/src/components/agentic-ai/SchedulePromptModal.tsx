@@ -140,23 +140,29 @@ export default function SchedulePromptModal({
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label className="text-xs text-gray-400">Start Date & Time</Label>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant={timezone === "UTC" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-5 text-[10px] px-1.5"
+                <div className="flex items-center bg-background-dark border border-gray-700 rounded-md p-0.5 gap-0.5">
+                  <button
+                    type="button"
                     onClick={() => handleTimezoneChange("UTC")}
+                    className={`h-5 text-[10px] px-1.5 rounded font-medium transition-colors ${
+                      timezone === "UTC"
+                        ? "bg-secondary text-secondary-foreground"
+                        : "text-gray-500 hover:bg-gray-800 hover:text-gray-200"
+                    }`}
                   >
                     UTC
-                  </Button>
-                  <Button
-                    variant={timezone === "local" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-5 text-[10px] px-1.5"
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleTimezoneChange("local")}
+                    className={`h-5 text-[10px] px-1.5 rounded font-medium transition-colors ${
+                      timezone === "local"
+                        ? "bg-secondary text-secondary-foreground"
+                        : "text-gray-500 hover:bg-gray-800 hover:text-gray-200"
+                    }`}
                   >
                     {localTimezone}
-                  </Button>
+                  </button>
                 </div>
               </div>
               <div className="flex gap-2">
