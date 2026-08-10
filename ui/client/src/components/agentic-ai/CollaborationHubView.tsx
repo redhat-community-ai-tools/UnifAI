@@ -13,7 +13,6 @@ import {
   cancelSession,
   getSessionState,
   getSessionStatus,
-  listUserSessions,
   submitSession,
 } from "@/api/sessions";
 import {
@@ -56,7 +55,7 @@ interface CollaborationHubViewProps {
 
 export default function CollaborationHubView({ runId, teamMembers, teamName, onSessionChange }: CollaborationHubViewProps) {
   const hub = useSessionHub({ runId, manualStreamControl: true, onSessionChange });
-  const { scrollRef, isFetchingNextPage } = useScrollPagination(hub);
+  const { scrollRef } = useScrollPagination(hub);
 
   // ── Collab-specific state ──────────────────────────────────────────────
   const [sessionParticipants, setSessionParticipants] = useState<Record<string, string[]>>({});

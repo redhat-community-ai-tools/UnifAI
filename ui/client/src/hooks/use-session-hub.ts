@@ -488,7 +488,6 @@ export function useSessionHub({
       clearStream,
       validateSelectedBlueprint,
       teamId,
-      isTeam,
       loadSessionMessages,
       manualStreamControl,
     ],
