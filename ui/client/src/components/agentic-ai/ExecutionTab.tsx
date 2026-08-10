@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
-import { MessageSquare, Users, Clock, Trash2, Plus } from "lucide-react";
+import { MessageSquare, Users, Clock, Trash2, Plus, DollarSign } from "lucide-react";
 import ChatInterface from "./chat/ChatInterface";
 import ExecutionStream from "./ExecutionStream";
 import GraphDisplay from "./graphs/GraphDisplay";
@@ -34,6 +34,7 @@ export type SessionPayload = {
 
 type ExecutionTabProps = {
   runId: string | null;
+  onSessionChange?: (sessionId: string) => void;
 };
 
 /**
@@ -49,8 +50,8 @@ const SessionMessagesLoader: React.FC = () => (
   </div>
 );
 
-export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactElement {
-  const hub = useSessionHub({ runId });
+export default function ExecutionTab({ runId, onSessionChange }: ExecutionTabProps): React.ReactElement {
+  const hub = useSessionHub({ runId, onSessionChange });
 
   const [showExecutionStream, setShowExecutionStream] = useState(false);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(15);
@@ -376,6 +377,15 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
                           <span className="text-sm font-medium truncate">
                             {session.title}
                           </span>
+                          {session.fromSchedule && (
+                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 ${
+                              session.status === "COMPLETED" || session.status === "FAILED" || session.status === "CANCELLED"
+                                ? "bg-gray-500/20 text-gray-400"
+                                : "bg-blue-500/20 text-blue-400"
+                            }`}>
+                              Scheduled
+                            </span>
+                          )}
                         </div>
                         <UmamiTrack event={UmamiEvents.AGENT_CHAT_DELETE_CHAT_BUTTON} includeUserData={false}>
                           <Button
@@ -391,6 +401,16 @@ export default function ExecutionTab({ runId }: ExecutionTabProps): React.ReactE
                       <div className="mt-1 flex items-center text-xs text-gray-400">
                         <Clock className="h-3 w-3 mr-1" />
                         <span>{session.lastActive}</span>
+                        {session.totalCost != null && session.totalCost > 0 && (
+                          <span
+                            className="inline-flex items-center ml-1.5"
+                            title={"Cost tracking started on July 31, 2026.\nClaude Agent Nodes & Deep Agents costs are not yet included in the session total."}
+                          >
+                            <span className="text-gray-600 mr-1.5">·</span>
+                            <DollarSign className="h-3 w-3 mr-0.5 text-emerald-500" />
+                            <span className="text-emerald-400">{session.totalCost.toFixed(4)}</span>
+                          </span>
+                        )}
                       </div>
                       <p className="mt-1 text-xs text-gray-500 truncate">
                         {session.preview}

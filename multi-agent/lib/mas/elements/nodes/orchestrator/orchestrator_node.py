@@ -503,6 +503,17 @@ class OrchestratorNode(
             print(f"   Changed items: {', '.join(cycle.changed_items)}")
         print(f"{'='*80}")
 
+        return self._run_orchestration_cycle_traced(cycle, content)
+
+    def _run_orchestration_cycle_traced(self, cycle: PendingCycle, content: str) -> AgentResult:
+        with self._tracing.trace_node(
+            node_uid=f"{self.uid}/cycle/{cycle.thread_id[:8]}",
+            node_type="orchestration_cycle",
+            display_name=f"Orchestration: {cycle.reason.value}",
+        ):
+            return self._run_orchestration_cycle_inner(cycle, content)
+
+    def _run_orchestration_cycle_inner(self, cycle: PendingCycle, content: str) -> AgentResult:
         # Build conversation context
         messages = self._build_context_messages(cycle.thread_id, content)
 

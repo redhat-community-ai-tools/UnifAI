@@ -7,15 +7,19 @@ from pydantic import BaseModel
 
 from mas.core.identity import Identity
 from mas.resources.models import Resource
-from mas.resources.registry import ResourcesRegistry
+from mas.resources.ports import BuiltinDescriptorReader, ResourceClonePort
 from mas.blueprints.models.blueprint import BlueprintDraft, BlueprintResource, StepDef
 from mas.blueprints.service import BlueprintService
 from mas.catalog.element_registry import ElementRegistry
 from mas.core.ref import RefWalker, RefRemapper
 from mas.core.ref.models import Ref
-from mas.core.enums import ResourceCategory
+from mas.core.enums import ResourceCategory, ResourceVisibility
 
 logger = logging.getLogger(__name__)
+
+
+class ShareCloneError(RuntimeError):
+    """A domain rule prevents a resource from being shared."""
 
 
 @dataclass
@@ -89,12 +93,14 @@ class ShareCloner:
     """
 
     def __init__(self,
-                 resources_registry: ResourcesRegistry,
+                 resources_service: ResourceClonePort,
                  blueprint_service: BlueprintService,
-                 element_registry: ElementRegistry):
-        self.resources = resources_registry
+                 element_registry: ElementRegistry,
+                 builtin_resource_service: BuiltinDescriptorReader):
+        self.resources = resources_service
         self.blueprints = blueprint_service
         self.elements = element_registry
+        self.builtin = builtin_resource_service
 
     @staticmethod
     def _recipient_identity(ctx: CloneContext) -> Identity:
@@ -152,6 +158,7 @@ class ShareCloner:
                 identity=recipient,
                 draft_dict=new_draft.model_dump(mode="json"),
                 metadata=bp_metadata or None,
+                skip_name_check=True,
             )
 
             logger.info(f"Blueprint clone completed: {new_blueprint_id}, {resources_cloned} resources cloned")
@@ -229,6 +236,7 @@ class ShareCloner:
 
         Returns cached data for all resources in the dependency closure.
         Only includes resources owned by the sender.
+        Built-in resources are never cloned — they are shared by reference.
         """
         visited_rids = set()
         to_visit = set(root_rids)
@@ -243,6 +251,18 @@ class ShareCloner:
             try:
                 # Load and validate resource
                 doc = self.resources.get(rid)
+
+                descriptor = self.builtin.get_descriptor(rid)
+                if descriptor is not None:
+                    if descriptor.visibility != ResourceVisibility.PUBLIC:
+                        raise ShareCloneError(
+                            f"Cannot share: resource {rid} ({doc.name}) is a "
+                            f"draft built-in and would be invisible to the recipient"
+                        )
+                    logger.debug(
+                        f"Skipping public built-in resource {rid} ({doc.name}) — kept by reference"
+                    )
+                    continue
 
                 if not ctx.is_authorized_owner(doc.identity.id):
                     logger.warning(
@@ -270,8 +290,10 @@ class ShareCloner:
                     if dep_rid not in visited_rids:
                         to_visit.add(dep_rid)
 
-            except (KeyError, Exception) as e:
-                logger.warning(f"Error processing resource {rid}: {e}")
+            except ShareCloneError:
+                raise
+            except (KeyError, ValueError) as e:
+                logger.warning(f"Skipping resource {rid} (missing or invalid config): {e}")
                 continue
 
         logger.debug(f"Cached data for {len(closure_cache)} resources")
@@ -317,10 +339,37 @@ class ShareCloner:
         )
 
     def _batch_create_resources(self, docs: List[Resource]) -> None:
-        """Create multiple resources efficiently."""
-        # TODO: Implement actual batch creation in ResourcesRegistry
-        for doc in docs:
-            self.resources.create(doc)
+        """Create multiple resources, rolling back on partial failure.
+
+        ``ResourcesService`` has no transactional/batch-save API, so each
+        ``save_resource`` call is a separate write. If one fails partway
+        through, the docs already saved would otherwise be left behind as
+        orphaned clones with no caller-visible way to remove them (the
+        overall clone is reported as failed, implying nothing was
+        persisted). Tracking what succeeded and deleting it (most recently
+        created first, since later docs may reference earlier ones) before
+        re-raising keeps the operation effectively all-or-nothing.
+        """
+        saved: List[Resource] = []
+        try:
+            for doc in docs:
+                self.resources.save_resource(doc)
+                saved.append(doc)
+        except Exception:
+            logger.exception(
+                "Batch resource creation failed after saving %d of %d "
+                "resources; rolling back the ones that succeeded",
+                len(saved), len(docs),
+            )
+            for doc in reversed(saved):
+                try:
+                    self.resources.delete(doc.rid)
+                except Exception:
+                    logger.exception(
+                        "Failed to roll back cloned resource '%s' — it may "
+                        "be orphaned and require manual cleanup", doc.rid,
+                    )
+            raise
 
     def _resolve_name_conflict(self, identity: Identity, category: str,
                                type_: str, preferred_name: str,
@@ -335,23 +384,35 @@ class ShareCloner:
         else:
             base_name = f"{preferred_name} (from {ctx.sender_label})"
 
-        current_name = base_name
+        return self._find_unique_name(
+            base_name,
+            exists_fn=lambda name: self.resources.exists_by_name(identity, category, type_, name),
+        )
 
+    def _resolve_blueprint_name_conflict(
+            self, identity: Identity, preferred_name: str,
+    ) -> str:
+        """Find a unique blueprint name for *identity*, appending a counter if needed."""
+        return self._find_unique_name(
+            preferred_name,
+            exists_fn=lambda name: self.blueprints.name_exists_for_identity(identity, name),
+        )
+
+    @staticmethod
+    def _find_unique_name(base_name: str, *, exists_fn) -> str:
+        """Return *base_name* (or *base_name (N)*) that doesn't already exist."""
+        if not exists_fn(base_name):
+            return base_name
         for counter in range(2, 101):
-            existing = self.resources.exists_by_name(identity, category, type_, current_name)
-            if not existing:
-                return current_name
-
-            current_name = f"{base_name} ({counter})"
-
-        # Fallback to UUID if too many conflicts
+            candidate = f"{base_name} ({counter})"
+            if not exists_fn(candidate):
+                return candidate
         return f"{base_name} ({uuid4().hex[:8]})"
 
     def _clone_blueprint_draft(self, draft: BlueprintDraft, rid_mapping: Dict[str, str],
                                ctx: CloneContext) -> BlueprintDraft:
         """Clone a BlueprintDraft with proper ref replacement and new step UIDs."""
 
-        # Clone resource categories using ResourceCategory enum
         resource_fields = {
             category.value: [
                 self._clone_resource_with_refs(res, rid_mapping)
@@ -361,9 +422,12 @@ class ShareCloner:
         }
 
         if ctx.is_team_contribution:
-            clone_name = draft.name
+            base_name = draft.name
         else:
-            clone_name = f"{draft.name} (from {ctx.sender_label})"
+            base_name = f"{draft.name} (from {ctx.sender_label})"
+
+        recipient = self._recipient_identity(ctx)
+        clone_name = self._resolve_blueprint_name_conflict(recipient, base_name)
 
         return BlueprintDraft(
             plan=self._clone_plan(draft.plan, rid_mapping),

@@ -47,3 +47,21 @@ class IdentityProvider(ABC):
     def resolve_team_display_name(self, username: str, team_id: str) -> str:
         """Return the human-readable display name for a team."""
         ...
+
+
+class AdminConfigReaderPort(ABC):
+    """Abstract interface for reading the centralized admin-user list.
+
+    Adapters provide read-only access to wherever the platform's admin
+    allowlist is stored (e.g. the backend's ``admin_config`` collection).
+    """
+
+    @abstractmethod
+    def is_admin(self, username: str) -> "bool | None":
+        """Check admin status for *username*.
+
+        Returns ``True``/``False`` when the admin list is available,
+        ``None`` when the backing store is unreachable so callers can
+        fall back to a static allowlist.
+        """
+        ...

@@ -1,8 +1,10 @@
+import logging
 from typing import List, Optional, Tuple, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pydantic import BaseModel
 
+from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity
 from mas.resources.registry import ResourcesRegistry
 from mas.catalog.element_registry import ElementRegistry
@@ -15,40 +17,49 @@ from mas.elements.common.validator import ElementValidationResult, ValidationCon
 from mas.elements.common.card import ElementCard
 from mas.catalog.card_service import ElementCardService
 from mas.resources.resolver import DependencyResolver
+from mas.resources.field_encryption import ResourceFieldEncryption
+from mas.resources.ports import CredentialCleanupPort
+from mas.resources.errors import ResourceAccessDeniedError
 from mas.validation.service import ElementValidationService
 
-class ResourcesService:
-    """
-    Public facade. Performs schema validation via ElementRegistry
-    and delegates storage to ResourcesRegistry.
+logger = logging.getLogger(__name__)
+
+class CoreResourceService:
+    """Pure resource CRUD, validation, card building, and encryption.
+
+    Has zero awareness of built-ins, overlays, visibility gating,
+    or admin locks.  Does not import anything from ``builtin_models``,
+    ``builtin_service``, ``ResourceOwnership``, or ``ResourceVisibility``.
+
+    If the built-in feature is removed, this class doesn't change.
     """
 
     def __init__(
             self,
             resource_registry: ResourcesRegistry,
             element_registry: ElementRegistry,
-            validation_service: ElementValidationService = None,
-            card_service: ElementCardService = None,
-            auth_service=None,
-            encryption_key: str = "",
-    ):
+            field_encryption: ResourceFieldEncryption,
+            validation_service: Optional[ElementValidationService] = None,
+            card_service: Optional[ElementCardService] = None,
+            auth_service: Optional[CredentialCleanupPort] = None,
+    ) -> None:
         self._store = resource_registry
         self.element_registry = element_registry
         self._card_service = card_service
         self._dependency_resolver = DependencyResolver(resource_registry=self._store)
         self._validation_service = validation_service
         self._auth_service = auth_service
-
-        from global_utils.utils.crypto import FieldCipher
-        self._cipher = FieldCipher(encryption_key) if encryption_key else None
+        self._fields = field_encryption
 
     # ---------- CRUD ----------
-    def create(self, *, identity: Identity, category, type, name, config) -> Resource:
+    def create(self, *, identity: Identity, category: str, type: str, name: str, config: dict) -> Resource:
         model_cls = self.element_registry.get_schema(ResourceCategory(category), type)
         cfg_model = model_cls(**config)
 
         nested_refs = list(RefWalker.external_rids(cfg_model))
-        cfg_dict = self._encrypt_fields(cfg_model.model_dump(mode="json"), model_cls)
+        cfg_dict = self._fields.encrypt_fields(
+            cfg_model.model_dump(mode="json"), model_cls, category=category, type_key=type
+        )
 
         doc = Resource(
             identity=identity,
@@ -61,15 +72,13 @@ class ResourcesService:
         return self._store.create(doc)
 
     def save_resource(self, resource: Resource) -> Resource:
-        """
-        Save a pre-built Resource directly.
+        """Save a pre-built Resource directly.
 
-        Use this when you already have a validated Resource object.
         Skips schema validation since the Resource is already built.
         """
         return self._store.create(resource)
 
-    def update(self, rid: str, *, config: dict, name: str = None) -> Resource:
+    def update(self, rid: str, *, config: dict, name: Optional[str] = None) -> Resource:
         doc = self._store.get(rid)
         old_server_id = doc.cfg_dict.get("server_identifier", "")
 
@@ -79,7 +88,10 @@ class ResourcesService:
 
         nested_refs = list(RefWalker.external_rids(cfg_model))
 
-        doc.cfg_dict = self._encrypt_fields(cfg_model.model_dump(mode="json"), model_cls)
+        doc.cfg_dict = self._fields.encrypt_fields(
+            cfg_model.model_dump(mode="json"), model_cls,
+            category=doc.category, type_key=doc.type,
+        )
         doc.nested_refs = nested_refs
 
         if name is not None:
@@ -94,6 +106,7 @@ class ResourcesService:
         return result
 
     def delete(self, rid: str) -> None:
+        """Delete a resource.  No descriptor/overlay cleanup."""
         doc = self._store.get(rid)
         self._store.delete(rid)
         server_id = doc.cfg_dict.get("server_identifier", "")
@@ -105,30 +118,84 @@ class ResourcesService:
         """Get a single resource by ID."""
         return self._store.get(rid)
 
-    def find_resources(self, identity: Identity, category: Optional[str] = None,
-                       type: Optional[str] = None, limit: int = 50,
-                       offset: int = 0) -> Tuple[List[Resource], int]:
-        """Find resources with optional filtering and pagination."""
-        category_enum = ResourceCategory(category) if category else None
+    def get_visible(
+        self, rid: str, *, caller: CallerScope = CallerScope(),
+    ) -> Resource:
+        """Get a resource, enforcing identity-based ownership only.
 
+        When ``caller.identity`` is set, a resource owned by a different
+        identity is hidden (``KeyError``) from non-admin callers.
+        ``caller.identity`` may be ``None`` (no ownership check) since
+        several internal callers intentionally look up resources without
+        scoping to a single identity.
+        """
+        resource = self._store.get(rid)
+        if caller.is_admin:
+            return resource
+        if (
+            caller.identity is not None
+            and (
+                resource.identity.type != caller.identity.type
+                or resource.identity.id != caller.identity.id
+            )
+        ):
+            raise KeyError(rid)
+        return resource
+
+    def find_resources(
+        self,
+        category: Optional[str] = None,
+        type: Optional[str] = None,
+        ownership: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        caller: CallerScope = CallerScope(),
+    ) -> Tuple[List[dict], int]:
+        """List the caller's own resources.  No built-in merging.
+
+        ``ownership`` is accepted but ignored — it's a built-in concept.
+        """
+        if caller.identity is None:
+            return [], 0
+
+        category_enum = ResourceCategory(category) if category else None
         query = ResourceQuery(
-            identity=identity,
+            identity=caller.identity,
             category=category_enum,
             type=type,
             limit=limit,
             offset=offset,
         )
-        return self._store.find_resources(query)
+        resources, total = self._store.find_resources(query)
+        return self.to_dicts(resources), total
 
     # ---------- resolve ----------
-    def resolve(self, rid: str) -> BaseModel:
-        category, _type = self._store.meta(rid)
-        model_cls = self.element_registry.get_schema(ResourceCategory(category), _type)
-        return model_cls(**self._store.raw_config(rid))
+    def resolve(
+        self, rid: str, caller: CallerScope = CallerScope(),
+    ) -> BaseModel:
+        """Resolve a resource by rid into its validated config model."""
+        resource = self.get_visible(rid, caller=caller)
+        return self.resolve_resource(resource, caller=caller)
+
+    def resolve_resource(self, resource: Resource, caller: CallerScope = CallerScope()) -> BaseModel:
+        """Resolve an already-fetched ``Resource`` into its validated config model.
+
+        Decrypts config and returns the Pydantic model.  No overlay merge.
+        """
+        config = self._store.raw_config_for(resource)
+        model_cls = self.element_registry.get_schema(
+            ResourceCategory(resource.category), resource.type)
+        return model_cls(**config)
 
     def get_dict(self, rid: str) -> dict:
         """Raw JSON for UI."""
         return self._store.raw_config(rid)
+
+    def exists_by_name(
+        self, identity: Identity, category: str, type_: str, name: str,
+    ) -> bool:
+        """Whether a resource with *name* already exists for *identity*."""
+        return self._store.exists_by_name(identity, category, type_, name)
 
     @staticmethod
     def get_resource_schema() -> dict:
@@ -145,30 +212,28 @@ class ResourcesService:
         group_by: List[str],
         filter: Dict[str, Any] = None,
     ) -> List[GroupedCount]:
-        """
-        Group resources by specified fields and return counts.
-        Performs efficient server-side grouping via the registry.
-        """
+        """Group resources by specified fields and return counts."""
         return self._store.group_count(identity, group_by, filter)
 
     # ---------- Validation ----------
     def validate_resource(
         self,
         rid: str,
+        caller: CallerScope = CallerScope(),
         user_id: str = "",
         timeout_seconds: float = 10.0,
         credential_user_id: str = "",
     ) -> ElementValidationResult:
-        """
-        Validate a saved resource and all its transitive dependencies.
-        """
+        """Validate a saved resource and all its transitive dependencies."""
         self._ensure_validation_service()
+
+        self.get_visible(rid, caller=caller)
 
         ordered_rids = self._dependency_resolver.resolve_with_deps(rid)
         if not ordered_rids:
             raise KeyError(f"Resource not found: {rid}")
 
-        ordered_configs = self._build_configs_from_rids(ordered_rids)
+        ordered_configs = self._build_configs_from_rids(ordered_rids, caller=caller)
 
         return self._validate_and_get(
             ordered_configs, rid, timeout_seconds,
@@ -178,17 +243,13 @@ class ResourcesService:
     def validate_resources(
         self,
         rids: List[str],
+        caller: CallerScope = CallerScope(),
         user_id: str = "",
         timeout_seconds: float = 10.0,
         max_workers: int = 10,
         credential_user_id: str = "",
     ) -> List[ElementValidationResult]:
-        """
-        Validate multiple resources in parallel.
-
-        Uses a thread pool for concurrent validation while preserving
-        the order of results to match the input order.
-        """
+        """Validate multiple resources in parallel."""
         self._ensure_validation_service()
 
         if not rids:
@@ -197,17 +258,18 @@ class ResourcesService:
         if len(rids) == 1:
             return [
                 self._validate_resource_safe(
-                    rids[0], user_id, timeout_seconds, credential_user_id,
+                    rids[0], caller, user_id, timeout_seconds, credential_user_id,
                 ),
             ]
 
         return self._validate_in_parallel(
-            rids, user_id, timeout_seconds, max_workers, credential_user_id,
+            rids, caller, user_id, timeout_seconds, max_workers, credential_user_id,
         )
 
     def _validate_in_parallel(
         self,
         rids: List[str],
+        caller: CallerScope,
         user_id: str,
         timeout_seconds: float,
         max_workers: int,
@@ -220,7 +282,7 @@ class ResourcesService:
             future_to_index = {
                 executor.submit(
                     self._validate_resource_safe,
-                    rid, user_id, timeout_seconds, credential_user_id,
+                    rid, caller, user_id, timeout_seconds, credential_user_id,
                 ): idx
                 for idx, rid in enumerate(rids)
             }
@@ -234,14 +296,16 @@ class ResourcesService:
     def _validate_resource_safe(
         self,
         rid: str,
-        user_id: str,
-        timeout_seconds: float,
+        caller: CallerScope = CallerScope(),
+        user_id: str = "",
+        timeout_seconds: float = 10.0,
         credential_user_id: str = "",
     ) -> ElementValidationResult:
         """Validate a single resource with exception handling."""
         try:
             return self.validate_resource(
                 rid=rid,
+                caller=caller,
                 user_id=user_id,
                 timeout_seconds=timeout_seconds,
                 credential_user_id=credential_user_id,
@@ -251,10 +315,11 @@ class ResourcesService:
                 rid=rid,
                 error=f"Resource not found: {rid}"
             )
-        except Exception as e:
+        except Exception:
+            logger.exception("Unexpected error validating resource %s", rid)
             return ElementValidationResult.create_error(
                 rid=rid,
-                error=f"Validation failed: {str(e)}"
+                error="Validation failed due to an internal error.",
             )
 
     def validate_config(
@@ -265,12 +330,7 @@ class ResourcesService:
         name: Optional[str] = None,
         timeout_seconds: float = 10.0,
     ) -> ElementValidationResult:
-        """
-        Validate an inline config before saving.
-
-        This validates a resource config without requiring it to be saved first.
-        Useful for UI validation before creating a resource.
-        """
+        """Validate an inline config before saving."""
         self._ensure_validation_service()
 
         category_enum = ResourceCategory(category)
@@ -297,34 +357,55 @@ class ResourcesService:
     def get_cards(
         self,
         rids: List[str],
+        caller: CallerScope = CallerScope(),
     ) -> Dict[str, ElementCard]:
-        """
-        Get element cards for a list of resources and their dependencies.
-
-        Resolves all transitive dependencies and builds cards for all elements
-        in dependency order.
-        """
+        """Get element cards for a list of resources and their dependencies."""
         self._ensure_card_service()
 
+        for rid in rids:
+            self.get_visible(rid, caller=caller)
+
         all_rids = self._dependency_resolver.resolve_all_with_deps(rids)
-        configs = self._build_configs_from_rids(all_rids)
+        configs = self._build_configs_from_rids(all_rids, caller=caller)
 
         return self._card_service.build_all_cards(configs)
 
     def get_card(
         self,
         rid: str,
+        caller: CallerScope = CallerScope(),
     ) -> ElementCard:
-        """
-        Get element card for a single resource.
-
-        Resolves all transitive dependencies and builds cards,
-        returning only the card for the requested resource.
-        """
-        cards = self.get_cards([rid])
+        """Get element card for a single resource."""
+        cards = self.get_cards([rid], caller=caller)
         if rid not in cards:
             raise KeyError(f"Resource not found: {rid}")
         return cards[rid]
+
+    # ---------- Write-access guard ----------
+
+    def guard_write_access(
+        self, rid: str, caller: CallerScope, *, username: str = "",
+    ) -> Resource:
+        """Identity-based ownership check only.
+
+        No built-in protection, no admin edit lock check.
+
+        Raises:
+            ResourceAccessDeniedError: resource is owned by a different
+                identity and caller is not admin.
+        """
+        resource = self._store.get(rid)
+        if caller.is_admin:
+            return resource
+        if (
+            caller.identity is None
+            or resource.identity.type != caller.identity.type
+            or resource.identity.id != caller.identity.id
+        ):
+            raise ResourceAccessDeniedError(rid)
+        return resource
+
+    # ---------- Internal Helpers ----------
 
     def _cleanup_orphaned_credential(self, identity: Identity, server_id: str) -> None:
         """Delete the stored credential if no other resource uses the same server_identifier."""
@@ -336,15 +417,34 @@ class ResourcesService:
         if remaining == 0:
             self._auth_service.delete_credential(identity.id, server_id)
 
-    # ---------- Helpers ----------
-    def _encrypt_fields(self, cfg_dict: dict, model_cls: type) -> dict:
-        """Encrypt fields declared in the config's ENCRYPTED_FIELDS before storage."""
-        if not self._cipher:
-            return cfg_dict
-        for field in getattr(model_cls, "ENCRYPTED_FIELDS", ()):
-            if cfg_dict.get(field):
-                cfg_dict[field] = self._cipher.encrypt(cfg_dict[field])
-        return cfg_dict
+    # ---------- Serialization ----------
+    def to_dict(
+        self,
+        resource: Resource,
+        *,
+        identity: Optional[Identity] = None,
+    ) -> dict:
+        """Serialize a single resource to a JSON-ready dict.
+
+        No ownership/visibility stamping — see ``BuiltinAwareResourceService``
+        for the decorated version that stamps descriptor metadata and merges
+        per-identity overlays. ``identity`` is accepted for signature
+        compatibility with that decorator and ignored here.
+        """
+        return resource.model_dump(mode="json")
+
+    def to_dicts(
+        self,
+        resources: List[Resource],
+        *,
+        identity: Optional[Identity] = None,
+    ) -> List[dict]:
+        """Serialize resources.
+
+        ``identity`` is accepted but unused — the built-in-aware decorator
+        uses it to attach ``user_configured`` flags and merge overlays.
+        """
+        return [self.to_dict(doc, identity=identity) for doc in resources]
 
     def _ensure_validation_service(self) -> None:
         """Raise if validation service not configured."""
@@ -356,12 +456,29 @@ class ResourcesService:
         if not self._card_service:
             raise RuntimeError("CardService not configured")
 
-    def _build_configs_from_rids(self, rids: List[str]) -> List[ElementConfigMeta]:
-        """Build ElementConfigMeta list from saved resource rids."""
+    def _build_configs_from_rids(
+        self, rids: List[str], caller: CallerScope = CallerScope(),
+    ) -> List[ElementConfigMeta]:
+        """Build ElementConfigMeta list from saved resource rids.
+
+        Checks whether the resolved config is missing a required secret —
+        see ``ResourceFieldEncryption.find_missing_conditionally_required_secrets``.
+        """
         configs: List[ElementConfigMeta] = []
         for rid in rids:
-            resource = self._store.get(rid)
-            config = self.resolve(rid)
+            resource = self.get_visible(rid, caller=caller)
+            config = self.resolve_resource(resource, caller=caller)
+
+            override_error = None
+            missing = self._fields.find_missing_conditionally_required_secrets(
+                resource.category, resource.type, config
+            )
+            if missing:
+                override_error = (
+                    f"{', '.join(missing)} is required for '{resource.name}' — "
+                    f"set it in the resource's configuration before it can be validated."
+                )
+
             configs.append(ElementConfigMeta(
                 rid=rid,
                 category=resource.category,
@@ -369,6 +486,7 @@ class ResourcesService:
                 name=resource.name,
                 config=config,
                 dependency_rids=list(resource.nested_refs),
+                validation_override_error=override_error,
             ))
         return configs
 

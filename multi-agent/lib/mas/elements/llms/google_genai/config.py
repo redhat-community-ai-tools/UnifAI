@@ -1,7 +1,7 @@
 from typing import Literal, Dict, Any, Optional
 from pydantic import Field, Extra
 from pydantic import BaseModel
-from mas.core.field_hints import SecretHint
+from mas.core.field_hints import SecretHint, CardHint, CardContext
 from .identifiers import Identifier
 
 
@@ -11,25 +11,31 @@ class GoogleGenAIConfig(BaseModel):
 
     model_name: str = Field(
         default="gemini-3.5-flash",
-        description="The Gemini model ID to use (e.g., gemini-3.5-flash, gemini-2.5-pro)"
+        description="The Gemini model ID to use (e.g., gemini-3.5-flash, gemini-2.5-pro)",
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
 
     api_key: str = Field(
         default="",
         description="Google API key for Generative AI",
-        json_schema_extra=SecretHint(reason="API credentials should be masked").to_hints()
+        # No ReadOnlyHint(read_only=False) here — the API key is set once by
+        # whoever creates the LLM resource and is never overridden per-user
+        # on built-ins (no "Configure" affordance on the built-in card).
+        json_schema_extra=SecretHint(reason="API credentials should be masked").to_hints(),
     )
 
     temperature: float = Field(
         default=0.7,
         ge=0.0,
         le=2.0,
-        description="Sampling temperature (0.0 to 2.0)"
+        description="Sampling temperature (0.0 to 2.0)",
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
 
     max_tokens: Optional[int] = Field(
         default=8192,
-        description="Maximum number of tokens to generate (None for model default)"
+        description="Maximum number of tokens to generate (None for model default)",
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
 
     top_p: Optional[float] = Field(

@@ -6,6 +6,7 @@ that Temporal-backed sessions can be shared across team members through
 the existing Redis Streams channel infrastructure.
 """
 import logging
+from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 from mas.core.identity import IdentityType
@@ -23,7 +24,12 @@ from .ports import CollaborationStore
 
 logger = logging.getLogger(__name__)
 
-EDIT_LOCK_KINDS: frozenset[str] = frozenset({"resource", "blueprint"})
+
+class EditLockKind(str, Enum):
+    """Discriminator for the type of entity being locked."""
+    RESOURCE = "resource"
+    BLUEPRINT = "blueprint"
+    BUILTIN = "builtin"
 
 
 class CollaborationService:
@@ -84,9 +90,11 @@ class CollaborationService:
 
         Raises ``ValueError`` if the kind is not recognised.
         """
-        if entity_kind not in EDIT_LOCK_KINDS:
+        try:
+            EditLockKind(entity_kind)
+        except ValueError:
             raise ValueError(
-                f"entityKind must be one of: {', '.join(sorted(EDIT_LOCK_KINDS))}"
+                f"entityKind must be one of: {', '.join(sorted(e.value for e in EditLockKind))}"
             )
 
     # ── Join / Leave ────────────────────────────────────────────────
@@ -202,6 +210,47 @@ class CollaborationService:
     def is_available(self) -> bool:
         return self._store.is_available()
 
+    # ── Edit locks (shared primitive) ────────────────────────────────
+    #
+    # Team and admin edit locks are the *same* underlying Redis lock,
+    # keyed by (namespace, kind, entity_id). "Team" locks scope the
+    # namespace to a real team_id and require team membership; "admin"
+    # locks scope it to a fixed sentinel namespace (``ADMIN_LOCK_NAMESPACE``)
+    # and skip that check because authorization is already enforced at the
+    # endpoint layer via ``@require_admin_access``. These private helpers
+    # hold the one implementation; the public methods below only differ in
+    # which authorization check (if any) they run and which namespace/kind
+    # they pass through.
+
+    def _acquire_edit_lock(
+        self, namespace: str, kind: str, entity_id: str, user_id: str,
+    ) -> Tuple[bool, Optional[TeamEditLockHolder]]:
+        return self._store.acquire_team_edit_lock(
+            namespace, kind, entity_id, user_id, user_id, ttl=self._edit_lock_ttl,
+        )
+
+    def _release_edit_lock(
+        self, namespace: str, kind: str, entity_id: str, user_id: str,
+    ) -> None:
+        self._store.release_team_edit_lock(namespace, kind, entity_id, user_id)
+
+    def _renew_edit_lock(
+        self, namespace: str, kind: str, entity_id: str, user_id: str,
+    ) -> bool:
+        return self._store.renew_team_edit_lock(
+            namespace, kind, entity_id, user_id, user_id, ttl=self._edit_lock_ttl,
+        )
+
+    def _get_edit_lock(
+        self, namespace: str, kind: str, entity_id: str,
+    ) -> Optional[TeamEditLockHolder]:
+        return self._store.get_team_edit_lock(namespace, kind, entity_id)
+
+    def _get_edit_locks_batch(
+        self, namespace: str, kind: str, entity_ids: list[str],
+    ) -> Dict[str, Optional[TeamEditLockHolder]]:
+        return self._store.get_team_edit_locks_batch(namespace, kind, entity_ids)
+
     # ── Team edit locks ─────────────────────────────────────────────
 
     def acquire_team_edit_lock(
@@ -213,14 +262,7 @@ class CollaborationService:
     ) -> Tuple[bool, Optional[TeamEditLockHolder]]:
         self.check_team_membership(user_id, team_id)
         self.validate_edit_lock_kind(entity_kind)
-        return self._store.acquire_team_edit_lock(
-            team_id,
-            entity_kind,
-            entity_id,
-            user_id,
-            user_id,
-            ttl=self._edit_lock_ttl,
-        )
+        return self._acquire_edit_lock(team_id, entity_kind, entity_id, user_id)
 
     def release_team_edit_lock(
         self,
@@ -231,9 +273,7 @@ class CollaborationService:
     ) -> None:
         self.check_team_membership(user_id, team_id)
         self.validate_edit_lock_kind(entity_kind)
-        self._store.release_team_edit_lock(
-            team_id, entity_kind, entity_id, user_id
-        )
+        self._release_edit_lock(team_id, entity_kind, entity_id, user_id)
 
     def renew_team_edit_lock(
         self,
@@ -244,14 +284,7 @@ class CollaborationService:
     ) -> bool:
         self.check_team_membership(user_id, team_id)
         self.validate_edit_lock_kind(entity_kind)
-        return self._store.renew_team_edit_lock(
-            team_id,
-            entity_kind,
-            entity_id,
-            user_id,
-            user_id,
-            ttl=self._edit_lock_ttl,
-        )
+        return self._renew_edit_lock(team_id, entity_kind, entity_id, user_id)
 
     def get_team_edit_lock(
         self,
@@ -262,7 +295,7 @@ class CollaborationService:
     ) -> Optional[TeamEditLockHolder]:
         self.check_team_membership(user_id, team_id)
         self.validate_edit_lock_kind(entity_kind)
-        return self._store.get_team_edit_lock(team_id, entity_kind, entity_id)
+        return self._get_edit_lock(team_id, entity_kind, entity_id)
 
     def get_team_edit_locks_batch(
         self,
@@ -273,6 +306,6 @@ class CollaborationService:
     ) -> Dict[str, Optional[TeamEditLockHolder]]:
         self.check_team_membership(user_id, team_id)
         self.validate_edit_lock_kind(entity_kind)
-        return self._store.get_team_edit_locks_batch(
-            team_id, entity_kind, entity_ids
-        )
+        return self._get_edit_locks_batch(team_id, entity_kind, entity_ids)
+
+

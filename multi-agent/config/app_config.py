@@ -14,10 +14,12 @@ class AppConfig(SharedConfig):
     templates_coll: str = "templates"
     credentials_coll: str = "credentials"
     server_configs_coll: str = "server_configs"
+    workflow_schedules_coll: str = "workflow_schedules"
     hostname: str = "0.0.0.0"
     port: str = "8002"
     version: str = "1.0.0"
-    admin_allowed_users: list = Field(default_factory=list)  # user_ids (usernames) for admin access
+    admin_allowed_users: list[str] = Field(default_factory=list)  # user_ids (usernames) for admin access
+    admin_config_db: str = "config"  # MongoDB database used by the backend admin config panel
     secret_key: str = ""
 
     # Session cookie — must match Identity so Flask never re-signs with different attributes
@@ -53,4 +55,10 @@ class AppConfig(SharedConfig):
     oauth_callback_path: str = "/api/credentials/callback"
     identity_provider_mode: str = ""
     credential_encryption_key: str = ""
+
+    # Langfuse tracing (optional — keys come from multiagent-be-secret)
+    langfuse_enabled: bool = False
+    langfuse_secret_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_base_url: str = "https://us.cloud.langfuse.com"
 

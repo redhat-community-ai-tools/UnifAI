@@ -9,6 +9,7 @@ import AgentRepository from "@/pages/AgentRepository";
 import AgenticChats from "@/pages/AgenticChats";
 
 import AgenticTemplates from "@/pages/AgenticTemplates";
+import ScheduledWorkflows from "@/pages/ScheduledWorkflows";
 import GetToKnow from "@/pages/GetToKnow";
 import Analytics from "@/pages/Analytics";
 import NotFound from "@/pages/not-found";
@@ -26,7 +27,6 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import TermsApproval from '@/components/auth/TermsApproval';
 import SlackIntegration from "./features/slack/SlackIntegration";
 import SlackAddSourcePage from "./features/slack/SlackAddSourcePage";
-import GuidesPage from "./components/guides/GuidesPage";
 import PublicChat from "./components/agentic-ai/chat/PublicChat";
 import AgenticLayout from "./components/layout/AgenticLayout";
 import { Toaster } from "./components/ui/toaster";
@@ -38,13 +38,15 @@ function AppRoutes() {
   const [isAgenticAI] = useRoute("/agentic-ai");
   const [isInventory] = useRoute("/inventory");
   const [isAgenticChats] = useRoute("/agentic-chats");
+  const [isAgenticChatsSession] = useRoute("/agentic-chats/:sessionId");
   const [isTemplates] = useRoute("/templates");
+  const [isScheduledWorkflows] = useRoute("/scheduled-workflows");
   const [isRagOverview] = useRoute("/rag-overview");
   const [isSlack] = useRoute("/slack");
   const [isDocuments] = useRoute("/documents");
   const [isSlackAddSource] = useRoute("/slack/add-source");
 
-  const isAgenticRoute = isAgenticOverview || isAgenticAI || isInventory || isAgenticChats || isTemplates;
+  const isAgenticRoute = isAgenticOverview || isAgenticAI || isInventory || isAgenticChats || isAgenticChatsSession || isTemplates || isScheduledWorkflows;
   const isTeamBlockedRagRoute =
     viewMode === "team" &&
     (isRagOverview || isSlack || isDocuments || isSlackAddSource);
@@ -65,7 +67,9 @@ function AppRoutes() {
             <Route path="/agentic-overview" component={AgenticOverview} />
             <Route path="/agentic-ai" component={AgenticWorkflows} />
             <Route path="/inventory" component={AgentRepository} />
+            <Route path="/agentic-chats/:sessionId" component={AgenticChats} />
             <Route path="/agentic-chats" component={AgenticChats} />
+            <Route path="/scheduled-workflows" component={ScheduledWorkflows} />
             <Route path="/templates" component={AgenticTemplates} />
           </Switch>
         </AgenticLayout>
@@ -84,7 +88,6 @@ function AppRoutes() {
       <Route path="/slack/add-source" component={SlackAddSourcePage} />
       <Route path="/get-to-know" component={GetToKnow} />
       <Route path="/configuration" component={Configuration} />
-      <Route path="/guides" component={GuidesPage} />
       <Route path="/analytics" component={Analytics} />
       <Route component={NotFound} />
     </Switch>

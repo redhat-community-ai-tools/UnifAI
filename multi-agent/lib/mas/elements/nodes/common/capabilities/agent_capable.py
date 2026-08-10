@@ -173,7 +173,62 @@ class AgentCapableMixin(Generic[T]):
             self._tool_executor_manager.add_pre_execution_hook(hook)
         for hook in self._custom_post_hooks:
             self._tool_executor_manager.add_post_execution_hook(hook)
-        
+
+        # Tracing hooks for tool execution
+        def _result_looks_like_error(result: Any) -> bool:
+            if result is None:
+                return False
+            text = str(result)
+            if len(text) > 2000:
+                text = text[:2000]
+            lower = text.lower()
+            if '"success": false' in lower or "'success': false" in lower:
+                return True
+            if '"error"' in lower and ('"message"' in lower or "error:" in lower):
+                return True
+            if '"isError": true' in lower or '"is_error": true' in lower:
+                return True
+            return False
+
+        tracing = getattr(self, "_tracing", None)
+        if tracing and tracing.enabled:
+            _tool_trace_stack: dict = {}
+
+            async def tracing_pre_hook(tool, args, context):
+                call_id = (context or {}).get("tool_call_id", id(args))
+                cm = tracing.trace_tool(tool_name=tool.name, tool_input=args)
+                handle = cm.__enter__()
+                _tool_trace_stack[call_id] = (cm, handle)
+
+            async def tracing_post_hook(response, context):
+                call_id = response.tool_call_id if response else None
+                entry = _tool_trace_stack.pop(call_id, None)
+                if entry:
+                    cm, handle = entry
+                    if not response.success:
+                        handle.update(
+                            output=str(response.error),
+                            level="ERROR",
+                            status_message=f"Tool '{response.tool_name}' failed: {response.error}",
+                            metadata={"success": False},
+                        )
+                    elif _result_looks_like_error(response.result):
+                        handle.update(
+                            output=response.result,
+                            level="ERROR",
+                            status_message=f"Tool '{response.tool_name}' returned error response",
+                            metadata={"success": False},
+                        )
+                    else:
+                        handle.update(
+                            output=response.result,
+                            metadata={"success": True},
+                        )
+                    cm.__exit__(None, None, None)
+
+            self._tool_executor_manager.add_pre_execution_hook(tracing_pre_hook)
+            self._tool_executor_manager.add_post_execution_hook(tracing_post_hook)
+
         return self._tool_executor_manager
     
     async def _setup_standard_hooks(self: T) -> None:
@@ -312,11 +367,14 @@ class AgentCapableMixin(Generic[T]):
             hitl_config=config.hitl_config,
         )
         
+        tracing = getattr(self, "_tracing", None)
+
         iterator = AgentIterator(
             strategy=strategy,
             execution_handler=execution_handler,
             stream=self._stream if self.is_streaming() else None,
             on_action=on_action,
+            tracing=tracing,
         )
         
         # Set initial messages

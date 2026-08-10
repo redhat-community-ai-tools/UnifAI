@@ -1,15 +1,24 @@
 import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
+from mas.core.tracing import TracingService
 from mas.session.management.user_session_manager import UserSessionManager
 from mas.session.execution.foreground_runner import ForegroundSessionRunner
 from mas.session.execution.input_projector import SessionInputProjector
-from mas.session.execution.ports import BackgroundSessionEngine, SubmitSessionRequest
+from mas.session.execution.ports import (
+    BackgroundSessionEngine,
+    ScheduledExecutionParams,
+    SubmitSessionRequest,
+)
+from mas.core.execution_context import ExecutionContext
 from mas.session.domain.status import SessionStatus
 from mas.session.domain.workflow_session import WorkflowSession
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.dto import SessionListItem
-from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
+from mas.session.domain.models import (
+    SessionChat, SessionMeta, ScheduleRunSummary,
+    TimeSeriesPoint, SystemAnalyticsData,
+)
 from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
@@ -31,26 +40,34 @@ class SessionService:
         foreground_runner: ForegroundSessionRunner,
         input_projector: SessionInputProjector,
         background_engine: Optional[BackgroundSessionEngine] = None,
+        tracing_service: Optional[TracingService] = None,
     ):
         self._manager = manager
         self._foreground = foreground_runner
         self._projector = input_projector
         self._engine = background_engine
+        self._tracing = tracing_service
 
     def create(
         self,
         identity: Identity,
         blueprint_id: str,
         metadata: Dict[str, Any] | SessionMeta | None = None,
+        *,
+        run_id: str | None = None,
     ) -> str:
         """
         Create a new session record and return its run_id.
         Lightweight — no graph compilation or blueprint resolution.
+
+        When *run_id* is supplied the session is created with that
+        deterministic key, making the call safe under activity retries.
         """
         return self._manager.create_session(
             identity=identity,
             blueprint_id=blueprint_id,
             metadata=SessionMeta.model_validate(metadata or {}),
+            run_id=run_id,
         )
 
     # ---- Two-phase execution entry points ----
@@ -149,6 +166,101 @@ class SessionService:
             return False
         return True
 
+    # ---- Scheduled execution ----
+
+    def prepare_for_scheduled_execution(
+        self,
+        *,
+        identity: Identity,
+        blueprint_id: str,
+        inputs: Dict[str, Any],
+        metadata: SessionMeta | None = None,
+        logged_in_user: str = "",
+        run_id: str | None = None,
+    ) -> tuple[str, "WorkflowSession"]:
+        """Create a session, stage inputs, and return the hydrated WorkflowSession.
+
+        Same staging as submit(), without starting background execution.
+        """
+        session_id = self.create(
+            identity=identity,
+            blueprint_id=blueprint_id,
+            metadata=metadata,
+            run_id=run_id,
+        )
+        record = self._manager.get_record(session_id)
+        self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
+
+        session = self._manager.get_session(session_id)
+        return session_id, session
+
+    def provision_scheduled_session(
+        self,
+        *,
+        identity: Identity,
+        blueprint_id: str,
+        inputs: Dict[str, Any],
+        schedule_id: str,
+        credential_user_id: str = "",
+        dedupe_key: str | None = None,
+    ) -> str:
+        """Provision a session for a scheduled run.
+
+        When dedupe_key is set and a session with that id already exists,
+        returns it unchanged. Otherwise creates a new session with schedule
+        metadata and staged inputs.
+        """
+        if dedupe_key:
+            try:
+                self._manager.get_record(dedupe_key)
+            except KeyError:
+                pass
+            else:
+                return dedupe_key
+
+        metadata = SessionMeta(
+            source="schedule",
+            schedule_id=schedule_id,
+            prompt_text=(inputs.get("user_prompt") or ""),
+        )
+        session_id, _ = self.prepare_for_scheduled_execution(
+            identity=identity,
+            blueprint_id=blueprint_id,
+            inputs=inputs,
+            metadata=metadata,
+            logged_in_user=credential_user_id,
+            run_id=dedupe_key,
+        )
+        return session_id
+
+    def build_scheduled_execution_params(
+        self,
+        session_id: str,
+        *,
+        engine_name: str,
+        engine_handle: str | None,
+    ) -> ScheduledExecutionParams:
+        """Build ScheduledExecutionParams for a provisioned session.
+
+        Loads the session and constructs an ExecutionContext with the given
+        engine_name and engine_handle.
+        """
+        session = self._manager.get_session(session_id)
+        exec_context = ExecutionContext(
+            session_id=session_id,
+            identity=session.record.identity,
+            scope="public",
+            engine_name=engine_name,
+            engine_handle=engine_handle,
+            tags=session.record.run_context.tags,
+        )
+        return ScheduledExecutionParams(
+            run_id=session_id,
+            execution_context=exec_context,
+            graph_state=session.graph_state,
+            graph_definition=session.executable_graph.graph_definition,
+        )
+
     # ---- Private staging ----
 
     _BUSY_STATUSES = frozenset({"QUEUED", "RUNNING"})
@@ -237,14 +349,33 @@ class SessionService:
         """
         return self._manager.get_chat(run_id)
 
+    def get_runs_by_schedule(self, schedule_id: str, *, limit: int = 20) -> List[ScheduleRunSummary]:
+        """Return formatted run history for a given schedule/prompt ID."""
+        docs = self._manager.find_by_schedule_id(schedule_id, limit=limit)
+        return [
+            ScheduleRunSummary(
+                session_id=d.get("run_id", ""),
+                status=SessionStatus(d["status"]) if d.get("status") in SessionStatus.__members__ else SessionStatus.PENDING,
+                started_at=d.get("run_context", {}).get("started_at"),
+                metadata=SessionMeta.model_validate(d.get("metadata") or {}),
+            )
+            for d in docs
+        ]
+
     def list_user_sessions(self, identity: Identity) -> list:
         """
         List all sessions created by a user (metadata only, no messages).
+
+        For terminal sessions that have been traced but whose cost hasn't
+        been persisted yet, fetches the cost from the tracing backend and
+        caches it in Mongo so subsequent calls don't need the API.
         """
         docs = self._manager.list_docs(identity)
         items = []
 
         for doc in docs:
+            self._backfill_cost(doc)
+
             blueprint_id = doc.get("blueprint_id", "")
             blueprint_exists = self._manager.blueprint_exists(blueprint_id) if blueprint_id else False
             bp_metadata = self._manager.get_blueprint_metadata(blueprint_id) if blueprint_exists else {}
@@ -259,6 +390,40 @@ class SessionService:
             items.append(item.model_dump())
 
         return items
+
+    def _backfill_cost(self, doc: Dict[str, Any]) -> None:
+        """Fetch session cost from the tracing backend and cache in Mongo.
+
+        Stores ``cost_updated_at`` alongside ``total_cost`` so we can
+        detect staleness: when ``last_active_at`` is newer than the
+        stored timestamp, the session had new activity and the cost is
+        re-fetched.  Sessions not found in Langfuse get ``total_cost: None``
+        to avoid repeated lookups.
+        """
+        if self._tracing is None or not self._tracing.enabled:
+            return
+        status = doc.get("status", "")
+        if status not in ({"COMPLETED", "FAILED"}):
+            return
+        meta = doc.get("metadata", {})
+        last_active = doc.get("run_context", {}).get("last_active_at", "")
+        cost_updated = meta.get("cost_updated_at", "")
+        if "total_cost" in meta and (not last_active or cost_updated >= last_active):
+            return
+        session_id = doc.get("run_id", "")
+        if not session_id:
+            return
+        try:
+            cost = self._tracing.get_session_cost(session_id)
+            meta["total_cost"] = cost
+            meta["cost_updated_at"] = last_active or datetime.utcnow().isoformat()
+            doc["metadata"] = meta
+            record = self._manager.get_record(session_id)
+            record.metadata.total_cost = cost
+            record.metadata.cost_updated_at = meta["cost_updated_at"]
+            self._manager.save_record(record)
+        except Exception:
+            logger.debug("Cost backfill failed for session %s", session_id, exc_info=True)
 
     def get_user_blueprints(self, identity: Identity) -> List[str]:
         """

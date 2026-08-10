@@ -2,6 +2,7 @@ from inbound.flask.endpoints.blueprints import blueprints_bp
 from inbound.flask.endpoints.sessions import sessions_bp
 from inbound.flask.endpoints.catalog import catalog_bp
 from inbound.flask.endpoints.resources import resources_bp
+from inbound.flask.endpoints.builtins import builtins_bp
 from inbound.flask.endpoints.graph import graph_bp
 from inbound.flask.endpoints.graph_validation import graph_validation_bp
 from inbound.flask.endpoints.actions import actions_bp
@@ -12,6 +13,7 @@ from inbound.flask.endpoints.templates import templates_bp
 from inbound.flask.endpoints.collaboration import collaboration_bp, collaboration_locks_bp
 from inbound.flask.endpoints.workspace import workspace_bp
 from inbound.flask.endpoints.credentials import credentials_bp
+from inbound.flask.endpoints.schedules import schedules_bp
 
 
 def register_all_endpoints(app):
@@ -21,6 +23,7 @@ def register_all_endpoints(app):
         {"bp": sessions_bp, "parent": 'sessions', "route": ''},
         {"bp": catalog_bp, "parent": 'catalog', "route": ''},
         {"bp": resources_bp, "parent": 'resources', "route": ''},
+        {"bp": builtins_bp, "parent": 'resources', "route": ''},
         {"bp": graph_bp, "parent": 'graph', "route": ''},
         {"bp": graph_validation_bp, "parent": 'graph', "route": 'validation'},
         {"bp": actions_bp, "parent": 'actions', "route": ''},
@@ -31,6 +34,7 @@ def register_all_endpoints(app):
         {"bp": collaboration_locks_bp, "parent": 'collaboration', "route": ''},
         {"bp": workspace_bp, "parent": 'workspace', "route": ''},
         {"bp": credentials_bp, "parent": 'credentials', "route": ''},
+        {"bp": schedules_bp, "parent": 'schedules', "route": ''},
     ]
 
     # register all other blueprints in the app
