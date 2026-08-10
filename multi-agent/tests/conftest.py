@@ -586,6 +586,16 @@ def pytest_addoption(parser):
         help="Max concurrent run workers in stress test (default: 10)"
     )
     _addoption(
+        "--stress-concurrent-create",
+        action="store",
+        type=int,
+        default=None,
+        help=(
+            "Max concurrent session creations in stress test "
+            "(default: 5 in StressTestConfig). Independent of --stress-concurrent."
+        ),
+    )
+    _addoption(
         "--stress-ramp-start",
         action="store",
         type=int,

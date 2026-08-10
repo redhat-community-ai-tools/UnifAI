@@ -467,7 +467,9 @@ class SessionAPIClient:
         params = {"resourceId": resource_id}
 
         try:
-            response = self.session.delete(url, params=params)
+            response = self.session.delete(
+                url, params=params, timeout=self.config.creation_timeout
+            )
             response.raise_for_status()
             return True
         except Exception as e:
@@ -480,7 +482,9 @@ class SessionAPIClient:
         params = {"blueprintId": blueprint_id}
         
         try:
-            response = self.session.delete(url, params=params)
+            response = self.session.delete(
+                url, params=params, timeout=self.config.creation_timeout
+            )
             response.raise_for_status()
             return True
         except Exception as e:
@@ -493,7 +497,9 @@ class SessionAPIClient:
         params = {"sessionId": session_id}
         
         try:
-            response = self.session.delete(url, params=params)
+            response = self.session.delete(
+                url, params=params, timeout=self.config.creation_timeout
+            )
             response.raise_for_status()
             return True
         except Exception as e:
@@ -998,6 +1004,8 @@ def stress_config(request):
         config.num_sessions = request.config.option.stress_sessions
     if hasattr(request.config.option, 'stress_concurrent'):
         config.concurrent_execute = request.config.option.stress_concurrent
+    if getattr(request.config.option, 'stress_concurrent_create', None) is not None:
+        config.concurrent_create = request.config.option.stress_concurrent_create
     if getattr(request.config.option, 'stress_ramp_start', None) is not None:
         config.ramp_start = request.config.option.stress_ramp_start
     if getattr(request.config.option, 'stress_ramp_step', None) is not None:
@@ -1113,9 +1121,15 @@ def catalog_llm(stress_config, api_client):
     yield llm_ref
 
     if created_rid:
-        print(f"🧹 Deleting auto-created catalog LLM {created_rid[:8]}...")
-        if api_client.delete_resource(created_rid):
-            print("  ✅ Catalog LLM deleted")
+        if stress_config.cleanup_sessions:
+            print(f"🧹 Deleting auto-created catalog LLM {created_rid[:8]}...")
+            if api_client.delete_resource(created_rid):
+                print("  ✅ Catalog LLM deleted")
+        else:
+            print(
+                f"  ⏭️  --stress-no-cleanup: leaving catalog LLM "
+                f"{created_rid[:8]}... in place"
+            )
 
 
 @pytest.fixture
