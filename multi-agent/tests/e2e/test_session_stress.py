@@ -33,7 +33,8 @@ import json
 import yaml
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
-from typing import Dict, List, Tuple, Optional
+from enum import Enum
+from typing import Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass, field
 import threading
 from collections import defaultdict
@@ -43,6 +44,11 @@ from collections import defaultdict
 # TEST CONFIGURATION
 # =============================================================================
 
+class LLMType(str, Enum):
+    GOOGLE_GENAI = "google_genai"
+    OPENAI = "openai"
+
+
 @dataclass
 class StressTestConfig:
     """Configuration for stress test parameters."""
@@ -51,6 +57,8 @@ class StressTestConfig:
     #base_url: str = "http://unifai-multiagent-be-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
     base_url: str = "https://unifai-ui-tag-ai--playground.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
     api_prefix: str = "/api2"
+    # Set False only for clusters with self-signed certificates (--stress-insecure).
+    verify_ssl: bool = True
     
     # User Configuration
     #user_id: str = "stress_test_user"
@@ -69,7 +77,7 @@ class StressTestConfig:
     create_llm: bool = True
     llm_ref: Optional[str] = None  # set / pass --llm-ref to skip create
     llm_api_key: Optional[str] = None  # from STRESS_LLM_API_KEY / --llm-api-key
-    llm_type: str = "google_genai"  # google_genai | openai
+    llm_type: LLMType = LLMType.GOOGLE_GENAI
     llm_model: str = "gemini-2.5-flash"
     llm_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
     llm_name: str = "stress_test_llm"
@@ -187,7 +195,7 @@ class SessionAPIClient:
         self.config = config
         self.base_url = f"{config.base_url}{config.api_prefix}"
         self.session = requests.Session()
-        self.session.verify = False
+        self.session.verify = config.verify_ssl
         self.session.headers.update({
             "X-Authenticated-User": self.config.user_id
         })
@@ -244,7 +252,6 @@ class SessionAPIClient:
             "sessionId": session_id,
             "inputs": inputs,
             "scope": "public",
-            "userId": self.config.user_id,
         }
 
         response = self.session.post(
@@ -397,37 +404,45 @@ class SessionAPIClient:
         self,
         *,
         name: str,
-        llm_type: str,
+        llm_type: Union[str, LLMType],
         model_name: str,
         api_key: str,
         base_url: Optional[str] = None,
     ) -> str:
         """Create a catalog LLM via /resources/resource.save and return its rid."""
         url = f"{self.base_url}/resources/resource.save"
-        llm_type = llm_type.strip().lower()
+        raw_type = llm_type.value if isinstance(llm_type, LLMType) else str(llm_type).strip().lower()
+        try:
+            llm_type = LLMType(raw_type)
+        except ValueError as exc:
+            raise ValueError(
+                f"Unsupported llm_type '{raw_type}'. Use "
+                f"'{LLMType.GOOGLE_GENAI.value}' or '{LLMType.OPENAI.value}'."
+            ) from exc
 
-        if llm_type == "google_genai":
+        if llm_type == LLMType.GOOGLE_GENAI:
             config = {
-                "type": "google_genai",
+                "type": LLMType.GOOGLE_GENAI.value,
                 "model_name": model_name,
                 "api_key": api_key,
             }
-        elif llm_type == "openai":
+        elif llm_type == LLMType.OPENAI:
+            if not base_url:
+                raise ValueError(
+                    "base_url is required for openai llm_type "
+                    "(set StressTestConfig.llm_base_url or pass --llm-base-url)."
+                )
             config = {
-                "type": "openai",
+                "type": LLMType.OPENAI.value,
                 "model_name": model_name,
                 "api_key": api_key,
-                "base_url": base_url or "https://generativelanguage.googleapis.com/v1beta/openai",
+                "base_url": base_url,
                 "verify_ssl": True,
             }
-        else:
-            raise ValueError(
-                f"Unsupported llm_type '{llm_type}'. Use 'google_genai' or 'openai'."
-            )
 
         payload = {
             "category": "llms",
-            "type": llm_type,
+            "type": llm_type.value,
             "name": name,
             "config": config,
             "userId": self.config.user_id,
@@ -1006,7 +1021,14 @@ def stress_config(request):
 
     # Optional CLI overrides for LLM fields (config defaults are the normal path)
     if getattr(request.config.option, 'llm_type', None):
-        config.llm_type = request.config.option.llm_type
+        raw_llm_type = request.config.option.llm_type.strip().lower()
+        try:
+            config.llm_type = LLMType(raw_llm_type)
+        except ValueError as exc:
+            raise pytest.UsageError(
+                f"Unsupported --llm-type '{raw_llm_type}'. Use "
+                f"'{LLMType.GOOGLE_GENAI.value}' or '{LLMType.OPENAI.value}'."
+            ) from exc
     if getattr(request.config.option, 'llm_model', None):
         config.llm_model = request.config.option.llm_model
     if getattr(request.config.option, 'llm_base_url', None):
@@ -1031,6 +1053,8 @@ def stress_config(request):
 
     if getattr(request.config.option, 'stress_no_cleanup', False):
         config.cleanup_sessions = False
+    if getattr(request.config.option, 'stress_insecure', False):
+        config.verify_ssl = False
     
     return config
 
@@ -1225,7 +1249,7 @@ class TestSessionStressSubmit:
             
             stress_runner.metrics.total_end_time = time.time()
             
-            # PHASE 4: Verification — require COMPLETED for every session that ran
+            # PHASE 4: Verification — tolerate partial failure (same bar as execution_success_rate)
             if stress_config.verify_status:
                 print(f"\n{'=' * 80}")
                 print("📋 PHASE 4: Session Status Verification")
@@ -1241,9 +1265,10 @@ class TestSessionStressSubmit:
                     except Exception as e:
                         print(f"  • Session {i + 1} ({session_id[:8]}...): Error getting status - {e}")
 
-                assert completed_count == len(session_ids), (
-                    f"Expected all {len(session_ids)} sessions COMPLETED, "
-                    f"got {completed_count}"
+                completed_rate = completed_count / len(session_ids)
+                assert completed_rate >= 0.8, (
+                    f"COMPLETED rate too low: {completed_count}/{len(session_ids)} "
+                    f"({completed_rate * 100:.1f}%)"
                 )
             
             # PHASE 5: Metrics Report

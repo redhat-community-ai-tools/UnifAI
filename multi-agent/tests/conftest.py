@@ -719,6 +719,15 @@ def pytest_addoption(parser):
             "Also skips deleting blueprints this test created."
         ),
     )
+    _addoption(
+        "--stress-insecure",
+        action="store_true",
+        default=False,
+        help=(
+            "Disable TLS certificate verification for stress-test HTTP calls "
+            "(self-signed cluster certs). Default is verify=True."
+        ),
+    )
 
 
 def pytest_configure(config):
