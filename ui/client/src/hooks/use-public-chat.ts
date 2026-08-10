@@ -234,7 +234,6 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
 
     const creationData: CreateSessionParams = {
       blueprintId: blueprintId,
-      userId: user.username,
       metadata: { source: 'public_link' },
     };
 
