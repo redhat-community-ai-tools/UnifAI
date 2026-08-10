@@ -1,29 +1,28 @@
 """
-End-to-End Stress Test for Session Creation and Execution
+End-to-End Stress Test for session create + run under load.
 
-This test validates the system's ability to handle concurrent session
-creation and parallel execution under load.
+Default path is UI-aligned submit + status poll:
 
-Test Phases:
-1. Blueprint Setup - Create/load a test blueprint
-2. Concurrent Creation - Create N sessions in parallel
-3. Parallel Execution - Execute M sessions concurrently
-4. Verification - Validate all sessions completed correctly
-5. Metrics - Report performance statistics
+  1. POST /sessions/user.session.submit  → HTTP 202 (Temporal starts in background)
+  2. Poll GET /sessions/session.status.get until COMPLETED | FAILED | CANCELLED
+  3. Assert final status == COMPLETED
 
-Run with (LLM type/model live in StressTestConfig — only the API key is needed):
-    export STRESS_LLM_API_KEY=...
-    pytest tests/e2e/test_session_stress.py -v -s -o addopts= --import-mode=importlib
+Switch to blocking/streaming execute with --stress-exec-mode=execute
+(and optional --use-streaming).
 
-    # Use an existing online blueprint (no create/delete of that blueprint)
-    pytest tests/e2e/test_session_stress.py::TestSessionStress::test_concurrent_session_creation_and_execution \
+Run with:
+    pytest tests/e2e/test_session_stress_submit.py::TestSessionStressSubmit::test_concurrent_session_creation_and_execution \
         -v -s -o addopts= --import-mode=importlib \
         --blueprint-id=<uuid> --stress-sessions=1 --stress-concurrent=1 \
         --input-text="your question"
 
-    # Optional: reuse an existing catalog LLM instead of creating one
-    pytest tests/e2e/test_session_stress.py -v -s -o addopts= --import-mode=importlib \
-        --llm-ref=1a8cb722b0954ee7b5554e7bbdad72a0
+    # Execute path (optional streaming)
+    ... --stress-exec-mode=execute
+    ... --stress-exec-mode=execute --use-streaming
+
+Ramp load (start at 1 concurrent, add 1 every 30s, up to 5):
+    ... --stress-sessions=20 --stress-concurrent=5 \
+        --stress-ramp-start=1 --stress-ramp-step=1 --stress-ramp-interval=30
 """
 
 import os
@@ -33,7 +32,7 @@ import time
 import json
 import yaml
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, field
 import threading
@@ -76,17 +75,28 @@ class StressTestConfig:
     llm_name: str = "stress_test_llm"
     
     # Execution Configuration
-    use_streaming: bool = False  # Use streaming mode (prevents gateway timeouts)
+    # "submit" = UI path (submit + status poll); "execute" = user.session.execute
+    exec_mode: str = "submit"
+    use_streaming: bool = False  # only used when exec_mode == "execute"
     
     # Load Configuration
     num_sessions: int = 20  # Total sessions to create
     concurrent_create: int = 5  # Concurrent session creations
-    concurrent_execute: int = 10  # Concurrent session executions
+    concurrent_execute: int = 10  # Max in-flight run workers at peak
+    
+    # Ramp-up: when ramp_interval > 0, start at ramp_start in-flight and
+    # increase by ramp_step every ramp_interval seconds until concurrent_execute.
+    # ramp_interval <= 0 disables ramp (run up to concurrent_execute immediately).
+    ramp_start: int = 1
+    ramp_step: int = 1
+    ramp_interval: float = 0.0
     
     # Timing Configuration
     creation_timeout: float = 30.0  # Per session creation
-    execution_timeout: float = 300.0  # Per session execution
-    total_timeout: float = 600.0  # Total test timeout
+    execution_timeout: float = 1800.0  # Max wait for one session to finish
+    total_timeout: float = 3600.0  # Total test timeout
+    poll_interval: float = 5.0  # Seconds between session.status.get polls (submit mode)
+    terminal_statuses: Tuple[str, ...] = ("COMPLETED", "FAILED", "CANCELLED")
     
     # Retry Configuration
     max_retries: int = 3
@@ -224,71 +234,154 @@ class SessionAPIClient:
         session_id = response.json()
         return session_id
     
+    def submit_session(self, session_id: str, inputs: Dict) -> Dict:
+        """
+        Fire-and-forget submit (UI path). Returns immediately with HTTP 202.
+        """
+        url = f"{self.base_url}/sessions/user.session.submit"
+
+        payload = {
+            "sessionId": session_id,
+            "inputs": inputs,
+            "scope": "public",
+            "userId": self.config.user_id,
+        }
+
+        response = self.session.post(
+            url,
+            json=payload,
+            timeout=self.config.creation_timeout,
+        )
+        if response.status_code >= 400:
+            detail = response.text[:500]
+            raise requests.exceptions.HTTPError(
+                f"{response.status_code} submitting session: {detail}",
+                response=response,
+            )
+        # Expect 202 Accepted
+        return response.json()
+
     def execute_session(self, session_id: str, inputs: Dict) -> Dict:
-        """Execute a session and return results."""
+        """Blocking execute (non-streaming)."""
         url = f"{self.base_url}/sessions/user.session.execute"
-        
+
         payload = {
             "sessionId": session_id,
             "inputs": inputs,
             "stream": False,
-            "scope": "public"
+            "scope": "public",
         }
-        
+
         response = self.session.post(
             url,
             json=payload,
-            timeout=self.config.execution_timeout
+            timeout=self.config.execution_timeout,
         )
         response.raise_for_status()
-        
         return response.json()
-    
+
     def execute_session_streaming(self, session_id: str, inputs: Dict) -> Dict:
-        """Execute a session with streaming and return final result."""
+        """Execute with streaming; consume chunks until the connection closes."""
         url = f"{self.base_url}/sessions/user.session.execute"
-        
+
         payload = {
             "sessionId": session_id,
             "inputs": inputs,
             "stream": True,
             "streamMode": ["custom"],
-            "scope": "public"
+            "scope": "public",
         }
-        
-        # Stream response with longer timeout between chunks
-        # (connect_timeout, read_timeout_between_chunks)
+
         response = self.session.post(
             url,
             json=payload,
-            stream=True,  # Enable response streaming
+            stream=True,
         )
         response.raise_for_status()
-        
-        # Just consume all chunks - don't parse, just let it finish
+
         chunk_count = 0
-        
         try:
             for line in response.iter_lines():
                 if line:
                     chunk_count += 1
-                    # Just count chunks, don't parse
-                    # This keeps the connection alive and prevents timeouts
         finally:
             response.close()
-        
-        # Return simple success indicator
+
         return {"status": "completed", "chunks_received": chunk_count}
-    
+
+    def run_session(self, session_id: str, inputs: Dict) -> Dict:
+        """Run a session using config.exec_mode (submit | execute)."""
+        if self.config.exec_mode == "execute":
+            if self.config.use_streaming:
+                return self.execute_session_streaming(session_id, inputs)
+            return self.execute_session(session_id, inputs)
+        return self.submit_and_wait(session_id, inputs)
+
     def get_session_status(self, session_id: str) -> str:
-        """Get session status."""
+        """Get session status string (e.g. RUNNING, COMPLETED, FAILED)."""
         url = f"{self.base_url}/sessions/session.status.get"
         params = {"sessionId": session_id}
-        
-        response = self.session.get(url, params=params)
+
+        response = self.session.get(url, params=params, timeout=30)
         response.raise_for_status()
-        
-        return response.json()
+
+        status = response.json()
+        # jsonify(str) → JSON string; tolerate {"status": "..."} just in case
+        if isinstance(status, dict):
+            return str(status.get("status") or status.get("state") or status)
+        return str(status)
+
+    def submit_and_wait(self, session_id: str, inputs: Dict) -> Dict:
+        """
+        Submit session then poll status until terminal or timeout.
+
+        Returns dict with sessionId, workflowId (if any), final status, and poll count.
+        Raises TimeoutError / RuntimeError on failure.
+        """
+        submit_result = self.submit_session(session_id, inputs)
+        workflow_id = submit_result.get("workflowId") or submit_result.get("workflow_id")
+        short_id = session_id[:8]
+        print(
+            f"    📤 Submitted {short_id}... "
+            f"(workflowId={workflow_id or 'n/a'}) — polling every "
+            f"{self.config.poll_interval}s",
+            flush=True,
+        )
+
+        deadline = time.time() + self.config.execution_timeout
+        started = time.time()
+        polls = 0
+        last_status = "UNKNOWN"
+
+        while time.time() < deadline:
+            polls += 1
+            last_status = self.get_session_status(session_id)
+            elapsed = time.time() - started
+            print(
+                f"    🔄 poll #{polls} {short_id}... status={last_status} "
+                f"elapsed={elapsed:.0f}s",
+                flush=True,
+            )
+            if last_status in self.config.terminal_statuses:
+                result = {
+                    "sessionId": session_id,
+                    "workflowId": workflow_id,
+                    "status": last_status,
+                    "polls": polls,
+                }
+                if last_status != "COMPLETED":
+                    raise RuntimeError(
+                        f"Session {short_id}... ended with status={last_status} "
+                        f"after {polls} polls"
+                    )
+                return result
+
+            time.sleep(self.config.poll_interval)
+
+        raise TimeoutError(
+            f"Session {short_id}... still {last_status} after "
+            f"{self.config.execution_timeout:.0f}s ({polls} polls)"
+        )
     
     def get_session_state(self, session_id: str) -> Dict:
         """Get session state."""
@@ -613,8 +706,8 @@ class StressTestRunner:
         index: int
     ) -> Tuple[Optional[Dict], bool, float, Optional[str]]:
         """
-        Execute a session and track metrics.
-        
+        Run a session via config.exec_mode and track metrics.
+
         Returns: (result, success, duration, error_message)
         """
         start_time = time.time()
@@ -623,11 +716,7 @@ class StressTestRunner:
         error_msg = None
         
         try:
-            # Choose streaming or non-streaming based on config
-            if self.config.use_streaming:
-                result = self.client.execute_session_streaming(session_id, inputs)
-            else:
-                result = self.client.execute_session(session_id, inputs)
+            result = self.client.run_session(session_id, inputs)
             
             success = True
             duration = time.time() - start_time
@@ -636,6 +725,20 @@ class StressTestRunner:
                 self.metrics.add_execute_success(duration)
             
             return result, success, duration, None
+
+        except TimeoutError as e:
+            duration = time.time() - start_time
+            error_msg = str(e)
+            with self.lock:
+                self.metrics.add_execute_failure("timeout")
+            return None, False, duration, error_msg
+
+        except RuntimeError as e:
+            duration = time.time() - start_time
+            error_msg = str(e)
+            with self.lock:
+                self.metrics.add_execute_failure("terminal_not_completed")
+            return None, False, duration, error_msg
             
         except requests.exceptions.Timeout:
             duration = time.time() - start_time
@@ -696,34 +799,140 @@ class StressTestRunner:
         
         return session_ids
     
+    def _record_execution_future(
+        self,
+        future,
+        index: int,
+        session_id: str,
+        total: int,
+        results: List[Dict],
+        future_timeout: float,
+    ) -> None:
+        """Collect one completed run future and print outcome."""
+        try:
+            result, success, duration, error_msg = future.result(timeout=future_timeout)
+            if success and result:
+                results.append(result)
+                status = result.get("status", "?")
+                if "polls" in result:
+                    detail = f"{status} ({result.get('polls')} polls)"
+                elif "chunks_received" in result:
+                    detail = f"{status} ({result.get('chunks_received')} chunks)"
+                else:
+                    detail = str(status)
+                print(
+                    f"  ✅ Session {index + 1}/{total} "
+                    f"{session_id[:8]}... {detail} in {duration:.2f}s",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"  ❌ Session {index + 1}/{total} "
+                    f"{session_id[:8]}... failed: {error_msg}",
+                    flush=True,
+                )
+        except Exception as e:
+            print(
+                f"  ❌ Session {index + 1}/{total} "
+                f"{session_id[:8]}... error: {e}",
+                flush=True,
+            )
+
     def run_concurrent_execution(self, session_ids: List[str], inputs: Dict) -> List[Dict]:
         """
-        Execute multiple sessions concurrently.
-        
-        Returns: List of execution results
+        Run sessions (submit or execute) with optional concurrency ramp-up.
+
+        Returns: List of successful execution results
         """
-        results = []
-        
-        print(f"\n⚡ Executing {len(session_ids)} sessions with concurrency={self.config.concurrent_execute}")
-        
-        with ThreadPoolExecutor(max_workers=self.config.concurrent_execute) as executor:
-            futures = {
-                executor.submit(self.execute_session_with_metrics, session_id, inputs, i): (i, session_id)
-                for i, session_id in enumerate(session_ids)
-            }
-            
-            for future in as_completed(futures):
-                index, session_id = futures[future]
-                try:
-                    result, success, duration, error_msg = future.result(timeout=self.config.execution_timeout)
-                    if success and result:
-                        results.append(result)
-                        print(f"  ✅ Execution {index + 1}/{len(session_ids)} completed in {duration:.2f}s")
-                    else:
-                        print(f"  ❌ Execution {index + 1}/{len(session_ids)} failed: {error_msg}")
-                except Exception as e:
-                    print(f"  ❌ Execution {index + 1}/{len(session_ids)} error: {e}")
-        
+        results: List[Dict] = []
+        total = len(session_ids)
+        max_concurrent = max(1, self.config.concurrent_execute)
+        mode_label = (
+            f"execute{'+stream' if self.config.use_streaming else ''}"
+            if self.config.exec_mode == "execute"
+            else "submit+poll"
+        )
+        timing_detail = (
+            f"poll every {self.config.poll_interval}s, "
+            f"timeout {self.config.execution_timeout:.0f}s"
+            if self.config.exec_mode == "submit"
+            else f"timeout {self.config.execution_timeout:.0f}s"
+        )
+        ramp_enabled = self.config.ramp_interval > 0
+        if ramp_enabled:
+            current_limit = max(1, min(self.config.ramp_start, max_concurrent))
+            ramp_step = max(1, self.config.ramp_step)
+            print(
+                f"\n⚡ Running {total} sessions ({mode_label}) with RAMP-UP: "
+                f"start={current_limit}, step=+{ramp_step} every "
+                f"{self.config.ramp_interval:.0f}s, max={max_concurrent} "
+                f"({timing_detail})",
+                flush=True,
+            )
+        else:
+            current_limit = max_concurrent
+            print(
+                f"\n⚡ Running {total} sessions ({mode_label}) with concurrency="
+                f"{max_concurrent} (no ramp; {timing_detail})",
+                flush=True,
+            )
+
+        future_timeout = self.config.execution_timeout + 60.0
+        pending = list(enumerate(session_ids))
+        next_idx = 0
+        active: Dict = {}
+        last_ramp_at = time.time()
+
+        with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+            def _fill_slots():
+                nonlocal next_idx
+                while next_idx < total and len(active) < current_limit:
+                    i, session_id = pending[next_idx]
+                    next_idx += 1
+                    fut = executor.submit(
+                        self.execute_session_with_metrics, session_id, inputs, i
+                    )
+                    active[fut] = (i, session_id)
+                    print(
+                        f"    🚀 started in-flight {len(active)}/{current_limit} "
+                        f"(queued remaining {total - next_idx}): "
+                        f"session {i + 1} {session_id[:8]}...",
+                        flush=True,
+                    )
+
+            _fill_slots()
+
+            while active or next_idx < total:
+                if (
+                    ramp_enabled
+                    and current_limit < max_concurrent
+                    and (time.time() - last_ramp_at) >= self.config.ramp_interval
+                ):
+                    current_limit = min(max_concurrent, current_limit + ramp_step)
+                    last_ramp_at = time.time()
+                    print(
+                        f"  📈 Ramped concurrency → {current_limit}/{max_concurrent}",
+                        flush=True,
+                    )
+                    _fill_slots()
+
+                if not active:
+                    _fill_slots()
+                    if not active:
+                        break
+
+                done, _ = wait(
+                    list(active.keys()),
+                    timeout=1.0,
+                    return_when=FIRST_COMPLETED,
+                )
+                for fut in done:
+                    index, session_id = active.pop(fut)
+                    self._record_execution_future(
+                        fut, index, session_id, total, results, future_timeout
+                    )
+                    _fill_slots()
+
         return results
     
     def print_metrics_summary(self):
@@ -774,6 +983,12 @@ def stress_config(request):
         config.num_sessions = request.config.option.stress_sessions
     if hasattr(request.config.option, 'stress_concurrent'):
         config.concurrent_execute = request.config.option.stress_concurrent
+    if getattr(request.config.option, 'stress_ramp_start', None) is not None:
+        config.ramp_start = request.config.option.stress_ramp_start
+    if getattr(request.config.option, 'stress_ramp_step', None) is not None:
+        config.ramp_step = request.config.option.stress_ramp_step
+    if getattr(request.config.option, 'stress_ramp_interval', None) is not None:
+        config.ramp_interval = request.config.option.stress_ramp_interval
     if hasattr(request.config.option, 'stress_base_url') and request.config.option.stress_base_url:
         config.base_url = request.config.option.stress_base_url
     if hasattr(request.config.option, 'blueprint_path'):
@@ -784,6 +999,8 @@ def stress_config(request):
         config.create_llm = False
     if hasattr(request.config.option, 'input_text'):
         config.input_text = request.config.option.input_text
+    if getattr(request.config.option, 'stress_exec_mode', None):
+        config.exec_mode = request.config.option.stress_exec_mode
     if hasattr(request.config.option, 'use_streaming'):
         config.use_streaming = request.config.option.use_streaming
 
@@ -916,8 +1133,8 @@ def stress_runner(stress_config, api_client):
 @pytest.mark.e2e
 @pytest.mark.stress
 @pytest.mark.session_management
-class TestSessionStress:
-    """End-to-end stress tests for session creation and execution."""
+class TestSessionStressSubmit:
+    """E2E stress tests; default submit+poll, switchable via --stress-exec-mode."""
     
     def test_concurrent_session_creation_and_execution(
         self,
@@ -927,28 +1144,39 @@ class TestSessionStress:
         stress_runner: StressTestRunner
     ):
         """
-        Test concurrent session creation and parallel execution.
-        
-        This test validates:
-        1. System can handle multiple concurrent session creations
-        2. Sessions can be executed in parallel
-        3. All sessions complete successfully
-        4. Performance meets acceptable thresholds
+        Concurrent create + run (submit/poll or execute) until complete.
         """
         blueprint_id = None
         owns_blueprint = False
         session_ids = []
+        mode_label = (
+            f"execute{'+stream' if stress_config.use_streaming else ''}"
+            if stress_config.exec_mode == "execute"
+            else "submit + status poll"
+        )
         
         try:
             print(f"\n{'=' * 80}")
-            print("🧪 STARTING E2E SESSION STRESS TEST")
+            print(f"🧪 STARTING E2E SESSION STRESS TEST ({mode_label})")
             print(f"{'=' * 80}")
             print(f"Configuration:")
             print(f"  • Total Sessions: {stress_config.num_sessions}")
             print(f"  • Concurrent Creates: {stress_config.concurrent_create}")
-            print(f"  • Concurrent Executes: {stress_config.concurrent_execute}")
-            print(f"  • Streaming Mode: {'ENABLED ✓' if stress_config.use_streaming else 'DISABLED'}")
+            print(f"  • Max concurrent runs: {stress_config.concurrent_execute}")
+            if stress_config.ramp_interval > 0:
+                print(
+                    f"  • Ramp-up: start={stress_config.ramp_start}, "
+                    f"step=+{stress_config.ramp_step} every "
+                    f"{stress_config.ramp_interval:.0f}s"
+                )
+            else:
+                print("  • Ramp-up: disabled (immediate full concurrency)")
+            print(f"  • Mode: {mode_label}")
+            if stress_config.exec_mode == "submit":
+                print(f"  • Poll interval: {stress_config.poll_interval}s")
+            print(f"  • Per-session timeout: {stress_config.execution_timeout:.0f}s")
             print(f"  • API: {stress_config.base_url}{stress_config.api_prefix}")
+            print(f"  • User: {stress_config.user_id}")
             if stress_config.blueprint_id:
                 print(f"  • Blueprint ID: {stress_config.blueprint_id}")
             if stress_config.create_llm:
@@ -979,12 +1207,11 @@ class TestSessionStress:
             creation_success_rate = len(session_ids) / stress_config.num_sessions
             print(f"\n✅ Created {len(session_ids)}/{stress_config.num_sessions} sessions ({creation_success_rate * 100:.1f}% success)")
             
-            # PHASE 3: Parallel Session Execution
+            # PHASE 3: Run sessions to completion
             print(f"\n{'=' * 80}")
-            print("📋 PHASE 3: Parallel Session Execution")
+            print(f"📋 PHASE 3: Run Until Complete ({mode_label})")
             print(f"{'=' * 80}")
             
-            # ✅ CORRECTED INPUT FORMAT - matches run_test_new_version
             test_inputs = {
                 "user_prompt": stress_config.input_text
             }
@@ -992,27 +1219,32 @@ class TestSessionStress:
             results = stress_runner.run_concurrent_execution(session_ids, test_inputs)
             
             # Assert execution success
-            assert len(results) > 0, "No sessions executed successfully"
+            assert len(results) > 0, "No sessions completed successfully"
             execution_success_rate = len(results) / len(session_ids)
-            print(f"\n✅ Executed {len(results)}/{len(session_ids)} sessions ({execution_success_rate * 100:.1f}% success)")
+            print(f"\n✅ Completed {len(results)}/{len(session_ids)} sessions ({execution_success_rate * 100:.1f}% success)")
             
             stress_runner.metrics.total_end_time = time.time()
             
-            # PHASE 4: Verification
+            # PHASE 4: Verification — require COMPLETED for every session that ran
             if stress_config.verify_status:
                 print(f"\n{'=' * 80}")
                 print("📋 PHASE 4: Session Status Verification")
                 print(f"{'=' * 80}")
                 
                 completed_count = 0
-                for i, session_id in enumerate(session_ids[:5]):  # Sample first 5
+                for i, session_id in enumerate(session_ids):
                     try:
                         status = api_client.get_session_status(session_id)
-                        print(f"  • Session {i + 1}: {status}")
+                        print(f"  • Session {i + 1} ({session_id[:8]}...): {status}")
                         if status == "COMPLETED":
                             completed_count += 1
                     except Exception as e:
-                        print(f"  • Session {i + 1}: Error getting status - {e}")
+                        print(f"  • Session {i + 1} ({session_id[:8]}...): Error getting status - {e}")
+
+                assert completed_count == len(session_ids), (
+                    f"Expected all {len(session_ids)} sessions COMPLETED, "
+                    f"got {completed_count}"
+                )
             
             # PHASE 5: Metrics Report
             stress_runner.print_metrics_summary()
@@ -1022,7 +1254,7 @@ class TestSessionStress:
             assert execution_success_rate >= 0.8, f"Execution success rate too low: {execution_success_rate * 100:.1f}%"
             
             print("\n" + "=" * 80)
-            print("✅ STRESS TEST PASSED")
+            print(f"✅ STRESS TEST PASSED ({mode_label})")
             print("=" * 80 + "\n")
             
         finally:
@@ -1057,7 +1289,7 @@ class TestSessionStress:
                     print(f"  ⏭️  Leaving existing blueprint {blueprint_id[:8]}... in place")
 
                 print("✅ Cleanup complete\n")
-
+    
     def test_rapid_sequential_sessions(
         self,
         stress_config: StressTestConfig,
@@ -1100,13 +1332,21 @@ class TestSessionStress:
                 session_id = api_client.create_session(blueprint_id)
                 session_ids.append(session_id)
                 
-                # Execute
-                result = api_client.execute_session(session_id, test_inputs)
+                result = api_client.run_session(session_id, test_inputs)
                 
                 duration = time.time() - start
                 timings.append(duration)
                 
-                print(f"  ✅ Session {i + 1}/{num_rapid_sessions}: {duration:.2f}s")
+                if "polls" in result:
+                    detail = f"{result.get('status')}, {result.get('polls')} polls"
+                elif "chunks_received" in result:
+                    detail = f"{result.get('status')}, {result.get('chunks_received')} chunks"
+                else:
+                    detail = str(result.get("status", "ok"))
+                print(
+                    f"  ✅ Session {i + 1}/{num_rapid_sessions}: {duration:.2f}s "
+                    f"({detail})"
+                )
             
             avg_time = sum(timings) / len(timings)
             print(f"\n📊 Average time per session: {avg_time:.2f}s")
@@ -1164,8 +1404,8 @@ class TestSessionStress:
 @pytest.mark.e2e
 @pytest.mark.stress
 @pytest.mark.custom_blueprint
-class TestCustomBlueprintStress:
-    """Stress tests using your custom blueprint."""
+class TestCustomBlueprintStressSubmit:
+    """Stress tests using your custom blueprint (mode via --stress-exec-mode)."""
     
     @pytest.fixture
     def custom_blueprint(self, stress_config, catalog_llm) -> Optional[Dict]:

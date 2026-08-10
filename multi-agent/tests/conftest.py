@@ -583,7 +583,7 @@ def pytest_addoption(parser):
         action="store",
         type=int,
         default=10,
-        help="Max concurrent submit+poll workers in stress test (default: 10)"
+        help="Max concurrent run workers in stress test (default: 10)"
     )
     _addoption(
         "--stress-ramp-start",
@@ -691,10 +691,24 @@ def pytest_addoption(parser):
         help="Optional override of StressTestConfig.llm_name",
     )
     _addoption(
+        "--stress-exec-mode",
+        action="store",
+        choices=["submit", "execute"],
+        default="submit",
+        help=(
+            "Session run path for e2e stress tests: "
+            "'submit' (UI: submit + status poll) or "
+            "'execute' (blocking/streaming user.session.execute). Default: submit."
+        ),
+    )
+    _addoption(
         "--use-streaming",
         action="store_true",
         default=False,
-        help="Use streaming execution mode (prevents gateway timeouts for high-load tests)"
+        help=(
+            "Use streaming with --stress-exec-mode=execute "
+            "(prevents gateway timeouts for high-load tests). Ignored for submit."
+        ),
     )
     _addoption(
         "--stress-no-cleanup",
