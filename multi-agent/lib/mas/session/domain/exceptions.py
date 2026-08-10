@@ -17,6 +17,27 @@ class SessionAlreadyCancelledError(Exception):
         super().__init__(f"Session '{session_id}' is already cancelled")
 
 
+class ScheduledSessionCancelledException(Exception):
+    """Engine-agnostic cancellation signal for scheduled session execution.
+
+    Each engine adapter translates its native cancel mechanism into this
+    exception inside its ScheduledRunOps methods. The ScheduledSessionRunner
+    catches it, records CANCELLED, and re-raises.
+    """
+    pass
+
+
+class ScheduledSessionSetupError(Exception):
+    """Raised when scheduled session provisioning fails before a session_id is available."""
+
+    def __init__(self, reason: str | None = None):
+        self.reason = reason
+        msg = "Scheduled session setup failed"
+        if reason:
+            msg = f"{msg}: {reason}"
+        super().__init__(msg)
+
+
 class SessionBlueprintError(Exception):
     """Base class for session blueprint-related errors."""
     pass

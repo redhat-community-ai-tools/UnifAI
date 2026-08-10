@@ -43,7 +43,7 @@ def secret_lists = [
     umami: ['umami_username', 'umami_password'],
     // keycloak: ['keycloak_base_url', 'client_id', 'client_secret', 'keycloak_realm'],
     global_config: ['secret_key', 'vault_role_id', 'vault_secret_id', 'langfuse_base_url', 'langfuse_public_key', 'langfuse_secret_key', 'slack_signing_secret', 'slack_app_token', 'slack_bot_token'],
-    multiagent: ['CREDENTIAL_ENCRYPTION_KEY', 'OAUTH_STATE_SECRET', 'GCP_SA_KEY_JSON_B64'],
+    multiagent: ['CREDENTIAL_ENCRYPTION_KEY', 'OAUTH_STATE_SECRET', 'GCP_SA_KEY_JSON_B64', 'langfuse_public_key', 'langfuse_secret_key'],
     rag: ['default_slack_bot_token', 'default_slack_user_token'],
     ]
 
@@ -116,6 +116,18 @@ def updateGlobalConfigYaml(String filePath) {
     writeYaml file: filePath, data: values, overwrite: true
     echo "📄 successfully Updated routes values in ${filePath}:\n" + writeYaml(returnText: true, data: values)
     }
+}
+
+def updateBackendSlackSocket(String filePath, boolean enabled) {
+    echo "🔄 Loading values from: ${filePath}"
+    def values = readYaml file: filePath
+
+    values.unifai_backend = values.unifai_backend ?: [:]
+    values.unifai_backend.slackSocket = values.unifai_backend.slackSocket ?: [:]
+    values.unifai_backend.slackSocket.enabled = enabled
+
+    writeYaml file: filePath, data: values, overwrite: true
+    echo "🏷 Set slackSocket.enabled=${enabled} in ${filePath} (deploy_location=${params.deploy_location})"
 }
 
 def updateValuesYaml(String filePath , String version) {
@@ -310,6 +322,13 @@ pipeline {
                                         def version = params.BACKEND_VERSION?.trim()
                                         updateChartVersions("${buildParams.DevRoot}/${params.BRANCH}/helm/backend/", version)
                                         updateValuesYaml("${buildParams.DevRoot}/${params.BRANCH}/helm/values/backend-resource-values.yaml", version)
+                                        // Slack Socket Mode sidecar depends on a bot token that is only valid
+                                        // in PRODUCTION today; skip it entirely on other deploy targets so a
+                                        // Slack auth failure can't take the whole backend pod's readiness down.
+                                        updateBackendSlackSocket(
+                                            "${buildParams.DevRoot}/${params.BRANCH}/helm/values/backend-resource-values.yaml",
+                                            params.deploy_location == 'PRODUCTION'
+                                        )
                                         deployModules('backend')
                                         break
 

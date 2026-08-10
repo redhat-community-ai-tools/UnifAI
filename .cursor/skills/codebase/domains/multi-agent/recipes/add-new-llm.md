@@ -71,6 +71,10 @@ class <Name>Config(BaseLLMConfig):
 
 `BaseLLMConfig` provides: `model_name: str`, `api_key: str`, `base_url: HttpUrl`, `verify_ssl: bool`.
 
+`api_key` should carry `SecretHint` (encrypted at rest, masked in UI). If a field should
+stay user-configurable or appear on a card once this LLM is promoted to a built-in, see
+"Field Hints on Config Fields" in `../references/elements.md`.
+
 ---
 
 ## Step 3: Message Converter

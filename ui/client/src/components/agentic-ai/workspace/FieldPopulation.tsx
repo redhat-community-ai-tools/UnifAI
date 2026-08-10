@@ -258,7 +258,16 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
 
   const applySelection = (values: string[]) => {
     setSelectedValues(values);
-    onPopulateResult(fieldName, getSelectedObjects(values), populateHint.multi_select || false);
+    // Multi-select fields (e.g. `docs: List[Dict]`) need the full backend
+    // objects preserved in formData. Single-select fields driven by this
+    // component are plain strings (e.g. `auth_method: str`) identified by
+    // `value_field` — storing the raw `{label, value}` object there instead
+    // of the extracted id string breaks every downstream consumer that
+    // expects a string (ConditionalHint checks, PropagateHint targets,
+    // action `dependencies` mappings, and the field's own pydantic type on
+    // save).
+    const results = populateHint.multi_select ? getSelectedObjects(values) : values;
+    onPopulateResult(fieldName, results, populateHint.multi_select || false);
   };
 
   /**
@@ -432,7 +441,12 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
 
               if (validatedSelections.length !== prevSelected.length) {
                 setTimeout(() => {
-                  onPopulateResult(fieldName, getSelectedObjects(validatedSelections), populateHint.multi_select || false);
+                  // Same shape rule as applySelection: multi-select needs full
+                  // backend objects, single-select needs the plain id string.
+                  const prunedResults = populateHint.multi_select
+                    ? getSelectedObjects(validatedSelections)
+                    : validatedSelections;
+                  onPopulateResult(fieldName, prunedResults, populateHint.multi_select || false);
                 }, 0);
               }
 
@@ -670,13 +684,14 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
                 <Badge
                   key={index}
                   variant="secondary"
-                  className="flex items-center gap-1 bg-gray-700 text-white border-gray-600 hover:bg-gray-600"
+                  className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/30 hover:bg-primary/15 hover:border-primary/50 transition-colors"
                 >
                   {getDisplayLabel(selectedValue)}
                   <button
                     type="button"
                     onClick={() => removeSelectedValue(selectedValue)}
-                    className="ml-1 text-xs text-gray-300 hover:text-red-400 transition-colors"
+                    className="ml-0.5 text-xs text-primary/70 hover:text-red-400 transition-colors"
+                    aria-label={`Remove ${getDisplayLabel(selectedValue)}`}
                   >
                     ×
                   </button>

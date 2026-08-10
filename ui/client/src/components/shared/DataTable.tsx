@@ -484,8 +484,8 @@ export function DataTable<T extends object>({
         </TableBody>
       </Table>
 
-      {/* Pagination */}
-      {enablePagination && (
+      {/* Pagination — hide when everything fits on a single page */}
+      {enablePagination && table.getPageCount() > 1 && (
         <Pagination
           pageIndex={table.getState().pagination.pageIndex}
           pageCount={table.getPageCount()}

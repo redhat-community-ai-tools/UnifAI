@@ -69,7 +69,7 @@ export default function ExecutionStream({
   const [isPaused, setIsPaused] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const { nodeListRef } = useStreamingData();
-  const { userId: contextUserId, identityType } = useWorkspaceIdentity();
+  const { teamId } = useWorkspaceIdentity();
 
   const extractNodeData = (graphFlow: GraphFlow): { id: string; name: string; description: string | null }[] => {
     if (!graphFlow || !graphFlow.plan) {
@@ -89,8 +89,10 @@ export default function ExecutionStream({
   
   // Create agent nodes from selected graph nodes on component mount
   useEffect(() => {
+    let cancelled = false;
+
     const getGraphNodes = async () => {
-      const blueprintObjects = await fetchResolvedBlueprints(contextUserId, identityType);
+      const blueprintObjects = await fetchResolvedBlueprints(teamId);
       
       // Find the specific graph flow by blueprint_id
       const targetBlueprintObj = blueprintObjects.find((blueprintObj: any, index: number) => 
@@ -101,21 +103,30 @@ export default function ExecutionStream({
     }
   
     const fetchAndSetNodes = async () => {
-      const nodeData = await getGraphNodes();
-      
-      const nodes = nodeData.map((node: { id: string; name: string; description: string | null }) => ({
-        id: node.id,
-        name: node.name,
-        description: node.description,
-        icon: getRandomAgentIcon(),
-      })) || null;
+      try {
+        const nodeData = await getGraphNodes();
+        if (cancelled) return;
+        
+        const nodes = nodeData.map((node: { id: string; name: string; description: string | null }) => ({
+          id: node.id,
+          name: node.name,
+          description: node.description,
+          icon: getRandomAgentIcon(),
+        })) || null;
 
-      setAgentNodes(nodes);
-      setSelectedNode(nodes && nodes.length > 0 ? nodes[0] : null);
+        setAgentNodes(nodes);
+        setSelectedNode(nodes && nodes.length > 0 ? nodes[0] : null);
+      } catch (err) {
+        if (cancelled) return;
+        console.error("Failed to fetch blueprint nodes:", err);
+        setAgentNodes(null);
+        setSelectedNode(null);
+      }
     };
   
     fetchAndSetNodes();
-  }, [blueprintId]);
+    return () => { cancelled = true; };
+  }, [blueprintId, teamId]);
 
   // Set up polling interval to get real-time node data
   useEffect(() => {

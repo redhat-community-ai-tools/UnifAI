@@ -7,6 +7,7 @@ import {
   Server,
   Search,
   GitBranch,
+  Lock,
   Box,
 } from "lucide-react";
 import { DownloadFile } from "@/utils/guideLoader";
@@ -25,6 +26,7 @@ export const getCategoryDisplay = (category: string): CategoryDisplay => {
     providers: { icon: <Server className="w-4 h-4" />, color: "#FF5722" },
     retrievers: { icon: <Search className="w-4 h-4" />, color: "#4CAF50" },
     conditions: { icon: <GitBranch className="w-4 h-4" />, color: "#9C27B0" },
+    auths: { icon: <Lock className="w-4 h-4" />, color: "#F44336" },
     sandboxes: { icon: <Box className="w-4 h-4" />, color: "#795548" },
     default: { icon: <Box className="w-4 h-4" />, color: "#607D8B" },
   };
@@ -40,6 +42,7 @@ export const getCategoryDisplayName = (category: string) => {
     retrievers: "Retrievers",
     providers: "Providers",
     conditions: "Conditions",
+    auths: "Auths",
     sandboxes: "Sandboxes",
   };
 

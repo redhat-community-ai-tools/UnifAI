@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
+from typing import List, Tuple, Dict, Any, Optional
+
 from mas.resources.models import Resource, ResourceQuery
 from mas.resources.repository.base import ResourceRepository
 from mas.blueprints.repository.repository import BlueprintRepository
 from mas.resources.errors import ResourceInUseError
 from mas.core.identity import Identity
-from typing import List, Tuple, Dict, Any, Optional
 from mas.core.dto import GroupedCount
 from mas.core.ref import RefRemapper
 from mas.core.ref.raw_blueprint_spec import remove_resource_ref_from_nested_dict
@@ -31,6 +32,7 @@ class ResourcesRegistry:
         # uniqueness guard
         if self._repo.find_by_name(doc.identity, doc.category, doc.type, doc.name):
             raise ValueError(f"{doc.category}:{doc.type}:{doc.name} exists for user")
+
         self._repo.save(doc)
         return doc
 
@@ -39,7 +41,7 @@ class ResourcesRegistry:
         existing_with_name = self._repo.find_by_name(doc.identity, doc.category, doc.type, doc.name)
         if existing_with_name and existing_with_name.rid != doc.rid:
             raise ValueError(f"{doc.category}:{doc.type}:{doc.name} exists for user")
-        
+
         doc.version += 1
         doc.updated = datetime.now(timezone.utc)
         self._repo.update(doc)
@@ -85,6 +87,10 @@ class ResourcesRegistry:
         doc.updated = datetime.now(timezone.utc)
         self._repo.update(doc)
 
+    def list_nested_usage(self, rid: str) -> List[str]:
+        """Return resource IDs whose `nested_refs` array contains *rid*."""
+        return self._repo.list_nested_usage(rid)
+
     # ---------- read ----------
     def get(self, rid: str) -> Resource:
         return self._repo.get(rid)
@@ -98,11 +104,20 @@ class ResourcesRegistry:
     def raw_config(self, rid: str) -> dict:
         """Return cfg_dict with encrypted string fields decrypted.
 
+        Fetches the resource fresh from storage. Prefer ``raw_config_for``
+        when the caller already has the ``Resource`` in hand, to avoid a
+        redundant round-trip.
+        """
+        return self.raw_config_for(self.get(rid))
+
+    def raw_config_for(self, resource: Resource) -> dict:
+        """Return *resource*'s cfg_dict with encrypted string fields decrypted.
+
         Uses a shallow copy so the in-memory Resource is not mutated.
         FieldCipher.decrypt() is prefix-aware: non-encrypted values
         pass through unchanged, making this safe for all resource types.
         """
-        cfg = dict(self.get(rid).cfg_dict)
+        cfg = dict(resource.cfg_dict)
         if self._cipher:
             for key, value in cfg.items():
                 if isinstance(value, str):
@@ -144,13 +159,5 @@ class ResourcesRegistry:
         """
         Group resources by specified fields and return counts.
         Performs efficient server-side grouping via the repository.
-        
-        Args:
-            identity: The identity to filter by
-            group_by: List of field names to group by (e.g., ["category", "type"])
-            filter: Optional additional filter criteria
-            
-        Returns:
-            List of GroupedCount DTOs with grouped field values and count.
         """
         return self._repo.group_count(identity, group_by, filter)

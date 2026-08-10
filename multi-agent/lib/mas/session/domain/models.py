@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from mas.core.dto import GroupedCount
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
+from mas.session.domain.status import SessionStatus
 
 
 class TimeSeriesPoint(BaseModel):
@@ -88,6 +89,8 @@ class SessionMeta(BaseModel):
     title: Optional[str] = None
     tags: Dict[str, str] = Field(default_factory=dict)
     source: Optional[str] = None
+    schedule_id: Optional[str] = None
+    prompt_text: Optional[str] = None
     status_message: Optional[str] = None
     hitl_enabled: bool = False
     # Live/presence fields — forwarded to the collaboration store when present.
@@ -101,3 +104,16 @@ class SessionChat(BaseModel):
     output: str = ""
     status: Optional[str] = None
     status_message: Optional[str] = None
+
+
+class ScheduleRunSummary(BaseModel):
+    """One execution record in a workflow schedule's run history.
+
+    Lives in the session domain (rather than ``mas.scheduling``) because each
+    run is a session — projected from session documents by
+    ``SessionService.get_runs_by_schedule()``.
+    """
+    session_id: str
+    status: SessionStatus = SessionStatus.PENDING
+    started_at: Optional[str] = None  # ISO-8601
+    metadata: SessionMeta = Field(default_factory=SessionMeta)

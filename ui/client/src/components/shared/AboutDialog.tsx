@@ -7,7 +7,6 @@ import {
   FaUser,
   FaSlack,
   FaExternalLinkAlt,
-  FaBook,
 } from "react-icons/fa";
 import {
   Dialog,
@@ -39,7 +38,6 @@ const COLOR_OPTIONS = [
 
 const QUICK_LINKS = [
   { label: "Getting Started", href: "/get-to-know", icon: FaInfoCircle },
-  { label: "How-To Guides", href: "/guides", icon: FaBook },
   { label: "Repository", href: "https://github.com/redhat-community-ai-tools/UnifAI", icon: FaExternalLinkAlt },
 ];
 

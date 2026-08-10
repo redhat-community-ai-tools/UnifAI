@@ -1,9 +1,24 @@
-from flask import Blueprint, jsonify, current_app, request
+import logging
+
+from flask import Blueprint, Response, jsonify, current_app, request, g
 
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
-from mas.resources.errors import ResourceInUseError
-from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
+from mas.resources.errors import (
+    ResourceInUseError,
+    ResourceLockedError,
+    BuiltInWriteProtectedError,
+    ResourceAccessDeniedError,
+)
+from inbound.flask.decorators import (
+    with_require_identity_authorization,
+    with_authenticated_user,
+    resolve_caller_scope,
+    G_IDENTITY_USERNAME,
+)
+from mas.core.identity import Identity
+
+logger = logging.getLogger(__name__)
 
 resources_bp = Blueprint("resources", __name__)
 
@@ -79,7 +94,7 @@ def save_resource(identity, category=None, type=None, name=None, config=None):
                          type=type,
                          name=name,
                          config=config)
-        return jsonify(doc.model_dump(mode="json")), 201
+        return jsonify(svc.to_dict(doc)), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
@@ -87,15 +102,17 @@ def save_resource(identity, category=None, type=None, name=None, config=None):
 
 
 @resources_bp.route("/resource.get", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def get_resource(resource_id):
+def get_resource(identity, resource_id):
     """Get a single resource by ID."""
     svc = current_app.container.resources_service
     try:
-        doc = svc.get(resource_id)
-        return jsonify(doc.model_dump(mode="json")), 200
+        caller = resolve_caller_scope(identity)
+        doc = svc.get_visible(resource_id, caller=caller)
+        return jsonify(svc.to_dict(doc)), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except Exception as e:
@@ -107,33 +124,37 @@ def get_resource(resource_id):
 @from_query({
     "category": fields.Str(required=False),
     "type": fields.Str(required=False),
-    "limit": fields.Int(required=False, load_default=1000),
+    "ownership": fields.Str(required=False),
+    "limit": fields.Int(required=False, load_default=50),
     "offset": fields.Int(required=False, load_default=0),
 })
-def list_resources(identity, category=None, type=None, limit=1000, offset=0):
+def list_resources(identity: Identity, category: str | None = None, type: str | None = None, ownership: str | None = None, limit: int = 50, offset: int = 0) -> tuple[Response, int]:
     """
     Get resources with flexible filtering and pagination:
     - identity: scopes to user or team workspace
     - category: filter by resource category
     - category + type: filter by specific type
+    - ownership: filter by ownership ('builtin' or 'custom')
     - limit/offset: pagination support
     """
     svc = current_app.container.resources_service
     try:
-        resources, total_count = svc.find_resources(
-            identity=identity,
+        caller = resolve_caller_scope(identity)
+        resources_data, total_count = svc.find_resources(
             category=category,
             type=type,
+            ownership=ownership,
             limit=limit,
             offset=offset,
+            caller=caller,
         )
         return jsonify({
-            "resources": [doc.model_dump(mode="json") for doc in resources],
+            "resources": resources_data,
             "pagination": {
                 "total": total_count,
                 "limit": limit,
                 "offset": offset,
-                "has_more": offset + len(resources) < total_count
+                "has_more": offset + len(resources_data) < total_count
             }
         }), 200
     except ValueError as e:  # Invalid category enum
@@ -143,19 +164,37 @@ def list_resources(identity, category=None, type=None, limit=1000, offset=0):
 
 
 @resources_bp.route("/resource.update", methods=["PUT"])
+@with_require_identity_authorization
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "config": fields.Dict(required=True),
     "name": fields.Str(required=False),
 })
-def update_resource(resource_id, config, name=None):
+def update_resource(identity: Identity, resource_id: str, config: dict, name: str | None = None) -> tuple[Response, int]:
     svc = current_app.container.resources_service
     try:
+        caller = resolve_caller_scope(identity)
+        svc.guard_write_access(
+            resource_id, caller,
+            username=getattr(g, G_IDENTITY_USERNAME, ""),
+        )
         doc = svc.update(resource_id, config=config, name=name)
-        return jsonify(doc.model_dump(mode="json")), 200
-    except KeyError as e:  # unknown id
+        return jsonify(svc.to_dict(doc)), 200
+    except ResourceLockedError as e:
+        return jsonify({
+            "error": str(e),
+            "lockedBy": {
+                "userId": e.locked_by_user_id,
+                "displayName": e.locked_by_display_name,
+            },
+        }), 409
+    except BuiltInWriteProtectedError as e:
+        return jsonify({"error": str(e)}), 403
+    except ResourceAccessDeniedError as e:
+        return jsonify({"error": str(e)}), 403
+    except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
-    except ValueError as e:  # validation, duplicate name, etc.
+    except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -178,17 +217,32 @@ def check_resource_usage(resource_id):
 
 
 @resources_bp.route("/resource.delete", methods=["DELETE"])
+@with_require_identity_authorization
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def delete_resource(resource_id):
-    # TODO: Add authorization check - verify user has permission to delete this resource
+def delete_resource(identity: Identity, resource_id: str) -> tuple[Response, int]:
     svc = current_app.container.resources_service
     try:
+        caller = resolve_caller_scope(identity)
+        svc.guard_write_access(
+            resource_id, caller,
+            username=getattr(g, G_IDENTITY_USERNAME, ""),
+        )
         svc.delete(resource_id)
         return jsonify({"status": "deleted"}), 200
-    except KeyError:
-        return jsonify({"error": f"Resource not found: {resource_id}"}), 404
+    except ResourceLockedError as e:
+        return jsonify({
+            "error": str(e),
+            "lockedBy": {
+                "userId": e.locked_by_user_id,
+                "displayName": e.locked_by_display_name,
+            },
+        }), 409
+    except BuiltInWriteProtectedError as e:
+        return jsonify({"error": str(e)}), 403
+    except ResourceAccessDeniedError as e:
+        return jsonify({"error": str(e)}), 403
     except ResourceInUseError as e:
         deletion_svc = current_app.container.deletion_service
         usage = deletion_svc.usage_payload_for_in_use(resource_id, e)
@@ -197,6 +251,8 @@ def delete_resource(resource_id):
             "code": "RESOURCE_IN_USE",
             **usage.model_dump(mode="json"),
         }), 409
+    except KeyError:
+        return jsonify({"error": f"Resource not found: {resource_id}"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -240,18 +296,20 @@ def get_resource_schema():
 
 
 @resources_bp.route("/resource.validate", methods=["POST"])
-@with_authenticated_user
+@with_require_identity_authorization
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),
     "user_id": fields.Str(data_key="userId", load_default=""),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_resource(authenticated_user, resource_id, user_id, timeout_seconds):
+def validate_resource(identity: Identity, resource_id: str, user_id: str, timeout_seconds: float) -> tuple[Response, int]:
     """Validate a saved resource and its dependencies."""
     svc = current_app.container.resources_service
+    authenticated_user = getattr(g, G_IDENTITY_USERNAME, "")
     try:
         result = svc.validate_resource(
             rid=resource_id,
+            caller=resolve_caller_scope(identity),
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,
@@ -266,14 +324,14 @@ def validate_resource(authenticated_user, resource_id, user_id, timeout_seconds)
 
 
 @resources_bp.route("/resources.validate", methods=["POST"])
-@with_authenticated_user
+@with_require_identity_authorization
 @from_body({
     "resource_ids": fields.List(fields.Str(), data_key="resourceIds", required=True),
     "user_id": fields.Str(data_key="userId", load_default=""),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
     "max_workers": fields.Int(data_key="maxWorkers", load_default=10),
 })
-def validate_resources(authenticated_user, resource_ids, user_id, timeout_seconds, max_workers):
+def validate_resources(identity: Identity, resource_ids: list[str], user_id: str, timeout_seconds: float, max_workers: int) -> tuple[Response, int]:
     """
     Validate multiple resources in parallel.
 
@@ -295,6 +353,7 @@ def validate_resources(authenticated_user, resource_ids, user_id, timeout_second
     Results are returned in the same order as the input resourceIds.
     """
     svc = current_app.container.resources_service
+    authenticated_user = getattr(g, G_IDENTITY_USERNAME, "")
 
     # Validate input
     if not resource_ids:
@@ -306,6 +365,7 @@ def validate_resources(authenticated_user, resource_ids, user_id, timeout_second
     try:
         results = svc.validate_resources(
             rids=resource_ids,
+            caller=resolve_caller_scope(identity),
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             max_workers=max_workers,
@@ -319,10 +379,11 @@ def validate_resources(authenticated_user, resource_ids, user_id, timeout_second
 
 
 @resources_bp.route("/resource.card", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
 })
-def get_resource_card(resource_id):
+def get_resource_card(identity: Identity, resource_id: str) -> tuple[Response, int]:
     """
     Get the element card for a saved resource.
 
@@ -331,7 +392,7 @@ def get_resource_card(resource_id):
     """
     svc = current_app.container.resources_service
     try:
-        card = svc.get_card(rid=resource_id)
+        card = svc.get_card(rid=resource_id, caller=resolve_caller_scope(identity))
         return jsonify(card.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
@@ -342,15 +403,17 @@ def get_resource_card(resource_id):
 
 
 @resources_bp.route("/resources.cards", methods=["POST"])
+@with_require_identity_authorization
 @from_body({
     "resource_ids": fields.List(fields.Str(), data_key="resourceIds", required=True),
 })
-def get_resource_cards(resource_ids):
+def get_resource_cards(identity: Identity, resource_ids: list[str]) -> tuple[Response, int]:
     """
     Get element cards for multiple resources.
 
     Returns a dictionary mapping resource IDs to their ElementCards.
-    Also includes cards for any transitive dependencies.
+    Also includes cards for any transitive dependencies. Cards reflect the
+    caller's configured overlay for any built-in resources involved.
     """
     svc = current_app.container.resources_service
 
@@ -358,7 +421,7 @@ def get_resource_cards(resource_ids):
         return jsonify({}), 200
 
     try:
-        cards = svc.get_cards(rids=resource_ids)
+        cards = svc.get_cards(rids=resource_ids, caller=resolve_caller_scope(identity))
         return jsonify({
             rid: card.model_dump(mode="json")
             for rid, card in cards.items()
@@ -402,3 +465,9 @@ def validate_config(category, type, config, name=None, timeout_seconds=10.0):
         return jsonify({"error": str(e)}), 500
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# Built-in resource endpoints (admin lifecycle, per-identity overlays, admin
+# edit locks) live in ``endpoints/builtins.py`` — registered under the same
+# ``/api/resources`` URL prefix, see ``endpoints/__init__.py``.
+

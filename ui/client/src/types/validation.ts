@@ -80,11 +80,11 @@ export interface ResourceValidationRequest {
 }
 
 /**
- * Request payload for blueprint validation
+ * Request payload for blueprint validation.
  */
 export interface BlueprintValidationRequest {
   blueprintId: string;
-  userId?: string;
+  teamId?: string;
   skipNetworkChecks?: boolean;
   timeoutSeconds?: number;
 }

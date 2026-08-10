@@ -54,6 +54,7 @@ def main():
                 trigger_id=body["trigger_id"],
                 user_name=body.get("user_name", ""),
                 user_id=body.get("user_id", ""),
+                channel_id=body.get("channel_id", ""),
             )
             return
 

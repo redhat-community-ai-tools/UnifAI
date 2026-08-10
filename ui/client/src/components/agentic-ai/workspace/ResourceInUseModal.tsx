@@ -7,16 +7,10 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, ArrowRightLeft, Unlink, Trash2, Eye } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, Unlink, Trash2, Eye, FileText, Check } from "lucide-react";
 import { getCategorySingularDisplayName } from "@/components/shared/helpers";
+import { cn } from "@/lib/utils";
 
 export interface InUseData {
   category: string;
@@ -66,7 +60,7 @@ function DependentList({
         {items.map((item) => (
           <li
             key={item.id}
-            className="text-sm bg-background-dark rounded px-3 py-1.5 border border-gray-800 flex items-center justify-between"
+            className="text-sm bg-background-dark rounded-md px-3 py-1.5 border border-white/10 flex items-center justify-between"
           >
             <span>{item.name}</span>
             {onItemClick && (
@@ -129,7 +123,7 @@ export function ResourceInUseModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-background-card border-gray-800 max-w-md">
+      <DialogContent className="bg-background-card border-white/10 max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500" />
@@ -144,7 +138,6 @@ export function ResourceInUseModal({
         <div className="py-2">
           {mode === "replace" && (
             <ReplaceFlow
-              category={inUseData.category}
               label={label}
               resources={inUseData.resources}
               blueprints={inUseData.blueprints}
@@ -240,7 +233,6 @@ function ConfirmButton({
 }
 
 function ReplaceFlow({
-  category,
   label,
   resources,
   blueprints,
@@ -252,7 +244,6 @@ function ReplaceFlow({
   onBlueprintClick,
   onResourceClick,
 }: {
-  category: string;
   label: string;
   resources: InUseData["resources"];
   blueprints: InUseData["blueprints"];
@@ -296,22 +287,55 @@ function ReplaceFlow({
         </p>
 
         {replacementOptions.length > 0 ? (
-          <Select value={selectedReplacement} onValueChange={onSelectReplacement}>
-            <SelectTrigger className="w-full bg-background-dark border-gray-700">
-              <SelectValue placeholder={`Select a ${label.toLowerCase()}...`} />
-            </SelectTrigger>
-            <SelectContent className="bg-background-card border-gray-700">
-              {replacementOptions.map((opt) => (
-                <SelectItem key={opt.rid} value={opt.rid}>
-                  {opt.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+            {replacementOptions.map((opt) => {
+              const isSelected = selectedReplacement === opt.rid;
+              return (
+                <button
+                  key={opt.rid}
+                  type="button"
+                  onClick={() => onSelectReplacement(opt.rid)}
+                  className={cn(
+                    "w-full flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all",
+                    isSelected
+                      ? "border-primary/50 bg-primary/10 shadow-sm shadow-primary/10"
+                      : "border-white/10 bg-background-dark hover:border-primary/30 hover:bg-white/5",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors",
+                      isSelected ? "bg-primary/20" : "bg-primary/10",
+                    )}
+                  >
+                    <FileText className={cn("h-3.5 w-3.5", isSelected ? "text-primary" : "text-gray-400")} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className={cn("text-sm font-medium truncate", isSelected ? "text-gray-100" : "text-gray-200")}>
+                      {opt.name}
+                    </p>
+                    {opt.type && (
+                      <p className="text-[11px] text-gray-500 truncate mt-0.5">{opt.type}</p>
+                    )}
+                  </div>
+                  <div
+                    className={cn(
+                      "flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border transition-colors",
+                      isSelected
+                        ? "border-primary bg-primary text-white"
+                        : "border-white/20 text-transparent",
+                    )}
+                  >
+                    <Check className="h-3 w-3" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         ) : isLoadingReplacements ? (
           <p className="text-sm text-gray-500 italic">Loading available replacements...</p>
         ) : (
-          <div className="bg-background-dark border border-gray-800 rounded p-3">
+          <div className="bg-background-dark border border-white/10 rounded-lg p-3">
             <p className="text-sm text-gray-400">
               No other {label.toLowerCase()}s available. To remove this {label.toLowerCase()},
               please remove any instances that use it first, or create a new{" "}

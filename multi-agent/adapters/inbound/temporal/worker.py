@@ -23,7 +23,8 @@ from mas.session.execution.lifecycle_handler import BackgroundLifecycleHandler
 from mas.session.execution.lifecycle import SessionLifecycle
 from temporal.client import get_temporal_client
 from inbound.temporal.activities import GraphNodeActivities, SessionLifecycleActivities
-from inbound.temporal.workflows import GraphTraversalWorkflow, SessionWorkflow
+from inbound.temporal.activities.schedule_activities import ScheduleActivities
+from inbound.temporal.workflows import GraphTraversalWorkflow, SessionWorkflow, ScheduledSessionWorkflow
 
 
 async def run_worker(
@@ -38,6 +39,7 @@ async def run_worker(
 
     node_executor = NodeExecutor(
         session_factory=container.session_factory,
+        tracing_service=container.tracing_service,
     )
 
     thread_pool = ThreadPoolExecutor(max_workers=threads)
@@ -58,12 +60,18 @@ async def run_worker(
         handler=lifecycle_handler,
     )
 
+    schedule_activities = ScheduleActivities(
+        session_service=container.session_service,
+        session_manager=container.session_manager,
+        schedule_service=container.schedule_service,
+    )
+
     client = await get_temporal_client()
 
     worker = Worker(
         client,
         task_queue=cfg.temporal_task_queue,
-        workflows=[GraphTraversalWorkflow, SessionWorkflow],
+        workflows=[GraphTraversalWorkflow, SessionWorkflow, ScheduledSessionWorkflow],
         activities=[
             graph_activities.execute_node,
             graph_activities.evaluate_condition,
@@ -71,6 +79,8 @@ async def run_worker(
             lifecycle_activities.complete_session,
             lifecycle_activities.fail_session,
             lifecycle_activities.cancel_session,
+            schedule_activities.provision_scheduled_session,
+            schedule_activities.record_scheduled_outcome,
         ],
         activity_executor=thread_pool,
         max_concurrent_activities=threads,

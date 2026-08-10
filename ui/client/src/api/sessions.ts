@@ -2,7 +2,7 @@ import axios from '@/http/axiosAgentConfig';
 
 export interface CreateSessionParams {
   blueprintId: string;
-  userId: string;
+  teamId?: string;
 }
 
 export async function createSession(params: CreateSessionParams) {
@@ -18,7 +18,6 @@ export interface SubmitSessionParams {
   sessionId: string;
   inputs: Record<string, any>;
   scope?: 'public' | 'private';
-  userId: string;
 }
 
 /**
@@ -42,6 +41,28 @@ export interface SubmitSessionResponse {
  */
 export async function submitSession(params: SubmitSessionParams): Promise<SubmitSessionResponse> {
   const response = await axios.post('/sessions/user.session.submit', params);
+  return response.data;
+}
+
+/**
+ * List chat sessions for the current user/team.
+ */
+export async function listUserSessions(params: {
+  teamId?: string;
+} = {}): Promise<any[]> {
+  const query = new URLSearchParams();
+  if (params.teamId) query.set('teamId', params.teamId);
+  const qs = query.toString();
+  const response = await axios.get(`/sessions/session.user.list${qs ? `?${qs}` : ''}`);
+  return response.data;
+}
+
+/**
+ * Get the current execution status of a session.
+ */
+export async function getSessionStatus(sessionId: string): Promise<string> {
+  const query = new URLSearchParams({ sessionId });
+  const response = await axios.get(`/sessions/session.status.get?${query.toString()}`);
   return response.data;
 }
 
@@ -94,7 +115,8 @@ export interface StreamStatusResponse {
  */
 export async function getSessionStreamStatus(sessionId: string): Promise<StreamStatusResponse | null> {
   try {
-    const response = await axios.get(`/sessions/session.stream.status?sessionId=${sessionId}`, {
+    const query = new URLSearchParams({ sessionId });
+    const response = await axios.get(`/sessions/session.stream.status?${query.toString()}`, {
       timeout: 5000, // 5 second timeout to prevent hanging
     });
     return response.data;
@@ -106,6 +128,26 @@ export async function getSessionStreamStatus(sessionId: string): Promise<StreamS
     console.error('Error fetching stream status:', err);
     return null;
   }
+}
+
+// ─── Session Chat (error-propagating) ─────────────────────────────────────────
+
+export interface SessionChatData {
+  messages: any[];
+  status?: string;
+  status_message?: string;
+}
+
+/**
+ * Fetch session chat data by ID.
+ * Unlike the swallowing variant in use-session-management, this propagates
+ * errors so callers can distinguish 403/404 from success.
+ */
+export async function fetchSessionChatById(sessionId: string): Promise<SessionChatData> {
+  const response = await axios.get('/sessions/session.chat.get', {
+    params: { sessionId },
+  });
+  return response.data;
 }
 
 // ─── HITL Approval ────────────────────────────────────────────────────────────
@@ -181,6 +223,36 @@ export async function submitApprovalRule(params: SubmitApprovalRuleParams): Prom
 }
 
 /**
+ * Delete a session by ID.
+ */
+export async function deleteSession(sessionId: string): Promise<void> {
+  const query = new URLSearchParams({ sessionId });
+  await axios.delete(`/sessions/session.delete?${query.toString()}`);
+}
+
+/**
+ * Get the full chat data for a session (output, status, status_message, etc.).
+ */
+export async function getSessionChat(sessionId: string): Promise<{
+  output: string;
+  status: string;
+  status_message?: string;
+}> {
+  const query = new URLSearchParams({ sessionId });
+  const response = await axios.get(`/sessions/session.chat.get?${query.toString()}`);
+  return response.data;
+}
+
+/**
+ * Get the final state of a session after execution completes.
+ */
+export async function getSessionState(sessionId: string): Promise<{ output: unknown }> {
+  const query = new URLSearchParams({ sessionId });
+  const response = await axios.get(`/sessions/session.state.get?${query.toString()}`);
+  return response.data;
+}
+
+/**
  * Subscribe to a session's Redis stream.
  * Returns a Response object for streaming, or null if unavailable.
  * 
@@ -191,8 +263,9 @@ export async function submitApprovalRule(params: SubmitApprovalRuleParams): Prom
  */
 export async function subscribeToSessionStream(sessionId: string): Promise<Response | null> {
   try {
+    const query = new URLSearchParams({ sessionId });
     const response = await fetch(
-      `/api2/sessions/session.subscribe?sessionId=${sessionId}`,
+      `/api2/sessions/session.subscribe?${query.toString()}`,
       {
         method: 'GET',
         headers: {

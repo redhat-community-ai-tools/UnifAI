@@ -9,32 +9,22 @@ import {
 } from "../types/workspace";
 import { useToast } from "./use-toast";
 import { catalogService } from "@/api/catalog";
+import * as resourcesApi from "@/api/resources";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
+import type { ResourceInstance } from "@/api/resources";
 
-// Types for Resources API responses
-interface ResourceInstance {
-  rid: string;
-  user_id: string;
-  category: string;
-  type: string;
-  name: string;
-  version: number;
-  cfg_dict: any;
-  nested_refs: string[];
-  contributed_by?: string;
-  created: string;
-  updated: string;
-}
-
-interface ResourcesListResponse {
-  resources: ResourceInstance[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    has_more: boolean;
-  };
+/**
+ * When a resource is made available to all, any aggregated elements it
+ * references (LLMs, providers, tools, etc.) that weren't already public
+ * built-ins get swept along automatically. Builds the disclaimer text for
+ * the success toast when that happened.
+ */
+function describeCascadedResources(result: ResourceInstance | null): string | null {
+  const cascaded = result?.cascaded_resources;
+  if (!cascaded || cascaded.length === 0) return null;
+  const names = cascaded.map((r) => `"${r.name}"`).join(", ");
+  return `Also made available to all, since this resource uses ${names}.`;
 }
 
 export const useWorkspaceData = () => {
@@ -51,7 +41,7 @@ export const useWorkspaceData = () => {
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const { addOrUpdateResource, removeResource, revalidateResourceAndAncestors } = useAgenticAI();
-  const { userId: USER_ID, displayName: USER_DISPLAY_NAME, identityType } = useWorkspaceIdentity();
+  const { userId: USER_ID, teamId } = useWorkspaceIdentity();
 
   // Fetch all available categories and element types
   const fetchCategories = useCallback(async () => {
@@ -98,13 +88,14 @@ export const useWorkspaceData = () => {
         setError(null);
         setElementInstances([]);
 
-        const response = await axios.get<ResourcesListResponse>(
-          `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}&category=${category}&type=${type}`,
-        );
+        const resources = await resourcesApi.listAllResources({
+          teamId,
+          category,
+          type,
+        });
 
-        // Transform ResourceInstance to ElementInstance format
-        const instances: ElementInstance[] = response.data.resources.map(
-          (resource: ResourceInstance) => ({
+        const instances: ElementInstance[] = resources.map(
+          (resource) => ({
             rid: resource.rid,
             name: resource.name,
             config: resource.cfg_dict,
@@ -115,6 +106,9 @@ export const useWorkspaceData = () => {
             updated: resource.updated,
             nested_refs: resource.nested_refs,
             contributed_by: resource.contributed_by,
+            ownership: resource.ownership || 'custom',
+            visibility: resource.visibility,
+            userConfigured: resource.user_configured ?? false,
           }),
         );
 
@@ -136,7 +130,7 @@ export const useWorkspaceData = () => {
         setIsLoadingInstances(false);
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, teamId],
   );
 
   // Fetch single resource by ID
@@ -146,11 +140,7 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        const response = await axios.get<ResourceInstance>(
-          `/resources/resource.get?resourceId=${resourceId}`,
-        );
-
-        return response.data;
+        return await resourcesApi.getResource(resourceId);
       } catch (err: any) {
         const errorMessage =
           err.response?.data?.error || "Failed to fetch resource";
@@ -171,17 +161,21 @@ export const useWorkspaceData = () => {
 
   // Fetch all resources for a category (for $ref dropdowns)
   const fetchResourcesForCategory = useCallback(
-    async (category: string) => {
+    async (category: string, ownership?: string) => {
       try {
-        const response = await axios.get<ResourcesListResponse>(
-          `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}&category=${category}`,
-        );
+        const resources = await resourcesApi.listAllResources({
+          teamId,
+          category,
+          ownership,
+        });
 
-        return response.data.resources.map((resource: ResourceInstance) => ({
+        return resources.map((resource) => ({
           rid: resource.rid,
           name: resource.name,
           type: resource.type,
           config: resource.cfg_dict,
+          ownership: resource.ownership || 'custom',
+          visibility: resource.visibility,
         }));
       } catch (err: any) {
         const errorMessage =
@@ -196,7 +190,7 @@ export const useWorkspaceData = () => {
         return [];
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, teamId],
   );
 
   // Fetch element schema for form generation (combines resource schema + element-specific schema)
@@ -207,16 +201,10 @@ export const useWorkspaceData = () => {
         setError(null);
 
         // First fetch the resource schema (first-level schema)
-        const resourceSchemaResponse = await axios.get(
-          "/resources/resource.schema",
-        );
-        const resourceSchema = resourceSchemaResponse.data;
+        const resourceSchema = await resourcesApi.getResourceSchema();
 
         // Then fetch the element-specific schema (cfg_dict schema)
-        const elementSchemaResponse = await axios.get<ElementSchema>(
-          `/catalog/element.spec.get?category=${category}&type=${type}`,
-        );
-        const elementSchema = elementSchemaResponse.data;
+        const elementSchema = await resourcesApi.getElementSpec(category, type);
 
         // Combine both schemas into a unified schema
         const combinedSchema: ElementSchema = {
@@ -306,65 +294,46 @@ export const useWorkspaceData = () => {
         setError(null);
 
         if (rid) {
-          // Update existing resource
-          const response = await axios.put("/resources/resource.update", {
+          const result = await resourcesApi.updateResource({
             resourceId: rid,
             config: elementData.cfg_dict,
             name: elementData.name,
           });
-          
-          // Update the resource mapping immediately
-          if (response.data) {
+
+          if (result) {
             addOrUpdateResource({
-              rid: response.data.rid || rid,
-              name: response.data.name || elementData.name,
-              category: response.data.category || category,
-              type: response.data.type || type,
+              rid: result.rid || rid,
+              name: result.name || elementData.name,
+              category: result.category || category,
+              type: result.type || type,
             });
-            // Revalidate resource after update
-            revalidateResourceAndAncestors(response.data.rid || rid);
+            revalidateResourceAndAncestors(result.rid || rid);
           }
-          
-          toast({
-            title: "Success",
-            description: "Element updated successfully",
-          });
-          return response.data;
+
+          toast({ title: "Success", description: "Element updated successfully" });
+          return result;
         } else {
-          // Create new resource
           const { cfg_dict, ...firstLevelFields } = elementData;
-          const savePayload = {
-            userId: USER_ID,
-            identityType: identityType,
-            displayName: USER_DISPLAY_NAME,
+          const result = await resourcesApi.createResource({
+            teamId,
             category,
             type,
             config: cfg_dict,
             ...firstLevelFields,
-          };
-
-          const response = await axios.post(
-            "/resources/resource.save",
-            savePayload,
-          );
-          
-          // Update the resource mapping immediately
-          if (response.data) {
-            addOrUpdateResource({
-              rid: response.data.rid,
-              name: response.data.name || elementData.name,
-              category: response.data.category || category,
-              type: response.data.type || type,
-            });
-            // Validate new resource immediately after creation
-            revalidateResourceAndAncestors(response.data.rid);
-          }
-          
-          toast({
-            title: "Success",
-            description: "Element created successfully",
           });
-          return response.data;
+
+          if (result) {
+            addOrUpdateResource({
+              rid: result.rid,
+              name: result.name || elementData.name,
+              category: result.category || category,
+              type: result.type || type,
+            });
+            revalidateResourceAndAncestors(result.rid);
+          }
+
+          toast({ title: "Success", description: "Element created successfully" });
+          return result;
         }
       } catch (err: any) {
         const errorMessage =
@@ -381,7 +350,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast, USER_ID, identityType],
+    [toast, teamId],
   );
 
   // Check whether a resource is in use without deleting it.
@@ -391,16 +360,14 @@ export const useWorkspaceData = () => {
       | { inUse: true; category: string; allowed_mode: string; blueprints: any[]; resources: any[] }
     > => {
       try {
-        const response = await axios.get(
-          `/resources/resource.check-usage?resourceId=${rid}`,
-        );
-        if (response.data.in_use) {
+        const data = await resourcesApi.checkResourceUsage(rid);
+        if (data.in_use) {
           return {
             inUse: true,
-            category: response.data.category,
-            allowed_mode: response.data.allowed_mode,
-            blueprints: response.data.blueprints || [],
-            resources: response.data.resources || [],
+            category: data.category!,
+            allowed_mode: data.allowed_mode!,
+            blueprints: data.blueprints || [],
+            resources: data.resources || [],
           };
         }
         return { inUse: false };
@@ -425,7 +392,7 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        await axios.delete(`/resources/resource.delete?resourceId=${rid}`);
+        await resourcesApi.deleteResource(rid);
 
         removeResource(rid);
 
@@ -460,7 +427,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast],
+    [toast, removeResource],
   );
 
   // Force-delete an element that is in use, using one of three modes.
@@ -474,10 +441,10 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        await axios.post("/resources/resource.force-delete", {
+        await resourcesApi.forceDeleteResource({
           resourceId: rid,
           mode,
-          ...(replacementId ? { replacementId } : {}),
+          replacementId,
         });
 
         removeResource(rid);
@@ -502,7 +469,293 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
+    [toast, removeResource],
+  );
+
+  // Fetch the annotated schema for a built-in resource (same schema as inventory,
+  // but each field has a readOnly hint based on the resource's BuiltinSchema)
+  const fetchBuiltinSchema = useCallback(
+    async (resourceId: string) => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const builtinSchema = await resourcesApi.getBuiltinSchema(resourceId);
+        setElementSchema({
+          category: "",
+          name: "",
+          type: "",
+          description: "",
+          tags: [],
+          config_schema: builtinSchema,
+        });
+        return builtinSchema;
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.error || "Failed to fetch built-in schema";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error("Error fetching built-in schema:", err);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
     [toast],
+  );
+
+  const fetchBuiltinUserConfig = useCallback(
+    async (resourceId: string): Promise<Record<string, any> | null> => {
+      try {
+        return await resourcesApi.getBuiltinUserConfig({
+          resourceId,
+          teamId,
+        });
+      } catch (err: any) {
+        console.error("Error fetching built-in user config:", err);
+        return null;
+      }
+    },
+    [teamId],
+  );
+
+  // Save per-user configuration for a built-in resource (only non-readOnly fields)
+  const configureBuiltin = useCallback(
+    async (
+      resourceId: string,
+      config: Record<string, any>,
+      options?: { silent?: boolean },
+    ) => {
+      const silent = options?.silent ?? false;
+      try {
+        // Silent background writes (e.g. persisting a discovered auth
+        // identifier) must not toggle the shared loading state — that would
+        // spuriously show a loading spinner elsewhere in the workspace for
+        // a save the user didn't initiate.
+        if (!silent) setIsLoading(true);
+        setError(null);
+
+        const result = await resourcesApi.configureBuiltin({
+          resourceId,
+          teamId,
+          config,
+        });
+
+        // Response cfg_dict is overlay-merged for this caller — refresh the
+        // local inventory instance so cards (e.g. MCP tool_names) update
+        // immediately instead of keeping the shared base config's empty
+        // "All tools" fallback until the next full refetch.
+        if (result?.cfg_dict) {
+          setElementInstances((prev) =>
+            prev.map((el) =>
+              el.rid === resourceId
+                ? {
+                    ...el,
+                    config: result.cfg_dict,
+                    userConfigured: result.user_configured ?? true,
+                    updated: result.updated ?? el.updated,
+                  }
+                : el,
+            ),
+          );
+        }
+
+        // The resource's validation status may have flipped (e.g. a
+        // previously-missing token is now set) — the cached badge on the
+        // card would otherwise keep showing the pre-save status forever.
+        revalidateResourceAndAncestors(resourceId);
+
+        // `silent` is used for background writes (e.g. persisting the
+        // discovered auth identifier right after a sign-in flow completes)
+        // that aren't a user-initiated "Configure" save and shouldn't pop a
+        // toast every time.
+        if (!silent) {
+          toast({
+            title: "Success",
+            description: "Built-in resource configured successfully",
+          });
+        }
+        return result;
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.error || "Failed to configure built-in resource";
+        setError(errorMessage);
+        if (!silent) {
+          toast({
+            title: "Error",
+            description: errorMessage,
+            variant: "destructive",
+          });
+        }
+        console.error("Error configuring built-in:", err);
+        // Rethrow (rather than returning null) so callers - notably
+        // BuiltinConfigureModal's handleSave - know the save failed and
+        // don't dismiss the modal as if it had succeeded.
+        throw err;
+      } finally {
+        if (!silent) setIsLoading(false);
+      }
+    },
+    [toast, teamId, revalidateResourceAndAncestors],
+  );
+
+  // Create a built-in resource directly (admin only).
+  // Configurable keys are derived from the schema's ReadOnlyHint annotations
+  // on the backend — no need to pass them from the frontend.
+  const saveBuiltinElement = useCallback(
+    async (
+      category: string,
+      type: string,
+      elementData: any,
+      availableToAll: boolean = false,
+      rid?: string,
+    ) => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        if (rid) {
+          const result = await resourcesApi.updateBuiltin({
+            resourceId: rid,
+            config: elementData.cfg_dict,
+            name: elementData.name,
+            availableToAll,
+          });
+          if (result) {
+            addOrUpdateResource({
+              rid: result.rid || rid,
+              name: result.name || elementData.name,
+              category: result.category || category,
+              type: result.type || type,
+            });
+            revalidateResourceAndAncestors(result.rid || rid);
+          }
+          const cascadeNote = describeCascadedResources(result);
+          toast({
+            title: "Success",
+            description: cascadeNote
+              ? `Built-in resource updated successfully. ${cascadeNote}`
+              : "Built-in resource updated successfully",
+          });
+          return result;
+        } else {
+          const { cfg_dict, name } = elementData;
+          const result = await resourcesApi.createBuiltin({
+            teamId,
+            category,
+            type,
+            name,
+            config: cfg_dict,
+            availableToAll,
+          });
+          if (result) {
+            addOrUpdateResource({
+              rid: result.rid,
+              name: result.name || elementData.name,
+              category: result.category || category,
+              type: result.type || type,
+            });
+            revalidateResourceAndAncestors(result.rid);
+          }
+          const cascadeNote = describeCascadedResources(result);
+          toast({
+            title: "Success",
+            description: cascadeNote
+              ? `Built-in resource created successfully. ${cascadeNote}`
+              : "Built-in resource created successfully",
+          });
+          return result;
+        }
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.error || "Failed to save built-in resource";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error("Error saving built-in element:", err);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [toast, teamId, addOrUpdateResource, revalidateResourceAndAncestors],
+  );
+
+  // Toggle available_to_all status for a resource (admin only)
+  const toggleBuiltinStatus = useCallback(
+    async (resourceId: string, availableToAll: boolean) => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const result = await resourcesApi.toggleBuiltinVisibility({
+          resourceId,
+          availableToAll,
+        });
+
+        const cascadeNote = describeCascadedResources(result);
+        toast({
+          title: "Success",
+          description: availableToAll
+            ? cascadeNote
+              ? `Resource is now available to all users. ${cascadeNote}`
+              : "Resource is now available to all users"
+            : "Resource is no longer available to all users",
+        });
+        return result;
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.error || "Failed to toggle resource status";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error("Error toggling built-in status:", err);
+        return null;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [toast],
+  );
+
+  // Delete a built-in/admin resource (admin only)
+  const deleteBuiltinElement = useCallback(
+    async (rid: string) => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        await resourcesApi.deleteResource(rid);
+        removeResource(rid);
+
+        toast({ title: "Success", description: "Built-in resource deleted successfully" });
+        return true;
+      } catch (err: any) {
+        const errorMessage =
+          err.response?.data?.error || "Failed to delete built-in resource";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error("Error deleting built-in element:", err);
+        return false;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [toast, removeResource],
   );
 
   // Initialize categories on mount
@@ -525,9 +778,15 @@ export const useWorkspaceData = () => {
     fetchResourcesForCategory,
     fetchResourceById,
     checkElementUsage,
+    fetchBuiltinSchema,
+    fetchBuiltinUserConfig,
+    configureBuiltin,
     saveElement,
     deleteElement,
     forceDeleteElement,
+    saveBuiltinElement,
+    toggleBuiltinStatus,
+    deleteBuiltinElement,
     refetchCategories: fetchCategories,
   };
 };
