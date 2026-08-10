@@ -7,15 +7,15 @@ metadata:
     {{- with .Values.storage.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- $extraAnnotations := .Values.storage.annotations | default dict }}
-  {{- if or .Values.storage.keepPvc (not (empty $extraAnnotations)) }}
-  annotations:
+  {{- $annotations := .Values.storage.annotations | default dict }}
+  {{- /* keepPvc owns helm.sh/resource-policy; drop any user duplicate of that key */ -}}
   {{- if .Values.storage.keepPvc }}
-    "helm.sh/resource-policy": keep
+    {{- $annotations = omit $annotations "helm.sh/resource-policy" }}
+    {{- $_ := set $annotations "helm.sh/resource-policy" "keep" }}
   {{- end }}
-  {{- if not (empty $extraAnnotations) }}
-    {{- toYaml $extraAnnotations | nindent 4 }}
-  {{- end }}
+  {{- if not (empty $annotations) }}
+  annotations:
+    {{- toYaml $annotations | nindent 4 }}
   {{- end }}
 spec:
   {{- with .Values.storage }}
