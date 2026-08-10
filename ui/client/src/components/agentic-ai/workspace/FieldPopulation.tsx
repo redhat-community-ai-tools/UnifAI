@@ -258,7 +258,16 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
 
   const applySelection = (values: string[]) => {
     setSelectedValues(values);
-    onPopulateResult(fieldName, getSelectedObjects(values), populateHint.multi_select || false);
+    // Multi-select fields (e.g. `docs: List[Dict]`) need the full backend
+    // objects preserved in formData. Single-select fields driven by this
+    // component are plain strings (e.g. `auth_method: str`) identified by
+    // `value_field` — storing the raw `{label, value}` object there instead
+    // of the extracted id string breaks every downstream consumer that
+    // expects a string (ConditionalHint checks, PropagateHint targets,
+    // action `dependencies` mappings, and the field's own pydantic type on
+    // save).
+    const results = populateHint.multi_select ? getSelectedObjects(values) : values;
+    onPopulateResult(fieldName, results, populateHint.multi_select || false);
   };
 
   /**
@@ -365,6 +374,13 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
         });
       }
 
+      // Merge static constants (fixed values that don't come from form fields)
+      if (populateHint.constants) {
+        Object.entries(populateHint.constants).forEach(([key, value]) => {
+          inputData[key] = value;
+        });
+      }
+
       // Add pagination params if supported
       if (supportsPagination) {
         inputData.limit = 30;
@@ -425,7 +441,12 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
 
               if (validatedSelections.length !== prevSelected.length) {
                 setTimeout(() => {
-                  onPopulateResult(fieldName, getSelectedObjects(validatedSelections), populateHint.multi_select || false);
+                  // Same shape rule as applySelection: multi-select needs full
+                  // backend objects, single-select needs the plain id string.
+                  const prunedResults = populateHint.multi_select
+                    ? getSelectedObjects(validatedSelections)
+                    : validatedSelections;
+                  onPopulateResult(fieldName, prunedResults, populateHint.multi_select || false);
                 }, 0);
               }
 

@@ -34,6 +34,9 @@ class GoogleGenAIFactory(BaseFactory[GoogleGenAIConfig, GoogleGenAILLM]):
         :raises PluginConfigurationError: on validation failure
         """
         try:
+            element_deps = deps.pop("deps", None)
+            tracing = element_deps.tracing_service if element_deps else None
+
             llm = GoogleGenAILLM(
                 model_name=cfg.model_name,
                 api_key=cfg.api_key,
@@ -41,6 +44,7 @@ class GoogleGenAIFactory(BaseFactory[GoogleGenAIConfig, GoogleGenAILLM]):
                 max_tokens=cfg.max_tokens,
                 top_p=cfg.top_p,
                 top_k=cfg.top_k,
+                tracing=tracing,
                 **cfg.extra
             )
             return llm

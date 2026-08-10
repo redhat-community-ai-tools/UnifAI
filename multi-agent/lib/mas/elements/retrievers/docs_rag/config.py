@@ -1,7 +1,7 @@
 from typing import Dict, List, Literal, Optional
 from pydantic import Field
 from mas.elements.retrievers.common.base_config import BaseRetrieverConfig
-from mas.core.field_hints import ActionHint, HintType, SelectionType
+from mas.core.field_hints import ActionHint, HintType, SelectionType, CardHint, CardContext, combine_hints
 from .identifiers import Identifier
 
 
@@ -14,7 +14,8 @@ class DocsRagRetrieverConfig(BaseRetrieverConfig):
     top_k_results: int = Field(
         default=3,
         ge=1,
-        description="Number of top document passages to return"
+        description="Number of top document passages to return",
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
 
     threshold: float = Field(
@@ -34,17 +35,20 @@ class DocsRagRetrieverConfig(BaseRetrieverConfig):
     docs: Optional[List[Dict]] = Field(
         default=None,
         description="Filter results to specific documents",
-        json_schema_extra=ActionHint(
-            action_uid="rag.get_available_docs",
-            display_name="documents",
-            hint_type=HintType.POPULATE,
-            selection_type=SelectionType.MANUAL,
-            field_mapping="documents",
-            display_field="name",
-            multi_select=True,
-            pagination=True,
-            search=True,
-        ).to_hints()
+        json_schema_extra=combine_hints(
+            ActionHint(
+                action_uid="rag.get_available_docs",
+                display_name="documents",
+                hint_type=HintType.POPULATE,
+                selection_type=SelectionType.MANUAL,
+                field_mapping="documents",
+                display_field="name",
+                multi_select=True,
+                pagination=True,
+                search=True,
+            ),
+            CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM], empty_text="All documents"),
+        )
     )
 
     tags: Optional[List[str]] = Field(

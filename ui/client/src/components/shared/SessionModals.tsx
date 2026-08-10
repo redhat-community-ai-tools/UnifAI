@@ -33,6 +33,8 @@ export interface AddFlowModalProps {
   onCancel: () => void;
   title?: string;
   confirmLabel?: string;
+  confirmDisabled?: boolean;
+  confirmDisabledReason?: string;
 }
 
 export function AddFlowModal({
@@ -45,6 +47,8 @@ export function AddFlowModal({
   onCancel,
   title = "Add New Session from Workflow",
   confirmLabel = "Add",
+  confirmDisabled = false,
+  confirmDisabledReason,
 }: AddFlowModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -64,6 +68,11 @@ export function AddFlowModal({
           </div>
         </div>
         <DialogFooter className="flex-shrink-0 pt-4 border-t border-gray-800">
+          {confirmDisabled && confirmDisabledReason && (
+            <p className="text-sm text-amber-400 mr-auto self-center">
+              {confirmDisabledReason}
+            </p>
+          )}
           <Button
             variant="outline"
             onClick={onCancel}
@@ -74,7 +83,7 @@ export function AddFlowModal({
           </Button>
           <Button
             onClick={onConfirm}
-            disabled={!selectedFlow || isCreating}
+            disabled={!selectedFlow || isCreating || confirmDisabled}
             className="bg-[#03DAC6] hover:bg-opacity-80 text-black"
           >
             {isCreating ? "Creating..." : confirmLabel}

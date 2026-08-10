@@ -56,7 +56,29 @@ class ElementValidationService:
         Looks up the validator from ElementRegistry and calls it.
         Builds ElementValidationResult from ValidatorReport + metadata.
         If no validator is defined, returns success with INFO message.
+
+        If ``config_meta.validation_override_error`` is set, the real
+        validator is skipped entirely and this fails immediately with that
+        message — e.g. a built-in resource whose caller has no per-identity
+        overlay for a required secret field. This keeps that veto generic
+        (a plain flag on the metadata) rather than importing any
+        Resources/built-in-specific logic here.
         """
+        if config_meta.validation_override_error:
+            return ElementValidationResult(
+                is_valid=False,
+                element_rid=config_meta.rid,
+                element_type=config_meta.type_key,
+                name=config_meta.name,
+                messages=[
+                    ValidationMessage(
+                        severity=ValidationSeverity.ERROR,
+                        code=ValidationCode.MISSING_REQUIRED_FIELD.value,
+                        message=config_meta.validation_override_error,
+                    )
+                ],
+            )
+
         spec = self._registry.get_spec(
             config_meta.category,
             config_meta.type_key

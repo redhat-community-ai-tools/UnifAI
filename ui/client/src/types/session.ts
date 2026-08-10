@@ -16,11 +16,13 @@ export interface ChatSession {
   messages: ChatMessage[];
   blueprintExists: boolean;
   fromSharedLink?: boolean;
+  fromSchedule?: boolean;
   blueprintName?: string;
   isSharingDisabled?: boolean;
   hitlEnabled?: boolean;
   status?: string;
   statusMessage?: string;
+  totalCost?: number | null;
 }
 
 // Types for the API response
@@ -31,6 +33,7 @@ export interface ChatSessionData {
   started_at: string;
   last_active_at?: string;
   blueprint_exists: boolean;
+  status?: string;
 }
 
 export interface SessionStateData {

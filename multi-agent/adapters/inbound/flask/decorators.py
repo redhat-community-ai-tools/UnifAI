@@ -23,8 +23,10 @@ from typing import Any, Callable
 
 from flask import current_app, g, jsonify, request, session
 
+from global_utils.constants import INTERNAL_AUTH_HEADER
 from global_utils.flask.decorators import validate_session, G_IDENTITY_SESSION
-from mas.core.identity import resolve_identity
+from mas.core.caller_scope import CallerScope
+from mas.core.identity import Identity, resolve_identity
 from mas.core.identity.ports import IdentityProvider
 
 logger = logging.getLogger(__name__)
@@ -49,7 +51,7 @@ def _get_redis_store():
 # Session callbacks
 # ──────────────────────────────────────────────────────────────────────────────
 
-_AUTH_HEADER = "X-Authenticated-User"
+_AUTH_HEADER = INTERNAL_AUTH_HEADER
 
 
 def _get_fallback_user() -> str | None:
@@ -220,27 +222,92 @@ def with_identity(f: Callable) -> Callable:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Admin access (unchanged)
+# Admin access
+#
+# There is a single admin concept across the entire MAS service.  The
+# Mongo-backed ``admin_config_reader`` (managed via the admin panel) is
+# the primary source of truth; the static ``admin_allowed_users`` Flask
+# config acts as a bootstrap/fallback so that admin access works before
+# the first admin-panel save populates the Mongo document.
+#
+# All ``@require_admin_access`` surfaces — built-in resources, OAuth
+# client config, templates, statistics — share this unified gate
+# intentionally: an admin is an admin everywhere.
 # ──────────────────────────────────────────────────────────────────────────────
 
-def require_admin_access(f):
-    """Gate an endpoint to users listed in ``admin_allowed_users``.
+G_ADMIN_STATUS_CACHE = "_admin_status_cache"
+
+
+def is_admin_user(username: str) -> bool:
+    """Check admin status via the container's admin config reader,
+    falling back to the static ``admin_allowed_users`` Flask config.
+
+    Public accessor other endpoint modules should use (e.g. to build
+    ``is_admin`` flags for service calls) instead of reaching into this
+    module's private implementation detail.
+
+    Delegates to ``current_app.container.admin_config_reader.is_admin()``,
+    which applies its own short-TTL cache for cross-request reuse. The
+    result is additionally cached on ``g`` so repeated checks for the
+    same username within one request never re-enter that lookup.
+    """
+    cache = getattr(g, G_ADMIN_STATUS_CACHE, None)
+    if cache is None:
+        cache = {}
+        setattr(g, G_ADMIN_STATUS_CACHE, cache)
+    elif username in cache:
+        return cache[username]
+
+    container = getattr(current_app, "container", None)
+    reader = getattr(container, "admin_config_reader", None) if container else None
+    mongo_result = reader.is_admin(username) if reader else None
+    if mongo_result is True:
+        result = True
+    else:
+        admin_allowed_users = current_app.config.get("admin_allowed_users", [])
+        result = username.lower() in [u.lower() for u in admin_allowed_users]
+
+    cache[username] = result
+    return result
+
+
+def resolve_caller_scope(identity: Identity) -> CallerScope:
+    """Bundle the caller's resolved ``identity`` with their admin status into
+    one immutable ``CallerScope``.
+
+    This is the single place endpoints should build a ``CallerScope`` to pass
+    into ``ResourcesService``/``BlueprintService``/``BlueprintResolver``,
+    instead of separately threading ``identity`` and
+    ``is_admin_user(username)`` through every service call. Reuses
+    ``is_admin_user``'s per-request cache on ``g``.
+    """
+    username = getattr(g, G_IDENTITY_USERNAME, "")
+    return CallerScope(identity=identity, is_admin=is_admin_user(username))
+
+
+# Backward-compat alias for any remaining internal call sites within this module.
+_is_admin = is_admin_user
+
+
+def require_admin_access(f: Callable[..., Any]) -> Callable[..., Any]:
+    """Gate an endpoint to admin users.
 
     Reads the authenticated username from the session (via
-    :func:`require_session_identity`) and checks it against the app config.
+    :func:`require_session_identity`) and checks admin status through
+    ``current_app.container.admin_config_reader`` (centralized admin
+    config managed via the admin panel).  Falls back to the static
+    ``admin_allowed_users`` Flask config.
+
+    All admin-gated surfaces (built-in resources, OAuth client config,
+    templates, statistics) share this single gate intentionally — there
+    is one admin concept across the MAS service.
+
     Does NOT inject ``identity`` into the wrapped function's kwargs.
     """
     @wraps(f)
-    def decorated_function(*args, **kwargs):
+    def decorated_function(*args: Any, **kwargs: Any) -> Any:
         try:
             kwargs.pop("identity", None)
-
-            admin_allowed_users = current_app.config.get("admin_allowed_users", [])
-            if not admin_allowed_users:
-                return jsonify({
-                    "error": "Access denied: Analytics is not enabled",
-                    "error_type": "FEATURE_DISABLED",
-                }), 403
 
             username = getattr(g, G_IDENTITY_USERNAME, "")
             if not username:
@@ -249,7 +316,7 @@ def require_admin_access(f):
                     "error_type": "AUTHENTICATION_REQUIRED",
                 }), 401
 
-            if username not in admin_allowed_users:
+            if not _is_admin(username):
                 return jsonify({
                     "error": "Access denied: insufficient permissions",
                     "error_type": "ACCESS_DENIED",

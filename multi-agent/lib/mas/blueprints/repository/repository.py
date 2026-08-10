@@ -80,5 +80,16 @@ class BlueprintRepository(ABC):
         """Total blueprint count, optionally scoped to *identity*."""
 
     @abstractmethod
+    def name_exists_for_identity(
+            self, identity: Identity, name: str,
+            *, exclude_blueprint_id: str | None = None,
+    ) -> bool:
+        """Return True if *identity* already owns a blueprint with this *name*.
+
+        When *exclude_blueprint_id* is given the check ignores that document
+        (used during rename/update so a blueprint doesn't conflict with itself).
+        """
+
+    @abstractmethod
     def delete_by_identity(self, identity: Identity) -> int:
         """Delete all blueprints owned by *identity*.  Returns the count of deleted documents."""

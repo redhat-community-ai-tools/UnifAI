@@ -73,6 +73,12 @@ class <Name>NodeConfig(NodeBaseConfig):
 `NodeBaseConfig` provides common fields like `retries`. The `type` field
 is the discriminator for the `NodeSpec` union — use `Literal[Identifier.TYPE]`.
 
+If a field should stay user-configurable when this node is later promoted to a
+built-in resource, annotate it with `ReadOnlyHint(read_only=False)` explicitly
+— fields without this hint default to read-only for built-ins. If it should
+also appear on an inventory card, add `CardHint` — see "Field Hints on Config
+Fields" in `../references/elements.md`.
+
 ---
 
 ## Step 3: Choose Mixins

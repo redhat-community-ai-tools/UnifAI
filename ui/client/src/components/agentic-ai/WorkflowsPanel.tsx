@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
-import { Trash2, Users, Pencil, Search, X, MoreVertical, MessageSquare } from "lucide-react";
+import { Trash2, Users, Pencil, Search, X, MoreVertical, MessageSquare, Clock } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { useView } from "@/contexts/ViewContext";
 import { useShared } from "@/contexts/SharedContext";
@@ -31,9 +32,11 @@ import { convertGraphFlowToFlowObject } from "@/utils/blueprintHelpers";
 import { hasHitlDynamicNodes } from "@/utils/hitlUtils";
 import ShareWorkflow from "./ShareWorkflow";
 import EditPromptShortcutsModal from "./EditPromptShortcutsModal";
+import SchedulePromptModal from "./SchedulePromptModal";
 import { BlueprintValidationResult } from "@/types/validation";
 import { useBlueprintValidation } from "@/hooks/use-blueprint-validation";
 import { useTeamEditLockPoll } from "@/hooks/use-team-edit-lock-poll";
+import { useScheduledBlueprints } from "@/hooks/use-scheduled-blueprints";
 import { cn } from "@/lib/utils";
 
 export interface WorkflowsPanelProps {
@@ -86,12 +89,15 @@ export default function WorkflowsPanel({
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [promptShortcutsModalOpen, setPromptShortcutsModalOpen] = useState(false);
   const [promptShortcutsFlow, setPromptShortcutsFlow] = useState<FlowObject | null>(null);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleModalFlow, setScheduleModalFlow] = useState<FlowObject | null>(null);
 
   const { selectedTeam } = useView();
   const { openShareForItem } = useShared();
-  const { isTeam, userId: contextUserId, identityType } = useWorkspaceIdentity();
-  const workspaceScopeRef = useRef({ contextUserId, identityType });
-  workspaceScopeRef.current = { contextUserId, identityType };
+  const { isTeam, userId: contextUserId, teamId } = useWorkspaceIdentity();
+  const queryClient = useQueryClient();
+  const workspaceScopeRef = useRef({ contextUserId, teamId });
+  workspaceScopeRef.current = { contextUserId, teamId };
   
   // Blueprint validation hook
   const {
@@ -118,6 +124,8 @@ export default function WorkflowsPanel({
     [selectedBlueprintData?.specDict],
   );
 
+  const scheduledBlueprintIds = useScheduledBlueprints(teamId);
+
   const filteredFlows = useMemo(() => {
     const normalizedSearch = (searchQuery ?? "").trim().toLowerCase();
     if (!normalizedSearch) return graphFlows;
@@ -132,13 +140,13 @@ export default function WorkflowsPanel({
   // `forceAutoSelect` bypasses the `selectedFlow` check so the first item is always
   // picked after a scope change (where the closure still sees the stale value).
   const fetchAvailableFlows = async (forceAutoSelect = false): Promise<void> => {
-    const scopeAtStart = { contextUserId, identityType };
+    const scopeAtStart = { contextUserId, teamId };
     try {
-      const summaries = await fetchBlueprintSummaries(contextUserId, identityType);
+      const summaries = await fetchBlueprintSummaries(teamId);
 
       if (
         workspaceScopeRef.current.contextUserId !== scopeAtStart.contextUserId ||
-        workspaceScopeRef.current.identityType !== scopeAtStart.identityType
+        workspaceScopeRef.current.teamId !== scopeAtStart.teamId
       ) {
         return;
       }
@@ -169,7 +177,7 @@ export default function WorkflowsPanel({
     } finally {
       if (
         workspaceScopeRef.current.contextUserId === scopeAtStart.contextUserId &&
-        workspaceScopeRef.current.identityType === scopeAtStart.identityType
+        workspaceScopeRef.current.teamId === scopeAtStart.teamId
       ) {
         setIsLoading(false);
       }
@@ -184,7 +192,7 @@ export default function WorkflowsPanel({
     fetchAvailableFlows(true).finally(() => {
       setIsLoading(false);
     });
-  }, [contextUserId, identityType]);
+  }, [contextUserId, teamId]);
 
   // Trigger validation when selected flow changes
   useEffect(() => {
@@ -215,9 +223,7 @@ export default function WorkflowsPanel({
       try {
         const blueprint = await fetchResolvedBlueprint(
           selectedFlow.id,
-          contextUserId,
-          identityType,
-          isTeam ? selectedTeam!.name : undefined,
+          teamId,
         );
         if (cancelled) return;
         if (blueprint) {
@@ -269,9 +275,15 @@ export default function WorkflowsPanel({
     setPromptShortcutsModalOpen(true);
   };
 
+  const handleSchedulePromptClick = (flow: FlowObject, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setScheduleModalFlow(flow);
+    setScheduleModalOpen(true);
+  };
+
   const handleSavePromptShortcuts = async (prompts: PromptShortcutInput[]) => {
     if (!promptShortcutsFlow) return;
-    await setPromptShortcuts(promptShortcutsFlow.id, prompts, contextUserId, identityType);
+    await setPromptShortcuts(promptShortcutsFlow.id, prompts, teamId);
   };
 
   const handleDeleteConfirm = async () => {
@@ -407,6 +419,11 @@ export default function WorkflowsPanel({
                       <span className="text-sm font-medium truncate">{flow.name}</span>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {scheduledBlueprintIds.has(flow.id) && (
+                        <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-1 rounded-full">
+                          Scheduled
+                        </span>
+                      )}
                       {selectedFlow?.id === flow.id && hasDynamicNodes && onHitlToggle && (
                         <SimpleTooltip content={<p>{hitlEnabled ? "Disable" : "Enable"} Human-in-the-Loop for dynamic nodes</p>}>
                           <div
@@ -476,6 +493,15 @@ export default function WorkflowsPanel({
                             >
                               <MessageSquare className="h-3.5 w-3.5" />
                               <span>Prompt Shortcuts</span>
+                            </DropdownMenuItem>
+                          )}
+                          {showEditButton && (
+                            <DropdownMenuItem
+                              className="cursor-pointer"
+                              onClick={(e) => handleSchedulePromptClick(flow, e as unknown as React.MouseEvent)}
+                            >
+                              <Clock className="h-3.5 w-3.5" />
+                              <span>Schedule Prompt</span>
                             </DropdownMenuItem>
                           )}
                           {showDeleteButton && (
@@ -588,9 +614,22 @@ export default function WorkflowsPanel({
         isOpen={promptShortcutsModalOpen}
         onClose={() => setPromptShortcutsModalOpen(false)}
         blueprintId={promptShortcutsFlow?.id || ""}
-        userId={contextUserId}
-        identityType={identityType}
+        teamId={teamId}
         onSave={handleSavePromptShortcuts}
+      />
+
+      {/* Schedule Prompt Modal */}
+      <SchedulePromptModal
+        isOpen={scheduleModalOpen}
+        onClose={(saved) => {
+          setScheduleModalOpen(false);
+          if (saved) {
+            queryClient.invalidateQueries({ queryKey: ["scheduled-prompts"] });
+          }
+        }}
+        blueprintId={scheduleModalFlow?.id || ""}
+        blueprintName={scheduleModalFlow?.name || ""}
+        teamId={teamId}
       />
     </>
   );

@@ -106,6 +106,7 @@ def get_supported_extensions():
 
 
 @docs_bp.route("/available.docs.get", methods=["GET"])
+@rag_require_session
 @from_query({
     "cursor": fields.Str(required=False, load_default=""),
     "limit": fields.Int(required=False, load_default=50),
@@ -114,6 +115,7 @@ def get_supported_extensions():
 def get_available_docs(cursor="", limit=50, search_regex=None):
     """
     Get paginated list of available documents (DONE status only).
+    Scoped to the authenticated user's documents.
     Used for dropdown selection in the UI.
     """
     try:
@@ -121,6 +123,7 @@ def get_available_docs(cursor="", limit=50, search_regex=None):
             cursor=cursor,
             limit=limit,
             search=search_regex,
+            upload_by=g.user_id,
         )
         return jsonify(result.to_dict(data_key="documents")), 200
         
@@ -130,6 +133,7 @@ def get_available_docs(cursor="", limit=50, search_regex=None):
 
 
 @docs_bp.route("/available.tags.get", methods=["GET"])
+@rag_require_session
 @from_query({
     "cursor": fields.Str(required=False, load_default=""),
     "limit": fields.Int(required=False, load_default=50),
@@ -138,6 +142,7 @@ def get_available_docs(cursor="", limit=50, search_regex=None):
 def get_available_tags(cursor="", limit=50, search_regex=None):
     """
     Get paginated list of available tags from DONE documents.
+    Scoped to the authenticated user's documents.
     Used for tag dropdown selection in the UI.
     
     Response format matches backend: options array with label/value pairs.
@@ -147,6 +152,7 @@ def get_available_tags(cursor="", limit=50, search_regex=None):
             cursor=cursor,
             limit=limit,
             search=search_regex,
+            upload_by=g.user_id,
         )
         
         # Format response to match backend structure
@@ -167,19 +173,17 @@ def get_available_tags(cursor="", limit=50, search_regex=None):
 @from_query({
     "query": fields.Str(required=True),
     "top_k_results": fields.Int(required=False, load_default=15),
-    "scope": fields.Str(required=False, load_default="public"),
     "doc_ids": fields.List(fields.Str(), required=False, load_default=None, data_key="docIds"),
     "tags": fields.List(fields.Str(), required=False, load_default=None),
 })
-def query_match(query, top_k_results, scope, doc_ids, tags):
+def query_match(query, top_k_results, doc_ids, tags):
     """
     Search documents using semantic similarity.
     Optionally filter by document IDs or tags.
     
     Args:
         query: Search query text
-        top_k_results: Number of results to return (default: 5)
-        scope: "public" or "private" - filters by upload_by if private
+        top_k_results: Number of results to return (default: 15)
         doc_ids: Optional list of document IDs to filter by
         tags: Optional list of tags to filter by
     """
@@ -188,8 +192,7 @@ def query_match(query, top_k_results, scope, doc_ids, tags):
         results = svc.search(
             query=query,
             limit=top_k_results,
-            scope=scope,
-            user=g.user_id,
+            owner_id=g.user_id,
             doc_ids=doc_ids,
             tags=tags,
         )

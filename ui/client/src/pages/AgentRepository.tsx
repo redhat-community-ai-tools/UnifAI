@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
-import { Plus, Info } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
 import { CategorySidebar } from '../components/agentic-ai/workspace/CategorySidebar';
@@ -11,6 +11,9 @@ import { ElementType, ElementInstance } from '../types/workspace';
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
 import { useView } from "@/contexts/ViewContext";
+import { cn } from "@/lib/utils";
+
+type ResourceFilter = "all" | "built-in" | "personal";
 
 export default function UserWorkspace() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -21,6 +24,7 @@ export default function UserWorkspace() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [elementToDelete, setElementToDelete] = useState<ElementInstance | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [resourceFilter, setResourceFilter] = useState<ResourceFilter>("all");
   const { viewMode, selectedTeam } = useView();
   const isTeam = viewMode === "team";
   const {
@@ -34,11 +38,25 @@ export default function UserWorkspace() {
     fetchElementSchema,
     fetchElementActions,
     saveElement,
-    deleteElement
+    deleteElement,
+    configureBuiltin,
   } = useWorkspaceData();
+
+  const filteredInstances = useMemo(() => {
+    if (resourceFilter === "all") return elementInstances;
+    if (resourceFilter === "built-in") return elementInstances.filter(el => el.ownership === 'builtin');
+    return elementInstances.filter(el => el.ownership !== 'builtin');
+  }, [elementInstances, resourceFilter]);
+
+  const filterCounts = useMemo(() => ({
+    all: elementInstances.length,
+    "built-in": elementInstances.filter(el => el.ownership === 'builtin').length,
+    personal: elementInstances.filter(el => el.ownership !== 'builtin').length,
+  }), [elementInstances]);
 
   useEffect(() => {
     if (selectedElementType) {
+      setResourceFilter("all");
       fetchElementInstances(selectedElementType.category, selectedElementType.type);
     }
   }, [selectedElementType, fetchElementInstances, viewMode, selectedTeam?.id]);
@@ -131,43 +149,61 @@ export default function UserWorkspace() {
           <div className="col-span-12 md:col-span-9 lg:col-span-10">
             <div className="flex flex-col h-full">
               {selectedElementType && (
-                <div className="flex justify-between items-center mb-6 sticky top-0 z-10 pb-4 pt-px -mt-px bg-[hsl(var(--background-dark))] shadow-[0_4px_12px_-2px_rgba(0,0,0,0.4)]">
-                  <div>
-                    <h2 className="text-2xl font-heading font-bold">
-                      {selectedElementType.name} Instances
-                    </h2>
-                    <p className="text-gray-400 text-sm">
-                      {isTeam
-                        ? `Shared ${selectedElementType.name.toLowerCase()} configurations from your team`
-                        : `Manage your ${selectedElementType.name.toLowerCase()} configurations`}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        const guidesUrl = `/guides?section=agentic-inventory`;
-                        window.open(guidesUrl, '_blank');
-                      }}
-                      className="border-gray-700 hover:bg-background-dark"
-                      title="View guides"
-                    >
-                      <Info className="h-4 w-4" />
-                    </Button>
-
-                    <UmamiTrack
-                      event={UmamiEvents.AGENT_REPOSITORY_CREATE_NEW_BUTTON}
-                      eventData={{ elementType: selectedElementType?.name }}
-                    >
-                      <Button
-                        onClick={handleCreateNew}
-                        className="bg-primary hover:bg-opacity-80"
-                        disabled={!elementSchema}
+                <div className="mb-6 sticky top-0 z-10 pb-4 pt-px -mt-px bg-[hsl(var(--background-dark))] shadow-[0_4px_12px_-2px_rgba(0,0,0,0.4)]">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h2 className="text-2xl font-heading font-bold">
+                        {selectedElementType.name} Instances
+                      </h2>
+                      <p className="text-gray-400 text-sm">
+                        {isTeam
+                          ? `Shared ${selectedElementType.name.toLowerCase()} configurations from your team`
+                          : `Manage your ${selectedElementType.name.toLowerCase()} configurations`}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <UmamiTrack
+                        event={UmamiEvents.AGENT_REPOSITORY_CREATE_NEW_BUTTON}
+                        eventData={{ elementType: selectedElementType?.name }}
                       >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create New
-                      </Button>
-                    </UmamiTrack>
+                        <Button
+                          onClick={handleCreateNew}
+                          className="bg-primary hover:bg-opacity-80"
+                          disabled={!elementSchema}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Create New
+                        </Button>
+                      </UmamiTrack>
+                    </div>
+                  </div>
+
+                  {/* Resource filter tabs */}
+                  <div className="flex items-center gap-1 mt-4 p-1 bg-background-card rounded-lg border border-gray-800 w-fit">
+                    {([
+                      { key: "all" as const, label: "All" },
+                      { key: "built-in" as const, label: "Built-in" },
+                      { key: "personal" as const, label: "My Resources" },
+                    ]).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => setResourceFilter(key)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                          resourceFilter === key
+                            ? "bg-primary text-white shadow-sm"
+                            : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                        )}
+                      >
+                        {label}
+                        <span className={cn(
+                          "ml-1.5 text-[10px] tabular-nums",
+                          resourceFilter === key ? "text-white/70" : "text-gray-500"
+                        )}>
+                          {filterCounts[key]}
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
@@ -175,11 +211,12 @@ export default function UserWorkspace() {
               <div className="flex-1">
                 {selectedElementType ? (
                   <ElementGrid
-                    elements={elementInstances}
+                    elements={filteredInstances}
                     elementType={selectedElementType}
                     isLoading={isLoadingInstances}
                     onEditElement={handleEditElement}
                     onDeleteElement={handleDeleteElement}
+                    onConfigureBuiltin={configureBuiltin}
                     elementSchema={elementSchema}
                   />
                 ) : (

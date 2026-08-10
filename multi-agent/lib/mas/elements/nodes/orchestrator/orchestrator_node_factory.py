@@ -32,12 +32,16 @@ class OrchestratorNodeFactory(BaseFactory[OrchestratorNodeConfig, OrchestratorNo
             PluginConfigurationError: If creation fails
         """
         try:
+            element_deps = deps.pop("deps", None)
+            tracing_service = element_deps.tracing_service if element_deps else None
+
             return OrchestratorNode(
                 llm=deps.pop("llm"),
                 tools=deps.pop("tools", []),
                 system_message=cfg.system_message,
                 max_rounds=cfg.max_rounds,
                 retries=cfg.retries,
+                tracing_service=tracing_service,
             )
         except Exception as e:
             raise PluginConfigurationError(

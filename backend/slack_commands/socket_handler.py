@@ -19,10 +19,9 @@ from shared.logger import logger
 from slack_commands.models import SlackCommand, SlackResponse
 
 
-def _build_service():
+def _build_container():
     cfg = AppConfig.get_instance()
-    container = AppContainer(cfg)
-    return container.slack_commands_service
+    return AppContainer(cfg)
 
 
 def main():
@@ -39,11 +38,25 @@ def main():
         sys.exit(1)
 
     app = App(token=bot_token)
-    service = _build_service()
+    container = _build_container()
+    service = container.slack_commands_service
+    form_handler = container.form_handler
+    form_handler.register(app)
 
     @app.command("/unifai")
-    def handle_unifai(ack, body, respond):
+    def handle_unifai(ack, body, respond, client):
         ack()
+
+        raw_text = (body.get("text") or "").strip().split()[0].lower() if body.get("text") else ""
+        if raw_text == "form":
+            form_handler.open_form(
+                client=client,
+                trigger_id=body["trigger_id"],
+                user_name=body.get("user_name", ""),
+                user_id=body.get("user_id", ""),
+                channel_id=body.get("channel_id", ""),
+            )
+            return
 
         missing = SlackCommand.validate_payload(body)
         if missing:

@@ -86,7 +86,7 @@ ARG OPENSHELL_PROTO_REF="main"
 RUN pip install 'grpcio-tools>=1.68.0' && \
     PROTO_DIR=$(mktemp -d) && \
     SITE_PKG=$(python3 -c "import pathlib,site; p=next(pathlib.Path(site.getsitepackages()[0]).rglob('openshell/_proto')); print(p)") && \
-    for f in datamodel.proto openshell.proto sandbox.proto inference.proto; do \
+    for f in datamodel.proto openshell.proto sandbox.proto inference.proto options.proto; do \
       curl -fsSL "https://raw.githubusercontent.com/NVIDIA/OpenShell/${OPENSHELL_PROTO_REF}/proto/$f" \
         -o "$PROTO_DIR/$f"; \
     done && \
@@ -98,11 +98,13 @@ RUN pip install 'grpcio-tools>=1.68.0' && \
       "$PROTO_DIR"/datamodel.proto \
       "$PROTO_DIR"/openshell.proto \
       "$PROTO_DIR"/sandbox.proto \
-      "$PROTO_DIR"/inference.proto && \
+      "$PROTO_DIR"/inference.proto \
+      "$PROTO_DIR"/options.proto && \
     sed -i 's/^import datamodel_pb2/from . import datamodel_pb2/' "$SITE_PKG"/*.py && \
     sed -i 's/^import openshell_pb2/from . import openshell_pb2/' "$SITE_PKG"/*.py && \
     sed -i 's/^import sandbox_pb2/from . import sandbox_pb2/' "$SITE_PKG"/*.py && \
     sed -i 's/^import inference_pb2/from . import inference_pb2/' "$SITE_PKG"/*.py && \
+    sed -i 's/^import options_pb2/from . import options_pb2/' "$SITE_PKG"/*.py && \
     rm -rf "$PROTO_DIR" && \
     python3 -c "import openshell; print('openshell SDK OK')"
 

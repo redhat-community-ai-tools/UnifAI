@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, ReactNode, useCa
 import axios from '@/http/axiosAgentConfig';
 import { useWorkspaceIdentity } from '@/hooks/use-workspace-identity';
 import { catalogService } from '@/api/catalog';
+import { listAllResources } from '@/api/resources';
 import { ElementValidationResult, CachedValidationResult, BlueprintValidationResult, BlueprintValidationRequest, CachedBlueprintValidationResult } from '@/types/validation';
 import { validateBlueprint as validateBlueprintApi } from '@/api/blueprints';
 
@@ -74,9 +75,9 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
   const [validationRevision, setValidationRevision] = useState(0);
   const {
     userId: USER_ID,
-    displayName: WORKSPACE_DISPLAY_NAME,
-    identityType: WORKSPACE_IDENTITY_TYPE,
+    teamId: WORKSPACE_TEAM_ID,
     credentialUserId: CREDENTIAL_USER_ID,
+    isTeam: IS_TEAM_WORKSPACE,
   } = useWorkspaceIdentity();
   
   // Use ref to access latest cache without causing re-renders in callbacks
@@ -128,8 +129,14 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
   // Helper: Cache a validation result and update status
   // Automatically triggers ancestor revalidation if status changed
   const cacheValidationResult = useCallback((rid: string, result: ElementValidationResult) => {
-    // Get previous status before updating (use ref to get latest)
-    const previousStatus = validationCacheRef.current.get(rid)?.result.is_valid ? 'valid' : 'invalid';
+    // Get previous status before updating (use ref to get latest). Must stay
+    // `undefined` when there is no prior cache entry — otherwise a resource's
+    // very first validation would be misread as a "change" from invalid to
+    // valid, triggering a needless (and cascading) ancestor revalidation.
+    const previousCached = validationCacheRef.current.get(rid);
+    const previousStatus: ValidationStatus | undefined = previousCached
+      ? (previousCached.result.is_valid ? 'valid' : 'invalid')
+      : undefined;
     const newStatus: ValidationStatus = result.is_valid ? 'valid' : 'invalid';
     
     // Check if status actually changed (not first-time validation, and status differs)
@@ -210,7 +217,21 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
     try {
       const response = await axios.post<ElementValidationResult>(
         '/resources/resource.validate',
-        { resourceId: rid, userId: CREDENTIAL_USER_ID },
+        {
+          resourceId: rid,
+          userId: CREDENTIAL_USER_ID,
+          // Without `teamId`, the backend's identity decorator always
+          // resolves the *personal* user identity (it only switches to the
+          // team identity when `teamId` is present in the body) — even
+          // while the workspace is in team view. A built-in's per-identity
+          // overlay (e.g. a team's configured bearer token) is saved under
+          // the team identity key, so validating without `teamId` here
+          // looks up the wrong overlay (or none at all) and the resource
+          // incorrectly comes back "Invalid" despite being fully configured
+          // for the team. Must stay in sync with how `configureBuiltin`
+          // (which does send team identity) resolves identity.
+          ...(WORKSPACE_TEAM_ID ? { teamId: WORKSPACE_TEAM_ID } : {}),
+        },
       );
       const result = response.data;
       updateDependencyParentMap(rid, result.dependency_results);
@@ -225,7 +246,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
       cacheValidationResult(rid, errorResult);
       return errorResult;
     }
-  }, [CREDENTIAL_USER_ID, cacheValidationResult, createErrorResult, updateDependencyParentMap]);
+  }, [CREDENTIAL_USER_ID, WORKSPACE_TEAM_ID, cacheValidationResult, createErrorResult, updateDependencyParentMap]);
 
   // ==================== Resource Mapping Functions ====================
 
@@ -241,29 +262,19 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
       const nameMap = new Map<string, string>();
       const resourceMap = new Map<string, ResourceMapping>();
 
-      // Fetch resources for each category
+      // Fetch resources for each category. `listAllResources` pages
+      // through `offset`/`has_more` internally (the endpoint caps `limit`
+      // at 1000/request), so categories with more than 1000 resources
+      // aren't assumed to fit in a single page.
       await Promise.all(
         categories.map(async (category) => {
           try {
-            const listParams = new URLSearchParams({
-              userId: USER_ID,
+            const resources = await listAllResources({
+              teamId: WORKSPACE_TEAM_ID,
               category,
-              limit: "1000",
-              identityType: WORKSPACE_IDENTITY_TYPE,
             });
-            if (WORKSPACE_DISPLAY_NAME) {
-              listParams.set("displayName", WORKSPACE_DISPLAY_NAME);
-            }
-            const response = await axios.get<{
-              resources: Array<{
-                rid: string;
-                name: string;
-                category: string;
-                type: string;
-              }>;
-            }>(`/resources/resources.list?${listParams.toString()}`);
 
-            response.data.resources.forEach((resource) => {
+            resources.forEach((resource) => {
               nameMap.set(resource.rid, resource.name);
               resourceMap.set(resource.rid, {
                 rid: resource.rid,
@@ -287,7 +298,7 @@ export const AgenticAIProvider: React.FC<AgenticAIProviderProps> = ({ children }
     } finally {
       setIsLoading(false);
     }
-  }, [USER_ID, WORKSPACE_IDENTITY_TYPE, WORKSPACE_DISPLAY_NAME]);
+  }, [USER_ID, WORKSPACE_TEAM_ID]);
 
   // Get resource name from a ref (falls back to type if no name)
   const getResourceName = useCallback((ref: string | any): string => {
@@ -673,9 +684,14 @@ return String(ref);
     setBlueprintValidationStatus(blueprintId, 'loading');
     
     try {
+      // Default to the current workspace identity (team id + "team" in team
+      // view) rather than the human credential user — the server resolves
+      // team membership/overlays from this, and the human user for
+      // OAuth/credential lookups is derived separately, server-side, from
+      // the session.
       const result = await validateBlueprintApi({
         ...request,
-        userId: request.userId || CREDENTIAL_USER_ID,
+        teamId: request.teamId || WORKSPACE_TEAM_ID,
       });
       
       // Cache the result
@@ -687,14 +703,14 @@ return String(ref);
       setBlueprintValidationStatus(blueprintId, 'invalid');
       throw error;
     }
-  }, [setBlueprintValidationStatus, cacheBlueprintResult, CREDENTIAL_USER_ID]);
+  }, [setBlueprintValidationStatus, cacheBlueprintResult, WORKSPACE_TEAM_ID]);
 
   // ==================== Effects ====================
 
   // Results were keyed only by rid; team view cached INVALID (wrong userId) until we
   // cleared. Also invalidate when switching team or user so ElementGrid re-validates.
   useEffect(() => {
-    const key = `${USER_ID}|${CREDENTIAL_USER_ID}`;
+    const key = `${USER_ID}|${CREDENTIAL_USER_ID}|${WORKSPACE_TEAM_ID}`;
     if (prevWorkspaceCredentialKeyRef.current === null) {
       prevWorkspaceCredentialKeyRef.current = key;
       return;
@@ -706,15 +722,17 @@ return String(ref);
     setValidationCache(new Map());
     setValidationStatusMap(new Map());
     setDependencyParentMap(new Map());
+    setBlueprintValidationCache(new Map());
+    setBlueprintValidationStatusMap(new Map());
     setValidationRevision((r) => r + 1);
-  }, [USER_ID, CREDENTIAL_USER_ID]);
+  }, [USER_ID, CREDENTIAL_USER_ID, WORKSPACE_TEAM_ID]);
 
   // Fetch resources when user changes or component mounts
   useEffect(() => {
     if (USER_ID) {
       fetchAllResources();
     }
-  }, [USER_ID, WORKSPACE_IDENTITY_TYPE, fetchAllResources]);
+  }, [USER_ID, WORKSPACE_TEAM_ID, fetchAllResources]);
 
   // ==================== Context Value ====================
 

@@ -9,7 +9,7 @@ import { useGraphDisplay } from "@/hooks/use-graph-display";
 import { getCategoryDisplay } from "@/components/shared/helpers";
 import type { BuildingBlock } from "@/types/graph";
 import ResourceDetailsModal from "@/workspace/ResourceDetailsModal";
-import { ValidationResultModal } from "../workspace/ValidationResultModal";
+import { ValidationResultModal } from "../workspace/validation/ValidationResultModal";
 import type { ElementValidationResult } from "@/types/validation";
 import { StreamingDataContext } from "../StreamingDataContext";
 import {

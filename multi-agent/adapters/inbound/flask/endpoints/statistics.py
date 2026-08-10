@@ -52,8 +52,8 @@ def get_system_stats(time_range):
     endpoint with different time_range values to get different views
     (e.g., today vs. last 7 days vs. all time).
     
-    Requires admin access (authenticated user must be in admin_allowed_users list).
-    If admin_allowed_users is empty, system stats are disabled and access is denied.
+    Requires admin access (via the unified admin gate: Mongo-backed admin
+    list with static ``admin_allowed_users`` fallback).
     
     Query params:
         time_range (str): Time range filter - 'today', '7days', '30days', or 'all' (default: 'all')

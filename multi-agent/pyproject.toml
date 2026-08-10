@@ -29,8 +29,9 @@ claude = ["claude-agent-sdk>=0.2.0", "anthropic[vertex]>=0.40.0"]
 openshell = ["openshell>=0.0.59"]
 rag = ["jsonschema"]
 redis = ["redis"]
+tracing = ["langfuse>=3.0.0"]
 all = [
-    "mas[flask,mongo,temporal,langgraph,llms,tools,a2a,claude,rag,redis,openshell]",
+    "mas[flask,mongo,temporal,langgraph,llms,tools,a2a,claude,rag,redis,openshell,tracing]",
 ]
 test = ["pytest>=6.0"]
 
@@ -61,8 +62,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 pythonpath = ["lib", "adapters", "."]
-importmode = "importlib"
-addopts = "-v --tb=short --strict-markers --strict-config --disable-warnings --color=yes"
+addopts = "-v --tb=short --strict-markers --disable-warnings --color=yes --import-mode=importlib"
 console_output_style = "progress"
 junit_family = "xunit2"
 minversion = "6.0"
@@ -88,4 +88,5 @@ markers = [
     "smoke: Smoke tests for basic functionality",
     "regression: Regression tests for bug fixes",
     "performance: Performance and load tests",
+    "asyncio: Async tests (pytest-asyncio)",
 ]

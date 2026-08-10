@@ -24,6 +24,9 @@ export interface ElementInstance {
   updated?: string;
   nested_refs?: string[];
   contributed_by?: string;
+  ownership?: 'builtin' | 'custom';
+  visibility?: 'draft' | 'public';
+  userConfigured?: boolean;
 }
 
 export interface ElementSchema {

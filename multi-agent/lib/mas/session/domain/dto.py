@@ -9,6 +9,7 @@ class SessionListItem(BaseModel):
     last_active_at: str = ""
     blueprint_id: str
     blueprint_exists: bool = True
+    status: str = ""
 
     @classmethod
     def from_doc(cls, doc: Mapping[str, Any], blueprint_exists: bool = True, public_usage_scope: bool = False, blueprint_metadata: Dict[str, Any] = None) -> "SessionListItem":
@@ -23,5 +24,6 @@ class SessionListItem(BaseModel):
             started_at=rc.get("started_at") or "",
             last_active_at=rc.get("last_active_at") or "",
             blueprint_id=doc.get("blueprint_id", ""),
-            blueprint_exists=blueprint_exists
+            blueprint_exists=blueprint_exists,
+            status=doc.get("status", ""),
         )
