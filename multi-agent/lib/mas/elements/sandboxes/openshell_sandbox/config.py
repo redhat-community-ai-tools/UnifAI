@@ -3,7 +3,7 @@ from typing import Literal, ClassVar, Tuple
 from pydantic import Field
 
 from mas.elements.sandboxes.common.base_config import BaseSandboxConfig
-from mas.core.field_hints import SecretHint, FileUploadHint, HiddenHint, combine_hints
+from mas.core.field_hints import SecretHint, FileUploadHint, HiddenHint, CardHint, CardContext, combine_hints
 from .identifiers import Identifier
 
 
@@ -17,6 +17,8 @@ class OpenShellSandboxConfig(BaseSandboxConfig):
     gateway_url: str = Field(
         ...,
         description="OpenShell gateway endpoint (host:port or https://host:port)",
+        title="Gateway URL",
+        json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
     ca_cert: str = Field(
         ...,

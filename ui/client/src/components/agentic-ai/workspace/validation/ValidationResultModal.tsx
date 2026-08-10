@@ -114,7 +114,16 @@ const DependencyResultItem: React.FC<{
     <div className={`${depth > 0 ? 'ml-4 border-l border-gray-700 pl-4' : ''}`}>
       <div 
         className={`flex items-center gap-2 py-2 ${hasDependencies ? 'cursor-pointer hover:bg-gray-800/50 rounded-md px-2 -mx-2' : ''}`}
+        role={hasDependencies ? "button" : undefined}
+        tabIndex={hasDependencies ? 0 : undefined}
+        aria-expanded={hasDependencies ? isExpanded : undefined}
         onClick={() => hasDependencies && setIsExpanded(!isExpanded)}
+        onKeyDown={hasDependencies ? (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setIsExpanded(!isExpanded);
+          }
+        } : undefined}
       >
         {hasDependencies ? (
           isExpanded ? (

@@ -11,12 +11,16 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import axios from "@/http/axiosAgentConfig";
 import { fetchResolvedBlueprint } from "@/api/blueprints";
-import { fetchSessionChatById } from "@/api/sessions";
+import {
+  createSession,
+  deleteSession,
+  getSessionChat,
+  listUserSessions,
+  fetchSessionChatById
+} from "@/api/sessions";
 import { useStreamingData } from "@/components/agentic-ai/StreamingDataContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useView } from "@/contexts/ViewContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import { useToast } from "@/hooks/use-toast";
 import { useBlueprintValidation } from "@/hooks/use-blueprint-validation";
@@ -33,6 +37,7 @@ import {
   sortSessionsByTimestamp,
 } from "@/utils/sessionHelpers";
 import type { FlowObject } from "@/components/agentic-ai/graphs/interfaces";
+import { SessionPayload } from "@/components/agentic-ai/ExecutionTab";
 
 // Re-export so consumers don't need a separate import
 export type { SessionPayload } from "@/components/agentic-ai/ExecutionTab";
@@ -109,7 +114,7 @@ export interface UseSessionHubReturn {
 
   // ── Identity helpers (pass-through for convenience) ─────────────────────
   contextUserId: string;
-  identityType: "team" | "user";
+  teamId: string | undefined;
   isTeam: boolean;
   displayName: string;
   globalScope: "public" | "private";
@@ -181,8 +186,7 @@ export function useSessionHub({
   // Contexts
   const { nodeListRef, clearStream } = useStreamingData();
   const { user } = useAuth();
-  const { selectedTeam } = useView();
-  const { isTeam, userId: contextUserId, displayName, identityType } =
+  const { isTeam, userId: contextUserId, displayName, teamId } =
     useWorkspaceIdentity();
   const { toast } = useToast();
 
@@ -362,9 +366,7 @@ export function useSessionHub({
         try {
           const resolved = await fetchResolvedBlueprint(
             session.blueprintId,
-            contextUserId,
-            identityType,
-            isTeam ? (selectedTeam?.name ?? undefined) : undefined,
+            teamId,
           );
           if (sessionSelectRequestId.current !== requestId) return;
           if (resolved) {
@@ -441,10 +443,8 @@ export function useSessionHub({
       sessionStream,
       clearStream,
       validateSelectedBlueprint,
-      contextUserId,
-      identityType,
+      teamId,
       isTeam,
-      selectedTeam?.name,
       loadSessionMessages,
       manualStreamControl,
     ],
@@ -456,11 +456,9 @@ export function useSessionHub({
     try {
       setIsLoading(true);
       setError(null);
-      const response = await axios.get(
-        `/sessions/session.user.list?userId=${contextUserId}&identityType=${identityType}`,
-      );
+      const response = await listUserSessions({ teamId });
       const sorted = sortSessionsByTimestamp(
-        transformApiDataToSessions(response.data),
+        transformApiDataToSessions(response),
       );
       setChatSessions(sorted);
 
@@ -509,7 +507,7 @@ export function useSessionHub({
     } finally {
       setIsLoading(false);
     }
-  }, [contextUserId, identityType, runId, transformApiDataToSessions]);
+  }, [teamId, runId, transformApiDataToSessions]);
 
   // ── Delete ─────────────────────────────────────────────────────────────
   const handleDeleteChat = useCallback(
@@ -525,7 +523,7 @@ export function useSessionHub({
     if (!chatToDelete) return;
     setIsDeleting(true);
     try {
-      await axios.delete(`/sessions/session.delete?sessionId=${chatToDelete.id}`);
+      await deleteSession(chatToDelete.id);
       setChatSessions((prev) => prev.filter((s) => s.id !== chatToDelete.id));
       if (selectedSession?.id === chatToDelete.id) {
         setSelectedSession(null);
@@ -556,17 +554,10 @@ export function useSessionHub({
     setIsCreatingSession(true);
     try {
       const graphId = selectedFlowForModal.id || `graph-${Date.now()}`;
-      await axios.post("/sessions/user.session.create", {
-        blueprintId: graphId,
-        userId: contextUserId,
-        displayName,
-        identityType,
-      });
-      const response = await axios.get(
-        `/sessions/session.user.list?userId=${contextUserId}&identityType=${identityType}`,
-      );
+      await createSession({ blueprintId: graphId, teamId });
+      const freshSessions = await listUserSessions({ teamId });
       const sorted = sortSessionsByTimestamp(
-        transformApiDataToSessions(response.data),
+        transformApiDataToSessions(freshSessions),
       );
       setChatSessions(sorted);
       const newest = sorted.find((s) => s.blueprintId === graphId);
@@ -578,7 +569,7 @@ export function useSessionHub({
     } finally {
       setIsCreatingSession(false);
     }
-  }, [selectedFlowForModal, contextUserId, displayName, identityType, transformApiDataToSessions]);
+  }, [selectedFlowForModal, teamId, transformApiDataToSessions]);
 
   const handleCancelAddFlow = useCallback(() => {
     setShowAddFlowModal(false);
@@ -594,13 +585,6 @@ export function useSessionHub({
 
   // ── Execution ──────────────────────────────────────────────────────────
 
-  type SessionPayload = {
-    sessionId: string;
-    inputs: { user_prompt: string };
-    scope?: "public" | "private";
-    loggedInUser?: string;
-  };
-
   const triggerExecution = useCallback(
     async (sessionPayload: SessionPayload): Promise<string> => {
       try {
@@ -615,22 +599,12 @@ export function useSessionHub({
           sessionId: sessionPayload.sessionId,
           inputs: sessionPayload.inputs,
           scope: sessionPayload.scope || globalScope,
-          userId: (() => {
-            const raw = (sessionPayload.loggedInUser || "").trim();
-            if (isTeam && raw && raw === contextUserId) {
-              return user?.username || "default";
-            }
-            if (raw && raw !== "default") return raw;
-            return user?.username || "default";
-          })(),
         });
 
         await streamCompletePromise;
 
-        const session_response = await axios.get(
-          `/sessions/session.chat.get?sessionId=${sessionPayload.sessionId}`,
-        );
-        const { output, status, status_message } = session_response.data;
+        const sessionChat = await getSessionChat(sessionPayload.sessionId);
+        const { output, status, status_message } = sessionChat;
 
         if (status === "CANCELLED") {
           throw createSessionError(status_message || "Workflow was stopped.", "CANCELLED");
@@ -646,7 +620,7 @@ export function useSessionHub({
         throw err;
       }
     },
-    [sessionStream, globalScope, isTeam, contextUserId, user?.username],
+    [sessionStream, globalScope],
   );
 
   // ── Cancel ─────────────────────────────────────────────────────────────
@@ -679,7 +653,7 @@ export function useSessionHub({
     setCurrentSessionMessages([]);
     fetchChatSessions({ skipRunId: hasMountedRef.current });
     hasMountedRef.current = true;
-  }, [contextUserId, identityType]);
+  }, [contextUserId, teamId]);
 
   // ── Return ─────────────────────────────────────────────────────────────
   return {
@@ -729,7 +703,7 @@ export function useSessionHub({
     handleCancelAddFlow,
 
     contextUserId,
-    identityType,
+    teamId,
     isTeam,
     displayName,
     globalScope,

@@ -60,27 +60,12 @@ export interface ScheduleRunResponse {
   metadata: Record<string, unknown>;
 }
 
-/**
- * Map workspace hook fields to the "with_require_identity_authorization" decorator.
- * Team view: send teamId (userId from the hook is already the team UUID).
- * User view: omit — session cookie supplies the user identity.
- */
-function workspaceScope(
-  userId?: string,
-  identityType?: string,
-): { teamId?: string } {
-  if (identityType === 'team' && userId) {
-    return { teamId: userId };
-  }
-  return {};
-}
-
-function withWorkspaceScope<T extends Record<string, unknown>>(
+function withTeamScope<T extends Record<string, unknown>>(
   payload: T,
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
 ): T & { teamId?: string } {
-  return { ...payload, ...workspaceScope(userId, identityType) };
+  if (teamId) return { ...payload, teamId };
+  return payload;
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
@@ -89,36 +74,32 @@ function withWorkspaceScope<T extends Record<string, unknown>>(
 
 export async function createSchedule(
   input: CreateScheduleInput,
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<WorkflowScheduleResponse> {
   const { data } = await axios.post(
     '/schedules/schedule.create',
-    withWorkspaceScope({ ...input }, userId, identityType),
+    withTeamScope({ ...input }, teamId),
   );
   return data;
 }
 
 export async function updateSchedule(
   input: UpdateScheduleInput,
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<WorkflowScheduleResponse> {
   const { data } = await axios.post(
     '/schedules/schedule.update',
-    withWorkspaceScope({ ...input }, userId, identityType),
+    withTeamScope({ ...input }, teamId),
   );
   return data;
 }
 
 export async function listSchedules(
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
   blueprintId?: string,
 ): Promise<WorkflowScheduleResponse[]> {
-  const params: Record<string, string> = {
-    ...workspaceScope(userId, identityType),
-  };
+  const params: Record<string, string> = {};
+  if (teamId) params.teamId = teamId;
   if (blueprintId) params.blueprintId = blueprintId;
   const { data } = await axios.get('/schedules/schedule.list', { params });
   return data;
@@ -126,15 +107,11 @@ export async function listSchedules(
 
 export async function getSchedule(
   scheduleId: string,
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<WorkflowScheduleResponse> {
-  const { data } = await axios.get('/schedules/schedule.get', {
-    params: {
-      scheduleId,
-      ...workspaceScope(userId, identityType),
-    },
-  });
+  const params: Record<string, string> = { scheduleId };
+  if (teamId) params.teamId = teamId;
+  const { data } = await axios.get('/schedules/schedule.get', { params });
   return data;
 }
 
@@ -144,47 +121,43 @@ export async function getSchedule(
 
 export async function pauseSchedule(
   scheduleId: string,
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<WorkflowScheduleResponse> {
   const { data } = await axios.post(
     '/schedules/schedule.pause',
-    withWorkspaceScope({ scheduleId }, userId, identityType),
+    withTeamScope({ scheduleId }, teamId),
   );
   return data;
 }
 
 export async function resumeSchedule(
   scheduleId: string,
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<WorkflowScheduleResponse> {
   const { data } = await axios.post(
     '/schedules/schedule.resume',
-    withWorkspaceScope({ scheduleId }, userId, identityType),
+    withTeamScope({ scheduleId }, teamId),
   );
   return data;
 }
 
 export async function triggerSchedule(
   scheduleId: string,
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<WorkflowScheduleResponse> {
   const { data } = await axios.post(
     '/schedules/schedule.trigger',
-    withWorkspaceScope({ scheduleId }, userId, identityType),
+    withTeamScope({ scheduleId }, teamId),
   );
   return data;
 }
 
 export async function deleteSchedule(
   scheduleId: string,
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
 ): Promise<{ deleted: boolean }> {
   const { data } = await axios.delete('/schedules/schedule.delete', {
-    data: withWorkspaceScope({ scheduleId }, userId, identityType),
+    data: withTeamScope({ scheduleId }, teamId),
   });
   return data;
 }
@@ -195,14 +168,11 @@ export async function deleteSchedule(
 
 export async function getScheduleRuns(
   scheduleId: string,
-  userId?: string,
-  identityType?: string,
+  teamId?: string,
   limit?: number,
 ): Promise<ScheduleRunResponse[]> {
-  const params: Record<string, string | number> = {
-    scheduleId,
-    ...workspaceScope(userId, identityType),
-  };
+  const params: Record<string, string | number> = { scheduleId };
+  if (teamId) params.teamId = teamId;
   if (limit) params.limit = limit;
   const { data } = await axios.get('/schedules/schedule.runs', { params });
   return data;

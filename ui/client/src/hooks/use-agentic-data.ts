@@ -9,25 +9,25 @@ import { fetchResolvedBlueprints } from "@/api/blueprints";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 
 export function useAgenticData() {
-  const { userId, identityType } = useWorkspaceIdentity();
+  const { teamId } = useWorkspaceIdentity();
 
   // Use aggregated stats endpoint for optimal performance
   const agenticStats = useQuery({
-    queryKey: ["agenticStats", userId, identityType],
-    queryFn: () => fetchAgenticStats(userId, identityType),
+    queryKey: ["agenticStats", teamId],
+    queryFn: () => fetchAgenticStats(teamId),
     staleTime: 0,
   });
 
   // Individual queries for granular data when needed by components
   const workflows = useQuery({
-    queryKey: ["blueprints", userId, identityType],
-    queryFn: () => fetchResolvedBlueprints(userId, identityType),
+    queryKey: ["blueprints", teamId],
+    queryFn: () => fetchResolvedBlueprints(teamId),
     staleTime: 0,
   });
 
   const activeSessions = useQuery({
-    queryKey: ["activeSessions", userId, identityType],
-    queryFn: () => fetchActiveSessions(userId, identityType),
+    queryKey: ["activeSessions", teamId],
+    queryFn: () => fetchActiveSessions(teamId),
     staleTime: 0,
   });
   
@@ -35,8 +35,8 @@ export function useAgenticData() {
   // No separate query needed - follows SOLID principles by using aggregated endpoint
 
   const resources = useQuery({
-    queryKey: ["allResources", userId, identityType],
-    queryFn: () => fetchAllResources(userId, identityType),
+    queryKey: ["allResources", teamId],
+    queryFn: () => fetchAllResources(teamId),
     staleTime: 0,
   });
 

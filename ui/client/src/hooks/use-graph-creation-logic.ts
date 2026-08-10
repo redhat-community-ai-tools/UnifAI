@@ -16,6 +16,7 @@ import { deriveThemeColors } from "@/lib/colorUtils";
 import axios from "../http/axiosAgentConfig";
 import * as yaml from "js-yaml";
 import { saveBlueprint, updateBlueprint, PromptShortcutInput } from "@/api/blueprints";
+import { listAllResources } from "@/api/resources";
 import {
   acquireTeamEditLock,
   heartbeatTeamEditLock,
@@ -133,7 +134,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
 
   const { user } = useAuth();
   const { selectedTeam } = useView();
-  const { isTeam, userId: USER_ID, displayName: USER_DISPLAY_NAME, identityType } = useWorkspaceIdentity();
+  const { isTeam, userId: USER_ID, teamId } = useWorkspaceIdentity();
 
   // Stable refs for callbacks embedded in node data (avoids stale closures)
   const deleteNodeRef = useRef<(id: string) => void>(() => {});
@@ -583,58 +584,59 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     setNodeId(3);
   }, [stableDeleteNode, stableAttachCondition, stableRemoveCondition]);
 
-  const loadBuildingBlocks = useCallback(async () => {
-    if (!isTeam && !user?.username) {
-      setIsLoadingBlocks(false);
-      return;
-    }
-    if (!USER_ID) {
-      setIsLoadingBlocks(false);
-      return;
-    }
-    try {
-      setIsLoadingBlocks(true);
-      const response = await axios.get(
-        `/resources/resources.list?userId=${USER_ID}&identityType=${identityType}`,
-      );
-      const allBlocks = response.data.resources.map(transformResourceToBlock);
-
-      setAllBlocksData(allBlocks);
-
-      const orchestratorBlocks = allBlocks.filter(
-        (block: BuildingBlock) =>
-          block.workspaceData?.category === "nodes" &&
-          block.workspaceData?.type === "orchestrator_node",
-      );
-      setOrchestratorsData(orchestratorBlocks);
-
-      const nodeBlocks = allBlocks.filter(
-        (block: BuildingBlock) =>
-          block.workspaceData?.category === "nodes" &&
-          block.workspaceData?.type !== "orchestrator_node",
-      );
-      setBuildingBlocksData(nodeBlocks);
-
-      const conditionBlocks = allBlocks.filter(
-        (block: BuildingBlock) =>
-          block.workspaceData?.category === "conditions",
-      );
-      setConditionsData(conditionBlocks);
-    } catch (error) {
-      console.error("Error loading workspace resources:", error);
-      toast({
-        title: "❌ Error Loading Resources",
-        description: "Failed to load workspace resources from server",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoadingBlocks(false);
-    }
-  }, [toast, USER_ID, identityType, isTeam, user?.username]);
-
   useEffect(() => {
-    loadBuildingBlocks();
-  }, [loadBuildingBlocks]);
+    let stale = false;
+    const load = async () => {
+      if (!isTeam && !user?.username) {
+        setIsLoadingBlocks(false);
+        return;
+      }
+      if (!USER_ID) {
+        setIsLoadingBlocks(false);
+        return;
+      }
+      try {
+        setIsLoadingBlocks(true);
+        const resources = await listAllResources({ teamId });
+        if (stale) return;
+        const allBlocks = resources.map(transformResourceToBlock);
+
+        setAllBlocksData(allBlocks);
+        setOrchestratorsData(
+          allBlocks.filter(
+            (block: BuildingBlock) =>
+              block.workspaceData?.category === "nodes" &&
+              block.workspaceData?.type === "orchestrator_node",
+          ),
+        );
+        setBuildingBlocksData(
+          allBlocks.filter(
+            (block: BuildingBlock) =>
+              block.workspaceData?.category === "nodes" &&
+              block.workspaceData?.type !== "orchestrator_node",
+          ),
+        );
+        setConditionsData(
+          allBlocks.filter(
+            (block: BuildingBlock) =>
+              block.workspaceData?.category === "conditions",
+          ),
+        );
+      } catch (error) {
+        if (stale) return;
+        console.error("Error loading workspace resources:", error);
+        toast({
+          title: "❌ Error Loading Resources",
+          description: "Failed to load workspace resources from server",
+          variant: "destructive",
+        });
+      } finally {
+        if (!stale) setIsLoadingBlocks(false);
+      }
+    };
+    load();
+    return () => { stale = true; };
+  }, [toast, teamId, isTeam, user?.username, USER_ID]);
 
   useEffect(() => {
     if (!editBlueprintId) {
@@ -1136,7 +1138,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         let blueprintId;
         
         if (isEditMode && editBlueprintId) {
-          response = await updateBlueprint(editBlueprintId, yamlString, USER_ID, identityType);
+          response = await updateBlueprint(editBlueprintId, yamlString, teamId);
           blueprintId = editBlueprintId;
         } else {
           if (!USER_ID) {
@@ -1148,7 +1150,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
             setIsSaving(false);
             return;
           }
-          response = await saveBlueprint(yamlString, USER_ID, USER_DISPLAY_NAME, identityType);
+          response = await saveBlueprint(yamlString, teamId);
           blueprintId = response.blueprint_id;
         }
 
@@ -1191,7 +1193,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
         setIsSaving(false);
       }
     },
-    [yamlFlow, toast, onSaveComplete, USER_ID, USER_DISPLAY_NAME, identityType, isEditMode, editBlueprintId],
+    [yamlFlow, toast, onSaveComplete, USER_ID, teamId, isEditMode, editBlueprintId],
   );
 
   useEffect(() => {

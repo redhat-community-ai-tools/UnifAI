@@ -3,9 +3,9 @@ import { Link, useLocation } from "wouter";
 import { useProject } from "@/contexts/ProjectContext";
 import { 
   FaTachometerAlt, FaCogs, FaFileAlt, 
-  FaChartLine, FaUserShield, FaCog, FaSignOutAlt,
+  FaChartLine, FaCog,
   FaRobot, FaFile, FaChevronLeft, FaChevronRight,
-  FaInfoCircle, FaBook, FaComment, FaPuzzlePiece,
+  FaInfoCircle, FaComment, FaPuzzlePiece,
 } from "react-icons/fa";
 import { FaSlack, FaBars } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
@@ -364,14 +364,6 @@ export default function Sidebar() {
             isCollapsed={isCollapsed}
           />
           <NavItem 
-            icon={<FaBook className="sidebar-icon" />} 
-            label="How-To Guides" 
-            to="/guides"
-            isActive={location === '/guides'}
-            status={null}
-            isCollapsed={isCollapsed}
-          />
-          <NavItem 
             icon={<FaCogs className="sidebar-icon" />} 
             label="Configuration" 
             to="/configuration"
@@ -390,15 +382,6 @@ export default function Sidebar() {
             isCollapsed={isCollapsed}
           />
           )}
-          <NavItem 
-            icon={<FaUserShield className="sidebar-icon" />} 
-            label="User Management" 
-            to="/users"
-            isActive={location === '/users'}
-            status={null}
-            isCollapsed={isCollapsed}
-            disabled={true}
-          />
           <NavItem 
             icon={<FaCog className="sidebar-icon" />} 
             label="Settings" 

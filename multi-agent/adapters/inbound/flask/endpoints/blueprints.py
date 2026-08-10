@@ -1,10 +1,11 @@
-from flask import Blueprint, jsonify, current_app, request
+from flask import Blueprint, jsonify, current_app, request, g, Response
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import yaml
 import logging
 from werkzeug.exceptions import BadRequest
 from typing import Optional
+from mas.core.identity import Identity
 from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
     BlueprintAccessDeniedError,
@@ -14,7 +15,12 @@ from mas.blueprints.exceptions import (
     InvalidMetadataKeysError,
     PromptShortcutsValidationError,
 )
-from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user
+from inbound.flask.decorators import (
+    with_require_identity_authorization,
+    with_authenticated_user,
+    resolve_caller_scope,
+    G_IDENTITY_USERNAME,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,16 +132,17 @@ def available_blueprint_summaries(identity):
 def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, sort_desc=True):
     try:
         svc = current_app.container.blueprint_service
+        caller = resolve_caller_scope(identity)
 
         # Single blueprint by ID
         if blueprint_id:
-            resolved = svc.get_resolved_doc(blueprint_id=blueprint_id)
+            resolved = svc.get_resolved_doc(blueprint_id=blueprint_id, caller=caller)
             return jsonify(resolved.model_dump(mode="json")), 200
 
         # Paginated list
         total = svc.count(identity=identity)
         items = svc.list_resolved_docs(
-            identity=identity, skip=skip, limit=limit, sort_desc=sort_desc
+            skip=skip, limit=limit, sort_desc=sort_desc, caller=caller,
         )
         return jsonify({
             "items": [item.model_dump(mode="json") for item in items],
@@ -147,6 +154,12 @@ def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, 
     except BlueprintNotFoundError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:
+        # Referenced-resource-not-found is already handled without raising
+        # (see BlueprintResolver.resolve_tolerant) — any KeyError reaching
+        # here is unexpected (e.g. a genuine bug), so let it fall through
+        # to the generic logged 500 rather than being mislabeled as a
+        # "referenced resource not found" 404.
+        logger.exception(f"Unexpected error resolving blueprint(s) for blueprint_id={blueprint_id}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -379,18 +392,25 @@ def set_metadata(blueprint_id, metadata):
         return jsonify({"error": str(e)}), 500
 
 @blueprints_bp.route("/blueprint.validate", methods=["POST"])
-@with_authenticated_user
+@with_require_identity_authorization
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
     "user_id": fields.Str(data_key="userId", load_default=""),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_blueprint(authenticated_user, blueprint_id, user_id, timeout_seconds):
+def validate_blueprint(
+    identity: Identity,
+    blueprint_id: str,
+    user_id: str,
+    timeout_seconds: float,
+) -> tuple[Response, int]:
     """Validate all elements in a saved blueprint."""
     svc = current_app.container.blueprint_service
+    authenticated_user = getattr(g, G_IDENTITY_USERNAME, "")
     try:
         result = svc.validate_blueprint(
             blueprint_id=blueprint_id,
+            caller=resolve_caller_scope(identity),
             user_id=user_id,
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,

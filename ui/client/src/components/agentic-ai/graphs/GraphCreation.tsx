@@ -7,6 +7,7 @@ import GraphHeader from "./GraphHeader";
 import * as yaml from "js-yaml";
 import { useTheme } from "@/contexts/ThemeContext";
 import { deriveThemeColors } from "@/lib/colorUtils";
+import { usePrimaryLightColor } from "@/hooks/use-primary-light-color";
 import { useGraphCreationCanvas } from "@/hooks/use-graph-creation-canvas";
 import { NODE_WIDTH, NODE_HEADER_HEIGHT, groupBadgesByNode } from "./GraphDisplayHelpers";
 import { AgentNodeOverlay } from "./AgentNodeOverlay";
@@ -373,9 +374,9 @@ const GraphCreation: React.FC<GraphCreationProps> = ({
     return () => document.removeEventListener("dragend", reset);
   }, []);
 
+  const accentColor = usePrimaryLightColor();
   const {
     primary: edgeColor,
-    primaryLight: accentColor,
     conditionAccent,
     conditionCardBg,
     conditionCardBorder,
