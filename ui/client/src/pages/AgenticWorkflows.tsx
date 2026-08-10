@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
 import Header from "@/components/layout/Header";
 import StatusBar from "@/components/layout/StatusBar";
@@ -41,6 +41,10 @@ export default function AgenticWorkflows() {
   const [isFlowValid, setIsFlowValid] = useState<boolean>(true);
   const [isValidatingFlow, setIsValidatingFlow] = useState<boolean>(false);
   const [currentValidationResult, setCurrentValidationResult] = useState<BlueprintValidationResult | null>(null);
+  const [hitlEnabled, setHitlEnabled] = useState<boolean>(false);
+
+  useEffect(() => { setHitlEnabled(false); }, [selectedFlow?.id]);
+
   const { user } = useAuth();
   const { toast } = useToast();
   const { cacheBlueprintValidationResults } = useAgenticAI();
@@ -88,6 +92,7 @@ export default function AgenticWorkflows() {
         userId: contextUserId,
         displayName: userDisplayName,
         identityType,
+        hitlEnabled: hitlEnabled || undefined,
       };
 
       const response = await axios.post(
@@ -227,6 +232,8 @@ export default function AgenticWorkflows() {
                   setSelectedFlow={setSelectedFlow}
                   onValidationChange={handleValidationChange}
                   onFlowEdit={handleOpenGraphBuilder}
+                  hitlEnabled={hitlEnabled}
+                  onHitlToggle={setHitlEnabled}
                 />
               </motion.div>
             </div>

@@ -308,7 +308,8 @@ class AgentCapableMixin(Generic[T]):
         # Create execution handler based on mode (Strategy pattern)
         execution_handler = ExecutionHandlerFactory.create(
             mode=config.execution_mode,
-            action_executor=action_executor
+            action_executor=action_executor,
+            hitl_config=config.hitl_config,
         )
         
         iterator = AgentIterator(

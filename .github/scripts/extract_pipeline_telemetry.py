@@ -16,6 +16,12 @@ MODEL_PRICING = {
         "cache_read": 1.50,
         "cache_write": 18.75,
     },
+    "claude-4.6-opus-max-thinking": {
+        "input": 15.00,
+        "output": 75.00,
+        "cache_read": 1.50,
+        "cache_write": 18.75,
+    },
     "claude-4.6-sonnet-medium-thinking": {
         "input": 3.00,
         "output": 15.00,

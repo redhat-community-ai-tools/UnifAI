@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Any, List, ClassVar, Set, Dict
 from copy import deepcopy
 from mas.graph.state.state_view import StateView
@@ -9,14 +10,19 @@ from mas.elements.nodes.common.capabilities.llm_capable import LlmCapableMixin
 from mas.elements.nodes.common.capabilities.retriever_capable import RetrieverCapableMixin
 from mas.elements.nodes.common.capabilities.agent_capable import AgentCapableMixin
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
+from mas.elements.nodes.common.capabilities.hitl_capable import HITLCapableMixin
 from mas.elements.nodes.common.workload import Task, AgentResult, WorkspaceContext
 from mas.elements.providers.mcp_server_client.mcp_provider import McpProvider
+from mas.core.hitl.models import HITLMode
 from mas.elements.nodes.common.agent import AgentConfig
 from mas.elements.nodes.common.agent.execution import ExecutionMode
+from mas.elements.nodes.common.agent.hitl_config import HITLHandlerConfig
 from mas.elements.nodes.common.agent.constants import StrategyType
 from mas.elements.tools.common.execution.models import ExecutorConfig
 from mas.elements.tools.builtin.time import GetCurrentTimeTool
 from mas.elements.tools.builtin.retriever import RetrieverTool
+
+logger = logging.getLogger(__name__)
 
 
 class CustomAgentNode(
@@ -25,6 +31,7 @@ class CustomAgentNode(
     AgentCapableMixin,
     LlmCapableMixin,
     RetrieverCapableMixin,
+    HITLCapableMixin,
     BaseNode
 ):
     """
@@ -53,22 +60,25 @@ class CustomAgentNode(
             max_rounds: Optional[int] = 15,
             strategy_type: str = StrategyType.REACT.value,
             include_builtin_tools: bool = True,
+            hitl_mode: HITLMode = HITLMode.SKIP,
+            execution_holder=None,
             **kwargs: Any
     ):
         super().__init__(
             llm=llm,
             retriever=retriever,
             system_message=system_message,
+            hitl_mode=hitl_mode,
+            execution_holder=execution_holder,
             **kwargs
         )
         self.mcp_providers = mcp_providers or []
         self.max_rounds = max_rounds
         self.strategy_type = strategy_type
 
-        # SOLID: Separate domain tools from builtin tools
-        self._domain_tools = tools or []  # Tools from configuration
+        self._domain_tools = tools or []
         self._include_builtin_tools = include_builtin_tools
-        self.tools = []  # Will be populated in run()
+        self.tools = []
 
     def run(self, state: StateView) -> StateView:
         """Main entry point - process all incoming TaskPackets."""
@@ -168,10 +178,10 @@ class CustomAgentNode(
             # 5. Route response using agent result
             self._route_response(task, agent_result, packet)
 
-            print(f"CustomAgent {self.uid}: Processed task, added result to workspace")
+            logger.debug("CustomAgent %s: processed task, added result to workspace", self.uid)
 
         except Exception as e:
-            print(f"CustomAgent {self.uid}: Error processing task: {e}")
+            logger.error("CustomAgent %s: error processing task: %s", self.uid, e)
             error_result = AgentResult(
                 content=f"Error processing task: {str(e)}",
                 agent_id=self.uid,
@@ -251,9 +261,29 @@ class CustomAgentNode(
                 max_steps=self.max_rounds
             )
 
+            hitl_active = self._should_activate_hitl()
+            mode = ExecutionMode.HITL if hitl_active else ExecutionMode.AUTO
+
+            hitl_config = None
+            if hitl_active:
+                hitl_config = HITLHandlerConfig(
+                    gate=self._approval_gate,
+                    policy=self._approval_policy,
+                    tool_registry={t.name: t for t in self.tools},
+                    node_uid=self.uid,
+                    node_display_name=self.display_name,
+                    session_id=self.hitl_session_id,
+                )
+                logger.info(
+                    "HITL: CustomAgentNode '%s' using HITL execution mode "
+                    "(hitl_mode=%s) with %d tools",
+                    self.uid, self._hitl_mode.value, len(self.tools),
+                )
+
             config = AgentConfig(
-                execution_mode=ExecutionMode.AUTO,
-                executor_config=ExecutorConfig.create_balanced()
+                execution_mode=mode,
+                executor_config=ExecutorConfig.create_balanced(),
+                hitl_config=hitl_config,
             )
 
             result = self.run_agent(

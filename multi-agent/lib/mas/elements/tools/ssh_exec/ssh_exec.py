@@ -1,6 +1,7 @@
 import paramiko
 from typing import Any, Optional
 from pydantic import BaseModel, Field, SecretStr
+from mas.core.hitl.models import ToolAccessMode
 from mas.elements.tools.common.base_tool import BaseTool
 
 
@@ -15,6 +16,7 @@ class SshExecTool(BaseTool):
     name: str = "SshExecTool"
     description: str = "Execute a shell command on a remote VM via SSH"
     args_schema = CommandInput
+    access_mode = ToolAccessMode.WRITE
 
     def __init__(self, *, host: str, port: int, username: str, password: str):
         super().__init__()

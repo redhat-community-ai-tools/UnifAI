@@ -66,6 +66,7 @@ from outbound.http.httpx_client import HttpxClient
 from mas.core.identity.ports import IdentityProvider
 from global_utils.identity_client import IdentityClient
 from global_utils.redis import RedisKVStore, TeamMembershipCache, build_redis_client
+from global_utils.utils.crypto import FieldCipher
 from global_utils.utils.singleton import SingletonMeta
 from global_utils.utils.util import get_redis_url
 
@@ -180,9 +181,12 @@ class AppContainer(metaclass=SingletonMeta):
             coll_name=cfg.resources_coll,
         )
 
+        field_cipher = FieldCipher(cfg.credential_encryption_key) if cfg.credential_encryption_key else None
+
         resource_registry = ResourcesRegistry(
             repo=self.resource_repo,
             bp_repo=self.blueprint_repo,
+            cipher=field_cipher,
         )
 
         # ── Application services ─────────────────────────────────────
@@ -193,6 +197,7 @@ class AppContainer(metaclass=SingletonMeta):
             validation_service=self.validation_service,
             card_service=self.card_service,
             auth_service=self.auth_service,
+            encryption_key=cfg.credential_encryption_key,
         )
 
         self.blueprint_resolver = BlueprintResolver(
@@ -260,9 +265,16 @@ class AppContainer(metaclass=SingletonMeta):
 
         self.channel_factory = self._create_channel_factory(cfg)
 
+        from outbound.hitl import ChannelApprovalGateFactory
+        self.overrides_store = self._create_overrides_store()
+        self.gate_factory = ChannelApprovalGateFactory(
+            overrides_store=self.overrides_store,
+        )
+
         foreground_runner = ForegroundSessionRunner(
             lifecycle=self.session_lifecycle,
             channel_factory=self.channel_factory,
+            gate_factory=self.gate_factory,
         )
 
         background_engine = self._create_background_engine(cfg.engine_name)
@@ -325,6 +337,28 @@ class AppContainer(metaclass=SingletonMeta):
         )
 
         self._initialized = True
+
+    @staticmethod
+    def _create_overrides_store():
+        redis_url = get_redis_url()
+        if redis_url:
+            from outbound.hitl import RedisOverridesStore
+            return RedisOverridesStore(redis_url=redis_url)
+        from mas.core.hitl.ports import OverridesStore
+        from mas.core.hitl.models import ApprovalOverrides
+
+        class InMemoryOverridesStore(OverridesStore):
+            """Fallback for environments without Redis."""
+            def __init__(self) -> None:
+                self._data: dict[str, ApprovalOverrides] = {}
+            def load(self, session_id: str) -> ApprovalOverrides:
+                return self._data.get(session_id, ApprovalOverrides())
+            def save(self, session_id: str, overrides: ApprovalOverrides) -> None:
+                self._data[session_id] = overrides
+            def remove(self, session_id: str) -> None:
+                self._data.pop(session_id, None)
+
+        return InMemoryOverridesStore()
 
     @staticmethod
     def _create_channel_factory(cfg: AppConfig):
