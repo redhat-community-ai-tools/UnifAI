@@ -115,7 +115,8 @@ class McpProviderConfig(ProviderBaseConfig):
     )
     additional_headers: Dict[str, Any] = Field(
         default_factory=dict,
-        description="",
+        description="Additional HTTP headers to include in MCP server requests",
+        # No auth_method gate — headers apply to both access_token and sign_in.
         json_schema_extra=ReadOnlyHint(read_only=False).to_hints(),
     )
     tool_names: Optional[List[str]] = Field(
