@@ -116,10 +116,7 @@ class McpProviderConfig(ProviderBaseConfig):
     additional_headers: Dict[str, Any] = Field(
         default_factory=dict,
         description="",
-        json_schema_extra=combine_hints(
-            ConditionalHint(visible_when={"auth_method": "access_token"}),
-            ReadOnlyHint(read_only=False),
-        ),
+        json_schema_extra=ReadOnlyHint(read_only=False).to_hints(),
     )
     tool_names: Optional[List[str]] = Field(
         default_factory=list,
