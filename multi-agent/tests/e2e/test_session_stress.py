@@ -1,6 +1,20 @@
 """
 End-to-End Stress Test for session create + run under load.
 
+Common usage: build/run the UnifAI test image (repo tests/Dockerfile), deploy or
+exec into a pod on the cluster, then run pytest from that pod so the in-cluster
+service DNS and /api prefix work. For external routes use --stress-base-url and
+--stress-api-prefix=/api2.
+
+Default API target is the in-cluster multi-agent service (run from an internal pod):
+
+  base_url   = http://unifai-multiagent-be:8003
+  api_prefix = /api
+
+In-cluster clients talk to the service on /api directly. External OpenShift
+routes expose /api2 and nginx rewrites that to /api, so when hitting a route
+you must use --stress-api-prefix=/api2 (not the in-cluster /api default).
+
 Default path is UI-aligned submit + status poll:
 
   1. POST /sessions/user.session.submit  → HTTP 202 (Temporal starts in background)
@@ -10,7 +24,8 @@ Default path is UI-aligned submit + status poll:
 Switch to blocking/streaming execute with --stress-exec-mode=execute
 (and optional --use-streaming).
 
-Run with:
+Run with (from the multi-agent test image / pod):
+    export STRESS_LLM_API_KEY=...
     pytest tests/e2e/test_session_stress.py::TestSessionStressSubmit::test_concurrent_session_creation_and_execution \
         -v -s -o addopts= --import-mode=importlib \
         --blueprint-id=<uuid> --stress-sessions=1 --stress-concurrent=1 \
@@ -20,9 +35,41 @@ Run with:
     ... --stress-exec-mode=execute
     ... --stress-exec-mode=execute --use-streaming
 
+    # External route (nginx: /api2 → /api)
+    ... --stress-base-url=https://<external-route> --stress-api-prefix=/api2 --stress-insecure
+
+    # Localhost process (no nginx rewrite; use /api if the app serves it there)
+    ... --stress-base-url=http://localhost:8002 --stress-api-prefix=/api
+
 Ramp load (start at 1 concurrent, add 1 every 30s, up to 5):
     ... --stress-sessions=20 --stress-concurrent=5 \
         --stress-ramp-start=1 --stress-ramp-step=1 --stress-ramp-interval=30
+
+Advanced in-cluster load (defaults already point at unifai-multiagent-be:8003 + /api;
+requires pytest-timeout for --timeout):
+    pytest tests/e2e/test_session_stress.py::TestSessionStressSubmit::test_concurrent_session_creation_and_execution \
+      -v -s -o addopts= --import-mode=importlib \
+      --stress-ramp-interval=5 --stress-ramp-start=1 --stress-ramp-step=1 \
+      --timeout=2400 --stress-no-cleanup \
+      --blueprint-id=<uuid> \
+      --stress-sessions=20 --stress-concurrent=20 \
+      --input-text="$(cat <<'PROMPT_EOF'
+I want you to do these steps:
+1. check in the diablo game manual for the names of the prime evils
+2. From major news sites (BBC, CNN, Reuters, Bild, der spiegel, El País), get the 5 most important headlines per site.
+3. From those lists, produce one combined top-5 list (prefer headlines that repeat across sites).
+4. list all in progress tickets in jira assigned to user sfiresht under the Genie project with the component unifai
+5. give me a list of the last 5 emails.
+6. On staging, run only: oc get pods -n tag-ai--playground -o wide
+   Return the raw command output.
+7. After step 6 completes, on github-runner-2:
+   - Choose a NEW unique path: /tmp/test_${RANDOM}_$(date +%s).txt
+   - Write the EXACT step-6 text with one command: cat <<'EOF' > that_path ... EOF
+   - Always create a new file. Never reuse or overwrite an existing test_*.txt.
+   - Do not ls/find/grep /tmp. Do not check whether other test_*.txt exist.
+   - Do not run oc on the VM.
+   - Reply with the full path created.
+PROMPT_EOF)"
 """
 
 import os
@@ -71,6 +118,10 @@ class SessionStatus(str, Enum):
     IN_USE = "IN_USE"
 
 
+# Attempts when deleting an auto-created catalog LLM during fixture teardown.
+CATALOG_LLM_DELETE_ATTEMPTS = 2
+
+
 def _coerce_session_status(raw: object) -> Optional[SessionStatus]:
     """Convert a server status value to SessionStatus; unknown values -> None."""
     if isinstance(raw, SessionStatus):
@@ -84,11 +135,11 @@ def _coerce_session_status(raw: object) -> Optional[SessionStatus]:
 @dataclass
 class StressTestConfig:
     """Configuration for stress test parameters."""
-    # API Configuration
-    # base_url: str = "http://localhost:8002"
-    #base_url: str = "http://unifai-multiagent-be-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
-    base_url: str = "https://unifai-ui-tag-ai--playground.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
-    api_prefix: str = "/api2"
+    # API Configuration — default is in-cluster (internal pod → service DNS on /api).
+    # External routes: use /api2 (nginx rewrites /api2 → /api). Override via
+    # --stress-base-url / --stress-api-prefix.
+    base_url: str = "http://unifai-multiagent-be:8003"
+    api_prefix: str = "/api"
     # Set False only for clusters with self-signed certificates (--stress-insecure).
     verify_ssl: bool = True
     
@@ -610,9 +661,12 @@ def cleanup_stress_resources(
     print(f"{'=' * 80}")
 
     if not stress_config.cleanup_sessions:
-        print("  ⏭️  --stress-no-cleanup: leaving sessions/chats in place")
+        print(
+            f"  ⏭️  --stress-no-cleanup: leaving {len(session_ids)} "
+            "sessions/chats in place"
+        )
         for session_id in session_ids:
-            print(f"     session: {session_id}")
+            print(f"     session: {session_id[:8]}...")
         if blueprint_id:
             print(f"  ⏭️  Leaving blueprint {blueprint_id[:8]}... in place")
         print("✅ Cleanup skipped\n")
@@ -1102,6 +1156,8 @@ def stress_config(request):
         config.ramp_interval = request.config.option.stress_ramp_interval
     if hasattr(request.config.option, 'stress_base_url') and request.config.option.stress_base_url:
         config.base_url = request.config.option.stress_base_url
+    if getattr(request.config.option, 'stress_api_prefix', None):
+        config.api_prefix = request.config.option.stress_api_prefix
     if hasattr(request.config.option, 'blueprint_path'):
         config.blueprint_path = request.config.option.blueprint_path
     if getattr(request.config.option, 'blueprint_id', None):
@@ -1212,12 +1268,10 @@ def catalog_llm(stress_config, api_client):
         if stress_config.cleanup_sessions:
             print(f"🧹 Deleting auto-created catalog LLM {created_rid[:8]}...")
             deleted = False
-            for attempt in range(2):
+            for _ in range(CATALOG_LLM_DELETE_ATTEMPTS):
                 if api_client.delete_resource(created_rid):
                     deleted = True
                     break
-                if attempt == 0:
-                    time.sleep(stress_config.retry_delay)
             if deleted:
                 print("  ✅ Catalog LLM deleted")
             else:

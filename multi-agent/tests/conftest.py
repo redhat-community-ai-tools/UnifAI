@@ -637,6 +637,15 @@ def pytest_addoption(parser):
         help="Base URL for API server in stress tests (overrides StressTestConfig.base_url)"
     )
     _addoption(
+        "--stress-api-prefix",
+        action="store",
+        default=None,
+        help=(
+            "API path prefix (overrides StressTestConfig.api_prefix). "
+            "In-cluster default is /api; external nginx routes typically need /api2."
+        ),
+    )
+    _addoption(
         "--blueprint-path",
         action="store",
         default=None,
