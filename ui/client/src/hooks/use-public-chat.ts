@@ -386,6 +386,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
         }
       })();
     } else if (sessions.length > 0 && !selectedSession) {
+      didAutoInitRef.current = true;
       handleSessionSelect(sessions[0]);
     }
   }, [sessions.length, isLoading, sessionsData, blueprintId, user, selectedSession, runId, createSession, handleSessionSelect]);
