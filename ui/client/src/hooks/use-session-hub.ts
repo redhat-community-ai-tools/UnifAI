@@ -626,8 +626,8 @@ export function useSessionHub({
     setIsCreatingSession(true);
     try {
       const graphId = selectedFlowForModal.id || `graph-${Date.now()}`;
-      await createSession({ blueprintId: graphId, teamId });
-      activeRunIdRef.current = null;
+      const runId = await createSession({ blueprintId: graphId, teamId });
+      activeRunIdRef.current = runId;
       autoSelectKeyRef.current = null;
       setSelectedSession(null);
       await refreshSessions();
