@@ -620,18 +620,40 @@ export function useSessionHub({
   }, []);
 
   // ── Add flow ───────────────────────────────────────────────────────────
-  // always select newest session
   const handleAddFlow = useCallback(async () => {
     if (!selectedFlowForModal) return;
     setIsCreatingSession(true);
     try {
       const graphId = selectedFlowForModal.id || `graph-${Date.now()}`;
       const runId = await createSession({ blueprintId: graphId, teamId });
-      const freshSessions = await refreshSessions();
-      const created = freshSessions.find((s) => s.id === runId);
-      if (created) {
-        handleSessionSelectRef.current(created);
-      }
+
+      const newSession: ChatSession = {
+        id: runId,
+        blueprintId: graphId,
+        title: selectedFlowForModal.name || "New Session",
+        lastActive: "Just now",
+        timestamp: new Date(),
+        preview: "Click to load messages...",
+        messages: [],
+        blueprintExists: true,
+      };
+
+      queryClient.setQueryData(sessionsQueryKey, (old: any) => {
+        if (!old?.pages?.length) return old;
+        const firstPage = old.pages[0];
+        return {
+          ...old,
+          pages: [
+            { ...firstPage, sessions: [newSession, ...firstPage.sessions] },
+            ...old.pages.slice(1),
+          ],
+        };
+      });
+
+      handleSessionSelectRef.current(newSession);
+
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
+
       setShowAddFlowModal(false);
       setSelectedFlowForModal(null);
     } catch (err) {
@@ -644,7 +666,7 @@ export function useSessionHub({
     } finally {
       setIsCreatingSession(false);
     }
-  }, [selectedFlowForModal, teamId, refreshSessions, toast]);
+  }, [selectedFlowForModal, teamId, queryClient, sessionsQueryKey, toast]);
 
   const handleCancelAddFlow = useCallback(() => {
     setShowAddFlowModal(false);
