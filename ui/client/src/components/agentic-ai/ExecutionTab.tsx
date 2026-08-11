@@ -257,13 +257,16 @@ export default function ExecutionTab({ runId, onSessionChange }: ExecutionTabPro
               </div>
             </div>
             <div className="p-0 flex-grow min-h-0 overflow-hidden">
-              {hub.chatSessions.length === 0 ? (
-                <div className="p-4 text-center text-gray-400 text-sm">
-                  No chat sessions available
-                </div>
-              ) : (
-                <div className="h-full overflow-y-auto py-2" ref={scrollRef}>
-                  {hub.chatSessions.map((session) => (
+              {/* Keep the scroll node always mounted so usePaginationTrigger can
+                  attach its listener; swapping it in only after the first page
+                  left the effect stuck with scrollRef.current === null. */}
+              <div className="h-full overflow-y-auto py-2" ref={scrollRef}>
+                {hub.chatSessions.length === 0 ? (
+                  <div className="p-4 text-center text-gray-400 text-sm">
+                    No chat sessions available
+                  </div>
+                ) : (
+                  hub.chatSessions.map((session) => (
                     <motion.div
                       key={session.id}
                       className={`group px-4 py-3 border-l-2 cursor-pointer ${
@@ -324,9 +327,9 @@ export default function ExecutionTab({ runId, onSessionChange }: ExecutionTabPro
                         {session.preview}
                       </p>
                     </motion.div>
-                  ))}
-                </div>
-              )}
+                  ))
+                )}
+              </div>
             </div>
             {hub.isFetchingNextPage && (
               <div className="p-2 text-center flex-shrink-0">

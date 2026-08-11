@@ -88,8 +88,14 @@ export function usePaginationTrigger({
     if (!container) return;
 
     container.addEventListener("scroll", handleScroll, { passive: true });
+    // Run once on bind: covers post-load mount and content shorter than the viewport.
+    handleScroll();
+
     return () => container.removeEventListener("scroll", handleScroll);
-  }, [mode, scrollRef, handleScroll]);
+    // hasNextPage: rebind after first page loads and the scroll node mounts.
+    // isFetchingNextPage: after a page lands, re-check in case the list still
+    // doesn't fill the viewport (no scroll event would fire otherwise).
+  }, [mode, scrollRef, handleScroll, hasNextPage, isFetchingNextPage]);
 
   return {
     scrollRef,
