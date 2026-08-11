@@ -59,11 +59,16 @@ class LLMType(str, Enum):
 
 
 class SessionStatus(str, Enum):
-    """Terminal session statuses returned by session.status.get."""
+    """Session statuses returned by session.status.get (mirrors mas.session.domain.status)."""
 
+    PENDING = "PENDING"
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
+    LOCKED = "LOCKED"
+    IN_USE = "IN_USE"
 
 
 def _coerce_session_status(raw: object) -> Optional[SessionStatus]:
@@ -363,7 +368,7 @@ class SessionAPIClient:
         return self.submit_and_wait(session_id, inputs)
 
     def get_session_status(self, session_id: str) -> Optional[SessionStatus]:
-        """Get session status; unknown/non-terminal server values return None."""
+        """Get session status; unrecognized server values return None."""
         url = f"{self.base_url}/sessions/session.status.get"
         params = {"sessionId": session_id}
 
@@ -590,6 +595,45 @@ def resolve_blueprint_id(
     blueprint_id = api_client.create_blueprint(blueprint_dict)
     print(f"✅ Blueprint created: {blueprint_id}")
     return blueprint_id, True
+
+
+def cleanup_stress_resources(
+    api_client: "SessionAPIClient",
+    stress_config: StressTestConfig,
+    session_ids: List[str],
+    blueprint_id: Optional[str],
+    owns_blueprint: bool,
+) -> None:
+    """Clean up stress-test sessions and owned blueprints (honors --stress-no-cleanup)."""
+    print(f"\n{'=' * 80}")
+    print("🧹 CLEANUP PHASE")
+    print(f"{'=' * 80}")
+
+    if not stress_config.cleanup_sessions:
+        print("  ⏭️  --stress-no-cleanup: leaving sessions/chats in place")
+        for session_id in session_ids:
+            print(f"     session: {session_id}")
+        if blueprint_id:
+            print(f"  ⏭️  Leaving blueprint {blueprint_id[:8]}... in place")
+        print("✅ Cleanup skipped\n")
+        return
+
+    if session_ids:
+        print(f"Deleting {len(session_ids)} sessions...")
+        deleted_count = 0
+        for session_id in session_ids:
+            if api_client.delete_session(session_id):
+                deleted_count += 1
+        print(f"  ✅ Deleted {deleted_count}/{len(session_ids)} sessions")
+
+    if blueprint_id and owns_blueprint:
+        print(f"Deleting blueprint {blueprint_id[:8]}...")
+        if api_client.delete_blueprint(blueprint_id):
+            print("  ✅ Blueprint deleted")
+    elif blueprint_id:
+        print(f"  ⏭️  Leaving existing blueprint {blueprint_id[:8]}... in place")
+
+    print("✅ Cleanup complete\n")
 
 
 def get_stress_test_blueprint(llm_ref: str) -> Dict:
@@ -1167,8 +1211,19 @@ def catalog_llm(stress_config, api_client):
     if created_rid:
         if stress_config.cleanup_sessions:
             print(f"🧹 Deleting auto-created catalog LLM {created_rid[:8]}...")
-            if api_client.delete_resource(created_rid):
+            deleted = False
+            for attempt in range(2):
+                if api_client.delete_resource(created_rid):
+                    deleted = True
+                    break
+                if attempt == 0:
+                    time.sleep(stress_config.retry_delay)
+            if deleted:
                 print("  ✅ Catalog LLM deleted")
+            else:
+                pytest.fail(
+                    f"Failed to delete auto-created catalog LLM {created_rid}"
+                )
         else:
             print(
                 f"  ⏭️  --stress-no-cleanup: leaving catalog LLM "
@@ -1317,7 +1372,12 @@ class TestSessionStressSubmit:
                 for i, session_id in enumerate(session_ids):
                     try:
                         status = api_client.get_session_status(session_id)
-                        status_label = status.value if status else "UNKNOWN"
+                        if status is None:
+                            status_label = "UNKNOWN"
+                        elif status in stress_config.terminal_statuses:
+                            status_label = status.value
+                        else:
+                            status_label = f"{status.value} (non-terminal)"
                         print(
                             f"  • Session {i + 1} ({session_id[:8]}...): {status_label}"
                         )
@@ -1344,37 +1404,9 @@ class TestSessionStressSubmit:
             print("=" * 80 + "\n")
             
         finally:
-            # CLEANUP PHASE
-            print(f"\n{'=' * 80}")
-            print("🧹 CLEANUP PHASE")
-            print(f"{'=' * 80}")
-
-            if not stress_config.cleanup_sessions:
-                print("  ⏭️  --stress-no-cleanup: leaving sessions/chats in place")
-                for session_id in session_ids:
-                    print(f"     session: {session_id}")
-                if blueprint_id:
-                    print(f"  ⏭️  Leaving blueprint {blueprint_id[:8]}... in place")
-                print("✅ Cleanup skipped\n")
-            else:
-                # Delete sessions
-                if session_ids:
-                    print(f"Deleting {len(session_ids)} sessions...")
-                    deleted_count = 0
-                    for session_id in session_ids:
-                        if api_client.delete_session(session_id):
-                            deleted_count += 1
-                    print(f"  ✅ Deleted {deleted_count}/{len(session_ids)} sessions")
-
-                # Only delete blueprints this test created
-                if blueprint_id and owns_blueprint:
-                    print(f"Deleting blueprint {blueprint_id[:8]}...")
-                    if api_client.delete_blueprint(blueprint_id):
-                        print(f"  ✅ Blueprint deleted")
-                elif blueprint_id:
-                    print(f"  ⏭️  Leaving existing blueprint {blueprint_id[:8]}... in place")
-
-                print("✅ Cleanup complete\n")
+            cleanup_stress_resources(
+                api_client, stress_config, session_ids, blueprint_id, owns_blueprint
+            )
     
     def test_rapid_sequential_sessions(
         self,
@@ -1451,36 +1483,9 @@ class TestSessionStressSubmit:
             print("\n✅ RAPID SEQUENTIAL TEST PASSED\n")
             
         finally:
-            # CLEANUP PHASE
-            print(f"\n{'=' * 80}")
-            print("🧹 CLEANUP PHASE")
-            print(f"{'=' * 80}")
-
-            if not stress_config.cleanup_sessions:
-                print("  ⏭️  --stress-no-cleanup: leaving sessions/chats in place")
-                for session_id in session_ids:
-                    print(f"     session: {session_id}")
-                if blueprint_id:
-                    print(f"  ⏭️  Leaving blueprint {blueprint_id[:8]}... in place")
-                print("✅ Cleanup skipped\n")
-            else:
-                # Delete sessions
-                if session_ids:
-                    print(f"Deleting {len(session_ids)} sessions...")
-                    deleted_count = 0
-                    for session_id in session_ids:
-                        if api_client.delete_session(session_id):
-                            deleted_count += 1
-                    print(f"  ✅ Deleted {deleted_count}/{len(session_ids)} sessions")
-
-                if blueprint_id and owns_blueprint:
-                    print(f"Deleting blueprint {blueprint_id[:8]}...")
-                    if api_client.delete_blueprint(blueprint_id):
-                        print(f"  ✅ Blueprint deleted")
-                elif blueprint_id:
-                    print(f"  ⏭️  Leaving existing blueprint {blueprint_id[:8]}... in place")
-
-                print("✅ Cleanup complete\n")
+            cleanup_stress_resources(
+                api_client, stress_config, session_ids, blueprint_id, owns_blueprint
+            )
 
 
 # =============================================================================
@@ -1581,34 +1586,7 @@ class TestCustomBlueprintStressSubmit:
             print("\n✅ CUSTOM BLUEPRINT STRESS TEST PASSED\n")
             
         finally:
-            # CLEANUP PHASE
-            print(f"\n{'=' * 80}")
-            print("🧹 CLEANUP PHASE")
-            print(f"{'=' * 80}")
-
-            if not stress_config.cleanup_sessions:
-                print("  ⏭️  --stress-no-cleanup: leaving sessions/chats in place")
-                for session_id in session_ids:
-                    print(f"     session: {session_id}")
-                if blueprint_id:
-                    print(f"  ⏭️  Leaving blueprint {blueprint_id[:8]}... in place")
-                print("✅ Cleanup skipped\n")
-            else:
-                # Delete sessions
-                if session_ids:
-                    print(f"Deleting {len(session_ids)} sessions...")
-                    deleted_count = 0
-                    for session_id in session_ids:
-                        if api_client.delete_session(session_id):
-                            deleted_count += 1
-                    print(f"  ✅ Deleted {deleted_count}/{len(session_ids)} sessions")
-
-                if blueprint_id and owns_blueprint:
-                    print(f"Deleting blueprint {blueprint_id[:8]}...")
-                    if api_client.delete_blueprint(blueprint_id):
-                        print(f"  ✅ Blueprint deleted")
-                elif blueprint_id:
-                    print(f"  ⏭️  Leaving existing blueprint {blueprint_id[:8]}... in place")
-
-                print("✅ Cleanup complete\n")
+            cleanup_stress_resources(
+                api_client, stress_config, session_ids, blueprint_id, owns_blueprint
+            )
 

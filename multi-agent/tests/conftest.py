@@ -556,13 +556,20 @@ def element_card():
 # PYTEST CONFIGURATION
 # =============================================================================
 
+def _positive_int(value: str) -> int:
+    """Parse a CLI int that must be >= 1 (for ThreadPoolExecutor max_workers)."""
+    parsed = int(value)
+    if parsed < 1:
+        raise ValueError(f"must be >= 1, got {parsed}")
+    return parsed
+
+
 def pytest_addoption(parser):
     """Add custom command line options.
 
     Idempotent: pytest may load this conftest more than once (e.g. after a
     manual pod copy / importlib), and re-adding the same flag raises ValueError.
     """
-    from tests.e2e.test_session_stress import ExecMode
 
     def _addoption(*opts: str, **attrs: object) -> None:
         try:
@@ -582,14 +589,14 @@ def pytest_addoption(parser):
     _addoption(
         "--stress-concurrent",
         action="store",
-        type=int,
+        type=_positive_int,
         default=10,
         help="Max concurrent run workers in stress test (default: 10)"
     )
     _addoption(
         "--stress-concurrent-create",
         action="store",
-        type=int,
+        type=_positive_int,
         default=None,
         help=(
             "Max concurrent session creations in stress test "
@@ -704,8 +711,10 @@ def pytest_addoption(parser):
     _addoption(
         "--stress-exec-mode",
         action="store",
-        choices=[mode.value for mode in ExecMode],
-        default=ExecMode.SUBMIT.value,
+        # Keep in sync with ExecMode in tests/e2e/test_session_stress.py
+        # (avoid importing that module here — it pulls e2e deps into every run).
+        choices=["submit", "execute"],
+        default="submit",
         help=(
             "Session run path for e2e stress tests: "
             "'submit' (UI: submit + status poll) or "
