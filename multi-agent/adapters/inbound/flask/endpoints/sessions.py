@@ -291,8 +291,14 @@ def list_user_sessions(identity, limit: int, offset: int, filters: str | None = 
 
     try:
         svc = current_app.container.session_service
-        items = svc.list_user_sessions(identity, limit=limit, offset=offset, filters=parsed_filters)
+        # Legacy callers (e.g. the Slack /sessions command) omit limit/offset
+        # entirely and expect the full session array back, since they page
+        # client-side. webargs' load_default=50 means `limit` is never None
+        # here, so gate what reaches the service on whether the client
+        # actually asked for pagination, not on the defaulted value.
         paginated = "limit" in request.args or "offset" in request.args
+        effective_limit = limit if paginated else None
+        items = svc.list_user_sessions(identity, limit=effective_limit, offset=offset, filters=parsed_filters)
 
         if paginated:
             total = svc.count(identity, parsed_filters)
@@ -305,7 +311,8 @@ def list_user_sessions(identity, limit: int, offset: int, filters: str | None = 
                     "has_more": offset + limit < total,
                 },
             }), 200
-        return jsonify(items), 200
+        else:
+            return jsonify(items), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
