@@ -627,10 +627,11 @@ export function useSessionHub({
     try {
       const graphId = selectedFlowForModal.id || `graph-${Date.now()}`;
       const runId = await createSession({ blueprintId: graphId, teamId });
-      activeRunIdRef.current = runId;
-      autoSelectKeyRef.current = null;
-      setSelectedSession(null);
-      await refreshSessions();
+      const freshSessions = await refreshSessions();
+      const created = freshSessions.find((s) => s.id === runId);
+      if (created) {
+        handleSessionSelectRef.current(created);
+      }
       setShowAddFlowModal(false);
       setSelectedFlowForModal(null);
     } catch (err) {
