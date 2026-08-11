@@ -11,7 +11,7 @@ Switch to blocking/streaming execute with --stress-exec-mode=execute
 (and optional --use-streaming).
 
 Run with:
-    pytest tests/e2e/test_session_stress_submit.py::TestSessionStressSubmit::test_concurrent_session_creation_and_execution \
+    pytest tests/e2e/test_session_stress.py::TestSessionStressSubmit::test_concurrent_session_creation_and_execution \
         -v -s -o addopts= --import-mode=importlib \
         --blueprint-id=<uuid> --stress-sessions=1 --stress-concurrent=1 \
         --input-text="your question"
@@ -32,9 +32,9 @@ import time
 import json
 import yaml
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from enum import Enum
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Any, Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass, field
 import threading
 from collections import defaultdict
@@ -44,9 +44,36 @@ from collections import defaultdict
 # TEST CONFIGURATION
 # =============================================================================
 
+class ExecMode(str, Enum):
+    """Stress-test session run path: submit+poll or execute."""
+
+    SUBMIT = "submit"
+    EXECUTE = "execute"
+
+
 class LLMType(str, Enum):
+    """Supported catalog LLM providers for stress-test resource creation."""
+
     GOOGLE_GENAI = "google_genai"
     OPENAI = "openai"
+
+
+class SessionStatus(str, Enum):
+    """Terminal session statuses returned by session.status.get."""
+
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+def _coerce_session_status(raw: object) -> Optional[SessionStatus]:
+    """Convert a server status value to SessionStatus; unknown values -> None."""
+    if isinstance(raw, SessionStatus):
+        return raw
+    try:
+        return SessionStatus(str(raw).strip())
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -83,9 +110,8 @@ class StressTestConfig:
     llm_name: str = "stress_test_llm"
     
     # Execution Configuration
-    # "submit" = UI path (submit + status poll); "execute" = user.session.execute
-    exec_mode: str = "submit"
-    use_streaming: bool = False  # only used when exec_mode == "execute"
+    exec_mode: ExecMode = ExecMode.SUBMIT
+    use_streaming: bool = False  # only used when exec_mode is ExecMode.EXECUTE
     
     # Load Configuration
     num_sessions: int = 20  # Total sessions to create
@@ -103,8 +129,13 @@ class StressTestConfig:
     creation_timeout: float = 30.0  # Per session creation
     execution_timeout: float = 1800.0  # Max wait for one session to finish
     total_timeout: float = 3600.0  # Total test timeout
+    status_timeout: float = 30.0  # Per session.status.get request
     poll_interval: float = 5.0  # Seconds between session.status.get polls (submit mode)
-    terminal_statuses: Tuple[str, ...] = ("COMPLETED", "FAILED", "CANCELLED")
+    terminal_statuses: Tuple[SessionStatus, ...] = (
+        SessionStatus.COMPLETED,
+        SessionStatus.FAILED,
+        SessionStatus.CANCELLED,
+    )
     
     # Retry Configuration
     max_retries: int = 3
@@ -303,12 +334,19 @@ class SessionAPIClient:
             url,
             json=payload,
             stream=True,
+            timeout=self.config.execution_timeout,
         )
         response.raise_for_status()
 
         chunk_count = 0
+        deadline = time.time() + self.config.execution_timeout
         try:
             for line in response.iter_lines():
+                if time.time() > deadline:
+                    raise TimeoutError(
+                        f"Streaming session {session_id[:8]}... exceeded "
+                        f"{self.config.execution_timeout:.0f}s"
+                    )
                 if line:
                     chunk_count += 1
         finally:
@@ -318,25 +356,29 @@ class SessionAPIClient:
 
     def run_session(self, session_id: str, inputs: Dict) -> Dict:
         """Run a session using config.exec_mode (submit | execute)."""
-        if self.config.exec_mode == "execute":
+        if self.config.exec_mode is ExecMode.EXECUTE:
             if self.config.use_streaming:
                 return self.execute_session_streaming(session_id, inputs)
             return self.execute_session(session_id, inputs)
         return self.submit_and_wait(session_id, inputs)
 
-    def get_session_status(self, session_id: str) -> str:
-        """Get session status string (e.g. RUNNING, COMPLETED, FAILED)."""
+    def get_session_status(self, session_id: str) -> Optional[SessionStatus]:
+        """Get session status; unknown/non-terminal server values return None."""
         url = f"{self.base_url}/sessions/session.status.get"
         params = {"sessionId": session_id}
 
-        response = self.session.get(url, params=params, timeout=30)
+        response = self.session.get(
+            url, params=params, timeout=self.config.status_timeout
+        )
         response.raise_for_status()
 
         status = response.json()
         # jsonify(str) → JSON string; tolerate {"status": "..."} just in case
         if isinstance(status, dict):
-            return str(status.get("status") or status.get("state") or status)
-        return str(status)
+            raw = status.get("status") or status.get("state") or status
+        else:
+            raw = status
+        return _coerce_session_status(raw)
 
     def submit_and_wait(self, session_id: str, inputs: Dict) -> Dict:
         """
@@ -358,14 +400,15 @@ class SessionAPIClient:
         deadline = time.time() + self.config.execution_timeout
         started = time.time()
         polls = 0
-        last_status = "UNKNOWN"
+        last_status: Optional[SessionStatus] = None
 
         while time.time() < deadline:
             polls += 1
             last_status = self.get_session_status(session_id)
             elapsed = time.time() - started
+            status_label = last_status.value if last_status else "UNKNOWN"
             print(
-                f"    🔄 poll #{polls} {short_id}... status={last_status} "
+                f"    🔄 poll #{polls} {short_id}... status={status_label} "
                 f"elapsed={elapsed:.0f}s",
                 flush=True,
             )
@@ -376,7 +419,7 @@ class SessionAPIClient:
                     "status": last_status,
                     "polls": polls,
                 }
-                if last_status != "COMPLETED":
+                if last_status != SessionStatus.COMPLETED:
                     raise RuntimeError(
                         f"Session {short_id}... ended with status={last_status} "
                         f"after {polls} polls"
@@ -385,8 +428,9 @@ class SessionAPIClient:
 
             time.sleep(self.config.poll_interval)
 
+        status_label = last_status.value if last_status else "UNKNOWN"
         raise TimeoutError(
-            f"Session {short_id}... still {last_status} after "
+            f"Session {short_id}... still {status_label} after "
             f"{self.config.execution_timeout:.0f}s ({polls} polls)"
         )
     
@@ -822,7 +866,7 @@ class StressTestRunner:
     
     def _record_execution_future(
         self,
-        future,
+        future: Future[Any],
         index: int,
         session_id: str,
         total: int,
@@ -870,13 +914,13 @@ class StressTestRunner:
         max_concurrent = max(1, self.config.concurrent_execute)
         mode_label = (
             f"execute{'+stream' if self.config.use_streaming else ''}"
-            if self.config.exec_mode == "execute"
+            if self.config.exec_mode is ExecMode.EXECUTE
             else "submit+poll"
         )
         timing_detail = (
             f"poll every {self.config.poll_interval}s, "
             f"timeout {self.config.execution_timeout:.0f}s"
-            if self.config.exec_mode == "submit"
+            if self.config.exec_mode is ExecMode.SUBMIT
             else f"timeout {self.config.execution_timeout:.0f}s"
         )
         ramp_enabled = self.config.ramp_interval > 0
@@ -901,11 +945,11 @@ class StressTestRunner:
         future_timeout = self.config.execution_timeout + 60.0
         pending = list(enumerate(session_ids))
         next_idx = 0
-        active: Dict = {}
+        active: Dict[Future[Any], Tuple[int, str]] = {}
         last_ramp_at = time.time()
 
         with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-            def _fill_slots():
+            def _fill_slots() -> None:
                 nonlocal next_idx
                 while next_idx < total and len(active) < current_limit:
                     i, session_id = pending[next_idx]
@@ -1023,7 +1067,7 @@ def stress_config(request):
     if hasattr(request.config.option, 'input_text'):
         config.input_text = request.config.option.input_text
     if getattr(request.config.option, 'stress_exec_mode', None):
-        config.exec_mode = request.config.option.stress_exec_mode
+        config.exec_mode = ExecMode(request.config.option.stress_exec_mode)
     if hasattr(request.config.option, 'use_streaming'):
         config.use_streaming = request.config.option.use_streaming
 
@@ -1189,7 +1233,7 @@ class TestSessionStressSubmit:
         session_ids = []
         mode_label = (
             f"execute{'+stream' if stress_config.use_streaming else ''}"
-            if stress_config.exec_mode == "execute"
+            if stress_config.exec_mode is ExecMode.EXECUTE
             else "submit + status poll"
         )
         
@@ -1197,7 +1241,7 @@ class TestSessionStressSubmit:
             print(f"\n{'=' * 80}")
             print(f"🧪 STARTING E2E SESSION STRESS TEST ({mode_label})")
             print(f"{'=' * 80}")
-            print(f"Configuration:")
+            print("Configuration:")
             print(f"  • Total Sessions: {stress_config.num_sessions}")
             print(f"  • Concurrent Creates: {stress_config.concurrent_create}")
             print(f"  • Max concurrent runs: {stress_config.concurrent_execute}")
@@ -1210,7 +1254,7 @@ class TestSessionStressSubmit:
             else:
                 print("  • Ramp-up: disabled (immediate full concurrency)")
             print(f"  • Mode: {mode_label}")
-            if stress_config.exec_mode == "submit":
+            if stress_config.exec_mode is ExecMode.SUBMIT:
                 print(f"  • Poll interval: {stress_config.poll_interval}s")
             print(f"  • Per-session timeout: {stress_config.execution_timeout:.0f}s")
             print(f"  • API: {stress_config.base_url}{stress_config.api_prefix}")
@@ -1273,8 +1317,11 @@ class TestSessionStressSubmit:
                 for i, session_id in enumerate(session_ids):
                     try:
                         status = api_client.get_session_status(session_id)
-                        print(f"  • Session {i + 1} ({session_id[:8]}...): {status}")
-                        if status == "COMPLETED":
+                        status_label = status.value if status else "UNKNOWN"
+                        print(
+                            f"  • Session {i + 1} ({session_id[:8]}...): {status_label}"
+                        )
+                        if status == SessionStatus.COMPLETED:
                             completed_count += 1
                     except Exception as e:
                         print(f"  • Session {i + 1} ({session_id[:8]}...): Error getting status - {e}")

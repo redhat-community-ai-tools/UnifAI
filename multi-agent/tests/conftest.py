@@ -562,6 +562,7 @@ def pytest_addoption(parser):
     Idempotent: pytest may load this conftest more than once (e.g. after a
     manual pod copy / importlib), and re-adding the same flag raises ValueError.
     """
+    from tests.e2e.test_session_stress import ExecMode
 
     def _addoption(*opts: str, **attrs: object) -> None:
         try:
@@ -703,8 +704,8 @@ def pytest_addoption(parser):
     _addoption(
         "--stress-exec-mode",
         action="store",
-        choices=["submit", "execute"],
-        default="submit",
+        choices=[mode.value for mode in ExecMode],
+        default=ExecMode.SUBMIT.value,
         help=(
             "Session run path for e2e stress tests: "
             "'submit' (UI: submit + status poll) or "
