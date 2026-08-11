@@ -37,7 +37,7 @@ class SessionRepository(ABC):
         ...
 
     @abstractmethod
-    def list_docs(self, identity: Identity) -> List[Mapping[str, Any]]:
+    def list_docs(self, identity: Identity, filters: Optional[Dict[str, Any]] = None) -> List[Mapping[str, Any]]:
         """Return all session documents for an identity in a single query."""
         ...
 

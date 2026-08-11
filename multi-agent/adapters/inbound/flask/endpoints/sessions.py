@@ -247,6 +247,35 @@ def get_session_status(session_id):
         return jsonify({"error": str(e)}), 500
 
 
+# Filter keys accepted from the client for session.user.list. Extend this set
+# (and validate new keys) before allowing additional filterable fields.
+_ALLOWED_SESSION_FILTER_KEYS = {"blueprint_id"}
+
+
+def _parse_session_filters(raw_filters: str | None) -> dict:
+    """Parse and allowlist the ``filters`` query param.
+
+    Returns the parsed dict, or raises ``ValueError`` with a client-facing
+    message if the value is malformed or contains unsupported keys.
+    """
+    if not raw_filters:
+        return {}
+
+    try:
+        parsed = json.loads(raw_filters)
+    except (json.JSONDecodeError, TypeError):
+        raise ValueError("filters must be a valid JSON object")
+
+    if not isinstance(parsed, dict):
+        raise ValueError("filters must be a JSON object")
+
+    unknown_keys = set(parsed) - _ALLOWED_SESSION_FILTER_KEYS
+    if unknown_keys:
+        raise ValueError(f"Unsupported filter keys: {', '.join(sorted(unknown_keys))}")
+
+    return parsed
+
+
 @sessions_bp.route("/session.user.list", methods=["GET"])
 @with_require_identity_authorization
 @from_query({
@@ -254,14 +283,19 @@ def get_session_status(session_id):
     "offset": fields.Int(data_key="offset", load_default=0, validate=validate.Range(min=0)),
     "filters": fields.Str(data_key="filters", required=False, load_default=None),
 })
-def list_user_sessions(identity, limit: int, offset: int, filters: dict | None = None):
+def list_user_sessions(identity, limit: int, offset: int, filters: str | None = None):
+    try:
+        parsed_filters = _parse_session_filters(filters)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
     try:
         svc = current_app.container.session_service
-        items = svc.list_user_sessions(identity, limit=limit, offset=offset, filters=filters)
+        items = svc.list_user_sessions(identity, limit=limit, offset=offset, filters=parsed_filters)
         paginated = "limit" in request.args or "offset" in request.args
 
         if paginated:
-            total = svc.count(identity, filters)
+            total = svc.count(identity, parsed_filters)
             return jsonify({
                 "sessions": items,
                 "pagination": {
@@ -271,8 +305,7 @@ def list_user_sessions(identity, limit: int, offset: int, filters: dict | None =
                     "has_more": offset + limit < total,
                 },
             }), 200
-        else:
-            return jsonify(items), 200
+        return jsonify(items), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

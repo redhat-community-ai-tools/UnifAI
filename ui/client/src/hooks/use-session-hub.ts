@@ -386,6 +386,25 @@ export function useSessionHub({
     }, []),
   });
 
+  // Update a single session inside the paged query cache without refetching.
+  const updateSessionInCache = useCallback(
+    (sessionId: string, updater: (s: ChatSession) => ChatSession) => {
+      queryClient.setQueryData(sessionsQueryKey, (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            sessions: page.sessions.map((s: ChatSession) =>
+              s.id === sessionId ? updater(s) : s,
+            ),
+          })),
+        };
+      });
+    },
+    [queryClient, sessionsQueryKey],
+  );
+
   // ── handleSessionSelect ────────────────────────────────────────────────
   // Stable ref so auto-select and handleAddFlow can call it without a circular dep
   const handleSessionSelectRef = useRef<(session: ChatSession) => Promise<void>>(null!);
@@ -490,6 +509,7 @@ export function useSessionHub({
       teamId,
       loadSessionMessages,
       manualStreamControl,
+      updateSessionInCache,
     ],
   );
   handleSessionSelectRef.current = handleSessionSelect;
@@ -500,25 +520,6 @@ export function useSessionHub({
     const data = queryClient.getQueryData(sessionsQueryKey) as any;
     return data?.pages.flatMap((p: any) => p.sessions) ?? [];
   }, [queryClient, sessionsQueryKey]);
-
-  // Update a single session inside the paged query cache without refetching.
-  const updateSessionInCache = useCallback(
-    (sessionId: string, updater: (s: ChatSession) => ChatSession) => {
-      queryClient.setQueryData(sessionsQueryKey, (old: any) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            sessions: page.sessions.map((s: ChatSession) =>
-              s.id === sessionId ? updater(s) : s,
-            ),
-          })),
-        };
-      });
-    },
-    [queryClient, sessionsQueryKey],
-  );
 
   // ── Auto-select session on load ────────────────────────────────────────
   const activeRunIdRef = useRef(runId);
