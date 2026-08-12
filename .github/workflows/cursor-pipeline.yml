@@ -1,7 +1,7 @@
 name: Cursor Pipeline Review
 
 env:
-  ORCHESTRATOR_MODEL: composer-2.5
+  ORCHESTRATOR_MODEL: auto
   ARCH_JUDGE_MODEL: claude-4.6-opus-max-thinking
   CODE_JUDGE_MODEL: claude-4.6-sonnet-medium-thinking
 
@@ -79,13 +79,13 @@ jobs:
             echo "::error::Failed to list models. Output: $MODEL_OUTPUT"
             exit 1
           }
-          if ! echo "$MODEL_OUTPUT" | grep -qF "$ORCHESTRATOR_MODEL"; then
+          if ! echo "$MODEL_OUTPUT" | grep -qw "$ORCHESTRATOR_MODEL"; then
             echo "::error::Orchestrator model '$ORCHESTRATOR_MODEL' is not available. Available models:"
             echo "$MODEL_OUTPUT"
             exit 1
           fi
           for MODEL in "$ARCH_JUDGE_MODEL" "$CODE_JUDGE_MODEL"; do
-            if ! echo "$MODEL_OUTPUT" | grep -qF "$MODEL"; then
+            if ! echo "$MODEL_OUTPUT" | grep -qw "$MODEL"; then
               echo "::error::Judge model '$MODEL' is not available. Available models:"
               echo "$MODEL_OUTPUT"
               exit 1
