@@ -415,7 +415,6 @@ export function useSessionHub({
   const handleSessionSelect = useCallback(
     async (session: ChatSession) => {
       const requestId = ++sessionSelectRequestId.current;
-      console.log('[handleSessionSelect] called with', session.id, 'requestId=', requestId);
 
       let current = session;
       setSelectedSession(current);
@@ -527,13 +526,11 @@ export function useSessionHub({
   const autoSelectKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const key = `${contextUserId}:${teamId}:${activeRunIdRef.current ?? "first"}`;
-    console.log('[auto-select] effect fired. key=', key, 'autoSelectKey=', autoSelectKeyRef.current, 'selectedSession=', selectedSession?.id ?? 'null', 'chatSessions.length=', chatSessions.length);
     if (isLoading || !sessionsData || autoSelectKeyRef.current === key) return;
     if (chatSessions.length > 0 && !selectedSession) {
       const target = activeRunIdRef.current
         ? chatSessions.find((s) => s.id === activeRunIdRef.current)
         : chatSessions[0];
-      console.log('[auto-select] will select target=', target?.id ?? 'none');
 
       if (activeRunIdRef.current && !target && hasNextPage && !isFetchingNextPage) {
         fetchNextPage();
@@ -629,8 +626,6 @@ export function useSessionHub({
     try {
       const graphId = selectedFlowForModal.id || `graph-${Date.now()}`;
       const runId = await createSession({ blueprintId: graphId, teamId });
-      console.log('[handleAddFlow] createSession returned runId=', runId, 'type=', typeof runId);
-
       const newSession: ChatSession = {
         id: runId,
         blueprintId: graphId,
@@ -654,10 +649,8 @@ export function useSessionHub({
         };
       });
 
-      console.log('[handleAddFlow] calling handleSessionSelect with newSession.id=', newSession.id);
       handleSessionSelectRef.current(newSession);
 
-      console.log('[handleAddFlow] firing invalidateQueries (background)');
       queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
 
       setShowAddFlowModal(false);
@@ -749,7 +742,6 @@ export function useSessionHub({
   // runId no longer applies to the new workspace's session list.
   const hasMountedRef = useRef(false);
   useEffect(() => {
-    console.log('[workspace-switch] effect fired. contextUserId=', contextUserId, 'teamId=', teamId);
     sessionSelectRequestId.current += 1;
     autoSelectKeyRef.current = null;
     activeRunIdRef.current = hasMountedRef.current ? null : runId;
