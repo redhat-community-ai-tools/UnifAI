@@ -7,6 +7,9 @@ via ``**filters``. Previously nothing parsed the string, so a real filter
 value raised an unhandled ``TypeError`` (surfaced as a 500).
 """
 import json
+from unittest.mock import Mock
+
+from flask.testing import FlaskClient
 
 
 class TestListUserSessionsFilters:
@@ -126,7 +129,7 @@ class TestListUserSessionsHasMore:
     asserted here.
     """
 
-    def test_has_more_true_when_more_pages_remain(self, client, user_headers, session_service) -> None:
+    def test_has_more_true_when_more_pages_remain(self, client: FlaskClient, user_headers: dict[str, str], session_service: Mock) -> None:
         # offset(0) + limit(10) < total(25): another page exists.
         session_service.count.return_value = 25
         resp = client.get("/api/sessions/session.user.list?limit=10&offset=0", headers=user_headers)
@@ -136,7 +139,7 @@ class TestListUserSessionsHasMore:
         assert pagination["total"] == 25
         assert pagination["has_more"] is True
 
-    def test_has_more_false_on_last_page(self, client, user_headers, session_service) -> None:
+    def test_has_more_false_on_last_page(self, client: FlaskClient, user_headers: dict[str, str], session_service: Mock) -> None:
         # offset(20) + limit(10) >= total(25): this is the final page.
         session_service.count.return_value = 25
         resp = client.get("/api/sessions/session.user.list?limit=10&offset=20", headers=user_headers)
@@ -146,7 +149,7 @@ class TestListUserSessionsHasMore:
         assert pagination["total"] == 25
         assert pagination["has_more"] is False
 
-    def test_has_more_false_when_offset_plus_limit_exactly_equals_total(self, client, user_headers, session_service) -> None:
+    def test_has_more_false_when_offset_plus_limit_exactly_equals_total(self, client: FlaskClient, user_headers: dict[str, str], session_service: Mock) -> None:
         # Exact boundary: offset(10) + limit(10) == total(20), nothing remains.
         session_service.count.return_value = 20
         resp = client.get("/api/sessions/session.user.list?limit=10&offset=10", headers=user_headers)
