@@ -25,29 +25,10 @@ interface UsePaginationTriggerReturn {
  * 1. Pass your own scrollRef
  * 2. Use the returned scrollRef (hook creates it for you)
  *
- * @example Scroll mode (auto-managed ref):
- * ```tsx
- * const { scrollRef, isFetchingNextPage } = usePaginationTrigger({
- *   mode: "scroll",
- *   hasNextPage: query.hasNextPage,
- *   isFetchingNextPage: query.isFetchingNextPage,
- *   fetchNextPage: query.fetchNextPage,
- * });
- *
- * return <div ref={scrollRef}>...</div>;
- * ```
- *
- * @example Manual mode (button):
- * ```tsx
- * const { next, canFetch } = usePaginationTrigger({
- *   mode: "manual",
- *   hasNextPage: query.hasNextPage,
- *   isFetchingNextPage: query.isFetchingNextPage,
- *   fetchNextPage: query.fetchNextPage,
- * });
- *
- * return <Button onClick={next} disabled={!canFetch}>Load More</Button>;
- * ```
+ * Important: the scroll listener rebinds when `hasNextPage` changes. Callers
+ * like ExecutionTab only mount the scroll node after the first page arrives;
+ * without that dependency the effect runs once with `current === null` and
+ * never attaches a listener, leaving the list stuck at the first page.
  */
 export function usePaginationTrigger({
   mode,
@@ -55,7 +36,7 @@ export function usePaginationTrigger({
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
-  threshold = 200, //early trigger when 200px from bottom for more seamless experience
+  threshold = 200, // early trigger when 200px from bottom for more seamless experience
 }: UsePaginationTriggerOptions): UsePaginationTriggerReturn {
   const canFetch = hasNextPage && !isFetchingNextPage;
   const canFetchRef = useRef(canFetch);
@@ -76,6 +57,8 @@ export function usePaginationTrigger({
     if (!scrollRef?.current || !canFetchRef.current) return;
 
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    // No overflow (scrollHeight ≈ clientHeight) yields ~0, which is < threshold
+    // and correctly triggers the next page until the list fills the viewport.
     if (scrollHeight - scrollTop - clientHeight < threshold) {
       fetchNextPage();
     }
