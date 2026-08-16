@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -108,6 +108,11 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     []
   );
 
+const sessionsQueryKey = useMemo(
+  () => ['publicChatSessions', user?.username, blueprintId] as const,
+  [user?.username, blueprintId],
+);
+
   // Paginated session fetching
   const {
     data: sessionsData,
@@ -118,7 +123,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     isError,
     error: queryError,
   } = useInfiniteQuery({
-    queryKey: ['publicChatSessions', user?.username, blueprintId],
+    queryKey: sessionsQueryKey,
     queryFn: async ({ pageParam = 0 }) => {
       const params = new URLSearchParams({
         userId: user!.username,

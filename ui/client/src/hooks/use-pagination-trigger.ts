@@ -19,7 +19,7 @@ interface UsePaginationTriggerReturn {
 }
 
 /**
- * Hook for managing pagination triggers (scroll, manual button, intersection observer, etc.)
+ * Hook for managing pagination triggers (scroll, manual button, etc.)
  *
  * For scroll mode, you can either:
  * 1. Pass your own scrollRef

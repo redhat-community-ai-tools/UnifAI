@@ -270,7 +270,7 @@ export function useSessionHub({
     },
   });
 
-  const chatSessions = sessionsData?.pages.flatMap((p) => p.sessions) ?? [];
+  const chatSessions = useMemo(() => sessionsData?.pages.flatMap((p) => p.sessions) ?? [], [sessionsData]);
   const sessionsError = isSessionsError
     ? (sessionsQueryError instanceof Error
         ? sessionsQueryError.message

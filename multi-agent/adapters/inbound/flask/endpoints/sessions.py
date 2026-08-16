@@ -263,8 +263,8 @@ def _parse_session_filters(raw_filters: str | None) -> dict:
 
     try:
         parsed = json.loads(raw_filters)
-    except (json.JSONDecodeError, TypeError):
-        raise ValueError("filters must be a valid JSON object")
+    except (json.JSONDecodeError, TypeError) as e:
+        raise ValueError("filters must be a valid JSON object") from e
 
     if not isinstance(parsed, dict):
         raise ValueError("filters must be a JSON object")
@@ -272,6 +272,14 @@ def _parse_session_filters(raw_filters: str | None) -> dict:
     unknown_keys = set(parsed) - _ALLOWED_SESSION_FILTER_KEYS
     if unknown_keys:
         raise ValueError(f"Unsupported filter keys: {', '.join(sorted(unknown_keys))}")
+
+    # Allowlist values too: only plain strings are permitted. This prevents a
+    # client from smuggling MongoDB query operators (e.g. {"$ne": null},
+    # {"$regex": "..."}) into the $match document, which would let the caller
+    # control matching semantics or force expensive scans within their scope.
+    for key, value in parsed.items():
+        if not isinstance(value, str):
+            raise ValueError(f"Filter '{key}' must be a string value")
 
     return parsed
 

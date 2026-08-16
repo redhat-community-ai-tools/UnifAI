@@ -54,6 +54,18 @@ class TestListUserSessionsFilters:
         assert resp.status_code == 400
         session_service.list_user_sessions.assert_not_called()
 
+    def test_operator_filter_value_returns_400(self, client, user_headers, session_service) -> None:
+        # An allowlisted key with a non-string value would smuggle a MongoDB
+        # query operator into the $match document; values must be rejected too.
+        resp = client.get(
+            "/api/sessions/session.user.list?filters="
+            + json.dumps({"blueprint_id": {"$ne": None}}),
+            headers=user_headers,
+        )
+
+        assert resp.status_code == 400
+        session_service.list_user_sessions.assert_not_called()
+
     def test_parsed_filters_are_also_passed_to_count_when_paginated(self, client, user_headers, session_service) -> None:
         resp = client.get(
             "/api/sessions/session.user.list?limit=10&offset=0&filters="

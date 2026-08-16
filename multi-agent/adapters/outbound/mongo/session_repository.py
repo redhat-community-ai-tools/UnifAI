@@ -164,7 +164,7 @@ class MongoSessionRepository(SessionRepository):
             {"$limit": limit},
             {"$project": {"_id": 0, "_sort_date": 0}},
         ]
-        return list(self._col.aggregate(pipeline))
+        return list(self._col.aggregate(pipeline, allowDiskUse=True))
 
     def delete(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""
