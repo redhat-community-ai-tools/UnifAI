@@ -14,6 +14,7 @@ from mas.graph.state.graph_state import GraphState
 from mas.session.domain.status import SessionStatus
 from mas.blueprints.service import BlueprintService
 from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
+from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity
@@ -148,7 +149,7 @@ class UserSessionManager:
         self,
         identity: Identity,
         skip: int = 0,
-        limit: int = 50,
+        limit: int = DEFAULT_SESSION_PAGE_SIZE,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[Mapping[str, Any]]:
         """Raw documents for bulk listing (paginated), with newest sessions first."""

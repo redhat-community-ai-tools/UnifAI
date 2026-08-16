@@ -294,7 +294,7 @@ export default function PublicChat() {
                 </UmamiTrack>
               </div>
             </CardHeader>
-            <CardContent className="p-0 flex-grow overflow-y-auto" ref={scrollRef as any}>
+            <CardContent className="p-0 flex-grow overflow-y-auto" ref={scrollRef}>
               {isLoadingSessions ? (
                 <div className="p-4 text-center">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />

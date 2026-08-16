@@ -7,6 +7,7 @@ import logging
 from mas.session.repository.repository import SessionRepository
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.models import SessionChat, TimeSeriesPoint, SystemAnalyticsData
+from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
 from mas.session.domain.status import SessionStatus, NON_RUNNABLE_STATUSES
 from mas.core.identity import Identity, IdentityFieldKey
@@ -151,7 +152,7 @@ class MongoSessionRepository(SessionRepository):
         self,
         identity: Identity,
         skip: int = 0,
-        limit: int = 50,
+        limit: int = DEFAULT_SESSION_PAGE_SIZE,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[Mapping[str, Any]]:
         """Return paginated session documents sorted by most recent activity, with newest sessions first."""

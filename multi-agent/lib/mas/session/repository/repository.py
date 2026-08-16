@@ -3,6 +3,7 @@ from typing import List, Mapping, Any, Dict, Optional
 from datetime import datetime
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.models import SessionChat, TimeSeriesPoint, SystemAnalyticsData
+from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 
@@ -46,7 +47,7 @@ class SessionRepository(ABC):
         self,
         identity: Identity,
         skip: int = 0,
-        limit: int = 50,
+        limit: int = DEFAULT_SESSION_PAGE_SIZE,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[Mapping[str, Any]]:
         """Return paginated session documents sorted by most recent activity, with newest sessions first."""

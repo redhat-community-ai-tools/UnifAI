@@ -9,6 +9,7 @@ from pydantic.json import pydantic_encoder
 from mas.core.channels import with_heartbeats
 from mas.core.hitl.models import ApprovalOverrides, ApprovalRuleSet
 from mas.session.domain.exceptions import BlueprintNotFoundError
+from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.session.domain.models import SessionMeta
 from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user, require_session_identity
 
@@ -287,7 +288,7 @@ def _parse_session_filters(raw_filters: str | None) -> dict:
 @sessions_bp.route("/session.user.list", methods=["GET"])
 @with_require_identity_authorization
 @from_query({
-    "limit": fields.Int(data_key="limit", load_default=50, validate=validate.Range(min=1, max=100)),
+    "limit": fields.Int(data_key="limit", load_default=DEFAULT_SESSION_PAGE_SIZE, validate=validate.Range(min=1, max=100)),
     "offset": fields.Int(data_key="offset", load_default=0, validate=validate.Range(min=0)),
     "filters": fields.Str(data_key="filters", required=False, load_default=None),
 })
