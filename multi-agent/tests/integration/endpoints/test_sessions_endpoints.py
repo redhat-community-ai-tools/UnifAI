@@ -113,3 +113,43 @@ class TestListUserSessionsLegacyContract:
         _, kwargs = session_service.list_user_sessions.call_args
         assert kwargs["limit"] == 50
         assert kwargs["offset"] == 20
+
+
+class TestListUserSessionsHasMore:
+    """Regression coverage for the ``has_more`` pagination flag.
+
+    The frontend drives infinite scrolling from this single field:
+    ``getNextPageParam`` in ``use-session-hub.ts`` and ``use-public-chat.ts``
+    stops paging when ``has_more`` is false. A regression in
+    ``offset + limit < total`` therefore either truncates the session list
+    (stops early) or loops forever (never stops), so both boundaries are
+    asserted here.
+    """
+
+    def test_has_more_true_when_more_pages_remain(self, client, user_headers, session_service) -> None:
+        # offset(0) + limit(10) < total(25): another page exists.
+        session_service.count.return_value = 25
+        resp = client.get("/api/sessions/session.user.list?limit=10&offset=0", headers=user_headers)
+
+        assert resp.status_code == 200
+        pagination = resp.get_json()["pagination"]
+        assert pagination["total"] == 25
+        assert pagination["has_more"] is True
+
+    def test_has_more_false_on_last_page(self, client, user_headers, session_service) -> None:
+        # offset(20) + limit(10) >= total(25): this is the final page.
+        session_service.count.return_value = 25
+        resp = client.get("/api/sessions/session.user.list?limit=10&offset=20", headers=user_headers)
+
+        assert resp.status_code == 200
+        pagination = resp.get_json()["pagination"]
+        assert pagination["total"] == 25
+        assert pagination["has_more"] is False
+
+    def test_has_more_false_when_offset_plus_limit_exactly_equals_total(self, client, user_headers, session_service) -> None:
+        # Exact boundary: offset(10) + limit(10) == total(20), nothing remains.
+        session_service.count.return_value = 20
+        resp = client.get("/api/sessions/session.user.list?limit=10&offset=10", headers=user_headers)
+
+        assert resp.status_code == 200
+        assert resp.get_json()["pagination"]["has_more"] is False
