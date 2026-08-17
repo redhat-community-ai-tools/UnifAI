@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   harness-eval:
     runs-on: ubuntu-latest
@@ -14,7 +18,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5906a326750d5838078e36cf38b85af677262 # v4
       with:
         persist-credentials: false
 
