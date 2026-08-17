@@ -1,0 +1,25 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  harness-eval:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Install harness-eval
+      run: pip install -q "harness-eval==7.9.2"
+
+    - name: Run harness-eval lint
+      run: harness-eval harness-lint . --preset recommended --fail-on-error --baseline .harness-eval-baseline.json
