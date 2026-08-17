@@ -210,7 +210,7 @@ const sessionsQueryKey = useMemo(
       setShowDeleteModal(false);
       setChatToDelete(null);
 
-      queryClient.invalidateQueries({ queryKey: ['publicChatSessions', user?.username, blueprintId] });
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
 
       toast({
         title: 'Success',
@@ -226,7 +226,7 @@ const sessionsQueryKey = useMemo(
     } finally {
       setIsDeleting(false);
     }
-  }, [chatToDelete, selectedSession, user, blueprintId, queryClient, toast]);
+  }, [chatToDelete, selectedSession, queryClient, sessionsQueryKey, toast]);
 
   const cancelDeleteChat = useCallback(() => {
     setShowDeleteModal(false);
@@ -274,11 +274,11 @@ const sessionsQueryKey = useMemo(
 
     // Invalidate to refresh with real data from server
     queryClient.invalidateQueries({
-      queryKey: ['publicChatSessions', user.username, blueprintId],
+      queryKey: sessionsQueryKey,
     });
 
     return tempSession;
-  }, [blueprintId, user, queryClient]);
+  }, [blueprintId, user, queryClient, sessionsQueryKey]);
 
   // Handle new chat creation (manual trigger with UI feedback)
   const handleNewChat = useCallback(async () => {
