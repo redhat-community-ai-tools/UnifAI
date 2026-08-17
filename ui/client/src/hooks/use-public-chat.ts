@@ -55,6 +55,8 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
   const [isLiveRequest, setIsLiveRequest] = useState(false);
 
   const streamCompleteResolverRef = useRef<(() => void) | null>(null);
+  const currentScopeRef = useRef('');
+  currentScopeRef.current = `${blueprintId ?? ''}::${user?.username ?? ''}`;
 
   const { loadSessionMessages } = useSessionManagement();
 
@@ -237,6 +239,8 @@ const sessionsQueryKey = useMemo(
       throw new Error('Blueprint ID and user are required');
     }
 
+    const scope = currentScopeRef.current; // scope this session is being created for
+
     const creationData: CreateSessionParams = {
       blueprintId: blueprintId,
       metadata: { source: 'public_link' },
@@ -246,6 +250,10 @@ const sessionsQueryKey = useMemo(
 
     if (!newSessionId || typeof newSessionId !== 'string') {
       throw new Error('Invalid session ID received from server');
+    }
+
+    if (scope !== currentScopeRef.current) {
+      return null;
     }
 
     const tempSession: ChatSession = {
