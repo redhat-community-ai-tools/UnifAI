@@ -1,7 +1,7 @@
 name: Cursor Pipeline Review
 
 env:
-  ORCHESTRATOR_MODEL: composer-2.5-fast
+  ORCHESTRATOR_MODEL: composer-2.5
   ARCH_JUDGE_MODEL: claude-4.6-opus-max-thinking
   CODE_JUDGE_MODEL: claude-4.6-sonnet-medium-thinking
 
