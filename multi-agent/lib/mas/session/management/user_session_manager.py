@@ -14,6 +14,7 @@ from mas.graph.state.graph_state import GraphState
 from mas.session.domain.status import SessionStatus
 from mas.blueprints.service import BlueprintService
 from mas.session.domain.models import SessionChat, SessionMeta, TimeSeriesPoint, SystemAnalyticsData
+from mas.session.domain.dto import SessionListFilter
 from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.core.caller_scope import CallerScope
@@ -141,7 +142,7 @@ class UserSessionManager:
         """All run_ids belonging to this user."""
         return self._repo.list_runs(identity)
 
-    def list_docs(self, identity: Identity, filters: Optional[Dict[str, Any]] = None) -> List[Mapping[str, Any]]:
+    def list_docs(self, identity: Identity, filters: Optional[SessionListFilter] = None) -> List[Mapping[str, Any]]:
         """Raw documents for bulk listing (all sessions, no pagination)."""
         return self._repo.list_docs(identity, filters=filters)
 
@@ -150,7 +151,7 @@ class UserSessionManager:
         identity: Identity,
         skip: int = 0,
         limit: int = DEFAULT_SESSION_PAGE_SIZE,
-        filters: Optional[Dict[str, Any]] = None,
+        filters: Optional[SessionListFilter] = None,
     ) -> List[Mapping[str, Any]]:
         """Raw documents for bulk listing (paginated), with newest sessions first."""
         return self._repo.list_docs_paginated(identity, skip=skip, limit=limit, filters=filters)
@@ -173,9 +174,9 @@ class UserSessionManager:
 
     # ---------- statistics ----------
 
-    def count(self, identity: Identity, filter: Dict[str, Any] = None) -> int:
+    def count(self, identity: Identity, filter: Optional[SessionListFilter] = None) -> int:
         """Count sessions matching filter criteria for a user."""
-        return self._repo.count(identity, filter or {})
+        return self._repo.count(identity, filter)
 
     def group_count(
         self,

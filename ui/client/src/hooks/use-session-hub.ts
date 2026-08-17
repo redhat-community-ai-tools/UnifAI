@@ -12,6 +12,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import type { FetchNextPageOptions } from "@tanstack/react-query";
 import { fetchResolvedBlueprint } from "@/api/blueprints";
 import {
   createSession,
@@ -75,7 +76,7 @@ export interface UseSessionHubReturn {
   isLoadingSessionMessages: boolean;
 
   // ── Pagination ─────────────────────────────────────────────────────────
-  fetchNextPage: (options?: { skipRunId?: boolean }) => void;
+  fetchNextPage: (options?: FetchNextPageOptions) => Promise<unknown>;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
 
@@ -245,6 +246,7 @@ export function useSessionHub({
     isFetchingNextPage,
     isLoading,
     isError: isSessionsError,
+    isFetchNextPageError,
     error: sessionsQueryError,
   } = useInfiniteQuery({
     queryKey: sessionsQueryKey,
@@ -532,7 +534,13 @@ export function useSessionHub({
         ? chatSessions.find((s) => s.id === activeRunIdRef.current)
         : chatSessions[0];
 
-      if (activeRunIdRef.current && !target && hasNextPage && !isFetchingNextPage) {
+      if (
+        activeRunIdRef.current &&
+        !target &&
+        hasNextPage &&
+        !isFetchingNextPage &&
+        !isFetchNextPageError
+      ) {
         fetchNextPage();
         return;
       }
@@ -578,7 +586,8 @@ export function useSessionHub({
       handleSessionSelectRef.current(target);
     }
   }, [isLoading, sessionsData, chatSessions, selectedSession, runId,
-      contextUserId, teamId, hasNextPage, isFetchingNextPage, fetchNextPage]);
+      contextUserId, teamId, hasNextPage, isFetchingNextPage, isFetchNextPageError,
+      fetchNextPage]);
 
   // ── Delete ─────────────────────────────────────────────────────────────
   const handleDeleteChat = useCallback(

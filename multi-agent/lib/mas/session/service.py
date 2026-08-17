@@ -14,7 +14,7 @@ from mas.core.execution_context import ExecutionContext
 from mas.session.domain.status import SessionStatus
 from mas.session.domain.workflow_session import WorkflowSession
 from mas.session.domain.session_record import SessionRecord
-from mas.session.domain.dto import SessionListItem
+from mas.session.domain.dto import SessionListItem, SessionListFilter
 from mas.session.domain.models import (
     SessionChat, SessionMeta, ScheduleRunSummary,
     TimeSeriesPoint, SystemAnalyticsData,
@@ -362,10 +362,13 @@ class SessionService:
             for d in docs
         ]
 
-    def list_user_sessions(self, identity: Identity, limit: int | None = None, offset: int = 0, filters: Optional[Dict[str, Any]] = None) -> list:
+    def list_user_sessions(self, identity: Identity, limit: int | None = None, offset: int = 0, filters: Optional[SessionListFilter] = None) -> List[SessionListItem]:
         """
         List sessions created by a user (metadata only, no messages).
         When limit is provided, returns a paginated slice. Otherwise returns all sessions.
+
+        Returns typed ``SessionListItem`` models; serialization to JSON is the
+        responsibility of the caller at the transport boundary.
 
         For terminal sessions that have been traced but whose cost hasn't
         been persisted yet, fetches the cost from the tracing backend and
@@ -391,7 +394,7 @@ class SessionService:
                     public_usage_scope = bp_metadata.get("usageScope") == "public"
 
             item = SessionListItem.from_doc(doc, blueprint_exists=blueprint_exists, public_usage_scope=public_usage_scope, blueprint_metadata=bp_metadata)
-            items.append(item.model_dump())
+            items.append(item)
 
         return items
 
@@ -448,7 +451,7 @@ class SessionService:
         """
         return self._manager.group_count(identity, group_by, filter)
 
-    def count(self, identity: Identity, filter: Dict[str, Any] = None) -> int:
+    def count(self, identity: Identity, filter: Optional[SessionListFilter] = None) -> int:
         """Count sessions matching filter criteria for a user."""
         return self._manager.count(identity, filter)
 

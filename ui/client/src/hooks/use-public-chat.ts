@@ -369,10 +369,16 @@ const sessionsQueryKey = useMemo(
 
   const didAutoInitRef = useRef(false);
 
-  // Reset auto-init flag when blueprint or user changes
+  // Reset auto-init flag and chat state when blueprint or user changes.
+  const { cancelStream } = sessionStream;
   useEffect(() => {
     didAutoInitRef.current = false;
-  }, [blueprintId, user?.username]);
+    cancelStream();
+    setIsLiveRequest(false);
+    setSelectedSession(null);
+    setChatHistory([]);
+    setRunId(null);
+  }, [blueprintId, user?.username, cancelStream]);
 
   // Auto-create or auto-select session when data first loads
   useEffect(() => {

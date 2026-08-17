@@ -3,6 +3,7 @@ from typing import List, Mapping, Any, Dict, Optional
 from datetime import datetime
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.models import SessionChat, TimeSeriesPoint, SystemAnalyticsData
+from mas.session.domain.dto import SessionListFilter
 from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
@@ -38,7 +39,7 @@ class SessionRepository(ABC):
         ...
 
     @abstractmethod
-    def list_docs(self, identity: Identity, filters: Optional[Dict[str, Any]] = None) -> List[Mapping[str, Any]]:
+    def list_docs(self, identity: Identity, filters: Optional[SessionListFilter] = None) -> List[Mapping[str, Any]]:
         """Return all session documents for an identity in a single query."""
         ...
 
@@ -48,7 +49,7 @@ class SessionRepository(ABC):
         identity: Identity,
         skip: int = 0,
         limit: int = DEFAULT_SESSION_PAGE_SIZE,
-        filters: Optional[Dict[str, Any]] = None,
+        filters: Optional[SessionListFilter] = None,
     ) -> List[Mapping[str, Any]]:
         """Return paginated session documents sorted by most recent activity, with newest sessions first."""
         ...
@@ -59,7 +60,7 @@ class SessionRepository(ABC):
         ...
 
     @abstractmethod
-    def count(self, identity: Identity, filter: Dict[str, Any]) -> int:
+    def count(self, identity: Identity, filter: Optional[SessionListFilter] = None) -> int:
         """Count sessions matching filter criteria for an identity."""
         ...
     

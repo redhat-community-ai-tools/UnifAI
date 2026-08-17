@@ -1,19 +1,22 @@
 """Integration tests for /session.user.list in ``sessions.py``.
 
 Regression coverage for the ``filters`` query param: it arrives as a JSON
-string (e.g. from ``use-public-chat.ts``), and must be parsed + allowlisted
-before reaching ``session_service`` / the Mongo adapter, which dict-unpack it
-via ``**filters``. Previously nothing parsed the string, so a real filter
-value raised an unhandled ``TypeError`` (surfaced as a 500).
+string (e.g. from ``use-public-chat.ts``), and must be parsed, validated, and
+allowlisted into a typed ``SessionListFilter`` before reaching
+``session_service`` / the Mongo adapter (which renders it to a ``$match``
+fragment). Previously nothing parsed the string, so a real filter value
+raised an unhandled ``TypeError`` (surfaced as a 500).
 """
 import json
 from unittest.mock import Mock
 
 from flask.testing import FlaskClient
 
+from mas.session.domain.dto import SessionListFilter
+
 
 class TestListUserSessionsFilters:
-    def test_valid_filters_are_parsed_and_forwarded_as_dict(self, client, user_headers, session_service) -> None:
+    def test_valid_filters_are_parsed_and_forwarded_as_typed_model(self, client, user_headers, session_service) -> None:
         resp = client.get(
             "/api/sessions/session.user.list?filters=" + json.dumps({"blueprint_id": "bp-123"}),
             headers=user_headers,
@@ -21,14 +24,14 @@ class TestListUserSessionsFilters:
 
         assert resp.status_code == 200
         _, kwargs = session_service.list_user_sessions.call_args
-        assert kwargs["filters"] == {"blueprint_id": "bp-123"}
+        assert kwargs["filters"] == SessionListFilter(blueprint_id="bp-123")
 
-    def test_no_filters_forwards_empty_dict(self, client, user_headers, session_service) -> None:
+    def test_no_filters_forwards_empty_typed_model(self, client, user_headers, session_service) -> None:
         resp = client.get("/api/sessions/session.user.list", headers=user_headers)
 
         assert resp.status_code == 200
         _, kwargs = session_service.list_user_sessions.call_args
-        assert kwargs["filters"] == {}
+        assert kwargs["filters"] == SessionListFilter()
 
     def test_malformed_json_returns_400(self, client, user_headers, session_service) -> None:
         resp = client.get(
@@ -78,7 +81,7 @@ class TestListUserSessionsFilters:
 
         assert resp.status_code == 200
         args, _ = session_service.count.call_args
-        assert args[1] == {"blueprint_id": "bp-123"}
+        assert args[1] == SessionListFilter(blueprint_id="bp-123")
 
 
 class TestListUserSessionsLegacyContract:
