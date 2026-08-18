@@ -12,14 +12,19 @@ Design Principles:
 - Integration: Works with existing agent system components
 """
 
+import logging
 import time
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
+
+from global_utils.utils.logging_config import emit
 
 from mas.elements.llms.common.chat.message import ChatMessage
 from .primitives import AgentStep, StepType
 from .execution import AgentIterator
 from .constants import EarlyStoppingPolicy, ExecutionDefaults
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -217,8 +222,7 @@ class StreamingRunner:
                 try:
                     on_step(step)
                 except Exception as e:
-                    # Don't let callback errors stop execution
-                    print(f"Step callback error: {e}")
+                    emit(logger, logging.WARNING, "agent.callback_error", error=str(e))
             
             # Check time limits
             if self.config.max_time:

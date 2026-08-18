@@ -12,7 +12,9 @@ from typing import Dict, Any
 
 from global_utils.celery_app import CeleryApp
 from bootstrap.app_container import slack_event_service
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @CeleryApp().app.task(bind=True, max_retries=3, default_retry_delay=60)
@@ -29,6 +31,9 @@ def process_slack_events_task(self, payload: Dict[str, Any]):
     event_id = payload.get("event_id", "unknown")
     event = payload.get("event", {})
     event_type = event.get("type", "unknown")
+
+    from global_utils.flask.correlation import bind_from_celery_headers
+    bind_from_celery_headers(getattr(self.request, "headers", None) or {})
     
     try:
         logger.info(f"Processing Slack event {event_id} ({event_type})")

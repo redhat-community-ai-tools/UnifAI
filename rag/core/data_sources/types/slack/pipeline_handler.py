@@ -7,7 +7,9 @@ from core.vector.domain.model import VectorChunk
 from core.data_sources.types.slack.domain.processor import SlackProcessor
 from infrastructure.sources.slack.connector import SlackConnector
 from infrastructure.sources.slack.chunker import SlackChunkerStrategy
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from global_utils.helpers.helpers import get_time_range_bounds_from_type_data
 

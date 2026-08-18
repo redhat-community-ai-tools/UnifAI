@@ -4,7 +4,9 @@ from typing import List, Dict, Any, Optional
 
 from core.registration.service import RegistrationService
 from core.pipeline.domain.dispatcher import PipelineTaskDispatcher, TaskResult
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

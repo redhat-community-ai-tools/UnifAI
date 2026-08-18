@@ -5,9 +5,12 @@ Provides business logic and service operations for work plan management.
 Models are now in models/workplan_models.py.
 """
 
-from typing import Dict, List, Optional
+import logging
 import threading
 from collections import defaultdict
+from typing import Dict, List, Optional
+
+from global_utils.utils.logging_config import emit
 from .models import (
     WorkPlan,
     WorkItem,
@@ -16,6 +19,8 @@ from .models import (
     WorkPlanStatus,
 )
 from .hooks import WorkPlanHook, WorkPlanHookPoint
+
+logger = logging.getLogger(__name__)
 
 
 class WorkPlanService:
@@ -98,7 +103,14 @@ class WorkPlanService:
                 method(*args, **kwargs)
             except Exception as e:
                 hook_name = hook.__class__.__name__
-                print(f"⚠️ [WORKPLAN-HOOK] Error in {hook_name}.{method_name}: {e}")
+                emit(
+                    logger,
+                    logging.ERROR,
+                    "workload.plan_hook_error",
+                    hook=hook_name,
+                    method=method_name,
+                    error=str(e),
+                )
     
     # -------------------------------------------------------------------------
     # WorkPlan Operations
@@ -134,7 +146,14 @@ class WorkPlanService:
             
             return plan
         except Exception as e:
-            print(f"❌ [PLAN] Error loading: {e}")
+            emit(
+                logger,
+                logging.ERROR,
+                "workload.plan_load_error",
+                thread_id=thread_id,
+                owner_uid=owner_uid,
+                error=str(e),
+            )
             return None
     
     def load_for_response(self, response_thread_id: str, owner_uid: str) -> Optional[WorkPlan]:
@@ -153,7 +172,13 @@ class WorkPlanService:
         """
         target_thread_id = self._thread_service.find_work_plan_owner(response_thread_id, owner_uid)
         if not target_thread_id:
-            print(f"❌ [PLAN] Could not resolve work plan owner for thread {response_thread_id}, owner: {owner_uid}")
+            emit(
+                logger,
+                logging.ERROR,
+                "workload.plan_owner_not_found",
+                response_thread_id=response_thread_id,
+                owner_uid=owner_uid,
+            )
             return None
             
         return self.load(target_thread_id, owner_uid)
@@ -179,7 +204,14 @@ class WorkPlanService:
                 
                 return True
             except Exception as e:
-                print(f"❌ [PLAN] Save error: {e}")
+                emit(
+                    logger,
+                    logging.ERROR,
+                    "workload.plan_save_error",
+                    thread_id=plan.thread_id,
+                    owner_uid=plan.owner_uid,
+                    error=str(e),
+                )
                 return False
     
     def remove(self, thread_id: str, owner_uid: str) -> bool:
@@ -203,7 +235,14 @@ class WorkPlanService:
                     return True
                 return False
             except Exception as e:
-                print(f"❌ [PLAN] Remove error: {e}")
+                emit(
+                    logger,
+                    logging.ERROR,
+                    "workload.plan_remove_error",
+                    thread_id=thread_id,
+                    owner_uid=owner_uid,
+                    error=str(e),
+                )
                 return False
     
     def get_status(self, thread_id: str, owner_uid: str) -> WorkPlanStatus:

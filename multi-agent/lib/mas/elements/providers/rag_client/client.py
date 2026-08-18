@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 import httpx
 from pydantic import HttpUrl
 from global_utils.constants import INTERNAL_AUTH_HEADER
+from global_utils.flask.correlation import correlation_headers
 
 from .models import (
     AvailableTagsResponse,
@@ -71,8 +72,9 @@ class RagClient:
 
     def __enter__(self) -> "RagClient":
         """Establish HTTP client connection."""
+        headers = {**correlation_headers(), **self._headers}
         self._client = httpx.Client(
-            headers=self._headers,
+            headers=headers,
             timeout=httpx.Timeout(
                 connect=10.0,
                 read=self._timeout,

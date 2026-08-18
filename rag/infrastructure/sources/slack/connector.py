@@ -2,7 +2,9 @@
 import requests
 import time
 from typing import Dict, List, Optional, Any, Tuple
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 from infrastructure.sources.slack.config import SlackConfigManager
 from core.connector.domain.base import DataConnector
 from core.data_sources.types.slack.domain.channel.model import SlackChannel

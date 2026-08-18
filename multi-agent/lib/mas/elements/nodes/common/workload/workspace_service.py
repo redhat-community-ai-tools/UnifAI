@@ -6,11 +6,14 @@ Separates workspace management from thread lifecycle.
 Includes work plan management as work plans are workspace content.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
-from collections import defaultdict
+import logging
 import threading
+from abc import ABC, abstractmethod
+from collections import defaultdict
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+from global_utils.utils.logging_config import emit
 from .workspace import Workspace
 from .models import (
     AgentResult,
@@ -22,6 +25,8 @@ from .models import (
 )
 from .hooks import WorkPlanHook, WorkPlanHookPoint
 from mas.elements.llms.common.chat.message import ChatMessage
+
+logger = logging.getLogger(__name__)
 
 
 class IWorkspaceService(ABC):
@@ -663,7 +668,14 @@ class WorkspaceService(IWorkspaceService):
                 method(*args, **kwargs)
             except Exception as e:
                 hook_name = hook.__class__.__name__
-                print(f"⚠️ [WORKPLAN-HOOK] Error in {hook_name}.{method_name}: {e}")
+                emit(
+                    logger,
+                    logging.ERROR,
+                    "workload.plan_hook_error",
+                    hook=hook_name,
+                    method=method_name,
+                    error=str(e),
+                )
     
     # ========== FACTS MANAGEMENT ==========
     
@@ -941,7 +953,14 @@ class WorkspaceService(IWorkspaceService):
             
             return plan
         except Exception as e:
-            print(f"❌ [PLAN] Error loading: {e}")
+            emit(
+                logger,
+                logging.ERROR,
+                "workload.plan_load_error",
+                thread_id=thread_id,
+                owner_uid=owner_uid,
+                error=str(e),
+            )
             return None
     
     def save_work_plan(self, plan: 'WorkPlan') -> bool:
@@ -965,7 +984,14 @@ class WorkspaceService(IWorkspaceService):
                 
                 return True
             except Exception as e:
-                print(f"❌ [PLAN] Save error: {e}")
+                emit(
+                    logger,
+                    logging.ERROR,
+                    "workload.plan_save_error",
+                    thread_id=plan.thread_id,
+                    owner_uid=plan.owner_uid,
+                    error=str(e),
+                )
                 return False
     
     def get_work_plan_status(self, thread_id: str, owner_uid: str) -> WorkPlanStatus:

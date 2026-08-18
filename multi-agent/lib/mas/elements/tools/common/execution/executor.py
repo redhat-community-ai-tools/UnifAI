@@ -5,11 +5,13 @@ This module provides the core ToolExecutorManager class that orchestrates
 tool execution using different strategies and error handling policies.
 """
 import asyncio
+import logging
 import time
 from typing import Dict, List, Optional, Any, Callable, Awaitable
 
 from mas.elements.tools.common.base_tool import BaseTool
 from global_utils.utils.async_bridge import AsyncBridge
+from global_utils.utils.logging_config import emit
 
 from .interfaces import ErrorHandler, ExecutionValidator, ExecutionStrategy
 from .strategies import (
@@ -25,6 +27,8 @@ from .results import ExecutionMetrics
 from .policies import RetryPolicy, CircuitBreakerPolicy
 from .validators import ArgumentValidator, CompositeValidator
 from .exceptions import ToolExecutionError, ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class ToolExecutorManager:
@@ -185,9 +189,9 @@ class ToolExecutorManager:
                     raise Exception(f"Circuit breaker is open for tool {tool.name}")
 
             # Log tool execution
-            print(f"🔧 Executing: {tool.name}")
+            emit(logger, logging.INFO, "tool.execute", tool_name=tool.name)
             if request.args:
-                print(f"   Args: {request.args}")
+                emit(logger, logging.INFO, "tool.execute", tool_name=tool.name, args=request.args)
 
             # Execute the tool with timeout
             result = await self._execute_with_timeout(tool, request.args, self._default_timeout)
@@ -215,7 +219,10 @@ class ToolExecutorManager:
             return response
 
         except Exception as e:
-            print(f"Error executing tool {request.tool_name}: {e}")
+            emit(
+                logger, logging.ERROR, "tool.failed",
+                tool_name=request.tool_name, error=str(e),
+            )
 
             # Record failure in circuit breaker
             if self._circuit_breaker:
@@ -367,7 +374,10 @@ class ToolExecutorManager:
             try:
                 await hook(tool, args, context)
             except Exception as e:
-                print(f"Warning: Pre-execution hook failed: {e}")
+                emit(
+                    logger, logging.WARNING, "tool.failed",
+                    hook_type="pre_execution", error=str(e),
+                )
 
     async def _run_post_execution_hooks(self, result: ToolExecutionResponse, context: Optional[Dict[str, Any]]):
         """Run all post-execution hooks (thread-safe)."""
@@ -379,7 +389,10 @@ class ToolExecutorManager:
             try:
                 await hook(result, context)
             except Exception as e:
-                print(f"Warning: Post-execution hook failed: {e}")
+                emit(
+                    logger, logging.WARNING, "tool.failed",
+                    hook_type="post_execution", error=str(e),
+                )
 
     async def _execute_with_timeout(self, tool: BaseTool, args: Dict[str, Any], timeout: Optional[float]):
         """Execute tool with timeout support."""

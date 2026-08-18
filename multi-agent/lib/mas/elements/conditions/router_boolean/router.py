@@ -1,6 +1,10 @@
 from ..common.base_condition import BaseCondition
 from ..common.models import ConditionOutputSchema, BranchType, SymbolicBranchDef
+import logging
+from global_utils.utils.logging_config import emit
 from mas.graph.state.state_view import StateView
+
+logger = logging.getLogger(__name__)
 
 
 class RouterBooleanCondition(BaseCondition):
@@ -20,7 +24,7 @@ class RouterBooleanCondition(BaseCondition):
         """
         Returns the configured boolean value.
         """
-        print(f"<RouterBooleanCondition: returns {self.boolean_value}>")
+        emit(logger, logging.DEBUG, "graph.router_boolean", boolean_value=self.boolean_value)
         return str(self.boolean_value).lower()
 
     def __repr__(self) -> str:

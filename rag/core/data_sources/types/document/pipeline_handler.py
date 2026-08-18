@@ -8,7 +8,9 @@ from core.data_sources.types.document.domain.processor import DocumentProcessor
 from core.data_sources.types.document.domain.processed_document import ProcessedDocument
 from infrastructure.sources.document.connector import DocumentConnector
 from infrastructure.sources.document.chunker import PDFChunkerStrategy
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from global_utils.utils.file_utils import cleanup_file
 

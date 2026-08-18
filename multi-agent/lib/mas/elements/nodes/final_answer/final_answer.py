@@ -1,9 +1,13 @@
 from typing import List, ClassVar, Dict, Any
+import logging
+from global_utils.utils.logging_config import emit
 from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.graph.state.graph_state import Channel
 from mas.graph.state.state_view import StateView
 from mas.elements.nodes.common.workload import AgentResult
+
+logger = logging.getLogger(__name__)
 
 
 class FinalAnswerNode(IEMCapableMixin, BaseNode):
@@ -53,10 +57,13 @@ class FinalAnswerNode(IEMCapableMixin, BaseNode):
             # Extract AgentResult from task if present
             if task.result and isinstance(task.result, AgentResult):
                 self._collected_results.append(task.result)
-                print(f"FinalAnswerNode {self.uid}: Collected result from {task.result.agent_name}")
-                
+                emit(
+                    logger, logging.INFO, "final_answer.result_collected",
+                    node_uid=self.uid, agent_name=task.result.agent_name,
+                )
+
         except Exception as e:
-            print(f"FinalAnswerNode {self.uid}: Error collecting task result: {e}")
+            emit(logger, logging.ERROR, "final_answer.collect_error", node_uid=self.uid, error=str(e))
 
     def _merge_results(self) -> str:
         """

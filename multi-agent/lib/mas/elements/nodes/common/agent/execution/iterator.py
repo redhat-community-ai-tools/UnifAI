@@ -10,7 +10,11 @@ The iterator delegates execution policy to ExecutionHandler implementations,
 keeping the iterator focused on its core responsibility: step-by-step control.
 """
 
+import logging
+
 from typing import Iterator, Optional, List, Callable, Dict, Any
+
+from global_utils.utils.logging_config import emit
 
 from mas.core.tracing import TracingService
 
@@ -25,6 +29,8 @@ from ..primitives import (
 from ..strategies.base import AgentStrategy
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from .handlers import ExecutionHandler, GuidedExecutionHandler
+
+logger = logging.getLogger(__name__)
 
 
 class AgentIterator:
@@ -60,7 +66,7 @@ class AgentIterator:
         # Iterate through execution steps
         for step in iterator:
             if step.type == StepType.FINISH:
-                print("Agent finished:", step.data.output)
+                # Agent finished with step.data.output
                 break
     """
 
@@ -152,7 +158,9 @@ class AgentIterator:
         try:
             # Get next steps from strategy
             steps = self.strategy.think(self.messages)
-            print(f"⚡ [AGENT] Processing {len(steps)} steps: {[step.type.value for step in steps]}")
+            emit(logger, logging.DEBUG, "agent.step",
+                 step_count=len(steps),
+                 step_types=[step.type.value for step in steps])
 
             # Update conversation messages with assistant responses
             self._update_conversation_messages(steps)
@@ -170,7 +178,8 @@ class AgentIterator:
                     # Validate action with callback
                     action = step.data
                     if self.on_action and not self.on_action(action):
-                        print(f"❌ [AGENT] Action {action.tool} rejected by policy")
+                        emit(logger, logging.WARNING, "agent.action_rejected",
+                             tool=action.tool, reason="policy")
                         # Create rejection step and queue it
                         rejection_step = self._create_rejection_step(action, "Rejected by policy")
                         self._step_queue.append(rejection_step)
@@ -180,13 +189,13 @@ class AgentIterator:
                     actions_to_handle.append(action)
 
                 elif step.type == StepType.FINISH:
-                    print(f"✅ [AGENT] Execution finished")
+                    emit(logger, logging.INFO, "llm.interaction_end")
                     self._finished = True
                     # Queue FINISH step for consistent ordering
                     self._step_queue.append(step)
 
                 elif step.type == StepType.ERROR:
-                    print(f"❌ [AGENT] Error step encountered")
+                    emit(logger, logging.ERROR, "agent.step", step_type="error")
                     # Queue ERROR step for consistent ordering
                     self._step_queue.append(step)
 
@@ -196,7 +205,8 @@ class AgentIterator:
 
             # Handle collected actions via execution handler
             if actions_to_handle:
-                print(f"🔧 [TOOLS] Executing {len(actions_to_handle)} actions")
+                emit(logger, logging.DEBUG, "agent.tools_execute",
+                     action_count=len(actions_to_handle))
 
                 # Delegate to execution handler (Strategy pattern)
                 for result_step in self.execution_handler.handle_actions(actions_to_handle):

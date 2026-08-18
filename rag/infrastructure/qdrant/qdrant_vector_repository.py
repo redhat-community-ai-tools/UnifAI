@@ -9,7 +9,9 @@ from qdrant_client.http import models as qmodels
 
 from core.vector.domain.model import VectorChunk, SearchResult
 from core.vector.domain.repository import VectorRepository
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class QdrantVectorRepository(VectorRepository):

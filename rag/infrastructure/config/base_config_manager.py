@@ -3,7 +3,9 @@ import os
 import json
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any, Tuple
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BaseConfigurationManager(ABC):
