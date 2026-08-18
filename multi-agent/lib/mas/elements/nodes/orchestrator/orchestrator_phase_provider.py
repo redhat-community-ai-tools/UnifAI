@@ -4,8 +4,11 @@ Orchestrator-specific phase provider implementation.
 Uses clean Pydantic models and enums to define orchestrator phases professionally.
 """
 
+import logging
+
 from enum import Enum
 from typing import List, Callable, Any, Optional
+from global_utils.utils.logging_config import emit
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.llms.common.chat.message import ChatMessage
 from mas.elements.nodes.common.agent.phases.unified_phase_provider import PhaseProvider
@@ -29,6 +32,8 @@ from mas.elements.tools.builtin.delegation.delegate_task import DelegateTaskTool
 from mas.elements.tools.builtin.topology.list_adjacent import ListAdjacentNodesTool
 from mas.elements.tools.builtin.topology.get_node_card import GetNodeCardTool
 from mas.elements.tools.builtin.time import GetCurrentTimeTool
+
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorPhase(Enum):
@@ -794,13 +799,21 @@ class OrchestratorPhaseProvider(PhaseProvider):
         path = " → ".join(transitions)
 
         if reason == 'stable':
-            print(f"🔄 Phase Cascade: {path}")
+            emit(logger, logging.DEBUG, "phase.cascade",
+                 thread_id=self._thread_id, path=path, reason=reason,
+                 transition_count=count)
         elif reason == 'cycle':
-            print(f"⚠️  Cycle Detected: {path} (forcing SYNTHESIS)")
+            emit(logger, logging.WARNING, "phase.cycle_detected",
+                 thread_id=self._thread_id, path=path, forcing="SYNTHESIS",
+                 transition_count=count)
         elif reason == 'max_transitions':
-            print(f"⚠️  Max Transitions: {path}")
+            emit(logger, logging.WARNING, "phase.cascade",
+                 thread_id=self._thread_id, path=path, reason=reason,
+                 transition_count=count)
         elif reason == 'invalid':
-            print(f"⚠️  Invalid Transition: {path}")
+            emit(logger, logging.WARNING, "phase.validate_error",
+                 thread_id=self._thread_id, path=path, reason=reason,
+                 transition_count=count)
 
     def decide_next_phase(
             self,
@@ -836,46 +849,63 @@ class OrchestratorPhaseProvider(PhaseProvider):
             # Access orchestrator context for smart decisions
             orch_ctx = self._current_orch_context
 
-            # 🔍 DEBUG: Print current status for diagnosis
-            print(f"🔍 [PLANNING] decide_next_phase called:")
-            print(f"   - Has orch_ctx: {orch_ctx is not None}")
-            print(f"   - status.total_items: {status.total_items}")
-            print(f"   - status.pending_items: {status.pending_items}")
-            print(f"   - status.blocked_items: {status.blocked_items}")
-            print(f"   - status.in_progress_items: {status.in_progress_items}")
-            print(f"   - status.has_remote_ready: {status.has_remote_ready}")
-            print(f"   - status.has_local_ready: {status.has_local_ready}")
-            print(f"   - status.is_complete: {status.is_complete}")
-            if orch_ctx:
-                print(f"   - Trigger reason: {orch_ctx.trigger.reason}")
+            emit(logger, logging.DEBUG, "phase.decision",
+                 thread_id=self._thread_id, phase="planning",
+                 detail="decide_next_phase called",
+                 has_orch_ctx=orch_ctx is not None,
+                 total_items=status.total_items,
+                 pending_items=status.pending_items,
+                 blocked_items=status.blocked_items,
+                 in_progress_items=status.in_progress_items,
+                 has_remote_ready=status.has_remote_ready,
+                 has_local_ready=status.has_local_ready,
+                 is_complete=status.is_complete,
+                 trigger_reason=str(orch_ctx.trigger.reason) if orch_ctx else None)
 
             # CASE 1: No plan exists - must stay in planning to create one
             if status.total_items == 0:
-                print(f"   → Decision: STAY in PLANNING (no items)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="planning",
+                     decision="STAY", to_phase="planning", reason="no items")
                 return OrchestratorPhase.PLANNING.value
 
             # CASE 2: Plan exists - use trigger reason for smart transition
             if orch_ctx:
                 trigger_reason = orch_ctx.trigger.reason
-                print(f"   → Has orch_ctx, trigger_reason: {trigger_reason}")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="planning",
+                     detail="has orch_ctx", trigger_reason=str(trigger_reason))
 
                 # CASE 2A: RESPONSE_ARRIVED - skip planning, go process responses
                 if trigger_reason == CycleTriggerReason.RESPONSE_ARRIVED:
-                    print(f"   → CASE 2A: RESPONSE_ARRIVED")
+                    emit(logger, logging.DEBUG, "phase.decision",
+                         thread_id=self._thread_id, phase="planning",
+                         detail="CASE 2A: RESPONSE_ARRIVED")
                     # Responses don't need new planning - just process them
                     if status.has_responses:
-                        print(f"   → Decision: Go to MONITORING (has_responses)")
+                        emit(logger, logging.DEBUG, "phase.decision",
+                             thread_id=self._thread_id, phase="planning",
+                             decision="MONITORING", to_phase="monitoring",
+                             reason="has_responses")
                         return OrchestratorPhase.MONITORING.value
                     elif status.is_complete:
-                        print(f"   → Decision: Go to SYNTHESIS (is_complete)")
+                        emit(logger, logging.DEBUG, "phase.decision",
+                             thread_id=self._thread_id, phase="planning",
+                             decision="SYNTHESIS", to_phase="synthesis",
+                             reason="is_complete")
                         return OrchestratorPhase.SYNTHESIS.value
                     else:
-                        print(f"   → Decision: Go to ALLOCATION (fallback)")
+                        emit(logger, logging.DEBUG, "phase.decision",
+                             thread_id=self._thread_id, phase="planning",
+                             decision="ALLOCATION", to_phase="allocation",
+                             reason="fallback")
                         return OrchestratorPhase.ALLOCATION.value
 
                 # CASE 2B: NEW_REQUEST with existing plan
                 elif trigger_reason == CycleTriggerReason.NEW_REQUEST:
-                    print(f"   → CASE 2B: NEW_REQUEST")
+                    emit(logger, logging.DEBUG, "phase.decision",
+                         thread_id=self._thread_id, phase="planning",
+                         detail="CASE 2B: NEW_REQUEST")
                     # Check if this is a fresh plan (nothing executed yet)
                     # Note: Don't check pending_items == total_items because blocked items
                     # are counted separately. A fresh plan with dependencies will have
@@ -883,149 +913,236 @@ class OrchestratorPhaseProvider(PhaseProvider):
                     all_pending = (status.done_items == 0 and
                                    status.failed_items == 0 and
                                    status.in_progress_items == 0)
-                    print(
-                        f"   → Fresh plan check: {all_pending} (done={status.done_items}, failed={status.failed_items}, in_progress={status.in_progress_items})")
+                    emit(logger, logging.DEBUG, "phase.decision",
+                         thread_id=self._thread_id, phase="planning",
+                         detail="fresh plan check",
+                         all_pending=all_pending,
+                         done_items=status.done_items,
+                         failed_items=status.failed_items,
+                         in_progress_items=status.in_progress_items)
 
                     if all_pending:
-                        print(f"   → Fresh plan detected")
+                        emit(logger, logging.DEBUG, "phase.decision",
+                             thread_id=self._thread_id, phase="planning",
+                             detail="fresh plan detected")
                         # Fresh plan just created - determine next phase based on what's actionable
                         if status.has_remote_ready:
                             # Has REMOTE items ready - go delegate them
                             # (Will cascade to EXECUTION if also has_local_ready)
-                            print(f"   → Decision: Go to ALLOCATION (has_remote_ready=True)")
+                            emit(logger, logging.DEBUG, "phase.decision",
+                                 thread_id=self._thread_id, phase="planning",
+                                 decision="ALLOCATION", to_phase="allocation",
+                                 reason="has_remote_ready")
                             return OrchestratorPhase.ALLOCATION.value
                         elif status.has_local_ready:
                             # Has LOCAL items ready but NO REMOTE ready
                             # Skip ALLOCATION, go straight to EXECUTION
-                            print(f"   → Decision: Go to EXECUTION (has_local_ready=True)")
+                            emit(logger, logging.DEBUG, "phase.decision",
+                                 thread_id=self._thread_id, phase="planning",
+                                 decision="EXECUTION", to_phase="execution",
+                                 reason="has_local_ready")
                             return OrchestratorPhase.EXECUTION.value
                         elif status.blocked_items == status.total_items:
                             # Everything is blocked by dependencies (bad plan)
                             # Force SYNTHESIS to report the issue
-                            print(f"   → Decision: Go to SYNTHESIS (all blocked)")
+                            emit(logger, logging.DEBUG, "phase.decision",
+                                 thread_id=self._thread_id, phase="planning",
+                                 decision="SYNTHESIS", to_phase="synthesis",
+                                 reason="all blocked")
                             return OrchestratorPhase.SYNTHESIS.value
                         else:
                             # Fallback: go to ALLOCATION
-                            print(f"   → Decision: Go to ALLOCATION (fallback)")
+                            emit(logger, logging.DEBUG, "phase.decision",
+                                 thread_id=self._thread_id, phase="planning",
+                                 decision="ALLOCATION", to_phase="allocation",
+                                 reason="fallback")
                             return OrchestratorPhase.ALLOCATION.value
 
                     # Not a fresh plan - work is in progress
-                    print(f"   → Not a fresh plan (work in progress)")
+                    emit(logger, logging.DEBUG, "phase.decision",
+                         thread_id=self._thread_id, phase="planning",
+                         detail="not a fresh plan, work in progress")
                     if status.is_complete:
                         # Complete plan + new request = LLM might add new work
                         # But check if new items were already added and are ready
-                        print(f"   → Plan was complete, checking if new items added...")
+                        emit(logger, logging.DEBUG, "phase.decision",
+                             thread_id=self._thread_id, phase="planning",
+                             detail="plan was complete, checking if new items added")
                         if status.has_remote_ready or status.has_local_ready:
                             # New items added and ready - transition to handle them
                             if status.has_remote_ready:
-                                print(f"   → Decision: Go to ALLOCATION (has_remote_ready=True)")
+                                emit(logger, logging.DEBUG, "phase.decision",
+                                     thread_id=self._thread_id, phase="planning",
+                                     decision="ALLOCATION", to_phase="allocation",
+                                     reason="has_remote_ready")
                                 return OrchestratorPhase.ALLOCATION.value
                             else:
-                                print(f"   → Decision: Go to EXECUTION (has_local_ready=True)")
+                                emit(logger, logging.DEBUG, "phase.decision",
+                                     thread_id=self._thread_id, phase="planning",
+                                     decision="EXECUTION", to_phase="execution",
+                                     reason="has_local_ready")
                                 return OrchestratorPhase.EXECUTION.value
                         else:
                             # No ready items yet - give LLM chance to plan
-                            print(f"   → Decision: STAY in PLANNING (complete + new request)")
+                            emit(logger, logging.DEBUG, "phase.decision",
+                                 thread_id=self._thread_id, phase="planning",
+                                 decision="STAY", to_phase="planning",
+                                 reason="complete + new request")
                             return OrchestratorPhase.PLANNING.value
                     elif orch_ctx.health.progress_metrics.is_stalled:
                         # Stalled work - may need replanning or pivot
-                        print(f"   → Decision: STAY in PLANNING (stalled)")
+                        emit(logger, logging.DEBUG, "phase.decision",
+                             thread_id=self._thread_id, phase="planning",
+                             decision="STAY", to_phase="planning",
+                             reason="stalled")
                         return OrchestratorPhase.PLANNING.value
                     elif status.failed_items == status.total_items > 0:
                         # All items failed - definitely need replanning
-                        print(f"   → Decision: STAY in PLANNING (all failed)")
+                        emit(logger, logging.DEBUG, "phase.decision",
+                             thread_id=self._thread_id, phase="planning",
+                             decision="STAY", to_phase="planning",
+                             reason="all failed")
                         return OrchestratorPhase.PLANNING.value
                     else:
                         # In-progress work with new request
                         # Check if new items are ready to execute/delegate
-                        print(f"   → Checking readiness for follow-up items...")
+                        emit(logger, logging.DEBUG, "phase.decision",
+                             thread_id=self._thread_id, phase="planning",
+                             detail="checking readiness for follow-up items")
                         if status.has_remote_ready:
-                            print(f"   → Decision: Go to ALLOCATION (has_remote_ready=True)")
+                            emit(logger, logging.DEBUG, "phase.decision",
+                                 thread_id=self._thread_id, phase="planning",
+                                 decision="ALLOCATION", to_phase="allocation",
+                                 reason="has_remote_ready")
                             return OrchestratorPhase.ALLOCATION.value
                         elif status.has_local_ready:
-                            print(f"   → Decision: Go to EXECUTION (has_local_ready=True)")
+                            emit(logger, logging.DEBUG, "phase.decision",
+                                 thread_id=self._thread_id, phase="planning",
+                                 decision="EXECUTION", to_phase="execution",
+                                 reason="has_local_ready")
                             return OrchestratorPhase.EXECUTION.value
                         else:
                             # Nothing ready yet - stay in planning to add/update items
-                            print(f"   → Decision: STAY in PLANNING (no ready items)")
+                            emit(logger, logging.DEBUG, "phase.decision",
+                                 thread_id=self._thread_id, phase="planning",
+                                 decision="STAY", to_phase="planning",
+                                 reason="no ready items")
                             return OrchestratorPhase.PLANNING.value
 
             # CASE 3: Fallback if no orchestrator context (shouldn't happen normally)
-            print(f"   → CASE 3: No orch_ctx (fallback)")
+            emit(logger, logging.DEBUG, "phase.decision",
+                 thread_id=self._thread_id, phase="planning",
+                 detail="CASE 3: no orch_ctx fallback")
             if status.total_items > 0:
-                print(f"   → Decision: Go to ALLOCATION (fallback, has items)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="planning",
+                     decision="ALLOCATION", to_phase="allocation",
+                     reason="fallback, has items")
                 return OrchestratorPhase.ALLOCATION.value
             else:
-                print(f"   → Decision: STAY in PLANNING (fallback, no items)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="planning",
+                     decision="STAY", to_phase="planning",
+                     reason="fallback, no items")
                 return OrchestratorPhase.PLANNING.value
 
         elif current_phase_enum == OrchestratorPhase.ALLOCATION:
-            # 🔍 DEBUG: Print current status for diagnosis
-            print(f"🔍 [ALLOCATION] decide_next_phase called:")
-            print(f"   - status.has_local_ready: {status.has_local_ready}")
-            print(f"   - status.has_remote_ready: {status.has_remote_ready}")
-            print(f"   - status.has_responses: {status.has_responses}")
-            print(f"   - status.has_remote_waiting: {status.has_remote_waiting}")
+            emit(logger, logging.DEBUG, "phase.decision",
+                 thread_id=self._thread_id, phase="allocation",
+                 detail="decide_next_phase called",
+                 has_local_ready=status.has_local_ready,
+                 has_remote_ready=status.has_remote_ready,
+                 has_responses=status.has_responses,
+                 has_remote_waiting=status.has_remote_waiting)
 
             # Move to execution if we have local work ready
             if status.has_local_ready:
-                print(f"   → Decision: Go to EXECUTION (has_local_ready)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="allocation",
+                     decision="EXECUTION", to_phase="execution",
+                     reason="has_local_ready")
                 return OrchestratorPhase.EXECUTION.value
             # Move to monitoring if we have responses to interpret
             elif status.has_responses:
-                print(f"   → Decision: Go to MONITORING (has_responses)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="allocation",
+                     decision="MONITORING", to_phase="monitoring",
+                     reason="has_responses")
                 return OrchestratorPhase.MONITORING.value
             # If just waiting (no responses yet), stay in allocation (will finish and wait for graph)
             elif status.has_remote_waiting:
-                print(f"   → Decision: STAY in ALLOCATION (has_remote_waiting, will finish)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="allocation",
+                     decision="STAY", to_phase="allocation",
+                     reason="has_remote_waiting")
                 return OrchestratorPhase.ALLOCATION.value  # Stay → finish
             else:
-                print(f"   → Decision: STAY in ALLOCATION (default)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="allocation",
+                     decision="STAY", to_phase="allocation",
+                     reason="default")
                 return OrchestratorPhase.ALLOCATION.value  # Stay in allocation
 
         elif current_phase_enum == OrchestratorPhase.EXECUTION:
-            # 🔍 DEBUG: Print current status for diagnosis
-            print(f"🔍 [EXECUTION] decide_next_phase called:")
-            print(f"   - status.is_complete: {status.is_complete}")
-            print(f"   - status.has_local_ready: {status.has_local_ready}")
+            emit(logger, logging.DEBUG, "phase.decision",
+                 thread_id=self._thread_id, phase="execution",
+                 detail="decide_next_phase called",
+                 is_complete=status.is_complete,
+                 has_local_ready=status.has_local_ready)
 
             # Check if work is complete
             if status.is_complete:
-                print(f"   → Decision: Go to SYNTHESIS (is_complete)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="execution",
+                     decision="SYNTHESIS", to_phase="synthesis",
+                     reason="is_complete")
                 return OrchestratorPhase.SYNTHESIS.value
             # If still have local ready items, stay in execution (LLM may need multiple iterations)
             elif status.has_local_ready:
-                print(f"   → Decision: STAY in EXECUTION (has_local_ready)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="execution",
+                     decision="STAY", to_phase="execution",
+                     reason="has_local_ready")
                 return OrchestratorPhase.EXECUTION.value
             # Otherwise move to monitoring
             else:
-                print(f"   → Decision: Go to MONITORING (no local ready)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="execution",
+                     decision="MONITORING", to_phase="monitoring",
+                     reason="no local ready")
                 return OrchestratorPhase.MONITORING.value
 
         elif current_phase_enum == OrchestratorPhase.MONITORING:
-            # 🔍 DEBUG: Print current status for diagnosis
-            print(f"🔍 [MONITORING] decide_next_phase called:")
-            print(f"   - status.total_items: {status.total_items}")
-            print(f"   - status.pending_items: {status.pending_items}")
-            print(f"   - status.in_progress_items: {status.in_progress_items}")
-            print(f"   - status.waiting_items: {status.waiting_items}")
-            print(f"   - status.done_items: {status.done_items}")
-            print(f"   - status.failed_items: {status.failed_items}")
-            print(f"   - status.blocked_items: {status.blocked_items}")
-            print(f"   - status.has_responses: {status.has_responses}")
-            print(f"   - status.has_local_ready: {status.has_local_ready}")
-            print(f"   - status.has_remote_ready: {status.has_remote_ready}")
-            print(f"   - status.has_remote_waiting: {status.has_remote_waiting}")
-            print(f"   - status.is_complete: {status.is_complete}")
+            emit(logger, logging.DEBUG, "phase.decision",
+                 thread_id=self._thread_id, phase="monitoring",
+                 detail="decide_next_phase called",
+                 total_items=status.total_items,
+                 pending_items=status.pending_items,
+                 in_progress_items=status.in_progress_items,
+                 waiting_items=status.waiting_items,
+                 done_items=status.done_items,
+                 failed_items=status.failed_items,
+                 blocked_items=status.blocked_items,
+                 has_responses=status.has_responses,
+                 has_local_ready=status.has_local_ready,
+                 has_remote_ready=status.has_remote_ready,
+                 has_remote_waiting=status.has_remote_waiting,
+                 is_complete=status.is_complete)
 
             # Check if work is complete
             if status.is_complete:
-                print(f"   → Decision: Go to SYNTHESIS (is_complete)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="monitoring",
+                     decision="SYNTHESIS", to_phase="synthesis",
+                     reason="is_complete")
                 return OrchestratorPhase.SYNTHESIS.value
             # PRIORITY: Stay in monitoring if we still have responses to interpret
             # (Process responses BEFORE transitioning to handle new pending work)
             elif status.has_responses:
-                print(f"   → Decision: STAY in MONITORING (has_responses=True)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="monitoring",
+                     decision="STAY", to_phase="monitoring",
+                     reason="has_responses")
                 return OrchestratorPhase.MONITORING.value
             # Check for all-blocked scenario (no actionable work)
             # If all remaining items are blocked and we can't make progress, force SYNTHESIS
@@ -1033,23 +1150,38 @@ class OrchestratorPhaseProvider(PhaseProvider):
                   status.pending_items == 0 and
                   not status.has_local_ready and
                   not status.has_remote_waiting):
-                print(f"⚠️  All Items Blocked ({status.blocked_items}) - Forcing SYNTHESIS")
-                print(f"   → Decision: Go to SYNTHESIS (all blocked)")
+                emit(logger, logging.WARNING, "phase.decision",
+                     thread_id=self._thread_id, phase="monitoring",
+                     detail="all items blocked, forcing synthesis",
+                     blocked_items=status.blocked_items)
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="monitoring",
+                     decision="SYNTHESIS", to_phase="synthesis",
+                     reason="all blocked")
                 return OrchestratorPhase.SYNTHESIS.value
             # Go back to execution if we have local ready items
             # (Check this BEFORE pending items to prioritize actual work over allocation)
             elif status.has_local_ready:
-                print(f"   → Decision: Go to EXECUTION (has_local_ready=True)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="monitoring",
+                     decision="EXECUTION", to_phase="execution",
+                     reason="has_local_ready")
                 return OrchestratorPhase.EXECUTION.value
             # Go back to allocation if we have pending items (and no responses)
             # Note: blocked items (pending=0, blocked>0) will NOT trigger this
             elif status.pending_items > 0:
-                print(f"   → Decision: Go to ALLOCATION (pending_items={status.pending_items})")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="monitoring",
+                     decision="ALLOCATION", to_phase="allocation",
+                     reason="pending_items", pending_items=status.pending_items)
                 return OrchestratorPhase.ALLOCATION.value
             else:
                 # No responses, no ready work, no pending work
                 # Either waiting for delegated responses or all items blocked/complete
-                print(f"   → Decision: STAY in MONITORING (waiting for responses or no actionable work)")
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase="monitoring",
+                     decision="STAY", to_phase="monitoring",
+                     reason="waiting for responses or no actionable work")
                 return OrchestratorPhase.MONITORING.value  # Stay in monitoring
 
         elif current_phase_enum == OrchestratorPhase.SYNTHESIS:
@@ -1071,7 +1203,9 @@ class OrchestratorPhaseProvider(PhaseProvider):
         Returns:
             Next phase to transition to (or synthesis for terminal)
         """
-        print(f"⚠️  Phase Limit Exceeded: {current_phase}")
+        emit(logger, logging.WARNING, "phase.decision",
+             thread_id=self._thread_id, phase=current_phase,
+             detail="phase limit exceeded")
 
         try:
             current_phase_enum = OrchestratorPhase(current_phase)
@@ -1164,30 +1298,25 @@ class OrchestratorPhaseProvider(PhaseProvider):
 
             status = workspace_service.get_work_plan_status(self._thread_id, self._node_uid)
 
-            # Compact one-line status
-            status_parts = []
-            if status.pending_items > 0:
-                status_parts.append(f"⏸️ {status.pending_items} Pending")
-            if status.in_progress_items > 0:
-                status_parts.append(f"🔄 {status.in_progress_items} In Progress")
-            if status.done_items > 0:
-                status_parts.append(f"✅ {status.done_items} Done")
-            if status.failed_items > 0:
-                status_parts.append(f"❌ {status.failed_items} Failed")
-
             extras = []
             if status.blocked_items > 0:
-                extras.append(f"🚫 {status.blocked_items} Blocked")
+                extras.append(f"{status.blocked_items} Blocked")
             if status.waiting_items > 0:
-                extras.append(f"⏳ {status.waiting_items} Waiting")
+                extras.append(f"{status.waiting_items} Waiting")
 
             extra_str = f" [{', '.join(extras)}]" if extras else ""
 
-            # Print header with one-line status
-            print(f"\n{'=' * 80}")
-            print(f"📋 WORK PLAN after {phase.upper()} ({status.total_items} items)")
-            print(f"={'=' * 80}")
-            print(f"Status: {' | '.join(status_parts)}{extra_str}")
+            emit(logger, logging.DEBUG, "phase.transition",
+                 thread_id=self._thread_id, phase=phase,
+                 detail="work_plan_after_phase",
+                 total_items=status.total_items,
+                 pending_items=status.pending_items,
+                 in_progress_items=status.in_progress_items,
+                 done_items=status.done_items,
+                 failed_items=status.failed_items,
+                 blocked_items=status.blocked_items,
+                 waiting_items=status.waiting_items,
+                 extra=extra_str or None)
 
             # Show items compactly
             for item_status in [WorkItemStatus.PENDING, WorkItemStatus.IN_PROGRESS, WorkItemStatus.DONE,
@@ -1264,9 +1393,13 @@ class OrchestratorPhaseProvider(PhaseProvider):
                                                                                      ' ') if latest.response_content else "No content"
                                 item_line += f"\n      ✓ Latest: {resp_preview}..."
 
-                    print(f"   {item_line}")
+                    emit(logger, logging.DEBUG, "phase.transition",
+                         thread_id=self._thread_id, phase=phase,
+                         item_line=item_line)
 
-            print(f"{'=' * 80}\n")
+            emit(logger, logging.DEBUG, "phase.transition",
+                 thread_id=self._thread_id, phase=phase,
+                 detail="work_plan_after_phase_end")
         except Exception as e:
             pass
 
@@ -1318,12 +1451,11 @@ class OrchestratorPhaseProvider(PhaseProvider):
                     plan_snapshot_console = "No work plan exists yet."
                 combined_context_console = self._current_orch_context.format_context(plan_snapshot_console)
 
-                # Print truncated context for debugging
-                print(f"\n{'=' * 80}")
-                print(f"📤 DYNAMIC CONTEXT PROVIDED TO LLM - Phase: {phase_name.upper()}")
-                print(f"{'=' * 80}")
-                print(combined_context_console)
-                print(f"{'=' * 80}\n")
+                # Log truncated context for debugging
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase=phase_name,
+                     detail="dynamic_context_provided",
+                     context=combined_context_console)
 
                 # Send FULL context to LLM
                 messages.append(ChatMessage(
@@ -1342,12 +1474,11 @@ class OrchestratorPhaseProvider(PhaseProvider):
                     plan_snapshot_console = "No work plan exists yet."
                 fallback_context_console = f"Current Work Plan:\n{plan_snapshot_console}"
 
-                # Print truncated fallback context for debugging
-                print(f"\n{'=' * 80}")
-                print(f"📤 DYNAMIC CONTEXT PROVIDED TO LLM - Phase: {phase_name.upper()} (FALLBACK)")
-                print(f"{'=' * 80}")
-                print(fallback_context_console)
-                print(f"{'=' * 80}\n")
+                # Log truncated fallback context for debugging
+                emit(logger, logging.DEBUG, "phase.decision",
+                     thread_id=self._thread_id, phase=phase_name,
+                     detail="dynamic_context_fallback",
+                     context=fallback_context_console)
 
                 # Send FULL context to LLM
                 messages.append(ChatMessage(
@@ -1357,7 +1488,9 @@ class OrchestratorPhaseProvider(PhaseProvider):
 
         except Exception as e:
             # Fail gracefully - don't break execution if context building fails
-            print(f"⚠️  Error building dynamic context: {e}")
+            emit(logger, logging.ERROR, "phase.validate_error",
+                 thread_id=self._thread_id, phase=phase_name,
+                 error=str(e), detail="error building dynamic context")
 
         return messages
 

@@ -1,6 +1,8 @@
 """MD5 Duplicate Validator - checks for content duplicates."""
 from typing import Optional, Any, Tuple, Protocol
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 from core.validation.domain.port import DataSourceValidator
 from core.validation.domain.model import ValidationIssue

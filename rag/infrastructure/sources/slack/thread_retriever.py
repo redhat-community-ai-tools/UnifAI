@@ -1,6 +1,8 @@
 """Slack thread retriever - infrastructure helper for SlackConnector."""
 from typing import Dict, List, Any, Optional
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SlackThreadRetriever:

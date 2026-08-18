@@ -16,6 +16,7 @@ from flask_cors import CORS
 
 from config.app_config import AppConfig
 from global_utils.flask.request_rules import RequestRules
+from global_utils.flask.error_handlers import register_error_handlers
 
 
 def create_app() -> Flask:
@@ -31,6 +32,9 @@ def create_app() -> Flask:
     Returns:
         Configured Flask application
     """
+    from global_utils.utils.logging_config import configure_logging
+
+    configure_logging("rag-server")
     app = Flask(__name__)
     config = AppConfig.get_instance()
     
@@ -50,6 +54,7 @@ def create_app() -> Flask:
         app,
         supports_credentials=True,
         origins=os.environ.get("FRONTEND_URL", "http://localhost:5000"),
+        allow_headers=["Content-Type", "Authorization", "X-Request-ID", "X-Correlation-ID"],
     )
     
     # Identity wiring — make Redis store and IdentityClient available to decorators
@@ -62,6 +67,7 @@ def create_app() -> Flask:
     
     # Request validation rules
     RequestRules(app)
+    register_error_handlers(app)
     
     return app
 

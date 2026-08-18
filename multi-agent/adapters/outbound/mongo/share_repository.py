@@ -1,3 +1,4 @@
+import logging
 import pymongo
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -5,6 +6,9 @@ from mas.sharing.repository.base import ShareRepository
 from mas.sharing.models import ShareInvite, ShareStatus, ShareCleanupConfig, ShareCleanupResult
 from mas.core.identity import Identity
 from global_utils.utils.util import get_mongo_url
+from global_utils.utils.logging_config import emit
+
+logger = logging.getLogger(__name__)
 
 
 class MongoShareRepository(ShareRepository):
@@ -128,7 +132,10 @@ class MongoShareRepository(ShareRepository):
                     setattr(result, f"{status_type}_count", count)
                 except Exception as e:
                     result.errors += 1
-                    print(f"Error deleting {status_type} invites: {e}")
+                    emit(
+                        logger, logging.ERROR, "share.cleanup_delete_error",
+                        status_type=status_type, error=str(e),
+                    )
         
         return result
 
@@ -150,7 +157,7 @@ class MongoShareRepository(ShareRepository):
                 result.total_processed = delete_result.deleted_count
             except Exception as e:
                 result.errors += 1
-                print(f"Error deleting expired invites: {e}")
+                emit(logger, logging.ERROR, "share.cleanup_expired_error", error=str(e))
         
         return result
 

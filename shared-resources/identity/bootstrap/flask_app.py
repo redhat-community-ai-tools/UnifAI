@@ -11,13 +11,13 @@ Usage:
     app.run(host="0.0.0.0", port=5000)
 """
 import os
-import logging
 from flask import Flask
 from flask_cors import CORS
 
 from config.app_config import AppConfig
-from config.logging_config import LoggingConfig
 from global_utils.flask.request_rules import RequestRules
+from global_utils.flask.error_handlers import register_error_handlers
+from global_utils.utils.logging_config import configure_logging
 from bootstrap.factories import build_auth_stack, build_team_service
 from global_utils.redis import TeamMembershipCache
 from utils.user_groups_cache import UserGroupsCache
@@ -37,15 +37,8 @@ def create_app() -> Flask:
     Returns:
         Configured Flask application
     """
-    
+    configure_logging("identity")
     config = AppConfig.get_instance()
-
-    #logging setup for app and all sub-modules.
-    logging.basicConfig(
-        level=LoggingConfig.log_level,
-        format=LoggingConfig.log_format,
-    )
-    logger = logging.getLogger(config.app_name)
 
     app = Flask(config.app_name)
         
@@ -60,6 +53,7 @@ def create_app() -> Flask:
         app,
         supports_credentials=True,
         origins=os.environ.get("FRONTEND_URL", "http://localhost:5000"),
+        allow_headers=["Content-Type", "Authorization", "X-Request-ID", "X-Correlation-ID"],
     )
     
     auth_manager, redis_store = build_auth_stack(app, config)
@@ -88,6 +82,7 @@ def create_app() -> Flask:
     
     # Request validation rules
     RequestRules(app)
+    register_error_handlers(app)
     
     return app
 

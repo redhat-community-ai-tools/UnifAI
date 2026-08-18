@@ -1,10 +1,4 @@
 import logging
-import sys
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-
+import warnings
+warnings.warn("shared.logger is deprecated; use logging.getLogger(__name__)", DeprecationWarning, stacklevel=2)
 logger = logging.getLogger("platform-backend")

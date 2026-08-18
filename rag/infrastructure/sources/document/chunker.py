@@ -3,7 +3,9 @@ from typing import Dict, List, Any
 from core.vector.domain.chunker import ContentChunker
 import tiktoken
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DoclingProcessingError(Exception):

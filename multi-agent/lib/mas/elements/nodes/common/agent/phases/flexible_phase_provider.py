@@ -5,8 +5,11 @@ This module provides a truly extensible phase provider system that can work
 with any custom phase definitions without requiring code changes.
 """
 
+import logging
+
 from typing import List, Dict, Set, Any, Union
 from abc import ABC, abstractmethod
+from global_utils.utils.logging_config import emit
 from mas.elements.tools.common.base_tool import BaseTool
 from .extensible_phases import ExtensiblePhaseProvider, PhaseRegistry, PhaseSystemFactory
 from .phase_protocols import PhaseState
@@ -15,6 +18,8 @@ from .phase_protocols import PhaseState
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..primitives import AgentObservation
+
+logger = logging.getLogger(__name__)
 
 
 class FlexiblePhaseProvider(ExtensiblePhaseProvider):
@@ -117,7 +122,8 @@ class WorkflowPhaseProvider(FlexiblePhaseProvider):
         try:
             return self._context_provider.get_context()
         except Exception as e:
-            print(f"Error getting workflow context: {e}")
+            emit(logger, logging.WARNING, "phase.validate_error",
+                 error=str(e), detail="get_workflow_context")
             return super().get_phase_context()
     
     def decide_next_phase(
@@ -137,7 +143,9 @@ class WorkflowPhaseProvider(FlexiblePhaseProvider):
             if hasattr(context, 'work_plan_status') and context.work_plan_status:
                 return self._decide_based_on_work_status(current_phase, context.work_plan_status)
         except Exception as e:
-            print(f"Error in context-based transition: {e}")
+            emit(logger, logging.WARNING, "phase.transition",
+                 current_phase=current_phase, error=str(e),
+                 detail="context_based_transition")
         
         # Fallback to simple progression
         return super().decide_next_phase(current_phase, context, observations)

@@ -4,14 +4,19 @@ Clean Pydantic models for phase definitions.
 Provides structured, type-safe phase configuration with validation support.
 """
 
+import logging
+
 from typing import List, Optional, Protocol, Any
 from pydantic import BaseModel, Field
+from global_utils.utils.logging_config import emit
 from mas.elements.tools.common.base_tool import BaseTool
 
 # Import for typing - avoid circular imports
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .models import PhaseValidationContext
+
+logger = logging.getLogger(__name__)
 
 
 class PhaseValidator(Protocol):
@@ -86,7 +91,8 @@ class PhaseDefinition(BaseModel):
                 if guidance:
                     guidance_parts.append(guidance)
             except Exception as e:
-                print(f"Validator error in phase '{self.name}': {e}")
+                emit(logger, logging.WARNING, "phase.validate_error",
+                     phase=self.name, error=str(e), detail="validator")
                 # Continue with other validators
         
         return "\n\n".join(guidance_parts) if guidance_parts else ""

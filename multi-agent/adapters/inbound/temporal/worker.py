@@ -13,8 +13,10 @@ Usage via CLI::
     mas temporal-worker --threads 20 --workflow-pollers 10
 """
 from concurrent.futures import ThreadPoolExecutor
+import logging
 from typing import Optional
 
+from global_utils.utils.logging_config import emit
 from temporalio.worker import Worker, UnsandboxedWorkflowRunner
 
 from config.app_config import AppConfig
@@ -25,6 +27,8 @@ from temporal.client import get_temporal_client
 from inbound.temporal.activities import GraphNodeActivities, SessionLifecycleActivities
 from inbound.temporal.activities.schedule_activities import ScheduleActivities
 from inbound.temporal.workflows import GraphTraversalWorkflow, SessionWorkflow, ScheduledSessionWorkflow
+
+logger = logging.getLogger(__name__)
 
 
 async def run_worker(
@@ -90,9 +94,11 @@ async def run_worker(
         workflow_runner=UnsandboxedWorkflowRunner(),
     )
 
-    print(
-        f"Worker started | task_queue={cfg.temporal_task_queue} "
-        f"| threads={threads} | workflow_pollers={workflow_pollers} "
-        f"| activity_pollers={activity_pollers}"
+    emit(
+        logger, logging.INFO, "temporal.worker_started",
+        task_queue=cfg.temporal_task_queue,
+        threads=threads,
+        workflow_pollers=workflow_pollers,
+        activity_pollers=activity_pollers,
     )
     await worker.run()

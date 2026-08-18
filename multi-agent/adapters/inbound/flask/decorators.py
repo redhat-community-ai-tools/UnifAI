@@ -25,6 +25,7 @@ from flask import current_app, g, jsonify, request, session
 
 from global_utils.constants import INTERNAL_AUTH_HEADER
 from global_utils.flask.decorators import validate_session, G_IDENTITY_SESSION
+from global_utils.flask.correlation import bind_session_id
 from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity, resolve_identity
 from mas.core.identity.ports import IdentityProvider
@@ -33,6 +34,21 @@ logger = logging.getLogger(__name__)
 
 G_IDENTITY = "identity"
 G_IDENTITY_USERNAME = "identity_username"
+
+
+def bind_session_id_arg(f: Callable[..., Any]) -> Callable[..., Any]:
+    """Bind MAS ``session_id`` kwarg into the logging ContextVar.
+
+    Place this decorator *below* ``@from_body`` / ``@from_query`` so
+    ``session_id`` is already injected when this runs.
+    """
+    @wraps(f)
+    def wrapped(*args: Any, **kwargs: Any) -> Any:
+        sid = kwargs.get("session_id")
+        if sid:
+            bind_session_id(str(sid))
+        return f(*args, **kwargs)
+    return wrapped
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -1,8 +1,4 @@
 import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+import warnings
+warnings.warn("shared.logger is deprecated; use logging.getLogger(__name__)", DeprecationWarning, stacklevel=2)
 logger = logging.getLogger("rag_pipeline")
-

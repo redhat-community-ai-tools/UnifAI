@@ -12,7 +12,9 @@ but uses hexagonal architecture components.
 from global_utils.celery_app import CeleryApp
 from bootstrap.app_container import pipeline_executor, get_pipeline_handler
 from core.pipeline.domain.port import PipelineContext
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def build_context(source_type: str, source_data: dict) -> PipelineContext:
@@ -102,6 +104,9 @@ def execute_pipeline_task(self, source_type: str, source_data: dict):
     Returns:
         dict with pipeline_id, source_type, status, and result
     """
+    from global_utils.flask.correlation import bind_from_celery_headers
+    bind_from_celery_headers(getattr(self.request, "headers", None) or {})
+
     try:
         logger.info(f"Starting pipeline execution for {source_type} source: {source_data}")
         

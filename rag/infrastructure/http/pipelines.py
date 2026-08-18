@@ -6,7 +6,9 @@ from webargs import fields
 from bootstrap.app_container import pipeline_dispatch_service
 from global_utils.helpers.apiargs import from_body
 from infrastructure.http.auth import rag_require_session
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 pipelines_bp = Blueprint("pipelines", __name__)
 

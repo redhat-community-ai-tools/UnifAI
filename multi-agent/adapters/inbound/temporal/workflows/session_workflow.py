@@ -74,6 +74,7 @@ class SessionWorkflow:
             BeginSessionParams(
                 run_id=self._params.run_id,
                 execution_context=self._params.execution_context,
+                request_id=self._params.request_id,
             ),
             start_to_close_timeout=_LIFECYCLE_TIMEOUT,
             retry_policy=_LIFECYCLE_RETRY,
@@ -92,6 +93,7 @@ class SessionWorkflow:
             graph_definition=self._params.graph_execution_params.graph_definition,
             session_id=self._params.run_id,
             execution_context=self._params.execution_context,
+            request_id=self._params.request_id,
         )
         try:
             return await workflow.execute_child_workflow(

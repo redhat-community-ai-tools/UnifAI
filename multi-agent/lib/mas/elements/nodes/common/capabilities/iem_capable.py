@@ -5,7 +5,9 @@ Clean, generic packet handling with minimal interface.
 Handles transport layer generically, delegates business logic to packet handlers.
 """
 
+import logging
 from typing import Any, TypeVar, Generic, List
+from global_utils.utils.logging_config import emit
 from mas.graph.state.state_view import StateView
 from mas.graph.state.graph_state import Channel
 from mas.core.iem.packets import BaseIEMPacket, TaskPacket
@@ -14,6 +16,8 @@ from mas.core.iem.interfaces import InterMessenger
 from mas.core.iem.factory import messenger_from_ctx
 from mas.core.contracts import SupportsStateContext
 from mas.core.iem.utils import get_outgoing_targets
+
+logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
 # Type variable bound to the minimal "SupportsStateContext" Protocol.
@@ -178,7 +182,7 @@ class IEMCapableMixin(Generic[TSupportsState]):
         elif packet.type == PacketType.DEBUG:
             self.handle_debug_packet(packet)
         else:
-            print(f"Unknown packet type: {packet.type}")
+            emit(logger, logging.WARNING, "iem.unknown_packet_type", packet_type=packet.type)
 
     # === PACKET TYPE HANDLERS (Override in subclasses) ===
     def handle_task_packet(self, packet: BaseIEMPacket) -> None:
