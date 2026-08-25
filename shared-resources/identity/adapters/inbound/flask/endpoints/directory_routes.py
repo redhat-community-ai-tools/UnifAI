@@ -18,7 +18,13 @@ def _parse_limit(default: int = 20) -> int:
 
 
 def _user_token():
-    return request.headers.get("X-User-Token")
+    """Retrieve the user's access token from the server-side session."""
+    auth_manager = current_app.extensions.get('auth_manager')
+    if auth_manager:
+        session_data = auth_manager._get_server_session()
+        if session_data:
+            return session_data.get('access_token')
+    return request.headers.get("X-User-Token")  # ponytail: fallback for backward compat
 
 
 def _cached_fetch(cache, cache_key: str, fetch: Callable, response_key: str, log_action: str):
