@@ -10,14 +10,16 @@
  * useSessionHub with its own collab hooks.
  */
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import type { FetchNextPageOptions } from "@tanstack/react-query";
 import { fetchResolvedBlueprint } from "@/api/blueprints";
 import {
   createSession,
   deleteSession,
   getSessionChat,
-  listUserSessions,
-  fetchSessionChatById
+  listSessions,
+  fetchSessionChatById,
 } from "@/api/sessions";
 import { useStreamingData } from "@/components/agentic-ai/StreamingDataContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -63,7 +65,8 @@ export interface UseSessionHubOptions {
 export interface UseSessionHubReturn {
   // ── Session list ────────────────────────────────────────────────────────
   chatSessions: ChatSession[];
-  setChatSessions: React.Dispatch<React.SetStateAction<ChatSession[]>>;
+  updateSessionInCache: (sessionId: string, updater: (s: ChatSession) => ChatSession) => void;
+  refreshSessions: () => Promise<ChatSession[]>;
   selectedSession: ChatSession | null;
   setSelectedSession: React.Dispatch<React.SetStateAction<ChatSession | null>>;
   currentSessionMessages: ChatMessage[];
@@ -71,7 +74,11 @@ export interface UseSessionHubReturn {
   isLoading: boolean;
   error: string | null;
   isLoadingSessionMessages: boolean;
-  fetchChatSessions: (options?: { skipRunId?: boolean }) => Promise<void>;
+
+  // ── Pagination ─────────────────────────────────────────────────────────
+  fetchNextPage: (options?: FetchNextPageOptions) => Promise<unknown>;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
 
   // ── Session selection ───────────────────────────────────────────────────
   handleSessionSelect: (session: ChatSession) => Promise<void>;
@@ -155,16 +162,16 @@ type ChunkData = {
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 50;
+
 export function useSessionHub({
   runId,
   manualStreamControl = false,
   onSessionChange,
 }: UseSessionHubOptions): UseSessionHubReturn {
   // ── Session state ──────────────────────────────────────────────────────
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<ChatSession | null>(null);
   const [currentSessionMessages, setCurrentSessionMessages] = useState<ChatMessage[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isLiveRequest, setIsLiveRequest] = useState(false);
   const [isCancelled, setIsCancelled] = useState(false);
@@ -189,6 +196,7 @@ export function useSessionHub({
   const { isTeam, userId: contextUserId, displayName, teamId } =
     useWorkspaceIdentity();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // Refs
   const sessionSelectRequestId = useRef(0);
@@ -210,6 +218,66 @@ export function useSessionHub({
 
   // ── Session management (message loading) ───────────────────────────────
   const { loadSessionMessages } = useSessionManagement();
+
+  // ── transformApiDataToSessions ─────────────────────────────────────────
+  const transformApiDataToSessions = useCallback(
+    (apiData: ChatSessionData[]): ChatSession[] =>
+      apiData.map((sessionData, index) => {
+        const base = transformSessionData(sessionData, index);
+        let sharing = false;
+        if (base.fromSharedLink && base.blueprintExists && base.blueprintId) {
+          sharing = !(sessionData.metadata?.public_usage_scope ?? false);
+        }
+        return { ...base, isSharingDisabled: sharing };
+      }),
+    [],
+  );
+
+  // ── Paginated session fetching ────────────────────────────────────────
+  const sessionsQueryKey = useMemo(
+    () => ['chatSessions', contextUserId, teamId] as const,
+    [contextUserId, teamId],
+  );
+
+  const {
+    data: sessionsData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError: isSessionsError,
+    isFetchNextPageError,
+    error: sessionsQueryError,
+  } = useInfiniteQuery({
+    queryKey: sessionsQueryKey,
+    queryFn: async ({ pageParam = 0 }) => {
+      const params = new URLSearchParams({
+        userId: contextUserId,
+        limit: String(PAGE_SIZE),
+        offset: String(pageParam),
+      });
+      if (teamId) params.set('teamId', teamId);
+      const { sessions, pagination } = await listSessions(params);
+      return {
+        sessions: sortSessionsByTimestamp(transformApiDataToSessions(sessions)),
+        hasMore: pagination.has_more,
+        nextOffset: pagination.offset + pagination.limit,
+        total: pagination.total,
+      };
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      if (!lastPage.hasMore) return undefined;
+      return lastPage.nextOffset;
+    },
+  });
+
+  const chatSessions = useMemo(() => sessionsData?.pages.flatMap((p) => p.sessions) ?? [], [sessionsData]);
+  const sessionsError = isSessionsError
+    ? (sessionsQueryError instanceof Error
+        ? sessionsQueryError.message
+        : "Failed to load chat sessions")
+    : null;
 
   // ── Node-list streaming ────────────────────────────────────────────────
   const updateNodeList = useCallback(
@@ -320,22 +388,27 @@ export function useSessionHub({
     }, []),
   });
 
-  // ── transformApiDataToSessions ─────────────────────────────────────────
-  const transformApiDataToSessions = useCallback(
-    (apiData: ChatSessionData[]): ChatSession[] =>
-      apiData.map((sessionData, index) => {
-        const base = transformSessionData(sessionData, index);
-        let sharing = false;
-        if (base.fromSharedLink && base.blueprintExists && base.blueprintId) {
-          sharing = !(sessionData.metadata?.public_usage_scope ?? false);
-        }
-        return { ...base, isSharingDisabled: sharing };
-      }),
-    [],
+  // Update a single session inside the paged query cache without refetching.
+  const updateSessionInCache = useCallback(
+    (sessionId: string, updater: (s: ChatSession) => ChatSession) => {
+      queryClient.setQueryData(sessionsQueryKey, (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            sessions: page.sessions.map((s: ChatSession) =>
+              s.id === sessionId ? updater(s) : s,
+            ),
+          })),
+        };
+      });
+    },
+    [queryClient, sessionsQueryKey],
   );
 
   // ── handleSessionSelect ────────────────────────────────────────────────
-  // Stable ref so fetchChatSessions can call it without a circular dep
+  // Stable ref so auto-select and handleAddFlow can call it without a circular dep
   const handleSessionSelectRef = useRef<(session: ChatSession) => Promise<void>>(null!);
 
   const onSessionChangeRef = useRef(onSessionChange);
@@ -382,19 +455,13 @@ export function useSessionHub({
               const disabled = !(resolved.metadata?.usageScope === "public");
               setIsSharingDisabled(disabled);
               current = { ...current, isSharingDisabled: disabled };
-              setChatSessions((prev) =>
-                prev.map((s) =>
-                  s.id === current.id
-                    ? { ...s, blueprintName, isSharingDisabled: disabled }
-                    : s,
-                ),
-              );
+              updateSessionInCache(current.id, (s) => ({
+                ...s, blueprintName, isSharingDisabled: disabled,
+              }));
             } else if (blueprintName) {
-              setChatSessions((prev) =>
-                prev.map((s) =>
-                  s.id === current.id ? { ...s, blueprintName } : s,
-                ),
-              );
+              updateSessionInCache(current.id, (s) => ({
+                ...s, blueprintName,
+              }));
             }
             setSelectedSession(current);
           }
@@ -413,9 +480,7 @@ export function useSessionHub({
         const merged = { ...current, ...updated };
         setSelectedSession(merged);
         setCurrentSessionMessages(merged.messages);
-        setChatSessions((prev) =>
-          prev.map((s) => (s.id === current.id ? merged : s)),
-        );
+        updateSessionInCache(current.id, () => merged);
       } else {
         setCurrentSessionMessages([]);
       }
@@ -444,35 +509,50 @@ export function useSessionHub({
       clearStream,
       validateSelectedBlueprint,
       teamId,
-      isTeam,
       loadSessionMessages,
       manualStreamControl,
+      updateSessionInCache,
     ],
   );
   handleSessionSelectRef.current = handleSessionSelect;
 
-  // ── fetchChatSessions ──────────────────────────────────────────────────
-  const fetchChatSessions = useCallback(async (options?: { skipRunId?: boolean }) => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const response = await listUserSessions({ teamId });
-      const sorted = sortSessionsByTimestamp(
-        transformApiDataToSessions(response),
-      );
-      setChatSessions(sorted);
+  // ── refreshSessions ────────────────────────────────────────────────────
+  const refreshSessions = useCallback(async (): Promise<ChatSession[]> => {
+    await queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
+    const data = queryClient.getQueryData(sessionsQueryKey) as any;
+    return data?.pages.flatMap((p: any) => p.sessions) ?? [];
+  }, [queryClient, sessionsQueryKey]);
 
-      const effectiveRunId = options?.skipRunId ? null : runId;
-      if (effectiveRunId) {
-        const target = sorted.find((s) => s.id === effectiveRunId);
-        if (target) {
-          await handleSessionSelectRef.current(target);
-        } else {
-          // Session not in the user's list — attempt a direct load.
+  // ── Auto-select session on load ────────────────────────────────────────
+  const activeRunIdRef = useRef(runId);
+  const autoSelectKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${contextUserId}:${teamId}:${activeRunIdRef.current ?? "first"}`;
+    if (isLoading || !sessionsData || autoSelectKeyRef.current === key) return;
+    if (chatSessions.length > 0 && !selectedSession) {
+      const target = activeRunIdRef.current
+        ? chatSessions.find((s) => s.id === activeRunIdRef.current)
+        : chatSessions[0];
+
+      if (
+        activeRunIdRef.current &&
+        !target &&
+        hasNextPage &&
+        !isFetchingNextPage &&
+        !isFetchNextPageError
+      ) {
+        fetchNextPage();
+        return;
+      }
+
+      // Deep-link fallback: session not in any loaded page
+      if (activeRunIdRef.current && !target) {
+        autoSelectKeyRef.current = key;
+        (async () => {
           try {
-            const chatData = await fetchSessionChatById(effectiveRunId);
+            const chatData = await fetchSessionChatById(activeRunIdRef.current!);
             const deepLinked: ChatSession = {
-              id: effectiveRunId,
+              id: activeRunIdRef.current!,
               blueprintId: "",
               title: "Deep-linked session",
               lastActive: "",
@@ -493,21 +573,21 @@ export function useSessionHub({
             } else {
               setError("Failed to load the requested session.");
             }
-            if (sorted.length > 0) {
-              await handleSessionSelectRef.current(sorted[0]);
+            if (chatSessions.length > 0) {
+              await handleSessionSelectRef.current(chatSessions[0]);
             }
           }
-        }
-      } else if (sorted.length > 0) {
-        await handleSessionSelectRef.current(sorted[0]);
+        })();
+        return;
       }
-    } catch (err) {
-      console.error("Error fetching chat sessions:", err);
-      setError("Failed to load chat sessions");
-    } finally {
-      setIsLoading(false);
+
+      if (!target) return;
+      autoSelectKeyRef.current = key;
+      handleSessionSelectRef.current(target);
     }
-  }, [teamId, runId, transformApiDataToSessions]);
+  }, [isLoading, sessionsData, chatSessions, selectedSession, runId,
+      contextUserId, teamId, hasNextPage, isFetchingNextPage, isFetchNextPageError,
+      fetchNextPage]);
 
   // ── Delete ─────────────────────────────────────────────────────────────
   const handleDeleteChat = useCallback(
@@ -524,7 +604,7 @@ export function useSessionHub({
     setIsDeleting(true);
     try {
       await deleteSession(chatToDelete.id);
-      setChatSessions((prev) => prev.filter((s) => s.id !== chatToDelete.id));
+      refreshSessions();
       if (selectedSession?.id === chatToDelete.id) {
         setSelectedSession(null);
         setCurrentSessionMessages([]);
@@ -541,7 +621,7 @@ export function useSessionHub({
     } finally {
       setIsDeleting(false);
     }
-  }, [chatToDelete, selectedSession?.id, toast]);
+  }, [chatToDelete, selectedSession?.id, toast, refreshSessions]);
 
   const cancelDeleteChat = useCallback(() => {
     setShowDeleteModal(false);
@@ -554,22 +634,47 @@ export function useSessionHub({
     setIsCreatingSession(true);
     try {
       const graphId = selectedFlowForModal.id || `graph-${Date.now()}`;
-      await createSession({ blueprintId: graphId, teamId });
-      const freshSessions = await listUserSessions({ teamId });
-      const sorted = sortSessionsByTimestamp(
-        transformApiDataToSessions(freshSessions),
-      );
-      setChatSessions(sorted);
-      const newest = sorted.find((s) => s.blueprintId === graphId);
-      if (newest) await handleSessionSelectRef.current(newest);
+      const runId = await createSession({ blueprintId: graphId, teamId });
+      const newSession: ChatSession = {
+        id: runId,
+        blueprintId: graphId,
+        title: selectedFlowForModal.name || "New Session",
+        lastActive: "Just now",
+        timestamp: new Date(),
+        preview: "Click to load messages...",
+        messages: [],
+        blueprintExists: true,
+      };
+
+      queryClient.setQueryData(sessionsQueryKey, (old: any) => {
+        if (!old?.pages?.length) return old;
+        const firstPage = old.pages[0];
+        return {
+          ...old,
+          pages: [
+            { ...firstPage, sessions: [newSession, ...firstPage.sessions] },
+            ...old.pages.slice(1),
+          ],
+        };
+      });
+
+      handleSessionSelectRef.current(newSession);
+
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
+
       setShowAddFlowModal(false);
       setSelectedFlowForModal(null);
     } catch (err) {
       console.error("Error creating session:", err);
+      toast({
+        title: "Create session failed",
+        description: "Could not start a new session. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsCreatingSession(false);
     }
-  }, [selectedFlowForModal, teamId, transformApiDataToSessions]);
+  }, [selectedFlowForModal, teamId, queryClient, sessionsQueryKey, toast]);
 
   const handleCancelAddFlow = useCallback(() => {
     setShowAddFlowModal(false);
@@ -647,26 +752,33 @@ export function useSessionHub({
   const hasMountedRef = useRef(false);
   useEffect(() => {
     sessionSelectRequestId.current += 1;
+    autoSelectKeyRef.current = null;
+    activeRunIdRef.current = hasMountedRef.current ? null : runId;
     sessionStream.cancelStream();
     clearStream();
     setSelectedSession(null);
     setCurrentSessionMessages([]);
-    fetchChatSessions({ skipRunId: hasMountedRef.current });
+    queryClient.removeQueries({ queryKey: sessionsQueryKey });
+    refreshSessions();
     hasMountedRef.current = true;
   }, [contextUserId, teamId]);
 
   // ── Return ─────────────────────────────────────────────────────────────
   return {
     chatSessions,
-    setChatSessions,
+    updateSessionInCache,
+    refreshSessions,
     selectedSession,
     setSelectedSession,
     currentSessionMessages,
     setCurrentSessionMessages,
     isLoading,
-    error,
+    error: sessionsError ?? error,
     isLoadingSessionMessages,
-    fetchChatSessions,
+
+    fetchNextPage,
+    hasNextPage: hasNextPage ?? false,
+    isFetchingNextPage,
 
     handleSessionSelect,
     sessionSelectRequestId,

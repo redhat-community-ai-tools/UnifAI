@@ -26,6 +26,7 @@ import { getBlueprintInfo, type PromptShortcut } from "@/api/blueprints";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { UmamiTrack } from "@/components/ui/umamitrack";
 import { UmamiEvents } from "@/config/umamiEvents";
+import { useScrollPagination } from "@/hooks/use-scroll-pagination";
 
 export default function PublicChat() {
   const [, params] = useRoute("/chat/:token");
@@ -68,7 +69,13 @@ export default function PublicChat() {
     showDeleteModal,
     setShowDeleteModal,
     chatToDelete,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    error: sessionsError,
   } = usePublicChat(blueprintId);
+
+  const { scrollRef } = useScrollPagination({ hasNextPage, isFetchingNextPage, fetchNextPage });
 
   // Check sharing status for the blueprint using getBlueprintInfo (usageScope is part of metadata)
   const checkSharingStatus = useCallback(async (blueprintId: string) => {
@@ -124,7 +131,7 @@ export default function PublicChat() {
 
         const shortcuts = blueprintInfo.spec_dict?.prompt_shortcuts;
         setDefaultPrompts(Array.isArray(shortcuts) ? shortcuts : []);
-        
+
         // Check sharing status from the same blueprintInfo response (no extra API call)
         const isPublic = blueprintInfo.metadata?.usageScope === "public";
         if (!isPublic) {
@@ -287,10 +294,14 @@ export default function PublicChat() {
                 </UmamiTrack>
               </div>
             </CardHeader>
-            <CardContent className="p-0 flex-grow overflow-y-auto">
+            <CardContent className="p-0 flex-grow overflow-y-auto" ref={scrollRef}>
               {isLoadingSessions ? (
                 <div className="p-4 text-center">
                   <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+                </div>
+              ) : sessionsError ? (
+                <div className="p-4 text-center text-red-400 text-sm">
+                  {sessionsError}
                 </div>
               ) : chatSessions.length === 0 ? (
                 <div className="p-4 text-center text-gray-400 text-sm">
@@ -342,6 +353,11 @@ export default function PublicChat() {
                 </div>
               )}
             </CardContent>
+            {isFetchingNextPage && (
+              <div className="p-4 text-center">
+                <Loader2 className="h-5 w-5 animate-spin mx-auto text-primary" />
+              </div>
+            )}
           </Card>
         </div>
 

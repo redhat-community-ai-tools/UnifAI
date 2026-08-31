@@ -1,8 +1,10 @@
 import axios from '@/http/axiosAgentConfig';
+import { ChatSessionData } from '@/types/session';
 
 export interface CreateSessionParams {
   blueprintId: string;
   teamId?: string;
+  metadata?: Record<string, any>;
 }
 
 export async function createSession(params: CreateSessionParams) {
@@ -41,19 +43,6 @@ export interface SubmitSessionResponse {
  */
 export async function submitSession(params: SubmitSessionParams): Promise<SubmitSessionResponse> {
   const response = await axios.post('/sessions/user.session.submit', params);
-  return response.data;
-}
-
-/**
- * List chat sessions for the current user/team.
- */
-export async function listUserSessions(params: {
-  teamId?: string;
-} = {}): Promise<any[]> {
-  const query = new URLSearchParams();
-  if (params.teamId) query.set('teamId', params.teamId);
-  const qs = query.toString();
-  const response = await axios.get(`/sessions/session.user.list${qs ? `?${qs}` : ''}`);
   return response.data;
 }
 
@@ -250,6 +239,27 @@ export async function getSessionState(sessionId: string): Promise<{ output: unkn
   const query = new URLSearchParams({ sessionId });
   const response = await axios.get(`/sessions/session.state.get?${query.toString()}`);
   return response.data;
+}
+
+/**
+ * List sessions for a user.
+ * 
+ * @param params - URLSearchParams containing the list of sessions
+ * @returns List of sessions and pagination information
+ */
+export async function listSessions(params: URLSearchParams): Promise<ListSessionsResponse> {
+  const response = await axios.get('/sessions/session.user.list', { params });
+  return response.data;
+}
+
+export interface ListSessionsResponse {
+  sessions: ChatSessionData[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+  };
 }
 
 /**

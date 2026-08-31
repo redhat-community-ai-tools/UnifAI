@@ -2,13 +2,17 @@ import logging
 
 from flask import Blueprint, jsonify, current_app, Response, request
 from global_utils.helpers.apiargs import from_body, from_query
+from marshmallow import validate
 from webargs import fields
 import json
+from pydantic import ValidationError
 from pydantic.json import pydantic_encoder
 from mas.core.channels import with_heartbeats
 from mas.core.hitl.models import ApprovalOverrides, ApprovalRuleSet
 from mas.session.domain.exceptions import BlueprintNotFoundError
+from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.session.domain.models import SessionMeta
+from mas.session.domain.dto import SessionListFilter, PaginationMeta, PaginatedSessions
 from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user, require_session_identity
 
 logger = logging.getLogger(__name__)
@@ -246,12 +250,90 @@ def get_session_status(session_id):
         return jsonify({"error": str(e)}), 500
 
 
+def _filter_error_message(exc: ValidationError) -> str:
+    """Translate a ``SessionListFilter`` validation error into a client message.
+
+    Preserves the two client-facing messages the previous hand-rolled
+    allowlist emitted: unsupported keys and non-string values. The allowlist
+    itself now lives in ``SessionListFilter`` (``extra="forbid"`` + typed
+    fields), which is what rejects unknown keys and MongoDB query operators
+    smuggled in as non-string values.
+    """
+    unknown_keys = [
+        str(err["loc"][-1]) for err in exc.errors() if err.get("type") == "extra_forbidden"
+    ]
+    if unknown_keys:
+        return f"Unsupported filter keys: {', '.join(sorted(unknown_keys))}"
+
+    for err in exc.errors():
+        if err.get("loc"):
+            return f"Filter '{err['loc'][-1]}' must be a string value"
+    return "filters contains invalid values"
+
+
+def _parse_session_filters(raw_filters: str | None) -> SessionListFilter:
+    """Parse, validate, and allowlist the ``filters`` query param.
+
+    Returns a typed ``SessionListFilter``, or raises ``ValueError`` with a
+    client-facing message if the value is malformed, contains unsupported
+    keys, or carries non-string values (which could smuggle MongoDB query
+    operators into the ``$match`` document).
+    """
+    if not raw_filters:
+        return SessionListFilter()
+
+    try:
+        parsed = json.loads(raw_filters)
+    except (json.JSONDecodeError, TypeError) as e:
+        raise ValueError("filters must be a valid JSON object") from e
+
+    if not isinstance(parsed, dict):
+        raise ValueError("filters must be a JSON object")
+
+    try:
+        return SessionListFilter.model_validate(parsed)
+    except ValidationError as e:
+        raise ValueError(_filter_error_message(e)) from e
+
+
 @sessions_bp.route("/session.user.list", methods=["GET"])
 @with_require_identity_authorization
-def list_user_sessions(identity):
+@from_query({
+    "limit": fields.Int(data_key="limit", load_default=DEFAULT_SESSION_PAGE_SIZE, validate=validate.Range(min=1, max=100)),
+    "offset": fields.Int(data_key="offset", load_default=0, validate=validate.Range(min=0)),
+    "filters": fields.Str(data_key="filters", required=False, load_default=None),
+})
+def list_user_sessions(identity, limit: int, offset: int, filters: str | None = None):
+    try:
+        session_filter = _parse_session_filters(filters)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
     try:
         svc = current_app.container.session_service
-        return jsonify(svc.list_user_sessions(identity)), 200
+        # Legacy callers (e.g. the Slack /sessions command) omit limit/offset
+        # entirely and expect the full session array back, since they page
+        # client-side. webargs' load_default=50 means `limit` is never None
+        # here, so gate what reaches the service on whether the client
+        # actually asked for pagination, not on the defaulted value.
+        paginated = "limit" in request.args or "offset" in request.args
+        effective_limit = limit if paginated else None
+        items = svc.list_user_sessions(identity, limit=effective_limit, offset=offset, filters=session_filter)
+
+        if paginated:
+            total = svc.count(identity, session_filter)
+            response = PaginatedSessions(
+                sessions=items,
+                pagination=PaginationMeta(
+                    total=total,
+                    limit=limit,
+                    offset=offset,
+                    has_more=offset + limit < total,
+                ),
+            )
+            return jsonify(response.model_dump(mode="json")), 200
+        else:
+            return jsonify([item.model_dump(mode="json") for item in items]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
