@@ -10,14 +10,14 @@ spec:
     - port: {{ .Values.service.port_grpc }}
       targetPort: {{ .Values.service.port_grpc }}
       protocol: TCP
-      name: port_grpc
+      name: port-grpc
     - port: {{ .Values.service.port_http }}
       targetPort: {{ .Values.service.port_http }}
       protocol: TCP
-      name: port_http
+      name: port-http
     - port: {{ .Values.service.port_ui }}
       targetPort: {{ .Values.service.port_ui }}
       protocol: TCP
-      name: port_ui
+      name: port-ui
   selector:
     app: {{ include "logging.name" . }}
