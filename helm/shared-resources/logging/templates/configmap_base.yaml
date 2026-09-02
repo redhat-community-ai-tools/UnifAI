@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "logging.fullname" . }}-base
+  labels:
+    {{- include "logging.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch: {}
+    exporters:
+      debug:
+        verbosity: basic
+      sumologic:
+        endpoint: ${env:SUMOLOGIC_ENDPOINT}  
+    extensions:
+      zpages:
+        endpoint: 0.0.0.0:55679
+    service:
+      extensions: [zpages]
+      pipelines:
+        logs:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug]
