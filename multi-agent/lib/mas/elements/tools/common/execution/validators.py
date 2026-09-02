@@ -6,10 +6,8 @@ function from global_utils.
 """
 import logging
 from typing import Dict, Optional, Any, Tuple, List
-
 from mas.elements.tools.common.base_tool import BaseTool
 from global_utils.utils.util import validate_arguments
-from global_utils.utils.logging_config import emit
 from .interfaces import ExecutionValidator
 
 logger = logging.getLogger(__name__)
@@ -40,10 +38,7 @@ class ArgumentValidator(ExecutionValidator):
         except ValueError as e:
             return False, str(e)
         except Exception as e:
-            emit(
-                logger, logging.ERROR, "tool.validation_error",
-                tool_name=tool.name, error=str(e),
-            )
+            logger.error("tool.validation_error", extra={"tool_name": tool.name, "error": str(e)})
             return False, f"Validation error: {e}"
 
 

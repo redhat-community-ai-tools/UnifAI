@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 from typing import Iterable, List, Set, Tuple, Type
 
-from global_utils.utils.logging_config import emit
+
 from mas.elements.common.base_element_spec import BaseElementSpec
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ class SpecDiscoverer:
         root = self._root
         if not root.exists():
             # Nothing to import; warn the user but do not crash.
-            emit(logger, logging.WARNING, "catalog.discover_dir_not_found", root=str(root))
+            logger.warning("catalog.discover_dir_not_found", extra={"root": str(root)})
             return
 
         for category_dir in root.iterdir():
@@ -145,4 +145,4 @@ class SpecDiscoverer:
             importlib.import_module(module_name)
         except Exception as exc:  # pragma: no cover – never crash discovery
             # TODO when adding logging print the traceback
-            emit(logger, logging.WARNING, "catalog.discover_import_failed", module=module_name, error=str(exc))
+            logger.warning("catalog.discover_import_failed", extra={"module": module_name, "error": str(exc)})

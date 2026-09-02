@@ -6,7 +6,6 @@ Uses clean task-based architecture with agentic threading.
 """
 
 import logging
-from global_utils.utils.logging_config import emit
 from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
@@ -107,10 +106,7 @@ class UserQuestionNode(WorkloadCapableMixin, IEMCapableMixin, BaseNode):
             if thread.status == ThreadStatus.ACTIVE and not thread.parent_thread_id:
                 # Found an active root thread initiated by this node
                 active_thread = thread
-                emit(
-                    logger, logging.INFO, "session.thread_reuse",
-                    node_uid=self.uid, thread_id=thread.thread_id,
-                )
+                logger.info("session.thread_reuse", extra={"node_uid": self.uid, "thread_id": thread.thread_id})
                 break
         
         if active_thread:
@@ -123,10 +119,7 @@ class UserQuestionNode(WorkloadCapableMixin, IEMCapableMixin, BaseNode):
                 objective=f"Process user query: {user_query[:50]}...",
                 initiator=self.uid
             )
-            emit(
-                logger, logging.INFO, "session.thread_created",
-                node_uid=self.uid, thread_id=thread.thread_id,
-            )
+            logger.info("session.thread_created", extra={"node_uid": self.uid, "thread_id": thread.thread_id})
         
         # Copy current conversation to workspace using new SOLID API
         self.copy_graphstate_messages_to_workspace(thread.thread_id)
@@ -151,13 +144,7 @@ class UserQuestionNode(WorkloadCapableMixin, IEMCapableMixin, BaseNode):
         
         # Log workflow initiation with enhanced context
         if active_thread:
-            emit(
-                logger, logging.INFO, "session.thread_reuse",
-                node_uid=self.uid, thread_id=thread.thread_id, continued=True,
-            )
+            logger.info("session.thread_reuse", extra={"node_uid": self.uid, "thread_id": thread.thread_id, "continued": True})
         else:
-            emit(
-                logger, logging.INFO, "session.thread_created",
-                node_uid=self.uid, thread_id=thread.thread_id, workflow_initiated=True,
-            )
+            logger.info("session.thread_created", extra={"node_uid": self.uid, "thread_id": thread.thread_id, "workflow_initiated": True})
 

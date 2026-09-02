@@ -16,9 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 from typing import Optional
 
-from global_utils.utils.logging_config import emit
-from temporalio.worker import Worker, UnsandboxedWorkflowRunner
 
+from temporalio.worker import Worker, UnsandboxedWorkflowRunner
 from config.app_config import AppConfig
 from mas.engine.distributed.node_executor import NodeExecutor
 from mas.session.execution.lifecycle_handler import BackgroundLifecycleHandler
@@ -94,11 +93,5 @@ async def run_worker(
         workflow_runner=UnsandboxedWorkflowRunner(),
     )
 
-    emit(
-        logger, logging.INFO, "temporal.worker_started",
-        task_queue=cfg.temporal_task_queue,
-        threads=threads,
-        workflow_pollers=workflow_pollers,
-        activity_pollers=activity_pollers,
-    )
+    logger.info("temporal.worker_started", extra={"task_queue": cfg.temporal_task_queue, "threads": threads, "workflow_pollers": workflow_pollers, "activity_pollers": activity_pollers})
     await worker.run()

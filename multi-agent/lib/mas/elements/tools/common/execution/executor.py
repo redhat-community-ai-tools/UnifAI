@@ -8,11 +8,8 @@ import asyncio
 import logging
 import time
 from typing import Dict, List, Optional, Any, Callable, Awaitable
-
 from mas.elements.tools.common.base_tool import BaseTool
 from global_utils.utils.async_bridge import AsyncBridge
-from global_utils.utils.logging_config import emit
-
 from .interfaces import ErrorHandler, ExecutionValidator, ExecutionStrategy
 from .strategies import (
     SequentialStrategy, ParallelStrategy,
@@ -189,9 +186,9 @@ class ToolExecutorManager:
                     raise Exception(f"Circuit breaker is open for tool {tool.name}")
 
             # Log tool execution
-            emit(logger, logging.INFO, "tool.execute", tool_name=tool.name)
+            logger.info("tool.execute", extra={"tool_name": tool.name})
             if request.args:
-                emit(logger, logging.INFO, "tool.execute", tool_name=tool.name, args=request.args)
+                logger.info("tool.execute", extra={"tool_name": tool.name, "tool_args": request.args})
 
             # Execute the tool with timeout
             result = await self._execute_with_timeout(tool, request.args, self._default_timeout)
@@ -219,10 +216,7 @@ class ToolExecutorManager:
             return response
 
         except Exception as e:
-            emit(
-                logger, logging.ERROR, "tool.failed",
-                tool_name=request.tool_name, error=str(e),
-            )
+            logger.error("tool.failed", extra={"tool_name": request.tool_name, "error": str(e)})
 
             # Record failure in circuit breaker
             if self._circuit_breaker:
@@ -374,10 +368,7 @@ class ToolExecutorManager:
             try:
                 await hook(tool, args, context)
             except Exception as e:
-                emit(
-                    logger, logging.WARNING, "tool.failed",
-                    hook_type="pre_execution", error=str(e),
-                )
+                logger.warning("tool.failed", extra={"hook_type": "pre_execution", "error": str(e)})
 
     async def _run_post_execution_hooks(self, result: ToolExecutionResponse, context: Optional[Dict[str, Any]]):
         """Run all post-execution hooks (thread-safe)."""
@@ -389,10 +380,7 @@ class ToolExecutorManager:
             try:
                 await hook(result, context)
             except Exception as e:
-                emit(
-                    logger, logging.WARNING, "tool.failed",
-                    hook_type="post_execution", error=str(e),
-                )
+                logger.warning("tool.failed", extra={"hook_type": "post_execution", "error": str(e)})
 
     async def _execute_with_timeout(self, tool: BaseTool, args: Dict[str, Any], timeout: Optional[float]):
         """Execute tool with timeout support."""

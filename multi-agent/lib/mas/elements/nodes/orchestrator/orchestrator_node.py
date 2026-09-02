@@ -9,9 +9,7 @@ This node coordinates work execution by:
 """
 
 import logging
-
 from typing import Optional, Any, List, ClassVar, Dict
-from global_utils.utils.logging_config import emit
 from mas.graph.state.state_view import StateView
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.elements.tools.common.base_tool import BaseTool
@@ -167,13 +165,11 @@ class OrchestratorNode(
 
         if task.is_response():
             # This is a response to delegated work
-            emit(logger, logging.INFO, "orchestrator.packet_received",
-                 node_uid=self.uid, packet_type="response")
+            logger.info("orchestrator.packet_received", extra={"node_uid": self.uid, "packet_type": "response"})
             self._handle_task_response(task)
         else:
             # This is a new work request
-            emit(logger, logging.INFO, "orchestrator.packet_received",
-                 node_uid=self.uid, packet_type="new_work")
+            logger.info("orchestrator.packet_received", extra={"node_uid": self.uid, "packet_type": "new_work"})
             self._handle_new_work(task)
 
     def _record_trigger(
@@ -228,10 +224,7 @@ class OrchestratorNode(
         Args:
             cycle: OrchestratorCycle with accumulated triggers
         """
-        emit(logger, logging.INFO, "orchestrator.cycle_start",
-             node_uid=self.uid, thread_id=cycle.thread_id,
-             triggers=cycle.get_trigger_summary(),
-             changed_items=list(cycle.all_changed_items) if cycle.all_changed_items else [])
+        logger.info("orchestrator.cycle_start", extra={"node_uid": self.uid, "thread_id": cycle.thread_id, "triggers": cycle.get_trigger_summary(), "changed_items": list(cycle.all_changed_items) if cycle.all_changed_items else []})
         
         # Get current status
         status = self.workspaces.get_work_plan_status(cycle.thread_id, self.uid)
@@ -272,20 +265,14 @@ class OrchestratorNode(
         # Find correlation in task data
         correlation_task_id = task.correlation_task_id
         if not correlation_task_id:
-            emit(logger, logging.WARNING, "orchestrator.packet_received",
-                 node_uid=self.uid, packet_type="response",
-                 detail="no correlation_task_id, skipping")
+            logger.warning("orchestrator.packet_received", extra={"node_uid": self.uid, "packet_type": "response", "detail": "no correlation_task_id, skipping"})
             return None
 
-        emit(logger, logging.DEBUG, "orchestrator.packet_received",
-             node_uid=self.uid, packet_type="response",
-             correlation_task_id=correlation_task_id,
-             from_thread=task.thread_id, created_by=task.created_by)
+        logger.debug("orchestrator.packet_received", extra={"node_uid": self.uid, "packet_type": "response", "correlation_task_id": correlation_task_id, "from_thread": task.thread_id, "created_by": task.created_by})
 
         # Determine which thread to update (parent vs child thread handling)
         target_thread_id = self._resolve_target_thread_for_response(task)
-        emit(logger, logging.DEBUG, "orchestrator.packet_received",
-             node_uid=self.uid, target_thread_id=target_thread_id)
+        logger.debug("orchestrator.packet_received", extra={"node_uid": self.uid, "target_thread_id": target_thread_id})
 
         # Update work plan and workspace context
         service = self.workspaces
@@ -353,9 +340,7 @@ class OrchestratorNode(
         )
         
         if success:
-            emit(logger, logging.INFO, "orchestrator.response_stored",
-                 node_uid=self.uid, thread_id=target_thread_id,
-                 correlation_task_id=correlation_task_id)
+            logger.info("orchestrator.response_stored", extra={"node_uid": self.uid, "thread_id": target_thread_id, "correlation_task_id": correlation_task_id})
             
             # Find which work items got responses
             changed_item_ids = self._find_items_for_task(target_thread_id, correlation_task_id)
@@ -366,14 +351,9 @@ class OrchestratorNode(
                 reason=CycleTriggerReason.RESPONSE_ARRIVED,
                 changed_items=changed_item_ids
             )
-            emit(logger, logging.INFO, "orchestrator.response_stored",
-                 node_uid=self.uid, thread_id=target_thread_id,
-                 detail="response trigger recorded")
+            logger.info("orchestrator.response_stored", extra={"node_uid": self.uid, "thread_id": target_thread_id, "detail": "response trigger recorded"})
         else:
-            emit(logger, logging.ERROR, "orchestrator.response_stored",
-                 node_uid=self.uid, thread_id=target_thread_id,
-                 correlation_task_id=correlation_task_id,
-                 detail="failed to store response, delegation exchange not found")
+            logger.error("orchestrator.response_stored", extra={"node_uid": self.uid, "thread_id": target_thread_id, "correlation_task_id": correlation_task_id, "detail": "failed to store response, delegation exchange not found"})
 
         # Return thread_id if we updated the work plan
         return target_thread_id if success else None
@@ -394,33 +374,23 @@ class OrchestratorNode(
         response_thread_id = task.thread_id
         if not response_thread_id:
             # No thread context, use current orchestrator thread
-            emit(logger, logging.WARNING, "orchestrator.packet_received",
-                 node_uid=self.uid, detail="no thread_id in response, using default")
+            logger.warning("orchestrator.packet_received", extra={"node_uid": self.uid, "detail": "no thread_id in response, using default"})
             return getattr(self, '_current_thread_id', None) or 'default'
 
         try:
             # Use thread service to find where THIS orchestrator's work plan is
-            emit(logger, logging.DEBUG, "orchestrator.packet_received",
-                 node_uid=self.uid, response_thread_id=response_thread_id,
-                 detail="resolving work plan owner")
+            logger.debug("orchestrator.packet_received", extra={"node_uid": self.uid, "response_thread_id": response_thread_id, "detail": "resolving work plan owner"})
             target_thread_id = self.threads.find_work_plan_owner(response_thread_id, self.uid)
             if target_thread_id:
                 if target_thread_id != response_thread_id:
-                    emit(logger, logging.DEBUG, "orchestrator.packet_received",
-                         node_uid=self.uid, target_thread_id=target_thread_id,
-                         detail="found in parent thread")
+                    logger.debug("orchestrator.packet_received", extra={"node_uid": self.uid, "target_thread_id": target_thread_id, "detail": "found in parent thread"})
                 else:
-                    emit(logger, logging.DEBUG, "orchestrator.packet_received",
-                         node_uid=self.uid, target_thread_id=target_thread_id,
-                         detail="found in same thread")
+                    logger.debug("orchestrator.packet_received", extra={"node_uid": self.uid, "target_thread_id": target_thread_id, "detail": "found in same thread"})
             else:
-                emit(logger, logging.WARNING, "orchestrator.packet_received",
-                     node_uid=self.uid, detail="work plan owner not found, falling back to response thread")
+                logger.warning("orchestrator.packet_received", extra={"node_uid": self.uid, "detail": "work plan owner not found, falling back to response thread"})
             return target_thread_id or response_thread_id
         except Exception as e:
-            emit(logger, logging.ERROR, "orchestrator.packet_received",
-                 node_uid=self.uid, error=str(e),
-                 detail="error during thread resolution")
+            logger.error("orchestrator.packet_received", extra={"node_uid": self.uid, "error": str(e), "detail": "error during thread resolution"})
             return response_thread_id
 
     def _find_items_for_task(self, thread_id: str, correlation_task_id: str) -> List[str]:
@@ -517,10 +487,7 @@ class OrchestratorNode(
             cycle: PendingCycle containing thread_id, reason, and changed_items
             content: Orchestration content (user request or guidance message)
         """
-        emit(logger, logging.INFO, "orchestrator.cycle_start",
-             node_uid=self.uid, thread_id=cycle.thread_id,
-             trigger=cycle.reason.value,
-             changed_items=cycle.changed_items or [])
+        logger.info("orchestrator.cycle_start", extra={"node_uid": self.uid, "thread_id": cycle.thread_id, "trigger": cycle.reason.value, "changed_items": cycle.changed_items or []})
 
         return self._run_orchestration_cycle_traced(cycle, content)
 
@@ -630,8 +597,7 @@ class OrchestratorNode(
         # Display work plan snapshot
         self._print_work_plan_snapshot(cycle.thread_id)
 
-        emit(logger, logging.INFO, "orchestrator.cycle_end",
-             node_uid=self.uid, thread_id=cycle.thread_id)
+        logger.info("orchestrator.cycle_end", extra={"node_uid": self.uid, "thread_id": cycle.thread_id})
 
         return agent_result
 
@@ -714,9 +680,7 @@ class OrchestratorNode(
             return "\n".join(lines)
             
         except Exception as e:
-            emit(logger, logging.ERROR, "orchestrator.cycle_start",
-                 node_uid=self.uid, error=str(e),
-                 detail="error building adjacency summary")
+            logger.error("orchestrator.cycle_start", extra={"node_uid": self.uid, "error": str(e), "detail": "error building adjacency summary"})
             # Fallback: show all adjacent nodes
             adjacent_nodes = self.get_adjacent_nodes()
             if not adjacent_nodes:
@@ -824,22 +788,12 @@ class OrchestratorNode(
         
         status = service.get_work_plan_status(thread_id, self.uid)
         
-        emit(logger, logging.DEBUG, "phase.transition",
-             node_uid=self.uid, thread_id=thread_id,
-             detail="work_plan_final", total_items=status.total_items)
+        logger.debug("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "detail": "work_plan_final", "total_items": status.total_items})
         
-        emit(logger, logging.DEBUG, "phase.transition",
-             node_uid=self.uid, thread_id=thread_id,
-             pending_items=status.pending_items,
-             in_progress_items=status.in_progress_items,
-             done_items=status.done_items,
-             failed_items=status.failed_items)
+        logger.debug("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "pending_items": status.pending_items, "in_progress_items": status.in_progress_items, "done_items": status.done_items, "failed_items": status.failed_items})
         
         if status.blocked_items > 0 or status.waiting_items > 0:
-            emit(logger, logging.DEBUG, "phase.transition",
-                 node_uid=self.uid, thread_id=thread_id,
-                 blocked_items=status.blocked_items,
-                 waiting_items=status.waiting_items)
+            logger.debug("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "blocked_items": status.blocked_items, "waiting_items": status.waiting_items})
         
         # Show ALL items compactly
         for status in [WorkItemStatus.PENDING, WorkItemStatus.IN_PROGRESS, WorkItemStatus.DONE, WorkItemStatus.FAILED]:
@@ -915,13 +869,9 @@ class OrchestratorNode(
                                 resp_preview = ex.response_content[:80].replace('\n', ' ')
                                 item_line += f"\n          ✓ A: {resp_preview}{'...' if len(ex.response_content) > 80 else ''}"
                 
-                emit(logger, logging.DEBUG, "phase.transition",
-                     node_uid=self.uid, thread_id=thread_id,
-                     item_line=item_line)
+                logger.debug("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "item_line": item_line})
         
-        emit(logger, logging.DEBUG, "phase.transition",
-             node_uid=self.uid, thread_id=thread_id,
-             detail="work_plan_final_end")
+        logger.debug("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "detail": "work_plan_final_end"})
 
     @staticmethod
     def _get_orchestrator_behavior_message() -> str:
@@ -1001,12 +951,8 @@ Key principles:
             )
             
         except Exception as e:
-            emit(logger, logging.ERROR, "orchestrator.cycle_start",
-                 node_uid=self.uid, error=str(e),
-                 detail="error creating delegation policy")
-            emit(logger, logging.WARNING, "orchestrator.cycle_start",
-                 node_uid=self.uid,
-                 detail="falling back to permissive policy")
+            logger.error("orchestrator.cycle_start", extra={"node_uid": self.uid, "error": str(e), "detail": "error creating delegation policy"})
+            logger.warning("orchestrator.cycle_start", extra={"node_uid": self.uid, "detail": "falling back to permissive policy"})
             
             # Fallback: Allow all adjacent nodes
             return PermissiveDelegationPolicy(self.get_adjacent_nodes())

@@ -6,12 +6,10 @@ phases, guidance, and tool mappings without modifying core code.
 """
 
 import logging
-
 from typing import Dict, List, Set, Protocol, Any, Type
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from global_utils.utils.logging_config import emit
 from mas.elements.tools.common.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -250,8 +248,7 @@ class ExtensiblePhaseProvider(ABC):
             
             return phase_tools
         except Exception as e:
-            emit(logger, logging.WARNING, "phase.validate_error",
-                 phase=phase_name, error=str(e), detail="get_tools_for_phase")
+            logger.warning("phase.validate_error", extra={"phase": phase_name, "error": str(e), "detail": "get_tools_for_phase"})
             return self._tools.copy()
     
     def validate_phase_transition(self, from_phase: str, to_phase: str) -> bool:
@@ -314,8 +311,7 @@ class ExtensiblePhaseProvider(ABC):
         try:
             self._phase_registry.validate_transitions()
         except Exception as e:
-            emit(logger, logging.WARNING, "phase.validate_error",
-                 error=str(e), detail="phase_registry_validation")
+            logger.warning("phase.validate_error", extra={"error": str(e), "detail": "phase_registry_validation"})
 
 
 # =============================================================================

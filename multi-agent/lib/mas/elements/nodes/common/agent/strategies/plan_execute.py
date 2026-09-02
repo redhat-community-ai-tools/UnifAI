@@ -12,10 +12,8 @@ Each phase exposes different tools to enforce clean separation of concerns.
 """
 
 import logging
-
 from typing import List, Dict, Any, Optional, Callable
 from enum import Enum
-from global_utils.utils.logging_config import emit
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.elements.tools.common.base_tool import BaseTool
 from ..primitives import AgentStep, StepType, AgentFinish, AgentObservation
@@ -151,12 +149,9 @@ class PlanAndExecuteStrategy(AgentStrategy):
             List of steps to execute
         """
         if self._step_count == 0:
-            emit(logger, logging.INFO, "llm.interaction_start",
-                 phase=self._current_phase, interaction_number=1,
-                 detail="beginning_orchestration_cycle")
+            logger.info("llm.interaction_start", extra={"phase": self._current_phase, "interaction_number": 1, "detail": "beginning_orchestration_cycle"})
         else:
-            emit(logger, logging.DEBUG, "agent.step",
-                 phase=self._current_phase, action="think")
+            logger.debug("agent.step", extra={"phase": self._current_phase, "action": "think"})
         
         try:
             # Store current phase before update
@@ -170,8 +165,7 @@ class PlanAndExecuteStrategy(AgentStrategy):
             
             # Phase transition detected
             if self._phase_changed:
-                emit(logger, logging.DEBUG, "phase.transition",
-                     from_phase=old_phase, to_phase=self._current_phase)
+                logger.debug("phase.transition", extra={"from_phase": old_phase, "to_phase": self._current_phase})
                 # Note: Messages will be filtered to clean slate in build_context()
             
             # Build phase-specific context
@@ -181,8 +175,7 @@ class PlanAndExecuteStrategy(AgentStrategy):
             tools = self.get_tools_for_phase(self._current_phase)
             
             # Get LLM response
-            emit(logger, logging.DEBUG, "llm.interaction_start",
-                 phase=self._current_phase, action="think")
+            logger.debug("llm.interaction_start", extra={"phase": self._current_phase, "action": "think"})
             response = self.llm_chat(context, tools)
             
             # Parse response
@@ -224,8 +217,7 @@ class PlanAndExecuteStrategy(AgentStrategy):
             
         except ParseError as e:
             # Add error feedback to messages for next iteration
-            emit(logger, logging.WARNING, "llm.parse_error",
-                 phase=self._current_phase, error=str(e))
+            logger.warning("llm.parse_error", extra={"phase": self._current_phase, "error": str(e)})
             
             from ..constants import ErrorMessages
             error_feedback = ChatMessage(
@@ -247,9 +239,7 @@ class PlanAndExecuteStrategy(AgentStrategy):
         except Exception as e:
             # Fatal strategy error
             import traceback
-            emit(logger, logging.ERROR, "agent.step",
-                 phase=self._current_phase, error_type="strategy_error",
-                 error=str(e), traceback=traceback.format_exc())
+            logger.error("agent.step", extra={"phase": self._current_phase, "error_type": "strategy_error", "error": str(e), "traceback": traceback.format_exc()})
             
             error_feedback = ChatMessage(
                 role=Role.SYSTEM,
@@ -512,9 +502,7 @@ class PlanAndExecuteStrategy(AgentStrategy):
         messages.clear()
         messages.extend(user_messages)
         
-        emit(logger, logging.DEBUG, "phase.transition",
-             detail="cleared_phase_messages",
-             kept_user_messages=len(user_messages))
+        logger.debug("phase.transition", extra={"detail": "cleared_phase_messages", "kept_user_messages": len(user_messages)})
     
     
     def _build_phase_prompt(self) -> str:

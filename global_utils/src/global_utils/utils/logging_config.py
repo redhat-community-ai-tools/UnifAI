@@ -1,4 +1,4 @@
-"""Unified structured logging for UnifAI services (OpenObserve-ready JSON)."""
+"""Unified structured logging JSON-ready."""
 from __future__ import annotations
 
 import json
@@ -11,12 +11,12 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
 _EVENT_NAME_RE = re.compile(r"^[a-z][a-z0-9_.]*$")
 
 # ---------------------------------------------------------------------------
-# Correlation context (populated by middleware / callers — Step 3)
+# Correlation context (populated by middleware / callers)
 # ---------------------------------------------------------------------------
 
 _request_id_var: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
@@ -91,23 +91,24 @@ def get_session_id() -> Optional[str]:
     return _session_id_var.get()
 
 
+def bind_correlation_ids(
+    request_id: Optional[str] = None, session_id: Optional[str] = None
+) -> None:
+    """Bind request_id/session_id ContextVars for the current context.
+
+    Falsy values are ignored (leaves any already-bound id untouched).
+    Used to re-bind correlation ids at the start of a Temporal
+    activity/workflow, since ContextVars don't cross process/worker
+    boundaries on their own.
+    """
+    if request_id:
+        set_request_id(request_id)
+    if session_id:
+        set_session_id(session_id)
+
+
 def get_logger(name: Optional[str] = None) -> logging.Logger:
     return logging.getLogger(name)
-
-
-def emit(
-    logger: logging.Logger,
-    level: Union[int, str],
-    event: str,
-    **fields: Any,
-) -> None:
-    """Log a structured event: message and ``event`` field are both ``event``."""
-    if isinstance(level, str):
-        level_no = getattr(logging, level.upper(), logging.INFO)
-    else:
-        level_no = level
-    extra = {"event": event, **fields}
-    logger.log(level_no, event, extra=extra)
 
 
 def _utc_timestamp() -> str:
@@ -124,7 +125,7 @@ def _record_extras(record: logging.LogRecord) -> dict[str, Any]:
 
 
 class UnifAIJSONFormatter(logging.Formatter):
-    """Emit one JSON object per line for OpenObserve ingest."""
+    """Emit one JSON object per line for logger-compatible ingest."""
 
     def __init__(self, service_name: str, environment: str, pod: Optional[str], deployment: Optional[str]):
         super().__init__()
@@ -231,7 +232,8 @@ def configure_logging(
 
     Env resolution (explicit args win):
       LOG_LEVEL      default "INFO"
-      ENVIRONMENT    default "production"  # local|development|dev → console; else JSON
+      BACKEND_ENV    default "production"  # local|development|dev → console; else JSON
+                     (same var Helm/services.yaml already set for every service)
       LOG_DIR        default "/var/log/unifai"
       POD_NAME, APP_VERSION  → pod / deployment fields
 
@@ -245,7 +247,7 @@ def configure_logging(
         return
 
     resolved_level = (log_level or os.getenv("LOG_LEVEL", "INFO")).upper()
-    resolved_env = (environment or os.getenv("ENVIRONMENT", "production")).lower()
+    resolved_env = (environment or os.getenv("BACKEND_ENV", "production")).lower()
     resolved_log_dir = Path(log_dir or os.getenv("LOG_DIR", "/var/log/unifai"))
     pod = os.getenv("POD_NAME") or os.getenv("HOSTNAME") or None
     deployment = os.getenv("APP_VERSION") or None

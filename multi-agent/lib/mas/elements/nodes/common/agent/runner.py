@@ -17,7 +17,6 @@ import time
 from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
 
-from global_utils.utils.logging_config import emit
 
 from mas.elements.llms.common.chat.message import ChatMessage
 from .primitives import AgentStep, StepType
@@ -222,7 +221,7 @@ class StreamingRunner:
                 try:
                     on_step(step)
                 except Exception as e:
-                    emit(logger, logging.WARNING, "agent.callback_error", error=str(e))
+                    logger.warning("agent.callback_error", extra={"error": str(e)})
             
             # Check time limits
             if self.config.max_time:

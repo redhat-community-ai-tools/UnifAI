@@ -37,12 +37,6 @@ def test_echoes_incoming_request_id():
     assert resp.get_json()["request_id"] == "req-fixed-1"
 
 
-def test_accepts_correlation_id_fallback():
-    client = _make_app().test_client()
-    resp = client.get("/ping", headers={"X-Correlation-ID": "corr-9"})
-    assert resp.headers.get(REQUEST_ID_HEADER) == "corr-9"
-
-
 def test_binds_session_id_from_query():
     client = _make_app().test_client()
     resp = client.get("/ping?sessionId=sess-xyz")

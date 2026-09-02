@@ -6,10 +6,8 @@ All phase providers must implement this contract.
 """
 
 import logging
-
 from typing import List, Optional, Any
 from abc import ABC, abstractmethod
-from global_utils.utils.logging_config import emit
 from mas.elements.tools.common.base_tool import BaseTool
 from .phase_definition import PhaseSystem, PhaseDefinition
 from .phase_protocols import PhaseState
@@ -111,8 +109,7 @@ class PhaseProvider(ABC):
             context = self._build_validation_context(phase_name)
             return phase.run_validators(context)
         except Exception as e:
-            emit(logger, logging.WARNING, "phase.validate_error",
-                 phase=phase_name, error=str(e))
+            logger.warning("phase.validate_error", extra={"phase": phase_name, "error": str(e)})
             return ""
     
     def build_phase_prompt(self, phase_name: str) -> str:

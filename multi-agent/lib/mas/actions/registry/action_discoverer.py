@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 from typing import List, Set, Type
 
-from global_utils.utils.logging_config import emit
+
 from mas.actions.common.base_action import BaseAction
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ class ActionDiscoverer:
         root = self._root
         if not root.exists():
             # Nothing to import; warn the user but do not crash.
-            emit(logger, logging.WARNING, "catalog.discover_dir_not_found", root=str(root))
+            logger.warning("catalog.discover_dir_not_found", extra={"root": str(root)})
             return
 
         # Import all action packages in the actions directory tree
@@ -102,10 +102,7 @@ class ActionDiscoverer:
                     # Recursively process subdirectories
                     self._import_action_packages_recursively(item, package_name)
                 else:
-                    emit(
-                        logger, logging.WARNING, "catalog.discover_skip_directory",
-                        directory=str(item),
-                    )
+                    logger.warning("catalog.discover_skip_directory", extra={"directory": str(item)})
 
     # ------------------------------------------------------------------
     #  Step 2: Collect concrete subclasses
@@ -127,10 +124,7 @@ class ActionDiscoverer:
                         seen.add(sub.uid)
                         collected.append(sub)
                     else:
-                        emit(
-                            logger, logging.WARNING, "catalog.discover_duplicate_uid",
-                            uid=sub.uid, module=sub.__module__,
-                        )
+                        logger.warning("catalog.discover_duplicate_uid", extra={"uid": sub.uid, "module": sub.__module__})
 
                 walk(sub)  # recurse further – there might be deeper levels
 
@@ -153,4 +147,4 @@ class ActionDiscoverer:
             importlib.import_module(module_name)
         except Exception as exc:  # pragma: no cover – never crash discovery
             # TODO when adding logging print the traceback
-            emit(logger, logging.WARNING, "catalog.discover_import_failed", module=module_name, error=str(exc))
+            logger.warning("catalog.discover_import_failed", extra={"module": module_name, "error": str(exc)})
