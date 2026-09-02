@@ -54,7 +54,7 @@ def create_app() -> Flask:
         app,
         supports_credentials=True,
         origins=os.environ.get("FRONTEND_URL", "http://localhost:5000"),
-        allow_headers=["Content-Type", "Authorization", "X-Request-ID", "X-Correlation-ID"],
+        allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
     )
     
     # Identity wiring — make Redis store and IdentityClient available to decorators

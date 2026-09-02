@@ -1,7 +1,6 @@
 import logging
 from typing import List, Dict, Any, Optional, ClassVar
 from copy import deepcopy
-from global_utils.utils.logging_config import emit
 from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.llm_capable import LlmCapableMixin
@@ -63,7 +62,7 @@ class LLMMergerNode(WorkloadCapableMixin, IEMCapableMixin, LlmCapableMixin, Base
             task = packet.extract_task()
             
             if not task.thread_id:
-                emit(logger, logging.WARNING, "merge.thread_missing", node_uid=self.uid)
+                logger.warning("merge.thread_missing", extra={"node_uid": self.uid})
                 return
             
             # Extract result from task (if it has one)
@@ -75,13 +74,10 @@ class LLMMergerNode(WorkloadCapableMixin, IEMCapableMixin, LlmCapableMixin, Base
                     self._collected_results[task.thread_id] = []
                 
                 self._collected_results[task.thread_id].append(agent_result)
-                emit(
-                    logger, logging.INFO, "merge.result_collected",
-                    node_uid=self.uid, agent_name=agent_result.agent_name, thread_id=task.thread_id,
-                )
+                logger.info("merge.result_collected", extra={"node_uid": self.uid, "agent_name": agent_result.agent_name, "thread_id": task.thread_id})
 
         except Exception as e:
-            emit(logger, logging.ERROR, "merge.collect_error", node_uid=self.uid, error=str(e))
+            logger.error("merge.collect_error", extra={"node_uid": self.uid, "error": str(e)})
 
     def _merge_all_collected_results(self) -> Dict[str, AgentResult]:
         """Merge all collected results for each thread. Returns merged results by thread_id."""
@@ -103,15 +99,9 @@ class LLMMergerNode(WorkloadCapableMixin, IEMCapableMixin, LlmCapableMixin, Base
         for thread_id, merged_result in merged_results_by_thread.items():
             try:
                 self._broadcast_merged_task_for_thread(thread_id, merged_result)
-                emit(
-                    logger, logging.INFO, "merge.broadcast_completed",
-                    node_uid=self.uid, thread_id=thread_id,
-                )
+                logger.info("merge.broadcast_completed", extra={"node_uid": self.uid, "thread_id": thread_id})
             except Exception as e:
-                emit(
-                    logger, logging.ERROR, "merge.broadcast_error",
-                    node_uid=self.uid, thread_id=thread_id, error=str(e),
-                )
+                logger.error("merge.broadcast_error", extra={"node_uid": self.uid, "thread_id": thread_id, "error": str(e)})
 
     def _merge_results_for_thread(self, thread_id: str, results: List[AgentResult]) -> AgentResult:
         """Complete merge logic for results - returns merged AgentResult."""
@@ -130,10 +120,7 @@ class LLMMergerNode(WorkloadCapableMixin, IEMCapableMixin, LlmCapableMixin, Base
         # Add to workspace
         # self._add_agent_result_to_workspace(thread_id, agent_result)
         
-        emit(
-            logger, logging.INFO, "merge.completed",
-            node_uid=self.uid, result_count=len(results), thread_id=thread_id,
-        )
+        logger.info("merge.completed", extra={"node_uid": self.uid, "result_count": len(results), "thread_id": thread_id})
 
         return agent_result
 
@@ -230,7 +217,4 @@ class LLMMergerNode(WorkloadCapableMixin, IEMCapableMixin, LlmCapableMixin, Base
         
         self.broadcast_task(merged_task)
 
-        emit(
-            logger, logging.INFO, "merge.task_broadcasted",
-            node_uid=self.uid, task_id=merged_task.task_id,
-        )
+        logger.info("merge.task_broadcasted", extra={"node_uid": self.uid, "task_id": merged_task.task_id})

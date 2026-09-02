@@ -3,11 +3,9 @@ from datetime import datetime
 import logging
 from collections import deque
 from typing import Dict, List, Optional, Any
-
 from core.monitoring.domain.model import MetricsEntry, ErrorEntry, LogEntry
 from core.monitoring.domain.repository import MonitoringRepository
 from core.pipeline.domain.repository import PipelineRepository
-
 from core.monitoring.parsing.base import LogParser
 from core.data_sources.types.slack.log_parser import SlackLogParser
 from core.data_sources.types.document.log_parser import DocLogParser
@@ -68,13 +66,7 @@ class MonitoringService:
             metrics=metrics,
         )
         self._monitoring_repo.save_metrics(entry)
-        emit(
-            self._logger,
-            "info",
-            "pipeline.metrics_logged",
-            pipeline_id=pipeline_id,
-            metrics=metrics,
-        )
+        self._logger.info("pipeline.metrics_logged", extra={"pipeline_id": pipeline_id, "metrics": metrics})
 
     def record_error(
         self,

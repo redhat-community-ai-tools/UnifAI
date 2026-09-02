@@ -7,7 +7,6 @@ Handles transport layer generically, delegates business logic to packet handlers
 
 import logging
 from typing import Any, TypeVar, Generic, List
-from global_utils.utils.logging_config import emit
 from mas.graph.state.state_view import StateView
 from mas.graph.state.graph_state import Channel
 from mas.core.iem.packets import BaseIEMPacket, TaskPacket
@@ -182,7 +181,7 @@ class IEMCapableMixin(Generic[TSupportsState]):
         elif packet.type == PacketType.DEBUG:
             self.handle_debug_packet(packet)
         else:
-            emit(logger, logging.WARNING, "iem.unknown_packet_type", packet_type=packet.type)
+            logger.warning("iem.unknown_packet_type", extra={"packet_type": packet.type})
 
     # === PACKET TYPE HANDLERS (Override in subclasses) ===
     def handle_task_packet(self, packet: BaseIEMPacket) -> None:

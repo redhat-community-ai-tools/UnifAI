@@ -10,6 +10,7 @@ from pydantic.json import pydantic_encoder
 from mas.core.channels import with_heartbeats
 from mas.core.hitl.models import ApprovalOverrides, ApprovalRuleSet
 from mas.session.domain.exceptions import BlueprintNotFoundError
+from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.session.domain.models import SessionMeta
 from mas.session.domain.dto import SessionListFilter, PaginationMeta, PaginatedSessions
 from inbound.flask.decorators import bind_session_id_arg, with_require_identity_authorization, with_authenticated_user, require_session_identity

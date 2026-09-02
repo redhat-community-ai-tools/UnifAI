@@ -12,17 +12,14 @@ from global_utils.utils.logging_config import (
 )
 
 REQUEST_ID_HEADER = "X-Request-ID"
-REQUEST_ID_HEADER_ALT = "X-Correlation-ID"
 
 
 def resolve_incoming_request_id(headers: Mapping[str, Any]) -> str:
-    """Read X-Request-ID (or X-Correlation-ID) or generate ``req-<hex>``."""
-    raw = headers.get(REQUEST_ID_HEADER) or headers.get(REQUEST_ID_HEADER_ALT)
+    """Read X-Request-ID or generate ``req-<hex>``."""
+    raw = headers.get(REQUEST_ID_HEADER)
     if raw is None and hasattr(headers, "get"):
-        # Werkzeug EnvironHeaders are case-insensitive; try lowercase keys too
-        raw = headers.get(REQUEST_ID_HEADER.lower()) or headers.get(
-            REQUEST_ID_HEADER_ALT.lower()
-        )
+        # Werkzeug EnvironHeaders are case-insensitive; try lowercase key too
+        raw = headers.get(REQUEST_ID_HEADER.lower())
     if isinstance(raw, (list, tuple)):
         raw = raw[0] if raw else None
     if raw:

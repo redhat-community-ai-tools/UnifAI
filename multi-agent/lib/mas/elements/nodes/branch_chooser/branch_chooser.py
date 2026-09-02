@@ -1,6 +1,5 @@
 from mas.elements.nodes.common.base_node import BaseNode
 import logging
-from global_utils.utils.logging_config import emit
 from mas.graph.state.graph_state import Channel
 from mas.graph.state.state_view import StateView
 from typing import Optional
@@ -42,7 +41,7 @@ class BranchChooserNode(BaseNode):
         if chosen_branch is None:
             chosen_branch = self.default_branch or "default_branch"
 
-        emit(logger, logging.INFO, "graph.branch_chosen", chosen_branch=chosen_branch)
+        logger.info("graph.branch_chosen", extra={"chosen_branch": chosen_branch})
         # Write the chosen branch to the target_branch state channel
         state["target_branch"] = chosen_branch
         return state

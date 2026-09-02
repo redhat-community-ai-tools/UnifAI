@@ -7,7 +7,6 @@ Emits workplan snapshots via callback when operations occur.
 import logging
 from typing import Callable, Optional
 
-from global_utils.utils.logging_config import emit
 
 from .hooks import BaseWorkPlanHook
 from .models import WorkPlan
@@ -32,15 +31,7 @@ class WorkPlanStreamingHook(BaseWorkPlanHook):
         try:
             self._emit_snapshot(plan, action="saved")
         except Exception as e:
-            emit(
-                logger,
-                logging.ERROR,
-                "workload.stream_hook_error",
-                hook_point="post_save",
-                thread_id=plan.thread_id,
-                owner_uid=plan.owner_uid,
-                error=str(e),
-            )
+            logger.error("workload.stream_hook_error", extra={"hook_point": "post_save", "thread_id": plan.thread_id, "owner_uid": plan.owner_uid, "error": str(e)})
     
     def on_post_load(self, plan: Optional[WorkPlan], context: dict) -> None:
         """Stream workplan snapshot after load (if plan exists)."""
@@ -48,15 +39,7 @@ class WorkPlanStreamingHook(BaseWorkPlanHook):
             try:
                 self._emit_snapshot(plan, action="loaded")
             except Exception as e:
-                emit(
-                    logger,
-                    logging.ERROR,
-                    "workload.stream_hook_error",
-                    hook_point="post_load",
-                    thread_id=plan.thread_id,
-                    owner_uid=plan.owner_uid,
-                    error=str(e),
-                )
+                logger.error("workload.stream_hook_error", extra={"hook_point": "post_load", "thread_id": plan.thread_id, "owner_uid": plan.owner_uid, "error": str(e)})
     
     def on_post_delete(self, context: dict) -> None:
         """Stream deletion event."""
@@ -69,15 +52,7 @@ class WorkPlanStreamingHook(BaseWorkPlanHook):
                 "action": "deleted"
             })
         except Exception as e:
-            emit(
-                logger,
-                logging.ERROR,
-                "workload.stream_hook_error",
-                hook_point="post_delete",
-                thread_id=context.get("thread_id"),
-                owner_uid=context.get("owner_uid"),
-                error=str(e),
-            )
+            logger.error("workload.stream_hook_error", extra={"hook_point": "post_delete", "thread_id": context.get("thread_id"), "owner_uid": context.get("owner_uid"), "error": str(e)})
     
     def _emit_snapshot(self, plan: WorkPlan, action: str = "updated") -> None:
         """Emit complete workplan snapshot using model_dump()."""

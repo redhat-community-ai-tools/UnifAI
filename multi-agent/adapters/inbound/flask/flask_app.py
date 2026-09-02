@@ -33,7 +33,7 @@ def create_app(container, config: AppConfig = None) -> Flask:
     CORS(app, resources={r"/api/*": {
         "origins": os.environ.get("FRONTEND_URL", "http://localhost:5000"),
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "X-Request-ID", "X-Correlation-ID"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Request-ID"],
         "supports_credentials": True,
     }})
 

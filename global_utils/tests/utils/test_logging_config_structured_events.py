@@ -1,4 +1,4 @@
-"""Tests for emit() and event auto-fill in logging_config."""
+"""Tests for structured-event logging and message->event auto-fill in logging_config."""
 from __future__ import annotations
 
 import json
@@ -24,14 +24,16 @@ def _reset_logging():
     logging.getLogger().handlers.clear()
 
 
-def test_emit_sets_event_and_context_fields():
+def test_structured_event_call_sets_event_and_context_fields():
+    """Standard logger call with a dotted event-name message: event/context
+    are derived by UnifAIJSONFormatter (see test_event_autofill_from_message)."""
     with tempfile.TemporaryDirectory() as d:
-        os.environ["ENVIRONMENT"] = "production"
+        os.environ["BACKEND_ENV"] = "production"
         lc.configure_logging("test-svc", log_dir=d, enable_file=True)
         lc.set_request_id("req-abc")
         lc.set_session_id("sess-1")
-        log = logging.getLogger("test.emit")
-        lc.emit(log, "info", "session.created", blueprint_id="bp-1")
+        log = logging.getLogger("test.structured_event")
+        log.info("session.created", extra={"blueprint_id": "bp-1"})
         lines = Path(d, "app.log").read_text().strip().splitlines()
         payload = json.loads(lines[-1])
         assert payload["event"] == "session.created"

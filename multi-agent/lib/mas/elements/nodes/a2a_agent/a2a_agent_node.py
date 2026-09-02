@@ -18,7 +18,6 @@ from mas.elements.providers.a2a_client import A2AProvider
 from mas.core.auth.credentials.credential import AuthCredential
 from mas.core.auth.errors import AuthError
 from global_utils.utils.async_bridge import get_async_bridge
-from global_utils.utils.logging_config import emit
 
 logger = logging.getLogger(__name__)
 
@@ -181,10 +180,10 @@ class A2AAgentNode(
             # 5. Route response
             self._route_response(task, agent_result, packet)
 
-            emit(logger, logging.INFO, "a2a.delegated", node_uid=self.uid)
+            logger.info("a2a.delegated", extra={"node_uid": self.uid})
 
         except Exception as e:
-            emit(logger, logging.ERROR, "a2a.task_error", node_uid=self.uid, error=str(e))
+            logger.error("a2a.task_error", extra={"node_uid": self.uid, "error": str(e)})
             # Create error agent result
             error_result = AgentResult(
                 content=f"Error delegating to remote agent: {str(e)}",
@@ -377,10 +376,7 @@ class A2AAgentNode(
         streaming_supported = getattr(agent_card.capabilities, 'streaming', False)
 
         if not streaming_supported:
-            emit(
-                logger, logging.WARNING, "a2a.streaming_fallback",
-                node_uid=self.uid,
-            )
+            logger.warning("a2a.streaming_fallback", extra={"node_uid": self.uid})
 
         return streaming_supported
 

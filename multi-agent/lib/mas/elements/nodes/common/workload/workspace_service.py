@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from global_utils.utils.logging_config import emit
+
 from .workspace import Workspace
 from .models import (
     AgentResult,
@@ -668,14 +668,7 @@ class WorkspaceService(IWorkspaceService):
                 method(*args, **kwargs)
             except Exception as e:
                 hook_name = hook.__class__.__name__
-                emit(
-                    logger,
-                    logging.ERROR,
-                    "workload.plan_hook_error",
-                    hook=hook_name,
-                    method=method_name,
-                    error=str(e),
-                )
+                logger.error("workload.plan_hook_error", extra={"hook": hook_name, "method": method_name, "error": str(e)})
     
     # ========== FACTS MANAGEMENT ==========
     
@@ -953,14 +946,7 @@ class WorkspaceService(IWorkspaceService):
             
             return plan
         except Exception as e:
-            emit(
-                logger,
-                logging.ERROR,
-                "workload.plan_load_error",
-                thread_id=thread_id,
-                owner_uid=owner_uid,
-                error=str(e),
-            )
+            logger.error("workload.plan_load_error", extra={"thread_id": thread_id, "owner_uid": owner_uid, "error": str(e)})
             return None
     
     def save_work_plan(self, plan: 'WorkPlan') -> bool:
@@ -984,14 +970,7 @@ class WorkspaceService(IWorkspaceService):
                 
                 return True
             except Exception as e:
-                emit(
-                    logger,
-                    logging.ERROR,
-                    "workload.plan_save_error",
-                    thread_id=plan.thread_id,
-                    owner_uid=plan.owner_uid,
-                    error=str(e),
-                )
+                logger.error("workload.plan_save_error", extra={"thread_id": plan.thread_id, "owner_uid": plan.owner_uid, "error": str(e)})
                 return False
     
     def get_work_plan_status(self, thread_id: str, owner_uid: str) -> WorkPlanStatus:

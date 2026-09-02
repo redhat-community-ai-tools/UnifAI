@@ -7,7 +7,6 @@ import time
 from typing import Any, Dict, Optional, List, Union
 from abc import ABC, abstractmethod
 from mas.elements.tools.common.base_tool import BaseTool
-from global_utils.utils.logging_config import emit
 from .interfaces import ErrorHandler
 from .exceptions import RetryExhaustedError, CircuitBreakerError, ToolExecutionError
 
@@ -60,17 +59,10 @@ class RetryPolicy(BaseErrorHandler):
         delay = self.initial_delay
         last_error = error
         
-        emit(
-            logger, logging.WARNING, "tool.retry",
-            tool_name=tool.name, error=str(error), stage="starting",
-        )
+        logger.warning("tool.retry", extra={"tool_name": tool.name, "error": str(error), "stage": "starting"})
         
         for attempt in range(self.max_retries):
-            emit(
-                logger, logging.WARNING, "tool.retry",
-                tool_name=tool.name, error=str(error),
-                attempt=attempt + 1, max_retries=self.max_retries,
-            )
+            logger.warning("tool.retry", extra={"tool_name": tool.name, "error": str(error), "attempt": attempt + 1, "max_retries": self.max_retries})
             
             # Apply jitter to delay if enabled
             actual_delay = delay
@@ -84,27 +76,18 @@ class RetryPolicy(BaseErrorHandler):
                 # Try to execute the tool again
                 result = await tool.arun(**args)
                 
-                emit(
-                    logger, logging.INFO, "tool.completed",
-                    tool_name=tool.name, attempt=attempt + 1, recovered=True,
-                )
+                logger.info("tool.completed", extra={"tool_name": tool.name, "attempt": attempt + 1, "recovered": True})
                 return result
                 
             except Exception as e:
                 last_error = e
-                emit(
-                    logger, logging.WARNING, "tool.retry",
-                    tool_name=tool.name, attempt=attempt + 1, error=str(e),
-                )
+                logger.warning("tool.retry", extra={"tool_name": tool.name, "attempt": attempt + 1, "error": str(e)})
                 
                 # Calculate next delay
                 delay = min(delay * self.exponential_base, self.max_delay)
         
         # All retries exhausted
-        emit(
-            logger, logging.ERROR, "tool.failed",
-            tool_name=tool.name, attempts=self.max_retries, error=str(last_error),
-        )
+        logger.error("tool.failed", extra={"tool_name": tool.name, "attempts": self.max_retries, "error": str(last_error)})
         raise RetryExhaustedError(
             f"All {self.max_retries} retry attempts failed",
             tool_name=tool.name,
@@ -128,43 +111,24 @@ class FallbackPolicy(BaseErrorHandler):
         context: Optional[Dict[str, Any]] = None
     ) -> Any:
         """Try fallback tools in order."""
-        emit(
-            logger, logging.WARNING, "tool.fallback",
-            tool_name=tool.name, error=str(error), stage="primary_failed",
-        )
-        emit(
-            logger, logging.INFO, "tool.fallback",
-            tool_name=tool.name, fallback_count=len(self.fallback_tools),
-        )
+        logger.warning("tool.fallback", extra={"tool_name": tool.name, "error": str(error), "stage": "primary_failed"})
+        logger.info("tool.fallback", extra={"tool_name": tool.name, "fallback_count": len(self.fallback_tools)})
         
         for i, fallback in enumerate(self.fallback_tools):
             try:
-                emit(
-                    logger, logging.INFO, "tool.fallback",
-                    primary_tool=tool.name, fallback_tool=fallback.name,
-                    attempt=i + 1, total=len(self.fallback_tools),
-                )
+                logger.info("tool.fallback", extra={"primary_tool": tool.name, "fallback_tool": fallback.name, "attempt": i + 1, "total": len(self.fallback_tools)})
                 
                 result = await fallback.arun(**args)
                 
-                emit(
-                    logger, logging.INFO, "tool.completed",
-                    tool_name=fallback.name, primary_tool=tool.name, via="fallback",
-                )
+                logger.info("tool.completed", extra={"tool_name": fallback.name, "primary_tool": tool.name, "via": "fallback"})
                 return result
                 
             except Exception as e:
-                emit(
-                    logger, logging.WARNING, "tool.fallback",
-                    fallback_tool=fallback.name, error=str(e),
-                )
+                logger.warning("tool.fallback", extra={"fallback_tool": fallback.name, "error": str(e)})
                 continue
         
         # All fallbacks failed
-        emit(
-            logger, logging.ERROR, "tool.failed",
-            tool_name=tool.name, fallback_count=len(self.fallback_tools),
-        )
+        logger.error("tool.failed", extra={"tool_name": tool.name, "fallback_count": len(self.fallback_tools)})
         raise ToolExecutionError(
             f"Primary tool and all {len(self.fallback_tools)} fallbacks failed",
             tool_name=tool.name,
@@ -219,16 +183,10 @@ class CircuitBreakerPolicy(BaseErrorHandler):
             if current_time - tool_state["last_failure_time"] >= self.recovery_timeout:
                 tool_state["state"] = "half-open"
                 tool_state["half_open_calls"] = 0
-                emit(
-                    logger, logging.INFO, "tool.circuit_breaker",
-                    tool_name=tool.name, state="half-open", action="transition",
-                )
+                logger.info("tool.circuit_breaker", extra={"tool_name": tool.name, "state": "half-open", "action": "transition"})
             else:
                 remaining_time = self.recovery_timeout - (current_time - tool_state["last_failure_time"])
-                emit(
-                    logger, logging.WARNING, "tool.circuit_breaker",
-                    tool_name=tool.name, state="open", remaining_seconds=remaining_time,
-                )
+                logger.warning("tool.circuit_breaker", extra={"tool_name": tool.name, "state": "open", "remaining_seconds": remaining_time})
                 raise CircuitBreakerError(
                     f"Circuit breaker is OPEN for {tool.name}",
                     tool_name=tool.name
@@ -238,20 +196,12 @@ class CircuitBreakerPolicy(BaseErrorHandler):
         tool_state["failure_count"] += 1
         tool_state["last_failure_time"] = current_time
         
-        emit(
-            logger, logging.WARNING, "tool.circuit_breaker",
-            tool_name=tool.name,
-            failure_count=tool_state["failure_count"],
-            failure_threshold=self.failure_threshold,
-        )
+        logger.warning("tool.circuit_breaker", extra={"tool_name": tool.name, "failure_count": tool_state["failure_count"], "failure_threshold": self.failure_threshold})
         
         # Check if we should open the circuit
         if tool_state["failure_count"] >= self.failure_threshold:
             tool_state["state"] = "open"
-            emit(
-                logger, logging.ERROR, "tool.circuit_breaker",
-                tool_name=tool.name, state="open", action="opened",
-            )
+            logger.error("tool.circuit_breaker", extra={"tool_name": tool.name, "state": "open", "action": "opened"})
             raise CircuitBreakerError(
                 f"Circuit breaker opened due to {self.failure_threshold} failures",
                 tool_name=tool.name,
@@ -265,10 +215,7 @@ class CircuitBreakerPolicy(BaseErrorHandler):
                 # Multiple failures in half-open, go back to open
                 tool_state["state"] = "open"
                 tool_state["last_failure_time"] = current_time
-                emit(
-                    logger, logging.ERROR, "tool.circuit_breaker",
-                    tool_name=tool.name, state="open", action="returned_to_open",
-                )
+                logger.error("tool.circuit_breaker", extra={"tool_name": tool.name, "state": "open", "action": "returned_to_open"})
         
         # Circuit is still allowing calls, propagate the error
         raise error
@@ -282,10 +229,7 @@ class CircuitBreakerPolicy(BaseErrorHandler):
             tool_state["state"] = "closed"
             tool_state["failure_count"] = 0
             tool_state["last_success_time"] = time.time()
-            emit(
-                logger, logging.INFO, "tool.circuit_breaker",
-                tool_name=tool_name, state="closed", action="closed_after_success",
-            )
+            logger.info("tool.circuit_breaker", extra={"tool_name": tool_name, "state": "closed", "action": "closed_after_success"})
         elif tool_state["state"] == "closed":
             # Regular success - update timestamp and maybe reset failure count
             tool_state["last_success_time"] = time.time()
@@ -307,10 +251,7 @@ class CircuitBreakerPolicy(BaseErrorHandler):
             if current_time - tool_state["last_failure_time"] >= self.recovery_timeout:
                 tool_state["state"] = "half-open"
                 tool_state["half_open_calls"] = 0
-                emit(
-                    logger, logging.INFO, "tool.circuit_breaker",
-                    tool_name=tool_name, state="half-open", action="transition",
-                )
+                logger.info("tool.circuit_breaker", extra={"tool_name": tool_name, "state": "half-open", "action": "transition"})
                 return True
             return False
         
@@ -325,20 +266,12 @@ class CircuitBreakerPolicy(BaseErrorHandler):
         tool_state["failure_count"] += 1
         tool_state["last_failure_time"] = current_time
         
-        emit(
-            logger, logging.WARNING, "tool.circuit_breaker",
-            tool_name=tool_name,
-            failure_count=tool_state["failure_count"],
-            failure_threshold=self.failure_threshold,
-        )
+        logger.warning("tool.circuit_breaker", extra={"tool_name": tool_name, "failure_count": tool_state["failure_count"], "failure_threshold": self.failure_threshold})
         
         # Check if we should open the circuit
         if tool_state["failure_count"] >= self.failure_threshold:
             tool_state["state"] = "open"
-            emit(
-                logger, logging.ERROR, "tool.circuit_breaker",
-                tool_name=tool_name, state="open", action="opened",
-            )
+            logger.error("tool.circuit_breaker", extra={"tool_name": tool_name, "state": "open", "action": "opened"})
         
         # For half-open state, check if we should go back to open
         if tool_state["state"] == "half-open":
@@ -347,10 +280,7 @@ class CircuitBreakerPolicy(BaseErrorHandler):
                 # Multiple failures in half-open, go back to open
                 tool_state["state"] = "open"
                 tool_state["last_failure_time"] = current_time
-                emit(
-                    logger, logging.ERROR, "tool.circuit_breaker",
-                    tool_name=tool_name, state="open", action="returned_to_open",
-                )
+                logger.error("tool.circuit_breaker", extra={"tool_name": tool_name, "state": "open", "action": "returned_to_open"})
 
 
 class CompositeErrorHandler(BaseErrorHandler):
@@ -373,34 +303,20 @@ class CompositeErrorHandler(BaseErrorHandler):
         
         for i, handler in enumerate(self.handlers):
             try:
-                emit(
-                    logger, logging.DEBUG, "tool.retry",
-                    tool_name=tool.name,
-                    handler=getattr(handler, 'name', type(handler).__name__),
-                    handler_index=i + 1, total_handlers=len(self.handlers),
-                )
+                logger.debug("tool.retry", extra={"tool_name": tool.name, "handler": getattr(handler, 'name', type(handler).__name__), "handler_index": i + 1, "total_handlers": len(self.handlers)})
                 result = await handler.handle_error(last_error, tool, args, context)
                 
                 if self.stop_on_success:
-                    emit(
-                        logger, logging.INFO, "tool.completed",
-                        tool_name=tool.name, handler_index=i + 1,
-                    )
+                    logger.info("tool.completed", extra={"tool_name": tool.name, "handler_index": i + 1})
                     return result
                     
             except Exception as e:
-                emit(
-                    logger, logging.WARNING, "tool.failed",
-                    tool_name=tool.name, handler_index=i + 1, error=str(e),
-                )
+                logger.warning("tool.failed", extra={"tool_name": tool.name, "handler_index": i + 1, "error": str(e)})
                 last_error = e
                 continue
         
         # All handlers failed
-        emit(
-            logger, logging.ERROR, "tool.failed",
-            tool_name=tool.name, handler_count=len(self.handlers),
-        )
+        logger.error("tool.failed", extra={"tool_name": tool.name, "handler_count": len(self.handlers)})
         raise last_error
 
 
@@ -433,19 +349,10 @@ class ConditionalErrorHandler(BaseErrorHandler):
             handler = self.default_handler
         
         if handler is None:
-            emit(
-                logger, logging.ERROR, "tool.failed",
-                tool_name=tool.name, error_type=error_type.__name__,
-                reason="no_handler_found",
-            )
+            logger.error("tool.failed", extra={"tool_name": tool.name, "error_type": error_type.__name__, "reason": "no_handler_found"})
             raise error
         
-        emit(
-            logger, logging.DEBUG, "tool.retry",
-            tool_name=tool.name,
-            handler=getattr(handler, 'name', type(handler).__name__),
-            error_type=error_type.__name__,
-        )
+        logger.debug("tool.retry", extra={"tool_name": tool.name, "handler": getattr(handler, 'name', type(handler).__name__), "error_type": error_type.__name__})
         return await handler.handle_error(error, tool, args, context)
 
 
@@ -478,10 +385,7 @@ class RateLimitPolicy(BaseErrorHandler):
             wait_time = 60 - (current_time - oldest_call)
             wait_time *= self.backoff_factor  # Apply backoff
             
-            emit(
-                logger, logging.WARNING, "tool.retry",
-                tool_name=tool_name, wait_seconds=wait_time, reason="rate_limit",
-            )
+            logger.warning("tool.retry", extra={"tool_name": tool_name, "wait_seconds": wait_time, "reason": "rate_limit"})
             await asyncio.sleep(wait_time)
         
         # Record this call
@@ -498,10 +402,7 @@ class RateLimitPolicy(BaseErrorHandler):
         # Check if this is a rate limit error (customize as needed)
         error_str = str(error).lower()
         if "rate limit" in error_str or "too many requests" in error_str:
-            emit(
-                logger, logging.WARNING, "tool.retry",
-                tool_name=tool.name, error=str(error), reason="rate_limit",
-            )
+            logger.warning("tool.retry", extra={"tool_name": tool.name, "error": str(error), "reason": "rate_limit"})
             
             # Wait based on rate limiting
             await self._wait_for_rate_limit(tool.name)
@@ -510,10 +411,7 @@ class RateLimitPolicy(BaseErrorHandler):
             try:
                 return await tool.arun(**args)
             except Exception as retry_error:
-                emit(
-                    logger, logging.ERROR, "tool.failed",
-                    tool_name=tool.name, error=str(retry_error), reason="rate_limit_retry",
-                )
+                logger.error("tool.failed", extra={"tool_name": tool.name, "error": str(retry_error), "reason": "rate_limit_retry"})
                 raise retry_error
         
         # Not a rate limit error, re-raise

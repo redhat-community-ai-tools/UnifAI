@@ -6,10 +6,8 @@ No over-engineering, no unnecessary abstractions.
 """
 
 import logging
-
 from typing import List, Set, Dict, Any
 from abc import ABC, abstractmethod
-from global_utils.utils.logging_config import emit
 from mas.elements.tools.common.base_tool import BaseTool
 from .phase_protocols import PhaseState
 
@@ -116,8 +114,7 @@ class PhaseProvider(ABC):
             
             return phase_tools
         except Exception as e:
-            emit(logger, logging.WARNING, "phase.validate_error",
-                 phase=phase, error=str(e), detail="get_tools_for_phase")
+            logger.warning("phase.validate_error", extra={"phase": phase, "error": str(e), "detail": "get_tools_for_phase"})
             return self._tools.copy()
     
     def _get_tool_category(self, tool: BaseTool) -> str:
