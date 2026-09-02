@@ -38,4 +38,4 @@ spec:
       volumes:
         - name: otel-config
           configMap:
-            name: {{ include "logging.fullname" . }}
+            name: {{ include "logging.fullname" . }}-base

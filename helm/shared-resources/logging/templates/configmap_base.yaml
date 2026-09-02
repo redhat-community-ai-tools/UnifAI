@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "logging.fullname" . }}
+  name: {{ include "logging.fullname" . }}-base
   labels:
     {{- include "logging.labels" . | nindent 4 }}
 data:
@@ -18,6 +18,8 @@ data:
     exporters:
       debug:
         verbosity: basic
+      sumologic:
+        endpoint: ${env:SUMOLOGIC_ENDPOINT}  
     extensions:
       zpages:
         endpoint: 0.0.0.0:55679
