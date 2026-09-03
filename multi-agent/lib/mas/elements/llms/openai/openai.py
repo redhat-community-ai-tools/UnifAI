@@ -17,6 +17,7 @@ from ..common.base_llm import BaseLLM
 from ..common.chat.message import ChatMessage, Role
 from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import OpenAIMessageConverter
+from .name_sanitizer import ToolNameSanitizer
 from .tools_converter import OpenAIToolsConverter
 from .stream_aggregator import StreamToolCallAggregator
 from mas.core.tracing import TracingService
@@ -30,6 +31,7 @@ class OpenAILLM(BaseLLM):
     * **OpenAIMessageConverter** – bidirectional ``ChatMessage`` ↔ OpenAI dict
     * **OpenAIToolsConverter** – ``BaseTool`` → OpenAI function-tool schema
     * **StreamToolCallAggregator** – reassembles incremental tool-call deltas
+    * **ToolNameSanitizer** – maps dotted domain tool names to provider-safe names
     """
 
     def __init__(
@@ -47,6 +49,7 @@ class OpenAILLM(BaseLLM):
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._tools: Optional[List[ChatCompletionToolParam]] = None
+        self._name_sanitizer = ToolNameSanitizer()
         self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
         self._tracing = tracing
 
@@ -69,7 +72,10 @@ class OpenAILLM(BaseLLM):
                     status_message=f"OpenAI API error: {type(e).__name__}: {e}",
                 )
                 raise
-            result_msg = OpenAIMessageConverter.from_openai(response.choices[0].message)
+            result_msg = OpenAIMessageConverter.from_openai(
+                response.choices[0].message,
+                sanitizer=self._name_sanitizer,
+            )
             usage = {}
             if response.usage:
                 usage = {
@@ -125,15 +131,22 @@ class OpenAILLM(BaseLLM):
             gen.update(output=accumulated_content)
 
         if aggregator.has_tool_calls:
+            tool_calls = aggregator.build()
+            if tool_calls:
+                tool_calls = [
+                    tc.model_copy(update={"name": self._name_sanitizer.to_domain(tc.name)})
+                    for tc in tool_calls
+                ]
             yield ChatMessage(
                 role=Role.ASSISTANT,
                 content=accumulated_content,
-                tool_calls=aggregator.build(),
+                tool_calls=tool_calls,
             )
 
     def bind_tools(self, tools: List[ToolDefinition]) -> OpenAILLM:
         clone = copy.copy(self)
-        clone._tools = OpenAIToolsConverter.to_openai(tools)
+        clone._name_sanitizer = ToolNameSanitizer(t.name for t in tools)
+        clone._tools = OpenAIToolsConverter.to_openai(tools, clone._name_sanitizer)
         return clone
 
     @property
@@ -154,7 +167,9 @@ class OpenAILLM(BaseLLM):
         """Assemble the kwargs dict for ``chat.completions.create``."""
         request: Dict[str, Any] = {
             "model": self._model,
-            "messages": OpenAIMessageConverter.to_openai(messages),
+            "messages": OpenAIMessageConverter.to_openai(
+                messages, sanitizer=self._name_sanitizer,
+            ),
             "temperature": self._temperature,
             "max_tokens": self._max_tokens,
         }
