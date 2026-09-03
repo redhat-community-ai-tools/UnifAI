@@ -169,13 +169,18 @@ class LdapDirectoryProvider(DirectoryProvider):
                 conn = self._get_locked_connection()
                 self._last_used_at = time.monotonic()
                 print(f"[LDAP] SEARCH using conn id={id(conn)} base={base_dn}")
-                conn.search(
+                search_ok = conn.search(
                     search_base=base_dn,
                     search_filter=search_filter,
                     search_scope=SUBTREE,
                     attributes=attributes,
                     size_limit=limit,
                 )
+                # ldap3 does NOT raise on LDAP-protocol-level errors (e.g. "inappropriate
+                # authentication") unless Connection(raise_exceptions=True) is set — it just
+                # returns False here and stashes the real result code/message in conn.result.
+                # Print it explicitly so a rejected-but-not-exceptional search is visible.
+                print(f"[LDAP] SEARCH RESULT ok={search_ok} conn.result={conn.result}")
                 results = [
                     entry for entry in conn.entries
                     if str(entry.entry_dn) != base_dn
