@@ -15,9 +15,9 @@ from openai.types.chat import ChatCompletionToolParam
 
 from ..common.base_llm import BaseLLM
 from ..common.chat.message import ChatMessage, Role
+from ..common.name_sanitizer import build_name_maps
 from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import OpenAIMessageConverter
-from ..common.name_sanitizer import ToolNameSanitizer
 from .tools_converter import OpenAIToolsConverter
 from .stream_aggregator import StreamToolCallAggregator
 from mas.core.tracing import TracingService
@@ -31,7 +31,10 @@ class OpenAILLM(BaseLLM):
     * **OpenAIMessageConverter** – bidirectional ``ChatMessage`` ↔ OpenAI dict
     * **OpenAIToolsConverter** – ``BaseTool`` → OpenAI function-tool schema
     * **StreamToolCallAggregator** – reassembles incremental tool-call deltas
-    * **ToolNameSanitizer** – maps dotted domain tool names to provider-safe names
+
+    Tool names containing dots (e.g. ``time.get_current_time``) are
+    sanitized to underscores at the API boundary and restored on
+    inbound tool calls.  All mapping logic lives in this class.
     """
 
     def __init__(
@@ -49,7 +52,8 @@ class OpenAILLM(BaseLLM):
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._tools: Optional[List[ChatCompletionToolParam]] = None
-        self._name_sanitizer = ToolNameSanitizer()
+        self._fwd_names: Dict[str, str] = {}  # domain → provider-safe
+        self._rev_names: Dict[str, str] = {}  # provider-safe → domain
         self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
         self._tracing = tracing
 
@@ -74,8 +78,8 @@ class OpenAILLM(BaseLLM):
                 raise
             result_msg = OpenAIMessageConverter.from_openai(
                 response.choices[0].message,
-                sanitizer=self._name_sanitizer,
             )
+            result_msg = self._restore_tool_names(result_msg)
             usage = {}
             if response.usage:
                 usage = {
@@ -134,7 +138,9 @@ class OpenAILLM(BaseLLM):
             tool_calls = aggregator.build()
             if tool_calls:
                 tool_calls = [
-                    tc.model_copy(update={"name": self._name_sanitizer.to_domain(tc.name)})
+                    tc.model_copy(
+                        update={"name": self._rev_names.get(tc.name, tc.name)},
+                    )
                     for tc in tool_calls
                 ]
             yield ChatMessage(
@@ -145,8 +151,13 @@ class OpenAILLM(BaseLLM):
 
     def bind_tools(self, tools: List[ToolDefinition]) -> OpenAILLM:
         clone = copy.copy(self)
-        clone._name_sanitizer = ToolNameSanitizer(t.name for t in tools)
-        clone._tools = OpenAIToolsConverter.to_openai(tools, clone._name_sanitizer)
+        clone._fwd_names, clone._rev_names = build_name_maps(
+            t.name for t in tools
+        )
+        clone._tools = OpenAIToolsConverter.to_openai(tools)
+        if clone._tools:
+            for tool_param, tool_def in zip(clone._tools, tools):
+                tool_param["function"]["name"] = clone._fwd_names[tool_def.name]
         return clone
 
     @property
@@ -165,11 +176,11 @@ class OpenAILLM(BaseLLM):
         **overrides: Any,
     ) -> Dict[str, Any]:
         """Assemble the kwargs dict for ``chat.completions.create``."""
+        raw_messages = OpenAIMessageConverter.to_openai(messages)
+        self._sanitize_outbound_names(raw_messages)
         request: Dict[str, Any] = {
             "model": self._model,
-            "messages": OpenAIMessageConverter.to_openai(
-                messages, sanitizer=self._name_sanitizer,
-            ),
+            "messages": raw_messages,
             "temperature": self._temperature,
             "max_tokens": self._max_tokens,
         }
@@ -180,3 +191,26 @@ class OpenAILLM(BaseLLM):
         if overrides:
             request.update(overrides)
         return request
+
+    def _sanitize_outbound_names(self, messages: List[Dict[str, Any]]) -> None:
+        """Replace domain tool names with provider-safe names in message dicts."""
+        if not self._fwd_names:
+            return
+        for msg in messages:
+            for tc in msg.get("tool_calls", []):
+                fn = tc.get("function", {})
+                original = fn.get("name")
+                if original in self._fwd_names:
+                    fn["name"] = self._fwd_names[original]
+
+    def _restore_tool_names(self, msg: ChatMessage) -> ChatMessage:
+        """Map provider-safe tool names back to domain names."""
+        if not msg.tool_calls or not self._rev_names:
+            return msg
+        restored = [
+            tc.model_copy(
+                update={"name": self._rev_names.get(tc.name, tc.name)},
+            )
+            for tc in msg.tool_calls
+        ]
+        return msg.model_copy(update={"tool_calls": restored})

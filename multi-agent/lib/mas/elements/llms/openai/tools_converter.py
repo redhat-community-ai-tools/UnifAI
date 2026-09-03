@@ -14,35 +14,21 @@ from openai.types.chat import ChatCompletionToolParam
 from openai.types.shared_params import FunctionDefinition
 
 from ...tools.common.tool_definition import ToolDefinition
-from ..common.name_sanitizer import ToolNameSanitizer
 
 
 class OpenAIToolsConverter:
-    """Converts ``ToolDefinition`` instances into OpenAI ``ChatCompletionToolParam`` dicts.
-
-    Function names are sanitized to ``^[a-zA-Z0-9_-]+$`` (OpenAI rejects
-    dots).  Domain ``ToolDefinition.name`` is left unchanged; callers
-    pass the same ``ToolNameSanitizer`` into the message converter so
-    inbound tool calls map back to the original name.
-    """
+    """Converts ``ToolDefinition`` instances into OpenAI ``ChatCompletionToolParam`` dicts."""
 
     @staticmethod
-    def to_openai(
-        tools: Optional[List[ToolDefinition]],
-        sanitizer: Optional[ToolNameSanitizer] = None,
-    ) -> Optional[List[ChatCompletionToolParam]]:
+    def to_openai(tools: Optional[List[ToolDefinition]]) -> Optional[List[ChatCompletionToolParam]]:
         if not tools:
             return None
-        sanitizer = sanitizer or ToolNameSanitizer(t.name for t in tools)
-        return [OpenAIToolsConverter._convert(t, sanitizer) for t in tools]
+        return [OpenAIToolsConverter._convert(t) for t in tools]
 
     @staticmethod
-    def _convert(
-        tool: ToolDefinition,
-        sanitizer: ToolNameSanitizer,
-    ) -> ChatCompletionToolParam:
+    def _convert(tool: ToolDefinition) -> ChatCompletionToolParam:
         function: FunctionDefinition = {
-            "name": sanitizer.to_provider(tool.name),
+            "name": tool.name,
             "description": tool.description,
             "parameters": tool.parameters,
         }
