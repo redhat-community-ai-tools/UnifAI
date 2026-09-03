@@ -7,6 +7,7 @@ New backends (Azure AD, etc.) are added here as additional branches.
 import logging
 from typing import Optional
 
+from directory.bind_credentials import prepare_ldap_bind_credentials
 from directory.provider import DirectoryProvider
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,6 @@ def build_directory_provider(cfg) -> Optional[DirectoryProvider]:
 
 def _build_ldap(cfg) -> DirectoryProvider:
     from directory import LdapDirectoryProvider, LdapConfig
-    from directory.ldap_provider import prepare_ldap_bind_credentials
 
     if not cfg.directory_url:
         raise ValueError("directory_url is required when directory_provider='ldap'")
