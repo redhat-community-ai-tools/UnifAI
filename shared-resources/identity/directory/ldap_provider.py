@@ -87,6 +87,9 @@ class LdapDirectoryProvider(DirectoryProvider):
         self._conn: Optional[Connection] = None
         self._conn_lock = threading.Lock()
         self._cache = _ResultCache()
+        # Debug instrumentation for tracing connection reuse/reconnect (see prints below).
+        self._conn_created_at: Optional[float] = None
+        self._last_used_at: Optional[float] = None
 
         logger.info(
             "LDAP provider: %s, user_base=%s, group_base=%s, bind=%s",
@@ -126,14 +129,19 @@ class LdapDirectoryProvider(DirectoryProvider):
         if self._conn is not None:
             try:
                 if self._conn.bound:
+                    idle = time.monotonic() - (self._last_used_at or 0)
+                    age = time.monotonic() - (self._conn_created_at or 0)
+                    print(f"[LDAP] REUSE conn id={id(self._conn)} idle={idle:.1f}s age={age:.1f}s")
                     return self._conn
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[LDAP] conn.bound check raised: {e!r} — treating as dead")
+            print(f"[LDAP] STALE conn id={id(self._conn)} — unbinding before reconnect")
             try:
                 self._conn.unbind()
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[LDAP] unbind() on stale conn raised: {e!r}")
 
+        print(f"[LDAP] CREATING new connection (prev_conn_id={id(self._conn) if self._conn else None})")
         conn = Connection(
             self._pool,
             user=self._bind_dn,
@@ -143,6 +151,9 @@ class LdapDirectoryProvider(DirectoryProvider):
             receive_timeout=self._timeout,
         )
         self._conn = conn
+        self._conn_created_at = time.monotonic()
+        print(f"[LDAP] NEW conn id={id(conn)} bound={conn.bound} "
+              f"user={self._bind_dn or 'anonymous'} server={conn.server}")
         return conn
 
     def _search(self, base_dn: str, search_filter: str,
@@ -156,6 +167,8 @@ class LdapDirectoryProvider(DirectoryProvider):
         with self._conn_lock:
             try:
                 conn = self._get_locked_connection()
+                self._last_used_at = time.monotonic()
+                print(f"[LDAP] SEARCH using conn id={id(conn)} base={base_dn}")
                 conn.search(
                     search_base=base_dn,
                     search_filter=search_filter,
@@ -173,7 +186,10 @@ class LdapDirectoryProvider(DirectoryProvider):
                 )
                 self._cache.put(cache_key, results)
                 return results
-            except LDAPException:
+            except LDAPException as e:
+                idle = time.monotonic() - (self._last_used_at or 0)
+                print(f"[LDAP] SEARCH FAILED conn id={id(self._conn)} "
+                      f"idle_since_last_use={idle:.1f}s err={e!r}")
                 logger.exception(
                     "LDAP search failed: base=%s filter=%s", base_dn, search_filter,
                 )
@@ -182,6 +198,7 @@ class LdapDirectoryProvider(DirectoryProvider):
                         self._conn.unbind()
                 except Exception:
                     pass
+                print(f"[LDAP] RESETTING self._conn=None (was id={id(self._conn)}) — next call will reconnect")
                 self._conn = None
                 return []
 

@@ -18,7 +18,9 @@ def _parse_limit(default: int = 20) -> int:
 
 
 def _user_token():
-    return request.headers.get("X-User-Token")
+    token = request.headers.get("X-User-Token")
+    print(f"[DIRECTORY] X-User-Token header present={bool(token)} len={len(token) if token else 0}")
+    return token
 
 
 def _cached_fetch(cache, cache_key: str, fetch: Callable, response_key: str, log_action: str):
@@ -29,17 +31,25 @@ def _cached_fetch(cache, cache_key: str, fetch: Callable, response_key: str, log
     if cache:
         cached = cache.get_json(cache_key)
         if cached is not None:
+            print(f"[DIRECTORY] CACHE HIT action={log_action} key={cache_key} -> {len(cached)} item(s), NOT refetching")
             return jsonify({response_key: cached}), 200
+        print(f"[DIRECTORY] CACHE MISS action={log_action} key={cache_key} -> refetching from LDAP")
+    else:
+        print(f"[DIRECTORY] NO CACHE CONFIGURED action={log_action} -> always refetching from LDAP")
     try:
         payload = fetch()
+        print(f"[DIRECTORY] FETCH RESULT action={log_action} key={cache_key} -> {len(payload)} item(s)")
         if cache:
             cache.set_json(cache_key, payload)
+            print(f"[DIRECTORY] CACHE SET action={log_action} key={cache_key}")
         return jsonify({response_key: payload}), 200
     except Exception:
+        print(f"[DIRECTORY] FETCH FAILED action={log_action} key={cache_key}")
         logger.exception("%s failed", log_action)
         if cache:
             cached = cache.get_json(cache_key)
             if cached is not None:
+                print(f"[DIRECTORY] FALLBACK TO STALE CACHE action={log_action} key={cache_key}")
                 return jsonify({response_key: cached, "cached": True}), 200
         return jsonify({"error": "Internal server error"}), 500
 
@@ -64,6 +74,7 @@ def search_users():
     token = _user_token()
     cache = current_app.extensions.get("directory_cache")
     cache_key = DirectoryCache.key_for_search("users", q, limit, token)
+    print(f"[DIRECTORY] search_users q={q!r} limit={limit} token_passed={bool(token)} cache_key={cache_key}")
     return _cached_fetch(
         cache, cache_key,
         fetch=lambda: [u.model_dump(mode="json") for u in svc.search_directory_users(q, limit=limit, user_token=token)],
