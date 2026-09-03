@@ -10,7 +10,7 @@ import time
 from typing import List, Optional, Tuple
 
 import ldap3
-from ldap3 import Server, ServerPool, Connection, SUBTREE, ROUND_ROBIN
+from ldap3 import Server, ServerPool, Connection, SUBTREE, ROUND_ROBIN, SIMPLE
 from ldap3.core.exceptions import LDAPException
 
 from directory.models import DirectoryUser, DirectoryGroup
@@ -20,6 +20,39 @@ from directory.models import LdapConfig
 logger = logging.getLogger(__name__)
 
 _CACHE_TTL = 30  # seconds
+
+
+def prepare_ldap_bind_credentials(
+    bind_dn: str,
+    bind_password: str,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Normalize bind DN/password for ldap3 SIMPLE bind.
+
+    *bind_dn* must be the **full** LDAP distinguished name as returned by IPA /
+    ROVER (commas are part of the DN and must be preserved)
+
+    Only leading/trailing whitespace is stripped — never split or rewrite the DN.
+    Returns ``(None, None)`` when *bind_dn* is empty (anonymous bind).
+    """
+    dn = (bind_dn or "").strip()
+    password = (bind_password or "").strip()
+    if not dn:
+        return None, None
+    if "=" not in dn:
+        logger.warning("directory_ldap_bind_dn=%r does not look like a full DN", dn)
+    if not password:
+        logger.warning("directory_ldap_bind_dn is set but bind password is empty")
+    return dn, password or None
+
+
+def ldap_bind_dn_log_label(bind_dn: Optional[str]) -> str:
+    """Short label for logs — first RDN value only, not the full DN."""
+    if not bind_dn:
+        return "anonymous"
+    first_rdn = bind_dn.split(",", 1)[0].strip()
+    if "=" in first_rdn:
+        return first_rdn.split("=", 1)[1]
+    return first_rdn
 
 
 class _ResultCache:
@@ -80,22 +113,20 @@ class LdapDirectoryProvider(DirectoryProvider):
         ]
         self._pool = ServerPool(servers, ROUND_ROBIN, active=True)
 
-        self._bind_dn = config.bind_dn or None
-        self._bind_pw = config.bind_password or None
+        self._bind_dn, self._bind_pw = prepare_ldap_bind_credentials(
+            config.bind_dn, config.bind_password,
+        )
         self._timeout = config.timeout_seconds
 
         self._conn: Optional[Connection] = None
         self._conn_lock = threading.Lock()
         self._cache = _ResultCache()
-        # Debug instrumentation for tracing connection reuse/reconnect (see prints below).
-        self._conn_created_at: Optional[float] = None
-        self._last_used_at: Optional[float] = None
 
         logger.info(
             "LDAP provider: %s, user_base=%s, group_base=%s, bind=%s",
             config.url, self._user_base,
             self._group_base or "(disabled)",
-            self._bind_dn or "anonymous",
+            ldap_bind_dn_log_label(self._bind_dn),
         )
 
     @staticmethod
@@ -129,31 +160,29 @@ class LdapDirectoryProvider(DirectoryProvider):
         if self._conn is not None:
             try:
                 if self._conn.bound:
-                    idle = time.monotonic() - (self._last_used_at or 0)
-                    age = time.monotonic() - (self._conn_created_at or 0)
-                    print(f"[LDAP] REUSE conn id={id(self._conn)} idle={idle:.1f}s age={age:.1f}s")
                     return self._conn
-            except Exception as e:
-                print(f"[LDAP] conn.bound check raised: {e!r} — treating as dead")
-            print(f"[LDAP] STALE conn id={id(self._conn)} — unbinding before reconnect")
+            except Exception:
+                pass
             try:
                 self._conn.unbind()
-            except Exception as e:
-                print(f"[LDAP] unbind() on stale conn raised: {e!r}")
+            except Exception:
+                pass
 
-        print(f"[LDAP] CREATING new connection (prev_conn_id={id(self._conn) if self._conn else None})")
         conn = Connection(
             self._pool,
             user=self._bind_dn,
             password=self._bind_pw,
+            authentication=SIMPLE,
+            auto_bind=True,
+            read_only=True,
+            receive_timeout=self._timeout,
+        ) if self._bind_dn else Connection(
+            self._pool,
             auto_bind=True,
             read_only=True,
             receive_timeout=self._timeout,
         )
         self._conn = conn
-        self._conn_created_at = time.monotonic()
-        print(f"[LDAP] NEW conn id={id(conn)} bound={conn.bound} "
-              f"user={self._bind_dn or 'anonymous'} server={conn.server}")
         return conn
 
     def _search(self, base_dn: str, search_filter: str,
@@ -167,20 +196,13 @@ class LdapDirectoryProvider(DirectoryProvider):
         with self._conn_lock:
             try:
                 conn = self._get_locked_connection()
-                self._last_used_at = time.monotonic()
-                print(f"[LDAP] SEARCH using conn id={id(conn)} base={base_dn}")
-                search_ok = conn.search(
+                conn.search(
                     search_base=base_dn,
                     search_filter=search_filter,
                     search_scope=SUBTREE,
                     attributes=attributes,
                     size_limit=limit,
                 )
-                # ldap3 does NOT raise on LDAP-protocol-level errors (e.g. "inappropriate
-                # authentication") unless Connection(raise_exceptions=True) is set — it just
-                # returns False here and stashes the real result code/message in conn.result.
-                # Print it explicitly so a rejected-but-not-exceptional search is visible.
-                print(f"[LDAP] SEARCH RESULT ok={search_ok} conn.result={conn.result}")
                 results = [
                     entry for entry in conn.entries
                     if str(entry.entry_dn) != base_dn
@@ -191,10 +213,7 @@ class LdapDirectoryProvider(DirectoryProvider):
                 )
                 self._cache.put(cache_key, results)
                 return results
-            except LDAPException as e:
-                idle = time.monotonic() - (self._last_used_at or 0)
-                print(f"[LDAP] SEARCH FAILED conn id={id(self._conn)} "
-                      f"idle_since_last_use={idle:.1f}s err={e!r}")
+            except LDAPException:
                 logger.exception(
                     "LDAP search failed: base=%s filter=%s", base_dn, search_filter,
                 )
@@ -203,7 +222,6 @@ class LdapDirectoryProvider(DirectoryProvider):
                         self._conn.unbind()
                 except Exception:
                     pass
-                print(f"[LDAP] RESETTING self._conn=None (was id={id(self._conn)}) — next call will reconnect")
                 self._conn = None
                 return []
 
