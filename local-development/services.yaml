@@ -98,6 +98,8 @@ services:
       client_id: "<REPLACE_WITH_YOUR_CLIENT_ID>"
       client_secret: "<REPLACE_WITH_YOUR_CLIENT_SECRET>"
       keycloak_realm: "EmployeeIDP"
+      directory_ldap_bind_dn: "<REPLACE_WITH_YOUR_LDAP_BIND_DN>"
+      directory_ldap_bind_password: "<REPLACE_WITH_YOUR_LDAP_BIND_PASSWORD>"
       hostname_local: "127.0.0.1"
       port: "13456"
       frontend_url: "http://127.0.0.1:5000"

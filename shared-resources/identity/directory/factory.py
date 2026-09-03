@@ -7,6 +7,7 @@ New backends (Azure AD, etc.) are added here as additional branches.
 import logging
 from typing import Optional
 
+from directory.bind_credentials import prepare_ldap_bind_credentials
 from directory.provider import DirectoryProvider
 
 logger = logging.getLogger(__name__)
@@ -126,11 +127,16 @@ def _build_ldap(cfg) -> DirectoryProvider:
     )
     _warn_if_user_base_still_placeholder(user_base)
 
+    bind_dn, bind_password = prepare_ldap_bind_credentials(
+        cfg.directory_ldap_bind_dn,
+        cfg.directory_ldap_bind_password,
+    )
+
     ldap_cfg = LdapConfig(
         url=cfg.directory_url,
         user_base_dn=user_base,
-        bind_dn=cfg.directory_ldap_bind_dn,
-        bind_password=cfg.directory_ldap_bind_password,
+        bind_dn=bind_dn or "",
+        bind_password=bind_password or "",
         skip_tls_verify=not cfg.directory_verify_ssl,
         timeout_seconds=cfg.directory_timeout,
         user_object_class=cfg.directory_ldap_user_object_class,
