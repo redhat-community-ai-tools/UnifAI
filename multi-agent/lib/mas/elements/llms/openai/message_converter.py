@@ -29,15 +29,22 @@ class OpenAIMessageConverter:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def to_openai(messages: List[ChatMessage]) -> List[Dict[str, Any]]:
+    def to_openai(
+        messages: List[ChatMessage],
+        name_map: Optional[Dict[str, str]] = None,
+    ) -> List[Dict[str, Any]]:
         """Convert a list of domain messages to OpenAI API dicts."""
-        return [OpenAIMessageConverter._to_dict(m) for m in messages]
+        return [OpenAIMessageConverter._to_dict(m, name_map) for m in messages]
 
     @staticmethod
-    def from_openai(msg: Any) -> ChatMessage:
+    def from_openai(
+        msg: Any,
+        rev_names: Optional[Dict[str, str]] = None,
+    ) -> ChatMessage:
         """Convert an OpenAI ``ChatCompletionMessage`` to a domain ChatMessage."""
         tool_calls = OpenAIMessageConverter._parse_tool_calls(
-            getattr(msg, "tool_calls", None)
+            getattr(msg, "tool_calls", None),
+            rev_names,
         )
         return ChatMessage(
             role=Role.ASSISTANT,
@@ -50,7 +57,10 @@ class OpenAIMessageConverter:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _to_dict(m: ChatMessage) -> Dict[str, Any]:
+    def _to_dict(
+        m: ChatMessage,
+        name_map: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
         role = _ROLE_MAP.get(m.role)
         if role is None:
             raise ValueError(f"Unknown role: {m.role}")
@@ -62,7 +72,7 @@ class OpenAIMessageConverter:
             d: Dict[str, Any] = {"role": role, "content": m.content or ""}
             if m.tool_calls:
                 d["tool_calls"] = [
-                    OpenAIMessageConverter._tool_call_to_dict(tc)
+                    OpenAIMessageConverter._tool_call_to_dict(tc, name_map)
                     for tc in m.tool_calls
                 ]
             return d
@@ -75,12 +85,16 @@ class OpenAIMessageConverter:
         }
 
     @staticmethod
-    def _tool_call_to_dict(tc: ToolCall) -> Dict[str, Any]:
+    def _tool_call_to_dict(
+        tc: ToolCall,
+        name_map: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        name = name_map.get(tc.name, tc.name) if name_map else tc.name
         return {
             "id": tc.tool_call_id,
             "type": "function",
             "function": {
-                "name": tc.name,
+                "name": name,
                 "arguments": json.dumps(tc.args),
             },
         }
@@ -88,12 +102,17 @@ class OpenAIMessageConverter:
     @staticmethod
     def _parse_tool_calls(
         raw: Optional[List[Any]],
+        rev_names: Optional[Dict[str, str]] = None,
     ) -> Optional[List[ToolCall]]:
         if not raw:
             return None
         result = [
             ToolCall(
-                name=tc.function.name,
+                name=(
+                    rev_names.get(tc.function.name, tc.function.name)
+                    if rev_names
+                    else tc.function.name
+                ),
                 args=(
                     json.loads(tc.function.arguments)
                     if isinstance(tc.function.arguments, str)

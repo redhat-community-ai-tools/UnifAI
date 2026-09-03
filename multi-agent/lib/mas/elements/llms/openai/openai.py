@@ -34,7 +34,8 @@ class OpenAILLM(BaseLLM):
 
     Tool names containing dots (e.g. ``time.get_current_time``) are
     sanitized to underscores at the API boundary and restored on
-    inbound tool calls.  All mapping logic lives in this class.
+    inbound tool calls.  Name maps are built in ``bind_tools`` and
+    passed through to the converters.
     """
 
     def __init__(
@@ -78,8 +79,8 @@ class OpenAILLM(BaseLLM):
                 raise
             result_msg = OpenAIMessageConverter.from_openai(
                 response.choices[0].message,
+                rev_names=self._rev_names,
             )
-            result_msg = self._restore_tool_names(result_msg)
             usage = {}
             if response.usage:
                 usage = {
@@ -136,7 +137,7 @@ class OpenAILLM(BaseLLM):
 
         if aggregator.has_tool_calls:
             tool_calls = aggregator.build()
-            if tool_calls:
+            if tool_calls and self._rev_names:
                 tool_calls = [
                     tc.model_copy(
                         update={"name": self._rev_names.get(tc.name, tc.name)},
@@ -154,10 +155,7 @@ class OpenAILLM(BaseLLM):
         clone._fwd_names, clone._rev_names = build_name_maps(
             t.name for t in tools
         )
-        clone._tools = OpenAIToolsConverter.to_openai(tools)
-        if clone._tools:
-            for tool_param, tool_def in zip(clone._tools, tools):
-                tool_param["function"]["name"] = clone._fwd_names[tool_def.name]
+        clone._tools = OpenAIToolsConverter.to_openai(tools, clone._fwd_names)
         return clone
 
     @property
@@ -176,11 +174,11 @@ class OpenAILLM(BaseLLM):
         **overrides: Any,
     ) -> Dict[str, Any]:
         """Assemble the kwargs dict for ``chat.completions.create``."""
-        raw_messages = OpenAIMessageConverter.to_openai(messages)
-        self._sanitize_outbound_names(raw_messages)
         request: Dict[str, Any] = {
             "model": self._model,
-            "messages": raw_messages,
+            "messages": OpenAIMessageConverter.to_openai(
+                messages, name_map=self._fwd_names,
+            ),
             "temperature": self._temperature,
             "max_tokens": self._max_tokens,
         }
@@ -191,26 +189,3 @@ class OpenAILLM(BaseLLM):
         if overrides:
             request.update(overrides)
         return request
-
-    def _sanitize_outbound_names(self, messages: List[Dict[str, Any]]) -> None:
-        """Replace domain tool names with provider-safe names in message dicts."""
-        if not self._fwd_names:
-            return
-        for msg in messages:
-            for tc in msg.get("tool_calls", []):
-                fn = tc.get("function", {})
-                original = fn.get("name")
-                if original in self._fwd_names:
-                    fn["name"] = self._fwd_names[original]
-
-    def _restore_tool_names(self, msg: ChatMessage) -> ChatMessage:
-        """Map provider-safe tool names back to domain names."""
-        if not msg.tool_calls or not self._rev_names:
-            return msg
-        restored = [
-            tc.model_copy(
-                update={"name": self._rev_names.get(tc.name, tc.name)},
-            )
-            for tc in msg.tool_calls
-        ]
-        return msg.model_copy(update={"tool_calls": restored})
