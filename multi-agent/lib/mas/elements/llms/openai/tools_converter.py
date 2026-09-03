@@ -14,7 +14,7 @@ from openai.types.chat import ChatCompletionToolParam
 from openai.types.shared_params import FunctionDefinition
 
 from ...tools.common.tool_definition import ToolDefinition
-from .name_sanitizer import ToolNameSanitizer
+from ..common.name_sanitizer import ToolNameSanitizer
 
 
 class OpenAIToolsConverter:

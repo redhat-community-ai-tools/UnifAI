@@ -17,7 +17,7 @@ from ..common.base_llm import BaseLLM
 from ..common.chat.message import ChatMessage, Role
 from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import OpenAIMessageConverter
-from .name_sanitizer import ToolNameSanitizer
+from ..common.name_sanitizer import ToolNameSanitizer
 from .tools_converter import OpenAIToolsConverter
 from .stream_aggregator import StreamToolCallAggregator
 from mas.core.tracing import TracingService

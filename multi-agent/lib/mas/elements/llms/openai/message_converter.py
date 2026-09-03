@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from ..common.chat.message import ChatMessage, Role, ToolCall
-from .name_sanitizer import ToolNameSanitizer
+from ..common.name_sanitizer import ToolNameSanitizer
 
 _ROLE_MAP: Dict[Role, str] = {
     Role.SYSTEM: "system",
