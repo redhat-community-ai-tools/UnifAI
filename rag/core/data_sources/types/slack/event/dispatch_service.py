@@ -3,7 +3,9 @@ from dataclasses import dataclass
 from typing import Dict, Any, Optional
 
 from core.data_sources.types.slack.domain.event.dispatcher import SlackEventDispatcher, SlackEventTaskResult
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

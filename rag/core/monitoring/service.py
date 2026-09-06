@@ -3,14 +3,13 @@ from datetime import datetime
 import logging
 from collections import deque
 from typing import Dict, List, Optional, Any
-
 from core.monitoring.domain.model import MetricsEntry, ErrorEntry, LogEntry
 from core.monitoring.domain.repository import MonitoringRepository
 from core.pipeline.domain.repository import PipelineRepository
-
 from core.monitoring.parsing.base import LogParser
 from core.data_sources.types.slack.log_parser import SlackLogParser
 from core.data_sources.types.document.log_parser import DocLogParser
+from global_utils.utils.logging_config import emit
 
 
 class MonitoringService:
@@ -57,8 +56,6 @@ class MonitoringService:
             self._logger.warning(f"Attempted to log metrics for non-existent pipeline: {pipeline_id}")
             return
         
-        print(f"Logging metrics for pipeline {pipeline_id}: {metrics}")
-        
         # Increment pipeline stats
         self._pipeline_repo.increment_stats(pipeline_id, metrics)
         
@@ -69,7 +66,7 @@ class MonitoringService:
             metrics=metrics,
         )
         self._monitoring_repo.save_metrics(entry)
-        self._logger.info(f"Logged metrics for pipeline {pipeline_id}: {metrics}")
+        self._logger.info("pipeline.metrics_logged", extra={"pipeline_id": pipeline_id, "metrics": metrics})
 
     def record_error(
         self,

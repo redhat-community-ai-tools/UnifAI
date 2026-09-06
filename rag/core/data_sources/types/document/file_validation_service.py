@@ -17,7 +17,9 @@ from dataclasses import dataclass
 
 from infrastructure.sources.document.config import DocConfigManager
 from infrastructure.sources.document.validator.name_duplicate_checker import NameDuplicateCheckerAdapter
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # Maximum file size in bytes (50 MB)

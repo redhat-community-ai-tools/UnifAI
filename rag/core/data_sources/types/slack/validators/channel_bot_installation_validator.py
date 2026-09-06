@@ -3,7 +3,9 @@ from typing import Optional, Any, Tuple, Protocol
 
 from core.validation.domain.port import DataSourceValidator
 from core.validation.domain.model import ValidationIssue
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BotInstallationCheckerPort(Protocol):

@@ -15,7 +15,6 @@ import subprocess
 import tempfile
 from copy import deepcopy
 from typing import Optional, Any, List, ClassVar, Dict
-
 from claude_agent_sdk import (
     query, ClaudeAgentOptions, SdkMcpTool, create_sdk_mcp_server,
     AssistantMessage, ResultMessage, TextBlock,
@@ -39,7 +38,6 @@ from mas.elements.sandboxes.common.base_sandbox import BaseSandbox
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.claude_sdk_converter import ClaudeSDKConverter
 from mas.elements.nodes.claude_agent.identifiers import EffortLevel
-
 from .hitl_hook import HITLHook, CLAUDE_BUILTIN_ACCESS_MODES
 
 logger = logging.getLogger(__name__)
@@ -167,11 +165,7 @@ class ClaudeAgentNode(
             self._route_response(task, agent_result, packet)
 
             duration_s = (execution_metadata.get('duration_ms') or 0) / 1000
-            print(f"ClaudeAgent {self.uid}: Session completed "
-                  f"(turns={execution_metadata.get('num_turns')}, "
-                  f"cost=${execution_metadata.get('total_cost_usd', 0):.4f}, "
-                  f"tokens={execution_metadata.get('input_tokens', 0)}in/{execution_metadata.get('output_tokens', 0)}out, "
-                  f"duration={duration_s:.1f}s)")
+            logger.info("claude.session_completed", extra={"node_uid": self.uid, "turns": execution_metadata.get('num_turns'), "cost_usd": execution_metadata.get('total_cost_usd', 0), "input_tokens": execution_metadata.get('input_tokens', 0), "output_tokens": execution_metadata.get('output_tokens', 0), "duration_s": round(duration_s, 1)})
 
         except Exception as e:
             logger.error("ClaudeAgent %s: Error processing task: %s", self.uid, e)
@@ -502,10 +496,7 @@ class ClaudeAgentNode(
             )
             kwargs.setdefault("mcp_servers", {})["sandbox"] = sandbox_server
 
-        print(
-            f"ClaudeAgent {self.uid}: Mode 3 active — disabled {DISABLED_BUILTINS}, "
-            f"injected {len(sandbox_mcp_tools)} sandbox tools"
-        )
+        logger.info("claude.sandbox_mode_active", extra={"node_uid": self.uid, "disabled_tools": list(DISABLED_BUILTINS), "sandbox_tool_count": len(sandbox_mcp_tools)})
 
     # ========== ENVIRONMENT ==========
 

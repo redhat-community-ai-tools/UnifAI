@@ -2,11 +2,15 @@
 Execution strategies for different concurrency patterns.
 """
 import asyncio
+import logging
 from typing import Callable, List, Awaitable
+
 
 from .models import ToolExecutionRequest, ToolExecutionResponse
 from .interfaces import ExecutionStrategy
 from .exceptions import StrategyError
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -29,10 +33,10 @@ class SequentialStrategy(ExecutionStrategy):
                 response = await executor_func(request)
                 responses.append(response)
             except Exception as e:
-                print(f"Error: Sequential execution failed for request {request.tool_call_id}: {e}")
+                logger.error("tool.failed", extra={"tool_call_id": request.tool_call_id, "error": str(e), "strategy": "sequential"})
                 raise StrategyError(f"Sequential execution failed: {e}") from e
         
-        print("Sequential execution completed")
+        logger.info("tool.completed", extra={"strategy": "sequential"})
         return responses
 
 
@@ -65,7 +69,7 @@ class ParallelStrategy(ExecutionStrategy):
         try:
             responses = await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
-            print(f"Error: Parallel execution failed: {e}")
+            logger.error("tool.failed", extra={"error": str(e), "strategy": "parallel"})
             raise StrategyError(f"Parallel execution failed: {e}")
         
         # Convert exceptions to error responses
@@ -110,13 +114,13 @@ class ConcurrentLimitedStrategy(ExecutionStrategy):
         
         async def execute_with_limit(request: ToolExecutionRequest) -> ToolExecutionResponse:
             async with semaphore:
-                print(f"Acquired semaphore for {request.tool_call_id}")
+                logger.debug("tool.execute", extra={"tool_call_id": request.tool_call_id, "action": "semaphore_acquired"})
                 try:
                     response = await executor_func(request)
-                    print(f"Released semaphore for {request.tool_call_id}")
+                    logger.debug("tool.execute", extra={"tool_call_id": request.tool_call_id, "action": "semaphore_released"})
                     return response
                 except Exception as e:
-                    print(f"Error: Error executing request {request.tool_call_id}: {e}")
+                    logger.error("tool.failed", extra={"tool_call_id": request.tool_call_id, "error": str(e)})
                     return ToolExecutionResponse(
                         tool_call_id=request.tool_call_id,
                         tool_name=request.tool_name,
@@ -138,7 +142,7 @@ class ConcurrentLimitedStrategy(ExecutionStrategy):
         try:
             responses = await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as e:
-            print(f"Error: Concurrent limited execution failed: {e}")
+            logger.error("tool.failed", extra={"error": str(e), "strategy": "concurrent_limited"})
             raise StrategyError(f"Concurrent limited execution failed: {e}")
         
         # Process responses (they should already be ToolExecutionResponse objects)
@@ -156,7 +160,7 @@ class ConcurrentLimitedStrategy(ExecutionStrategy):
             else:
                 processed_responses.append(response)
         
-        print(f"Concurrent limited execution completed: {len(processed_responses)} responses")
+        logger.info("tool.completed", extra={"strategy": "concurrent_limited", "response_count": len(processed_responses)})
         return processed_responses
 
 

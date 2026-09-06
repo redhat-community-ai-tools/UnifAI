@@ -5,9 +5,14 @@ SOLID design focused solely on thread lifecycle and hierarchy operations.
 Provides clean API for all thread-related operations in one place.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional, Set, Dict, Any
+
+
 from .thread import Thread, ThreadStatus
+
+logger = logging.getLogger(__name__)
 
 
 class IThreadService(ABC):
@@ -316,7 +321,7 @@ class ThreadService(IThreadService):
             depth += 1
             
         # Max depth protection triggered
-        print(f"⚠️ [ThreadService] Maximum depth {self._max_depth} reached for thread {thread_id}")
+        logger.warning("workload.max_depth", extra={"thread_id": thread_id, "max_depth": self._max_depth, "operation": "find_root_thread"})
         return current_id
     
     def get_hierarchy_path(self, thread_id: str) -> List[str]:
@@ -377,34 +382,33 @@ class ThreadService(IThreadService):
         current_id = thread_id
         depth = 0
         
-        print(f"   🔍 [THREAD_SERVICE] Finding work plan owner for owner_uid={owner_uid}")
-        print(f"      Starting from thread: {thread_id[:8]}...")
-        
+        logger.info("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": thread_id, "phase": "start"})
+
         while depth < self._max_depth:
             # Check if owner_uid has a work plan in current thread
             try:
                 workspace = self._storage.get_workspace(current_id)
                 if workspace and owner_uid in workspace.context.work_plans:
-                    print(f"      ✅ Found work plan in thread {current_id[:8]}... at depth {depth}")
+                    logger.info("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "depth": depth, "found": True})
                     return current_id  # Found it!
                 else:
-                    print(f"      ⏭️ Thread {current_id[:8]}... (depth {depth}): no work plan for {owner_uid}")
+                    logger.debug("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "depth": depth, "found": False})
             except Exception as e:
                 # Workspace doesn't exist for this thread, continue searching
-                print(f"      ⚠️ Thread {current_id[:8]}... (depth {depth}): workspace error - {e}")
+                logger.debug("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "depth": depth, "error": str(e)})
                 pass
             
             # Move up to parent thread
             thread = self._storage.get_thread(current_id)
             if not thread or not thread.parent_thread_id:
-                print(f"      ❌ Reached root thread {current_id[:8]}..., work plan not found")
+                logger.info("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "found": False, "reason": "reached_root"})
                 return None  # Reached root, not found
-            
-            print(f"      ↑ Moving to parent thread: {thread.parent_thread_id[:8]}...")
+
+            logger.debug("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "parent_thread_id": thread.parent_thread_id, "depth": depth, "phase": "move_to_parent"})
             current_id = thread.parent_thread_id
             depth += 1
-        
-        print(f"      ❌ Max depth ({self._max_depth}) reached, work plan not found")
+
+        logger.warning("workload.max_depth", extra={"owner_uid": owner_uid, "thread_id": thread_id, "max_depth": self._max_depth, "operation": "find_work_plan_owner"})
         return None  # Max depth reached
     
     def list_threads_by_initiator(self, initiator: str) -> List[Thread]:

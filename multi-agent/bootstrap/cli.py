@@ -33,16 +33,11 @@ api_app = typer.Typer(
 app.add_typer(api_app, name="api")
 
 
-def _build_container():
+def _build_container(service_name: str = "multi-agent"):
     """Shared bootstrap: config → container."""
-    import logging
-    import os
+    from global_utils.utils.logging_config import configure_logging
 
-    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
-    logging.basicConfig(
-        level=getattr(logging, log_level, logging.INFO),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+    configure_logging(service_name)
 
     from config.app_config import AppConfig
     from bootstrap.container import AppContainer
@@ -113,7 +108,7 @@ def temporal_worker(
     import asyncio
     from inbound.temporal.worker import run_worker
 
-    container, _ = _build_container()
+    container, _ = _build_container("multi-agent-temporal-worker")
     asyncio.run(run_worker(
         container,
         threads=threads,

@@ -7,7 +7,9 @@ from core.vector.domain.repository import VectorRepository
 from core.pipeline.service import PipelineService
 from core.monitoring.service import MonitoringService
 from core.data_sources.service import DataSourceService
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class PipelineExecutor:

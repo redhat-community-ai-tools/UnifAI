@@ -4,7 +4,9 @@ from typing import Dict, Any, List
 
 from core.pipeline.domain.dispatcher import PipelineTaskDispatcher, TaskResult
 from global_utils.celery_app.helpers import send_task
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class CeleryPipelineDispatcher(PipelineTaskDispatcher):

@@ -3,7 +3,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any, Optional
 
 from infrastructure.sources.slack.thread_retriever import SlackThreadRetriever
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ThreadRetrieverWorker:

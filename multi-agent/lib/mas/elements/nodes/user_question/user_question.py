@@ -5,6 +5,7 @@ Converts user input into tasks and broadcasts to agent network.
 Uses clean task-based architecture with agentic threading.
 """
 
+import logging
 from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.elements.nodes.common.capabilities.workload_capable import WorkloadCapableMixin
@@ -14,6 +15,8 @@ from mas.graph.state.graph_state import Channel
 from mas.graph.state.state_view import StateView
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from typing import ClassVar
+
+logger = logging.getLogger(__name__)
 
 
 class UserQuestionNode(WorkloadCapableMixin, IEMCapableMixin, BaseNode):
@@ -103,7 +106,7 @@ class UserQuestionNode(WorkloadCapableMixin, IEMCapableMixin, BaseNode):
             if thread.status == ThreadStatus.ACTIVE and not thread.parent_thread_id:
                 # Found an active root thread initiated by this node
                 active_thread = thread
-                print(f"🔄 [UserQuestion] Reusing existing thread {thread.thread_id} for conversation continuity")
+                logger.info("session.thread_reuse", extra={"node_uid": self.uid, "thread_id": thread.thread_id})
                 break
         
         if active_thread:
@@ -116,7 +119,7 @@ class UserQuestionNode(WorkloadCapableMixin, IEMCapableMixin, BaseNode):
                 objective=f"Process user query: {user_query[:50]}...",
                 initiator=self.uid
             )
-            print(f"📝 [UserQuestion] Created new thread {thread.thread_id} for workflow")
+            logger.info("session.thread_created", extra={"node_uid": self.uid, "thread_id": thread.thread_id})
         
         # Copy current conversation to workspace using new SOLID API
         self.copy_graphstate_messages_to_workspace(thread.thread_id)
@@ -141,7 +144,7 @@ class UserQuestionNode(WorkloadCapableMixin, IEMCapableMixin, BaseNode):
         
         # Log workflow initiation with enhanced context
         if active_thread:
-            print(f"🔄 [UserQuestion] Continued workflow in thread {thread.thread_id}")
+            logger.info("session.thread_reuse", extra={"node_uid": self.uid, "thread_id": thread.thread_id, "continued": True})
         else:
-            print(f"📝 [UserQuestion] Initiated new workflow {thread.thread_id}")
+            logger.info("session.thread_created", extra={"node_uid": self.uid, "thread_id": thread.thread_id, "workflow_initiated": True})
 

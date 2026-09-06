@@ -1,7 +1,9 @@
 import re
 import os
 from typing import Dict, List, Any, Optional
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 from core.processing.domain.base import DataProcessor
 
 class DocumentProcessor(DataProcessor):

@@ -1,8 +1,11 @@
 from ..common.base_condition import BaseCondition
 from ..common.models import ConditionOutputSchema, BranchType, DirectBranchDef
+import logging
 from mas.graph.state.state_view import StateView
 from mas.graph.state.graph_state import Channel
 from mas.core.iem.utils import get_outgoing_targets
+
+logger = logging.getLogger(__name__)
 
 
 class RouterDirectCondition(BaseCondition):
@@ -21,13 +24,13 @@ class RouterDirectCondition(BaseCondition):
             - END if no targets (graceful termination instead of None crash)
         """
         if not self.context:
-            print("⚠️ [ROUTER] No context available - ending graph")
+            logger.warning("graph.router_no_context")
             return "END"
 
         targets = get_outgoing_targets(state, self.context)
-        print(targets)
+        logger.debug("graph.router_targets", extra={"targets": list(targets)})
         if not targets:
-            print("⚠️ [ROUTER] No outgoing targets found - ending graph gracefully")
+            logger.warning("graph.router_no_targets")
             return "END"
 
         if len(targets) == 1:

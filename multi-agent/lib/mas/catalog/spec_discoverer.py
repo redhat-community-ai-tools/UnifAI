@@ -22,12 +22,16 @@ Rationale & Design Goals
 
 import importlib
 import inspect
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Iterable, List, Set, Tuple, Type
 
+
 from mas.elements.common.base_element_spec import BaseElementSpec
+
+logger = logging.getLogger(__name__)
 
 
 class SpecDiscoverer:
@@ -80,7 +84,7 @@ class SpecDiscoverer:
         root = self._root
         if not root.exists():
             # Nothing to import; warn the user but do not crash.
-            print(f"[SpecDiscoverer] elements directory not found at {root}")
+            logger.warning("catalog.discover_dir_not_found", extra={"root": str(root)})
             return
 
         for category_dir in root.iterdir():
@@ -141,4 +145,4 @@ class SpecDiscoverer:
             importlib.import_module(module_name)
         except Exception as exc:  # pragma: no cover – never crash discovery
             # TODO when adding logging print the traceback
-            print(f"[SpecDiscoverer] Failed to import {module_name}: {exc}")
+            logger.warning("catalog.discover_import_failed", extra={"module": module_name, "error": str(exc)})

@@ -5,7 +5,9 @@ from core.data_sources.types.slack.domain.event.port import SlackEventHandler
 from core.data_sources.types.slack.domain.event.model import ChannelCreatedEvent
 from core.data_sources.types.slack.domain.channel.model import SlackChannel
 from core.data_sources.types.slack.domain.channel.repository import SlackChannelRepository
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ChannelCreatedEventHandler(SlackEventHandler):
