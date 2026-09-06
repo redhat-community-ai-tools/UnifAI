@@ -14,6 +14,7 @@ from openai.types.chat import ChatCompletionToolParam
 from openai.types.shared_params import FunctionDefinition
 
 from ...tools.common.tool_definition import ToolDefinition
+from ..common.name_sanitizer import map_name
 
 
 class OpenAIToolsConverter:
@@ -34,7 +35,7 @@ class OpenAIToolsConverter:
         name_map: Optional[Dict[str, str]] = None,
     ) -> ChatCompletionToolParam:
         function: FunctionDefinition = {
-            "name": name_map.get(tool.name, tool.name) if name_map else tool.name,
+            "name": map_name(tool.name, name_map),
             "description": tool.description,
             "parameters": tool.parameters,
         }

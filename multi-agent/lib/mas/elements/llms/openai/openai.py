@@ -15,7 +15,7 @@ from openai.types.chat import ChatCompletionToolParam
 
 from ..common.base_llm import BaseLLM
 from ..common.chat.message import ChatMessage, Role
-from ..common.name_sanitizer import build_name_maps
+from ..common.name_sanitizer import build_name_maps, map_name
 from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import OpenAIMessageConverter
 from .tools_converter import OpenAIToolsConverter
@@ -137,11 +137,9 @@ class OpenAILLM(BaseLLM):
 
         if aggregator.has_tool_calls:
             tool_calls = aggregator.build()
-            if tool_calls and self._rev_names:
+            if tool_calls:
                 tool_calls = [
-                    tc.model_copy(
-                        update={"name": self._rev_names.get(tc.name, tc.name)},
-                    )
+                    tc.model_copy(update={"name": map_name(tc.name, self._rev_names)})
                     for tc in tool_calls
                 ]
             yield ChatMessage(

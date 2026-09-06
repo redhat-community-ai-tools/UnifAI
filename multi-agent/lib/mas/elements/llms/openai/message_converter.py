@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from ..common.chat.message import ChatMessage, Role, ToolCall
+from ..common.name_sanitizer import map_name
 
 _ROLE_MAP: Dict[Role, str] = {
     Role.SYSTEM: "system",
@@ -89,7 +90,7 @@ class OpenAIMessageConverter:
         tc: ToolCall,
         name_map: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        name = name_map.get(tc.name, tc.name) if name_map else tc.name
+        name = map_name(tc.name, name_map)
         return {
             "id": tc.tool_call_id,
             "type": "function",
@@ -108,11 +109,7 @@ class OpenAIMessageConverter:
             return None
         result = [
             ToolCall(
-                name=(
-                    rev_names.get(tc.function.name, tc.function.name)
-                    if rev_names
-                    else tc.function.name
-                ),
+                name=map_name(tc.function.name, rev_names),
                 args=(
                     json.loads(tc.function.arguments)
                     if isinstance(tc.function.arguments, str)

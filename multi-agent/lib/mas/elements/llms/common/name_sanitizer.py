@@ -8,7 +8,7 @@ parsing the response.
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
 _MAX_NAME_LENGTH = 64
 
@@ -17,6 +17,15 @@ def sanitize_tool_name(name: str) -> str:
     """Replace dots with underscores, truncate to 64 chars."""
     safe = name.replace(".", "_")
     return safe[:_MAX_NAME_LENGTH]
+
+
+def map_name(name: str, name_map: Optional[Dict[str, str]] = None) -> str:
+    """Look up *name* in *name_map*, falling back to ``sanitize_tool_name``."""
+    if name_map:
+        mapped = name_map.get(name)
+        if mapped is not None:
+            return mapped
+    return sanitize_tool_name(name)
 
 
 def build_name_maps(
