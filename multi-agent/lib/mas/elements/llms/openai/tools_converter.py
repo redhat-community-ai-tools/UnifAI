@@ -8,34 +8,27 @@ keys or wrong value types are caught by the type checker, not at runtime.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from openai.types.chat import ChatCompletionToolParam
 from openai.types.shared_params import FunctionDefinition
 
 from ...tools.common.tool_definition import ToolDefinition
-from ..common.name_sanitizer import map_name
 
 
 class OpenAIToolsConverter:
     """Converts ``ToolDefinition`` instances into OpenAI ``ChatCompletionToolParam`` dicts."""
 
     @staticmethod
-    def to_openai(
-        tools: Optional[List[ToolDefinition]],
-        name_map: Optional[Dict[str, str]] = None,
-    ) -> Optional[List[ChatCompletionToolParam]]:
+    def to_openai(tools: Optional[List[ToolDefinition]]) -> Optional[List[ChatCompletionToolParam]]:
         if not tools:
             return None
-        return [OpenAIToolsConverter._convert(t, name_map) for t in tools]
+        return [OpenAIToolsConverter._convert(t) for t in tools]
 
     @staticmethod
-    def _convert(
-        tool: ToolDefinition,
-        name_map: Optional[Dict[str, str]] = None,
-    ) -> ChatCompletionToolParam:
+    def _convert(tool: ToolDefinition) -> ChatCompletionToolParam:
         function: FunctionDefinition = {
-            "name": map_name(tool.name, name_map),
+            "name": tool.name,
             "description": tool.description,
             "parameters": tool.parameters,
         }
