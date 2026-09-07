@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import sys
+import time
 import traceback
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -71,6 +72,10 @@ _TOP_LEVEL_FIELDS = frozenset(
 _LOCAL_ENVIRONMENTS = frozenset({"local", "development", "dev"})
 
 _CONFIGURED = False
+
+
+_FILE_LOG_READY_ATTEMPTS = 3
+_FILE_LOG_READY_RETRY_SECONDS = 0.4
 
 
 def set_request_id(request_id: Optional[str]) -> None:
@@ -219,6 +224,26 @@ class UnifAIConsoleFormatter(logging.Formatter):
         return " ".join(parts)
 
 
+def _is_dir_writable_with_retry(
+    path: Path,
+    *,
+    attempts: int = _FILE_LOG_READY_ATTEMPTS,
+    delay: float = _FILE_LOG_READY_RETRY_SECONDS,
+) -> bool:
+    """Check whether ``path`` is a writable directory, retrying briefly.
+
+    Guards against a startup race on network-backed mounts (e.g. EFS access
+    points) where the mount exists but write authorization hasn't finished
+    propagating yet. See module-level comment near _FILE_LOG_READY_ATTEMPTS.
+    """
+    for attempt in range(attempts):
+        if path.is_dir() and os.access(path, os.W_OK):
+            return True
+        if attempt < attempts - 1:
+            time.sleep(delay)
+    return False
+
+
 def configure_logging(
     service_name: str,
     *,
@@ -240,7 +265,10 @@ def configure_logging(
     Handlers:
       - always: StreamHandler(sys.stdout)
       - file: RotatingFileHandler(LOG_DIR/app.log, 50MB, 10 backups)
-        if enable_file is True, or (enable_file is None and LOG_DIR is writable)
+        if enable_file is True, or (enable_file is None and LOG_DIR is writable
+        — checked with a few short retries to tolerate network mounts, e.g.
+        EFS access points, that aren't write-authorized the instant this
+        runs; see _is_dir_writable_with_retry)
     """
     global _CONFIGURED
     if _CONFIGURED:
@@ -276,7 +304,7 @@ def configure_logging(
 
     should_file = enable_file
     if should_file is None:
-        should_file = resolved_log_dir.is_dir() and os.access(resolved_log_dir, os.W_OK)
+        should_file = _is_dir_writable_with_retry(resolved_log_dir)
 
     if should_file:
         try:
