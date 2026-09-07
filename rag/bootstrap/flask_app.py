@@ -17,6 +17,7 @@ from flask_cors import CORS
 from config.app_config import AppConfig
 from global_utils.flask.request_rules import RequestRules
 from global_utils.flask.error_handlers import register_error_handlers
+from global_utils.utils.logging_config import configure_logging
 
 
 def create_app() -> Flask:
@@ -32,8 +33,6 @@ def create_app() -> Flask:
     Returns:
         Configured Flask application
     """
-    from global_utils.utils.logging_config import configure_logging
-
     configure_logging("rag-server")
     app = Flask(__name__)
     config = AppConfig.get_instance()

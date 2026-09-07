@@ -4,6 +4,7 @@ from .endpoints import register_all_endpoints
 from flask_cors import CORS
 from global_utils.flask.request_rules import RequestRules
 from global_utils.flask.error_handlers import register_error_handlers
+from global_utils.utils.logging_config import configure_logging
 import os
 
 
@@ -14,8 +15,6 @@ def create_app(container, config: AppConfig = None) -> Flask:
     Receives a fully-wired AppContainer from the entry point.
     This adapter never creates the container itself — it only consumes it.
     """
-    from global_utils.utils.logging_config import configure_logging
-
     configure_logging("multi-agent")
     config = config or AppConfig.get_instance()
     app = Flask(__name__)

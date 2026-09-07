@@ -131,7 +131,7 @@ class MongoShareRepository(ShareRepository):
                     setattr(result, f"{status_type}_count", count)
                 except Exception as e:
                     result.errors += 1
-                    logger.error("share.cleanup_delete_error", extra={"status_type": status_type, "error": str(e)})
+                    logger.exception("share.cleanup_delete_error", extra={"status_type": status_type, "error": str(e)})
         
         return result
 
@@ -153,7 +153,7 @@ class MongoShareRepository(ShareRepository):
                 result.total_processed = delete_result.deleted_count
             except Exception as e:
                 result.errors += 1
-                logger.error("share.cleanup_expired_error", extra={"error": str(e)})
+                logger.exception("share.cleanup_expired_error", extra={"error": str(e)})
         
         return result
 

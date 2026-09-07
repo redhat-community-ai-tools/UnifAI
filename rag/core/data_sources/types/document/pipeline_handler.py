@@ -10,7 +10,7 @@ from infrastructure.sources.document.connector import DocumentConnector
 from infrastructure.sources.document.chunker import PDFChunkerStrategy
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag_pipeline")
 
 from global_utils.utils.file_utils import cleanup_file
 

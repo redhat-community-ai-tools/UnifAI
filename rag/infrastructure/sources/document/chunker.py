@@ -5,7 +5,7 @@ import tiktoken
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag_pipeline")
 
 
 class DoclingProcessingError(Exception):

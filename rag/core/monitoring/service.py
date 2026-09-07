@@ -9,7 +9,6 @@ from core.pipeline.domain.repository import PipelineRepository
 from core.monitoring.parsing.base import LogParser
 from core.data_sources.types.slack.log_parser import SlackLogParser
 from core.data_sources.types.document.log_parser import DocLogParser
-from global_utils.utils.logging_config import emit
 
 
 class MonitoringService:

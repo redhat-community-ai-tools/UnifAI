@@ -11,7 +11,7 @@ from core.vector.domain.model import VectorChunk, SearchResult
 from core.vector.domain.repository import VectorRepository
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag_pipeline")
 
 
 class QdrantVectorRepository(VectorRepository):

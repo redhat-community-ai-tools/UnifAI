@@ -4,7 +4,7 @@ import time
 from typing import Dict, List, Optional, Any, Tuple
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag_pipeline")
 from infrastructure.sources.slack.config import SlackConfigManager
 from core.connector.domain.base import DataConnector
 from core.data_sources.types.slack.domain.channel.model import SlackChannel

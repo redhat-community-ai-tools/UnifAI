@@ -9,6 +9,7 @@ from .endpoints import register_all_endpoints
 from flask_cors import CORS
 from global_utils.flask.request_rules import RequestRules
 from global_utils.flask.error_handlers import register_error_handlers
+from global_utils.utils.logging_config import configure_logging
 
 
 def create_app(config: AppConfig = None) -> Flask:
@@ -21,8 +22,6 @@ def create_app(config: AppConfig = None) -> Flask:
     4) Register API blueprints
     5) Register request rules
     """
-    from global_utils.utils.logging_config import configure_logging
-
     configure_logging("backend")
     config = config or AppConfig.get_instance()
     app = Flask(__name__)

@@ -9,7 +9,7 @@ from infrastructure.sources.slack.connector import SlackConnector
 from infrastructure.sources.slack.chunker import SlackChunkerStrategy
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag_pipeline")
 
 from global_utils.helpers.helpers import get_time_range_bounds_from_type_data
 

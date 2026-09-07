@@ -116,17 +116,20 @@ class CompleteSessionParams(BaseModel):
     """Input to the complete_session activity."""
     run_id: str
     final_state: GraphState = Field(default_factory=GraphState)
+    request_id: Optional[str] = None
 
 
 class FailSessionParams(BaseModel):
     """Input to the fail_session activity."""
     run_id: str
     error_message: str = ""
+    request_id: Optional[str] = None
 
 
 class CancelSessionParams(BaseModel):
     """Input to the cancel_session activity."""
     run_id: str
+    request_id: Optional[str] = None
 
 
 # ── Scheduled session params ─────────────────────────────────────────

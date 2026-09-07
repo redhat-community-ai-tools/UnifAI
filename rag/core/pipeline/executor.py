@@ -9,7 +9,7 @@ from core.monitoring.service import MonitoringService
 from core.data_sources.service import DataSourceService
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag_pipeline")
 
 
 class PipelineExecutor:

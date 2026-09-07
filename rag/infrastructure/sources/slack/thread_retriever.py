@@ -2,7 +2,7 @@
 from typing import Dict, List, Any, Optional
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag_pipeline")
 
 
 class SlackThreadRetriever:
