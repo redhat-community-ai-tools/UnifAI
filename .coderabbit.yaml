@@ -17,8 +17,6 @@ reviews:
     drafts: false
 
   path_filters:
-  #temp filter lib mas
-    - "!multi-agent/lib/**"
     - "multi-agent/**"
     - "backend/**"
     - "ui/**"
