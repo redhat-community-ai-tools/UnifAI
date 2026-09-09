@@ -26,7 +26,7 @@ def _reset_logging():
 
 def test_structured_event_call_sets_event_and_context_fields():
     """Standard logger call with a dotted event-name message: event/context
-    are derived by UnifAIJSONFormatter (see test_event_autofill_from_message)."""
+    are derived by JSONFormatter (see test_event_autofill_from_message)."""
     with tempfile.TemporaryDirectory() as d:
         os.environ["BACKEND_ENV"] = "production"
         lc.configure_logging("test-svc", log_dir=d, enable_file=True)
@@ -44,7 +44,7 @@ def test_structured_event_call_sets_event_and_context_fields():
 
 
 def test_event_autofill_from_message():
-    formatter = lc.UnifAIJSONFormatter("svc", "production", None, None)
+    formatter = lc.JSONFormatter("svc", "production", None, None)
     record = logging.LogRecord(
         name="t", level=logging.INFO, pathname="", lineno=0,
         msg="phase.transition", args=(), exc_info=None,

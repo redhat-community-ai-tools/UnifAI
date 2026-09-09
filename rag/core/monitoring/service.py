@@ -1,4 +1,5 @@
 """Monitoring application service - log processing and metrics tracking."""
+from dataclasses import dataclass
 from datetime import datetime
 import logging
 from collections import deque
@@ -9,6 +10,13 @@ from core.pipeline.domain.repository import PipelineRepository
 from core.monitoring.parsing.base import LogParser
 from core.data_sources.types.slack.log_parser import SlackLogParser
 from core.data_sources.types.document.log_parser import DocLogParser
+
+
+@dataclass
+class MonitoringHandle:
+    """Opaque handle returned by start_log_monitoring for scoped cleanup."""
+    handler: logging.Handler
+    logger: logging.Logger
 
 
 class MonitoringService:
@@ -37,10 +45,6 @@ class MonitoringService:
         
         # In-memory cache of recent logs for quick access
         self._recent_logs_cache: Dict[str, deque] = {}
-        
-        # Handler reference for cleanup
-        self._monitoring_handler: Optional[logging.Handler] = None
-        self._monitoring_logger: Optional[logging.Logger] = None
 
     def log_metrics(self, pipeline_id: str, metrics: Dict[str, Any]) -> None:
         """
@@ -226,7 +230,7 @@ class MonitoringService:
         
         return metrics
 
-    def start_log_monitoring(self, pipeline_id: str = "", target_logger: Optional[logging.Logger] = None) -> None:
+    def start_log_monitoring(self, pipeline_id: str = "", target_logger: Optional[logging.Logger] = None) -> MonitoringHandle:
         """
         Start monitoring a logger for pipeline information.
         
@@ -236,6 +240,9 @@ class MonitoringService:
         Args:
             pipeline_id: Optional pipeline ID to associate with all logs
             target_logger: The logger instance to monitor (default: uses internal logger)
+            
+        Returns:
+            MonitoringHandle to pass to finish_log_monitoring for scoped cleanup
         """
         if target_logger is None:
             target_logger = self._logger
@@ -257,13 +264,14 @@ class MonitoringService:
         handler.setFormatter(formatter)
         target_logger.addHandler(handler)
         
-        self._monitoring_handler = handler
-        self._monitoring_logger = target_logger
+        return MonitoringHandle(handler=handler, logger=target_logger)
 
-    def finish_log_monitoring(self) -> None:
-        """Turn off monitoring a logger for pipeline information."""
-        if self._monitoring_handler and self._monitoring_logger:
-            self._monitoring_logger.removeHandler(self._monitoring_handler)
-            self._monitoring_handler = None
-            self._monitoring_logger = None
+    def finish_log_monitoring(self, handle: Optional[MonitoringHandle] = None) -> None:
+        """Turn off monitoring a logger for pipeline information.
+        
+        Args:
+            handle: The MonitoringHandle returned by start_log_monitoring
+        """
+        if handle and handle.handler and handle.logger:
+            handle.logger.removeHandler(handle.handler)
             self._logger.info("Finished log monitoring")

@@ -103,7 +103,7 @@ class GraphPlan:
         def _format_step(step, prefix, is_last):
             # Print the node
             bullet = "└── " if is_last else "├── "
-            logger.debug("graph.plan_tree_line", extra={"line": f"{prefix}{bullet}{step.uid}"})
+            logger.info("graph.plan_tree_line", extra={"line": f"{prefix}{bullet}{step.uid}"})
             # Avoid re-visiting
             if step.uid in visited:
                 return
@@ -122,7 +122,7 @@ class GraphPlan:
                 _format_step(child, child_prefix, i == len(single_parent_children) - 1)
 
         for root in roots:
-            logger.debug("graph.plan_tree_line", extra={"line": root.uid})
+            logger.info("graph.plan_tree_line", extra={"line": root.uid})
             visited.add(root.uid)
 
             # 1) print its single-parent children (agent_1, agent_2)

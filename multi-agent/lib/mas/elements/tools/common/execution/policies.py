@@ -303,7 +303,7 @@ class CompositeErrorHandler(BaseErrorHandler):
         
         for i, handler in enumerate(self.handlers):
             try:
-                logger.debug("tool.retry", extra={"tool_name": tool.name, "handler": getattr(handler, 'name', type(handler).__name__), "handler_index": i + 1, "total_handlers": len(self.handlers)})
+                logger.info("tool.retry", extra={"tool_name": tool.name, "handler": getattr(handler, 'name', type(handler).__name__), "handler_index": i + 1, "total_handlers": len(self.handlers)})
                 result = await handler.handle_error(last_error, tool, args, context)
                 
                 if self.stop_on_success:
@@ -352,7 +352,7 @@ class ConditionalErrorHandler(BaseErrorHandler):
             logger.error("tool.failed", extra={"tool_name": tool.name, "error_type": error_type.__name__, "reason": "no_handler_found"})
             raise error
         
-        logger.debug("tool.retry", extra={"tool_name": tool.name, "handler": getattr(handler, 'name', type(handler).__name__), "error_type": error_type.__name__})
+        logger.info("tool.retry", extra={"tool_name": tool.name, "handler": getattr(handler, 'name', type(handler).__name__), "error_type": error_type.__name__})
         return await handler.handle_error(error, tool, args, context)
 
 

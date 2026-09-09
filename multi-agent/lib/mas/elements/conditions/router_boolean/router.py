@@ -23,7 +23,7 @@ class RouterBooleanCondition(BaseCondition):
         """
         Returns the configured boolean value.
         """
-        logger.debug("graph.router_boolean", extra={"boolean_value": self.boolean_value})
+        logger.info("graph.router_boolean", extra={"boolean_value": self.boolean_value})
         return str(self.boolean_value).lower()
 
     def __repr__(self) -> str:

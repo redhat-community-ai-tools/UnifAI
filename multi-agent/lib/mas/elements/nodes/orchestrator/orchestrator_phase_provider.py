@@ -797,7 +797,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
         path = " → ".join(transitions)
 
         if reason == 'stable':
-            logger.debug("phase.cascade", extra={"thread_id": self._thread_id, "path": path, "reason": reason, "transition_count": count})
+            logger.info("phase.cascade", extra={"thread_id": self._thread_id, "path": path, "reason": reason, "transition_count": count})
         elif reason == 'cycle':
             logger.warning("phase.cycle_detected", extra={"thread_id": self._thread_id, "path": path, "forcing": "SYNTHESIS", "transition_count": count})
         elif reason == 'max_transitions':
@@ -839,35 +839,35 @@ class OrchestratorPhaseProvider(PhaseProvider):
             # Access orchestrator context for smart decisions
             orch_ctx = self._current_orch_context
 
-            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "decide_next_phase called", "has_orch_ctx": orch_ctx is not None, "total_items": status.total_items, "pending_items": status.pending_items, "blocked_items": status.blocked_items, "in_progress_items": status.in_progress_items, "has_remote_ready": status.has_remote_ready, "has_local_ready": status.has_local_ready, "is_complete": status.is_complete, "trigger_reason": str(orch_ctx.trigger.reason) if orch_ctx else None})
+            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "decide_next_phase called", "has_orch_ctx": orch_ctx is not None, "total_items": status.total_items, "pending_items": status.pending_items, "blocked_items": status.blocked_items, "in_progress_items": status.in_progress_items, "has_remote_ready": status.has_remote_ready, "has_local_ready": status.has_local_ready, "is_complete": status.is_complete, "trigger_reason": str(orch_ctx.trigger.reason) if orch_ctx else None})
 
             # CASE 1: No plan exists - must stay in planning to create one
             if status.total_items == 0:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "no items"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "no items"})
                 return OrchestratorPhase.PLANNING.value
 
             # CASE 2: Plan exists - use trigger reason for smart transition
             if orch_ctx:
                 trigger_reason = orch_ctx.trigger.reason
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "has orch_ctx", "trigger_reason": str(trigger_reason)})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "has orch_ctx", "trigger_reason": str(trigger_reason)})
 
                 # CASE 2A: RESPONSE_ARRIVED - skip planning, go process responses
                 if trigger_reason == CycleTriggerReason.RESPONSE_ARRIVED:
-                    logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "CASE 2A: RESPONSE_ARRIVED"})
+                    logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "CASE 2A: RESPONSE_ARRIVED"})
                     # Responses don't need new planning - just process them
                     if status.has_responses:
-                        logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "MONITORING", "to_phase": "monitoring", "reason": "has_responses"})
+                        logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "MONITORING", "to_phase": "monitoring", "reason": "has_responses"})
                         return OrchestratorPhase.MONITORING.value
                     elif status.is_complete:
-                        logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "SYNTHESIS", "to_phase": "synthesis", "reason": "is_complete"})
+                        logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "SYNTHESIS", "to_phase": "synthesis", "reason": "is_complete"})
                         return OrchestratorPhase.SYNTHESIS.value
                     else:
-                        logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "fallback"})
+                        logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "fallback"})
                         return OrchestratorPhase.ALLOCATION.value
 
                 # CASE 2B: NEW_REQUEST with existing plan
                 elif trigger_reason == CycleTriggerReason.NEW_REQUEST:
-                    logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "CASE 2B: NEW_REQUEST"})
+                    logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "CASE 2B: NEW_REQUEST"})
                     # Check if this is a fresh plan (nothing executed yet)
                     # Note: Don't check pending_items == total_items because blocked items
                     # are counted separately. A fresh plan with dependencies will have
@@ -875,127 +875,127 @@ class OrchestratorPhaseProvider(PhaseProvider):
                     all_pending = (status.done_items == 0 and
                                    status.failed_items == 0 and
                                    status.in_progress_items == 0)
-                    logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "fresh plan check", "all_pending": all_pending, "done_items": status.done_items, "failed_items": status.failed_items, "in_progress_items": status.in_progress_items})
+                    logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "fresh plan check", "all_pending": all_pending, "done_items": status.done_items, "failed_items": status.failed_items, "in_progress_items": status.in_progress_items})
 
                     if all_pending:
-                        logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "fresh plan detected"})
+                        logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "fresh plan detected"})
                         # Fresh plan just created - determine next phase based on what's actionable
                         if status.has_remote_ready:
                             # Has REMOTE items ready - go delegate them
                             # (Will cascade to EXECUTION if also has_local_ready)
-                            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "has_remote_ready"})
+                            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "has_remote_ready"})
                             return OrchestratorPhase.ALLOCATION.value
                         elif status.has_local_ready:
                             # Has LOCAL items ready but NO REMOTE ready
                             # Skip ALLOCATION, go straight to EXECUTION
-                            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "EXECUTION", "to_phase": "execution", "reason": "has_local_ready"})
+                            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "EXECUTION", "to_phase": "execution", "reason": "has_local_ready"})
                             return OrchestratorPhase.EXECUTION.value
                         elif status.blocked_items == status.total_items:
                             # Everything is blocked by dependencies (bad plan)
                             # Force SYNTHESIS to report the issue
-                            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "SYNTHESIS", "to_phase": "synthesis", "reason": "all blocked"})
+                            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "SYNTHESIS", "to_phase": "synthesis", "reason": "all blocked"})
                             return OrchestratorPhase.SYNTHESIS.value
                         else:
                             # Fallback: go to ALLOCATION
-                            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "fallback"})
+                            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "fallback"})
                             return OrchestratorPhase.ALLOCATION.value
 
                     # Not a fresh plan - work is in progress
-                    logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "not a fresh plan, work in progress"})
+                    logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "not a fresh plan, work in progress"})
                     if status.is_complete:
                         # Complete plan + new request = LLM might add new work
                         # But check if new items were already added and are ready
-                        logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "plan was complete, checking if new items added"})
+                        logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "plan was complete, checking if new items added"})
                         if status.has_remote_ready or status.has_local_ready:
                             # New items added and ready - transition to handle them
                             if status.has_remote_ready:
-                                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "has_remote_ready"})
+                                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "has_remote_ready"})
                                 return OrchestratorPhase.ALLOCATION.value
                             else:
-                                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "EXECUTION", "to_phase": "execution", "reason": "has_local_ready"})
+                                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "EXECUTION", "to_phase": "execution", "reason": "has_local_ready"})
                                 return OrchestratorPhase.EXECUTION.value
                         else:
                             # No ready items yet - give LLM chance to plan
-                            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "complete + new request"})
+                            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "complete + new request"})
                             return OrchestratorPhase.PLANNING.value
                     elif orch_ctx.health.progress_metrics.is_stalled:
                         # Stalled work - may need replanning or pivot
-                        logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "stalled"})
+                        logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "stalled"})
                         return OrchestratorPhase.PLANNING.value
                     elif status.failed_items == status.total_items > 0:
                         # All items failed - definitely need replanning
-                        logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "all failed"})
+                        logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "all failed"})
                         return OrchestratorPhase.PLANNING.value
                     else:
                         # In-progress work with new request
                         # Check if new items are ready to execute/delegate
-                        logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "checking readiness for follow-up items"})
+                        logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "checking readiness for follow-up items"})
                         if status.has_remote_ready:
-                            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "has_remote_ready"})
+                            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "has_remote_ready"})
                             return OrchestratorPhase.ALLOCATION.value
                         elif status.has_local_ready:
-                            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "EXECUTION", "to_phase": "execution", "reason": "has_local_ready"})
+                            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "EXECUTION", "to_phase": "execution", "reason": "has_local_ready"})
                             return OrchestratorPhase.EXECUTION.value
                         else:
                             # Nothing ready yet - stay in planning to add/update items
-                            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "no ready items"})
+                            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "no ready items"})
                             return OrchestratorPhase.PLANNING.value
 
             # CASE 3: Fallback if no orchestrator context (shouldn't happen normally)
-            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "CASE 3: no orch_ctx fallback"})
+            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "detail": "CASE 3: no orch_ctx fallback"})
             if status.total_items > 0:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "fallback, has items"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "fallback, has items"})
                 return OrchestratorPhase.ALLOCATION.value
             else:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "fallback, no items"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "planning", "decision": "STAY", "to_phase": "planning", "reason": "fallback, no items"})
                 return OrchestratorPhase.PLANNING.value
 
         elif current_phase_enum == OrchestratorPhase.ALLOCATION:
-            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "allocation", "detail": "decide_next_phase called", "has_local_ready": status.has_local_ready, "has_remote_ready": status.has_remote_ready, "has_responses": status.has_responses, "has_remote_waiting": status.has_remote_waiting})
+            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "allocation", "detail": "decide_next_phase called", "has_local_ready": status.has_local_ready, "has_remote_ready": status.has_remote_ready, "has_responses": status.has_responses, "has_remote_waiting": status.has_remote_waiting})
 
             # Move to execution if we have local work ready
             if status.has_local_ready:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "allocation", "decision": "EXECUTION", "to_phase": "execution", "reason": "has_local_ready"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "allocation", "decision": "EXECUTION", "to_phase": "execution", "reason": "has_local_ready"})
                 return OrchestratorPhase.EXECUTION.value
             # Move to monitoring if we have responses to interpret
             elif status.has_responses:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "allocation", "decision": "MONITORING", "to_phase": "monitoring", "reason": "has_responses"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "allocation", "decision": "MONITORING", "to_phase": "monitoring", "reason": "has_responses"})
                 return OrchestratorPhase.MONITORING.value
             # If just waiting (no responses yet), stay in allocation (will finish and wait for graph)
             elif status.has_remote_waiting:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "allocation", "decision": "STAY", "to_phase": "allocation", "reason": "has_remote_waiting"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "allocation", "decision": "STAY", "to_phase": "allocation", "reason": "has_remote_waiting"})
                 return OrchestratorPhase.ALLOCATION.value  # Stay → finish
             else:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "allocation", "decision": "STAY", "to_phase": "allocation", "reason": "default"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "allocation", "decision": "STAY", "to_phase": "allocation", "reason": "default"})
                 return OrchestratorPhase.ALLOCATION.value  # Stay in allocation
 
         elif current_phase_enum == OrchestratorPhase.EXECUTION:
-            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "execution", "detail": "decide_next_phase called", "is_complete": status.is_complete, "has_local_ready": status.has_local_ready})
+            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "execution", "detail": "decide_next_phase called", "is_complete": status.is_complete, "has_local_ready": status.has_local_ready})
 
             # Check if work is complete
             if status.is_complete:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "execution", "decision": "SYNTHESIS", "to_phase": "synthesis", "reason": "is_complete"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "execution", "decision": "SYNTHESIS", "to_phase": "synthesis", "reason": "is_complete"})
                 return OrchestratorPhase.SYNTHESIS.value
             # If still have local ready items, stay in execution (LLM may need multiple iterations)
             elif status.has_local_ready:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "execution", "decision": "STAY", "to_phase": "execution", "reason": "has_local_ready"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "execution", "decision": "STAY", "to_phase": "execution", "reason": "has_local_ready"})
                 return OrchestratorPhase.EXECUTION.value
             # Otherwise move to monitoring
             else:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "execution", "decision": "MONITORING", "to_phase": "monitoring", "reason": "no local ready"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "execution", "decision": "MONITORING", "to_phase": "monitoring", "reason": "no local ready"})
                 return OrchestratorPhase.MONITORING.value
 
         elif current_phase_enum == OrchestratorPhase.MONITORING:
-            logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "detail": "decide_next_phase called", "total_items": status.total_items, "pending_items": status.pending_items, "in_progress_items": status.in_progress_items, "waiting_items": status.waiting_items, "done_items": status.done_items, "failed_items": status.failed_items, "blocked_items": status.blocked_items, "has_responses": status.has_responses, "has_local_ready": status.has_local_ready, "has_remote_ready": status.has_remote_ready, "has_remote_waiting": status.has_remote_waiting, "is_complete": status.is_complete})
+            logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "detail": "decide_next_phase called", "total_items": status.total_items, "pending_items": status.pending_items, "in_progress_items": status.in_progress_items, "waiting_items": status.waiting_items, "done_items": status.done_items, "failed_items": status.failed_items, "blocked_items": status.blocked_items, "has_responses": status.has_responses, "has_local_ready": status.has_local_ready, "has_remote_ready": status.has_remote_ready, "has_remote_waiting": status.has_remote_waiting, "is_complete": status.is_complete})
 
             # Check if work is complete
             if status.is_complete:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "SYNTHESIS", "to_phase": "synthesis", "reason": "is_complete"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "SYNTHESIS", "to_phase": "synthesis", "reason": "is_complete"})
                 return OrchestratorPhase.SYNTHESIS.value
             # PRIORITY: Stay in monitoring if we still have responses to interpret
             # (Process responses BEFORE transitioning to handle new pending work)
             elif status.has_responses:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "STAY", "to_phase": "monitoring", "reason": "has_responses"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "STAY", "to_phase": "monitoring", "reason": "has_responses"})
                 return OrchestratorPhase.MONITORING.value
             # Check for all-blocked scenario (no actionable work)
             # If all remaining items are blocked and we can't make progress, force SYNTHESIS
@@ -1004,22 +1004,22 @@ class OrchestratorPhaseProvider(PhaseProvider):
                   not status.has_local_ready and
                   not status.has_remote_waiting):
                 logger.warning("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "detail": "all items blocked, forcing synthesis", "blocked_items": status.blocked_items})
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "SYNTHESIS", "to_phase": "synthesis", "reason": "all blocked"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "SYNTHESIS", "to_phase": "synthesis", "reason": "all blocked"})
                 return OrchestratorPhase.SYNTHESIS.value
             # Go back to execution if we have local ready items
             # (Check this BEFORE pending items to prioritize actual work over allocation)
             elif status.has_local_ready:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "EXECUTION", "to_phase": "execution", "reason": "has_local_ready"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "EXECUTION", "to_phase": "execution", "reason": "has_local_ready"})
                 return OrchestratorPhase.EXECUTION.value
             # Go back to allocation if we have pending items (and no responses)
             # Note: blocked items (pending=0, blocked>0) will NOT trigger this
             elif status.pending_items > 0:
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "pending_items", "pending_items": status.pending_items})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "ALLOCATION", "to_phase": "allocation", "reason": "pending_items", "pending_items": status.pending_items})
                 return OrchestratorPhase.ALLOCATION.value
             else:
                 # No responses, no ready work, no pending work
                 # Either waiting for delegated responses or all items blocked/complete
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "STAY", "to_phase": "monitoring", "reason": "waiting for responses or no actionable work"})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": "monitoring", "decision": "STAY", "to_phase": "monitoring", "reason": "waiting for responses or no actionable work"})
                 return OrchestratorPhase.MONITORING.value  # Stay in monitoring
 
         elif current_phase_enum == OrchestratorPhase.SYNTHESIS:
@@ -1142,7 +1142,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
 
             extra_str = f" [{', '.join(extras)}]" if extras else ""
 
-            logger.debug("phase.transition", extra={"thread_id": self._thread_id, "phase": phase, "detail": "work_plan_after_phase", "total_items": status.total_items, "pending_items": status.pending_items, "in_progress_items": status.in_progress_items, "done_items": status.done_items, "failed_items": status.failed_items, "blocked_items": status.blocked_items, "waiting_items": status.waiting_items, "extra": extra_str or None})
+            logger.info("phase.transition", extra={"thread_id": self._thread_id, "phase": phase, "detail": "work_plan_after_phase", "total_items": status.total_items, "pending_items": status.pending_items, "in_progress_items": status.in_progress_items, "done_items": status.done_items, "failed_items": status.failed_items, "blocked_items": status.blocked_items, "waiting_items": status.waiting_items, "extra": extra_str or None})
 
             # Show items compactly
             for item_status in [WorkItemStatus.PENDING, WorkItemStatus.IN_PROGRESS, WorkItemStatus.DONE,
@@ -1219,9 +1219,9 @@ class OrchestratorPhaseProvider(PhaseProvider):
                                                                                      ' ') if latest.response_content else "No content"
                                 item_line += f"\n      ✓ Latest: {resp_preview}..."
 
-                    logger.debug("phase.transition", extra={"thread_id": self._thread_id, "phase": phase, "item_line": item_line})
+                    logger.info("phase.transition", extra={"thread_id": self._thread_id, "phase": phase, "item_line": item_line})
 
-            logger.debug("phase.transition", extra={"thread_id": self._thread_id, "phase": phase, "detail": "work_plan_after_phase_end"})
+            logger.info("phase.transition", extra={"thread_id": self._thread_id, "phase": phase, "detail": "work_plan_after_phase_end"})
         except Exception as e:
             pass
 
@@ -1274,7 +1274,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
                 combined_context_console = self._current_orch_context.format_context(plan_snapshot_console)
 
                 # Log truncated context for debugging
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": phase_name, "detail": "dynamic_context_provided", "context": combined_context_console})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": phase_name, "detail": "dynamic_context_provided", "context": combined_context_console})
 
                 # Send FULL context to LLM
                 messages.append(ChatMessage(
@@ -1294,7 +1294,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
                 fallback_context_console = f"Current Work Plan:\n{plan_snapshot_console}"
 
                 # Log truncated fallback context for debugging
-                logger.debug("phase.decision", extra={"thread_id": self._thread_id, "phase": phase_name, "detail": "dynamic_context_fallback", "context": fallback_context_console})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": phase_name, "detail": "dynamic_context_fallback", "context": fallback_context_console})
 
                 # Send FULL context to LLM
                 messages.append(ChatMessage(

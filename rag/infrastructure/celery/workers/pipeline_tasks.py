@@ -10,6 +10,7 @@ Logic is identical to backend/celery_app/tasks/pipeline_tasks.py,
 but uses hexagonal architecture components.
 """
 from global_utils.celery_app import CeleryApp
+from global_utils.flask.correlation import bind_from_celery_headers
 from bootstrap.app_container import pipeline_executor, get_pipeline_handler
 from core.pipeline.domain.port import PipelineContext
 import logging
@@ -104,7 +105,6 @@ def execute_pipeline_task(self, source_type: str, source_data: dict):
     Returns:
         dict with pipeline_id, source_type, status, and result
     """
-    from global_utils.flask.correlation import bind_from_celery_headers
     bind_from_celery_headers(getattr(self.request, "headers", None) or {})
 
     try:
@@ -130,4 +130,3 @@ def execute_pipeline_task(self, source_type: str, source_data: dict):
     except Exception as e:
         logger.error(f"Pipeline execution failed for {source_type}: {str(e)}", exc_info=True)
         raise
-

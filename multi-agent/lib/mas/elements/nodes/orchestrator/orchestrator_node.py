@@ -268,11 +268,11 @@ class OrchestratorNode(
             logger.warning("orchestrator.packet_received", extra={"node_uid": self.uid, "packet_type": "response", "detail": "no correlation_task_id, skipping"})
             return None
 
-        logger.debug("orchestrator.packet_received", extra={"node_uid": self.uid, "packet_type": "response", "correlation_task_id": correlation_task_id, "from_thread": task.thread_id, "created_by": task.created_by})
+        logger.info("orchestrator.packet_received", extra={"node_uid": self.uid, "packet_type": "response", "correlation_task_id": correlation_task_id, "from_thread": task.thread_id, "created_by": task.created_by})
 
         # Determine which thread to update (parent vs child thread handling)
         target_thread_id = self._resolve_target_thread_for_response(task)
-        logger.debug("orchestrator.packet_received", extra={"node_uid": self.uid, "target_thread_id": target_thread_id})
+        logger.info("orchestrator.packet_received", extra={"node_uid": self.uid, "target_thread_id": target_thread_id})
 
         # Update work plan and workspace context
         service = self.workspaces
@@ -379,13 +379,13 @@ class OrchestratorNode(
 
         try:
             # Use thread service to find where THIS orchestrator's work plan is
-            logger.debug("orchestrator.packet_received", extra={"node_uid": self.uid, "response_thread_id": response_thread_id, "detail": "resolving work plan owner"})
+            logger.info("orchestrator.packet_received", extra={"node_uid": self.uid, "response_thread_id": response_thread_id, "detail": "resolving work plan owner"})
             target_thread_id = self.threads.find_work_plan_owner(response_thread_id, self.uid)
             if target_thread_id:
                 if target_thread_id != response_thread_id:
-                    logger.debug("orchestrator.packet_received", extra={"node_uid": self.uid, "target_thread_id": target_thread_id, "detail": "found in parent thread"})
+                    logger.info("orchestrator.packet_received", extra={"node_uid": self.uid, "target_thread_id": target_thread_id, "detail": "found in parent thread"})
                 else:
-                    logger.debug("orchestrator.packet_received", extra={"node_uid": self.uid, "target_thread_id": target_thread_id, "detail": "found in same thread"})
+                    logger.info("orchestrator.packet_received", extra={"node_uid": self.uid, "target_thread_id": target_thread_id, "detail": "found in same thread"})
             else:
                 logger.warning("orchestrator.packet_received", extra={"node_uid": self.uid, "detail": "work plan owner not found, falling back to response thread"})
             return target_thread_id or response_thread_id
@@ -788,12 +788,12 @@ class OrchestratorNode(
         
         status = service.get_work_plan_status(thread_id, self.uid)
         
-        logger.debug("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "detail": "work_plan_final", "total_items": status.total_items})
+        logger.info("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "detail": "work_plan_final", "total_items": status.total_items})
         
-        logger.debug("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "pending_items": status.pending_items, "in_progress_items": status.in_progress_items, "done_items": status.done_items, "failed_items": status.failed_items})
+        logger.info("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "pending_items": status.pending_items, "in_progress_items": status.in_progress_items, "done_items": status.done_items, "failed_items": status.failed_items})
         
         if status.blocked_items > 0 or status.waiting_items > 0:
-            logger.debug("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "blocked_items": status.blocked_items, "waiting_items": status.waiting_items})
+            logger.info("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "blocked_items": status.blocked_items, "waiting_items": status.waiting_items})
         
         # Show ALL items compactly
         for status in [WorkItemStatus.PENDING, WorkItemStatus.IN_PROGRESS, WorkItemStatus.DONE, WorkItemStatus.FAILED]:
@@ -869,9 +869,9 @@ class OrchestratorNode(
                                 resp_preview = ex.response_content[:80].replace('\n', ' ')
                                 item_line += f"\n          ✓ A: {resp_preview}{'...' if len(ex.response_content) > 80 else ''}"
                 
-                logger.debug("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "item_line": item_line})
+                logger.info("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "item_line": item_line})
         
-        logger.debug("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "detail": "work_plan_final_end"})
+        logger.info("phase.transition", extra={"node_uid": self.uid, "thread_id": thread_id, "detail": "work_plan_final_end"})
 
     @staticmethod
     def _get_orchestrator_behavior_message() -> str:

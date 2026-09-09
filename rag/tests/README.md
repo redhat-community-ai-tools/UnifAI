@@ -149,8 +149,8 @@ These tests cover `PipelineExecutor`, the **orchestrator** that runs the full pi
 
 **Cleanup guarantees:**
 
-- **`test_cleanup_always_called_on_success`** — After a successful pipeline, the executor should call `handler.cleanup()` (to delete temp files from disk) and `finish_log_monitoring()` (to remove the logging handler). This is the "finally" block.
-- **`test_cleanup_always_called_on_failure`** — Even when the pipeline crashes, cleanup must still happen. Without this guarantee, temp files would leak on disk and logging handlers would accumulate in memory.
+- **`test_cleanup_always_called_on_success`** — After a successful pipeline, the executor should call `handler.cleanup()` (to delete temp files from disk) and `finish_log_monitoring(handle)` (to remove the exact logging handler for this execution). This is the "finally" block.
+- **`test_cleanup_always_called_on_failure`** — Even when the pipeline crashes, cleanup must still happen. Without this guarantee, temp files would leak on disk and logging handlers would accumulate in memory. The monitoring handle ensures only this execution's handler is removed.
 - **`test_exception_re_raised`** — After recording the error and cleaning up, the executor should re-raise the original exception so the Celery worker knows the task failed and can mark it accordingly.
 
 **Monitoring:**

@@ -114,10 +114,10 @@ class ConcurrentLimitedStrategy(ExecutionStrategy):
         
         async def execute_with_limit(request: ToolExecutionRequest) -> ToolExecutionResponse:
             async with semaphore:
-                logger.debug("tool.execute", extra={"tool_call_id": request.tool_call_id, "action": "semaphore_acquired"})
+                logger.info("tool.execute", extra={"tool_call_id": request.tool_call_id, "action": "semaphore_acquired"})
                 try:
                     response = await executor_func(request)
-                    logger.debug("tool.execute", extra={"tool_call_id": request.tool_call_id, "action": "semaphore_released"})
+                    logger.info("tool.execute", extra={"tool_call_id": request.tool_call_id, "action": "semaphore_released"})
                     return response
                 except Exception as e:
                     logger.error("tool.failed", extra={"tool_call_id": request.tool_call_id, "error": str(e)})

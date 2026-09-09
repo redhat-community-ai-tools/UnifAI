@@ -151,7 +151,7 @@ class PlanAndExecuteStrategy(AgentStrategy):
         if self._step_count == 0:
             logger.info("llm.interaction_start", extra={"phase": self._current_phase, "interaction_number": 1, "detail": "beginning_orchestration_cycle"})
         else:
-            logger.debug("agent.step", extra={"phase": self._current_phase, "action": "think"})
+            logger.info("agent.step", extra={"phase": self._current_phase, "action": "think"})
         
         try:
             # Store current phase before update
@@ -165,7 +165,7 @@ class PlanAndExecuteStrategy(AgentStrategy):
             
             # Phase transition detected
             if self._phase_changed:
-                logger.debug("phase.transition", extra={"from_phase": old_phase, "to_phase": self._current_phase})
+                logger.info("phase.transition", extra={"from_phase": old_phase, "to_phase": self._current_phase})
                 # Note: Messages will be filtered to clean slate in build_context()
             
             # Build phase-specific context
@@ -175,7 +175,7 @@ class PlanAndExecuteStrategy(AgentStrategy):
             tools = self.get_tools_for_phase(self._current_phase)
             
             # Get LLM response
-            logger.debug("llm.interaction_start", extra={"phase": self._current_phase, "action": "think"})
+            logger.info("llm.interaction_start", extra={"phase": self._current_phase, "action": "think"})
             response = self.llm_chat(context, tools)
             
             # Parse response
@@ -502,7 +502,7 @@ class PlanAndExecuteStrategy(AgentStrategy):
         messages.clear()
         messages.extend(user_messages)
         
-        logger.debug("phase.transition", extra={"detail": "cleared_phase_messages", "kept_user_messages": len(user_messages)})
+        logger.info("phase.transition", extra={"detail": "cleared_phase_messages", "kept_user_messages": len(user_messages)})
     
     
     def _build_phase_prompt(self) -> str:

@@ -28,7 +28,7 @@ class RouterDirectCondition(BaseCondition):
             return "END"
 
         targets = get_outgoing_targets(state, self.context)
-        logger.debug("graph.router_targets", extra={"targets": list(targets)})
+        logger.info("graph.router_targets", extra={"targets": list(targets)})
         if not targets:
             logger.warning("graph.router_no_targets")
             return "END"

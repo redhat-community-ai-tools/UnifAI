@@ -155,7 +155,7 @@ class AgentIterator:
         try:
             # Get next steps from strategy
             steps = self.strategy.think(self.messages)
-            logger.debug("agent.step", extra={"step_count": len(steps), "step_types": [step.type.value for step in steps]})
+            logger.info("agent.step", extra={"step_count": len(steps), "step_types": [step.type.value for step in steps]})
 
             # Update conversation messages with assistant responses
             self._update_conversation_messages(steps)
@@ -199,7 +199,7 @@ class AgentIterator:
 
             # Handle collected actions via execution handler
             if actions_to_handle:
-                logger.debug("agent.tools_execute", extra={"action_count": len(actions_to_handle)})
+                logger.info("agent.tools_execute", extra={"action_count": len(actions_to_handle)})
 
                 # Delegate to execution handler (Strategy pattern)
                 for result_step in self.execution_handler.handle_actions(actions_to_handle):

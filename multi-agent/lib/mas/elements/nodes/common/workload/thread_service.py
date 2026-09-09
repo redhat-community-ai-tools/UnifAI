@@ -392,10 +392,10 @@ class ThreadService(IThreadService):
                     logger.info("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "depth": depth, "found": True})
                     return current_id  # Found it!
                 else:
-                    logger.debug("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "depth": depth, "found": False})
+                    logger.info("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "depth": depth, "found": False})
             except Exception as e:
                 # Workspace doesn't exist for this thread, continue searching
-                logger.debug("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "depth": depth, "error": str(e)})
+                logger.info("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "depth": depth, "error": str(e)})
                 pass
             
             # Move up to parent thread
@@ -404,7 +404,7 @@ class ThreadService(IThreadService):
                 logger.info("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "found": False, "reason": "reached_root"})
                 return None  # Reached root, not found
 
-            logger.debug("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "parent_thread_id": thread.parent_thread_id, "depth": depth, "phase": "move_to_parent"})
+            logger.info("workload.thread_lookup", extra={"owner_uid": owner_uid, "thread_id": current_id, "parent_thread_id": thread.parent_thread_id, "depth": depth, "phase": "move_to_parent"})
             current_id = thread.parent_thread_id
             depth += 1
 

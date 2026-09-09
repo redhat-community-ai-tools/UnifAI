@@ -129,7 +129,7 @@ def _record_extras(record: logging.LogRecord) -> dict[str, Any]:
     return extras
 
 
-class UnifAIJSONFormatter(logging.Formatter):
+class JSONFormatter(logging.Formatter):
     """Emit one JSON object per line for logger-compatible ingest."""
 
     def __init__(self, service_name: str, environment: str, pod: Optional[str], deployment: Optional[str]):
@@ -190,7 +190,11 @@ class UnifAIJSONFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
-class UnifAIConsoleFormatter(logging.Formatter):
+# Kept as a compatibility alias for services that imported the original name.
+UnifAIJSONFormatter = JSONFormatter
+
+
+class ConsoleFormatter(logging.Formatter):
     """Human-readable formatter for local development."""
 
     def __init__(self, service_name: str):
@@ -222,6 +226,10 @@ class UnifAIConsoleFormatter(logging.Formatter):
         if record.exc_info:
             parts.append(self.formatException(record.exc_info))
         return " ".join(parts)
+
+
+# Kept as a compatibility alias for services that imported the original name.
+UnifAIConsoleFormatter = ConsoleFormatter
 
 
 def _is_dir_writable_with_retry(
@@ -284,14 +292,14 @@ def configure_logging(
     use_json = resolved_env not in _LOCAL_ENVIRONMENTS
 
     if use_json:
-        formatter: logging.Formatter = UnifAIJSONFormatter(
+        formatter: logging.Formatter = JSONFormatter(
             service_name=service_name,
             environment=resolved_env,
             pod=pod,
             deployment=deployment,
         )
     else:
-        formatter = UnifAIConsoleFormatter(service_name=service_name)
+        formatter = ConsoleFormatter(service_name=service_name)
 
     root = logging.getLogger()
     root.handlers.clear()
@@ -321,9 +329,6 @@ def configure_logging(
         except OSError:
             # Mount missing or not writable — stdout-only is fine (local / OO ingest).
             pass
-
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
     _CONFIGURED = True
     logging.getLogger(__name__).info(
