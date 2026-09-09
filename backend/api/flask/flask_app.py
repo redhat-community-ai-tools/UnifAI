@@ -8,6 +8,8 @@ from core.app_container import AppContainer
 from .endpoints import register_all_endpoints
 from flask_cors import CORS
 from global_utils.flask.request_rules import RequestRules
+from global_utils.flask.error_handlers import register_error_handlers
+from global_utils.utils.logging_config import configure_logging
 
 
 def create_app(config: AppConfig = None) -> Flask:
@@ -20,6 +22,7 @@ def create_app(config: AppConfig = None) -> Flask:
     4) Register API blueprints
     5) Register request rules
     """
+    configure_logging("backend")
     config = config or AppConfig.get_instance()
     app = Flask(__name__)
 
@@ -37,7 +40,7 @@ def create_app(config: AppConfig = None) -> Flask:
     CORS(app, resources={r"/api/*": {
         "origins": os.environ.get("FRONTEND_URL", "http://localhost:5000"),
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Request-ID"],
         "supports_credentials": True,
     }})
 
@@ -45,5 +48,6 @@ def create_app(config: AppConfig = None) -> Flask:
     app.container = container
     register_all_endpoints(app)
     RequestRules(app)
+    register_error_handlers(app)
 
     return app

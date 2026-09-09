@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 from mas.core.auth.ports import HttpClient, HttpResponse
+from global_utils.flask.correlation import correlation_headers
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +29,9 @@ class HttpxClient(HttpClient):
         headers: Optional[Dict[str, str]] = None,
         timeout: float = 10.0,
     ) -> HttpResponse:
+        merged = {**correlation_headers(), **(headers or {})}
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, data=data, json=json, headers=headers)
+            resp = await client.post(url, data=data, json=json, headers=merged or None)
             body = self._parse_body(resp)
             return HttpResponse(
                 status_code=resp.status_code,
@@ -44,8 +46,9 @@ class HttpxClient(HttpClient):
         headers: Optional[Dict[str, str]] = None,
         timeout: float = 10.0,
     ) -> HttpResponse:
+        merged = {**correlation_headers(), **(headers or {})}
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.get(url, headers=headers)
+            resp = await client.get(url, headers=merged or None)
             body = self._parse_body(resp)
             return HttpResponse(
                 status_code=resp.status_code,

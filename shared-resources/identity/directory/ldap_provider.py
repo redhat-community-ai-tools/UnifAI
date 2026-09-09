@@ -10,9 +10,10 @@ import time
 from typing import List, Optional, Tuple
 
 import ldap3
-from ldap3 import Server, ServerPool, Connection, SUBTREE, ROUND_ROBIN
+from ldap3 import Server, ServerPool, Connection, SUBTREE, ROUND_ROBIN, SIMPLE
 from ldap3.core.exceptions import LDAPException
 
+from directory.bind_credentials import prepare_ldap_bind_credentials, ldap_bind_dn_log_label
 from directory.models import DirectoryUser, DirectoryGroup
 from directory.provider import DirectoryProvider
 from directory.models import LdapConfig
@@ -80,8 +81,9 @@ class LdapDirectoryProvider(DirectoryProvider):
         ]
         self._pool = ServerPool(servers, ROUND_ROBIN, active=True)
 
-        self._bind_dn = config.bind_dn or None
-        self._bind_pw = config.bind_password or None
+        self._bind_dn, self._bind_pw = prepare_ldap_bind_credentials(
+            config.bind_dn, config.bind_password,
+        )
         self._timeout = config.timeout_seconds
 
         self._conn: Optional[Connection] = None
@@ -92,7 +94,7 @@ class LdapDirectoryProvider(DirectoryProvider):
             "LDAP provider: %s, user_base=%s, group_base=%s, bind=%s",
             config.url, self._user_base,
             self._group_base or "(disabled)",
-            self._bind_dn or "anonymous",
+            ldap_bind_dn_log_label(self._bind_dn),
         )
 
     @staticmethod
@@ -138,6 +140,12 @@ class LdapDirectoryProvider(DirectoryProvider):
             self._pool,
             user=self._bind_dn,
             password=self._bind_pw,
+            authentication=SIMPLE,
+            auto_bind=True,
+            read_only=True,
+            receive_timeout=self._timeout,
+        ) if self._bind_dn else Connection(
+            self._pool,
             auto_bind=True,
             read_only=True,
             receive_timeout=self._timeout,

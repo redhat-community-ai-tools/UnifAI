@@ -6,7 +6,9 @@ using Slack API and MongoDB storage respectively.
 import time
 from typing import Any
 
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BotInstallationCheckerAdapter:

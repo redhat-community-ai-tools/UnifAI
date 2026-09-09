@@ -21,6 +21,7 @@ from mas.graph.state.graph_state import GraphState
 from config.app_config import AppConfig
 from temporal.client import get_temporal_client
 from temporal.models import GraphExecutionParams
+from global_utils.utils.logging_config import get_request_id
 
 _WORKFLOW_NAME = "GraphTraversalWorkflow"
 
@@ -65,6 +66,7 @@ class TemporalGraphExecutor(BaseGraphExecutor):
             state=state,
             graph_definition=self._graph_def,
             session_id=session_id,
+            request_id=get_request_id(),
         )
         return await client.execute_workflow(
             _WORKFLOW_NAME,

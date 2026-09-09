@@ -8,9 +8,14 @@ from global_utils.utils.logging_config import logger
 
 
 def send_task(task_name, celery_queue, **kwargs):
-    CeleryApp().app.send_task(task_name,
-                              kwargs=kwargs,
-                              queue=celery_queue)
+    from global_utils.flask.correlation import celery_correlation_headers
+    headers = celery_correlation_headers()
+    CeleryApp().app.send_task(
+        task_name,
+        kwargs=kwargs,
+        queue=celery_queue,
+        headers=headers or None,
+    )
 
 
 def is_celery_queue_empty(queue_name: str) -> bool:

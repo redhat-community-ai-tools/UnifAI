@@ -14,6 +14,7 @@ from global_utils.embedding.exceptions import (
     EmbeddingConnectionError,
     EmbeddingTimeoutError,
 )
+from global_utils.flask.correlation import correlation_headers
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,11 @@ class EmbeddingClient:
             response = self._client.post(
                 url,
                 json=payload,
-                headers={"Content-Type": "application/json", "accept": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "accept": "application/json",
+                    **correlation_headers(),
+                },
             )
             response.raise_for_status()
             return response.json()
@@ -111,7 +116,11 @@ class EmbeddingClient:
             True if healthy, False otherwise
         """
         try:
-            response = self._client.get("/health", timeout=10)
+            response = self._client.get(
+                "/health",
+                timeout=10,
+                headers=correlation_headers(),
+            )
             return response.status_code == 200
         except Exception:
             return False

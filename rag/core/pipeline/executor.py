@@ -7,7 +7,9 @@ from core.vector.domain.repository import VectorRepository
 from core.pipeline.service import PipelineService
 from core.monitoring.service import MonitoringService
 from core.data_sources.service import DataSourceService
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger("rag_pipeline")
 
 
 class PipelineExecutor:
@@ -78,7 +80,7 @@ class PipelineExecutor:
         
         # Start log monitoring (orchestration)
         monitoring_pipeline_id = f"{source_type.lower()}_{context.source_id}"
-        self._monitoring_svc.start_log_monitoring(
+        monitoring_handle = self._monitoring_svc.start_log_monitoring(
             pipeline_id=monitoring_pipeline_id,
             target_logger=logger,
         )
@@ -149,5 +151,5 @@ class PipelineExecutor:
             
         finally:
             # Always cleanup: stop monitoring and run handler cleanup
-            self._monitoring_svc.finish_log_monitoring()
+            self._monitoring_svc.finish_log_monitoring(monitoring_handle)
             handler.cleanup(context)

@@ -10,7 +10,9 @@ from typing import Optional, Dict, Any, List
 from pymongo.collection import Collection
 
 from core.pagination.domain.model import PaginatedResult
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class PaginatedQueryBuilder:

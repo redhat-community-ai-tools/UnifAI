@@ -38,7 +38,7 @@ def buildParams = [
 def secret_lists = [
     cluster: ['cluster_address', 'cluster_access_token', 'tenant_name', 'namespace', 'jenkins_credentials_id'],
     redis: ['redis_username', 'redis_password'],
-    identity: ['client_id', 'client_secret', 'keycloak_realm', 'keycloak_base_url'],
+    identity: ['client_id', 'client_secret', 'keycloak_realm', 'keycloak_base_url', 'directory_ldap_bind_dn', 'directory_ldap_bind_password'],
     rabbitmq: ['rmq_username', 'rmq_password'],
     umami: ['umami_username', 'umami_password'],
     // keycloak: ['keycloak_base_url', 'client_id', 'client_secret', 'keycloak_realm'],
