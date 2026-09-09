@@ -3,7 +3,6 @@ Module for importing non-configured flask extensions
 """
 from celery import Celery
 from global_utils.utils.util import get_mongo_url, get_rabbitmq_url
-from global_utils.utils.logging_config import logger
 import logging
 
 
@@ -43,18 +42,11 @@ class CeleryApp:
             worker_task_log_format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         )
 
+        # Use process root handlers from configure_logging (stdout / optional file).
         celery_logger = logging.getLogger('celery')
-
-        # Clear Celery's handlers
-        for handler in celery_logger.handlers[:]:
-            celery_logger.removeHandler(handler)
-
-        # Add your custom handlers
-        for handler in logger.handlers:
-            celery_logger.addHandler(handler)
-
-        celery_logger.setLevel(logger.level)
-        celery_logger.propagate = False
+        celery_logger.handlers.clear()
+        celery_logger.setLevel(logging.getLogger().level)
+        celery_logger.propagate = True
 
     @property
     def app(self):

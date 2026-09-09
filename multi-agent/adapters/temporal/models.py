@@ -34,6 +34,7 @@ class GraphExecutionParams(BaseModel):
     graph_definition: GraphDefinition = Field(default_factory=GraphDefinition)
     session_id: str = ""
     execution_context: ExecutionContext = Field(default_factory=ExecutionContext)
+    request_id: Optional[str] = None
 
 
 class SessionWorkflowParams(BaseModel):
@@ -50,6 +51,7 @@ class SessionWorkflowParams(BaseModel):
     run_id: str
     execution_context: ExecutionContext = Field(default_factory=ExecutionContext)
     graph_execution_params: GraphExecutionParams = Field(default_factory=GraphExecutionParams)
+    request_id: Optional[str] = None
 
     def to_scheduled_execution_params(self) -> ScheduledExecutionParams:
         """Map transport DTO → domain VO for ScheduledRunOps."""
@@ -88,6 +90,7 @@ class ExecuteNodeParams(BaseModel):
     state: GraphState = Field(default_factory=GraphState)
     session_id: str = ""
     execution_context: ExecutionContext = Field(default_factory=ExecutionContext)
+    request_id: Optional[str] = None
 
 
 class EvaluateConditionParams(BaseModel):
@@ -96,6 +99,7 @@ class EvaluateConditionParams(BaseModel):
     condition_blueprint: Dict[str, Any] = Field(default_factory=dict)
     step_context: Optional[StepContext] = None
     state: GraphState = Field(default_factory=GraphState)
+    request_id: Optional[str] = None
 
 
 class BeginSessionParams(BaseModel):
@@ -105,23 +109,27 @@ class BeginSessionParams(BaseModel):
     """
     run_id: str
     execution_context: ExecutionContext = Field(default_factory=ExecutionContext)
+    request_id: Optional[str] = None
 
 
 class CompleteSessionParams(BaseModel):
     """Input to the complete_session activity."""
     run_id: str
     final_state: GraphState = Field(default_factory=GraphState)
+    request_id: Optional[str] = None
 
 
 class FailSessionParams(BaseModel):
     """Input to the fail_session activity."""
     run_id: str
     error_message: str = ""
+    request_id: Optional[str] = None
 
 
 class CancelSessionParams(BaseModel):
     """Input to the cancel_session activity."""
     run_id: str
+    request_id: Optional[str] = None
 
 
 # ── Scheduled session params ─────────────────────────────────────────
@@ -135,6 +143,7 @@ class ScheduledSessionParams(BaseModel):
     source: PromptSource = PromptSource.MANUAL
     dedupe_key: Optional[str] = None
     credential_user_id: str = ""
+    request_id: Optional[str] = None
 
 
 # ── Consolidated scheduled session params ─────────────────────────────

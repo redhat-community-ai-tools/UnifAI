@@ -78,6 +78,10 @@ class ForegroundSessionRunner:
             ``GraphState`` when *stream* is False;
             ``Iterator[Any]`` of channel events when *stream* is True.
         """
+        from global_utils.utils.logging_config import set_session_id
+        run_id = session.get_run_id() if hasattr(session, "get_run_id") else None
+        if run_id:
+            set_session_id(run_id)
         if stream:
             return self._run_streaming(session, scope)
         return self._run_blocking(session, scope)

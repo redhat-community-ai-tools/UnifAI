@@ -2,7 +2,9 @@
 from flask import Blueprint, jsonify
 
 from bootstrap.app_container import vector_stats_service
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 vector_bp = Blueprint("vector", __name__)
 

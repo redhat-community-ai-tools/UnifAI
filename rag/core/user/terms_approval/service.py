@@ -2,7 +2,9 @@
 from typing import Dict, Any
 
 from core.user.terms_approval.domain.repository import TermsApprovalRepository
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class TermsApprovalService:

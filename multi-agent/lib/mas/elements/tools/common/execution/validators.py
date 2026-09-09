@@ -4,11 +4,13 @@ Validation components for tool execution.
 This module provides argument validation using the existing validation
 function from global_utils.
 """
+import logging
 from typing import Dict, Optional, Any, Tuple, List
-
 from mas.elements.tools.common.base_tool import BaseTool
 from global_utils.utils.util import validate_arguments
 from .interfaces import ExecutionValidator
+
+logger = logging.getLogger(__name__)
 
 
 class ArgumentValidator(ExecutionValidator):
@@ -36,7 +38,7 @@ class ArgumentValidator(ExecutionValidator):
         except ValueError as e:
             return False, str(e)
         except Exception as e:
-            print(f"Validation error for {tool.name}: {e}")
+            logger.error("tool.validation_error", extra={"tool_name": tool.name, "error": str(e)})
             return False, f"Validation error: {e}"
 
 

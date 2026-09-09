@@ -8,11 +8,14 @@ The dispatcher only needs a service-name → base-URL map so it can
 resolve full URLs at runtime.
 """
 
+import logging
 from typing import Dict, Optional
 
 import requests
 
-from shared.logger import logger
+from global_utils.flask.correlation import correlation_headers
+
+logger = logging.getLogger(__name__)
 
 
 class ActionDispatcher:
@@ -49,7 +52,12 @@ class ActionDispatcher:
         url = base_url.rstrip("/") + endpoint
         try:
             logger.info("Dispatching action '%s' → %s", action, url)
-            resp = requests.post(url, json={}, timeout=self._timeout)
+            resp = requests.post(
+                url,
+                json={},
+                headers=correlation_headers() or None,
+                timeout=self._timeout,
+            )
             resp.raise_for_status()
             logger.info(
                 "Action '%s' dispatched successfully (status=%s)",

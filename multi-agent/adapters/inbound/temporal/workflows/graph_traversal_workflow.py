@@ -44,6 +44,7 @@ class GraphTraversalWorkflow:
         self._current_nodes: List[str] = []
         self._session_id: str = ""
         self._execution_context = None
+        self._request_id: str | None = None
 
     @workflow.run
     async def run(self, params: GraphExecutionParams) -> GraphState:
@@ -51,6 +52,7 @@ class GraphTraversalWorkflow:
         state = params.state
         self._session_id = params.session_id
         self._execution_context = params.execution_context
+        self._request_id = params.request_id
 
         traversal = GraphTraversal(graph, GraphState)
 
@@ -91,6 +93,7 @@ class GraphTraversalWorkflow:
             state=state,
             session_id=self._session_id,
             execution_context=self._execution_context,
+            request_id=self._request_id,
         )
         return await workflow.execute_activity(
             "execute_graph_node",
@@ -111,6 +114,7 @@ class GraphTraversalWorkflow:
             condition_blueprint=cond.condition_blueprint,
             step_context=cond.step_context,
             state=state,
+            request_id=self._request_id,
         )
         return await workflow.execute_activity(
             "evaluate_condition",
