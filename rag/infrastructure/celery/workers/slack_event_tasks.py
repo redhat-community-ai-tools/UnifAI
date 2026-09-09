@@ -32,7 +32,7 @@ def process_slack_events_task(self, payload: Dict[str, Any]):
     event = payload.get("event", {})
     event_type = event.get("type", "unknown")
 
-    from global_utils.flask.correlation import bind_from_celery_headers
+    from global_utils.flask.correlation import bind_from_celery_headers, clear_correlation_context
     bind_from_celery_headers(getattr(self.request, "headers", None) or {})
     
     try:
@@ -47,3 +47,6 @@ def process_slack_events_task(self, payload: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Error processing Slack event {event_id}: {e}", exc_info=True)
         raise self.retry(exc=e)
+
+    finally:
+        clear_correlation_context()

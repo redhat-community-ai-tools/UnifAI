@@ -51,3 +51,20 @@ def test_event_autofill_from_message():
     )
     payload = json.loads(formatter.format(record))
     assert payload["event"] == "phase.transition"
+
+
+def test_bind_correlation_ids_overwrites_missing_ids():
+    lc.set_request_id("req-old")
+    lc.set_session_id("sess-old")
+
+    lc.bind_correlation_ids(None, "sess-2")
+    assert lc.get_request_id() is None
+    assert lc.get_session_id() == "sess-2"
+
+    lc.bind_correlation_ids("req-new")
+    assert lc.get_request_id() == "req-new"
+    assert lc.get_session_id() is None
+
+    lc.bind_correlation_ids("", "")
+    assert lc.get_request_id() is None
+    assert lc.get_session_id() is None

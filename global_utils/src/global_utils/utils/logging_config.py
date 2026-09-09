@@ -101,15 +101,12 @@ def bind_correlation_ids(
 ) -> None:
     """Bind request_id/session_id ContextVars for the current context.
 
-    Falsy values are ignored (leaves any already-bound id untouched).
-    Used to re-bind correlation ids at the start of a Temporal
-    activity/workflow, since ContextVars don't cross process/worker
-    boundaries on their own.
+    Always overwrites both ids, including None, so a reused Temporal
+    worker thread cannot leak a previous activity's correlation ids.
+    Empty strings are treated as unset.
     """
-    if request_id:
-        set_request_id(request_id)
-    if session_id:
-        set_session_id(session_id)
+    set_request_id(request_id or None)
+    set_session_id(session_id or None)
 
 
 def get_logger(name: Optional[str] = None) -> logging.Logger:
