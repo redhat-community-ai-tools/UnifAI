@@ -20,6 +20,10 @@ data:
         verbosity: basic
       sumologic:
         endpoint: ${env:SUMOLOGIC_ENDPOINT}  
+      otlp_http:
+        endpoint: "https://otel-input.corp.redhat.com:4318"
+        headers:
+          Authorization: "Bearer ${env:OTEL_AUTH_TOKEN}"
     extensions:
       zpages:
         endpoint: 0.0.0.0:55679
