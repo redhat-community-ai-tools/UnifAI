@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "logging.fullname" . }}
+  labels:
+    app: {{ include "logging.name" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "logging.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "logging.name" . }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default "latest" }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config=/etc/otelcol-contrib/config.yaml"]
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.service.port_grpc }}
+              protocol: TCP
+            - name: http
+              containerPort: {{ .Values.service.port_http }}
+              protocol: TCP
+            - name: ui
+              containerPort: {{ .Values.service.port_ui }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: otel-config
+              mountPath: /etc/otelcol-contrib
+              readOnly: true
+      volumes:
+        - name: otel-config
+          configMap:
+            name: {{ include "logging.fullname" . }}-base
