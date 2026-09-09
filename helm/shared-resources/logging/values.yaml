@@ -15,6 +15,12 @@ storage:
   labels:
     paas.redhat.com/appcode: TAG-001
 
+
+env:
+  OTEL_ENDPOINT: "https://otel-input.corp.redhat.com:4318"
+  OTEL_AUTH_TOKEN: "Bearer ${env:OTEL_AUTH_TOKEN}"
+  SUMOLOGIC_ENDPOINT: "https://otel-input.corp.redhat.com:4318"
+
 # This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
 replicaCount: 1
 
@@ -174,3 +180,5 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+
