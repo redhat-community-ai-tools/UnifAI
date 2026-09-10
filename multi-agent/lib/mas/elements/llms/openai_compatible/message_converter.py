@@ -1,5 +1,5 @@
 """
-Bidirectional converter between domain ChatMessage and OpenAI API messages.
+Bidirectional converter between domain ChatMessage and OpenAI Chat Completions messages.
 
 Handles all message roles (system, user, assistant, tool) including
 assistant messages with tool_calls and tool result messages.
@@ -22,7 +22,7 @@ _ROLE_MAP: Dict[Role, str] = {
 
 
 class OpenAIMessageConverter:
-    """Stateless converter between ``ChatMessage`` and native OpenAI message dicts."""
+    """Stateless converter between ``ChatMessage`` and OpenAI Chat Completions dicts."""
 
     # ------------------------------------------------------------------
     # Public API

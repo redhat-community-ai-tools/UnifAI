@@ -62,6 +62,20 @@ class MongoAdminConfigReader(AdminConfigReaderPort):
         self._cached_at: float = 0.0
         self._last_failure_at: float = 0.0
 
+    def get_section(self, key: str) -> "dict | None":
+        """Return the stored ``value`` dict for *key*, or ``None`` on miss / error.
+
+        No additional caching layer here — callers that need it (e.g.
+        ``model_capabilities``) implement their own TTL on top.
+        """
+        try:
+            doc = self._col.find_one({"key": key})
+            if doc and isinstance(doc.get("value"), dict):
+                return doc["value"]
+        except Exception:
+            logger.warning("Could not read admin config section '%s'", key, exc_info=True)
+        return None
+
     def is_admin(self, username: str) -> "bool | None":
         """Return *True*/*False* when the admin list is available, *None*
         when Mongo is unreachable so the caller can fall back to the

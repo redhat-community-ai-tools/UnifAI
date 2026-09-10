@@ -1,8 +1,10 @@
 """
-OpenAI LLM implementation using the native ``openai`` Python SDK.
+OpenAI LLM implementation using the Responses API (``/v1/responses``).
 
-Supports any OpenAI-compatible API (OpenAI, vLLM, Azure, etc.) via
-the ``base_url`` parameter.
+This provider targets the official OpenAI endpoint and GPT-5+ / o-series
+models that require the Responses API for tool calling.  For older models
+or OpenAI-compatible servers (vLLM, LocalAI, Ollama), use the
+``openai_compatible`` provider instead.
 """
 
 from __future__ import annotations
@@ -11,50 +13,47 @@ import copy
 from typing import Any, Dict, Iterator, List, Optional, Union
 
 from openai import OpenAI
-from openai.types.chat import ChatCompletionToolParam
 
 from ..common.base_llm import BaseLLM
 from ..common.chat.message import ChatMessage, Role
 from ..common.name_sanitizer import build_name_maps, map_name
 from ...tools.common.tool_definition import ToolDefinition
-from .message_converter import OpenAIMessageConverter
-from .tools_converter import OpenAIToolsConverter
-from .stream_aggregator import StreamToolCallAggregator
+from .responses_adapter import ResponsesAdapter
+from .responses_stream_aggregator import ResponsesStreamAggregator
 from mas.core.tracing import TracingService
 
 
 class OpenAILLM(BaseLLM):
-    """LLM client backed by the native OpenAI Python SDK.
+    """LLM client for the OpenAI Responses API (GPT-5+, o-series).
 
     Responsibilities are split across dedicated collaborators:
 
-    * **OpenAIMessageConverter** – bidirectional ``ChatMessage`` ↔ OpenAI dict
-    * **OpenAIToolsConverter** – ``BaseTool`` → OpenAI function-tool schema
-    * **StreamToolCallAggregator** – reassembles incremental tool-call deltas
+    * **ResponsesAdapter** – bidirectional ``ChatMessage`` ↔ Responses API format
+    * **ResponsesStreamAggregator** – reassembles Responses API streaming events
 
     Tool names containing dots (e.g. ``time.get_current_time``) are
     sanitized to underscores at the API boundary and restored on
-    inbound tool calls.  Name maps are built in ``bind_tools`` and
-    applied by this class — converters remain unaware of sanitization.
+    inbound tool calls.  The adapter handles name sanitization for
+    outbound messages; this class handles tool definitions and inbound.
     """
 
     def __init__(
         self,
         base_url: str,
         model_name: str,
-        temperature: float = 0.7,
-        max_tokens: int = 1024,
+        max_tokens: int = 4096,
         api_key: str = "EMPTY",
+        reasoning_effort: Optional[str] = None,
         tracing: TracingService = None,
         **extra: Any,
     ) -> None:
         self._name = "openai"
         self._model = model_name
-        self._temperature = temperature
         self._max_tokens = max_tokens
-        self._tools: Optional[List[ChatCompletionToolParam]] = None
-        self._fwd_names: Dict[str, str] = {}  # domain → provider-safe
-        self._rev_names: Dict[str, str] = {}  # provider-safe → domain
+        self._reasoning_effort = reasoning_effort
+        self._responses_tools: Optional[List[Dict[str, Any]]] = None
+        self._fwd_names: Dict[str, str] = {}
+        self._rev_names: Dict[str, str] = {}
         self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
         self._tracing = tracing
 
@@ -63,29 +62,33 @@ class OpenAILLM(BaseLLM):
     # ------------------------------------------------------------------
 
     def chat(self, messages: List[ChatMessage]) -> ChatMessage:
-        request = self._build_request(messages)
+        input_items = ResponsesAdapter.to_input(messages, self._fwd_names)
+
         with self._tracing.trace_llm(
             model=self._model,
             provider="openai",
-            input_messages=[{"role": m.role.value, "content": m.content} for m in messages[-5:]],
+            input_messages=[
+                {"role": m.role.value, "content": m.content}
+                for m in messages[-5:]
+            ],
         ) as gen:
             try:
-                response = self._client.chat.completions.create(**request)
+                response = self._client.responses.create(
+                    **self._build_request(input_items),
+                )
             except Exception as e:
                 gen.update(
                     level="ERROR",
                     status_message=f"OpenAI API error: {type(e).__name__}: {e}",
                 )
                 raise
-            result_msg = OpenAIMessageConverter.from_openai(
-                response.choices[0].message,
-            )
+            result_msg = ResponsesAdapter.from_response(response)
             result_msg = self._restore_tool_names(result_msg)
             usage = {}
             if response.usage:
                 usage = {
-                    "input_tokens": response.usage.prompt_tokens,
-                    "output_tokens": response.usage.completion_tokens,
+                    "input_tokens": response.usage.input_tokens,
+                    "output_tokens": response.usage.output_tokens,
                     "total_tokens": response.usage.total_tokens,
                 }
             gen.update(output=result_msg.content, usage_details=usage or None)
@@ -96,51 +99,42 @@ class OpenAILLM(BaseLLM):
         messages: List[ChatMessage],
         **call_params: Any,
     ) -> Iterator[Union[str, ChatMessage]]:
-        request = self._build_request(messages, stream=True, **call_params)
-        aggregator = StreamToolCallAggregator()
-        accumulated_content = ""
+        input_items = ResponsesAdapter.to_input(messages, self._fwd_names)
+        aggregator = ResponsesStreamAggregator()
 
         with self._tracing.trace_llm(
             model=self._model,
             provider="openai",
-            input_messages=[{"role": m.role.value, "content": m.content} for m in messages[-5:]],
+            input_messages=[
+                {"role": m.role.value, "content": m.content}
+                for m in messages[-5:]
+            ],
             metadata={"streaming": True},
         ) as gen:
             try:
-                stream_iter = self._client.chat.completions.create(**request)
+                stream_iter = self._client.responses.create(
+                    **self._build_request(input_items, stream=True, **call_params),
+                )
             except Exception as e:
                 gen.update(
                     level="ERROR",
                     status_message=f"OpenAI API error: {type(e).__name__}: {e}",
                 )
                 raise
-            for chunk in stream_iter:
-                if not chunk.choices:
-                    if hasattr(chunk, "usage") and chunk.usage:
-                        gen.update(usage_details={
-                            "input_tokens": chunk.usage.prompt_tokens,
-                            "output_tokens": chunk.usage.completion_tokens,
-                            "total_tokens": chunk.usage.total_tokens,
-                        })
-                    continue
+            for event in stream_iter:
+                text_delta = aggregator.process(event)
+                if text_delta:
+                    yield text_delta
 
-                delta = chunk.choices[0].delta
-
-                if delta.content:
-                    accumulated_content += delta.content
-                    yield delta.content
-
-                if delta.tool_calls:
-                    aggregator.absorb(delta.tool_calls)
-
-            gen.update(output=accumulated_content)
+            if aggregator.usage:
+                gen.update(usage_details=aggregator.usage)
+            gen.update(output=aggregator.accumulated_content)
 
         if aggregator.has_tool_calls:
-            tool_calls = aggregator.build()
             result = ChatMessage(
                 role=Role.ASSISTANT,
-                content=accumulated_content,
-                tool_calls=tool_calls,
+                content=aggregator.accumulated_content,
+                tool_calls=aggregator.build(),
             )
             yield self._restore_tool_names(result)
 
@@ -149,8 +143,8 @@ class OpenAILLM(BaseLLM):
         clone._fwd_names, clone._rev_names = build_name_maps(
             t.name for t in tools
         )
-        clone._tools = OpenAIToolsConverter.to_openai(tools)
-        self._sanitize_tool_defs(clone._tools, clone._fwd_names)
+        clone._responses_tools = ResponsesAdapter.tools_to_responses(tools)
+        self._sanitize_tool_defs(clone._responses_tools, clone._fwd_names)
         return clone
 
     @property
@@ -163,24 +157,22 @@ class OpenAILLM(BaseLLM):
 
     def _build_request(
         self,
-        messages: List[ChatMessage],
+        input_items: List[Dict[str, Any]],
         *,
         stream: bool = False,
         **overrides: Any,
     ) -> Dict[str, Any]:
-        """Assemble the kwargs dict for ``chat.completions.create``."""
-        raw_messages = OpenAIMessageConverter.to_openai(messages)
-        self._sanitize_outbound_names(raw_messages)
+        """Assemble kwargs for ``client.responses.create``."""
         request: Dict[str, Any] = {
             "model": self._model,
-            "messages": raw_messages,
-            "temperature": self._temperature,
-            "max_tokens": self._max_tokens,
+            "input": input_items,
+            "max_output_tokens": self._max_tokens,
+            "tools": self._responses_tools or [],
         }
         if stream:
             request["stream"] = True
-        if self._tools:
-            request["tools"] = self._tools
+        if self._reasoning_effort:
+            request["reasoning"] = {"effort": self._reasoning_effort}
         if overrides:
             request.update(overrides)
         return request
@@ -191,22 +183,14 @@ class OpenAILLM(BaseLLM):
 
     @staticmethod
     def _sanitize_tool_defs(
-        tools: Optional[List[ChatCompletionToolParam]],
+        tools: Optional[List[Dict[str, Any]]],
         fwd_names: Dict[str, str],
     ) -> None:
-        """Sanitize function names inside tool definitions (in-place)."""
+        """Sanitize function names inside Responses API tool defs (in-place)."""
         if not tools:
             return
         for tool in tools:
-            name = tool["function"]["name"]
-            tool["function"]["name"] = map_name(name, fwd_names)
-
-    def _sanitize_outbound_names(self, messages: List[Dict[str, Any]]) -> None:
-        """Sanitize tool-call names in outbound message history (in-place)."""
-        for msg in messages:
-            for tc in msg.get("tool_calls", []):
-                name = tc["function"]["name"]
-                tc["function"]["name"] = map_name(name, self._fwd_names)
+            tool["name"] = map_name(tool["name"], fwd_names)
 
     def _restore_tool_names(self, msg: ChatMessage) -> ChatMessage:
         """Map provider-safe names back to domain names on an inbound message."""
