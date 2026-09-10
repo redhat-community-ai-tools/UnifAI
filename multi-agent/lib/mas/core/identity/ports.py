@@ -65,3 +65,11 @@ class AdminConfigReaderPort(ABC):
         fall back to a static allowlist.
         """
         ...
+
+    def get_section(self, key: str) -> "dict | None":
+        """Return the stored value dict for *key*, or ``None`` on miss / error.
+
+        Default implementation returns ``None``; concrete adapters that
+        support general section reads should override this.
+        """
+        return None

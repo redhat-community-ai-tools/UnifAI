@@ -20,7 +20,7 @@ class FieldDefinition(BaseModel):
     """Single configurable field inside a section."""
     key: str
     label: str
-    field_type: Literal["string_list", "string", "boolean", "number"]
+    field_type: Literal["string_list", "string", "boolean", "number", "json"]
     description: str = ""
     default: Any = None
     placeholder: str = ""

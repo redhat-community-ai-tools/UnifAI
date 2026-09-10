@@ -118,6 +118,25 @@ class AdminConfigService:
 
         return True, section_def.on_update_action
 
+    # ──────────────────── seeding ─────────────────────────────────────────
+
+    def seed_defaults(self) -> None:
+        """Write template defaults to MongoDB for any section not yet saved.
+
+        Idempotent — existing sections are never overwritten.  Call once at
+        startup so consumers that read the ``admin_config`` collection directly
+        (e.g. the multi-agent) always find the data without needing a static
+        fallback dict.
+        """
+        for cat_def in self._template.categories:
+            for sec_def in cat_def.sections:
+                if self._repo.get(sec_def.key) is not None:
+                    continue  # already persisted — leave it alone
+                defaults = {f.key: f.default for f in sec_def.fields if f.default is not None}
+                if defaults:
+                    self._repo.set(AdminConfigEntry(key=sec_def.key, value=defaults))
+                    logger.info("Admin config section '%s' seeded with defaults", sec_def.key)
+
     # ──────────────────── access control ─────────────────────────────────
 
     def is_admin(self, username: str) -> bool:

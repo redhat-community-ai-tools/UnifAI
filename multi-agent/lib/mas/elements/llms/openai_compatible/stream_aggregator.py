@@ -1,15 +1,15 @@
 """
-Aggregator for OpenAI streaming tool call deltas.
+Aggregator for OpenAI Chat Completions streaming tool call deltas.
 
-The OpenAI streaming API sends tool call information as incremental
-fragments across multiple chunks.  This module reassembles them into
+The Chat Completions streaming API sends tool call information as incremental
+fragments across multiple chunks. This module reassembles them into
 complete ToolCall domain objects.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from ..common.chat.message import ToolCall
@@ -65,7 +65,4 @@ class StreamToolCallAggregator:
         """Return assembled ToolCall list, or *None* if nothing was collected."""
         if not self._fragments:
             return None
-        return [
-            frag.to_tool_call()
-            for frag in self._fragments.values()
-        ]
+        return [frag.to_tool_call() for frag in self._fragments.values()]

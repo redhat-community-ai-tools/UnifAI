@@ -1,14 +1,14 @@
 """
 Streamable HTTP transport manager for MCP connections.
 
-Uses ``mcp.client.streamable_http.streamablehttp_client`` to open a
+Uses ``mcp.client.streamable_http.streamable_http_client`` to open a
 bidirectional HTTP transport to the MCP server. Supports custom HTTP
 headers for authentication.
 """
 
 from typing import Any, Tuple
 
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 from .base_transport import BaseTransportManager
 from .enums import McpTransportType
@@ -31,7 +31,7 @@ class StreamableHttpTransportManager(BaseTransportManager):
         return "Streamable HTTP"
 
     def _create_transport_context(self) -> Any:
-        return streamablehttp_client(
+        return streamable_http_client(
             url=self.endpoint,
             headers=self.headers,
         )

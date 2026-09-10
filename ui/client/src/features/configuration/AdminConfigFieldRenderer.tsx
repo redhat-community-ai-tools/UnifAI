@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { type FieldValue } from "@/api/adminConfig";
 import StringListField from "./StringListField";
+import JsonField from "./JsonField";
 
 export default function AdminConfigFieldRenderer({
   field,
@@ -57,6 +58,14 @@ export default function AdminConfigFieldRenderer({
             {value ? "Enabled" : "Disabled"}
           </span>
         </div>
+      )}
+
+      {field.field_type === "json" && (
+        <JsonField
+          value={value}
+          onChange={onChange}
+          placeholder={field.placeholder}
+        />
       )}
     </div>
   );

@@ -48,6 +48,66 @@ ADMIN_CONFIG_TEMPLATE = AdminConfigTemplate(
                 ),
             ],
         ),
+        # ── OpenAI Models ───────────────────────────────────────────────────
+        CategoryDefinition(
+            key="openai_models",
+            title="OpenAI Models",
+            description=(
+                "Configure capabilities for OpenAI Responses API models "
+                "(GPT-5+, o-series). Adjust the reasoning-effort levels "
+                "available for each model without redeploying."
+            ),
+            sections=[
+                SectionDefinition(
+                    key="openai_model_capabilities",
+                    title="Model Capabilities",
+                    description=(
+                        "A JSON dictionary mapping model-name prefixes to their "
+                        "supported reasoning levels. "
+                        "Keys are matched by prefix — 'gpt-5' matches "
+                        "'gpt-5', 'gpt-5.6-sol', etc.  "
+                        "More specific prefixes take precedence.\n\n"
+                        "Structure:\n"
+                        '{"<model-prefix>": {'
+                        '"reasoning": ["none","low","medium","high","xhigh","max"]'
+                        "}}"
+                    ),
+                    on_update_action="reload_openai_model_capabilities",
+                    fields=[
+                        FieldDefinition(
+                            key="capabilities",
+                            label="Model Capabilities",
+                            field_type="json",
+                            description=(
+                                "Edit the full capabilities map. Changes take effect "
+                                "immediately for newly-created sessions."
+                            ),
+                            default={
+                                "gpt-5.6-sol": {
+                                    "reasoning": ["none", "low", "medium", "high", "xhigh", "max"],
+                                },
+                                "gpt-5.6-terra": {
+                                    "reasoning": ["none", "low", "medium", "high", "xhigh", "max"],
+                                },
+                                "gpt-5.6-luna": {
+                                    "reasoning": ["none", "low", "medium", "high", "xhigh", "max"],
+                                },
+                                "gpt-5.5": {
+                                    "reasoning": ["none", "low", "medium", "high", "xhigh"],
+                                },
+                                "gpt-5.2": {
+                                    "reasoning": ["none", "low", "medium", "high", "xhigh"],
+                                },
+                                "gpt-5": {
+                                    "reasoning": ["minimal", "low", "medium", "high"],
+                                },
+                               
+                            },
+                        ),
+                    ],
+                ),
+            ],
+        ),
         # ── Data Source Rules (disabled until backend is fully deployed) ──
         # CategoryDefinition(
         #     key="restricted_channels_rules",
