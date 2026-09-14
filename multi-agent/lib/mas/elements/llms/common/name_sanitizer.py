@@ -31,11 +31,23 @@ def map_name(name: str, name_map: Optional[Dict[str, str]] = None) -> str:
 def build_name_maps(
     names: Iterable[str],
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
-    """Build forward (domain → safe) and reverse (safe → domain) dicts."""
+    """Build forward (domain → safe) and reverse (safe → domain) dicts.
+
+    Raises ``ValueError`` if two distinct domain names sanitize to the same
+    safe name (e.g. ``time.get_info`` and ``time_get_info`` both become
+    ``time_get_info``).  Allowing a silent overwrite would misroute tool
+    results to the wrong handler.
+    """
     forward: Dict[str, str] = {}
     reverse: Dict[str, str] = {}
     for name in names:
         safe = sanitize_tool_name(name)
+        if safe in reverse and reverse[safe] != name:
+            raise ValueError(
+                f"Tool-name collision after sanitization: '{name}' and "
+                f"'{reverse[safe]}' both map to '{safe}'. "
+                "Rename one of the tools to avoid ambiguity."
+            )
         forward[name] = safe
         reverse[safe] = name
     return forward, reverse
