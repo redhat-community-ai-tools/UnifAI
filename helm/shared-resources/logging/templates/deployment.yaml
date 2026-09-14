@@ -33,7 +33,7 @@ spec:
               protocol: TCP
           envFrom:
             - secretRef:
-              name: {{ .Values.LoggingSecretName }}
+                name: {{ .Values.LoggingSecretName }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
