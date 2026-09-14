@@ -126,6 +126,38 @@ def _record_extras(record: logging.LogRecord) -> dict[str, Any]:
     return extras
 
 
+def _otel_enabled() -> bool:
+    return os.getenv("OTEL_LOGS_ENABLED", "").lower() in ("1", "true", "yes")
+
+
+def _attach_otel_handler(service_name: str, level: int, formatter: logging.Formatter) -> bool:
+    """Attach an OTLP handler to the root logger. OpenTelemetry imports stay lazy."""
+    try:
+        from opentelemetry._logs import set_logger_provider
+        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+        from opentelemetry.sdk.resources import Resource
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "OTEL_LOGS_ENABLED is set but opentelemetry packages are not installed"
+        )
+        return False
+
+    logger_provider = LoggerProvider(
+        resource=Resource.create({"service.name": service_name}),
+    )
+    logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter(insecure=True))
+    )
+    set_logger_provider(logger_provider)
+
+    handler = LoggingHandler(level=level, logger_provider=logger_provider)
+    handler.setFormatter(formatter)
+    logging.getLogger().addHandler(handler)
+    return True
+
+
 class JSONFormatter(logging.Formatter):
     """Emit one JSON object per line for logger-compatible ingest."""
 
@@ -266,6 +298,8 @@ def configure_logging(
                      (same var Helm/services.yaml already set for every service)
       LOG_DIR        default "/var/log/unifai"
       POD_NAME, APP_VERSION  → pod / deployment fields
+      OTEL_LOGS_ENABLED      if true/1/yes, attach OTLP handler (endpoint from
+                             OTEL_EXPORTER_OTLP_ENDPOINT)
 
     Handlers:
       - always: StreamHandler(sys.stdout)
@@ -274,6 +308,7 @@ def configure_logging(
         — checked with a few short retries to tolerate network mounts, e.g.
         EFS access points, that aren't write-authorized the instant this
         runs; see _is_dir_writable_with_retry)
+      - OTLP LoggingHandler when OTEL_LOGS_ENABLED, same formatter as stdout
     """
     global _CONFIGURED
     if _CONFIGURED:
@@ -327,6 +362,10 @@ def configure_logging(
             # Mount missing or not writable — stdout-only is fine (local / OO ingest).
             pass
 
+    otel_attached = False
+    if _otel_enabled():
+        otel_attached = _attach_otel_handler(service_name, level, formatter)
+
     _CONFIGURED = True
     logging.getLogger(__name__).info(
         "logging.configured",
@@ -335,6 +374,7 @@ def configure_logging(
             "log_level": resolved_level,
             "log_environment": resolved_env,
             "file_logging": bool(should_file),
+            "otel_logs": otel_attached,
         },
     )
 
