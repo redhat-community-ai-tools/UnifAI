@@ -19,6 +19,8 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default "latest" }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["--config=/etc/otelcol-contrib/config.yaml"]
+          stdin: true
+          tty: true
           ports:
             - name: grpc
               containerPort: {{ .Values.service.port_grpc }}
@@ -29,6 +31,9 @@ spec:
             - name: ui
               containerPort: {{ .Values.service.port_ui }}
               protocol: TCP
+          envFrom:
+            - secretRef:
+              name: {{ .Values.LoggingSecretName }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
