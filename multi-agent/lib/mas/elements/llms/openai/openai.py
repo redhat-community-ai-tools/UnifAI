@@ -17,6 +17,7 @@ from openai import OpenAI
 from ..common.base_llm import BaseLLM
 from ..common.chat.message import ChatMessage, Role
 from ..common.name_sanitizer import build_name_maps, map_name
+from ..common.tool_name_restorer import restore_tool_names
 from ...tools.common.tool_definition import ToolDefinition
 from .responses_adapter import ResponsesAdapter
 from .responses_stream_aggregator import ResponsesStreamAggregator
@@ -83,7 +84,7 @@ class OpenAILLM(BaseLLM):
                 )
                 raise
             result_msg = ResponsesAdapter.from_response(response)
-            result_msg = self._restore_tool_names(result_msg)
+            result_msg = restore_tool_names(self._rev_names, result_msg)
             usage = {}
             if response.usage:
                 usage = {
@@ -136,7 +137,7 @@ class OpenAILLM(BaseLLM):
                 content=aggregator.accumulated_content,
                 tool_calls=aggregator.build(),
             )
-            yield self._restore_tool_names(result)
+            yield restore_tool_names(self._rev_names, result)
 
     def bind_tools(self, tools: List[ToolDefinition]) -> OpenAILLM:
         clone = copy.copy(self)
@@ -192,12 +193,3 @@ class OpenAILLM(BaseLLM):
         for tool in tools:
             tool["name"] = map_name(tool["name"], fwd_names)
 
-    def _restore_tool_names(self, msg: ChatMessage) -> ChatMessage:
-        """Map provider-safe names back to domain names on an inbound message."""
-        if not msg.tool_calls:
-            return msg
-        restored = [
-            tc.model_copy(update={"name": map_name(tc.name, self._rev_names)})
-            for tc in msg.tool_calls
-        ]
-        return msg.model_copy(update={"tool_calls": restored})
