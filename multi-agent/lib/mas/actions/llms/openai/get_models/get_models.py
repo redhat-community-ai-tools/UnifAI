@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional
 from mas.actions.common.action_models import ActionType, BaseActionInput, BaseActionOutput
 from mas.actions.common.base_action import BaseAction
 from mas.core.enums import ResourceCategory
-from mas.elements.llms.openai.model_capabilities import get_capabilities_map
+from mas.core.identity.ports import AdminConfigReaderPort
+from mas.actions.llms.openai.capabilities import load_capabilities
 from mas.elements.llms.openai.identifiers import Identifier
 
 
@@ -42,13 +43,16 @@ class GetOpenAIModelsAction(BaseAction):
     tags = {"openai", "llm", "discovery", "models"}
     elements = {(ResourceCategory.LLM.value, Identifier.TYPE)}
 
+    def __init__(self, admin_config_reader: AdminConfigReaderPort) -> None:
+        self._reader = admin_config_reader
+
     def execute(
         self,
         input_data: GetOpenAIModelsInput,
         context: Optional[Dict[str, Any]] = None,
     ) -> GetOpenAIModelsOutput:
         try:
-            caps = get_capabilities_map()
+            caps = load_capabilities(self._reader)
             models = sorted(caps.keys())
             return GetOpenAIModelsOutput(
                 success=True,

@@ -18,10 +18,8 @@ from pydantic import Field
 from mas.actions.common.action_models import ActionType, BaseActionInput, BaseActionOutput
 from mas.actions.common.base_action import BaseAction
 from mas.core.enums import ResourceCategory
-from mas.elements.llms.openai.model_capabilities import (
-    get_capabilities_map,
-    get_model_capabilities,
-)
+from mas.core.identity.ports import AdminConfigReaderPort
+from mas.actions.llms.openai.capabilities import load_capabilities, find_model_capabilities
 from mas.elements.llms.openai.identifiers import Identifier
 
 
@@ -53,6 +51,9 @@ class GetOpenAIReasoningLevelsAction(BaseAction):
     tags = {"openai", "llm", "discovery", "reasoning"}
     elements = {(ResourceCategory.LLM.value, Identifier.TYPE)}
 
+    def __init__(self, admin_config_reader: AdminConfigReaderPort) -> None:
+        self._reader = admin_config_reader
+
     def execute(
         self,
         input_data: GetOpenAIReasoningLevelsInput,
@@ -61,8 +62,8 @@ class GetOpenAIReasoningLevelsAction(BaseAction):
         try:
             model_name = input_data.model_name.strip()
             # Fetch once so the cap lookup shares the cached map.
-            caps = get_capabilities_map()
-            cap = get_model_capabilities(model_name, capabilities=caps)
+            caps = load_capabilities(self._reader)
+            cap = find_model_capabilities(caps, model_name)
 
             if cap is None:
                 return GetOpenAIReasoningLevelsOutput(
