@@ -83,10 +83,11 @@ class ResponsesStreamAggregator:
             frag.arguments += event.delta
 
         elif t == "response.function_call_arguments.done":
+            # In openai SDK v3+, this event carries only item_id, arguments,
+            # output_index — name and call_id come from response.output_item.done.
             frag = self._fragments.setdefault(
                 event.item_id, _FunctionCallFragment(item_id=event.item_id),
             )
-            frag.name = event.name
             frag.arguments = event.arguments
 
         elif t == "response.output_item.done":
