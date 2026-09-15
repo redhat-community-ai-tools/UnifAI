@@ -22,6 +22,8 @@ data:
         endpoint: ${env:SUMOLOGIC_ENDPOINT}  
       otlphttp:
         endpoint: "https://otel-input.corp.redhat.com:4318"
+        tls:
+          insecure_skip_verify: true
         headers:
           Authorization: "Bearer ${env:OTEL_AUTH_TOKEN}"
     extensions:
