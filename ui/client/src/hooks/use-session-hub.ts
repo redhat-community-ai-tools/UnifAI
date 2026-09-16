@@ -553,13 +553,13 @@ export function useSessionHub({
             const chatData = await fetchSessionChatById(activeRunIdRef.current!);
             const deepLinked: ChatSession = {
               id: activeRunIdRef.current!,
-              blueprintId: "",
+              blueprintId: chatData?.blueprint_id ?? "",
               title: "Deep-linked session",
               lastActive: "",
               timestamp: new Date(),
               preview: "",
               messages: chatData?.messages ?? [],
-              blueprintExists: false,
+              blueprintExists: chatData?.blueprint_exists ?? true,
               status: chatData?.status,
               statusMessage: chatData?.status_message,
             };

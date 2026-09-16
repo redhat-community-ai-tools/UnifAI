@@ -66,7 +66,7 @@ def migrate(*, dry_run: bool) -> int:
     client = MongoClient(f"mongodb://{MONGODB_IP}:{MONGODB_PORT}/")
     coll = client[MONGO_DB][COLL_NAME]
 
-    docs = list(coll.find({"category": "llm", "type": "openai"}, {"_id": 1, "name": 1, "cfg_dict": 1}))
+    docs = list(coll.find({"category": "llms", "type": "openai"}, {"_id": 1, "name": 1, "cfg_dict": 1}))
     print(f"Found {len(docs)} LLM resource(s) with type='openai'\n")
 
     if not docs:

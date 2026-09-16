@@ -104,6 +104,8 @@ class SessionChat(BaseModel):
     output: str = ""
     status: Optional[str] = None
     status_message: Optional[str] = None
+    blueprint_id: Optional[str] = None
+    blueprint_exists: bool = True
 
 
 class ScheduleRunSummary(BaseModel):

@@ -119,8 +119,16 @@ class UserSessionManager:
         self._repo.save(record)
 
     def get_chat(self, run_id: str) -> SessionChat:
-        """Projected fetch — only messages and output from graph state."""
-        return self._repo.fetch_chat(run_id)
+        """Projected fetch — only messages and output from graph state.
+
+        Also returns ``blueprint_id`` and ``blueprint_exists`` so the frontend
+        can correctly determine whether the associated workflow still exists
+        without a separate round-trip.
+        """
+        chat = self._repo.fetch_chat(run_id)
+        if chat.blueprint_id:
+            chat.blueprint_exists = self.blueprint_exists(chat.blueprint_id)
+        return chat
 
     def get_session(self, run_id: str) -> WorkflowSession:
         """Full build — compiles runtime plan + executable graph from the record."""

@@ -125,6 +125,8 @@ export interface SessionChatData {
   messages: any[];
   status?: string;
   status_message?: string;
+  blueprint_id?: string;
+  blueprint_exists?: boolean;
 }
 
 /**

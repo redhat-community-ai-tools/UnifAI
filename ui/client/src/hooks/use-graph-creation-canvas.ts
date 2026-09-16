@@ -121,10 +121,12 @@ function extractResolvedElements(
         const guessedType = block?.workspaceData?.category
           ? TYPE_MAP[block.workspaceData.category]
           : undefined;
+        const blockConfig = block?.workspaceData?.config;
         elements.push({
           id: refId,
           name: block?.label ?? block?.workspaceData?.name ?? refId,
           type: matchedType || guessedType || "tool",
+          config: blockConfig && typeof blockConfig === "object" ? blockConfig as Record<string, unknown> : undefined,
         });
       }
       return;
