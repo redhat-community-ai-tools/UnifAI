@@ -6,7 +6,9 @@ from core.vector.domain.repository import VectorRepository
 from core.vector.domain.embedder import EmbeddingGenerator
 from core.vector.domain.model import SearchResult
 from infrastructure.retrieval.source_filter_resolver import SourceFilterResolver
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

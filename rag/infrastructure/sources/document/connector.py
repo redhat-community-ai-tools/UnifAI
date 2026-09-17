@@ -18,7 +18,7 @@ from core.data_sources.types.document.domain.document_converter import (
 from core.data_sources.types.document.domain.processed_document import ProcessedDocument
 from infrastructure.sources.document.config import DocConfigManager
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag_pipeline")
 
 
 class DocumentConnector(DataConnector, HealthCheckable):

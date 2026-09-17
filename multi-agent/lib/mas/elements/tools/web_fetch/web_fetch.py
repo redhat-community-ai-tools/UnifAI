@@ -1,11 +1,12 @@
 import asyncio
+import logging
 from typing import Any, Dict
-
 import safehttpx
 from html_to_markdown import convert
-
 from mas.elements.tools.common.base_tool import BaseTool
 from .models import WebFetchArgs, WebFetchResponse
+
+logger = logging.getLogger(__name__)
 
 
 class WebFetchTool(BaseTool):
@@ -24,7 +25,7 @@ class WebFetchTool(BaseTool):
         try:
             response = await safehttpx.get(url, _transport=False)
         except Exception as exc:
-            print(exc)
+            logger.error("tool.failed", extra={"tool_name": self.name, "url": url, "error": str(exc)})
             return WebFetchResponse(success=False, url=url, error=str(exc)).model_dump()
 
         result = convert(response.text)

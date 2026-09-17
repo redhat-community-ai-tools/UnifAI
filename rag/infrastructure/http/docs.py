@@ -12,7 +12,9 @@ from bootstrap.app_container import (
 from global_utils.helpers.apiargs import from_query, from_body
 from infrastructure.http.auth import rag_require_session
 from infrastructure.sources.document.config import DocConfigManager
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 docs_bp = Blueprint("docs", __name__)
 

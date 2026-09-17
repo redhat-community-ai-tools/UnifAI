@@ -7,6 +7,7 @@ Nginx proxy; Slack sends payloads over the pre-authenticated socket.
 Reuses the same SlackCommandsService and command handlers as the
 Flask adapter — only the transport layer changes.
 """
+import logging
 import os
 import sys
 
@@ -15,8 +16,9 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 
 from config.app_config import AppConfig
 from core.app_container import AppContainer
-from shared.logger import logger
 from slack_commands.models import SlackCommand, SlackResponse
+
+logger = logging.getLogger(__name__)
 
 
 def _build_container():
@@ -25,6 +27,9 @@ def _build_container():
 
 
 def main():
+    from global_utils.utils.logging_config import configure_logging
+
+    configure_logging("backend")
     cfg = AppConfig.get_instance()
 
     bot_token = cfg.slack_bot_token or os.environ.get("SLACK_BOT_TOKEN", "")

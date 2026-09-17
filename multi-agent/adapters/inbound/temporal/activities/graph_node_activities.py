@@ -23,6 +23,7 @@ from mas.core.hitl.ports import ApprovalGateFactory
 from mas.core.runtime_binder import NodeRuntimeBindings
 from mas.engine.distributed.node_executor import NodeExecutor
 from mas.graph.state.graph_state import GraphState
+from global_utils.utils.logging_config import bind_correlation_ids
 from inbound.temporal.activities.heartbeat import heartbeat
 from temporal.models import ExecuteNodeParams, EvaluateConditionParams
 
@@ -50,6 +51,7 @@ class GraphNodeActivities:
     @activity.defn(name="execute_graph_node")
     @heartbeat(interval=3)
     def execute_node(self, params: ExecuteNodeParams) -> GraphState:
+        bind_correlation_ids(params.request_id, params.session_id)
         bindings = self._build_bindings(params.session_id)
         try:
             return self._executor.execute_node(
@@ -66,6 +68,7 @@ class GraphNodeActivities:
 
     @activity.defn(name="evaluate_condition")
     def evaluate_condition(self, params: EvaluateConditionParams) -> str:
+        bind_correlation_ids(params.request_id)
         return self._executor.evaluate_condition(
             condition_rid=params.condition_rid,
             condition_blueprint=params.condition_blueprint,

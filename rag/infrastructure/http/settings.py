@@ -3,7 +3,9 @@ from flask import Blueprint, jsonify
 
 from bootstrap.app_container import umami_client
 from config.app_config import AppConfig
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 settings_bp = Blueprint("settings", __name__)
 

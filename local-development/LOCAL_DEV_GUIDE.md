@@ -512,10 +512,10 @@ unifai-dev env show identity        # inspect a service's env config
 
 | File                                | Contents                                                                             |
 | ----------------------------------- | ------------------------------------------------------------------------------------ |
-| `backend/.env`                      | `hostname_local=127.0.0.1`, `secret_key` (auto-generated)                            |
-| `rag/.env`                          | `hostname_local=127.0.0.1`, `port=13457`, `secret_key` (auto-generated)              |
-| `multi-agent/.env`                  | `secret_key` (auto-generated)                                                        |
-| `shared-resources/identity/.env`    | `keycloak_base_url`, `keycloak_realm`, `client_id`, `client_secret` (placeholders), `hostname_local`, `port`, `frontend_url`, `backend_env`, `secret_key` (auto-generated) |
+| `backend/.env`                      | `hostname_local=127.0.0.1`, `BACKEND_ENV=development`, `secret_key` (auto-generated)  |
+| `rag/.env`                          | `hostname_local=127.0.0.1`, `port=13457`, `BACKEND_ENV=development`, `secret_key` (auto-generated) |
+| `multi-agent/.env`                  | `BACKEND_ENV=development`, `secret_key` (auto-generated)                             |
+| `shared-resources/identity/.env`    | `keycloak_base_url`, `keycloak_realm`, `client_id`, `client_secret` (placeholders), `hostname_local`, `port`, `frontend_url`, `BACKEND_ENV`, `secret_key` (auto-generated) |
 | `ui/.env.local`                     | `DEV_PORT=5000`, `DEV_HOST=0.0.0.0`, proxy targets for all backends                  |
 
 > [!NOTE]

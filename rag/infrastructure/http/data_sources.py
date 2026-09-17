@@ -5,7 +5,9 @@ from webargs import fields
 from bootstrap.app_container import data_source_service
 from global_utils.helpers.apiargs import from_query, from_body
 from infrastructure.http.auth import rag_require_session
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 data_sources_bp = Blueprint("data_sources", __name__)
 

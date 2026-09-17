@@ -9,7 +9,9 @@ from core.data_sources.domain.view import DataSourceView
 from core.pagination.domain.model import PaginatedResult
 from core.pipeline.domain.repository import PipelineRepository
 from core.vector.domain.repository import VectorRepository
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

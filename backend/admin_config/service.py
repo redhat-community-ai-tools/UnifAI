@@ -6,6 +6,7 @@ Responsibilities:
   - PUT: validate and persist a section's values, then dispatch the
          on_update_action to downstream services via ActionDispatcher.
 """
+import logging
 from typing import Any, Dict, Optional, Tuple
 
 from admin_config.models import (
@@ -18,7 +19,8 @@ from admin_config.models import (
 )
 from admin_config.repository.repository import AdminConfigRepository
 from admin_config.action_dispatcher import ActionDispatcher
-from shared.logger import logger
+
+logger = logging.getLogger(__name__)
 
 
 class AdminConfigService:

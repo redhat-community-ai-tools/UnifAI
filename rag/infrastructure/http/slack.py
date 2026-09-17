@@ -11,7 +11,9 @@ from bootstrap.app_container import (
 )
 from global_utils.helpers.apiargs import from_query
 from infrastructure.http.auth import rag_require_session
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 slack_bp = Blueprint("slack", __name__)
 

@@ -17,6 +17,7 @@ from config.app_config import AppConfig
 from temporal.client import get_temporal_client
 from temporal.models import SessionWorkflowParams, GraphExecutionParams
 from outbound.temporal.executor import TemporalGraphExecutor
+from global_utils.utils.logging_config import get_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +80,13 @@ class TemporalSessionEngine(BackgroundSessionEngine):
             graph_definition=executor.graph_definition,
             session_id=session.get_run_id(),
             execution_context=request.execution_context,
+            request_id=get_request_id(),
         )
         params = SessionWorkflowParams(
             run_id=session.get_run_id(),
             execution_context=request.execution_context,
             graph_execution_params=graph_params,
+            request_id=graph_params.request_id,
         )
         await client.start_workflow(
             _WORKFLOW_NAME,

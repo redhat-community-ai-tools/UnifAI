@@ -3,7 +3,9 @@ from typing import Dict, Any
 
 import umami
 
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class UmamiClient:

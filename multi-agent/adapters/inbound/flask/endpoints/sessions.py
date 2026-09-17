@@ -13,7 +13,7 @@ from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.session.domain.models import SessionMeta
 from mas.session.domain.dto import SessionListFilter, PaginationMeta, PaginatedSessions
-from inbound.flask.decorators import with_require_identity_authorization, with_authenticated_user, require_session_identity
+from inbound.flask.decorators import bind_session_id_arg, with_require_identity_authorization, with_authenticated_user, require_session_identity
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,7 @@ def create_user_session(identity, blueprint_id, metadata, hitl_enabled):
     "scope": fields.Str(data_key="scope", load_default="public"),
     "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
 })
+@bind_session_id_arg
 def execute_user_session(identity, session_id, inputs, stream_mode, stream, scope, session_type):
     """
     Execute (or stream) an existing session.
@@ -160,6 +161,7 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
     "scope": fields.Str(data_key="scope", load_default="public"),
     "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
 })
+@bind_session_id_arg
 def submit_user_session(identity, session_id, inputs, scope, session_type):
     """
     Fire-and-forget execute for Temporal-backed sessions.
@@ -197,6 +199,7 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def cancel_session(session_id):
     try:
         svc = current_app.container.session_service
@@ -215,6 +218,7 @@ def cancel_session(session_id):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def get_session_state(session_id):
     try:
         svc = current_app.container.session_service
@@ -228,6 +232,7 @@ def get_session_state(session_id):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def get_session_chat(session_id):
     try:
         svc = current_app.container.session_service
@@ -241,6 +246,7 @@ def get_session_chat(session_id):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def get_session_status(session_id):
     try:
         svc = current_app.container.session_service
@@ -352,6 +358,7 @@ def get_user_blueprints(identity):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def delete_session(session_id):
     """
     Delete a session by session_id.
@@ -372,6 +379,7 @@ def delete_session(session_id):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def get_stream_status(session_id):
     """Return metadata about a session's event stream."""
     monitor = current_app.container.channel_factory.create_monitor()
@@ -408,6 +416,7 @@ def list_active_streams():
     "feedback": fields.Str(data_key="feedback", load_default=""),
     "modified_args": fields.Dict(data_key="modifiedArgs", load_default=lambda: {}),
 })
+@bind_session_id_arg
 def submit_approval(identity, session_id, request_id, decision, feedback, modified_args):
     """Submit a human decision for a pending HITL approval request.
 
@@ -450,6 +459,7 @@ def submit_approval(identity, session_id, request_id, decision, feedback, modifi
     "tool_name": fields.Str(data_key="toolName", load_default=None, allow_none=True),
     "action": fields.Str(data_key="action", required=True),
 })
+@bind_session_id_arg
 def add_approval_rule(identity, session_id, node_uid, tool_name, action):
     """Add or clear an auto-approval rule for this session.
 
@@ -505,6 +515,7 @@ def add_approval_rule(identity, session_id, node_uid, tool_name, action):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def get_approval_rules(identity, session_id):
     """Return the current auto-approval rules for this session."""
     svc = current_app.container.session_service
@@ -592,6 +603,7 @@ def _remove_tool_from_overrides(overrides, node_uid, tool_name):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def subscribe_session(session_id):
     """
     Stream session events as NDJSON.
@@ -626,6 +638,7 @@ def subscribe_session(session_id):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def get_session_meta(authenticated_user, session_id):
     """Return the full metadata object for a session.
 

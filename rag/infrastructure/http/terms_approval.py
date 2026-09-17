@@ -4,7 +4,9 @@ from flask.wrappers import Response
 
 from bootstrap.app_container import terms_approval_service
 from infrastructure.http.auth import rag_require_session
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 terms_approval_bp = Blueprint("terms_approval", __name__)
 

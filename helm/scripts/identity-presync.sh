@@ -14,7 +14,9 @@ create_or_update_resource configmap identity-config \
   --from-literal=keycloak_realm="$keycloak_realm" \
   --from-literal=directory_provider="$directory_provider" \
   --from-literal=directory_url="$directory_url" \
-  --from-literal=directory_verify_ssl="$directory_verify_ssl"
+  --from-literal=directory_verify_ssl="$directory_verify_ssl" \
+  --from-literal=directory_ldap_bind_dn="$directory_ldap_bind_dn"
 
 create_or_update_resource "secret generic" identity-secret \
-  --from-literal=client_secret="$client_secret"
+  --from-literal=client_secret="$client_secret" \
+  --from-literal=directory_ldap_bind_password="$directory_ldap_bind_password"

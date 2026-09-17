@@ -83,14 +83,23 @@ class IdentityClient:
 
     # ── Teams API ─────────────────────────────────────────────────────
 
+    def _directory_headers(self, token: Optional[str] = None) -> dict:
+        from global_utils.flask.correlation import correlation_headers
+        h: dict = {**correlation_headers()}
+        if token:
+            h["X-User-Token"] = token
+        return h
+
     def list_teams_for_user(self, username: str) -> list[dict]:
         """Return the raw ``teams`` array from Identity ``teams.list``.
 
         Raises on non-2xx responses.
         """
+        from global_utils.flask.correlation import correlation_headers
         resp = http_requests.get(
             f"{self._base}/api/teams/teams.list",
             params={"userId": username},
+            headers=correlation_headers(),
             timeout=self._timeout,
         )
         resp.raise_for_status()
@@ -186,12 +195,6 @@ class IdentityClient:
         return team_id
 
     # ── Directory API ─────────────────────────────────────────────────
-
-    def _directory_headers(self, token: Optional[str] = None) -> dict:
-        h: dict = {}
-        if token:
-            h["X-User-Token"] = token
-        return h
 
     def search_directory(
         self,

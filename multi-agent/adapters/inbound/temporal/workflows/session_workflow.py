@@ -74,6 +74,7 @@ class SessionWorkflow:
             BeginSessionParams(
                 run_id=self._params.run_id,
                 execution_context=self._params.execution_context,
+                request_id=self._params.request_id,
             ),
             start_to_close_timeout=_LIFECYCLE_TIMEOUT,
             retry_policy=_LIFECYCLE_RETRY,
@@ -92,6 +93,7 @@ class SessionWorkflow:
             graph_definition=self._params.graph_execution_params.graph_definition,
             session_id=self._params.run_id,
             execution_context=self._params.execution_context,
+            request_id=self._params.request_id,
         )
         try:
             return await workflow.execute_child_workflow(
@@ -113,6 +115,7 @@ class SessionWorkflow:
             CompleteSessionParams(
                 run_id=self._params.run_id,
                 final_state=final_state,
+                request_id=self._params.request_id,
             ),
             start_to_close_timeout=_LIFECYCLE_TIMEOUT,
             retry_policy=_LIFECYCLE_RETRY,
@@ -125,6 +128,7 @@ class SessionWorkflow:
             FailSessionParams(
                 run_id=self._params.run_id,
                 error_message=str(error),
+                request_id=self._params.request_id,
             ),
             start_to_close_timeout=_LIFECYCLE_TIMEOUT,
             retry_policy=_LIFECYCLE_RETRY,
@@ -134,7 +138,10 @@ class SessionWorkflow:
         """Mark CANCELLED, close channels, persist."""
         await workflow.execute_activity(
             "cancel_session",
-            CancelSessionParams(run_id=self._params.run_id),
+            CancelSessionParams(
+                run_id=self._params.run_id,
+                request_id=self._params.request_id,
+            ),
             start_to_close_timeout=_LIFECYCLE_TIMEOUT,
             retry_policy=_LIFECYCLE_RETRY,
         )

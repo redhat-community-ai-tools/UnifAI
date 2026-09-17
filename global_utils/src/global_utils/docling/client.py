@@ -20,6 +20,7 @@ from global_utils.docling.exceptions import (
     DoclingConnectionError,
     DoclingTimeoutError,
 )
+from global_utils.flask.correlation import correlation_headers
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,9 @@ class DoclingClient:
             DoclingTimeoutError: On request timeout
         """
         try:
-            response = self._client.request(method, url, **kwargs)
+            headers = kwargs.pop("headers", None) or {}
+            headers = {**correlation_headers(), **headers}
+            response = self._client.request(method, url, headers=headers, **kwargs)
             response.raise_for_status()
             return response.json()
         except httpx.ConnectError as e:

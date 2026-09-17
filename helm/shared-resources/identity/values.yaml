@@ -124,7 +124,7 @@ affinity: {}
 # Identity specific configuration - this is what your templates are looking for
 
 # LDAP directory search requires these on the Identity pod (process env wins over local .env).
-# Optional bind account: set DIRECTORY_LDAP_BIND_DN / DIRECTORY_LDAP_BIND_PASSWORD (or a secret mount).
+# Bind DN is in identity-config; bind password in identity-secret (Vault → Jenkins presync).
 backend:
   image:
     repository: images.paas.redhat.com/unifai/identity
@@ -139,8 +139,6 @@ backend:
     SESSION_COOKIE_SAMESITE: "None"
     SESSION_COOKIE_SECURE: true
     SESSION_COOKIE_HTTPONLY: true
-    # DIRECTORY_LDAP_BIND_DN: ""
-    # DIRECTORY_LDAP_BIND_PASSWORD: ""
 
 # TODO : follow up story for sso-nginx GENIE-812
 # nginx:
