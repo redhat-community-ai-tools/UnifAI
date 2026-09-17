@@ -111,16 +111,17 @@ def migrate(*, dry_run: bool) -> int:
     now = datetime.now(timezone.utc)
 
     # 1. Migrate Chat Completions resources → openai_compatible
+    # NOTE: temperature is a valid field for openai_compatible (Chat Completions),
+    # so we preserve it — only the type field changes.
     if to_compatible:
         ids = [doc["_id"] for doc, _ in to_compatible]
         coll.update_many(
             {"_id": {"$in": ids}},
             {
                 "$set": {"type": "openai_compatible", "updated": now},
-                "$unset": {"cfg_dict.temperature": ""},
             },
         )
-        print(f"\nMigrated {len(ids)} resource(s) to 'openai_compatible' (temperature removed).")
+        print(f"\nMigrated {len(ids)} resource(s) to 'openai_compatible' (temperature preserved).")
 
     # 2. Keep Responses-API resources as openai — only remove temperature
     if keep_openai:
