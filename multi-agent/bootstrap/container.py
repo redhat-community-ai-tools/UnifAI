@@ -65,6 +65,8 @@ from mas.actions.providers.a2a.validate_connection.validate_connection import (
     ValidateConnectionAction as A2AValidateConnectionAction,
 )
 from mas.actions.providers.mcp.get_tools_names.get_tools_names import GetToolsNamesAction
+from mas.actions.llms.openai.get_models.get_models import GetOpenAIModelsAction
+from mas.actions.llms.openai.get_reasoning_levels.get_reasoning_levels import GetOpenAIReasoningLevelsAction
 
 from config.app_config import AppConfig
 from mas.core.platform_config import PlatformConfig
@@ -310,6 +312,12 @@ class AppContainer(metaclass=SingletonMeta):
         ))
         self.actions_service.register_instance(GetToolsNamesAction(
             auth_service=self.auth_service,
+        ))
+        self.actions_service.register_instance(GetOpenAIModelsAction(
+            admin_config_reader=self.admin_config_reader,
+        ))
+        self.actions_service.register_instance(GetOpenAIReasoningLevelsAction(
+            admin_config_reader=self.admin_config_reader,
         ))
 
         # ── Tracing (observability) ───────────────────────────────────

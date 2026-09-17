@@ -58,6 +58,9 @@ class AppContainer(metaclass=SingletonMeta):
             template=ADMIN_CONFIG_TEMPLATE,
             action_dispatcher=self.action_dispatcher,
         )
+        # Ensure every section has its defaults persisted so other services
+        # (e.g. the multi-agent) can read from MongoDB without a static fallback.
+        self.admin_config_service.seed_defaults()
 
         # ── Identity ─────────────────────────────────────────────────
         self.redis_kv_store = RedisKVStore(build_redis_client())

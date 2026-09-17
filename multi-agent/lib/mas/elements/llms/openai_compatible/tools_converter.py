@@ -1,9 +1,8 @@
 """
-Converter from ``ToolDefinition`` to OpenAI-native tool definitions.
+Converter from ``ToolDefinition`` to OpenAI Chat Completions tool definitions.
 
 Uses the SDK's own ``ChatCompletionToolParam`` and ``FunctionDefinition``
-TypedDicts so the output is type-checked against the API spec — misspelled
-keys or wrong value types are caught by the type checker, not at runtime.
+TypedDicts so the output is type-checked against the API spec.
 """
 
 from __future__ import annotations

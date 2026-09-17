@@ -123,13 +123,14 @@ class MongoSessionRepository(SessionRepository):
         doc = self._col.find_one(
             {self._RUN_ID_FIELD: run_id},
             {"_id": 0, "graph_state.messages": 1, "graph_state.output": 1,
-             "status": 1, "metadata.status_message": 1},
+             "status": 1, "metadata.status_message": 1, self._BLUEPRINT_FIELD: 1},
         )
         if not doc:
             raise KeyError(f"No session for {run_id}")
         gs = doc.get("graph_state", {})
         gs["status"] = doc.get("status")
         gs["status_message"] = doc.get("metadata", {}).get("status_message")
+        gs["blueprint_id"] = doc.get(self._BLUEPRINT_FIELD)
         return SessionChat.model_validate(gs)
 
     def list_runs(self, identity: Identity) -> List[str]:

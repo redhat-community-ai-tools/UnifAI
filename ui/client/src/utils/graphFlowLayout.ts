@@ -14,6 +14,8 @@ export interface ResolvedElement {
   type: "llm" | "tool" | "retriever" | "provider" | "sandbox";
   name: string;
   id: string;
+  /** Element config (cfg_dict) — currently populated for LLMs to surface extra display info. */
+  config?: Record<string, unknown>;
 }
 
 export interface LayoutNode {
@@ -114,14 +116,15 @@ function extractAllRefs(config: Record<string, unknown>): string[] {
  */
 function buildDefinitionLookup(
   graphFlow: GraphFlow,
-): Map<string, { type: ResolvedElement["type"]; name: string }> {
-  const lookup = new Map<string, { type: ResolvedElement["type"]; name: string }>();
+): Map<string, { type: ResolvedElement["type"]; name: string; config?: Record<string, unknown> }> {
+  const lookup = new Map<string, { type: ResolvedElement["type"]; name: string; config?: Record<string, unknown> }>();
   const register = (list: unknown[] | undefined, type: ResolvedElement["type"]) => {
     (list || []).forEach((d: any) => {
       if (!d || typeof d !== "object" || !d.rid) return;
       const id = extractUidFromRef(d.rid);
-      lookup.set(id, { type, name: d.name || id });
-      if (id !== d.rid) lookup.set(d.rid, { type, name: d.name || id });
+      const cfg = d.config && typeof d.config === "object" ? d.config as Record<string, unknown> : undefined;
+      lookup.set(id, { type, name: d.name || id, config: cfg });
+      if (id !== d.rid) lookup.set(d.rid, { type, name: d.name || id, config: cfg });
     });
   };
   register(graphFlow.llms as unknown[] | undefined, "llm");
@@ -152,6 +155,7 @@ function getResolvedElements(
       type: match?.type ?? "tool",
       name: match?.name ?? id,
       id,
+      config: match?.config,
     };
   });
 }

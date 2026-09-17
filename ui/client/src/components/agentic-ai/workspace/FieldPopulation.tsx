@@ -177,13 +177,19 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
     });
   };
 
-  // Initialize selectedValues from formData when editing existing element
+  // Sync selectedValues from formData — handles both initial population (edit mode)
+  // and external clears (e.g. PropagateHint resetting a dependent field).
   useEffect(() => {
     const currentValue = formData[fieldName];
     if (Array.isArray(currentValue) && currentValue.length > 0) {
       const values = currentValue.map(extractValue);
       if (JSON.stringify(values) !== JSON.stringify(selectedValues)) {
         setSelectedValues(values);
+      }
+    } else if (currentValue === "" || currentValue === null || currentValue === undefined) {
+      // Field was cleared externally (e.g. via PropagateHint) — reset display too
+      if (selectedValues.length > 0) {
+        setSelectedValues([]);
       }
     }
   }, [formData[fieldName]]);

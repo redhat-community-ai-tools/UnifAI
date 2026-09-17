@@ -1,5 +1,5 @@
 """
-Validator for the OpenAI Responses API LLM — checks API connectivity and model availability.
+Validator for OpenAI-compatible LLM — checks API connectivity and model availability.
 """
 
 from typing import List
@@ -24,22 +24,39 @@ from mas.elements.common.validator import (
     ValidationMessage,
     ValidationCode,
 )
-from mas.elements.llms.openai.config import OpenAIConfig
+from mas.elements.llms.openai_compatible.config import OpenAICompatibleConfig
 
 
-class OpenAILLMValidator(BaseElementValidator):
+class OpenAICompatibleLLMValidator(BaseElementValidator):
     """
-    Validates OpenAI LLM configuration for the Responses API.
+    Validates OpenAI-compatible LLM configuration.
 
     Checks:
     - API endpoint reachability
-    - API key validity
+    - API key validity (where applicable)
     - Model availability
     """
 
+    def _validate_via_completion(
+        self,
+        client: OpenAI,
+        model_name: str,
+    ) -> None:
+        """
+        Validate model by making a minimal completion request.
+
+        Used for OpenAI-compatible APIs that don't implement /v1/models/{id}.
+        Raises appropriate OpenAI exceptions on failure.
+        """
+        client.completions.create(
+            model=model_name,
+            prompt="test",
+            max_tokens=1,
+        )
+
     def validate(
         self,
-        config: OpenAIConfig,
+        config: OpenAICompatibleConfig,
         context: ValidationContext,
     ) -> ValidatorReport:
         messages: List[ValidationMessage] = []
@@ -55,7 +72,14 @@ class OpenAILLMValidator(BaseElementValidator):
                     timeout=context.timeout_seconds,
                     http_client=http_client,
                 )
-                client.models.retrieve(config.model_name)
+
+                try:
+                    client.models.retrieve(config.model_name)
+                except NotFoundError:
+                    # Many OpenAI-compatible APIs don't implement /v1/models/{id}
+                    # Fall back to a minimal completion request
+                    self._validate_via_completion(client, config.model_name)
+
                 messages.append(self._info(
                     "MODEL_AVAILABLE",
                     f"Successfully connected and found model '{config.model_name}'",

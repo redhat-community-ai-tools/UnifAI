@@ -223,15 +223,30 @@ export function AgentNodeOverlay({
             {display.icon}
           </span>
         );
+        const reasoningEffort = badge.element.type === "llm"
+          ? (badge.element.config?.reasoning_effort as string | undefined)
+          : undefined;
         const nameSpan = (
           <span
-            className="truncate"
+            className="flex items-center gap-1 truncate"
             style={{
               color: "rgba(255,255,255,0.88)", fontWeight: 500,
               letterSpacing: "0.01em", maxWidth: badge.width - (previewMode ? 56 : 40),
             }}
           >
-            {badge.element.name}
+            <span className="truncate">{badge.element.name}</span>
+            {reasoningEffort && (
+              <span
+                style={{
+                  fontSize: Math.max(7 / sx, 9),
+                  color: "rgba(255,255,255,0.55)",
+                  fontWeight: 400,
+                  flexShrink: 0,
+                }}
+              >
+                · {reasoningEffort}
+              </span>
+            )}
           </span>
         );
 
