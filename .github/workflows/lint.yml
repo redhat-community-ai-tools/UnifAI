@@ -1,0 +1,29 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harness-eval:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+      with:
+        persist-credentials: false
+
+    - name: Install harness-eval
+      run: pip install -q "harness-eval==7.12.0"
+
+    - name: Run harness-eval gate
+      run: harness-eval harness-gate . --baseline .harness-eval-baseline.json
