@@ -85,7 +85,7 @@ class UserSessionData(BaseModel):
         return bool(self.username and self.access_token)
 
     def is_session_expired(self) -> bool:
-        """True when ``session_expires_at`` is set and in the past."""
+        """True when ``session_expires_at`` is missing or in the past."""
         if self.session_expires_at is None:
-            return False
+            return True  # ponytail: fail closed — matches identity service semantics
         return datetime.now().timestamp() >= self.session_expires_at

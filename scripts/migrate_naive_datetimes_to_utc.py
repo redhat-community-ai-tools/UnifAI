@@ -30,7 +30,7 @@ import pymongo
 from pymongo import UpdateOne
 
 # Default MongoDB connection settings
-DEFAULT_MONGO_URI = "mongodb://10.46.254.131:27017/"
+DEFAULT_MONGO_URI = "mongodb://localhost:27017/"
 DEFAULT_DB_NAME = "UnifAI"
 
 # Collection configurations: (collection_name, list of datetime field paths)
