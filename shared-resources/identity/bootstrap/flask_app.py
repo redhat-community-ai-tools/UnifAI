@@ -22,6 +22,8 @@ from bootstrap.factories import build_auth_stack, build_team_service
 from global_utils.redis import TeamMembershipCache
 from utils.user_groups_cache import UserGroupsCache
 from utils.directory_cache import DirectoryCache
+from global_utils.utils.logging_config import configure_logging
+
 
 
 def create_app() -> Flask:
