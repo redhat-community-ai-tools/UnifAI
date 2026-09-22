@@ -183,13 +183,16 @@ class AgentIterator:
                     actions_to_handle.append(action)
 
                 elif step.type == StepType.FINISH:
-                    logger.info("llm.interaction_end")
+                    logger.info(
+                        "llm.interaction_end",
+                        extra={"interaction_number": self._iteration_count},
+                    )
                     self._finished = True
                     # Queue FINISH step for consistent ordering
                     self._step_queue.append(step)
 
                 elif step.type == StepType.ERROR:
-                    logger.error("agent.step", extra={"step_type": "error"})
+                    self._log_error_step(step)
                     # Queue ERROR step for consistent ordering
                     self._step_queue.append(step)
 
@@ -250,7 +253,38 @@ class AgentIterator:
             )
             self.history.append(error_step)
             self._emit_step_event(error_step)
+            self._log_error_step(error_step)
             return error_step
+
+    def _log_error_step(self, step: AgentStep) -> None:
+        """Log a failed step with the original exception details.
+
+        Error steps are often returned by a strategy after its exception
+        handler has run, so relying on ``logger.exception`` here would lose
+        the original traceback.  Format the traceback retained by the
+        exception object instead.
+        """
+        error = step.data
+        context = {
+            "step_type": "error",
+            "exception_type": type(error).__name__,
+            "exception_message": str(error),
+            "iteration": self._iteration_count,
+        }
+        if step.metadata:
+            context.update(step.metadata)
+
+        # Keep an actionable, stable classification without coupling agent
+        # execution to an MCP provider implementation.
+        if "mcp" in type(error).__name__.lower() or "mcp" in str(error).lower():
+            context["cause"] = "mcp_unavailable"
+
+        exc_info = (
+            (type(error), error, error.__traceback__)
+            if isinstance(error, BaseException)
+            else None
+        )
+        logger.error("agent.step", extra=context, exc_info=exc_info)
 
     def _update_conversation_messages(self, steps: List[AgentStep]) -> None:
         """Update conversation messages with assistant responses."""

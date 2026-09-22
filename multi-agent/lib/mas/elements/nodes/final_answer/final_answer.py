@@ -56,7 +56,21 @@ class FinalAnswerNode(IEMCapableMixin, BaseNode):
             # Extract AgentResult from task if present
             if task.result and isinstance(task.result, AgentResult):
                 self._collected_results.append(task.result)
-                logger.info("final_answer.result_collected", extra={"node_uid": self.uid, "agent_name": task.result.agent_name})
+                result = task.result
+                result_type = "success" if result.success else "error"
+                summary_source = result.error if not result.success and result.error else result.content
+                result_summary = " ".join(str(summary_source or "").split())
+                logger.info(
+                    "final_answer.result_collected",
+                    extra={
+                        "node_uid": self.uid,
+                        "agent_name": result.agent_name,
+                        "result_type": result_type,
+                        "result_summary": result_summary[:500],
+                        "result_characters": len(str(summary_source or "")),
+                        "is_error_response": not result.success,
+                    },
+                )
 
         except Exception as e:
             logger.error("final_answer.collect_error", extra={"node_uid": self.uid, "error": str(e)})

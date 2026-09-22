@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 _EVENT_NAME_RE = re.compile(r"^[a-z][a-z0-9_.]*$")
+_SUCCESSFUL_HEALTH_CHECK_RE = re.compile(
+    r'"GET /api/health/?(?:\?[^ ]*)? HTTP/\d\.\d" 200(?:\s|$)'
+)
 
 # ---------------------------------------------------------------------------
 # Correlation context (populated by middleware / callers)
@@ -126,6 +129,77 @@ def _record_extras(record: logging.LogRecord) -> dict[str, Any]:
     return extras
 
 
+def _none_if_blank(value: Any) -> Any:
+    """Treat blank strings as absent structured-log fields."""
+    return None if isinstance(value, str) and not value.strip() else value
+
+
+class _SuccessfulHealthCheckFilter(logging.Filter):
+    """Drop noisy successful Werkzeug health-check access logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (
+            record.name == "werkzeug"
+            and _SUCCESSFUL_HEALTH_CHECK_RE.search(record.getMessage())
+        )
+
+
+def _otel_enabled() -> bool:
+    return os.getenv("OTEL_LOGS_ENABLED", "").lower() in ("1", "true", "yes")
+
+
+def _otel_resource_attributes(
+    service_name: str,
+    environment: Optional[str],
+    deployment: Optional[str],
+) -> dict[str, str]:
+    """Build stable resource metadata for all OTLP logs from a service."""
+    attributes = {"service.name": service_name}
+    if environment:
+        attributes["deployment.environment.name"] = environment
+    if deployment:
+        attributes["service.version"] = deployment
+    return attributes
+
+
+def _attach_otel_handler(
+    service_name: str,
+    level: int,
+    formatter: logging.Formatter,
+    *,
+    environment: Optional[str] = None,
+    deployment: Optional[str] = None,
+) -> bool:
+    """Attach an OTLP handler to the root logger. OpenTelemetry imports stay lazy."""
+    try:
+        from opentelemetry._logs import set_logger_provider
+        from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+        from opentelemetry.sdk.resources import Resource
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "OTEL_LOGS_ENABLED is set but opentelemetry packages are not installed"
+        )
+        return False
+
+    logger_provider = LoggerProvider(
+        resource=Resource.create(
+            _otel_resource_attributes(service_name, environment, deployment)
+        ),
+    )
+    logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter(insecure=True))
+    )
+    set_logger_provider(logger_provider)
+
+    handler = LoggingHandler(level=level, logger_provider=logger_provider)
+    handler.addFilter(_SuccessfulHealthCheckFilter())
+    handler.setFormatter(formatter)
+    logging.getLogger().addHandler(handler)
+    return True
+
+
 class JSONFormatter(logging.Formatter):
     """Emit one JSON object per line for logger-compatible ingest."""
 
@@ -139,15 +213,22 @@ class JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         extras = _record_extras(record)
 
-        event = extras.pop("event", None)
-        request_id = extras.pop("request_id", None)
+        event = _none_if_blank(extras.pop("event", None))
+        request_id = _none_if_blank(extras.pop("request_id", None))
         if request_id is None:
             request_id = get_request_id()
-        session_id = extras.pop("session_id", None)
+        request_id = _none_if_blank(request_id)
+        session_id = _none_if_blank(extras.pop("session_id", None))
         if session_id is None:
             session_id = get_session_id()
+        session_id = _none_if_blank(session_id)
 
         nested_context = extras.pop("context", None)
+        if isinstance(nested_context, str):
+            try:
+                nested_context = json.loads(nested_context)
+            except (json.JSONDecodeError, TypeError):
+                nested_context = {"raw": nested_context} if nested_context else None
         context: dict[str, Any] = {}
         if isinstance(nested_context, dict):
             context.update(nested_context)
@@ -166,12 +247,16 @@ class JSONFormatter(logging.Formatter):
             "environment": self.environment,
             "logger": record.name,
             "message": message,
-            "event": event,
-            "request_id": request_id,
-            "session_id": session_id,
             "pod": self.pod,
             "deployment": self.deployment,
         }
+        for field, value in {
+            "event": event,
+            "request_id": request_id,
+            "session_id": session_id,
+        }.items():
+            if value is not None:
+                payload[field] = value
 
         if context:
             payload["context"] = context
@@ -265,7 +350,10 @@ def configure_logging(
       BACKEND_ENV    default "production"  # local|development|dev → console; else JSON
                      (same var Helm/services.yaml already set for every service)
       LOG_DIR        default "/var/log/unifai"
-      POD_NAME, APP_VERSION  → pod / deployment fields
+      POD_NAME, APP_VERSION  → pod / deployment fields; APP_VERSION is also
+                               exported as OTLP service.version
+      OTEL_LOGS_ENABLED      if true/1/yes, attach OTLP handler (endpoint from
+                             OTEL_EXPORTER_OTLP_ENDPOINT)
 
     Handlers:
       - always: StreamHandler(sys.stdout)
@@ -274,6 +362,7 @@ def configure_logging(
         — checked with a few short retries to tolerate network mounts, e.g.
         EFS access points, that aren't write-authorized the instant this
         runs; see _is_dir_writable_with_retry)
+      - OTLP LoggingHandler when OTEL_LOGS_ENABLED, same formatter as stdout
     """
     global _CONFIGURED
     if _CONFIGURED:
@@ -304,6 +393,7 @@ def configure_logging(
 
     stdout = logging.StreamHandler(sys.stdout)
     stdout.setLevel(level)
+    stdout.addFilter(_SuccessfulHealthCheckFilter())
     stdout.setFormatter(formatter)
     root.addHandler(stdout)
 
@@ -321,11 +411,22 @@ def configure_logging(
                 encoding="utf-8",
             )
             file_handler.setLevel(level)
+            file_handler.addFilter(_SuccessfulHealthCheckFilter())
             file_handler.setFormatter(formatter)
             root.addHandler(file_handler)
         except OSError:
             # Mount missing or not writable — stdout-only is fine (local / OO ingest).
             pass
+
+    otel_attached = False
+    if _otel_enabled():
+        otel_attached = _attach_otel_handler(
+            service_name,
+            level,
+            formatter,
+            environment=resolved_env,
+            deployment=deployment,
+        )
 
     _CONFIGURED = True
     logging.getLogger(__name__).info(
@@ -335,6 +436,7 @@ def configure_logging(
             "log_level": resolved_level,
             "log_environment": resolved_env,
             "file_logging": bool(should_file),
+            "otel_logs": otel_attached,
         },
     )
 

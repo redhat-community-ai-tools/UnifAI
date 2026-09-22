@@ -148,11 +148,19 @@ class PlanAndExecuteStrategy(AgentStrategy):
         Returns:
             List of steps to execute
         """
+        # Log thinking separately from the LLM call below.
         if self._step_count == 0:
-            logger.info("llm.interaction_start", extra={"phase": self._current_phase, "interaction_number": 1, "detail": "beginning_orchestration_cycle"})
+            logger.info(
+                "agent.step",
+                extra={
+                    "phase": self._current_phase,
+                    "action": "think",
+                    "detail": "beginning_orchestration_cycle",
+                },
+            )
         else:
             logger.info("agent.step", extra={"phase": self._current_phase, "action": "think"})
-        
+
         try:
             # Store current phase before update
             old_phase = self._current_phase
@@ -175,7 +183,15 @@ class PlanAndExecuteStrategy(AgentStrategy):
             tools = self.get_tools_for_phase(self._current_phase)
             
             # Get LLM response
-            logger.info("llm.interaction_start", extra={"phase": self._current_phase, "action": "think"})
+            logger.info(
+                "llm.interaction_start",
+                extra={
+                    "strategy": self.strategy_name,
+                    "phase": self._current_phase,
+                    "interaction_number": self._step_count + 1,
+                    "tool_count": len(tools),
+                },
+            )
             response = self.llm_chat(context, tools)
             
             # Parse response
