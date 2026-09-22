@@ -115,68 +115,110 @@ jobs:
           BRANCH_REF: ${{ steps.branch.outputs.ref }}
         run: |
           AGENT_EXIT=0
+          # Avoid bash process substitution for stderr — it can silently
+          # prevent the stdout redirect from creating review.json in edge
+          # cases.  Capture stderr to file and display it afterwards.
           agent --trust --force -p "/pipeline review" \
             --model "$ORCHESTRATOR_MODEL" --output-format json \
-            > review.json 2> >(tee review_stderr.log >&2) || AGENT_EXIT=$?
-          # Extract result directly to file — avoids shell variable mangling
-          # (echo of large content can lose newlines / interpret backslashes)
-          jq -r '.result // empty' review.json > review_output.txt || true
+            > review.json 2> review_stderr.log || AGENT_EXIT=$?
+          if [ -s review_stderr.log ]; then
+            echo "::group::Agent stderr"
+            cat review_stderr.log >&2
+            echo "::endgroup::"
+          fi
+
+          # --- Extract review text (best-effort) ---
+          # Primary gate signal: /tmp/pipeline_results.json (written by the
+          # agent via Shell tool during execution).
+          # Secondary: review.json (CLI stdout envelope) → review_output.txt
+          # → split arch/code files for summary artifact & text-fallback scoring.
+          if [ -s review.json ]; then
+            jq -r '.result // empty' review.json > review_output.txt || {
+              echo "::warning::Failed to extract .result from review.json."
+              : > review_output.txt
+            }
+          else
+            echo "::warning::review.json missing or empty (agent exit code: $AGENT_EXIT)."
+            : > review_output.txt
+          fi
+
           # Normalize line endings (CRLF → LF) so grep anchors work reliably
           sed -i 's/\r$//' review_output.txt
+
           # Split combined output into separate files for the gate evaluator.
-          # Uses line-number-based extraction to prevent malformed output (repeated
-          # or out-of-order headers) from leaking verdicts across sections.
-          ARCH_LINES=$(grep -n -E '^## (PHASE [0-9]+: )?ARCHITECTURE REVIEW[[:space:]]*$' review_output.txt | cut -d: -f1 || true)
-          CODE_LINES=$(grep -n -E '^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$' review_output.txt | cut -d: -f1 || true)
-          ARCH_COUNT=$(echo "$ARCH_LINES" | grep -c . || true)
-          CODE_COUNT=$(echo "$CODE_LINES" | grep -c . || true)
-          if [ "$ARCH_COUNT" -ne 1 ] || [ "$CODE_COUNT" -ne 1 ]; then
-            echo "::error::Expected exactly one '## ARCHITECTURE REVIEW' and one '## CODE REVIEW' header, found ${ARCH_COUNT} and ${CODE_COUNT} respectively. Agent output is malformed."
-            exit 1
+          # Uses line-number-based extraction to prevent malformed output
+          # (repeated or out-of-order headers) from leaking verdicts across
+          # sections.
+          SPLIT_OK=true
+          if [ -s review_output.txt ]; then
+            ARCH_LINES=$(grep -n -E '^## (PHASE [0-9]+: )?ARCHITECTURE REVIEW[[:space:]]*$' review_output.txt | cut -d: -f1 || true)
+            CODE_LINES=$(grep -n -E '^## (PHASE [0-9]+: )?CODE REVIEW[[:space:]]*$' review_output.txt | cut -d: -f1 || true)
+            ARCH_COUNT=$(echo "$ARCH_LINES" | grep -c . || true)
+            CODE_COUNT=$(echo "$CODE_LINES" | grep -c . || true)
+            if [ "$ARCH_COUNT" -ne 1 ] || [ "$CODE_COUNT" -ne 1 ]; then
+              echo "::warning::Expected one '## ARCHITECTURE REVIEW' and one '## CODE REVIEW' header, found ${ARCH_COUNT} and ${CODE_COUNT}."
+              SPLIT_OK=false
+            else
+              ARCH_LINE=$(echo "$ARCH_LINES" | head -1)
+              CODE_LINE=$(echo "$CODE_LINES" | head -1)
+              if [ "$ARCH_LINE" -ge "$CODE_LINE" ]; then
+                echo "::warning::ARCHITECTURE REVIEW header (line $ARCH_LINE) must appear before CODE REVIEW (line $CODE_LINE)."
+                SPLIT_OK=false
+              fi
+            fi
+          else
+            SPLIT_OK=false
           fi
-          ARCH_LINE=$(echo "$ARCH_LINES" | head -1)
-          CODE_LINE=$(echo "$CODE_LINES" | head -1)
-          if [ "$ARCH_LINE" -ge "$CODE_LINE" ]; then
-            echo "::error::ARCHITECTURE REVIEW header (line $ARCH_LINE) must appear before CODE REVIEW header (line $CODE_LINE). Agent output is malformed."
-            exit 1
-          fi
-          # Extract arch section: from ARCH_LINE+1 to CODE_LINE-1
-          ARCH_END=$((CODE_LINE - 1))
-          ARCH_START=$((ARCH_LINE + 1))
-          if [ "$ARCH_START" -le "$ARCH_END" ]; then
-            sed -n "${ARCH_START},${ARCH_END}p" review_output.txt > arch_review_output.txt
+
+          if [ "$SPLIT_OK" = true ]; then
+            ARCH_END=$((CODE_LINE - 1))
+            ARCH_START=$((ARCH_LINE + 1))
+            if [ "$ARCH_START" -le "$ARCH_END" ]; then
+              sed -n "${ARCH_START},${ARCH_END}p" review_output.txt > arch_review_output.txt
+            else
+              : > arch_review_output.txt
+            fi
+            CODE_START=$((CODE_LINE + 1))
+            TOTAL_LINES=$(wc -l < review_output.txt)
+            if [ "$CODE_START" -le "$TOTAL_LINES" ]; then
+              sed -n "${CODE_START},\$p" review_output.txt > code_review_output.txt
+            else
+              : > code_review_output.txt
+            fi
           else
             : > arch_review_output.txt
-          fi
-          # Extract code section: from CODE_LINE+1 to EOF
-          CODE_START=$((CODE_LINE + 1))
-          TOTAL_LINES=$(wc -l < review_output.txt)
-          if [ "$CODE_START" -le "$TOTAL_LINES" ]; then
-            sed -n "${CODE_START},\$p" review_output.txt > code_review_output.txt
-          else
             : > code_review_output.txt
           fi
 
-          # Validate split files contain expected review content
-          SPLIT_OK=true
+          # Validate split files
           for f in arch_review_output.txt code_review_output.txt; do
             if [ ! -s "$f" ]; then
-              echo "::error::${f} is empty. Agent output must contain '## ARCHITECTURE REVIEW' and '## CODE REVIEW' headers (optionally prefixed with 'PHASE N: ')."
-              SPLIT_OK=false
+              echo "::warning::${f} is empty."
             elif ! grep -qE 'PIPELINE_(ARCH_|CODE_)?VERDICT' "$f"; then
               echo "::warning::${f} missing PIPELINE_*_VERDICT — judge output may be incomplete."
             fi
           done
+
+          # Decide step outcome.
+          # Fail only when NO usable output exists for the gate evaluator.
+          HAS_JSON_RESULTS=false
+          [ -f /tmp/pipeline_results.json ] && [ -s /tmp/pipeline_results.json ] && HAS_JSON_RESULTS=true
+
           if [ "$AGENT_EXIT" -ne 0 ]; then
-            if [ "$SPLIT_OK" = false ]; then
-              echo "::error::Agent exited with code $AGENT_EXIT and produced unusable output. See review_stderr.log."
+            if [ "$HAS_JSON_RESULTS" = false ] && [ "$SPLIT_OK" = false ]; then
+              echo "::error::Agent exited with code $AGENT_EXIT and produced no usable output."
               exit 1
             fi
-            echo "::warning::Agent exited with code $AGENT_EXIT but review output appears valid. Continuing."
+            echo "::warning::Agent exited with code $AGENT_EXIT but review results are available."
           fi
-          if [ "$SPLIT_OK" = false ]; then
-            echo "::error::Output splitting failed — review sections missing or empty. Ensure output uses '## ARCHITECTURE REVIEW' then '## CODE REVIEW' headers (with or without 'PHASE N: ' prefix)."
+
+          if [ "$SPLIT_OK" = false ] && [ "$HAS_JSON_RESULTS" = false ]; then
+            echo "::error::No review text or structured results available. Pipeline cannot evaluate."
             exit 1
+          fi
+
+          if [ "$SPLIT_OK" = false ]; then
+            echo "::notice::Review text splitting failed but /tmp/pipeline_results.json is available. Gate will use JSON scoring."
           fi
 
       - name: Publish results to Job Summary
