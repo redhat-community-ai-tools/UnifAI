@@ -17,6 +17,7 @@ Reference:
 """
 
 import time
+import logging
 from typing import List, Tuple, Callable, Optional, Dict, Any
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.elements.tools.common.base_tool import BaseTool
@@ -24,6 +25,9 @@ from ..primitives import AgentAction, AgentObservation, AgentFinish, AgentStep, 
 from ..parsers import OutputParser, ParseError, ParseErrorType
 from .base import AgentStrategy
 from ..constants import StrategyDefaults, SystemPrompts, StrategyType
+
+
+logger = logging.getLogger(__name__)
 
 
 class ReActStrategy(AgentStrategy):
@@ -129,6 +133,14 @@ class ReActStrategy(AgentStrategy):
             tools = self.get_tools_for_phase(StrategyType.REACT.value)
 
             # Get LLM response
+            logger.info(
+                "llm.interaction_start",
+                extra={
+                    "strategy": self.strategy_name,
+                    "interaction_number": self._step_count + 1,
+                    "tool_count": len(tools),
+                },
+            )
             start_time = time.time()
             response = self.llm_chat(context, tools)
             reasoning_time = time.time() - start_time

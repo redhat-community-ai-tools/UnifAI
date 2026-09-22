@@ -7,6 +7,7 @@ hooks (_create_transport_context and _enter_transport_context).
 """
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Tuple, Any
 
@@ -62,6 +63,7 @@ class BaseTransportManager(ABC):
         self._write_stream = None
         self._session: Optional[ClientSession] = None
         self._is_connected = False
+        self._connection_attempts = 0
 
     # =========================================================================
     # Abstract hooks (subclass-specific)
@@ -126,6 +128,18 @@ class BaseTransportManager(ABC):
         if self.is_connected:
             return
 
+        self._connection_attempts += 1
+        attempt = self._connection_attempts
+        is_reconnect = attempt > 1
+        started_at = time.monotonic()
+        logger.info(
+            "mcp.stream_reconnect_start" if is_reconnect else "mcp.stream_connect_start",
+            extra={
+                "attempt": attempt,
+                "transport": self._transport_label,
+            },
+        )
+
         await self._safe_cleanup()
 
         # 1) Open the protocol-specific transport
@@ -136,6 +150,13 @@ class BaseTransportManager(ABC):
             )
         except Exception as e:
             self._transport_context = None
+            self._log_connection_failure(
+                attempt=attempt,
+                is_reconnect=is_reconnect,
+                phase="transport_open",
+                error=e,
+                started_at=started_at,
+            )
             raise McpConnectionError(
                 f"{self._transport_label} transport failed: {e}"
             ) from e
@@ -156,13 +177,47 @@ class BaseTransportManager(ABC):
                 pass
             self._transport_context = None
             self._session = None
+            self._log_connection_failure(
+                attempt=attempt,
+                is_reconnect=is_reconnect,
+                phase="session_initialize",
+                error=e,
+                started_at=started_at,
+            )
             raise McpConnectionError(
                 f"ClientSession initialization failed: {e}"
             ) from e
 
         self._is_connected = True
-        logger.debug(
-            "%s transport connected to %s", self._transport_label, self.endpoint
+        logger.info(
+            "mcp.stream_reconnect_success" if is_reconnect else "mcp.stream_connect_success",
+            extra={
+                "attempt": attempt,
+                "transport": self._transport_label,
+                "latency_ms": round((time.monotonic() - started_at) * 1000),
+            },
+        )
+
+    def _log_connection_failure(
+        self,
+        *,
+        attempt: int,
+        is_reconnect: bool,
+        phase: str,
+        error: Exception,
+        started_at: float,
+    ) -> None:
+        logger.error(
+            "mcp.stream_reconnect_failed" if is_reconnect else "mcp.stream_connect_failed",
+            extra={
+                "attempt": attempt,
+                "transport": self._transport_label,
+                "phase": phase,
+                "latency_ms": round((time.monotonic() - started_at) * 1000),
+                "exception_type": type(error).__name__,
+                "exception_message": str(error),
+            },
+            exc_info=(type(error), error, error.__traceback__),
         )
 
     async def disconnect(self) -> None:
@@ -202,7 +257,8 @@ class BaseTransportManager(ABC):
                 self._write_stream = None
 
         logger.debug(
-            "%s transport disconnected from %s", self._transport_label, self.endpoint
+            "mcp.stream_disconnected",
+            extra={"transport": self._transport_label, "attempt": self._connection_attempts},
         )
 
     async def _safe_cleanup(self) -> None:

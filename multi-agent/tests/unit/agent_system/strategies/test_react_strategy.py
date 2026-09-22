@@ -67,6 +67,21 @@ class TestReActStrategy:
         assert isinstance(steps[1].data, AgentAction)
         assert steps[1].data.tool == "test_tool"
         assert steps[1].data.id == "call-123"
+
+    def test_logs_interaction_start_before_calling_llm(
+        self, react_strategy, sample_chat_messages, caplog
+    ):
+        """The start event distinguishes pre-LLM failures from LLM failures."""
+        with patch.object(react_strategy, "llm_chat", side_effect=RuntimeError("unavailable")) as llm_chat:
+            with caplog.at_level("INFO"):
+                react_strategy.think(sample_chat_messages)
+
+        record = next(
+            record for record in caplog.records if record.message == "llm.interaction_start"
+        )
+        assert record.strategy == "react"
+        assert record.interaction_number == 1
+        assert llm_chat.called
     
     def test_think_with_multiple_tool_calls(self, react_strategy, sample_chat_messages):
         """Test think method when LLM returns multiple tool calls."""

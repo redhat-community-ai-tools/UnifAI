@@ -10,7 +10,7 @@ Tests the agent execution iterator including:
 """
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 from mas.elements.nodes.common.agent.execution import AgentIterator, ExecutionMode, ExecutionHandlerFactory
 from mas.elements.nodes.common.agent.primitives import AgentAction, AgentObservation, AgentFinish, AgentStep, StepType, ActionStatus
 from mas.elements.llms.common.chat.message import ChatMessage, Role
@@ -370,9 +370,13 @@ class TestAgentIterator:
         assert finish_step.type == StepType.FINISH
         assert finish_step.data.output == "Task complete"
     
-    def test_error_handling_recoverable(self, agent_iterator, mock_strategy):
+    def test_error_handling_recoverable(self, agent_iterator, mock_strategy, caplog):
         """Test error step handling for recoverable errors."""
         error = Exception("Test error")
+        trace_cm = MagicMock()
+        trace_cm.__enter__.return_value = MagicMock()
+        agent_iterator._tracing = Mock()
+        agent_iterator._tracing.trace_agent_iteration.return_value = trace_cm
         mock_strategy.think.return_value = [
             AgentStep(
                 type=StepType.ERROR,
@@ -382,12 +386,18 @@ class TestAgentIterator:
         ]
         
         # Execute
-        step = next(agent_iterator)
+        with caplog.at_level("ERROR"):
+            step = next(agent_iterator)
         
         # Should return error step but not finish
         assert step.type == StepType.ERROR
         assert step.data == error
         assert not agent_iterator._finished  # Recoverable error shouldn't finish
+
+        record = next(record for record in caplog.records if record.message == "agent.step")
+        assert record.exception_type == "Exception"
+        assert record.exception_message == "Test error"
+        assert record.exc_info[1] is error
     
     def test_error_handling_non_recoverable(self, agent_iterator, mock_strategy):
         """Test error step handling for non-recoverable errors."""
