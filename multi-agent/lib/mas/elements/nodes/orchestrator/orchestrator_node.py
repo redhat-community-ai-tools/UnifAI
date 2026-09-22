@@ -100,9 +100,7 @@ class OrchestratorNode(
         # Orchestration cycles (one per thread, accumulates triggers)
         self._orchestration_cycles: Dict[str, OrchestratorCycle] = {}
 
-        # Results received through ordinary upstream tasks.  These are kept
-        # only until the batch's cycle for that thread has run: unlike
-        # delegated responses, they have no correlation ID or work-plan entry.
+        # Results received through ordinary upstream tasks.
         self._incoming_upstream_tasks: Dict[str, List[Task]] = {}
         
         # Context builder for rich orchestration context (lazy init per thread)
@@ -720,7 +718,7 @@ class OrchestratorNode(
         # User prompt is always last
         if content:
             messages.append(ChatMessage(role=Role.USER, content=content))
-
+        logger.debug("i have built the context messages %s for the thread %s", messages, thread_id)
         return messages
 
     def _build_adjacency_summary(self) -> str:
