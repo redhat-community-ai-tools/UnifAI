@@ -10,6 +10,9 @@ unifai_backend:
     RAG_URL: "http://unifai-rag-server:13457"
     MULTIAGENT_URL: "http://unifai-multiagent-be:8003"
     VERSION: ""
+    OTEL_LOGS_ENABLED: "true"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://unifai-logging:4317"
+    OTEL_EXPORTER_OTLP_INSECURE: "true"
   resources:
     limits:
       cpu: 1
