@@ -14,6 +14,17 @@ data:
           http:
             endpoint: 0.0.0.0:4318
     processors:
+      transform/enrich:
+        log_statements:
+          - context: resource
+            statements:
+              - set(attributes["_sourceCategory"], Concat(["otel/unifai", attributes["service.name"]], "/"))
+              - set(attributes["_sourceHost"], attributes["host.name"]) where attributes["host.name"] != nil
+      filter/health:
+        error_mode: ignore
+        log_conditions:
+          # OTLP log bodies are the application's JSON-formatted log line.
+          - 'IsMatch(log.body, "\"logger\": \"werkzeug\"") and IsMatch(log.body, "GET /api/health/?") and IsMatch(log.body, " 200 ")'
       batch: {}
     exporters:
       debug:
@@ -34,5 +45,5 @@ data:
       pipelines:
         logs:
           receivers: [otlp]
-          processors: [batch]
+          processors: [transform/enrich, filter/health, batch]
           exporters: [debug, otlphttp]
