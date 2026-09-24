@@ -18,7 +18,6 @@ interface UserDirectorySearchProps {
   excludeUserIds?: string[];
   placeholder?: string;
   clearOnSelect?: boolean;
-  accessToken?: string | null;
   inputClassName?: string;
 }
 
@@ -29,7 +28,6 @@ export default function UserDirectorySearch({
   excludeUserIds = [],
   placeholder,
   clearOnSelect = true,
-  accessToken,
   inputClassName,
 }: UserDirectorySearchProps) {
   const [directoryEnabled, setDirectoryEnabled] = useState(true);
@@ -114,8 +112,8 @@ export default function UserDirectorySearch({
         const id = requestId;
         try {
           const result = onSelectGroup
-            ? await searchDirectory(value.trim(), 10, accessToken)
-            : { users: await searchDirectoryUsers(value.trim(), 10, accessToken), groups: [] };
+            ? await searchDirectory(value.trim(), 10)
+            : { users: await searchDirectoryUsers(value.trim(), 10), groups: [] };
           if (id !== searchIdRef.current) return;
           searchCacheRef.current.set(trimmed, result);
           const filteredUsers = result.users.filter((u) => !excludeUserIdsRef.current.includes(u.user_id));
@@ -127,7 +125,7 @@ export default function UserDirectorySearch({
           // so people can continue selecting users while group lookup is down.
           if (onSelectGroup) {
             try {
-              const users = await searchDirectoryUsers(value.trim(), 10, accessToken);
+              const users = await searchDirectoryUsers(value.trim(), 10);
               if (id !== searchIdRef.current) return;
               const filteredUsers = users.filter((u) => !excludeUserIdsRef.current.includes(u.user_id));
               setUserResults(filteredUsers);
@@ -150,7 +148,7 @@ export default function UserDirectorySearch({
         }
       }, 250);
     },
-    [directoryEnabled, accessToken, onInputChange, onSelectGroup],
+    [directoryEnabled, onInputChange, onSelectGroup],
   );
 
   const handleSelectUser = (user: DirectoryUser) => {

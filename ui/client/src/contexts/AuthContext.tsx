@@ -13,7 +13,6 @@ export interface User {
 
 export interface AuthContextType {
   user: User | null;
-  accessToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: () => void;
@@ -29,7 +28,6 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -42,17 +40,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await api.get('/auth/user');
       if (response.data.authenticated && response.data.user) {
         setUser(response.data.user);
-        setAccessToken(response.data.access_token ?? null);
         setIsAuthenticated(true);
       } else {
         setUser(null);
-        setAccessToken(null);
         setIsAuthenticated(false);
       }
     } catch (error) {
       console.error('Auth check failed:', error);
       setUser(null);
-      setAccessToken(null);
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
@@ -176,7 +171,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const value: AuthContextType = {
     user,
-    accessToken,
     isAuthenticated,
     isLoading,
     login,
