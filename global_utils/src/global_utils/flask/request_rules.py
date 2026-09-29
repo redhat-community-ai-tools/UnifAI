@@ -1,5 +1,6 @@
 from functools import reduce
 import logging
+import time
 
 from flask import request
 
@@ -10,6 +11,8 @@ from global_utils.flask.correlation import (
     clear_correlation_context,
 )
 from global_utils.utils.logging_config import get_request_id
+
+_http_logger = logging.getLogger("unifai.http.access")
 
 
 class RequestRules:
@@ -26,6 +29,7 @@ class RequestRules:
         app.after_request(self._after_request)
 
     def _before_request(self):
+        request._start_time = time.monotonic()
         bind_request_id_from_headers(request.headers)
         # Soft-bind session id from query only (no body parse).
         session_id = request.args.get("sessionId") or request.args.get("session_id")
@@ -40,8 +44,29 @@ class RequestRules:
         :param response:
         :return:
         """
-        fns = [self.set_request_id_header, self.set_metadata, self._clear_context]
+        fns = [self._log_request, self.set_request_id_header, self.set_metadata, self._clear_context]
         return reduce(lambda prev, f: f(prev), fns, response)
+
+    @staticmethod
+    def _log_request(response):
+        """Emit a structured HTTP access log replacing werkzeug's default."""
+        start = getattr(request, "_start_time", None)
+        duration_ms = round((time.monotonic() - start) * 1000) if start else None
+        http_info = {
+            "method": request.method,
+            "url": request.path,
+            "status_code": response.status_code,
+            "client_ip": request.remote_addr,
+        }
+        if duration_ms is not None:
+            http_info["duration_ms"] = duration_ms
+        if response.content_length is not None:
+            http_info["response_bytes"] = response.content_length
+        _http_logger.info(
+            "http.request",
+            extra={"event": "http.request", "http": http_info},
+        )
+        return response
 
     def size_limit(self):
         """ Limit content payload size to 1000MB for POST commands"""

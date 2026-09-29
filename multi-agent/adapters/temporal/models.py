@@ -99,6 +99,7 @@ class EvaluateConditionParams(BaseModel):
     condition_blueprint: Dict[str, Any] = Field(default_factory=dict)
     step_context: Optional[StepContext] = None
     state: GraphState = Field(default_factory=GraphState)
+    session_id: str = ""
     request_id: Optional[str] = None
 
 
