@@ -18,6 +18,7 @@ _EVENT_NAME_RE = re.compile(r"^[a-z][a-z0-9_.]*$")
 _SUCCESSFUL_HEALTH_CHECK_RE = re.compile(
     r'"GET /api/health/?(?:\?[^ ]*)? HTTP/\d\.\d" 200(?:\s|$)'
 )
+_MEMORY_ADDR_RE = re.compile(r" at 0x[0-9a-fA-F]+>")
 
 # ---------------------------------------------------------------------------
 # Correlation context (populated by middleware / callers)
@@ -73,6 +74,8 @@ _TOP_LEVEL_FIELDS = frozenset(
 )
 
 _LOCAL_ENVIRONMENTS = frozenset({"local", "development", "dev"})
+
+_NOISY_THIRD_PARTY_LOGGERS = ("werkzeug", "httpx", "httpcore", "mcp")
 
 _CONFIGURED = False
 
@@ -238,6 +241,7 @@ class JSONFormatter(logging.Formatter):
             context[key] = value
 
         message = record.getMessage()
+        message = _MEMORY_ADDR_RE.sub(">", message)
         if event is None and _EVENT_NAME_RE.match(message):
             event = message
         payload: dict[str, Any] = {
@@ -263,9 +267,10 @@ class JSONFormatter(logging.Formatter):
 
         if record.exc_info:
             exc_type, exc_val, exc_tb = record.exc_info
+            exc_message = _MEMORY_ADDR_RE.sub(">", str(exc_val))
             payload["exception"] = {
                 "type": exc_type.__name__ if exc_type else "Exception",
-                "message": str(exc_val),
+                "message": exc_message,
                 "stacktrace": "".join(traceback.format_exception(exc_type, exc_val, exc_tb)),
             }
 
@@ -396,6 +401,12 @@ def configure_logging(
     stdout.addFilter(_SuccessfulHealthCheckFilter())
     stdout.setFormatter(formatter)
     root.addHandler(stdout)
+
+    # Suppress noisy third-party loggers: werkzeug access logs are replaced
+    # by structured HTTP logging in RequestRules; httpx/httpcore/mcp library
+    # loggers only need to surface warnings and errors.
+    for name in _NOISY_THIRD_PARTY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     should_file = enable_file
     if should_file is None:

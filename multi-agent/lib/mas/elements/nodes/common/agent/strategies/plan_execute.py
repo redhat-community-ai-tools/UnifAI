@@ -12,6 +12,7 @@ Each phase exposes different tools to enforce clean separation of concerns.
 """
 
 import logging
+import time
 from typing import List, Dict, Any, Optional, Callable
 from enum import Enum
 from mas.elements.llms.common.chat.message import ChatMessage, Role
@@ -192,8 +193,20 @@ class PlanAndExecuteStrategy(AgentStrategy):
                     "tool_count": len(tools),
                 },
             )
+            start_time = time.time()
             response = self.llm_chat(context, tools)
-            
+            reasoning_time = time.time() - start_time
+
+            logger.info(
+                "llm.interaction_end",
+                extra={
+                    "strategy": self.strategy_name,
+                    "phase": self._current_phase,
+                    "interaction_number": self._step_count + 1,
+                    "duration_ms": round(reasoning_time * 1000),
+                },
+            )
+
             # Parse response
             result = self.parser.parse(response)
             
@@ -232,6 +245,15 @@ class PlanAndExecuteStrategy(AgentStrategy):
             return steps
             
         except ParseError as e:
+            logger.info(
+                "llm.interaction_end",
+                extra={
+                    "strategy": self.strategy_name,
+                    "phase": self._current_phase,
+                    "interaction_number": self._step_count + 1,
+                    "outcome": "parse_error",
+                },
+            )
             # Add error feedback to messages for next iteration
             logger.warning("llm.parse_error", extra={"phase": self._current_phase, "error": str(e)})
             
@@ -253,6 +275,15 @@ class PlanAndExecuteStrategy(AgentStrategy):
             )]
         
         except Exception as e:
+            logger.info(
+                "llm.interaction_end",
+                extra={
+                    "strategy": self.strategy_name,
+                    "phase": self._current_phase,
+                    "interaction_number": self._step_count + 1,
+                    "outcome": "strategy_error",
+                },
+            )
             # Fatal strategy error
             import traceback
             logger.error("agent.step", extra={"phase": self._current_phase, "error_type": "strategy_error", "error": str(e), "traceback": traceback.format_exc()})

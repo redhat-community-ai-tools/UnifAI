@@ -183,10 +183,6 @@ class AgentIterator:
                     actions_to_handle.append(action)
 
                 elif step.type == StepType.FINISH:
-                    logger.info(
-                        "llm.interaction_end",
-                        extra={"interaction_number": self._iteration_count},
-                    )
                     self._finished = True
                     # Queue FINISH step for consistent ordering
                     self._step_queue.append(step)

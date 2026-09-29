@@ -145,6 +145,15 @@ class ReActStrategy(AgentStrategy):
             response = self.llm_chat(context, tools)
             reasoning_time = time.time() - start_time
 
+            logger.info(
+                "llm.interaction_end",
+                extra={
+                    "strategy": self.strategy_name,
+                    "interaction_number": self._step_count + 1,
+                    "duration_ms": round(reasoning_time * 1000),
+                },
+            )
+
             # Parse response
             result = self.parser.parse(response)
             
@@ -160,6 +169,14 @@ class ReActStrategy(AgentStrategy):
             steps = self._create_success_steps(response, result, reasoning_time)
 
         except ParseError as e:
+            logger.info(
+                "llm.interaction_end",
+                extra={
+                    "strategy": self.strategy_name,
+                    "interaction_number": self._step_count + 1,
+                    "outcome": "parse_error",
+                },
+            )
             # Add error feedback to messages
             from ..constants import ErrorMessages
             error_feedback = ChatMessage(
@@ -171,6 +188,14 @@ class ReActStrategy(AgentStrategy):
             steps = [self._create_error_step(e, "parse_error")]
 
         except Exception as e:
+            logger.info(
+                "llm.interaction_end",
+                extra={
+                    "strategy": self.strategy_name,
+                    "interaction_number": self._step_count + 1,
+                    "outcome": "strategy_error",
+                },
+            )
             import traceback
             traceback.print_exc()
             

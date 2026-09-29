@@ -82,6 +82,42 @@ class TestReActStrategy:
         assert record.strategy == "react"
         assert record.interaction_number == 1
         assert llm_chat.called
+
+    def test_logs_interaction_end_with_matching_number(
+        self, react_strategy, sample_chat_messages, caplog
+    ):
+        """Start and end events share the same interaction_number."""
+        mock_response = ChatMessage(
+            role=Role.ASSISTANT,
+            content="Here is the answer.",
+            tool_calls=None,
+        )
+        with patch.object(react_strategy, "llm_chat", return_value=mock_response):
+            with caplog.at_level("INFO"):
+                react_strategy.think(sample_chat_messages)
+
+        start = next(
+            r for r in caplog.records if r.message == "llm.interaction_start"
+        )
+        end = next(
+            r for r in caplog.records if r.message == "llm.interaction_end"
+        )
+        assert start.interaction_number == end.interaction_number
+        assert end.duration_ms >= 0
+
+    def test_logs_interaction_end_on_error(
+        self, react_strategy, sample_chat_messages, caplog
+    ):
+        """interaction_end is emitted even when the LLM call fails."""
+        with patch.object(react_strategy, "llm_chat", side_effect=RuntimeError("boom")):
+            with caplog.at_level("INFO"):
+                react_strategy.think(sample_chat_messages)
+
+        end = next(
+            r for r in caplog.records if r.message == "llm.interaction_end"
+        )
+        assert end.interaction_number == 1
+        assert end.outcome == "strategy_error"
     
     def test_think_with_multiple_tool_calls(self, react_strategy, sample_chat_messages):
         """Test think method when LLM returns multiple tool calls."""

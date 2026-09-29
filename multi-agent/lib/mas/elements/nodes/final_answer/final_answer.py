@@ -59,15 +59,14 @@ class FinalAnswerNode(IEMCapableMixin, BaseNode):
                 result = task.result
                 result_type = "success" if result.success else "error"
                 summary_source = result.error if not result.success and result.error else result.content
-                result_summary = " ".join(str(summary_source or "").split())
+                source_len = len(str(summary_source or ""))
                 logger.info(
                     "final_answer.result_collected",
                     extra={
                         "node_uid": self.uid,
                         "agent_name": result.agent_name,
                         "result_type": result_type,
-                        "result_summary": result_summary[:500],
-                        "result_characters": len(str(summary_source or "")),
+                        "result_characters": source_len,
                         "is_error_response": not result.success,
                     },
                 )
