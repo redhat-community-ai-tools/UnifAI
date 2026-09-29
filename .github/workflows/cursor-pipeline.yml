@@ -202,7 +202,13 @@ jobs:
           # Decide step outcome.
           # Fail only when NO usable output exists for the gate evaluator.
           HAS_JSON_RESULTS=false
-          [ -f /tmp/pipeline_results.json ] && [ -s /tmp/pipeline_results.json ] && HAS_JSON_RESULTS=true
+          if [ -f /tmp/pipeline_results.json ] && [ -s /tmp/pipeline_results.json ]; then
+            if python3 -c "import json, sys; json.load(open(sys.argv[1]))" /tmp/pipeline_results.json 2>/dev/null; then
+              HAS_JSON_RESULTS=true
+            else
+              echo "::warning::pipeline_results.json exists but contains invalid JSON."
+            fi
+          fi
 
           if [ "$AGENT_EXIT" -ne 0 ]; then
             if [ "$HAS_JSON_RESULTS" = false ] && [ "$SPLIT_OK" = false ]; then
