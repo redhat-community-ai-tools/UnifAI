@@ -7,5 +7,8 @@ unifai_rag_celery:
   env:
     DOCLING_SERVICE_URL: "${DOCLING_URL}"
     EMBEDDING_SERVICE_URL: "${EMBEDDING_URL}"
+# The helmfile passes .Values.storage flat to the chart; the chart reads storage.className, hence the nested key.
 storage:
   className: ${SHARED_STORAGE_CLASS}
+  storage:
+    className: ${SHARED_STORAGE_CLASS}

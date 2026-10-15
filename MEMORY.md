@@ -29,7 +29,8 @@ Deploy UnifAI autonomously on our OpenShift cluster, evolve it, and contribute s
   `ui/UnifAI-secrets/certificates/unifai.{crt,key}` (`make ui-certs`).
 
 ## Known gaps / not validated
-- `helmfile` not installed when written: `deploy*` untested. `podman build` never run. Public images for mongo/qdrant/rabbitmq (`bitnamilegacy/rabbitmq`) to confirm.
+- helmfile 1.8.1 + helm-diff installed in `~/.local/bin`; `helmfile template` passes on the 6 rendered modules (no AWS/Red Hat leftovers), `deploy-diff`/`deploy` not yet run on a cluster. Images built and pushed to `quay.io/zuno/unifai-*:devel` (+`devel-<sha>`). Public images for mongo/qdrant/rabbitmq (`bitnamilegacy/rabbitmq`) to confirm at runtime.
+- Upstream values quirks handled in overlays: mongodb/qdrant read `storage.className` (not `storageClassName`); rabbitmq uses `global.storageClass`; rag/multiagent shared-storage need a nested `storage.storage.className`.
 - Remaining Red Hat dependencies: docling and embedding service URLs (set `DOCLING_URL`/`EMBEDDING_URL`, or `USE_REMOTE_*=False`), `paas.redhat.com/appcode` annotations.
 - Upstream chart defects found by `make helm-lint`: `helm/multiagent/be` (template without extension), `helm/shared-resources/rabbitmq` (missing `common` dependency).
 - Upstream has no CONTRIBUTING; PRs come from in-repo branches; review gate = CodeRabbit + Cursor pipeline (arch APPROVE, score >= 8/10) needing secrets forks do not get.

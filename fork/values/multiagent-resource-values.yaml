@@ -1,2 +1,5 @@
+# The helmfile passes .Values.storage flat to the chart, which reads storage.className: hence the nested key.
 storage:
   className: ${SHARED_STORAGE_CLASS}
+  storage:
+    className: ${SHARED_STORAGE_CLASS}

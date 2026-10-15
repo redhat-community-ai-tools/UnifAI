@@ -4,18 +4,20 @@ mongodb:
     registry: docker.io
     repository: library/mongo
   storage:
-    storageClassName: ${STORAGE_CLASS}
+    className: ${STORAGE_CLASS}
 qdrant:
   image:
     registry: docker.io
     repository: qdrant/qdrant
     tag: v1.16.0
   storage:
-    storageClassName: ${STORAGE_CLASS}
+    className: ${STORAGE_CLASS}
 rabbitmq:
   image:
     registry: docker.io
     repository: bitnamilegacy/rabbitmq
+  global:
+    storageClass: ${STORAGE_CLASS}
 redis:
   image:
     registry: registry.access.redhat.com
