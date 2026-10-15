@@ -29,7 +29,7 @@ TAG                  ?= $(DEVEL_TAG)
 export REGISTRY IMAGE_PREFIX UI_HOST IDENTITY_HOST_NAME STORAGE_CLASS SHARED_STORAGE_CLASS DOCLING_URL EMBEDDING_URL
 
 .DEFAULT_GOAL := help
-.PHONY: ui-perms help init status login sync-main merge-main-to-devel sync-all feature-start feature-to-devel \
+.PHONY: ui-perms multiagent-perms help init status login sync-main merge-main-to-devel sync-all feature-start feature-to-devel \
         ui-certs build-all push-all images-devel overlay helm-lint deploy-shared deploy-diff deploy \
         release contrib-update contrib-check contrib-pr contrib-ready
 
@@ -106,6 +106,11 @@ ui-perms: ## Make ui/ and README.md world-readable (the UI Dockerfile uses COPY,
 	chmod -R a+rX ui README.md
 
 build-ui: ui-perms
+
+multiagent-perms: ## Make multi-agent/ world-readable (its Dockerfile COPYs entrypoint.sh keeping the host mode)
+	chmod -R a+rX multi-agent
+
+build-multi-agent: multiagent-perms
 
 build-%: check-quay ## Build one component (rag multi-agent backend identity ui); TAG=...
 	$(ENGINE) build $(BUILD_ARGS_$*) -t $(call img,$*):$(TAG) -f $(DOCKERFILE_$*) .
