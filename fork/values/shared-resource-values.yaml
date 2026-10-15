@@ -20,7 +20,9 @@ rabbitmq:
     storageClass: ${STORAGE_CLASS}
 redis:
   image:
-    registry: registry.access.redhat.com
+    registry: quay.io
+    repository: fedora/redis-7
+    tag: "20250108"
   storage:
     storageClassName: ${STORAGE_CLASS}
 redis-insight:
