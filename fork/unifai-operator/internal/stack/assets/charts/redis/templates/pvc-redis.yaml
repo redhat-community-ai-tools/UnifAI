@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "redis.fullname" . }}-pvc
+  labels:
+    app: {{ .Chart.Name }}
+    paas.redhat.com/appcode: TAG-001
+  annotations:
+    kubernetes.io/reclaimPolicy: Delete
+    "helm.sh/resource-policy": keep
+spec:
+  accessModes:
+    {{- toYaml .Values.storage.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.size }}
+  storageClassName: {{ .Values.storage.storageClassName }}

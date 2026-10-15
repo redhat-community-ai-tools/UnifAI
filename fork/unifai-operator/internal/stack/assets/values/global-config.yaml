@@ -1,0 +1,9 @@
+env:
+  FRONTEND_URL: "https://unifai-ui-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
+  RAG_HOST:  "unifai-rag-server"
+  RAG_PORT: "13456"
+  MULTIAGENT_HOST: "unifai-multiagent-be"
+  MULTIAGENT_PORT: "8003"
+  # will be used once SSO team adds the new routes to the configuration
+  IDENTITY_HOST: "https://unifai-identity-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
+  #IDENTITY_HOST: "https://unifai-sso-backend-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"

@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "multiagent-temporal-worker.fullname" . }}
+  labels:
+    {{- include "multiagent-temporal-worker.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "multiagent-temporal-worker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "multiagent-temporal-worker.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "multiagent-temporal-worker.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          stdin: true
+          tty: true
+          env:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: APP_VERSION
+            value: "{{ .Values.image.tag | default .Chart.AppVersion }}"
+          {{- range $key, $value := .Values.env }}
+          {{- if and (ne $key "POD_NAME") (ne $key "APP_VERSION") }}
+          - name: {{ $key | quote }}
+            value: {{ $value | quote }}
+          {{- end }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.globalConfigMapName }}
+            - configMapRef:
+                name: multiagent-be-configmap
+            - configMapRef:
+                name: multiagent-temporal-worker-configmap
+            - secretRef:
+                name: {{ .Values.globalSecretName }}
+            - secretRef:
+                name: {{ .Values.MultiagentSecretName }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+
+          {{- if ne .Values.env.ROLE "debug"}}
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "temporal-worker"]
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["pgrep", "-f", "temporal-worker"]
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            failureThreshold: 3
+          {{- end }}
+
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- tpl (toYaml .) $ | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,145 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: '[]'
+    capabilities: Seamless Upgrades
+    categories: AI/Machine Learning, Developer Tools
+    containerImage: quay.io/zuno/unifai-operator:v0.0.0
+    description: Deploys UnifAI stacks and manages UnifAI agents, workflows and RAG
+      pipelines declaratively.
+    features.operators.openshift.io/disconnected: "false"
+    features.operators.openshift.io/fips-compliant: "false"
+    features.operators.openshift.io/proxy-aware: "false"
+    features.operators.openshift.io/tls-profiles: "false"
+    features.operators.openshift.io/token-auth-aws: "false"
+    features.operators.openshift.io/token-auth-azure: "false"
+    features.operators.openshift.io/token-auth-gcp: "false"
+    operatorframework.io/suggested-namespace: openshift-operators
+    repository: https://github.com/startxfr/UnifAI
+    support: startx
+  name: unifai-operator.v0.0.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: UnifaiAgent is an UnifAI Agent (workflow node) (nodes resource).
+      displayName: Unifai Agent
+      kind: UnifaiAgent
+      name: unifaiagents.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiChat runs one prompt on a workflow; the transcript lands
+        in status.result.
+      displayName: Unifai Chat
+      kind: UnifaiChat
+      name: unifaichats.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiCondition is an UnifAI Workflow condition (conditions resource).
+      displayName: Unifai Condition
+      kind: UnifaiCondition
+      name: unifaiconditions.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiLLM is an UnifAI LLM endpoint (llms resource).
+      displayName: Unifai LLM
+      kind: UnifaiLLM
+      name: unifaillms.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiProvider is an UnifAI Provider (MCP server) (providers resource).
+      displayName: Unifai Provider
+      kind: UnifaiProvider
+      name: unifaiproviders.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiRAGPipeline uploads documents and dispatches the document
+        pipeline (chunk, embed, store in Qdrant).
+      displayName: Unifai RAGPipeline
+      kind: UnifaiRAGPipeline
+      name: unifairagpipelines.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiRetriever is an UnifAI Retriever (retrievers resource).
+      displayName: Unifai Retriever
+      kind: UnifaiRetriever
+      name: unifairetrievers.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiSandbox is an UnifAI Sandbox (sandboxes resource).
+      displayName: Unifai Sandbox
+      kind: UnifaiSandbox
+      name: unifaisandboxes.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiSchedule is a scheduled workflow (Temporal schedule).
+      displayName: Unifai Schedule
+      kind: UnifaiSchedule
+      name: unifaischedules.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiStack deploys a complete UnifAI platform in its namespace
+        (at most one per namespace, named `unifai`).
+      displayName: Unifai Stack
+      kind: UnifaiStack
+      name: unifaistacks.unifai.startx.fr
+      version: v1alpha1
+    - description: 'UnifaiTemplate is an UnifAI catalog template (no update API: changes
+        delete and recreate it).'
+      displayName: Unifai Template
+      kind: UnifaiTemplate
+      name: unifaitemplates.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiTool is an UnifAI Tool (tools resource).
+      displayName: Unifai Tool
+      kind: UnifaiTool
+      name: unifaitools.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiWorkflow is an UnifAI agentic workflow (blueprint).
+      displayName: Unifai Workflow
+      kind: UnifaiWorkflow
+      name: unifaiworkflows.unifai.startx.fr
+      version: v1alpha1
+  description: |
+    The UnifAI operator deploys and configures [UnifAI](https://github.com/redhat-community-ai-tools/UnifAI), an agentic AI platform (multi-agent workflows, RAG data pipelines, MCP tools).
+
+    ## Deploy a platform
+    Create one `UnifaiStack` named `unifai` in a namespace (one stack per namespace). The operator deploys MongoDB, Qdrant, RabbitMQ, Redis, Temporal, the RAG and multi-agent services, the backend, the identity service and the UI, and wires their configuration and secrets. Authentication uses an existing Keycloak realm or a Keycloak deployed by the operator with the Red Hat build of Keycloak operator.
+
+    ## Configure UnifAI as code
+    In a namespace that runs a stack, declare UnifAI objects as custom resources: `UnifaiLLM`, `UnifaiProvider` (MCP servers), `UnifaiTool`, `UnifaiCondition`, `UnifaiRetriever`, `UnifaiSandbox`, `UnifaiAgent`, `UnifaiWorkflow`, `UnifaiSchedule`, `UnifaiTemplate`, `UnifaiChat` and `UnifaiRAGPipeline`. Objects reference each other by name (`$ref:llm/my-llm`), secrets come from Kubernetes Secrets, and deleting a resource deletes the UnifAI object.
+
+    ## Profiles
+    `dev` (default) caps resource requests for small clusters; `prod` keeps the upstream sizing (about 25 CPU / 60 GiB).
+  displayName: UnifAI Operator
+  icon:
+  - base64data: PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMxZjJhNDQiLz48Y2lyY2xlIGN4PSIyMCIgY3k9IjIyIiByPSI2IiBmaWxsPSIjNWVjMmZmIi8+PGNpcmNsZSBjeD0iNDQiIGN5PSIyMiIgcj0iNiIgZmlsbD0iIzVlYzJmZiIvPjxjaXJjbGUgY3g9IjMyIiBjeT0iNDQiIHI9IjYiIGZpbGw9IiNmZmIzNDciLz48cGF0aCBkPSJNMjAgMjJMMzIgNDRMNDQgMjIiIHN0cm9rZT0iI2NmZThmZiIgc3Ryb2tlLXdpZHRoPSIzIiBmaWxsPSJub25lIi8+PC9zdmc+
+    mediatype: image/svg+xml
+  install:
+    spec:
+      deployments: null
+    strategy: ""
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - unifai
+  - ai
+  - agents
+  - agentic
+  - rag
+  - llm
+  - mcp
+  - workflow
+  links:
+  - name: UnifAI
+    url: https://github.com/redhat-community-ai-tools/UnifAI
+  - name: Operator source
+    url: https://github.com/startxfr/UnifAI/tree/devel/fork/unifai-operator
+  maintainers:
+  - name: startx
+  maturity: alpha
+  minKubeVersion: 1.30.0
+  provider:
+    name: startx
+    url: https://www.startx.fr
+  version: 0.0.0

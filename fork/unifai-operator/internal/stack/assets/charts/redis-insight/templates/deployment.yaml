@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "redis-insight.fullname" . }} 
+  labels:
+    app: {{ .Chart.Name }}
+spec:
+  replicas: 1 
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }} 
+  template: 
+    metadata:
+      labels:
+        app: {{ .Chart.Name }} 
+    spec:
+      volumes:
+        - name: redis-insight
+          persistentVolumeClaim:
+            claimName: {{ include "redis-insight.fullname" . }}-pvc
+        - name: log-storage
+          emptyDir: {}
+      containers:
+        - name:  {{ include "redis-insight.fullname" . }} 
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}" #- need to think over the latest tag
+          imagePullPolicy: {{ .Values.image.pullPolicy }} 
+          volumeMounts:
+          - name: redis-insight
+            mountPath: /data
+          - name: log-storage
+            mountPath: /data/redis-insight/logs
+          env:
+          {{- range $key, $value := .Values.env }}
+          - name: "{{ $key }}"
+            value: "{{ $value }}"
+          {{- end }}
+          envFrom:
+          {{- if .Values.redisConfigMapName }}
+            - configMapRef:
+                name: {{ .Values.redisConfigMapName | quote }}
+          {{- end }}
+          {{- if .Values.RedisSecretName }}
+            - secretRef:
+                name: {{ .Values.RedisSecretName }}
+          {{- end }}
+          ports:
+          - containerPort: {{ .Values.service.port }} 
+            protocol: TCP

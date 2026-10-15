@@ -1,0 +1,892 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: ClusterServiceVersion
+metadata:
+  annotations:
+    alm-examples: |-
+      [
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiAgent",
+          "metadata": {
+            "name": "demo-agent"
+          },
+          "spec": {
+            "config": {
+              "hitl_mode": "skip",
+              "llm": "$ref:llm/demo-fake",
+              "max_rounds": 10,
+              "providers": [
+                "$ref:provider/demo-mcp"
+              ],
+              "strategy_type": "react",
+              "system_message": "You are a concise assistant.",
+              "tools": [
+                "$ref:tool/demo-web-fetch"
+              ]
+            },
+            "type": "custom_agent_node"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiChat",
+          "metadata": {
+            "name": "demo-chat-smoke"
+          },
+          "spec": {
+            "prompt": "ping",
+            "title": "Smoke test",
+            "workflow": "demo-linear"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiCondition",
+          "metadata": {
+            "name": "demo-direct"
+          },
+          "spec": {
+            "config": {},
+            "type": "router_direct"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiLLM",
+          "metadata": {
+            "name": "demo-fake"
+          },
+          "spec": {
+            "config": {
+              "api_key": "EMPTY",
+              "base_url": "http://unifai-demo-llm:8000/v1",
+              "model_name": "mock-model"
+            },
+            "type": "openai_compatible"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiProvider",
+          "metadata": {
+            "name": "demo-mcp"
+          },
+          "spec": {
+            "config": {
+              "auth_method": "access_token",
+              "mcp_url": "http://unifai-demo-mcp:8004/sse",
+              "tool_names": [
+                "utc_now",
+                "echo"
+              ],
+              "transport_type": "sse"
+            },
+            "type": "mcp_server"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiRAGPipeline",
+          "metadata": {
+            "name": "demo-docs"
+          },
+          "spec": {
+            "documents": [
+              {
+                "name": "unifai-demo-notes.md",
+                "source": {
+                  "inline": "# UnifAI demo notes\nThe startx demo cluster hosts UnifAI in the namespace unifai-devel.\nObjects are declared with the unifai.startx.fr custom resources.\n"
+                },
+                "tags": [
+                  "demo",
+                  "notes"
+                ]
+              },
+              {
+                "name": "operator-readme.md",
+                "source": {
+                  "configMapKeyRef": {
+                    "key": "operator-readme.md",
+                    "name": "unifai-demo-docs"
+                  }
+                },
+                "tags": [
+                  "demo"
+                ]
+              }
+            ],
+            "owner": "admin"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiRetriever",
+          "metadata": {
+            "name": "demo-docs"
+          },
+          "spec": {
+            "config": {
+              "threshold": 0.3,
+              "timeout": 30,
+              "top_k_results": 5
+            },
+            "type": "docs_rag"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiSandbox",
+          "metadata": {
+            "name": "demo-openshell"
+          },
+          "spec": {
+            "config": {
+              "gateway_url": "https://openshell-gateway.example.com:8443",
+              "keep_sandbox": false,
+              "workdir": "/sandbox"
+            },
+            "secretRefs": [
+              {
+                "path": "ca_cert",
+                "secretKeyRef": {
+                  "key": "ca.pem",
+                  "name": "openshell-pki"
+                }
+              },
+              {
+                "path": "tls_cert",
+                "secretKeyRef": {
+                  "key": "tls.crt",
+                  "name": "openshell-pki"
+                }
+              },
+              {
+                "path": "tls_key",
+                "secretKeyRef": {
+                  "key": "tls.key",
+                  "name": "openshell-pki"
+                }
+              }
+            ],
+            "type": "openshell_sandbox"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiSchedule",
+          "metadata": {
+            "name": "demo-every-30m"
+          },
+          "spec": {
+            "inputs": {
+              "user_prompt": "status report, please"
+            },
+            "schedule": {
+              "interval": "PT30M",
+              "overlap_policy": "skip",
+              "timezone": "UTC"
+            },
+            "workflow": "demo-linear"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiStack",
+          "metadata": {
+            "name": "unifai"
+          },
+          "spec": {
+            "identity": {
+              "adminUsers": [
+                "admin"
+              ],
+              "keycloak": {
+                "database": {
+                  "type": "auto"
+                }
+              }
+            },
+            "profile": "dev",
+            "rag": {
+              "docling": {
+                "mode": "local"
+              },
+              "embedding": {
+                "mode": "local"
+              }
+            },
+            "storage": {
+              "className": "gp3-csi",
+              "sharedClassName": "nfs"
+            }
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiTemplate",
+          "metadata": {
+            "name": "demo-chat-quickstart"
+          },
+          "spec": {
+            "draft": {
+              "description": "One Gemini agent answering questions.",
+              "llms": [
+                {
+                  "config": {
+                    "api_key": "PLACEHOLDER_API_KEY",
+                    "model_name": "gemini-3.5-flash",
+                    "type": "google_genai"
+                  },
+                  "name": "gemini",
+                  "rid": "llm_rid",
+                  "type": "google_genai"
+                }
+              ],
+              "name": "Demo Chat Quickstart",
+              "nodes": [
+                {
+                  "config": {
+                    "retries": 1,
+                    "type": "user_question_node"
+                  },
+                  "name": "User Question Node",
+                  "rid": "user_question",
+                  "type": "user_question_node"
+                },
+                {
+                  "config": {
+                    "retries": 1,
+                    "type": "final_answer_node"
+                  },
+                  "name": "Final Answer Node",
+                  "rid": "final_answer",
+                  "type": "final_answer_node"
+                },
+                {
+                  "config": {
+                    "hitl_mode": "skip",
+                    "llm": "llm_rid",
+                    "system_message": "You are a helpful assistant.",
+                    "type": "custom_agent_node"
+                  },
+                  "name": "Assistant",
+                  "rid": "agent_rid",
+                  "type": "custom_agent_node"
+                }
+              ],
+              "plan": [
+                {
+                  "node": "user_question",
+                  "uid": "ask"
+                },
+                {
+                  "after": "ask",
+                  "node": "agent_rid",
+                  "uid": "answer"
+                },
+                {
+                  "after": "answer",
+                  "node": "final_answer",
+                  "uid": "finish"
+                }
+              ]
+            },
+            "metadata": {
+              "author": "startx",
+              "category": "Chat",
+              "is_public": true,
+              "tags": [
+                "chat",
+                "quickstart"
+              ],
+              "version": "1.0.0"
+            },
+            "owner": "admin",
+            "placeholders": {
+              "categories": [
+                {
+                  "category": "llms",
+                  "resources": [
+                    {
+                      "placeholders": [
+                        {
+                          "field_path": "api_key",
+                          "hint": "Google AI Studio key",
+                          "label": "Gemini API key",
+                          "required": true
+                        }
+                      ],
+                      "rid": "llm_rid"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiTool",
+          "metadata": {
+            "name": "demo-web-fetch"
+          },
+          "spec": {
+            "config": {},
+            "type": "web_fetch"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiWorkflow",
+          "metadata": {
+            "name": "demo-linear"
+          },
+          "spec": {
+            "blueprint": {
+              "conditions": [
+                {
+                  "rid": "$ref:condition/demo-direct"
+                }
+              ],
+              "nodes": [
+                {
+                  "config": {
+                    "retries": 1,
+                    "type": "user_question_node"
+                  },
+                  "name": "User Question Node",
+                  "rid": "user_question",
+                  "type": "user_question_node"
+                },
+                {
+                  "config": {
+                    "retries": 1,
+                    "type": "final_answer_node"
+                  },
+                  "name": "Final Answer Node",
+                  "rid": "final_answer",
+                  "type": "final_answer_node"
+                },
+                {
+                  "rid": "$ref:agent/demo-agent"
+                }
+              ],
+              "plan": [
+                {
+                  "branches": {
+                    "agent": "agent"
+                  },
+                  "exit_condition": "$rid:condition/demo-direct",
+                  "node": "user_question",
+                  "uid": "ask"
+                },
+                {
+                  "node": "$rid:agent/demo-agent",
+                  "uid": "agent"
+                },
+                {
+                  "after": "agent",
+                  "node": "final_answer",
+                  "uid": "finish"
+                }
+              ]
+            },
+            "description": "question -\u003e demo-agent -\u003e answer"
+          }
+        }
+      ]
+    capabilities: Seamless Upgrades
+    categories: AI/Machine Learning, Developer Tools
+    containerImage: quay.io/zuno/unifai-operator:v0.1.0
+    createdAt: "2026-10-15T23:17:24Z"
+    description: Deploys UnifAI stacks and manages UnifAI agents, workflows and RAG
+      pipelines declaratively.
+    features.operators.openshift.io/disconnected: "false"
+    features.operators.openshift.io/fips-compliant: "false"
+    features.operators.openshift.io/proxy-aware: "false"
+    features.operators.openshift.io/tls-profiles: "false"
+    features.operators.openshift.io/token-auth-aws: "false"
+    features.operators.openshift.io/token-auth-azure: "false"
+    features.operators.openshift.io/token-auth-gcp: "false"
+    operatorframework.io/suggested-namespace: openshift-operators
+    operators.operatorframework.io/builder: operator-sdk-v1.41.1
+    operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
+    repository: https://github.com/startxfr/UnifAI
+    support: startx
+  name: unifai-operator.v0.1.0
+  namespace: placeholder
+spec:
+  apiservicedefinitions: {}
+  customresourcedefinitions:
+    owned:
+    - description: UnifaiAgent is an UnifAI Agent (workflow node) (nodes resource).
+      displayName: Unifai Agent
+      kind: UnifaiAgent
+      name: unifaiagents.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiChat runs one prompt on a workflow; the transcript lands
+        in status.result.
+      displayName: Unifai Chat
+      kind: UnifaiChat
+      name: unifaichats.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiCondition is an UnifAI Workflow condition (conditions resource).
+      displayName: Unifai Condition
+      kind: UnifaiCondition
+      name: unifaiconditions.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiLLM is an UnifAI LLM endpoint (llms resource).
+      displayName: Unifai LLM
+      kind: UnifaiLLM
+      name: unifaillms.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiProvider is an UnifAI Provider (MCP server) (providers resource).
+      displayName: Unifai Provider
+      kind: UnifaiProvider
+      name: unifaiproviders.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiRAGPipeline uploads documents and dispatches the document
+        pipeline (chunk, embed, store in Qdrant).
+      displayName: Unifai RAGPipeline
+      kind: UnifaiRAGPipeline
+      name: unifairagpipelines.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiRetriever is an UnifAI Retriever (retrievers resource).
+      displayName: Unifai Retriever
+      kind: UnifaiRetriever
+      name: unifairetrievers.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiSandbox is an UnifAI Sandbox (sandboxes resource).
+      displayName: Unifai Sandbox
+      kind: UnifaiSandbox
+      name: unifaisandboxes.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiSchedule is a scheduled workflow (Temporal schedule).
+      displayName: Unifai Schedule
+      kind: UnifaiSchedule
+      name: unifaischedules.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiStack deploys a complete UnifAI platform in its namespace
+        (at most one per namespace, named `unifai`).
+      displayName: Unifai Stack
+      kind: UnifaiStack
+      name: unifaistacks.unifai.startx.fr
+      version: v1alpha1
+    - description: 'UnifaiTemplate is an UnifAI catalog template (no update API: changes
+        delete and recreate it).'
+      displayName: Unifai Template
+      kind: UnifaiTemplate
+      name: unifaitemplates.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiTool is an UnifAI Tool (tools resource).
+      displayName: Unifai Tool
+      kind: UnifaiTool
+      name: unifaitools.unifai.startx.fr
+      version: v1alpha1
+    - description: UnifaiWorkflow is an UnifAI agentic workflow (blueprint).
+      displayName: Unifai Workflow
+      kind: UnifaiWorkflow
+      name: unifaiworkflows.unifai.startx.fr
+      version: v1alpha1
+  description: |
+    The UnifAI operator deploys and configures [UnifAI](https://github.com/redhat-community-ai-tools/UnifAI), an agentic AI platform (multi-agent workflows, RAG data pipelines, MCP tools).
+
+    ## Deploy a platform
+    Create one `UnifaiStack` named `unifai` in a namespace (one stack per namespace). The operator deploys MongoDB, Qdrant, RabbitMQ, Redis, Temporal, the RAG and multi-agent services, the backend, the identity service and the UI, and wires their configuration and secrets. Authentication uses an existing Keycloak realm or a Keycloak deployed by the operator with the Red Hat build of Keycloak operator.
+
+    ## Configure UnifAI as code
+    In a namespace that runs a stack, declare UnifAI objects as custom resources: `UnifaiLLM`, `UnifaiProvider` (MCP servers), `UnifaiTool`, `UnifaiCondition`, `UnifaiRetriever`, `UnifaiSandbox`, `UnifaiAgent`, `UnifaiWorkflow`, `UnifaiSchedule`, `UnifaiTemplate`, `UnifaiChat` and `UnifaiRAGPipeline`. Objects reference each other by name (`$ref:llm/my-llm`), secrets come from Kubernetes Secrets, and deleting a resource deletes the UnifAI object.
+
+    ## Profiles
+    `dev` (default) caps resource requests for small clusters; `prod` keeps the upstream sizing (about 25 CPU / 60 GiB).
+  displayName: UnifAI Operator
+  icon:
+  - base64data: PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMxZjJhNDQiLz48Y2lyY2xlIGN4PSIyMCIgY3k9IjIyIiByPSI2IiBmaWxsPSIjNWVjMmZmIi8+PGNpcmNsZSBjeD0iNDQiIGN5PSIyMiIgcj0iNiIgZmlsbD0iIzVlYzJmZiIvPjxjaXJjbGUgY3g9IjMyIiBjeT0iNDQiIHI9IjYiIGZpbGw9IiNmZmIzNDciLz48cGF0aCBkPSJNMjAgMjJMMzIgNDRMNDQgMjIiIHN0cm9rZT0iI2NmZThmZiIgc3Ryb2tlLXdpZHRoPSIzIiBmaWxsPSJub25lIi8+PC9zdmc+
+    mediatype: image/svg+xml
+  install:
+    spec:
+      clusterPermissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          - endpoints
+          - persistentvolumeclaims
+          - secrets
+          - serviceaccounts
+          - services
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        - apiGroups:
+          - ""
+          resources:
+          - pods
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - apps
+          resources:
+          - deployments
+          - statefulsets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - autoscaling
+          resources:
+          - horizontalpodautoscalers
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - batch
+          resources:
+          - jobs
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - config.openshift.io
+          resources:
+          - ingresses
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - k8s.keycloak.org
+          resources:
+          - keycloakrealmimports
+          - keycloaks
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - monitoring.coreos.com
+          resources:
+          - prometheusrules
+          - servicemonitors
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - networking.k8s.io
+          resources:
+          - ingresses
+          - networkpolicies
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - operators.coreos.com
+          resources:
+          - clusterserviceversions
+          - operatorgroups
+          - subscriptions
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - policy
+          resources:
+          - poddisruptionbudgets
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - postgres-operator.crunchydata.com
+          resources:
+          - postgresclusters
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - rbac.authorization.k8s.io
+          resources:
+          - rolebindings
+          - roles
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - route.openshift.io
+          resources:
+          - routes
+          - routes/custom-host
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - unifai.startx.fr
+          resources:
+          - unifaiagents
+          - unifaichats
+          - unifaiconditions
+          - unifaillms
+          - unifaiproviders
+          - unifairagpipelines
+          - unifairetrievers
+          - unifaisandboxes
+          - unifaischedules
+          - unifaistacks
+          - unifaitemplates
+          - unifaitools
+          - unifaiworkflows
+          verbs:
+          - get
+          - list
+          - patch
+          - update
+          - watch
+        - apiGroups:
+          - unifai.startx.fr
+          resources:
+          - unifaiagents/finalizers
+          - unifaichats/finalizers
+          - unifaiconditions/finalizers
+          - unifaillms/finalizers
+          - unifaiproviders/finalizers
+          - unifairagpipelines/finalizers
+          - unifairetrievers/finalizers
+          - unifaisandboxes/finalizers
+          - unifaischedules/finalizers
+          - unifaistacks/finalizers
+          - unifaitemplates/finalizers
+          - unifaitools/finalizers
+          - unifaiworkflows/finalizers
+          verbs:
+          - update
+        - apiGroups:
+          - unifai.startx.fr
+          resources:
+          - unifaiagents/status
+          - unifaichats/status
+          - unifaiconditions/status
+          - unifaillms/status
+          - unifaiproviders/status
+          - unifairagpipelines/status
+          - unifairetrievers/status
+          - unifaisandboxes/status
+          - unifaischedules/status
+          - unifaistacks/status
+          - unifaitemplates/status
+          - unifaitools/status
+          - unifaiworkflows/status
+          verbs:
+          - get
+          - patch
+          - update
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
+        serviceAccountName: unifai-operator-controller-manager
+      deployments:
+      - label:
+          app.kubernetes.io/managed-by: kustomize
+          app.kubernetes.io/name: unifai-operator
+          control-plane: controller-manager
+        name: unifai-operator-controller-manager
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: unifai-operator
+              control-plane: controller-manager
+          strategy: {}
+          template:
+            metadata:
+              annotations:
+                kubectl.kubernetes.io/default-container: manager
+              labels:
+                app.kubernetes.io/name: unifai-operator
+                control-plane: controller-manager
+            spec:
+              containers:
+              - args:
+                - --metrics-bind-address=:8443
+                - --leader-elect
+                - --health-probe-bind-address=:8081
+                command:
+                - /manager
+                env:
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                image: quay.io/zuno/unifai-operator:v0.1.0
+                livenessProbe:
+                  httpGet:
+                    path: /healthz
+                    port: 8081
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                name: manager
+                readinessProbe:
+                  httpGet:
+                    path: /readyz
+                    port: 8081
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                resources:
+                  limits:
+                    memory: 1Gi
+                  requests:
+                    cpu: 50m
+                    memory: 192Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                    - ALL
+              securityContext:
+                runAsNonRoot: true
+                seccompProfile:
+                  type: RuntimeDefault
+              serviceAccountName: unifai-operator-controller-manager
+              terminationGracePeriodSeconds: 10
+      permissions:
+      - rules:
+        - apiGroups:
+          - ""
+          resources:
+          - configmaps
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - coordination.k8s.io
+          resources:
+          - leases
+          verbs:
+          - get
+          - list
+          - watch
+          - create
+          - update
+          - patch
+          - delete
+        - apiGroups:
+          - ""
+          resources:
+          - events
+          verbs:
+          - create
+          - patch
+        serviceAccountName: unifai-operator-controller-manager
+    strategy: deployment
+  installModes:
+  - supported: false
+    type: OwnNamespace
+  - supported: false
+    type: SingleNamespace
+  - supported: false
+    type: MultiNamespace
+  - supported: true
+    type: AllNamespaces
+  keywords:
+  - unifai
+  - ai
+  - agents
+  - agentic
+  - rag
+  - llm
+  - mcp
+  - workflow
+  links:
+  - name: UnifAI
+    url: https://github.com/redhat-community-ai-tools/UnifAI
+  - name: Operator source
+    url: https://github.com/startxfr/UnifAI/tree/devel/fork/unifai-operator
+  maintainers:
+  - name: startx
+  maturity: alpha
+  minKubeVersion: 1.30.0
+  provider:
+    name: startx
+    url: https://www.startx.fr
+  version: 0.1.0

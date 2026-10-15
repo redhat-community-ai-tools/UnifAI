@@ -1,0 +1,19 @@
+backend:
+  image:
+
+    repository: images.paas.redhat.com/unifai/sharedresources/identity
+    tag: "latest"
+    pullPolicy: Always
+  env:
+    ROLE: "flask"
+    BACKEND_ENV: "production"
+    VERSION: ""
+    PORT: 13456
+    LOG_LEVEL: info
+
+
+  service:
+    name: identity
+    port: 13456
+  type: ClusterIP
+

@@ -1,0 +1,25 @@
+{{- if include "mongodb.createSecureConfig" . }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "mongodb.fullname" . }}
+  labels:
+    {{- include "mongodb.labels" . | nindent 4 }}
+type: Opaque
+data:
+{{- with .Values.userDatabase }}
+  MONGO_INITDB_DATABASE: {{ required "Values: userDatabase.name is mandatory if userDatabase is specified." .name | b64enc }}
+  {{- if .user }}
+  USERDB_USER: {{ .user | b64enc }}
+  USERDB_PASSWORD: {{ required "Values: userDatabase.password is mandatory if userDatabase.user is specified." .password | b64enc }}
+  {{- end }}
+{{- end }}
+{{- with .Values.settings }}
+  {{- if .rootUsername }}
+  MONGO_INITDB_ROOT_USERNAME: {{ .rootUsername | b64enc }}
+  {{- end }}
+  {{- if .rootPassword }}
+  MONGO_INITDB_ROOT_PASSWORD: {{ .rootPassword | b64enc }}
+  {{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,16 @@
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiAgent
+metadata:
+  name: demo-agent
+spec:
+  type: custom_agent_node
+  config:
+    llm: $ref:llm/demo-fake
+    providers:
+    - $ref:provider/demo-mcp
+    tools:
+    - $ref:tool/demo-web-fetch
+    system_message: You are a concise assistant.
+    strategy_type: react
+    max_rounds: 10
+    hitl_mode: skip

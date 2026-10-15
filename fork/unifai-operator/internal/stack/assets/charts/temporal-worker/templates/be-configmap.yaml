@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: multiagent-temporal-worker-configmap
+  #namespace: {{ .Values.global.namespace }}
+data: 
+  # role: {{ .Values.global.role }}
+  # mode: {{ .Values.global.mode }}
+  PORT: {{ .Values.service.port | quote}} 
+{{- range $key, $value:= .Values.env }}
+  {{ $key }}: {{ $value | quote }}
+{{- end }}
+immutable: false

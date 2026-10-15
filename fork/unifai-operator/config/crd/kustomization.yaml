@@ -1,0 +1,28 @@
+# This kustomization.yaml is not intended to be run by itself,
+# since it depends on service name and namespace that are out of this kustomize package.
+# It should be run by config/default
+resources:
+- bases/unifai.startx.fr_unifaistacks.yaml
+- bases/unifai.startx.fr_unifaillms.yaml
+- bases/unifai.startx.fr_unifaiproviders.yaml
+- bases/unifai.startx.fr_unifaitools.yaml
+- bases/unifai.startx.fr_unifaiconditions.yaml
+- bases/unifai.startx.fr_unifairetrievers.yaml
+- bases/unifai.startx.fr_unifaisandboxes.yaml
+- bases/unifai.startx.fr_unifaiagents.yaml
+- bases/unifai.startx.fr_unifaiworkflows.yaml
+- bases/unifai.startx.fr_unifaischedules.yaml
+- bases/unifai.startx.fr_unifaitemplates.yaml
+- bases/unifai.startx.fr_unifaichats.yaml
+- bases/unifai.startx.fr_unifairagpipelines.yaml
+# +kubebuilder:scaffold:crdkustomizeresource
+
+patches:
+# [WEBHOOK] To enable webhook, uncomment all the sections with [WEBHOOK] prefix.
+# patches here are for enabling the conversion webhook for each CRD
+# +kubebuilder:scaffold:crdkustomizewebhookpatch
+
+# [WEBHOOK] To enable webhook, uncomment the following section
+# the following config is for teaching kustomize how to do kustomization for CRDs.
+#configurations:
+#- kustomizeconfig.yaml

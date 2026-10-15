@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  labels:
+    {{- include "qdrant.labels" . | nindent 4 }}
+  name: {{ include "qdrant.fullname" . }}
+spec:
+  port:
+    targetPort: {{ .Values.service.port }}
+  to:
+    kind: Service
+    name: {{ include "qdrant.fullname" . }}
+    weight: 100
+  wildcardPolicy: None

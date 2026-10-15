@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "temporal.fullname" . }}-external
+  labels:
+    app: {{ .Chart.Name }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port_ui }}
+      name: temporal-ui
+  selector:
+    app: {{ .Chart.Name }}
+

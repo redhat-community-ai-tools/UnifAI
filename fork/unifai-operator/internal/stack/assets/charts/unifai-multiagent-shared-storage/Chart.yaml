@@ -1,0 +1,9 @@
+apiVersion: v2
+name: unifai-multiagent-shared-storage
+description: A Helm chart for provisioning shared storage PVC for the multiagent temporal-worker
+
+type: application
+
+version: 0.1.0
+
+appVersion: "1.16.0"

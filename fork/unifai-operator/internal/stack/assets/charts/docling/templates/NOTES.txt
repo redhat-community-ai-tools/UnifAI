@@ -1,0 +1,63 @@
+🚀 Docling Serve has been deployed successfully!
+
+1. Access the Docling Serve API and UI:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  🌐 API: http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  🎨 UI: http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}ui
+  📖 Docs: http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}docs
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "docling.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  🌐 API: http://$NODE_IP:$NODE_PORT
+  🎨 UI: http://$NODE_IP:$NODE_PORT/ui
+  📖 Docs: http://$NODE_IP:$NODE_PORT/docs
+{{- else if contains "LoadBalancer" .Values.service.type }}
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           You can watch the status by running 'kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "docling.fullname" . }}'
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "docling.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  🌐 API: http://$SERVICE_IP:{{ .Values.service.port }}
+  🎨 UI: http://$SERVICE_IP:{{ .Values.service.port }}/ui
+  📖 Docs: http://$SERVICE_IP:{{ .Values.service.port }}/docs
+{{- else if contains "ClusterIP" .Values.service.type }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "docling.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  echo "Forward ports to access Docling Serve:"
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 5001:5001
+  
+  Then visit:
+  🌐 API: http://127.0.0.1:5001
+  🎨 UI: http://127.0.0.1:5001/ui  
+  📖 Docs: http://127.0.0.1:5001/docs
+{{- end }}
+
+2. Test the API with a simple conversion:
+   curl -X 'POST' \
+     'http://localhost:5001/v1/convert/source' \
+     -H 'accept: application/json' \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "sources": [{"kind": "http", "url": "https://arxiv.org/pdf/2501.17887"}]
+     }'
+
+3. Check the status of the Docling Serve deployment:
+   kubectl get pods -l "app.kubernetes.io/name={{ include "docling.name" . }},app.kubernetes.io/instance={{ .Release.Name }}"
+
+4. View logs:
+   kubectl logs -f deployment/{{ include "docling.fullname" . }}
+
+5. Docling Serve is configured with:
+   📊 Workers: {{ .Values.config.server.workers }}
+   🖥️  UI Enabled: {{ .Values.config.server.enableUI }}
+   📁 Max File Size: {{ .Values.config.processing.maxFileSizeMB }}MB
+   ⏱️  Timeout: {{ .Values.config.processing.timeoutSeconds }}s
+   👁️  OCR Enabled: {{ .Values.config.processing.enableOCR }}
+   📝 Output Formats: {{ .Values.config.processing.outputFormats | join ", " }}
+
+{{- if .Values.storage.requestedSize }}
+6. 💾 Persistent storage of {{ .Values.storage.requestedSize }} has been allocated for document processing.
+{{- end }}
+
+📚 For more information, visit: https://github.com/docling-project/docling-serve

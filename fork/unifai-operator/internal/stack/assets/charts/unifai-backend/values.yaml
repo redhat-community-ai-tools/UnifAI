@@ -1,0 +1,98 @@
+env:
+  ROLE: "flask"
+  BACKEND_ENV: "production"
+  SESSION_COOKIE_SAMESITE: "None"
+  SESSION_COOKIE_SECURE: true
+  SESSION_COOKIE_HTTPONLY: true
+
+debug: false
+
+globalConfigMapName: shared-config
+globalSecretName: shared-secret
+
+replicaCount: 1
+
+image:
+   repository: images.paas.redhat.com/unifai/backend
+   tag: latest
+   pullPolicy: Always
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: false
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 8005
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+resources:
+  limits:
+    cpu: 1
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: 8005
+  periodSeconds: 60
+
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: 8005
+  periodSeconds: 60
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+
+slackSocket:
+  enabled: true
+  resources:
+    limits:
+      cpu: 250m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+volumes: 
+  - name: unifai-logging-volume
+    persistentVolumeClaim:
+      claimName: unifai-logging-volume
+volumeMounts:
+  - name: unifai-logging-volume
+    mountPath: /var/log/unifai
+    subPathExpr: backend/$(POD_NAME)/$(APP_VERSION)
+    readOnly: false
+ 
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,13 @@
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiProvider
+metadata:
+  name: demo-mcp
+spec:
+  type: mcp_server
+  config:
+    mcp_url: http://unifai-demo-mcp:8004/sse
+    transport_type: sse
+    auth_method: access_token
+    tool_names:
+    - utc_now
+    - echo

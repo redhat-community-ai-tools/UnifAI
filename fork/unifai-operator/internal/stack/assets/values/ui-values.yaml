@@ -1,0 +1,37 @@
+# Default values for ui.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+#The ports variables are left empty when using deployment over ocp as the routes usually direct to the target service which is port specific.
+#In cases where a backend resides on a separate server then a address and port are needed.
+#In addition when using the load balancerservice location instead of a route a port specification might be needed as well.
+#The current implementation covers these 2 "edge" cases.
+
+# "unifai-rag-server-tag-ai--pipeline.apps.stc-ai-e1-prod.rtc9.p1.openshiftapps.com"
+# https://unifai-rag-server-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com
+
+debug: false
+
+ui:
+  env:
+    NGINX_PORT: "8443"
+    VERSION: ""
+    TEAM_MEMBERS: "Lina Abu Yousef,Maya Carmi,Nir Rashti,Odai Odeh,Omri Sabach,Saar Fireshtein,Shani Tzvi,Yosi Habushi"
+    SUPPORT_LINK: "https://redhat-internal.slack.com/app_redirect?channel=forum-unifai"
+
+  image:
+    repository: images.paas.redhat.com/unifai/ui
+    tag: "latest"
+    pullPolicy: Always
+
+  service:
+    portList:
+    - name: ui-https
+      port: 8443
+    - name: ui
+      port: 8080
+    - name: df-backend
+      port: 13456
+    - name: ma-backend
+      port: 8003
+    type: ClusterIP

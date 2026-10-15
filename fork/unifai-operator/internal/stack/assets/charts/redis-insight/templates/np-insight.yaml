@@ -1,0 +1,17 @@
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: {{ include "redis-insight.fullname" . }}-np
+  labels:
+    app: {{ .Chart.Name }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ .Chart.Name }}
+  ingress:
+    - {}
+  egress:
+    - {}
+  policyTypes:
+    - Ingress
+    - Egress

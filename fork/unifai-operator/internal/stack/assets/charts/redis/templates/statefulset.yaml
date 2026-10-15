@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "redis.fullname" . }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "redis.selectorLabels" . | nindent 6 }}
+  serviceName: {{ include "redis.fullname" . }}-svc
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        {{- include "redis.labels" . | nindent 8 }}
+    spec:
+      volumes:
+        - name: redis-volume
+          persistentVolumeClaim:
+            claimName: {{ include "redis.fullname" . }}-pvc
+      containers:
+        - name: redis
+          image: {{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}
+          #args: ["--requirepass", "admin", "--appendonly", "yes", "--save", "900", "1", "--save", "30", "2"]
+          args: ["redis-server", "--requirepass", "$(REDIS_PASSWORD)", "--appendonly", "yes", "--save", "900", "1", "--save", "30", "2", "--dir", "/data"]
+          ports:
+            - containerPort: {{ .Values.service.port }}
+              name: {{ .Values.service.name }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+          {{- range .Values.env }}
+            - name: {{ .name | quote }}
+              value: {{ .value | quote }}
+          {{- end }}
+          envFrom:
+          {{- if .Values.redisConfigMapName }}
+            - configMapRef:
+                name: {{ .Values.redisConfigMapName | quote }}
+          {{- end }}
+          {{- if .Values.redisSecretName }}
+            - secretRef:
+                name: {{ .Values.redisSecretName | quote }}
+          {{- end }}
+          volumeMounts:
+            - name: redis-volume
+              mountPath: /data

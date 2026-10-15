@@ -1,0 +1,323 @@
+# Default values for mongodb.
+
+## MongoDB docker image
+image:
+  registry: "images.paas.redhat.com/genie"
+  repository: "mongo"
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+## Pull secrets and name override options
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: "mongodb"
+
+## Additional labels for Deployment or StatefulSet
+customLabels: {}
+
+## Additional annotations for Deployment or StatefulSet
+customAnnotations: {}
+
+## Optional service account
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+## Additional pod labels
+podLabels: {}
+
+## Pod security options
+#podSecurityContext: 
+#  fsGroup: 999
+#  supplementalGroups:
+#    - 999
+podSecurityContext: {}
+
+## Pod management policy
+podManagementPolicy: OrderedReady
+
+## Pod update strategy
+updateStrategyType: RollingUpdate
+
+## Default security options to run MongoDB as non-root, read only container without privilege escalation
+securityContext: {}
+  #securityContext:
+  #allowPrivilegeEscalation: false
+  #privileged: false
+  #readOnlyRootFilesystem: true
+  #runAsNonRoot: true
+  #runAsGroup: 999
+  #runAsUser: 999
+  #capabilities:
+  #drop:
+  #- ALL
+
+service:
+  # Suffix of the headless service name
+  headlessServiceSuffix: internal
+  type: LoadBalancer
+  port: 27017
+  ## The node port (only relevant for type LoadBalancer or NodePort)
+  nodePort:
+  ## The cluster ip address (only relevant for type LoadBalancer or NodePort)
+  clusterIP:
+  ## The loadbalancer ip address (only relevant for type LoadBalancer)
+  loadBalancerIP:
+  ## Annotations to add to the service
+  annotations: {}
+  ## Labels to add to the service
+  labels: {}
+
+## Resource limits and requests
+resources:
+  requests:
+    memory: "1Gi"     
+    cpu: "1"       
+  limits:
+    memory: "1Gi"     
+    cpu: "1"  
+
+## Custom startup probe (overwrites default startup probe)
+customStartupProbe: {}
+
+## Default startup check
+startupProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+  successThreshold: 1
+  periodSeconds: 10
+
+## Custom liveness probe (overwrites default liveness probe)
+customLivenessProbe: {}
+
+## Default liveness probe
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+  periodSeconds: 10
+
+## Custom readiness probe (overwrites default readiness probe)
+customReadinessProbe: {}
+
+## Default readiness probe
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+  periodSeconds: 10
+
+## Additional node selector
+nodeSelector: {}
+
+## Tolerations for pod assignment
+tolerations: []
+
+## Affinity for pod assignment
+affinity: {}
+
+## Topology spread constraints for pods
+topologySpreadConstraints: {}
+
+## Maximum number of revisions maintained in revision history
+revisionHistoryLimit:
+
+## Extra init containers
+extraInitContainers: []
+
+## Extra containers for usage as sidecars
+extraContainers: []
+
+## Use Kubernetes Deployment instead of StatefulSet when in Non-HA mode
+useDeploymentWhenNonHA: false
+
+## Parameters to build a MongoDB replica set (HA mode)
+replicaSet:
+  ## Enables replica set deployment mode
+  enabled: false
+  ## Replica set name
+  name: "repl"
+  ## Key for internal replica set authentication (base64 encoded string 6-1024 chars.)
+  key:
+  ## Alternative to 'key' - Name of an existing secret with a file named "keyfile" containing the base64 encoded key string
+  keySecretName:
+  ## Default Kubernetes cluster domain
+  clusterDomain: cluster.local
+  ## Number of secondary instances (should be at least 2 - or - one secondary and an arbiter)
+  secondaries: 2
+  ## Creates hidden secondary instances when configured
+  hiddenSecondaries:
+    # Number of hidden secondary instances
+    instances: 0
+    # Suffix of the headless service name for hidden secondary instances
+    headlessServiceSuffix: hidden
+    ## Additional node selector
+    nodeSelector: {}
+    ## Pod tolerations
+    tolerations: []
+    ## Pod affinity
+    affinity: {}
+    ## Topology spread constraints for pods
+    topologySpreadConstraints: {}
+    # Internal volume name and prefix of created PVC
+    volumeName: "mongodb-hidden-volume"
+  ## Creates an additional arbiter when enabled
+  arbiter:
+    # Enable arbiter deployment
+    enabled: false
+    # Suffix of the arbiters headless service name
+    headlessServiceSuffix: arbiter
+    ## Resource limits and requests for the arbiter
+    resources: {}
+      # limits:
+      #   cpu: 100m
+      #   memory: 128Mi
+      # requests:
+      #   cpu: 100m
+      #   memory: 128Mi
+    ## Additional node selector
+    nodeSelector: {}
+    ## Pod tolerations
+    tolerations: []
+    ## Pod affinity
+    affinity: {}
+    ## Topology spread constraints for pods
+    topologySpreadConstraints: {}
+    # Storage of the arbiter
+    storage:
+      ## Set persistentVolumenClaimName to reference an existing PVC
+      persistentVolumeClaimName:
+      ## Internal volume name and prefix of a created PVC
+      volumeName: "mongodb-arbiter-volume"
+      ## Alternative set requestedSize to define a size for a dynamically created PVC
+      requestedSize:
+      ## the storage class name
+      className:
+      ## Default access mode (ReadWriteOnce)
+      accessModes:
+        - ReadWriteOnce
+      ## Additional storage annotations
+      annotations: {}
+      ## Additional storage labels
+      labels: {}
+
+  ## Internal configuration for extra initialization phase which is used during replicaset configuration
+  extraInit:
+    ## Number of retries to detect whether mongod is fully up and running in background
+    retries: 10
+    ## Seconds to wait between retries
+    delay: 3
+    ## Seconds to wait after mongod is running to give it time for internal initialization
+    initDelay: 5
+  ## Internal shutdown configuration
+  shutdown:
+    ## Delay until termination request is forwarded to mongod process to give ReplicaSet time for electing a new primary instance
+    delay: 10
+
+## Additional arguments for the container entrypoint process
+args: []
+
+## Additional environment variables
+env: []
+
+settings:
+  ## The root username
+  rootUsername:
+  ## The root user password
+  rootPassword:
+
+## Optional user database which is created during first startup with user and password
+userDatabase: {}
+  ## Name of the user database
+  # name:
+
+  ## Database user with full access rights
+  # user:
+
+  ## Password of the database user
+  # password:
+
+## Custom configuration that will be created as file in /etc/mongo/custom.conf (use instead of command args)
+## For more flexible options see extraSecretConfigs: section
+customConfig: |
+
+## Optional custom scripts that can be defined inline and will be mounted as files in /docker-entrypoint-initdb.d
+customScripts: {}
+#  01-a-script.sh: |
+#    echo "hello"
+#  02-another-script.sh: |
+#    echo "hello 2"
+
+## A list of existing secrets that will be mounted into the container as environment variables
+## As an alternative these secrets can set the database root user and password or other options when settings.rootUsername and settings.rootPassword was not specified
+## For example: Setting MONGO_INITDB_DATABASE, USERDB_USER, USERDB_PASSWORD will allow creating a user database and grant access for the given user
+extraEnvSecrets: []
+
+## An existing secret with files that will be added to the mongodb configuration in addition to /etc/mongo/custom.conf
+extraSecretConfigs:
+
+## An existing configMap with files that will be mounted into the container as script files (*.sql, *.sh) in /docker-entrypoint-initdb.d
+## For more details see https://hub.docker.com/_/mongo
+extraScripts:
+
+## A list of additional existing secrets that will be mounted into the container
+## The mounted files of the secrets can be used for advanced configuration - f.e. TLS
+extraSecrets: []
+    ## Name of the existing K8s secret
+#  - name:
+    ## Mount path where the secret should be mounted into the container (f.e. /mysecretfolder)
+#    mountPath:
+
+# Storage parameters (for primary and all secondaries - incl. hidden secondaries)
+# When a persistentVolumenClaimName is configured the requestedSize and accessModes will be ignored and the existing PVC based on the name will be used
+# otherwise a dynamic persistent volume will be created with PVC name of this chart and the configured requestedSize and accessModes
+# If both parameters are missing a volatile emtpyDir volume will be used as storage
+storage:
+  ## Set persistentVolumenClaimName to reference an existing PVC
+  persistentVolumeClaimName:
+
+  ## Internal volume name and prefix of a created PVC
+  volumeName: "unifai-mongodb-volume"
+
+  ## Alternative set requestedSize to define a size for a dynamically created PVC
+  requestedSize: 100G
+
+  ## the storage class name
+  className: aws-ebs
+
+  ## Default access mode (ReadWriteOnce)
+  accessModes:
+    - ReadWriteOnce
+
+  ## Keep a created Persistent volume claim when uninstalling the helm chart (only for non-HA mode with option useDeploymentWhenNonHA: true)
+  keepPvc: false
+
+  ## Additional storage annotations
+  annotations: 
+    kubernetes.io/reclaimPolicy: Delete
+  labels:
+    paas.redhat.com/appcode: TAG-001
+
+
+## Network policies
+networkPolicy:
+  ## Ingress and Egress policies
+   ingress: 
+   - ports:
+      - port: 27017
+        protocol: TCP
+   egress: {}

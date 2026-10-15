@@ -1,0 +1,151 @@
+# GPU-enabled values for Docling Serve
+# This file overrides the default values.yaml to enable GPU acceleration for document processing
+# Usage: helm install docling-serve ./helm/shared-resources/docling -f values-gpu.yaml
+
+# Override default resources to include GPU
+resources:
+  requests:
+    memory: "4Gi"
+    cpu: "2"
+    nvidia.com/gpu: "1"
+  limits:
+    memory: "8Gi"
+    cpu: "4"
+    nvidia.com/gpu: "1"
+
+# Node affinity to ensure deployment runs on GPU nodes (commented out for flexibility)
+# affinity:
+#   nodeAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       nodeSelectorTerms:
+#       - matchExpressions:
+#         - key: nvidia.com/gpu.product
+#           operator: In
+#           values:
+#           - NVIDIA-A100-SXM4-40GB
+
+# Tolerations for GPU nodes (if they have taints)
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# Environment variables optimized for GPU usage
+env:
+  - name: DOCLING_SERVE_HOST
+    value: "0.0.0.0"
+  - name: DOCLING_SERVE_PORT
+    value: "5001"
+  - name: DOCLING_SERVE_ENABLE_UI
+    value: "1"
+  - name: DOCLING_SERVE_LOG_LEVEL
+    value: "INFO"
+  - name: DOCLING_SERVE_MAX_WORKERS
+    value: "2"  # Reduced for GPU usage
+  - name: DOCLING_SERVE_MAX_FILE_SIZE_MB
+    value: "200"  # Increased for GPU processing
+  - name: CUDA_VISIBLE_DEVICES
+    value: "0"
+  - name: NVIDIA_VISIBLE_DEVICES
+    value: "all"
+  - name: NVIDIA_DRIVER_CAPABILITIES
+    value: "compute,utility"
+
+# Enhanced configuration for GPU processing
+config:
+  # Server configuration
+  server:
+    host: "0.0.0.0"
+    port: 5001
+    workers: 2  # Optimized for GPU
+    enableUI: true
+    logLevel: "INFO"
+  
+  # Document processing configuration with GPU optimizations
+  processing:
+    maxFileSizeMB: 200  # Increased for GPU processing
+    timeoutSeconds: 600  # Increased timeout for complex documents
+    enableOCR: true
+    enableGPU: true  # Enable GPU acceleration if supported
+    outputFormats:
+      - "markdown"
+      - "text"
+      - "json"
+      - "docx"
+  
+  # API configuration
+  api:
+    version: "v1"
+    corsEnabled: true
+    maxRequestsPerMinute: 120  # Increased for GPU performance
+
+# Increased health probe timeouts for GPU initialization
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 120  # Increased for GPU warmup
+  periodSeconds: 30
+  timeoutSeconds: 15
+  failureThreshold: 5
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 60  # Increased for GPU initialization
+  periodSeconds: 15
+  timeoutSeconds: 10
+  failureThreshold: 10
+
+# Enhanced storage configuration for GPU workloads
+storage:
+  volumeName: "unifai-docling-gpu-volume"
+  requestedSize: 50Gi  # Increased for GPU processing cache
+  className: aws-ebs
+  accessModes:
+    - ReadWriteOnce
+  annotations:
+    kubernetes.io/reclaimPolicy: Delete
+  labels:
+    paas.redhat.com/appcode: TAG-001
+    gpu-enabled: "true"
+
+# Route configuration (inherited from base values)
+route:
+  enabled: true
+  host: ""
+  path: ""
+  annotations:
+    haproxy.router.openshift.io/timeout: "300s"  # Increased timeout for GPU processing
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+
+# Network policy configuration for GPU workloads
+networkPolicy:
+  enabled: true
+  annotations:
+    gpu-workload: "true"
+  # Ingress rules - allow incoming traffic to the service
+  ingress:
+    - ports:
+        - port: 5001
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+  # Egress rules - allow outgoing traffic for GPU operations
+  egress: []  # Empty means allow all egress (needed for model downloads, etc.)
+
+# Pod annotations for GPU monitoring
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "5001"
+  prometheus.io/path: "/metrics"
+  gpu.enabled: "true"
+
+# Pod labels for GPU identification
+podLabels:
+  gpu-enabled: "true"
+  workload-type: "document-processing"

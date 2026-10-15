@@ -1,0 +1,102 @@
+{{- $createPvc := and (empty .Values.storage.persistentVolumeClaimName) (.Values.storage.requestedSize) }}
+{{- $deployWithNonHA := true }}
+{{- $fullname := include "qdrant.fullname" . }}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "qdrant.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "qdrant.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "qdrant.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "qdrant.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: {{ .Values.storage.volumeName }}
+              mountPath: /qdrant/storage
+            - name: config-volume
+              mountPath: /qdrant/config
+              readOnly: true
+          env:
+            - name: QDRANT__CONFIG_PATH
+              value: /qdrant/config/config.yaml
+
+      volumes:
+        - name: {{ .Values.storage.volumeName }}
+          {{- if $createPvc }}
+          persistentVolumeClaim:
+            claimName: {{ $fullname }}
+          {{- else if .Values.storage.persistentVolumeClaimName }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.storage.persistentVolumeClaimName }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: config-volume
+          configMap:
+            name: qdrant-config
+            items:
+              - key: config.yaml
+                path: config.yaml
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

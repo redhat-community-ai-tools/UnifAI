@@ -1,0 +1,16 @@
+## Append samples of your project ##
+resources:
+- unifai_v1alpha1_unifaistack.yaml
+- unifai_v1alpha1_unifaillm.yaml
+- unifai_v1alpha1_unifaiprovider.yaml
+- unifai_v1alpha1_unifaitool.yaml
+- unifai_v1alpha1_unifaicondition.yaml
+- unifai_v1alpha1_unifairetriever.yaml
+- unifai_v1alpha1_unifaisandbox.yaml
+- unifai_v1alpha1_unifaiagent.yaml
+- unifai_v1alpha1_unifaiworkflow.yaml
+- unifai_v1alpha1_unifaischedule.yaml
+- unifai_v1alpha1_unifaitemplate.yaml
+- unifai_v1alpha1_unifaichat.yaml
+- unifai_v1alpha1_unifairagpipeline.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

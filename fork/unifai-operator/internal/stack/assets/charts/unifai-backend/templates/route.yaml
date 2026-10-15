@@ -1,0 +1,21 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+    haproxy.router.openshift.io/timeout: "600s"
+  labels:
+    {{- include "unifai-backend.labels" . | nindent 4 }}
+  name: {{ include "unifai-backend.fullname" . }}
+spec:
+  host:
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: {{ include "unifai-backend.fullname" . }}
+    weight: 100
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: None
+  wildcardPolicy: None

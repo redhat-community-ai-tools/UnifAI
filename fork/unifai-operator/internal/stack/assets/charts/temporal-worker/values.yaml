@@ -1,0 +1,185 @@
+# Default values for unifai-multiagent-celery.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+global:
+  #namespace: tag-ai--pipeline  #do we want to add this or ignore is as we login to a speficif namespace?
+  app: unifai
+  # role: multiagent-app
+  # mode: debug
+  port: 8003
+
+# This will set the replicaset count more information can be found here: https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+replicaCount: 1
+#command: ["/bin/bash"]
+globalConfigMapName: shared-config
+MultiagentSecretName: multiagent-be-secret
+globalSecretName: shared-secret
+env:
+  MONGODB_IP: mongodb
+  #MONGO_URI: mongodb  # currently using that var but  we need to change to fit the rag vars to try to merge files.
+  MONGODB_PORT: "27017"
+  RABBITMQ_IP: rabbitmq
+  RABBITMQ_PORT: "5672"
+  BACKEND_ENV: "production" #options - production development
+  ROLE: "temporal-worker" #options - flask celery debug
+  LANGFUSE_ENABLED: true
+  LANGFUSE_BASE_URL: "https://us.cloud.langfuse.com"
+
+
+# This sets the container image more information can be found here: https://kubernetes.io/docs/concepts/containers/images/
+image:
+  # repository: images.paas.redhat.com/unifai/multiagent/backend
+  repository: images.paas.redhat.com/unifai/multiagent
+  # This sets the pull policy for images.
+  pullPolicy: Always #IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+# This is for the secrets for pulling an image from a private repository more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+imagePullSecrets: []
+# This is to override the chart name.
+nameOverride: ""
+fullnameOverride: ""
+
+# This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false #true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# This is for setting Kubernetes Annotations to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+# This is for setting Kubernetes Labels to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+# This is for setting up a service more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/
+service:
+  # This sets the service type more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+  type: ClusterIP
+  # This sets the ports more information can be found here: https://kubernetes.io/docs/concepts/services-networking/service/#field-spec-ports
+  port: 8003
+
+route:
+  enabled: false
+
+# This block is for setting up the ingress for more information can be found here: https://kubernetes.io/docs/concepts/services-networking/ingress/
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: 
+  limits:
+    cpu: '2'
+    memory: '4Gi'
+  requests:
+    cpu: '1'
+    memory: '2Gi'
+
+##### currently the liveness/readyness probes are set manually in the deployment file and taking the port from the service in this file.
+# This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+livenessProbe:
+  httpGet:
+    path: /api/health/
+    # currently these are hardcoded to 8080, though we need to set this to be dependant on the port inserted at the top level values file, 
+    #this means changing the structure for the liveness probe in the deployment file
+    port: 8003  # currently these are hardcoded to 8080, though we need to set this to be dependant on the port inserted at the top level values file, this means changing the structure for the liveness probe in the deployment file
+  initialDelaySeconds: 10
+  periodSeconds: 60
+
+readinessProbe:
+  httpGet:
+    path: /api/health/
+    # currently these are hardcoded to 8080, though we need to set this to be dependant on the port inserted at the top level values file, 
+    #this means changing the structure for the liveness probe in the deployment file
+    port: 8003
+  initialDelaySeconds: 10
+  periodSeconds: 60
+
+
+# This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
+# This section is for setting up autoscaling more information can be found here: https://kubernetes.io/docs/concepts/workloads/autoscaling/
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 6
+  targetMemoryUtilizationPercentage: 75
+  targetCPUUtilizationPercentage: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      maxPodsPerMinute: 1
+      periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 60
+      maxPodsPerPeriod: 1
+      periodSeconds: 60
+
+# Additional volumes on the output Deployment definition.
+volumes:
+  - name: unifai-multiagent-shared-storage
+    persistentVolumeClaim:
+      claimName: unifai-multiagent-shared-storage
+  - name: gcp-credentials
+    secret:
+      secretName: gcp-vertex-credentials
+      optional: true
+  - name: unifai-logging-volume
+    persistentVolumeClaim:
+      claimName: unifai-logging-volume
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts:
+  - name: unifai-multiagent-shared-storage
+    mountPath: /app/shared
+  - name: gcp-credentials
+    mountPath: /opt/app-root/src/config/gcp
+    readOnly: true
+  - name: unifai-logging-volume
+    mountPath: /var/log/unifai
+    subPathExpr: multi-agent-temporal-worker/$(POD_NAME)/$(APP_VERSION)
+    readOnly: false
+ 
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: '{{ include "multiagent-temporal-worker.name" . }}'
+              app.kubernetes.io/instance: '{{ .Release.Name }}'
+          topologyKey: kubernetes.io/hostname

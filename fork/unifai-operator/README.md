@@ -1,57 +1,129 @@
-# unifai-operator — declarative UnifAI (`unifai.startx.fr/v1alpha1`)
+# unifai-operator
 
-Declare UnifAI objects as Kubernetes custom resources; a small kopf controller reconciles them into UnifAI through its REST API
-(`unifai-multiagent-be:8003`, `unifai-rag-server:13456`). Fork-only (`fork/`), never contributed upstream.
+Go operator (operator-sdk / controller-runtime) that deploys UnifAI and manages UnifAI objects declaratively.
+Fork-only (`fork/`, branch `devel`). API group `unifai.startx.fr/v1alpha1`. Images on `quay.io/zuno`.
 
-## Kinds
+## What it manages
 
-| CRD (short) | UnifAI object | API used |
-|---|---|---|
-| `UnifaiLLM` (ullm), `UnifaiProvider` (uprov), `UnifaiTool` (utool), `UnifaiCondition` (ucond), `UnifaiRetriever` (uretr), `UnifaiSandbox` (usbx), `UnifaiAgent` (uagent) | rows of Mongo `UnifAI.resources` (category llms/providers/tools/conditions/retrievers/sandboxes/nodes) | `/api/resources/resource.{save,update,delete}`, `config.validate` |
-| `UnifaiWorkflow` (uwf) | blueprint (agentic workflow) | `/api/blueprints/blueprint.{save,update}`, `remove.blueprint` |
-| `UnifaiSchedule` (usch) | scheduled workflow (Temporal) | `/api/schedules/schedule.{create,update,delete}` |
-| `UnifaiTemplate` (utpl) | catalog template (admin only, no update API: delete + create) | `/api/templates/template.{create,delete}` |
-| `UnifaiChat` (uchat) | one-shot chat session (create + submit prompt, result in `.status.result`) | `/api/sessions/user.session.{create,submit}`, `session.{status,chat}.get` |
-| `UnifaiRAGPipeline` (urag) | document ingestion (upload, then chunk/embed into Qdrant) | rag-server `/api/docs/upload`, `PUT /api/pipelines/embed` |
+| Kind | Role |
+|---|---|
+| `UnifaiStack` | Deploys a full UnifAI platform in **its own namespace**. One per namespace: the name must be `unifai` (CEL rule in the CRD). |
+| `UnifaiLLM`, `UnifaiProvider`, `UnifaiTool`, `UnifaiCondition`, `UnifaiRetriever`, `UnifaiSandbox`, `UnifaiAgent` | Rows of the UnifAI `resources` collection (`/api/resources/*`). |
+| `UnifaiWorkflow` | Blueprint (agentic workflow). |
+| `UnifaiSchedule` | Scheduled workflow (Temporal). |
+| `UnifaiTemplate` | Catalog template (owner must be an UnifAI admin; no update API, so a change deletes and recreates it). |
+| `UnifaiChat` | One-shot chat: one session, one prompt, transcript in `status.result`. The spec is immutable. |
+| `UnifaiRAGPipeline` | Uploads documents and dispatches the RAG document pipeline. |
 
-`kubectl get unifai` lists them all. `status`: `phase` (Ready/Error/...), `message`, `rid`/`blueprintId`/`scheduleId`/..., `hash`.
+`kubectl get unifai -A` lists everything. Examples: [`examples/`](examples/) (one directory per kind) and
+[`config/samples/`](config/samples/) (also the OperatorHub `alm-examples`).
 
-## Spec conventions
-- `spec.owner` (default `admin`) is the UnifAI user owning the object; `spec.teamId` targets a team workspace; `spec.unifaiName` overrides the name (default `metadata.name`).
-- `spec.type` + `spec.config` = UnifAI `type` + `cfg_dict`. The accepted types are those the deployed instance serves: `GET /api/catalog/elements.list.get`
-  (on demo333: llms openai/openai_compatible/google_genai; conditions router_direct; tools oc_exec/ssh_exec/web_fetch; providers mcp_server; retrievers docs_rag; sandboxes openshell_sandbox; nodes custom_agent/orchestrator/a2a_agent/deep_agent/claude_agent).
-  Each change is first checked with `config.validate`; an invalid spec gives `phase: Error` (permanent) with UnifAI's message.
-- `spec.secretRefs: [{path: api_key, secretKeyRef: {name, key}}]` injects a Secret value at a dotted path of the config. UnifAI encrypts it at rest.
-- References: `$ref:<kind>/<name>` becomes `$ref:<rid>` (kind = llm|provider|tool|retriever|sandbox|condition|agent); `$rid:<kind>/<name>` becomes the bare rid (blueprint `plan`).
-  A missing target is retried every 10 s (`ordering` is thus free in a single `kubectl apply`).
-- Workflows: node entries `{rid: "$ref:agent/x"}` without `config` are expanded with the library agent's config (what the UI stores).
-- Idempotent upsert on `(owner, category, name)`. An object already present in UnifAI but not owned by a CR is **not** touched unless the CR carries the annotation `unifai.startx.fr/adopt: "true"`.
-- Deleting a CR deletes the UnifAI object; one still referenced (`ResourceInUse`) is retried every 30 s: delete the dependants first.
+### UnifaiStack
 
-## Deploy
+The operator replaces the upstream helmfile: the upstream charts (`helm/`) are embedded in the binary
+(`internal/stack/assets`, refreshed by `make charts`, never edited) and installed with the Helm SDK. Everything
+fork-specific is applied by the operator at render time:
+
+- values: images (`spec.imageRegistry`/`spec.version`, per-component `spec.images`), storage classes and sizes,
+  URLs, Docling/embedding mode, Langfuse/Slack switches, `RAG_URL` port fix;
+- a post-renderer: dev profile (requests capped to 100m CPU / 512Mi, no HPA), per-component `spec.resources`,
+  `nodeSelector`/`tolerations`/`imagePullSecrets`, GPU request of rag-celery only with `spec.rag.gpu`,
+  Routes (UI and identity only, unless `spec.exposure.exposeInternal`), `helm.sh/resource-policy: keep` on volumes
+  (Retain policy), removal of Red Hat PaaS labels, a config hash on pod templates (pods restart when their
+  ConfigMaps/Secrets change);
+- the helmfile hooks ported to Go (`internal/stack/objects.go`): `redis-config`, `redis-secret`, `shared-config`,
+  `shared-secret`, `unifai-rag-secrets`, `multiagent-be-secret`, `identity-config`, `identity-secret`,
+  `gcp-vertex-credentials`, and the service ConfigMaps read by the UI (`unifai-rag-config`, `multiagent-config`,
+  `backend-config`, `identity-svc-config`). The four "dummy" ConfigMap charts are not installed any more;
+- `unifai-generated` Secret: `SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY` (Fernet), `OAUTH_STATE_SECRET`,
+  `REDIS_PASSWORD`, Keycloak client/admin/DB passwords. Generated once, never regenerated; `spec.secretsRef`
+  overrides any key;
+- `unifai-stack` NetworkPolicy: ingress only from the namespace, the OpenShift router, monitoring and
+  `openshift-operators` (the internal APIs trust an `X-Authenticated-User` header).
+
+Phases: shared resources (MongoDB, Qdrant, RabbitMQ, Redis, Redis Insight, Temporal, logging volume), then the
+applications once the shared resources are ready, then the UI once the application Services exist.
+`status.components[]` shows each release, `status.endpoints` the URLs.
+
+Identity, exactly one of:
+- `identity.external`: existing Keycloak realm (`url`, `realm`, `clientId`, `clientSecret` Secret selector);
+- `identity.keycloak`: Keycloak deployed in the namespace. RHBK only supports OwnNamespace/SingleNamespace installs,
+  so the operator creates an OperatorGroup (if the namespace has none) and a `rhbk-operator` Subscription, a database
+  (Crunchy `PostgresCluster` when that API is served, else a PostgreSQL StatefulSet), the `Keycloak` CR, an edge
+  Route, and a `KeycloakRealmImport` (realm `unifai`, confidential client `unifai`, one user per
+  `identity.adminUsers`, secrets passed as placeholders). The realm is imported once: later host changes must be
+  applied in Keycloak.
+
+Deletion: releases are uninstalled in reverse order, Keycloak objects and the RHBK subscription removed.
+`deletionPolicy: Retain` (default) keeps PVCs, `unifai-generated` and the Keycloak database, so recreating the stack
+finds its data and encryption key; `Delete` removes them. `paused: true` stops reconciling.
+
+### Object kinds
+
+Same conventions as the first (Python) version: `spec.type` + `spec.config` (UnifAI `cfg_dict`), `spec.secretRefs`
+(Secret value injected at a dotted path), `spec.owner` (default `admin`), `spec.teamId`, `spec.unifaiName`.
+`$ref:<kind>/<name>` resolves to `$ref:<rid>`, `$rid:<kind>/<name>` to `<rid>`; node entries of a workflow without
+config are expanded from the library. Specs are dry-run validated (`config.validate`); invalid ones go to phase
+`Error` until the spec changes. An object that already exists in UnifAI is only taken over with the annotation
+`unifai.startx.fr/adopt: "true"`. While the namespace's `UnifaiStack` is not Ready, objects wait (namespaces
+without a stack, e.g. deployed by helmfile, are not gated). The operator calls
+`unifai-multiagent-be.<ns>.svc:8003` and `unifai-rag-server.<ns>.svc:13456`.
+
+## Build and release
+
+Requirements: Go 1.26, operator-sdk 1.41, opm, podman, write access to `quay.io/zuno/unifai-operator{,-bundle,-catalog}`.
+
+```bash
+make test                       # unit tests (chart rendering) + envtest (controllers against a fake UnifAI API, CEL rules)
+make charts                     # refresh internal/stack/assets from ../../helm
+make docker-build-local docker-push   # VERSION=0.1.0 UNIFAI_VERSION=devel (Dockerfile.local; `make docker-build` compiles in the image)
+make bundle bundle-build bundle-push
+make catalog-add                # record VERSION in catalog-template.yaml (CHANNELS=alpha,stable; replaces the channel head)
+make catalog-build catalog-push # quay.io/zuno/unifai-operator-catalog:latest
 ```
-kubectl apply -k fork/unifai-operator          # CRDs + RBAC + operator (code in a ConfigMap, pip install at start)
-kubectl -n unifai-devel apply -k fork/unifai-operator/examples/demo-backends   # test LLM + MCP (optional)
-kubectl -n unifai-devel apply -f fork/unifai-operator/examples/00-secrets/secrets.example.yaml   # placeholders: edit first
-kubectl -n unifai-devel apply -f examples/llm -f examples/provider -f examples/tool -f examples/condition \
-  -f examples/agent/agents.yaml -f examples/retriever -f examples/workflow -f examples/schedule -f examples/chat -f examples/template
+
+A new release: bump `VERSION`, run the steps above (`catalog-add` with `CHANNELS=alpha` for a devel build, then again
+with `CHANNELS=stable` to promote it). The catalog image tag is `latest` and the CatalogSource polls it.
+
+## Install with OLM (OpenShift)
+
+```yaml
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata: {name: unifai-operator-catalog, namespace: openshift-marketplace}
+spec:
+  sourceType: grpc
+  image: quay.io/zuno/unifai-operator-catalog:latest
+  displayName: UnifAI Operator (startx)
+  publisher: startx
+  updateStrategy: {registryPoll: {interval: 15m}}
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata: {name: unifai-operator, namespace: openshift-operators}
+spec:
+  channel: alpha
+  name: unifai-operator
+  source: unifai-operator-catalog
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic
 ```
-CRDs are generated: edit `gen_crds.py`, run `python3 gen_crds.py`. An image can replace the ConfigMap approach: `operator/Dockerfile` (not built: pushing to `quay.io/zuno` needs credentials).
 
-## Examples (`examples/`)
-`llm` (fake/vLLM/OpenAI/Gemini), `provider` (MCP without auth and with bearer), `tool` (web_fetch, oc_exec, ssh_exec), `condition` (router_direct),
-`agent` (ReAct custom agent, orchestrator, a2a; `not-applied/` claude agent), `retriever` (docs_rag), `sandbox` (openshell, not applied: no gateway),
-`workflow` (linear, branches, orchestrated, rag), `schedule` (interval + cron/timezone), `chat` (smoke test), `template` (2 catalog templates), `rag` (ingestion), `demo-backends` (offline fake LLM + MCP).
-The `demo-fake` LLM answers a constant text, so `UnifaiChat/demo-chat-smoke` validates the whole chain with no model or key.
+Files: [`deploy/olm/`](deploy/olm/). Then, in any namespace:
 
-## RAG data pipeline (what is and is not declarative)
-- Per-document ingestion: `UnifaiRAGPipeline`. Global behaviour is environment configuration of rag-server/rag-celery (Helm overlay `fork/values/rag-resource-values.yaml`):
-  `USE_REMOTE_DOCLING`, `DOCLING_SERVICE_URL`, `USE_REMOTE_EMBEDDING`, `EMBEDDING_SERVICE_URL`, `EMBEDDING_SERVICE_MODEL`, `EMBEDDING_DIM`.
-- Chunking is hard-coded (500 tokens, 50 overlap: `rag/bootstrap/app_container.py`); Qdrant collections `document_data` / `slack_data` are created automatically.
-- On demo333 `rag-celery` is Pending (GPU request), so submitted pipelines stay queued in RabbitMQ until it runs.
+```yaml
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiStack
+metadata: {name: unifai}
+spec:
+  profile: dev
+  identity: {keycloak: {}}
+  storage: {className: gp3-csi, sharedClassName: nfs}
+```
 
-## Security notes
-- The operator authenticates with the `X-Authenticated-User` header that multiagent-be/rag-server accept without a session. Anything that can reach those services can impersonate any user:
-  restrict ingress with a NetworkPolicy (not applied yet: it must also allow the UI nginx, identity and the Routes) and keep the public Routes under review.
-- Secret values are only read from Secrets of the CR's namespace; `status.hash` is a truncated SHA-256 of the resolved spec.
-- `$ref:` of deleted/renamed objects is not rewritten in existing blueprints: UnifAI refuses deleting referenced resources, which protects this case.
+## Layout
+
+`api/v1alpha1` types · `internal/unifai` REST client · `internal/controller` reconcilers · `internal/stack` charts,
+values, post-renderer, Keycloak · `config/` kustomize (CRDs, RBAC, manager, CSV base, samples) · `bundle/` OLM
+bundle (generated) · `catalog-template.yaml` → `catalog/` FBC · `examples/` · `legacy-kopf/` first Python version
+(to remove once the Go operator is validated on a cluster).

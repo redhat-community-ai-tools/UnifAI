@@ -1,0 +1,151 @@
+package stack
+
+import (
+	"strings"
+	"testing"
+
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chartutil"
+	kubefake "helm.sh/helm/v3/pkg/kube/fake"
+	"helm.sh/helm/v3/pkg/registry"
+	helmstorage "helm.sh/helm/v3/pkg/storage"
+	"helm.sh/helm/v3/pkg/storage/driver"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"
+)
+
+func testPlan(t *testing.T, mutate func(*unifaiv1.UnifaiStackSpec)) *Plan {
+	t.Helper()
+	st := &unifaiv1.UnifaiStack{ObjectMeta: metav1.ObjectMeta{Name: "unifai", Namespace: "team-a"}}
+	st.Spec.Identity.External = &unifaiv1.ExternalOIDCSpec{URL: "https://kc.example.com", Realm: "unifai", ClientID: "unifai"}
+	st.Spec.Storage = unifaiv1.StorageSpec{ClassName: "gp3-csi", SharedClassName: "nfs"}
+	if mutate != nil {
+		mutate(&st.Spec)
+	}
+	p, err := NewPlan(st, "apps.example.com", "openshift-operators")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Secrets = map[string]string{}
+	return p
+}
+
+// renderAll renders every enabled release client-side (helm template) with the post-renderer.
+func renderAll(t *testing.T, p *Plan) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, r := range Releases {
+		if !r.IsEnabled(p) {
+			continue
+		}
+		rr, err := Render(p, r)
+		if err != nil {
+			t.Fatalf("%s: %v", r.Name, err)
+		}
+		chrt, _, err := loadChart(r.Chart)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := &action.Configuration{
+			Releases:       helmstorage.Init(driver.NewMemory()),
+			KubeClient:     &kubefake.PrintingKubeClient{},
+			Capabilities:   chartutil.DefaultCapabilities,
+			RegistryClient: &registry.Client{},
+		}
+		in := action.NewInstall(cfg)
+		in.ReleaseName, in.Namespace, in.DryRun, in.ClientOnly = r.Name, p.Namespace, true, true
+		in.PostRenderer = &postRenderer{plan: p, rel: r}
+		rel, err := in.Run(chrt, rr.Values)
+		if err != nil {
+			t.Fatalf("render %s: %v", r.Name, err)
+		}
+		out[r.Name] = rel.Manifest
+	}
+	return out
+}
+
+func TestRenderDevProfile(t *testing.T) {
+	p := testPlan(t, nil)
+	m := renderAll(t, p)
+	if len(m) != 16 {
+		t.Fatalf("expected 16 releases (no docling), got %d", len(m))
+	}
+	all := strings.Join(func() []string {
+		var s []string
+		for _, v := range m {
+			s = append(s, v)
+		}
+		return s
+	}(), "\n---\n")
+	for _, bad := range []string{"images.paas.redhat.com", "aws-ebs", "aws-efs", "nvidia.com/gpu", "paas.redhat.com/appcode", "HorizontalPodAutoscaler"} {
+		if strings.Contains(all, bad) {
+			t.Errorf("rendered stack still contains %q", bad)
+		}
+	}
+	for _, want := range []string{
+		"quay.io/zuno/unifai-rag:devel", "quay.io/zuno/unifai-multiagent:devel", "quay.io/zuno/unifai-backend:devel",
+		"quay.io/zuno/unifai-identity:devel", "quay.io/zuno/unifai-ui:devel", "docker.io/qdrant/qdrant:v1.16.0",
+		"host: unifai-ui-team-a.apps.example.com", "host: unifai-identity-team-a.apps.example.com",
+		"storageClassName: gp3-csi", "storageClassName: nfs", "https://unifai-ui-team-a.apps.example.com",
+		"http://unifai-rag-server:13456", "helm.sh/resource-policy: keep",
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("rendered stack lacks %q", want)
+		}
+	}
+	routes := strings.Count(all, "kind: Route")
+	if routes != 2 {
+		t.Errorf("expected only the ui and identity routes, got %d routes", routes)
+	}
+	for name, man := range m {
+		objs, err := ParseManifest(man)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, o := range objs {
+			if o.Kind == "Deployment" || o.Kind == "StatefulSet" {
+				t.Logf("%s: %s/%s", name, o.Kind, o.Name)
+			}
+		}
+	}
+}
+
+func TestRenderOverrides(t *testing.T) {
+	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) {
+		s.Profile = "prod"
+		s.Version = "v1.2.3"
+		s.Exposure.ExposeInternal = true
+		s.RAG.GPU = true
+		s.RAG.Docling.Mode = "deploy"
+		s.DeletionPolicy = "Delete"
+		s.Images = map[string]string{"redis": "registry.example.com/redis/redis:7", "ui": "registry.example.com/ui:x"}
+		s.NodeSelector = map[string]string{"workload": "unifai"}
+		s.Resources = map[string]corev1.ResourceRequirements{"backend": {Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3")}}}
+	})
+	m := renderAll(t, p)
+	if len(m) != 17 {
+		t.Fatalf("expected 17 releases with docling, got %d", len(m))
+	}
+	for rel, want := range map[string]string{
+		"unifai-rag-celery":    "nvidia.com/gpu",
+		"unifai-redis":         "registry.example.com/redis/redis:7",
+		"unifai-ui":            "registry.example.com/ui:x",
+		"unifai-rag-server":    "quay.io/zuno/unifai-rag:v1.2.3",
+		"unifai-backend":       "cpu: \"3\"",
+		"unifai-multiagent-be": "workload: unifai",
+		"unifai-qdrant":        "kind: Route",
+	} {
+		if !strings.Contains(m[rel], want) {
+			t.Errorf("%s lacks %q", rel, want)
+		}
+	}
+	if !strings.Contains(m["unifai-rag-server"], DoclingURL) {
+		t.Errorf("rag-server not pointed at the deployed docling")
+	}
+	if strings.Contains(m["unifai-mongodb"], "helm.sh/resource-policy: keep") {
+		t.Errorf("Delete policy must not keep the MongoDB volume")
+	}
+}

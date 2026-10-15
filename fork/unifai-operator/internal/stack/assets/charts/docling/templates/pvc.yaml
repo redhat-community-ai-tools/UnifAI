@@ -1,0 +1,25 @@
+{{- $createPvc := and (empty .Values.storage.persistentVolumeClaimName) (.Values.storage.requestedSize) }}
+{{- if $createPvc }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "docling.fullname" . }}
+  labels:
+    {{- include "docling.labels" . | nindent 4 }}
+    {{- with .Values.storage.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.storage.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.storage.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.requestedSize }}
+  {{- if .Values.storage.className }}
+  storageClassName: {{ .Values.storage.className }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,246 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - endpoints
+  - persistentvolumeclaims
+  - secrets
+  - serviceaccounts
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - autoscaling
+  resources:
+  - horizontalpodautoscalers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - k8s.keycloak.org
+  resources:
+  - keycloakrealmimports
+  - keycloaks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - prometheusrules
+  - servicemonitors
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - operators.coreos.com
+  resources:
+  - clusterserviceversions
+  - operatorgroups
+  - subscriptions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - postgres-operator.crunchydata.com
+  resources:
+  - postgresclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
+  - routes/custom-host
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - unifai.startx.fr
+  resources:
+  - unifaiagents
+  - unifaichats
+  - unifaiconditions
+  - unifaillms
+  - unifaiproviders
+  - unifairagpipelines
+  - unifairetrievers
+  - unifaisandboxes
+  - unifaischedules
+  - unifaistacks
+  - unifaitemplates
+  - unifaitools
+  - unifaiworkflows
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - unifai.startx.fr
+  resources:
+  - unifaiagents/finalizers
+  - unifaichats/finalizers
+  - unifaiconditions/finalizers
+  - unifaillms/finalizers
+  - unifaiproviders/finalizers
+  - unifairagpipelines/finalizers
+  - unifairetrievers/finalizers
+  - unifaisandboxes/finalizers
+  - unifaischedules/finalizers
+  - unifaistacks/finalizers
+  - unifaitemplates/finalizers
+  - unifaitools/finalizers
+  - unifaiworkflows/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - unifai.startx.fr
+  resources:
+  - unifaiagents/status
+  - unifaichats/status
+  - unifaiconditions/status
+  - unifaillms/status
+  - unifaiproviders/status
+  - unifairagpipelines/status
+  - unifairetrievers/status
+  - unifaisandboxes/status
+  - unifaischedules/status
+  - unifaistacks/status
+  - unifaitemplates/status
+  - unifaitools/status
+  - unifaiworkflows/status
+  verbs:
+  - get
+  - patch
+  - update

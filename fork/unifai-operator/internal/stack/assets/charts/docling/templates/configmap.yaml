@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "docling.fullname" . }}-config
+  labels:
+    {{- include "docling.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    server:
+      host: {{ .Values.config.server.host | quote }}
+      port: {{ .Values.config.server.port }}
+      workers: {{ .Values.config.server.workers }}
+      enable_ui: {{ .Values.config.server.enableUI }}
+      log_level: {{ .Values.config.server.logLevel | quote }}
+    
+    processing:
+      max_file_size_mb: {{ .Values.config.processing.maxFileSizeMB }}
+      timeout_seconds: {{ .Values.config.processing.timeoutSeconds }}
+      enable_ocr: {{ .Values.config.processing.enableOCR }}
+      output_formats: {{ .Values.config.processing.outputFormats | toJson }}
+    
+    api:
+      version: {{ .Values.config.api.version | quote }}
+      cors_enabled: {{ .Values.config.api.corsEnabled }}
+      max_requests_per_minute: {{ .Values.config.api.maxRequestsPerMinute }}
+  
+  .env: |
+    DOCLING_SERVE_HOST={{ .Values.config.server.host }}
+    DOCLING_SERVE_PORT={{ .Values.config.server.port }}
+    DOCLING_SERVE_ENABLE_UI={{ if .Values.config.server.enableUI }}1{{ else }}0{{ end }}
+    DOCLING_SERVE_LOG_LEVEL={{ .Values.config.server.logLevel }}
+    DOCLING_SERVE_MAX_WORKERS={{ .Values.config.server.workers }}
+    DOCLING_SERVE_MAX_FILE_SIZE_MB={{ .Values.config.processing.maxFileSizeMB }}

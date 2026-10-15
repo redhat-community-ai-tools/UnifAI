@@ -1,0 +1,16 @@
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: {{ include "temporal.fullname" . }}-route
+  labels:
+    app: {{ .Chart.Name }}
+    paas.redhat.com/appcode: TAG-001
+spec:
+  host: 
+  to:
+    kind: Service
+    name: {{ include "temporal.fullname" . }}-external
+    weight: 100
+  port:
+    targetPort: {{ .Values.service.port_ui }}
+  wildcardPolicy: None

@@ -1,0 +1,49 @@
+{{- if .Values.route.enabled -}}
+{{- $fullName := include "docling.fullname" . -}}
+{{- $svcPort := .Values.service.port -}}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "docling.labels" . | nindent 4 }}
+  {{- with .Values.route.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.route.host }}
+  host: {{ .Values.route.host }}
+  {{- end }}
+  {{- if .Values.route.path }}
+  path: {{ .Values.route.path }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ $fullName }}
+    weight: 100
+  port:
+    targetPort: {{ $svcPort }}
+  {{- if .Values.route.tls }}
+  tls:
+    {{- if .Values.route.tls.termination }}
+    termination: {{ .Values.route.tls.termination }}
+    {{- end }}
+    {{- if .Values.route.tls.insecureEdgeTerminationPolicy }}
+    insecureEdgeTerminationPolicy: {{ .Values.route.tls.insecureEdgeTerminationPolicy }}
+    {{- end }}
+    {{- if .Values.route.tls.certificate }}
+    certificate: {{ .Values.route.tls.certificate }}
+    {{- end }}
+    {{- if .Values.route.tls.key }}
+    key: {{ .Values.route.tls.key }}
+    {{- end }}
+    {{- if .Values.route.tls.caCertificate }}
+    caCertificate: {{ .Values.route.tls.caCertificate }}
+    {{- end }}
+    {{- if .Values.route.tls.destinationCACertificate }}
+    destinationCACertificate: {{ .Values.route.tls.destinationCACertificate }}
+    {{- end }}
+  {{- end }}
+  wildcardPolicy: {{ .Values.route.wildcardPolicy | default "None" }}
+{{- end }}

@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qdrant-config
+data:
+  config.yaml: |
+    log_level: INFO
+    logger:
+      format: text
+      on_disk:
+        enabled: true
+        log_file: /tmp/qdrant.log
+        log_level: INFO
+        format: text
+    storage:
+      storage_path: /qdrant/storage
+      snapshots_path: /qdrant/storage/snapshots
+      temp_path: /qdrant/storage/temp
+      on_disk_payload: true
+      update_concurrency: null
+      wal:
+        wal_capacity_mb: 32
+        wal_segments_ahead: 0
+      node_type: "Normal"
+      performance:
+        max_search_threads: 0
+        max_optimization_threads: 0
+        optimizer_cpu_budget: 0
+        update_rate_limit: null
+      optimizers:
+        deleted_threshold: 0.2
+        vacuum_min_vector_number: 1000
+        default_segment_number: 0
+        indexing_threshold_kb: 20000
+        flush_interval_sec: 5
+        max_optimization_threads: null
+      hnsw_index:
+        m: 16
+        ef_construct: 100
+        full_scan_threshold_kb: 10000
+        max_indexing_threads: 0
+        on_disk: false
+    service:
+      max_request_size_mb: 32
+      max_workers: 0
+      host: 0.0.0.0
+      http_port: {{ .Values.service.port }}
+      grpc_port: 6334
+      enable_cors: true
+      enable_tls: false
+      verify_https_client_certificate: false
+    cluster:
+      enabled: false
+      p2p:
+        port: 6335
+        enable_tls: false
+      consensus:
+        tick_period_ms: 100
+        compact_wal_entries: 128
+    telemetry_disabled: false
+    tls:
+      cert: ./tls/cert.pem
+      key: ./tls/key.pem
+      ca_cert: ./tls/cacert.pem
+      cert_ttl: 3600

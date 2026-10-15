@@ -1,0 +1,104 @@
+{{- if .Values.networkPolicy.enabled -}}
+{{- $fullName := include "docling.fullname" . -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullName }}-netpol
+  labels:
+    {{- include "docling.labels" . | nindent 4 }}
+  {{- with .Values.networkPolicy.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "docling.selectorLabels" . | nindent 6 }}
+  policyTypes:
+  {{- if .Values.networkPolicy.ingress }}
+  - Ingress
+  {{- end }}
+  {{- if .Values.networkPolicy.egress }}
+  - Egress
+  {{- end }}
+  {{- if .Values.networkPolicy.ingress }}
+  ingress:
+  {{- range .Values.networkPolicy.ingress }}
+  - {{- if .from }}
+    from:
+    {{- range .from }}
+    - {{- if .podSelector }}
+      podSelector:
+        {{- if .podSelector.matchLabels }}
+        matchLabels:
+          {{- toYaml .podSelector.matchLabels | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- if .namespaceSelector }}
+      namespaceSelector:
+        {{- if .namespaceSelector.matchLabels }}
+        matchLabels:
+          {{- toYaml .namespaceSelector.matchLabels | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- if .ipBlock }}
+      ipBlock:
+        {{- toYaml .ipBlock | nindent 8 }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- if .ports }}
+    ports:
+    {{- range .ports }}
+    - port: {{ .port }}
+      {{- if .protocol }}
+      protocol: {{ .protocol }}
+      {{- end }}
+      {{- if .endPort }}
+      endPort: {{ .endPort }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- if .Values.networkPolicy.egress }}
+  egress:
+  {{- range .Values.networkPolicy.egress }}
+  - {{- if .to }}
+    to:
+    {{- range .to }}
+    - {{- if .podSelector }}
+      podSelector:
+        {{- if .podSelector.matchLabels }}
+        matchLabels:
+          {{- toYaml .podSelector.matchLabels | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- if .namespaceSelector }}
+      namespaceSelector:
+        {{- if .namespaceSelector.matchLabels }}
+        matchLabels:
+          {{- toYaml .namespaceSelector.matchLabels | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- if .ipBlock }}
+      ipBlock:
+        {{- toYaml .ipBlock | nindent 8 }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- if .ports }}
+    ports:
+    {{- range .ports }}
+    - port: {{ .port }}
+      {{- if .protocol }}
+      protocol: {{ .protocol }}
+      {{- end }}
+      {{- if .endPort }}
+      endPort: {{ .endPort }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+{{- end }}

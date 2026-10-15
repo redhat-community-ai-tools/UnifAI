@@ -1,0 +1,115 @@
+mongodb:
+  image:
+    registry: "images.paas.redhat.com/genie"
+    repository: "mongo"
+    pullPolicy: IfNotPresent
+  service:
+    #type: LoadBalancer
+    type: ClusterIP
+    port: 27017
+  storage:
+    size: 100Gi
+    storageClassName: aws-ebs
+
+qdrant:
+  replicaCount: 1
+  image:
+    registry: "images.paas.redhat.com/genie"
+    repository: "qdrant"
+    pullPolicy: IfNotPresent
+    tag: "stable"
+  service:
+    #type: LoadBalancer
+    type: ClusterIP
+    port: 6333
+  resources:
+    limits:
+      cpu: 8
+      memory: 16Gi
+    requests:
+      cpu: 4
+      memory: 12Gi
+  storage:
+    requestedSize: 100Gi
+    storageClassName: aws-ebs
+
+rabbitmq:
+  image:
+    registry: images.paas.redhat.com/genie
+    repository: rabbitmq
+    pullPolicy: IfNotPresent
+    tag: 4.0.5-debian-12-r0
+  service:
+    #type: LoadBalancer
+    type: ClusterIP
+
+redis:
+  image:
+    registry: registry.redhat.io
+    repository: rhel9/redis-7
+    tag: '9.7'
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 4
+      memory: 16Gi
+    requests:
+      cpu: 4
+      memory: 12Gi
+  service:
+    type: ClusterIP
+    port: 6379
+  storage:
+    size: 10Gi
+    storageClassName: aws-ebs
+
+
+redis-insight:
+  image:
+    registry: redis
+    repository: redisinsight
+    tag: 3.4.2
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5540
+  storage:
+    size: 2Gi
+    storageClassName: aws-ebs
+
+
+temporal:
+  image:
+    registry: temporalio
+    repository: temporal
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 4
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 4Gi
+  service:
+    type: ClusterIP
+    port: 7233
+    port_ui: 8233
+  storage:
+    size: 10Gi
+    storageClassName: aws-ebs
+
+logging:
+  storage:
+    volumeName: "unifai-logging-volume"
+    requestedSize: 100Gi
+    className: aws-efs-tier-c1
+    accessModes:
+      - ReadWriteMany
+    # keepPvc → helm.sh/resource-policy: keep (Helm will not delete the PVC on uninstall).
+    # kubernetes.io/reclaimPolicy is required by the PaaS storage admission webhook.
+    keepPvc: true
+    annotations:
+      kubernetes.io/reclaimPolicy: Delete
+    labels:
+      paas.redhat.com/appcode: TAG-001
+

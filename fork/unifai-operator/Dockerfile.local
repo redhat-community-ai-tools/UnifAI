@@ -1,0 +1,10 @@
+# Packages a manager binary built on the host (make docker-build-local): avoids compiling inside the image build.
+FROM gcr.io/distroless/static:nonroot
+ARG VERSION=0.0.0
+LABEL name="unifai-operator" vendor="startx" version="${VERSION}" \
+      summary="UnifAI operator" description="Deploys UnifAI stacks and manages UnifAI objects declaratively"
+WORKDIR /
+COPY --chmod=755 bin/manager-linux-amd64 /manager
+ENV HOME=/tmp
+USER 65532:65532
+ENTRYPOINT ["/manager"]

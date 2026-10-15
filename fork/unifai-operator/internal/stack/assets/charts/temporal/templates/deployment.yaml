@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "temporal.fullname" . }}
+  labels:
+    app: {{ .Chart.Name }} 
+spec:
+  replicas: 1 
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }} 
+  template: 
+    metadata:
+      labels:
+        app: {{ .Chart.Name }} 
+    spec:
+      volumes:
+        - name: temporal
+          persistentVolumeClaim:
+            claimName: {{ include "temporal.fullname" . }}-pvc
+      containers:
+        - name:  temporal
+          image: {{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          tty: true
+          stdin: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          command: ["/bin/sh", "-c", "temporal server start-dev --ip 0.0.0.0"]
+          volumeMounts:
+          - name: temporal
+            mountPath: /tmp/temporal
+          ports:
+          - containerPort: {{ .Values.service.port }}
+            protocol: TCP
+          - containerPort: {{ .Values.service.port_ui }}
+            protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.service.port_ui }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.service.port_ui }}

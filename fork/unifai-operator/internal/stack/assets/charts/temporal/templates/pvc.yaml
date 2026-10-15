@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "temporal.fullname" . }}-pvc
+  labels:
+    app: {{ .Chart.Name }}
+    paas.redhat.com/appcode: TAG-001
+  annotations:
+  {{- with .Values.annotations }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.storage }}
+  accessModes:
+    {{- toYaml .accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .size }}
+  {{- if .storageClassName }}
+  storageClassName: {{ .storageClassName }}
+  {{- end }}
+  {{- end }}
