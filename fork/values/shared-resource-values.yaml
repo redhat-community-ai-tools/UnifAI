@@ -1,0 +1,32 @@
+# Overlay merged over helm/values/shared-resource-values.yaml: public images, cluster storage classes.
+mongodb:
+  image:
+    registry: docker.io
+    repository: library/mongo
+  storage:
+    storageClassName: ${STORAGE_CLASS}
+qdrant:
+  image:
+    registry: docker.io
+    repository: qdrant/qdrant
+    tag: v1.16.0
+  storage:
+    storageClassName: ${STORAGE_CLASS}
+rabbitmq:
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/rabbitmq
+redis:
+  image:
+    registry: registry.access.redhat.com
+  storage:
+    storageClassName: ${STORAGE_CLASS}
+redis-insight:
+  storage:
+    storageClassName: ${STORAGE_CLASS}
+temporal:
+  storage:
+    storageClassName: ${STORAGE_CLASS}
+logging:
+  storage:
+    className: ${SHARED_STORAGE_CLASS}

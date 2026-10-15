@@ -1,0 +1,4 @@
+# Overlay merged over helm/values/global-config.yaml. Placeholders in braces come from the environment (see fork.mk).
+env:
+  FRONTEND_URL: "https://${UI_HOST}"
+  IDENTITY_HOST: "https://${IDENTITY_HOST_NAME}"

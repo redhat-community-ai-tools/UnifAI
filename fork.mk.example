@@ -1,0 +1,10 @@
+# Copy to fork.mk (git-ignored by `make init`) and adapt.
+QUAY_ORG             = my-quay-org
+NAMESPACE            = unifai-devel
+# Cluster-specific values consumed by fork/values/*.yaml
+UI_HOST              = unifai-ui-unifai-devel.apps.mycluster.example.com
+IDENTITY_HOST_NAME   = unifai-identity-unifai-devel.apps.mycluster.example.com
+STORAGE_CLASS        = gp3-csi
+SHARED_STORAGE_CLASS = efs-sc
+DOCLING_URL          = http://docling:5001
+EMBEDDING_URL        = http://embedding:8080

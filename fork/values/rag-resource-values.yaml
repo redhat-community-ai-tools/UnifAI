@@ -1,0 +1,11 @@
+# Overlay merged over helm/values/rag-resource-values.yaml.
+unifai_rag_server:
+  env:
+    DOCLING_SERVICE_URL: "${DOCLING_URL}"
+    EMBEDDING_SERVICE_URL: "${EMBEDDING_URL}"
+unifai_rag_celery:
+  env:
+    DOCLING_SERVICE_URL: "${DOCLING_URL}"
+    EMBEDDING_SERVICE_URL: "${EMBEDDING_URL}"
+storage:
+  className: ${SHARED_STORAGE_CLASS}

@@ -1,0 +1,17 @@
+# Application images built by this fork: values file -> (component, dotted key paths of `image`).
+# `component` is the quay.io image suffix (see Makefile COMPONENTS / IMAGE_PREFIX).
+rag-resource-values.yaml:
+  component: rag
+  paths: [unifai_rag_server.image, unifai_rag_celery.image, unifai_rag_celery_beat.image]
+multiagent-resource-values.yaml:
+  component: multiagent
+  paths: [multiagent_server.image, multiagent_temporal_worker.image]
+backend-resource-values.yaml:
+  component: backend
+  paths: [unifai_backend.image]
+identity-values.yaml:
+  component: identity
+  paths: [backend.image]
+ui-values.yaml:
+  component: ui
+  paths: [ui.image]
