@@ -1,0 +1,8 @@
+# Test backends: `kubectl apply -k examples/demo-backends -n unifai-devel`
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [backends.yaml]
+generatorOptions: {disableNameSuffixHash: true}
+configMapGenerator:
+  - name: unifai-demo-backends-src
+    files: [mock_llm.py, demo_mcp.py]

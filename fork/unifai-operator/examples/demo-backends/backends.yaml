@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: unifai-demo-llm, labels: {app: unifai-demo-llm}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: unifai-demo-llm}}
+  template:
+    metadata: {labels: {app: unifai-demo-llm}}
+    spec:
+      containers:
+        - name: llm
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          command: [python, /src/mock_llm.py]
+          ports: [{containerPort: 8000}]
+          resources: {requests: {cpu: 10m, memory: 32Mi}, limits: {memory: 128Mi}}
+          volumeMounts: [{name: src, mountPath: /src}]
+      volumes: [{name: src, configMap: {name: unifai-demo-backends-src}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: unifai-demo-llm}
+spec:
+  selector: {app: unifai-demo-llm}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: unifai-demo-mcp, labels: {app: unifai-demo-mcp}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: unifai-demo-mcp}}
+  template:
+    metadata: {labels: {app: unifai-demo-mcp}}
+    spec:
+      initContainers:
+        - name: deps
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          command: [sh, -c, "pip install --no-cache-dir --target /deps 'mcp>=1.23,<2'"]
+          volumeMounts: [{name: deps, mountPath: /deps}]
+      containers:
+        - name: mcp
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          command: [python, /src/demo_mcp.py]
+          env: [{name: PYTHONPATH, value: /deps}]
+          ports: [{containerPort: 8004}]
+          resources: {requests: {cpu: 20m, memory: 64Mi}, limits: {memory: 256Mi}}
+          volumeMounts: [{name: deps, mountPath: /deps}, {name: src, mountPath: /src}]
+      volumes:
+        - {name: deps, emptyDir: {}}
+        - {name: src, configMap: {name: unifai-demo-backends-src}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: unifai-demo-mcp}
+spec:
+  selector: {app: unifai-demo-mcp}
+  ports: [{port: 8004, targetPort: 8004}]

@@ -1,0 +1,39 @@
+# Code shipped as a ConfigMap (see kustomization.yaml) + pip install at start: no image build needed.
+# Swap to the image built from operator/Dockerfile (quay.io/zuno/unifai-operator) when pushing is possible.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: unifai-operator
+  labels: {app: unifai-operator}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: unifai-operator}
+  template:
+    metadata:
+      labels: {app: unifai-operator}
+    spec:
+      serviceAccountName: unifai-operator
+      initContainers:
+        - name: deps
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          command: [sh, -c, "pip install --no-cache-dir --target /deps -r /src/requirements.txt"]
+          volumeMounts: [{name: deps, mountPath: /deps}, {name: src, mountPath: /src}]
+      containers:
+        - name: operator
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          command: [sh, -c, "cd /src && exec python -m kopf run --standalone --namespace $(NAMESPACE) unifai_operator.py"]
+          env:
+            - {name: PYTHONPATH, value: /deps}
+            - {name: NAMESPACE, valueFrom: {fieldRef: {fieldPath: metadata.namespace}}}
+            - {name: UNIFAI_MAS_URL, value: "http://unifai-multiagent-be:8003"}
+            - {name: UNIFAI_RAG_URL, value: "http://unifai-rag-server:13456"}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 384Mi}
+          volumeMounts: [{name: deps, mountPath: /deps}, {name: src, mountPath: /src}]
+      volumes:
+        - {name: deps, emptyDir: {}}
+        - name: src
+          configMap: {name: unifai-operator-src}

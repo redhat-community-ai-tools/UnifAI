@@ -66,3 +66,9 @@ Deploy UnifAI autonomously on our OpenShift cluster, evolve it, and contribute s
 1. GPU for rag-celery (or drop the request), docling + embedding services for RAG ingestion, Slack tokens for the backend sidecar.
 2. Dev-sized resource requests overlay; remove public routes; scale `unifai-worker-a` down when idle.
 3. Contact upstream maintainers before the first PR (candidate: `fix/multiagent-optional-corp-ca`).
+
+## Declarative configuration (`fork/unifai-operator/`, added 2026-10-15)
+- No upstream CRD exists. We ship 12 CRDs `unifai.startx.fr/v1alpha1` (LLM, Provider, Tool, Condition, Retriever, Sandbox, Agent, Workflow, Schedule, Template, Chat, RAGPipeline) + a kopf operator (`unifai-operator` in `unifai-devel`, code in a ConfigMap, `kubectl apply -k fork/unifai-operator`). It calls multiagent-be/rag-server with the `X-Authenticated-User` header (no session). See `fork/unifai-operator/README.md`.
+- Everything except workflows/schedules/templates/sessions is one Mongo collection `UnifAI.resources` keyed by (identity, category, name); refs are `$ref:<rid>`. The deployed catalog is smaller than the code: no mock LLM, threshold/router_boolean conditions or slack retriever (`GET /api/catalog/elements.list.get`).
+- Demo objects `demo-*` (+ `unifai-demo-llm`/`unifai-demo-mcp` pods, Secret `unifai-demo-secrets` with placeholders) live in `unifai-devel`; UI-created objects (`local-fake`, `mcp-jira`, `if_ok`, `test-fake`, schedule PT15M) were left untouched (operator needs `unifai.startx.fr/adopt: "true"` to take over an existing name).
+- Open: operator image not built (needs quay `zuno` write access); no NetworkPolicy on MAS/RAG yet; sandbox/claude agent examples not applied; RAG ingestion queued until rag-celery runs.

@@ -1,0 +1,10 @@
+# Schema example only (needs Vertex AI + a sandbox gateway): not applied on demo333.
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiAgent
+metadata: {name: demo-claude-agent}
+spec:
+  type: claude_agent_node
+  config:
+    vertex_project_id: my-gcp-project
+    vertex_region: us-east5
+    sandbox: $ref:sandbox/demo-openshell

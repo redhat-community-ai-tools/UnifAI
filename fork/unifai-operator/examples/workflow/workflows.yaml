@@ -1,0 +1,84 @@
+# 1) Linear: question -> agent -> final answer. Library nodes (`$ref:agent/...`) get their config filled by the operator.
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiWorkflow
+metadata: {name: demo-linear}
+spec:
+  description: question -> demo-agent -> answer
+  blueprint:
+    nodes:
+      - {rid: user_question, name: User Question Node, type: user_question_node, config: {type: user_question_node, retries: 1}}
+      - {rid: final_answer, name: Final Answer Node, type: final_answer_node, config: {type: final_answer_node, retries: 1}}
+      - {rid: "$ref:agent/demo-agent"}
+    conditions:
+      - {rid: "$ref:condition/demo-direct"}
+    plan:
+      - {uid: ask, node: user_question, exit_condition: "$rid:condition/demo-direct", branches: {agent: agent}}
+      - {uid: agent, node: "$rid:agent/demo-agent"}
+      - {uid: finish, node: final_answer, after: agent}
+---
+# 2) Branching on a condition (router_direct is the only condition type served by this instance)
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiWorkflow
+metadata: {name: demo-branches}
+spec:
+  description: question -> (agent | agent-b) -> answer
+  blueprint:
+    nodes:
+      - {rid: user_question, name: User Question Node, type: user_question_node, config: {type: user_question_node, retries: 1}}
+      - {rid: final_answer, name: Final Answer Node, type: final_answer_node, config: {type: final_answer_node, retries: 1}}
+      - {rid: "$ref:agent/demo-agent"}
+      - {rid: "$ref:agent/demo-agent-b"}
+    conditions:
+      - {rid: "$ref:condition/demo-direct"}
+    plan:
+      - {uid: ask, node: user_question, exit_condition: "$rid:condition/demo-direct", branches: {a: agent_a, b: agent_b}}
+      - {uid: agent_a, node: "$rid:agent/demo-agent"}
+      - {uid: agent_b, node: "$rid:agent/demo-agent-b"}
+      - {uid: finish, node: final_answer, after: [agent_a, agent_b]}
+---
+# 3) Orchestrator coordinating two agents
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiWorkflow
+metadata: {name: demo-orchestrated}
+spec:
+  description: question -> orchestrator (+ agent, agent-b) -> answer
+  blueprint:
+    nodes:
+      - {rid: user_question, name: User Question Node, type: user_question_node, config: {type: user_question_node, retries: 1}}
+      - {rid: final_answer, name: Final Answer Node, type: final_answer_node, config: {type: final_answer_node, retries: 1}}
+      - {rid: "$ref:agent/demo-orchestrator"}
+      - {rid: "$ref:agent/demo-agent"}
+      - {rid: "$ref:agent/demo-agent-b"}
+    plan:
+      - {uid: ask, node: user_question}
+      - {uid: orchestrate, node: "$rid:agent/demo-orchestrator", after: ask}
+      - {uid: worker_a, node: "$rid:agent/demo-agent", after: orchestrate}
+      - {uid: worker_b, node: "$rid:agent/demo-agent-b", after: orchestrate}
+      - {uid: finish, node: final_answer, after: [worker_a, worker_b]}
+---
+# 4) RAG: an agent equipped with the docs retriever
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiAgent
+metadata: {name: demo-rag-agent}
+spec:
+  type: custom_agent_node
+  config:
+    llm: $ref:llm/demo-fake
+    retriever: $ref:retriever/demo-docs
+    system_message: Answer using the retrieved documents only.
+    hitl_mode: skip
+---
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiWorkflow
+metadata: {name: demo-rag}
+spec:
+  description: question -> rag agent (docs retriever) -> answer
+  blueprint:
+    nodes:
+      - {rid: user_question, name: User Question Node, type: user_question_node, config: {type: user_question_node, retries: 1}}
+      - {rid: final_answer, name: Final Answer Node, type: final_answer_node, config: {type: final_answer_node, retries: 1}}
+      - {rid: "$ref:agent/demo-rag-agent"}
+    plan:
+      - {uid: ask, node: user_question}
+      - {uid: rag, node: "$rid:agent/demo-rag-agent", after: ask}
+      - {uid: finish, node: final_answer, after: rag}

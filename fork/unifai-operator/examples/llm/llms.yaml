@@ -1,0 +1,44 @@
+# Offline test LLM: the in-namespace fake from examples/demo-backends (answers a constant text)
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiLLM
+metadata: {name: demo-fake}
+spec:
+  type: openai_compatible
+  config:
+    model_name: mock-model
+    base_url: http://unifai-demo-llm:8000/v1
+    api_key: EMPTY
+---
+# Real self-hosted endpoint (vLLM / Ollama / KServe...): adjust base_url / model_name
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiLLM
+metadata: {name: demo-vllm}
+spec:
+  type: openai_compatible
+  config:
+    model_name: my-model
+    base_url: http://vllm.my-namespace.svc:8000/v1
+    temperature: 0.2
+  secretRefs:
+    - {path: api_key, secretKeyRef: {name: unifai-demo-secrets, key: vllm-api-key}}
+---
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiLLM
+metadata: {name: demo-openai}
+spec:
+  type: openai
+  config:
+    model_name: gpt-5.5
+    base_url: https://api.openai.com/v1
+    max_tokens: 4096
+  secretRefs:
+    - {path: api_key, secretKeyRef: {name: unifai-demo-secrets, key: openai-api-key}}
+---
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiLLM
+metadata: {name: demo-gemini}
+spec:
+  type: google_genai
+  config: {model_name: gemini-3.5-flash, temperature: 0.2}
+  secretRefs:
+    - {path: api_key, secretKeyRef: {name: unifai-demo-secrets, key: gemini-api-key}}

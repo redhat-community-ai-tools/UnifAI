@@ -1,0 +1,25 @@
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiTool
+metadata: {name: demo-web-fetch}
+spec:
+  type: web_fetch
+  config: {}
+---
+# Use a dedicated read-only ServiceAccount token
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiTool
+metadata: {name: demo-oc-exec}
+spec:
+  type: oc_exec
+  config: {server: "https://api.demo333.startx.fr:6443", skip_tls_verify: false}
+  secretRefs:
+    - {path: token, secretKeyRef: {name: unifai-demo-secrets, key: oc-token}}
+---
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiTool
+metadata: {name: demo-ssh-exec}
+spec:
+  type: ssh_exec
+  config: {host: ssh-target.example.com, port: 22, username: unifai}
+  secretRefs:
+    - {path: password, secretKeyRef: {name: unifai-demo-secrets, key: ssh-password}}

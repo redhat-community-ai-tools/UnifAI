@@ -1,0 +1,85 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: unifaiproviders.unifai.startx.fr
+spec:
+  group: unifai.startx.fr
+  scope: Namespaced
+  names:
+    kind: UnifaiProvider
+    plural: unifaiproviders
+    singular: unifaiprovider
+    shortNames:
+    - uprov
+    categories:
+    - unifai
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - name: Phase
+      type: string
+      jsonPath: .status.phase
+    - name: Type
+      type: string
+      jsonPath: .spec.type
+    - name: Message
+      type: string
+      jsonPath: .status.message
+      priority: 1
+    - name: Age
+      type: date
+      jsonPath: .metadata.creationTimestamp
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            required:
+            - type
+            properties:
+              owner:
+                type: string
+                default: admin
+                description: UnifAI user owning the object (workspace identity)
+              teamId:
+                type: string
+                description: Use a team workspace instead of the user's
+              unifaiName:
+                type: string
+                description: Name in UnifAI (defaults to metadata.name)
+              type:
+                type: string
+                enum:
+                - mcp_server
+              config:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                description: UnifAI cfg_dict; `$ref:<kind>/<name>` references another
+                  UnifAI object
+              secretRefs:
+                type: array
+                description: Values injected into config (dotted path) from a Secret
+                items:
+                  type: object
+                  required:
+                  - path
+                  - secretKeyRef
+                  properties:
+                    path: &id001
+                      type: string
+                    secretKeyRef:
+                      type: object
+                      required:
+                      - name
+                      - key
+                      properties:
+                        name: *id001
+                        key: *id001
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true

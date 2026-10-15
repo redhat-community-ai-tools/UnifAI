@@ -1,0 +1,86 @@
+# Catalog templates (admin only: `owner` must be in admin_allowed_users). Users instantiate them from the UI ("materialize").
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiTemplate
+metadata: {name: demo-chat-quickstart}
+spec:
+  owner: admin
+  draft:
+    name: Demo Chat Quickstart
+    description: One Gemini agent answering questions.
+    llms:
+      - rid: llm_rid
+        name: gemini
+        type: google_genai
+        config: {type: google_genai, model_name: gemini-3.5-flash, api_key: PLACEHOLDER_API_KEY}
+    nodes:
+      - {rid: user_question, name: User Question Node, type: user_question_node, config: {type: user_question_node, retries: 1}}
+      - {rid: final_answer, name: Final Answer Node, type: final_answer_node, config: {type: final_answer_node, retries: 1}}
+      - rid: agent_rid
+        name: Assistant
+        type: custom_agent_node
+        config: {type: custom_agent_node, llm: llm_rid, system_message: You are a helpful assistant., hitl_mode: skip}
+    plan:
+      - {uid: ask, node: user_question}
+      - {uid: answer, node: agent_rid, after: ask}
+      - {uid: finish, node: final_answer, after: answer}
+  placeholders:
+    categories:
+      - category: llms
+        resources:
+          - rid: llm_rid
+            placeholders:
+              - {field_path: api_key, required: true, label: Gemini API key, hint: Google AI Studio key}
+  metadata: {author: startx, version: 1.0.0, is_public: true, category: Chat, tags: [chat, quickstart]}
+---
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiTemplate
+metadata: {name: demo-ops-triage}
+spec:
+  owner: admin
+  draft:
+    name: Demo Ops Triage
+    description: An agent with an MCP provider and the OpenShift CLI tool.
+    providers:
+      - rid: mcp_rid
+        name: Ops MCP
+        type: mcp_server
+        config: {type: mcp_server, mcp_url: https://placeholder.example.com/sse, transport_type: sse, auth_method: access_token, bearer_token: PLACEHOLDER_MCP_TOKEN}
+    llms:
+      - rid: llm_rid
+        name: gemini
+        type: google_genai
+        config: {type: google_genai, model_name: gemini-3.5-flash, api_key: PLACEHOLDER_API_KEY}
+    tools:
+      - rid: oc_rid
+        name: OpenShift CLI
+        type: oc_exec
+        config: {type: oc_exec, server: https://api.placeholder.example.com:6443, token: PLACEHOLDER_OC_TOKEN}
+    nodes:
+      - {rid: user_question, name: User Question Node, type: user_question_node, config: {type: user_question_node, retries: 1}}
+      - {rid: final_answer, name: Final Answer Node, type: final_answer_node, config: {type: final_answer_node, retries: 1}}
+      - rid: sre_rid
+        name: SRE Agent
+        type: custom_agent_node
+        config: {type: custom_agent_node, llm: llm_rid, tools: [oc_rid], providers: [mcp_rid], system_message: Triage the incident., hitl_mode: skip}
+    plan:
+      - {uid: ask, node: user_question}
+      - {uid: triage, node: sre_rid, after: ask}
+      - {uid: finish, node: final_answer, after: triage}
+  placeholders:
+    categories:
+      - category: llms
+        resources:
+          - {rid: llm_rid, placeholders: [{field_path: api_key, required: true, label: Gemini API key}]}
+      - category: tools
+        resources:
+          - rid: oc_rid
+            placeholders:
+              - {field_path: server, required: true, label: OpenShift API URL}
+              - {field_path: token, required: true, label: ServiceAccount token}
+      - category: providers
+        resources:
+          - rid: mcp_rid
+            placeholders:
+              - {field_path: mcp_url, required: true, label: MCP URL}
+              - {field_path: bearer_token, required: true, label: MCP token}
+  metadata: {author: startx, version: 1.0.0, is_public: true, category: SRE, tags: [sre, openshift]}

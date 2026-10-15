@@ -1,0 +1,18 @@
+# Every 30 minutes (ISO-8601 interval, minimum PT1M)
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiSchedule
+metadata: {name: demo-every-30m}
+spec:
+  workflow: demo-linear
+  inputs: {user_prompt: "status report, please"}
+  schedule: {interval: PT30M, overlap_policy: skip, timezone: UTC}
+---
+# Weekdays 08:30 Paris time, created suspended (`suspend: false` or remove it to enable)
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiSchedule
+metadata: {name: demo-weekday-morning}
+spec:
+  workflow: demo-linear
+  suspend: true
+  inputs: {user_prompt: "morning brief"}
+  schedule: {cron_expression: "30 8 * * 1-5", timezone: Europe/Paris, overlap_policy: skip}

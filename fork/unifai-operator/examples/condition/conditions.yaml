@@ -1,0 +1,7 @@
+# The deployed instance only serves `router_direct` (threshold / router_boolean exist upstream but are not registered here).
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiCondition
+metadata: {name: demo-direct}
+spec:
+  type: router_direct
+  config: {}
