@@ -29,7 +29,7 @@ TAG                  ?= $(DEVEL_TAG)
 export REGISTRY IMAGE_PREFIX UI_HOST IDENTITY_HOST_NAME STORAGE_CLASS SHARED_STORAGE_CLASS DOCLING_URL EMBEDDING_URL
 
 .DEFAULT_GOAL := help
-.PHONY: help init status login sync-main merge-main-to-devel sync-all feature-start feature-to-devel \
+.PHONY: ui-perms help init status login sync-main merge-main-to-devel sync-all feature-start feature-to-devel \
         ui-certs build-all push-all images-devel overlay helm-lint deploy-shared deploy-diff deploy \
         release contrib-update contrib-check contrib-pr contrib-ready
 
@@ -100,6 +100,12 @@ ui-certs: ## Self-signed certs for the UI image (nginx expects unifai.crt/unifai
 	mkdir -p ui/UnifAI-secrets/certificates
 	openssl req -x509 -nodes -newkey rsa:2048 -days 365 -subj "/CN=unifai" \
 	  -keyout ui/UnifAI-secrets/certificates/unifai.key -out ui/UnifAI-secrets/certificates/unifai.crt
+	chmod 644 ui/UnifAI-secrets/certificates/*
+
+ui-perms: ## Make ui/ and README.md world-readable (the UI Dockerfile uses COPY, which keeps host modes; needed with a restrictive umask)
+	chmod -R a+rX ui README.md
+
+build-ui: ui-perms
 
 build-%: check-quay ## Build one component (rag multi-agent backend identity ui); TAG=...
 	$(ENGINE) build $(BUILD_ARGS_$*) -t $(call img,$*):$(TAG) -f $(DOCKERFILE_$*) .
