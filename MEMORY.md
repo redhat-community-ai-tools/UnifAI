@@ -52,7 +52,7 @@ Deploy UnifAI autonomously on our OpenShift cluster, evolve it, and contribute s
 
 ## Cluster demo333 (api.demo333.startx.fr, domain apps.demo333.startx.fr) — 2026-10-15
 - Shared with the zuno demo (nodes at ~98% CPU requests). Added MachineSet `unifai-worker-a` (2x m5a.4xlarge, label workload=unifai) + NFS provisioner (ns `nfs-provisioner`, StorageClass `nfs`), namespace `unifai-devel`.
-- Keycloak (RHBK, ns zuno-auth): realm import `unifai-realm` (realm `unifai`, client `unifai`, user `unifai-admin`); client_secret/admin password in `.fork/secrets.env` (git-excluded). identity connects ("Keycloak client setup successfully").
+- Keycloak (RHBK, ns zuno-auth): realm import `unifai-realm` (realm `unifai`, client `unifai`, user `admin` (renamed from unifai-admin; admin_allowed_users=["admin"])); client_secret/admin password in `.fork/secrets.env` (git-excluded). identity connects ("Keycloak client setup successfully").
 - fork.mk (local): hosts `unifai-{ui,identity}-unifai-devel.apps.demo333.startx.fr`, STORAGE_CLASS=gp3-csi, SHARED_STORAGE_CLASS=nfs.
 - State: UI, identity, backend, multiagent, rag-server, shared resources up. rag-celery Pending (GPU kept: no allocatable GPU yet); because rag-config `needs` celery, run `scripts/rag-postsync.sh` by hand to create `unifai-rag-config` (UI needs it).
 - Run helmfile from `.fork/helm` (recreated by `make overlay`: never keep a shell cwd inside it while re-rendering).
