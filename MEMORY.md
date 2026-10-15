@@ -43,16 +43,26 @@ Deploy UnifAI autonomously on our OpenShift cluster, evolve it, and contribute s
 ## Key commands
 `make help`, `make init`, `make status`, `make sync-all`, `make overlay`, `make helm-lint`, `make images-devel`, `make contrib-check`.
 
-## Deployment state (cluster api.amine420.startx.fr, namespace `unifai-devel`) — 2026-10-15
-- RWX: `nfs-provisioner-operator` in ns `nfs-provisioner` (StorageClass `nfs`, 300G gp3 backing). ODF rejected (not enough nodes). `fork.mk`: STORAGE_CLASS=gp3-csi, SHARED_STORAGE_CLASS=nfs.
-- Deployed: shared resources, rag-server, backend (slack-socket sidecar crash-loops: no Slack tokens), multiagent be + temporal-worker (image `devel-<sha>`; needs `make multiagent-perms`, umask 0077 issue).
-- Not working: rag-celery (chart requests nvidia.com/gpu, no GPU; overlay change declined), identity + ui (identity needs an external Keycloak: keycloak_base_url, client_id/secret, realm).
-- Helmfile hook variables live in `.fork/secrets.env` (git-excluded, generated): source it with fork.mk before `helmfile`/`make deploy`. `make deploy` stops at the first failing module (rag-celery wait), so apply modules individually.
-- Security: charts expose public Routes for mongodb, qdrant, redis-insight, temporal, backend, multiagent-be: review/remove.
+## Clusters (all deployments are in namespace `unifai-devel`)
+- **demo333** (api.demo333.startx.fr, apps.demo333.startx.fr) — current, working (validated by the user 2026-10-15). Shared with the zuno demo, nodes at ~98% CPU requests.
+  - Added MachineSet `unifai-worker-a` (2x m5a.4xlarge, label `workload=unifai`; ~0.8 $/h each, scale to 0 when unused). Existing worker MachineSets are t3a.large (too small).
+  - RWX: `nfs-provisioner-operator` (community-operators) in ns `nfs-provisioner`, StorageClass `nfs`, 300G gp3 backing. ODF was rejected (needs 3 big storage nodes).
+  - Keycloak (RHBK in ns `zuno-auth`, https://keycloak.apps.demo333.startx.fr) is managed by ArgoCD for zuno: do not touch realm `zuno`. Realm `unifai` was created with a `KeycloakRealmImport` (client `unifai`, user `admin`; `admin_allowed_users=["admin"]`). A KeycloakRealmImport is not re-applied once the realm exists: later changes go through the admin REST API (token from the `keycloak-admin` secret in `zuno-auth`; renaming a user needs `editUsernameAllowed=true` temporarily). Client secret and passwords: `.fork/secrets.env` only.
+  - `fork.mk` (local): hosts `unifai-{ui,identity}-unifai-devel.apps.demo333.startx.fr`, STORAGE_CLASS=gp3-csi, SHARED_STORAGE_CLASS=nfs, docling/embedding URLs still dummy.
+  - Up: shared resources, rag-server, backend (`slack-socket` sidecar fails: no Slack tokens), multiagent be + temporal-worker, identity, ui. `rag-celery` Pending: chart requests `nvidia.com/gpu: 1`, GPU nodes had no allocatable GPU (user chose to keep the GPU request).
+- **amine420** (api.amine420.startx.fr): first test cluster (no GPU, no Keycloak). Shared + rag-server + backend + multiagent were deployed there; identity/ui were not. NFS provisioner installed there too. Still holds a partial deployment.
 
-## Cluster demo333 (api.demo333.startx.fr, domain apps.demo333.startx.fr) — 2026-10-15
-- Shared with the zuno demo (nodes at ~98% CPU requests). Added MachineSet `unifai-worker-a` (2x m5a.4xlarge, label workload=unifai) + NFS provisioner (ns `nfs-provisioner`, StorageClass `nfs`), namespace `unifai-devel`.
-- Keycloak (RHBK, ns zuno-auth): realm import `unifai-realm` (realm `unifai`, client `unifai`, user `admin` (renamed from unifai-admin; admin_allowed_users=["admin"])); client_secret/admin password in `.fork/secrets.env` (git-excluded). identity connects ("Keycloak client setup successfully").
-- fork.mk (local): hosts `unifai-{ui,identity}-unifai-devel.apps.demo333.startx.fr`, STORAGE_CLASS=gp3-csi, SHARED_STORAGE_CLASS=nfs.
-- State: UI, identity, backend, multiagent, rag-server, shared resources up. rag-celery Pending (GPU kept: no allocatable GPU yet); because rag-config `needs` celery, run `scripts/rag-postsync.sh` by hand to create `unifai-rag-config` (UI needs it).
-- Run helmfile from `.fork/helm` (recreated by `make overlay`: never keep a shell cwd inside it while re-rendering).
+## Operations notes / gotchas
+- Always `set -a; source <(sed 's/ *= */=/' fork.mk); set +a; source .fork/secrets.env` before `make deploy*` or `helmfile`: the presync/postsync hooks read lowercase env vars with `set -u` (redis_*, umami_*, vault_*, langfuse_*, slack_*, keycloak_*/client_*, CREDENTIAL_ENCRYPTION_KEY, OAUTH_STATE_SECRET...). `admin_allowed_users` must be a JSON list.
+- `make deploy` stops at the first failing module (rag-celery `wait: true`): apply modules individually from `.fork/helm` (`helmfile -n unifai-devel -f <module>.yaml.gotmpl apply`). `make overlay` deletes and recreates `.fork/helm`: never keep a shell cwd inside it while re-rendering.
+- `rag-config` `needs` rag-celery, so while celery is Pending its postsync never runs: run `bash scripts/rag-postsync.sh` by hand (creates `unifai-rag-config`, required by the UI nginx: "no host in upstream" otherwise). Hooks of unchanged releases are skipped: run `shared-resources-postsync.sh` / `identity-presync.sh` by hand after changing env values, then restart the pods.
+- umask 0077 on the build host makes `COPY` produce unreadable files for the non-root image user: `make build-ui` and `make build-multi-agent` run `chmod -R a+rX` first. Image tags `:devel` are mutable and nodes cache them: deploy a `devel-<sha>` tag (`DEPLOY_TAG=devel-<sha> make overlay`) or restart after clearing the cache.
+- Pull of `registry.access.redhat.com/rhel9/redis-7` needs a Red Hat login: the overlay uses `quay.io/fedora/redis-7`. A Pending StatefulSet pod stuck on a bad image must be deleted by hand after fixing the image.
+- Rolling updates can deadlock when nodes are full (identity needs 4 CPU): delete the old pod. Upstream requests are large (total ~25.6 CPU / 60 GiB); a dev-sized requests overlay is a possible follow-up.
+- quay.io: images are public under `quay.io/zuno/unifai-*` (`:devel`, `:devel-<sha>`); push needs a login with write access to `zuno` (a robot of another org gets "authentication required").
+- Security: charts create public Routes for mongodb, qdrant, redis-insight, temporal, backend, multiagent-be (no auth on qdrant/redis-insight/temporal): review or remove. The `admin` password is weak (user's choice): change it before wider exposure.
+
+## Open TODO
+1. GPU for rag-celery (or drop the request), docling + embedding services for RAG ingestion, Slack tokens for the backend sidecar.
+2. Dev-sized resource requests overlay; remove public routes; scale `unifai-worker-a` down when idle.
+3. Contact upstream maintainers before the first PR (candidate: `fix/multiagent-optional-corp-ca`).
