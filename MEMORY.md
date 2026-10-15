@@ -1,0 +1,43 @@
+# MEMORY — fork startxfr/UnifAI (branch `devel` only)
+
+Project memory for resuming work on this fork. Fork-only: never versioned outside `devel` (see `fork/fork-only-paths`).
+No secrets here.
+
+## Goal
+Deploy UnifAI autonomously on our OpenShift cluster, evolve it, and contribute selected changes upstream
+(`redhat-community-ai-tools/UnifAI`, trunk `main`).
+
+## Branch model
+- `main` = strict mirror of `upstream/main` (`git merge --ff-only`), no own commits. Never merge `devel` into `main`.
+- `devel` = `main` + fork delta (Makefile, `fork/`, `MEMORY.md`, fork-only patches). Receives `main` by merge. Build/deploy/release branch.
+- Features/fixes: branch from `main` (`make feature-start`), merge into `devel` to test (`make feature-to-devel`), PR upstream if wanted.
+- Releases are tagged on `devel` (what is deployed = what is tagged).
+
+## Guard rails
+- Pushes to `origin` and `upstream` are disabled (`remote.*.pushurl=DISABLED`); nothing is pushed unless explicitly decided
+  (`git config --unset remote.origin.pushurl`). User rule: commit locally as much as needed, no push.
+- Fork-only paths (`fork/fork-only-paths`): `Makefile`, `fork.mk`, `fork.mk.example`, `MEMORY.md`, `fork/`, `.fork/`.
+  A `.gitignore` cannot keep tracked files out of a merge, so `fork/hooks/guard-fork-only` (installed by `make init` as
+  pre-commit and pre-merge-commit) refuses them on any branch but `devel`; `make contrib-check` also rejects them.
+
+## What exists
+- `fork/render_values.py` + `fork/values/*.yaml` + `fork/images.yaml`: `make overlay` copies `helm/` to `.fork/helm/` and deep-merges
+  overlays over `helm/values/*` (image repos/tags -> quay.io, URLs, storage classes, public shared images). Chosen over
+  `--state-values-file` because `global-config.yaml` is a release-level values file. Cluster-specific placeholders come from `fork.mk`.
+- Branch `fix/multiagent-optional-corp-ca` (merged in `devel`): `--build-arg CERT_URL=` skips the Red Hat CA download. Candidate for a first upstream PR.
+- Image names: `$(REGISTRY)/unifai-{rag,multiagent,backend,identity,ui}`; identity's helm values key is `backend`. UI image needs
+  `ui/UnifAI-secrets/certificates/unifai.{crt,key}` (`make ui-certs`).
+
+## Known gaps / not validated
+- `helmfile` not installed when written: `deploy*` untested. `podman build` never run. Public images for mongo/qdrant/rabbitmq (`bitnamilegacy/rabbitmq`) to confirm.
+- Remaining Red Hat dependencies: docling and embedding service URLs (set `DOCLING_URL`/`EMBEDDING_URL`, or `USE_REMOTE_*=False`), `paas.redhat.com/appcode` annotations.
+- Upstream chart defects found by `make helm-lint`: `helm/multiagent/be` (template without extension), `helm/shared-resources/rabbitmq` (missing `common` dependency).
+- Upstream has no CONTRIBUTING; PRs come from in-repo branches; review gate = CodeRabbit + Cursor pipeline (arch APPROVE, score >= 8/10) needing secrets forks do not get.
+
+## Open TODO (manual)
+1. Create quay.io repos `unifai-*`; `cp fork.mk.example fork.mk` and fill it; install helmfile (+helm-diff), gh, ruff, gitleaks.
+2. Contact upstream maintainers (CODEOWNERS) before the first PR.
+3. Validate `make deploy-diff` then deploy on a test namespace; decide TLS (nginx certs vs OpenShift Route).
+
+## Key commands
+`make help`, `make init`, `make status`, `make sync-all`, `make overlay`, `make helm-lint`, `make images-devel`, `make contrib-check`.

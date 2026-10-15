@@ -2,7 +2,7 @@
 # Pre-PR checks reproducing the review rules found in upstream (.coderabbit.yaml, .pr_agent.toml,
 # .cursor/rules/engineering-standards.md, helm/ARCHITECTURE.md, security-pip-auditing.yaml).
 set -uo pipefail
-FORK_ONLY=(Makefile fork.mk fork.mk.example fork .fork)
+mapfile -t FORK_ONLY < <(git show devel:fork/fork-only-paths | sed 's#/$##')
 fail=0
 err()  { echo "ERROR: $*"; fail=1; }
 warn() { echo "WARN:  $*"; }

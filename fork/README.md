@@ -10,3 +10,7 @@ Fork-only files (never part of an upstream PR): `Makefile`, `fork.mk` (local, gi
   (placeholders in braces are read from `fork.mk`); image repositories/tags come from `fork/images.yaml`. Upstream files stay untouched.
 - Known gaps: `helmfile` is not validated here (not installed when written); `make helm-lint` reports upstream chart issues
   (`multiagent/be` template without extension, `rabbitmq` missing `common` dependency).
+
+## Guard rails for main
+`main` mirrors upstream, so fork-only paths (`fork/fork-only-paths`) must never reach it. `make init` installs
+`fork/hooks/guard-fork-only` as pre-commit and pre-merge-commit hook: it refuses these paths on every branch except `devel`.

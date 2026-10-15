@@ -25,7 +25,6 @@ DOCKERFILE_identity    = shared-resources/identity/Dockerfile
 DOCKERFILE_ui          = ui/deployment/Dockerfile
 IMAGE_multi-agent      = multiagent
 BUILD_ARGS_multi-agent = --build-arg CERT_URL=
-FORK_ONLY_PATHS      := Makefile fork.mk fork.mk.example fork .fork
 TAG                  ?= $(DEVEL_TAG)
 export REGISTRY IMAGE_PREFIX UI_HOST IDENTITY_HOST_NAME STORAGE_CLASS SHARED_STORAGE_CLASS DOCLING_URL EMBEDDING_URL
 
@@ -51,13 +50,14 @@ check-quay:
 	@test "$(QUAY_ORG)" != "CHANGEME" || { echo "set QUAY_ORG in fork.mk"; exit 1; }
 
 # --- setup & state -------------------------------------------------------------------------------
-init: ## Add upstream remote (no push anywhere by default), create devel, hide fork-only paths
+init: ## Add upstream remote (no push anywhere by default), create devel, install the fork-only guard hooks, hide local files
 	git remote get-url upstream >/dev/null 2>&1 || git remote add upstream $(UPSTREAM_URL)
 	git config remote.upstream.pushurl DISABLED
 	git config remote.upstream.tagOpt --no-tags
 	git config remote.origin.pushurl DISABLED
 	git fetch upstream --no-tags
 	git show-ref --verify --quiet refs/heads/devel || git branch devel main
+	for h in pre-commit pre-merge-commit; do install -m 755 fork/hooks/guard-fork-only $$(git rev-parse --git-path hooks)/$$h; done
 	@grep -qxF '.fork/' .git/info/exclude || echo '.fork/' >> .git/info/exclude
 	@grep -qxF 'fork.mk' .git/info/exclude || echo 'fork.mk' >> .git/info/exclude
 	@grep -qxF 'ui/UnifAI-secrets/' .git/info/exclude || echo 'ui/UnifAI-secrets/' >> .git/info/exclude

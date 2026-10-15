@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Refuse to commit/merge fork-only paths (listed in fork/fork-only-paths on devel) anywhere but on devel.
+# Installed as .git/hooks/pre-commit and .git/hooks/pre-merge-commit by `make init`.
+branch=$(git branch --show-current)
+[ -z "$branch" ] || [ "$branch" = devel ] && exit 0
+list=$(git show devel:fork/fork-only-paths 2>/dev/null) || exit 0
+bad=0
+while IFS= read -r file; do
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    p=${p%/}
+    if [ "$file" = "$p" ] || [[ "$file" == "$p"/* ]]; then
+      echo "fork-only path '$file' must not be versioned on '$branch' (only on devel)" >&2
+      bad=1
+    fi
+  done <<< "$list"
+done < <(git diff --cached --name-only)
+exit $bad
