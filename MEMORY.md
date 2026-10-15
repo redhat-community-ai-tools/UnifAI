@@ -42,3 +42,10 @@ Deploy UnifAI autonomously on our OpenShift cluster, evolve it, and contribute s
 
 ## Key commands
 `make help`, `make init`, `make status`, `make sync-all`, `make overlay`, `make helm-lint`, `make images-devel`, `make contrib-check`.
+
+## Deployment state (cluster api.amine420.startx.fr, namespace `unifai-devel`) — 2026-10-15
+- RWX: `nfs-provisioner-operator` in ns `nfs-provisioner` (StorageClass `nfs`, 300G gp3 backing). ODF rejected (not enough nodes). `fork.mk`: STORAGE_CLASS=gp3-csi, SHARED_STORAGE_CLASS=nfs.
+- Deployed: shared resources, rag-server, backend (slack-socket sidecar crash-loops: no Slack tokens), multiagent be + temporal-worker (image `devel-<sha>`; needs `make multiagent-perms`, umask 0077 issue).
+- Not working: rag-celery (chart requests nvidia.com/gpu, no GPU; overlay change declined), identity + ui (identity needs an external Keycloak: keycloak_base_url, client_id/secret, realm).
+- Helmfile hook variables live in `.fork/secrets.env` (git-excluded, generated): source it with fork.mk before `helmfile`/`make deploy`. `make deploy` stops at the first failing module (rag-celery wait), so apply modules individually.
+- Security: charts expose public Routes for mongodb, qdrant, redis-insight, temporal, backend, multiagent-be: review/remove.
