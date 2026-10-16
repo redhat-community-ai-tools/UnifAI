@@ -85,7 +85,9 @@ func WorkloadsReady(ctx context.Context, c client.Client, ns string, objs []Mani
 			if d.Spec.Replicas != nil {
 				want = *d.Spec.Replicas
 			}
-			if d.Status.ObservedGeneration < d.Generation || d.Status.UpdatedReplicas < want || d.Status.AvailableReplicas < want {
+			// Same rule as `kubectl rollout status`: no pod of an older revision may remain.
+			if d.Status.ObservedGeneration < d.Generation || d.Status.UpdatedReplicas < want || d.Status.AvailableReplicas < want ||
+				d.Status.Replicas > d.Status.UpdatedReplicas {
 				waiting = append(waiting, fmt.Sprintf("deployment/%s %d/%d", o.Name, d.Status.AvailableReplicas, want))
 			}
 		case "StatefulSet":

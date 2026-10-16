@@ -28,12 +28,13 @@ var devCaps = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")
 type postRenderer struct {
 	plan *Plan
 	rel  Release
+	rwo  map[string]bool
 }
 
 // Run implements helm's postrender.PostRenderer.
 func (r *postRenderer) Run(in *bytes.Buffer) (*bytes.Buffer, error) {
 	reader := utilyaml.NewYAMLReader(bufio.NewReader(in))
-	out := &bytes.Buffer{}
+	var objs []map[string]any
 	for {
 		doc, err := reader.Read()
 		if err == io.EOF {
@@ -46,9 +47,13 @@ func (r *postRenderer) Run(in *bytes.Buffer) (*bytes.Buffer, error) {
 		if err := yaml.Unmarshal(doc, &obj); err != nil {
 			return nil, err
 		}
-		if len(obj) == 0 {
-			continue
+		if len(obj) > 0 {
+			objs = append(objs, obj)
 		}
+	}
+	r.rwo = r.readWriteOnceClaims(objs)
+	out := &bytes.Buffer{}
+	for _, obj := range objs {
 		keep, err := r.mutate(obj)
 		if err != nil {
 			return nil, fmt.Errorf("%s %s: %w", obj["kind"], name(obj), err)
@@ -64,6 +69,41 @@ func (r *postRenderer) Run(in *bytes.Buffer) (*bytes.Buffer, error) {
 		out.Write(b)
 	}
 	return out, nil
+}
+
+// readWriteOnceClaims lists the ReadWriteOnce PVCs of the release (rendered or already existing).
+func (r *postRenderer) readWriteOnceClaims(objs []map[string]any) map[string]bool {
+	rwo := map[string]bool{}
+	for _, o := range objs {
+		if o["kind"] != "PersistentVolumeClaim" {
+			continue
+		}
+		for _, m := range asSlice(mapAt(o, "spec")["accessModes"]) {
+			if m == "ReadWriteOnce" {
+				rwo[name(o)] = true
+			}
+		}
+	}
+	for key, spec := range r.plan.LiveVolumes {
+		for _, m := range spec.AccessModes {
+			if m == corev1.ReadWriteOnce && strings.HasPrefix(key, "pvc/") {
+				rwo[strings.TrimPrefix(key, "pvc/")] = true
+			}
+		}
+	}
+	return rwo
+}
+
+// usesRWO reports whether a pod template mounts a ReadWriteOnce claim: a rolling update would start the new pod
+// on a volume the old one still holds (and locks), so such Deployments must be recreated.
+func (r *postRenderer) usesRWO(tpl map[string]any) bool {
+	for _, v := range asSlice(mapAt(tpl, "spec")["volumes"]) {
+		vm, _ := v.(map[string]any)
+		if c, ok := mapAt(vm, "persistentVolumeClaim")["claimName"].(string); ok && r.rwo[c] {
+			return true
+		}
+	}
+	return false
 }
 
 func name(obj map[string]any) string {
@@ -123,17 +163,36 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 		}
 	case "PersistentVolumeClaim":
 		r.keepPVC(md)
+		r.liveVolume(spec, "pvc/"+name(obj))
 	case "Deployment", "StatefulSet":
 		if kind == "StatefulSet" {
 			for _, t := range asSlice(spec["volumeClaimTemplates"]) {
 				if tm, ok := t.(map[string]any); ok {
 					tmd := mapAt(tm, "metadata")
+					if live, ok := r.plan.LiveClaimTemplates[name(obj)+"/"+fmt.Sprint(tmd["name"])]; ok {
+						lm := toMap(live)
+						delete(lm, "status")
+						for k := range tm {
+							delete(tm, k)
+						}
+						for k, v := range lm {
+							tm[k] = v
+						}
+						continue
+					}
 					r.keepPVC(tmd)
 					tm["metadata"] = tmd
 				}
 			}
 		}
 		tpl := mapAt(spec, "template")
+		if kind == "Deployment" && r.plan.Dev() && spec["replicas"] == nil {
+			spec["replicas"] = 1 // no HPA in dev: never keep the replicas an HPA left behind
+		}
+		if kind == "Deployment" && r.usesRWO(tpl) {
+			// rollingUpdate: null makes the upgrade patch drop the live rolling settings (rejected with Recreate).
+			spec["strategy"] = map[string]any{"type": "Recreate", "rollingUpdate": nil}
+		}
 		if err := r.mutatePod(tpl); err != nil {
 			return false, err
 		}
@@ -150,6 +209,31 @@ func (r *postRenderer) setHost(md, spec map[string]any, host string) {
 	if a := mapAt(md, "annotations"); len(a) > 0 {
 		delete(a, "openshift.io/host.generated")
 		md["annotations"] = a
+	}
+}
+
+// liveVolume keeps the size, class and access modes of a volume that already exists.
+func (r *postRenderer) liveVolume(spec map[string]any, key string) {
+	live, ok := r.plan.LiveVolumes[key]
+	if !ok {
+		return
+	}
+	if q, ok := live.Resources.Requests[corev1.ResourceStorage]; ok {
+		res := mapAt(spec, "resources")
+		req := mapAt(res, "requests")
+		req["storage"] = q.String()
+		res["requests"] = req
+		spec["resources"] = res
+	}
+	if live.StorageClassName != nil {
+		spec["storageClassName"] = *live.StorageClassName
+	}
+	if len(live.AccessModes) > 0 {
+		var am []any
+		for _, m := range live.AccessModes {
+			am = append(am, string(m))
+		}
+		spec["accessModes"] = am
 	}
 }
 

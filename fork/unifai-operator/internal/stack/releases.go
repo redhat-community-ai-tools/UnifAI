@@ -28,7 +28,7 @@ func (r Release) IsEnabled(p *Plan) bool { return r.Enabled == nil || r.Enabled(
 var Releases = []Release{
 	{Name: "unifai-mongodb", Chart: "mongodb", Component: "mongodb", Phase: 0, Internal: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("shared-resource-values.yaml", "mongodb")
-		return storage(p, v, err, "mongodb", "storage.className", "storage.size", "100Gi", false)
+		return storage(p, v, err, "mongodb", "storage.className", "storage.requestedSize", "100G", false)
 	}},
 	{Name: "unifai-qdrant", Chart: "qdrant", Component: "qdrant", Phase: 0, Internal: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("shared-resource-values.yaml", "qdrant")

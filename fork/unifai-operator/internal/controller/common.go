@@ -205,6 +205,9 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 	orig := obj.DeepCopyObject().(client.Object)
 	var requeue time.Duration
 	err := b.stackGate(ctx, obj.GetNamespace())
+	if err != nil && (st.Phase == "Completed" || st.Phase == "Failed") {
+		return reconcile.Result{RequeueAfter: resync}, nil // finished one-shot runs do not depend on the stack
+	}
 	if err == nil {
 		requeue, err = h.Apply(ctx)
 	}

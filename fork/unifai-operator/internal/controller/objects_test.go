@@ -180,6 +180,19 @@ var _ = Describe("UnifAI object controllers", func() {
 		Eventually(phaseOf(rag), 60*time.Second, interval).Should(Equal("Ready"))
 		Expect(rag.Status.Message).To(Equal("2 document(s) ingested"))
 
+		By("retrying failed documents with the retry annotation")
+		mas.mu.Lock()
+		for _, src := range mas.ragSources {
+			if src["source_name"] == "b-"+ns+".md" {
+				src["status"] = "FAILED"
+			}
+		}
+		mas.mu.Unlock()
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rag), rag)).To(Succeed())
+		rag.Spec.Documents[1].Tags = []string{"x"} // spec change: status hash differs, FAILED is resubmitted
+		Expect(k8sClient.Update(ctx, rag)).To(Succeed())
+		Eventually(phaseOf(rag), 60*time.Second, interval).Should(Equal("Ready"))
+
 		By("deleting the resource")
 		Expect(k8sClient.Delete(ctx, rag)).To(Succeed())
 		Eventually(func() map[string]string { return mas.ragSourceNames() }, 30*time.Second, interval).ShouldNot(HaveKey("b-" + ns + ".md"))

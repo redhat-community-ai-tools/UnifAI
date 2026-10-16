@@ -1,0 +1,19 @@
+# unifai-devel on demo333: the helmfile deployment taken over by the operator (existing volumes and keys are kept).
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiStack
+metadata:
+  name: unifai
+  namespace: unifai-devel
+spec:
+  profile: dev
+  identity:
+    adminUsers: [admin]
+    external:
+      url: https://keycloak.apps.demo333.startx.fr
+      realm: unifai
+      clientId: unifai
+      clientSecret: {name: unifai-oidc, key: client-secret}
+  storage:
+    className: gp3-csi
+    sharedClassName: nfs
+  deletionPolicy: Retain

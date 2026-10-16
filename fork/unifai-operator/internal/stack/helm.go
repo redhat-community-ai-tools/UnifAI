@@ -76,6 +76,10 @@ func Render(p *Plan, r Release) (*Rendered, error) {
 	if err != nil {
 		return nil, fmt.Errorf("values of %s: %w", r.Name, err)
 	}
+	if p.Dev() {
+		// Charts only render `replicas` when autoscaling is off: dropping the HPA alone would keep its last scale.
+		set(vals, "autoscaling.enabled", false)
+	}
 	_, digest, err := loadChart(r.Chart)
 	if err != nil {
 		return nil, err
@@ -87,7 +91,7 @@ func Render(p *Plan, r Release) (*Rendered, error) {
 }
 
 // postRenderVersion changes when the post-renderer behaviour changes, forcing upgrades.
-const postRenderVersion = 1
+const postRenderVersion = 3
 
 // Apply installs the release, or upgrades it; it repairs releases left pending by an interrupted operation.
 func (e *Engine) Apply(ctx context.Context, p *Plan, rr *Rendered) (*release.Release, error) {

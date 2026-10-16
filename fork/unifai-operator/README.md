@@ -75,6 +75,27 @@ config are expanded from the library. Specs are dry-run validated (`config.valid
 without a stack, e.g. deployed by helmfile, are not gated). The operator calls
 `unifai-multiagent-be.<ns>.svc:8003` and `unifai-rag-server.<ns>.svc:13456`.
 
+### Taking over a helmfile deployment
+
+A `UnifaiStack` created in a namespace deployed by the upstream helmfile adopts it in place (done for `unifai-devel`,
+see [`examples/stack/stack-unifai-devel.yaml`](examples/stack/stack-unifai-devel.yaml)):
+
+1. Put the OIDC client secret in a Secret (`identity-secret` holds it as `client_secret`) and reference it in
+   `identity.external.clientSecret`.
+2. Create the stack. The operator then:
+   - seeds `unifai-generated` from the existing `multiagent-be-secret` / `shared-secret` (same
+     `CREDENTIAL_ENCRYPTION_KEY`, so the credentials stored in MongoDB stay readable);
+   - keeps every existing PVC and StatefulSet claim template as is (size, class, metadata: immutable);
+   - uninstalls the helmfile "dummy" releases (`unifai-redis-config`, `unifai-shared-config`, `unifai-rag-config`,
+     `multiagent-config`) after marking the ConfigMaps it manages `helm.sh/resource-policy: keep`;
+   - upgrades the other releases in place (a release left `failed` at its first revision is reinstalled).
+3. Expect one restart of every pod (labels, config hash, dev requests) and the removal of the internal Routes and HPAs.
+
+Other behaviours worth knowing: Deployments mounting a ReadWriteOnce volume (qdrant, temporal, redis-insight, docling)
+use the `Recreate` strategy; the dev profile disables chart autoscaling (fixed `replicas`); readiness follows
+`kubectl rollout status` (no pod of an older revision left). An `UnifaiRAGPipeline` in phase `Failed` is retried when
+its spec changes or when the `unifai.startx.fr/retry` annotation gets a new value.
+
 ## Build and release
 
 Requirements: Go 1.26, operator-sdk 1.41, opm, podman, write access to `quay.io/zuno/unifai-operator{,-bundle,-catalog}`.

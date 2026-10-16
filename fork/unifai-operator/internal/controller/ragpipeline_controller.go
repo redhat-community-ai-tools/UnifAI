@@ -144,7 +144,7 @@ func (r *RAGPipelineReconciler) apply(ctx context.Context, api *unifai.Client, o
 			md5:   m,
 		})
 	}
-	h := hash(digest)
+	h := hash([]any{digest, obj.Annotations[unifaiv1.RetryAnnotation]})
 	sources, err := listSources(ctx, api)
 	if err != nil {
 		return 0, err
@@ -204,7 +204,7 @@ func (r *RAGPipelineReconciler) apply(ctx context.Context, api *unifai.Client, o
 	obj.Status.Hash = h
 	switch {
 	case len(failed) > 0:
-		setReady(&obj.Status, "Failed", fmt.Sprintf("ingestion failed for %v (change the spec to retry)", failed))
+		setReady(&obj.Status, "Failed", fmt.Sprintf("ingestion failed for %v (change the spec or the "+unifaiv1.RetryAnnotation+" annotation to retry)", failed))
 		return 0, nil
 	case running > 0:
 		setReady(&obj.Status, "Ingesting", fmt.Sprintf("%d/%d documents ingested", done, len(docs)))

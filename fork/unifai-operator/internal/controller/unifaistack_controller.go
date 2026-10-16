@@ -131,6 +131,9 @@ func (r *StackReconciler) plan(ctx context.Context, st *unifaiv1.UnifaiStack) (*
 	case apierrors.IsNotFound(err):
 		gen = &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: stack.GeneratedSecretName, Namespace: st.Namespace,
 			Labels: map[string]string{stack.LabelPartOf: "unifai", stack.LabelManagedBy: "unifai-operator"}}, Data: map[string][]byte{}}
+		if err := r.seedFromExisting(ctx, st.Namespace, gen.Data); err != nil {
+			return nil, err
+		}
 		stack.FillGenerated(gen.Data)
 		if err := r.Create(ctx, gen); err != nil {
 			return nil, err
@@ -263,8 +266,21 @@ func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) 
 	if err != nil {
 		return 0, err
 	}
+	if p.LiveVolumes, p.LiveClaimTemplates, err = r.liveVolumes(ctx, st.Namespace); err != nil {
+		return 0, err
+	}
 	base := stack.BaseObjects(p)
 	p.ConfigHash = configHash(base)
+	managed := map[string]bool{}
+	for _, o := range base {
+		managed[o.GetName()] = true
+	}
+	for _, sc := range stack.ServiceConfigs {
+		managed[sc.ConfigMap] = true
+	}
+	if err := r.removeLegacyReleases(ctx, st.Namespace, managed); err != nil {
+		return 0, err
+	}
 	for _, o := range base {
 		if err := r.apply(ctx, st, o); err != nil {
 			return 0, fmt.Errorf("%T %s: %w", o, o.GetName(), err)
@@ -530,4 +546,93 @@ func configHash(objs []client.Object) string {
 		}
 	}
 	return hash(parts)
+}
+
+// liveVolumes records the existing PVCs and StatefulSet claim templates of the namespace (see Plan.LiveVolumes).
+func (r *StackReconciler) liveVolumes(ctx context.Context, ns string) (map[string]corev1.PersistentVolumeClaimSpec, map[string]corev1.PersistentVolumeClaim, error) {
+	out := map[string]corev1.PersistentVolumeClaimSpec{}
+	tpl := map[string]corev1.PersistentVolumeClaim{}
+	var pvcs corev1.PersistentVolumeClaimList
+	if err := r.List(ctx, &pvcs, client.InNamespace(ns)); err != nil {
+		return nil, nil, err
+	}
+	for _, p := range pvcs.Items {
+		out["pvc/"+p.Name] = p.Spec
+	}
+	var stss appsv1.StatefulSetList
+	if err := r.List(ctx, &stss, client.InNamespace(ns)); err != nil {
+		return nil, nil, err
+	}
+	for _, s := range stss.Items {
+		for _, t := range s.Spec.VolumeClaimTemplates {
+			tpl[s.Name+"/"+t.Name] = t
+		}
+	}
+	return out, tpl, nil
+}
+
+// seedFromExisting copies the keys of a stack deployed before (helmfile or an older operator) into a new generated
+// secret: a new CREDENTIAL_ENCRYPTION_KEY would make the credentials stored in MongoDB unreadable.
+func (r *StackReconciler) seedFromExisting(ctx context.Context, ns string, data map[string][]byte) error {
+	sources := map[string][]string{
+		"multiagent-be-secret": {stack.KeyCredentialKey, stack.KeyOAuthState},
+		"shared-secret":        {stack.KeySecretKey, stack.KeyRedisPassword},
+	}
+	for name, keys := range sources {
+		var s corev1.Secret
+		err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, &s)
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		for _, k := range keys {
+			if v := s.Data[k]; len(v) > 0 {
+				data[k] = v
+			}
+		}
+	}
+	return nil
+}
+
+// legacyReleases are the helmfile "dummy" ConfigMap charts: the operator writes these ConfigMaps itself.
+var legacyReleases = []string{"unifai-redis-config", "unifai-shared-config", "unifai-rag-config", "multiagent-config"}
+
+// removeLegacyReleases uninstalls the helmfile dummy releases, keeping the ConfigMaps the operator manages.
+func (r *StackReconciler) removeLegacyReleases(ctx context.Context, ns string, managed map[string]bool) error {
+	for _, name := range legacyReleases {
+		rel, err := r.Engine.Get(ctx, ns, name)
+		if err != nil || rel == nil {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		objs, _ := stack.ParseManifest(rel.Manifest)
+		for _, o := range objs {
+			if o.Kind != "ConfigMap" || !managed[o.Name] {
+				continue
+			}
+			cm := &corev1.ConfigMap{}
+			if err := r.Get(ctx, types.NamespacedName{Namespace: ns, Name: o.Name}, cm); err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return err
+			}
+			if cm.Annotations == nil {
+				cm.Annotations = map[string]string{}
+			}
+			cm.Annotations["helm.sh/resource-policy"] = "keep"
+			if err := r.Update(ctx, cm); err != nil {
+				return err
+			}
+		}
+		log.FromContext(ctx).Info("removing helmfile dummy release", "release", name)
+		if _, err := r.Engine.Uninstall(ctx, ns, name); err != nil {
+			return err
+		}
+	}
+	return nil
 }

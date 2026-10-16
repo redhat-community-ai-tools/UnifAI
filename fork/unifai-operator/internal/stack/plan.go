@@ -2,6 +2,8 @@ package stack
 
 import (
 	"encoding/json"
+
+	corev1 "k8s.io/api/core/v1"
 	"fmt"
 	"strings"
 
@@ -28,6 +30,13 @@ type Plan struct {
 	OperatorNamespace string
 	// ConfigHash changes with the ConfigMaps/Secrets read by the pods; it is set on pod templates so they restart.
 	ConfigHash string
+	// LiveVolumes holds the specs of the PVCs ("pvc/<name>") and StatefulSet claim templates ("<sts>/<claim>")
+	// that already exist: volumes are never resized or moved to another class (immutable or unsafe), so stacks
+	// installed by an older version or by helmfile keep their volumes.
+	LiveVolumes map[string]corev1.PersistentVolumeClaimSpec
+	// LiveClaimTemplates are the existing StatefulSet claim templates ("<sts>/<claim>"), reused verbatim: the
+	// whole template (metadata included) is immutable.
+	LiveClaimTemplates map[string]corev1.PersistentVolumeClaim
 }
 
 // NewPlan derives hosts and the image version; secrets and OIDC are filled by the controller.

@@ -106,6 +106,17 @@ func TestRenderDevProfile(t *testing.T) {
 	if !found {
 		t.Errorf("no docling Service matches DoclingURL %s: %v", DoclingURL, objs)
 	}
+	if !strings.Contains(m["unifai-multiagent-be"], "replicas: 1") {
+		t.Errorf("multiagent-be must have a fixed replica count in dev")
+	}
+	for _, rel := range []string{"unifai-qdrant", "unifai-temporal", "unifai-redis-insight", "unifai-docling"} {
+		if !strings.Contains(m[rel], "type: Recreate") {
+			t.Errorf("%s mounts a ReadWriteOnce volume but is not recreated", rel)
+		}
+	}
+	if strings.Contains(m["unifai-rag-server"], "type: Recreate") {
+		t.Errorf("rag-server uses a ReadWriteMany volume and should roll")
+	}
 	routes := strings.Count(all, "kind: Route")
 	if routes != 2 {
 		t.Errorf("expected only the ui and identity routes, got %d routes", routes)
@@ -120,6 +131,29 @@ func TestRenderDevProfile(t *testing.T) {
 				t.Logf("%s: %s/%s", name, o.Kind, o.Name)
 			}
 		}
+	}
+}
+
+func TestLiveVolumesAreKept(t *testing.T) {
+	p := testPlan(t, nil)
+	sc := "old-class"
+	p.LiveClaimTemplates = map[string]corev1.PersistentVolumeClaim{"mongodb/unifai-mongodb-volume": {
+		ObjectMeta: metav1.ObjectMeta{Name: "unifai-mongodb-volume", Labels: map[string]string{"paas.redhat.com/appcode": "TAG-001"}},
+		Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &sc, Resources: corev1.VolumeResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("100G")}}}}}
+	p.LiveVolumes = map[string]corev1.PersistentVolumeClaimSpec{
+		"pvc/qdrant": {Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("100Gi")}}},
+	}
+	m := renderAll(t, p)
+	if !strings.Contains(m["unifai-mongodb"], "storage: 100G\n") || !strings.Contains(m["unifai-mongodb"], "storageClassName: old-class") ||
+		!strings.Contains(m["unifai-mongodb"], "paas.redhat.com/appcode: TAG-001") {
+		t.Errorf("live MongoDB claim template not kept:\n%s", m["unifai-mongodb"])
+	}
+	if !strings.Contains(m["unifai-qdrant"], "storage: 100Gi") {
+		t.Errorf("live qdrant PVC size not kept")
+	}
+	if fresh := renderAll(t, testPlan(t, nil)); !strings.Contains(fresh["unifai-mongodb"], "storage: 10Gi") {
+		t.Errorf("dev MongoDB size not applied on a new stack")
 	}
 }
 

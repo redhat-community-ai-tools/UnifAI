@@ -9,6 +9,9 @@ import (
 // AdoptAnnotation lets a CR take over an object that already exists in UnifAI under the same name.
 const AdoptAnnotation = "unifai.startx.fr/adopt"
 
+// RetryAnnotation: a new value resubmits the failed documents of an UnifaiRAGPipeline.
+const RetryAnnotation = "unifai.startx.fr/retry"
+
 // SecretKeySelector selects a key of a Secret in the CR's namespace.
 type SecretKeySelector struct {
 	Name string `json:"name"`
