@@ -327,6 +327,7 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.
+	chmod -R a+rX bundle
 	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
@@ -367,6 +368,7 @@ catalog: opm ## Render and validate the file-based catalog in catalog/.
 	mkdir -p catalog/unifai-operator
 	$(OPM) alpha render-template basic catalog-template.yaml -o yaml > catalog/unifai-operator/catalog.yaml
 	$(OPM) validate catalog
+	chmod -R a+rX catalog
 
 .PHONY: catalog-build
 catalog-build: catalog ## Build the catalog image.
