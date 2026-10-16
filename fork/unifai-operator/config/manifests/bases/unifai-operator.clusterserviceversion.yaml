@@ -136,7 +136,8 @@ spec:
   - name: Operator source
     url: https://github.com/startxfr/UnifAI/tree/devel/fork/unifai-operator
   maintainers:
-  - name: startx
+  - email: dev@startx.fr
+    name: startx
   maturity: alpha
   minKubeVersion: 1.30.0
   provider:

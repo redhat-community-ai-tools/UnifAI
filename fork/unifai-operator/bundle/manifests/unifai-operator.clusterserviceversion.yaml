@@ -398,7 +398,7 @@ metadata:
     capabilities: Seamless Upgrades
     categories: AI/Machine Learning, Developer Tools
     containerImage: quay.io/zuno/unifai-operator:v0.1.0
-    createdAt: "2026-10-15T23:17:24Z"
+    createdAt: "2026-10-16T00:13:51Z"
     description: Deploys UnifAI stacks and manages UnifAI agents, workflows and RAG
       pipelines declaratively.
     features.operators.openshift.io/disconnected: "false"
@@ -883,7 +883,8 @@ spec:
   - name: Operator source
     url: https://github.com/startxfr/UnifAI/tree/devel/fork/unifai-operator
   maintainers:
-  - name: startx
+  - email: dev@startx.fr
+    name: startx
   maturity: alpha
   minKubeVersion: 1.30.0
   provider:
