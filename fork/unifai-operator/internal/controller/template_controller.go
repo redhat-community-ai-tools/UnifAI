@@ -23,7 +23,7 @@ type TemplateReconciler struct{ Base }
 
 func (r *TemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	obj := &unifaiv1.UnifaiTemplate{}
-	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
+	if err := r.get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	api := r.mas(obj)
@@ -87,7 +87,7 @@ func (r *TemplateReconciler) apply(ctx context.Context, api *unifai.Client, obj 
 		ID string `json:"template_id"`
 	}
 	if err := api.Call(ctx, http.MethodPost, "/api/templates/template.create", nil, body, &out); err != nil {
-		return permanentOn(err, http.StatusBadRequest, http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity)
+		return permanentOn(err, http.StatusBadRequest, http.StatusConflict, http.StatusUnprocessableEntity)
 	}
 	st.TemplateID, st.Hash = out.ID, h
 	setReady(st, "Ready", "template "+out.ID)

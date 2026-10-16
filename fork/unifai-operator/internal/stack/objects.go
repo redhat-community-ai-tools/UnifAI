@@ -9,9 +9,12 @@ import (
 	"fmt"
 	"math/big"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // GeneratedSecretName holds the values generated once per stack; it is never regenerated
@@ -188,4 +191,59 @@ func networkPolicy(p *Plan) *networkingv1.NetworkPolicy {
 			Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: peers}},
 		},
 	}
+}
+
+// EmbeddingName is the Deployment/Service of the embedding service deployed by the stack.
+const EmbeddingName = "unifai-embedding"
+
+// EmbeddingObjects deploys Text Embeddings Inference (CPU), the OpenAI-compatible service the rag pods call.
+func EmbeddingObjects(p *Plan) []ctrlObject {
+	if !p.DeployEmbedding() {
+		return nil
+	}
+	labels := map[string]string{"app": EmbeddingName, LabelPartOf: "unifai", LabelManagedBy: "unifai-operator", LabelComponent: "embedding"}
+	req := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("2Gi")}
+	if p.Dev() {
+		req = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("512Mi")}
+	}
+	res := corev1.ResourceRequirements{Requests: req, Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("4Gi")}}
+	if o, ok := p.Spec.Resources["embedding"]; ok {
+		res = o
+	}
+	one := int32(1)
+	probe := func(delay int32) *corev1.Probe {
+		return &corev1.Probe{ProbeHandler: corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/health", Port: intstr.FromInt32(8080)}},
+			InitialDelaySeconds: delay, PeriodSeconds: 10, FailureThreshold: 30}
+	}
+	dep := &appsv1.Deployment{
+		ObjectMeta: objMeta(p, EmbeddingName, "embedding"),
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &one,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": EmbeddingName}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: corev1.PodSpec{
+					NodeSelector: p.Spec.NodeSelector, Tolerations: p.Spec.Tolerations, ImagePullSecrets: p.Spec.ImagePullSecrets,
+					Containers: []corev1.Container{{
+						Name: "tei", Image: p.fullImage("embedding"), ImagePullPolicy: p.Spec.ImagePullPolicy,
+						Args:           []string{"--model-id", p.EmbeddingModel(), "--port", "8080", "--hostname", "0.0.0.0"},
+						Env:            []corev1.EnvVar{{Name: "HF_HOME", Value: "/data"}, {Name: "HUGGINGFACE_HUB_CACHE", Value: "/data"}},
+						Ports:          []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}},
+						Resources:      res,
+						ReadinessProbe: probe(10),
+						StartupProbe:   probe(5),
+						VolumeMounts:   []corev1.VolumeMount{{Name: "data", MountPath: "/data"}},
+					}},
+					Volumes: []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}},
+				},
+			},
+		},
+	}
+	dep.Labels["app"] = EmbeddingName
+	svc := &corev1.Service{
+		ObjectMeta: objMeta(p, EmbeddingName, "embedding"),
+		Spec: corev1.ServiceSpec{Selector: map[string]string{"app": EmbeddingName},
+			Ports: []corev1.ServicePort{{Name: "http", Port: 8080, TargetPort: intstr.FromInt32(8080)}}},
+	}
+	return []ctrlObject{dep, svc}
 }

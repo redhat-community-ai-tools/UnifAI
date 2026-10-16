@@ -23,7 +23,7 @@ type ScheduleReconciler struct{ Base }
 
 func (r *ScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	obj := &unifaiv1.UnifaiSchedule{}
-	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
+	if err := r.get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	api := r.mas(obj)

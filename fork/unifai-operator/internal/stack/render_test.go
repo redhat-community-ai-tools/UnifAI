@@ -70,8 +70,8 @@ func renderAll(t *testing.T, p *Plan) map[string]string {
 func TestRenderDevProfile(t *testing.T) {
 	p := testPlan(t, nil)
 	m := renderAll(t, p)
-	if len(m) != 16 {
-		t.Fatalf("expected 16 releases (no docling), got %d", len(m))
+	if len(m) != 17 {
+		t.Fatalf("expected 17 releases (with docling), got %d", len(m))
 	}
 	all := strings.Join(func() []string {
 		var s []string
@@ -91,6 +91,7 @@ func TestRenderDevProfile(t *testing.T) {
 		"host: unifai-ui-team-a.apps.example.com", "host: unifai-identity-team-a.apps.example.com",
 		"storageClassName: gp3-csi", "storageClassName: nfs", "https://unifai-ui-team-a.apps.example.com",
 		"http://unifai-rag-server:13456", "helm.sh/resource-policy: keep",
+		DoclingURL, EmbeddingURL, "docling-project/docling-serve-cpu:v1.37.0",
 	} {
 		if !strings.Contains(all, want) {
 			t.Errorf("rendered stack lacks %q", want)
@@ -119,15 +120,16 @@ func TestRenderOverrides(t *testing.T) {
 		s.Version = "v1.2.3"
 		s.Exposure.ExposeInternal = true
 		s.RAG.GPU = true
-		s.RAG.Docling.Mode = "deploy"
+		s.RAG.Docling.Mode = "remote"
+		s.RAG.Docling.URL = "http://docling.example.com"
 		s.DeletionPolicy = "Delete"
 		s.Images = map[string]string{"redis": "registry.example.com/redis/redis:7", "ui": "registry.example.com/ui:x"}
 		s.NodeSelector = map[string]string{"workload": "unifai"}
 		s.Resources = map[string]corev1.ResourceRequirements{"backend": {Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3")}}}
 	})
 	m := renderAll(t, p)
-	if len(m) != 17 {
-		t.Fatalf("expected 17 releases with docling, got %d", len(m))
+	if len(m) != 16 {
+		t.Fatalf("expected 16 releases with a remote docling, got %d", len(m))
 	}
 	for rel, want := range map[string]string{
 		"unifai-rag-celery":    "nvidia.com/gpu",
@@ -142,8 +144,8 @@ func TestRenderOverrides(t *testing.T) {
 			t.Errorf("%s lacks %q", rel, want)
 		}
 	}
-	if !strings.Contains(m["unifai-rag-server"], DoclingURL) {
-		t.Errorf("rag-server not pointed at the deployed docling")
+	if !strings.Contains(m["unifai-rag-server"], "http://docling.example.com") {
+		t.Errorf("rag-server not pointed at the remote docling")
 	}
 	if strings.Contains(m["unifai-mongodb"], "helm.sh/resource-policy: keep") {
 		t.Errorf("Delete policy must not keep the MongoDB volume")

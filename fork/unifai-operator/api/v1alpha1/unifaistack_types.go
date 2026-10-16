@@ -16,7 +16,7 @@ type StorageSpec struct {
 	// StorageClass for the ReadWriteMany volumes shared by several pods (rag, multiagent, logging). Empty = cluster default.
 	// +optional
 	SharedClassName string `json:"sharedClassName,omitempty"`
-	// Size overrides by volume: mongodb, qdrant, redis, redisInsight, temporal, rabbitmq, ragShared, multiagentShared, logging, keycloakDb.
+	// Size overrides by volume: mongodb, qdrant, redis, redisInsight, temporal, rabbitmq, ragShared, multiagentShared, logging, docling, keycloakDb.
 	// +optional
 	Sizes map[string]string `json:"sizes,omitempty"`
 }
@@ -100,28 +100,35 @@ type IdentitySpec struct {
 	Keycloak *ManagedKeycloakSpec `json:"keycloak,omitempty"`
 }
 
-// DoclingSpec configures document conversion.
+// DoclingSpec configures document conversion. The upstream rag image has no in-process converter: documents are
+// always converted by a docling-serve service.
+// +kubebuilder:validation:XValidation:rule="self.mode != 'remote' || has(self.url)",message="docling.url is required with mode remote"
 type DoclingSpec struct {
-	// local = docling library inside the rag pods; remote = existing service at url; deploy = docling chart in the namespace.
-	// +kubebuilder:validation:Enum=local;remote;deploy
-	// +kubebuilder:default=local
+	// deploy (or local) = docling-serve (CPU) deployed in the stack namespace; remote = existing service at url.
+	// +kubebuilder:validation:Enum=deploy;local;remote
+	// +kubebuilder:default=deploy
 	// +optional
 	Mode string `json:"mode,omitempty"`
 	// +optional
 	URL string `json:"url,omitempty"`
 }
 
-// EmbeddingSpec configures the embedding model.
+// EmbeddingSpec configures the embedding service (OpenAI-compatible /v1/embeddings, e.g. Text Embeddings Inference).
+// +kubebuilder:validation:XValidation:rule="self.mode != 'remote' || has(self.url)",message="embedding.url is required with mode remote"
 type EmbeddingSpec struct {
-	// local = sentence-transformers inside the rag pods; remote = embedding service at url.
-	// +kubebuilder:validation:Enum=local;remote
-	// +kubebuilder:default=local
+	// deploy (or local) = Text Embeddings Inference (CPU) deployed in the stack namespace; remote = service at url.
+	// +kubebuilder:validation:Enum=deploy;local;remote
+	// +kubebuilder:default=deploy
 	// +optional
 	Mode string `json:"mode,omitempty"`
 	// +optional
 	URL string `json:"url,omitempty"`
+	// Hugging Face model id (deploy) or model name sent to the remote service.
+	// +kubebuilder:default="sentence-transformers/all-MiniLM-L6-v2"
 	// +optional
 	Model string `json:"model,omitempty"`
+	// Vector size of the model (Qdrant collections are created with it).
+	// +kubebuilder:default=384
 	// +optional
 	Dimension int `json:"dimension,omitempty"`
 }
@@ -202,7 +209,7 @@ type UnifaiStackSpec struct {
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
 	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
-	// Full image overrides by component: mongodb, qdrant, rabbitmq, redis, redisInsight, temporal, rag, multiagent, backend, identity, ui, docling.
+	// Full image overrides by component: mongodb, qdrant, rabbitmq, redis, redisInsight, temporal, rag, multiagent, backend, identity, ui, docling, embedding.
 	// +optional
 	Images map[string]string `json:"images,omitempty"`
 	// +optional

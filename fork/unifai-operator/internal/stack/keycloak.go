@@ -31,6 +31,10 @@ const (
 	LabelOwnedOLM = "unifai.startx.fr/olm-owned"
 )
 
+// crunchyUserSchema makes Crunchy create a schema owned by each user in its databases: PostgreSQL 15+ no longer
+// lets a non-owner create tables in `public`, so Keycloak uses the `keycloak` schema.
+const crunchyUserSchema = "postgres-operator.crunchydata.com/autoCreateUserSchema"
+
 // GVKs of the external APIs used for the managed Keycloak.
 var (
 	GVKOperatorGroup = schema.GroupVersionKind{Group: "operators.coreos.com", Version: "v1", Kind: "OperatorGroup"}
@@ -214,6 +218,7 @@ func (k *Keycloak) ensureCrunchy(ctx context.Context, p *Plan) (string, *corev1.
 			pvc["storageClassName"] = c
 		}
 		pg.SetLabels(map[string]string{LabelPartOf: "unifai", LabelManagedBy: "unifai-operator", LabelComponent: "keycloak"})
+		pg.SetAnnotations(map[string]string{crunchyUserSchema: "true"})
 		pg.Object["spec"] = map[string]any{
 			"postgresVersion": int64(16),
 			"instances":       []any{map[string]any{"name": "db", "replicas": int64(1), "dataVolumeClaimSpec": pvc}},
@@ -224,6 +229,16 @@ func (k *Keycloak) ensureCrunchy(ctx context.Context, p *Plan) (string, *corev1.
 		}
 	} else if err != nil {
 		return "", nil, nil, "", err
+	} else if pg.GetAnnotations()[crunchyUserSchema] != "true" {
+		a := pg.GetAnnotations()
+		if a == nil {
+			a = map[string]string{}
+		}
+		a[crunchyUserSchema] = "true"
+		pg.SetAnnotations(a)
+		if err := k.Client.Update(ctx, pg); err != nil {
+			return "", nil, nil, "", err
+		}
 	}
 	secretName := KeycloakDBName + "-pguser-keycloak"
 	var s corev1.Secret
@@ -323,15 +338,19 @@ func (k *Keycloak) apply(ctx context.Context, obj *unstructured.Unstructured) er
 }
 
 func (k *Keycloak) ensureKeycloak(ctx context.Context, p *Plan, dbHost string, user, pass *corev1.SecretKeySelector) error {
+	db := map[string]any{
+		"vendor": "postgres", "host": dbHost, "port": int64(5432), "database": "keycloak",
+		"usernameSecret": map[string]any{"name": user.Name, "key": user.Key},
+		"passwordSecret": map[string]any{"name": pass.Name, "key": pass.Key},
+	}
+	if strings.HasPrefix(user.Name, KeycloakDBName+"-pguser-") { // Crunchy: per-user schema
+		db["schema"] = "keycloak"
+	}
 	kc := newU(GVKKeycloak, p.Namespace, KeycloakName)
 	kc.SetLabels(map[string]string{LabelPartOf: "unifai", LabelManagedBy: "unifai-operator", LabelComponent: "keycloak"})
 	spec := map[string]any{
 		"instances": int64(1),
-		"db": map[string]any{
-			"vendor": "postgres", "host": dbHost, "port": int64(5432), "database": "keycloak",
-			"usernameSecret": map[string]any{"name": user.Name, "key": user.Key},
-			"passwordSecret": map[string]any{"name": pass.Name, "key": pass.Key},
-		},
+		"db":        db,
 		"http":     map[string]any{"httpEnabled": true},
 		"hostname": map[string]any{"hostname": "https://" + p.KeycloakHost},
 		"proxy":    map[string]any{"headers": "xforwarded"},

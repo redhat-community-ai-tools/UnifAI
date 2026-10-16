@@ -222,7 +222,7 @@ spec:
                   type: string
                 description: 'Full image overrides by component: mongodb, qdrant,
                   rabbitmq, redis, redisInsight, temporal, rag, multiagent, backend,
-                  identity, ui, docling.'
+                  identity, ui, docling, embedding.'
                 type: object
               integrations:
                 description: IntegrationsSpec groups optional third-party integrations.
@@ -381,39 +381,55 @@ spec:
                 description: RAGSpec configures the RAG data pipeline.
                 properties:
                   docling:
-                    description: DoclingSpec configures document conversion.
+                    description: |-
+                      DoclingSpec configures document conversion. The upstream rag image has no in-process converter: documents are
+                      always converted by a docling-serve service.
                     properties:
                       mode:
-                        default: local
-                        description: local = docling library inside the rag pods;
-                          remote = existing service at url; deploy = docling chart
-                          in the namespace.
+                        default: deploy
+                        description: deploy (or local) = docling-serve (CPU) deployed
+                          in the stack namespace; remote = existing service at url.
                         enum:
+                        - deploy
                         - local
                         - remote
-                        - deploy
                         type: string
                       url:
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: docling.url is required with mode remote
+                      rule: self.mode != 'remote' || has(self.url)
                   embedding:
-                    description: EmbeddingSpec configures the embedding model.
+                    description: EmbeddingSpec configures the embedding service (OpenAI-compatible
+                      /v1/embeddings, e.g. Text Embeddings Inference).
                     properties:
                       dimension:
+                        default: 384
+                        description: Vector size of the model (Qdrant collections
+                          are created with it).
                         type: integer
                       mode:
-                        default: local
-                        description: local = sentence-transformers inside the rag
-                          pods; remote = embedding service at url.
+                        default: deploy
+                        description: deploy (or local) = Text Embeddings Inference
+                          (CPU) deployed in the stack namespace; remote = service
+                          at url.
                         enum:
+                        - deploy
                         - local
                         - remote
                         type: string
                       model:
+                        default: sentence-transformers/all-MiniLM-L6-v2
+                        description: Hugging Face model id (deploy) or model name
+                          sent to the remote service.
                         type: string
                       url:
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: embedding.url is required with mode remote
+                      rule: self.mode != 'remote' || has(self.url)
                   gpu:
                     description: Request one nvidia.com/gpu for rag-celery (upstream
                       default). Without it, ingestion runs on CPU.
@@ -515,7 +531,7 @@ spec:
                       type: string
                     description: 'Size overrides by volume: mongodb, qdrant, redis,
                       redisInsight, temporal, rabbitmq, ragShared, multiagentShared,
-                      logging, keycloakDb.'
+                      logging, docling, keycloakDb.'
                     type: object
                 type: object
               tolerations:

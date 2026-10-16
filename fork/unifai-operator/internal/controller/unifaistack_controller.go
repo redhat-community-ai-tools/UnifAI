@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,6 +40,9 @@ type StackReconciler struct {
 func NewStackReconciler(mgr ctrl.Manager) *StackReconciler {
 	return &StackReconciler{Client: mgr.GetClient(), Engine: &stack.Engine{Config: mgr.GetConfig()}, OperatorNamespace: os.Getenv("POD_NAMESPACE")}
 }
+
+// specHashAnnotation records the desired spec of the Deployments the operator manages directly.
+const specHashAnnotation = "unifai.startx.fr/spec-hash"
 
 const (
 	stackRequeue      = 15 * time.Second
@@ -98,7 +102,10 @@ func (r *StackReconciler) setStatus(ctx context.Context, st *unifaiv1.UnifaiStac
 	st.Status.Phase, st.Status.Message, st.Status.ObservedGeneration = phase, unifai.Truncate(msg, 1000), st.Generation
 	meta.SetStatusCondition(&st.Status.Conditions, metav1.Condition{Type: "Ready", Status: ready, Reason: reason,
 		Message: unifai.Truncate(msg, 1000), ObservedGeneration: st.Generation})
-	return r.Status().Update(ctx, st)
+	// Merge patch from an empty status: no resourceVersion conflict (arrays such as components are replaced whole).
+	base := st.DeepCopy()
+	base.Status = unifaiv1.UnifaiStackStatus{}
+	return r.Status().Patch(ctx, st, client.MergeFrom(base))
 }
 
 // clusterDomain returns the OpenShift apps domain ("" elsewhere).
@@ -229,6 +236,20 @@ func (r *StackReconciler) apply(ctx context.Context, st *unifaiv1.UnifaiStack, o
 			o.Data, o.StringData, o.Type = secretData(d), nil, d.Type
 		case *networkingv1.NetworkPolicy:
 			o.Spec = desired.(*networkingv1.NetworkPolicy).Spec
+		case *corev1.Service:
+			d := desired.(*corev1.Service)
+			o.Spec.Ports, o.Spec.Selector = d.Spec.Ports, d.Spec.Selector
+		case *appsv1.Deployment:
+			// Replaced only when the desired spec changes (server defaults would make every compare differ).
+			d := desired.(*appsv1.Deployment)
+			h := hash(d.Spec)
+			if o.Annotations[specHashAnnotation] != h {
+				o.Spec = d.Spec
+				if o.Annotations == nil {
+					o.Annotations = map[string]string{}
+				}
+				o.Annotations[specHashAnnotation] = h
+			}
 		default:
 			return fmt.Errorf("unsupported object %T", obj)
 		}
@@ -260,6 +281,27 @@ func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) 
 	}
 
 	waiting := []string{}
+	embedding := stack.EmbeddingObjects(p)
+	for _, o := range embedding {
+		if err := r.apply(ctx, st, o); err != nil {
+			return 0, fmt.Errorf("%T %s: %w", o, o.GetName(), err)
+		}
+	}
+	if len(embedding) == 0 {
+		for _, o := range []client.Object{
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: st.Namespace, Name: stack.EmbeddingName}},
+			&corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: st.Namespace, Name: stack.EmbeddingName}},
+		} {
+			if err := r.Delete(ctx, o); client.IgnoreNotFound(err) != nil {
+				return 0, err
+			}
+		}
+	} else if msg, err := stack.WorkloadsReady(ctx, r.Client, st.Namespace,
+		[]stack.ManifestObject{{Kind: "Deployment", Name: stack.EmbeddingName}}); err != nil {
+		return 0, err
+	} else if msg != "" {
+		waiting = append(waiting, "embedding: "+msg)
+	}
 	kcReady := true
 	if st.Spec.Identity.Keycloak != nil {
 		kc := &stack.Keycloak{Client: r.Client, SetOwner: func(o client.Object) error {
@@ -337,7 +379,8 @@ func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) 
 	if p.KeycloakHost != "" {
 		st.Status.Endpoints.Keycloak = "https://" + p.KeycloakHost
 	}
-	if kcReady && phaseReady[0] && phaseReady[1] && phaseReady[2] {
+	embeddingReady := !strings.Contains(strings.Join(waiting, ";"), "embedding: ")
+	if kcReady && embeddingReady && phaseReady[0] && phaseReady[1] && phaseReady[2] {
 		return stackReadyRequeue, r.setStatus(ctx, st, "Ready", "all components ready", metav1.ConditionTrue, "Ready")
 	}
 	sort.Strings(waiting)
@@ -355,8 +398,9 @@ func (r *StackReconciler) applyRelease(ctx context.Context, p *stack.Plan, rel s
 	if err != nil {
 		return cs, err
 	}
+	// The hash is stored on the Helm release itself, so a lost status never causes a needless upgrade.
 	deployed := cur != nil && cur.Info != nil && cur.Info.Status == "deployed"
-	if !deployed || prev.Hash != rr.Hash || prev.Revision != cur.Version {
+	if !deployed || cur.Labels[stack.HashLabel] != rr.Hash {
 		log.FromContext(ctx).Info("applying release", "release", rel.Name, "upgrade", cur != nil)
 		cur, err = r.Engine.Apply(ctx, p, rr)
 		if err != nil {
@@ -458,7 +502,7 @@ func (r *StackReconciler) finalize(ctx context.Context, st *unifaiv1.UnifaiStack
 // SetupWithManager registers the controller; owned ConfigMaps/Secrets trigger a reconcile when edited by hand.
 func (r *StackReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiStack{}).
-		Owns(&corev1.ConfigMap{}).Owns(&corev1.Secret{}).
+		Owns(&corev1.ConfigMap{}).Owns(&corev1.Secret{}).Owns(&appsv1.Deployment{}).
 		Named("unifaistack").Complete(r)
 }
 

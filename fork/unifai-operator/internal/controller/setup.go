@@ -8,7 +8,7 @@ import (
 
 // SetupAll registers every controller of the operator.
 func SetupAll(mgr ctrl.Manager) error {
-	base := Base{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}
+	base := Base{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), APIReader: mgr.GetAPIReader()}
 	for kind, newObj := range ResourceKinds {
 		if err := (&ResourceReconciler{Base: base, Kind: kind, NewObj: newObj}).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("%s: %w", kind, err)

@@ -2,6 +2,7 @@ package stack
 
 import (
 	"fmt"
+	"strings"
 )
 
 // Release is one Helm release of the stack (the helmfile releases, without the four "dummy" ConfigMap charts whose
@@ -105,17 +106,26 @@ var Releases = []Release{
 		return withGlobal(p, v, nil, false)
 	}},
 	{Name: "unifai-docling", Chart: "docling", Component: "docling", Phase: 1,
-		Enabled: func(p *Plan) bool { return p.Spec.RAG.Docling.Mode == "deploy" },
+		Enabled: func(p *Plan) bool { return p.DeployDocling() },
 		Values: func(p *Plan) (map[string]any, error) {
 			v, err := valuesFile("docling-values-cpu.yaml", "")
 			if err != nil {
 				return nil, err
 			}
-			if img := p.imageValues("docling"); len(img) > 0 {
-				v["image"] = merge(mapAt(v, "image"), img)
+			// The upstream "cpu" values still carry GPU settings.
+			delete(v, "tolerations")
+			var env []any
+			for _, e := range asSlice(v["env"]) {
+				if m, ok := e.(map[string]any); ok && strings.Contains(fmt.Sprint(m["name"]), "VISIBLE_DEVICES") ||
+					ok && m["name"] == "NVIDIA_DRIVER_CAPABILITIES" {
+					continue
+				}
+				env = append(env, e)
 			}
+			v["env"] = env
+			set(v, "config.processing.enableGPU", false)
 			set(v, "route.enabled", false)
-			return v, nil
+			return storage(p, v, nil, "docling", "storage.className", "storage.requestedSize", "10Gi", false)
 		}},
 
 	{Name: "unifai-ui", Chart: "ui", Component: "ui", Phase: 2, Values: func(p *Plan) (map[string]any, error) {
@@ -128,8 +138,11 @@ var Releases = []Release{
 	}},
 }
 
-// DoclingURL is the in-namespace URL of the deployed docling service.
-const DoclingURL = "http://unifai-docling:5001"
+// In-namespace URLs of the deployed docling and embedding services.
+const (
+	DoclingURL   = "http://unifai-docling:5001"
+	EmbeddingURL = "http://unifai-embedding:8080"
+)
 
 func mapAt(m map[string]any, key string) map[string]any {
 	if v, ok := m[key].(map[string]any); ok {
@@ -197,17 +210,19 @@ func ragValues(p *Plan, v map[string]any) map[string]any {
 	}
 	appImage(p, v, "image", "rag")
 	r := p.Spec.RAG
-	docling := r.Docling.URL
-	if r.Docling.Mode == "deploy" {
+	docling, embedding := r.Docling.URL, r.Embedding.URL
+	if p.DeployDocling() {
 		docling = DoclingURL
 	}
-	set(v, "env.USE_REMOTE_DOCLING", boolStr(r.Docling.Mode == "remote" || r.Docling.Mode == "deploy"))
-	set(v, "env.DOCLING_SERVICE_URL", docling)
-	set(v, "env.USE_REMOTE_EMBEDDING", boolStr(r.Embedding.Mode == "remote"))
-	set(v, "env.EMBEDDING_SERVICE_URL", r.Embedding.URL)
-	if r.Embedding.Model != "" {
-		set(v, "env.EMBEDDING_SERVICE_MODEL", r.Embedding.Model)
+	if p.DeployEmbedding() {
+		embedding = EmbeddingURL
 	}
+	// The upstream rag image has neither docling nor sentence-transformers: both are always remote services.
+	set(v, "env.USE_REMOTE_DOCLING", boolStr(true))
+	set(v, "env.DOCLING_SERVICE_URL", docling)
+	set(v, "env.USE_REMOTE_EMBEDDING", boolStr(true))
+	set(v, "env.EMBEDDING_SERVICE_URL", embedding)
+	set(v, "env.EMBEDDING_SERVICE_MODEL", p.EmbeddingModel())
 	if r.Embedding.Dimension > 0 {
 		set(v, "env.EMBEDDING_DIM", fmt.Sprint(r.Embedding.Dimension))
 	}

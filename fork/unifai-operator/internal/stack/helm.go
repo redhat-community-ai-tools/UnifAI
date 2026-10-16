@@ -17,6 +17,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+// HashLabel is the Helm release label holding the hash of the inputs it was applied with.
+const HashLabel = "unifai.startx.fr/hash"
+
 // maxHistory bounds the Helm release secrets kept per release.
 const maxHistory = 5
 
@@ -122,11 +125,13 @@ func (e *Engine) Apply(ctx context.Context, p *Plan, rr *Rendered) (*release.Rel
 	if last == nil {
 		in := action.NewInstall(cfg)
 		in.ReleaseName, in.Namespace, in.PostRenderer = rr.Release.Name, p.Namespace, post
+		in.Labels = map[string]string{HashLabel: rr.Hash}
 		in.Timeout = 5 * time.Minute
 		return in.RunWithContext(ctx, chrt, rr.Values)
 	}
 	up := action.NewUpgrade(cfg)
 	up.Namespace, up.PostRenderer, up.MaxHistory = p.Namespace, post, maxHistory
+	up.Labels = map[string]string{HashLabel: rr.Hash}
 	up.Timeout = 5 * time.Minute
 	return up.RunWithContext(ctx, rr.Release.Name, chrt, rr.Values)
 }

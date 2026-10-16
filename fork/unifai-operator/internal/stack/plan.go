@@ -98,6 +98,8 @@ var thirdPartyDefaults = map[string]string{
 	"redis":        "quay.io/fedora/redis-7:20250108",
 	"redisInsight": "docker.io/redis/redisinsight:3.4.2",
 	"temporal":     "docker.io/temporalio/temporal",
+	"docling":      "quay.io/docling-project/docling-serve-cpu:v1.37.0",
+	"embedding":    "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9",
 }
 
 // imageValues returns {registry, repository[, tag]} for a third-party component.
@@ -151,7 +153,7 @@ func (p *Plan) size(key, def string) string {
 // devSizes are the volume sizes of the dev profile (upstream sizes target production).
 var devSizes = map[string]string{
 	"mongodb": "10Gi", "qdrant": "10Gi", "redis": "2Gi", "redisInsight": "1Gi", "temporal": "2Gi", "rabbitmq": "2Gi",
-	"ragShared": "10Gi", "multiagentShared": "5Gi", "logging": "5Gi", "keycloakDb": "2Gi",
+	"ragShared": "10Gi", "multiagentShared": "5Gi", "logging": "5Gi", "docling": "5Gi", "keycloakDb": "2Gi",
 }
 
 func boolStr(b bool) string {
@@ -159,4 +161,26 @@ func boolStr(b bool) string {
 		return "True"
 	}
 	return "False"
+}
+
+// DeployDocling reports whether docling-serve runs in the stack namespace.
+func (p *Plan) DeployDocling() bool { return p.Spec.RAG.Docling.Mode != "remote" }
+
+// DeployEmbedding reports whether the embedding service runs in the stack namespace.
+func (p *Plan) DeployEmbedding() bool { return p.Spec.RAG.Embedding.Mode != "remote" }
+
+// EmbeddingModel is the embedding model (default the upstream one).
+func (p *Plan) EmbeddingModel() string {
+	if m := p.Spec.RAG.Embedding.Model; m != "" {
+		return m
+	}
+	return "sentence-transformers/all-MiniLM-L6-v2"
+}
+
+// fullImage returns the image reference of a component (override or default).
+func (p *Plan) fullImage(component string) string {
+	if img := p.Spec.Images[component]; img != "" {
+		return img
+	}
+	return thirdPartyDefaults[component]
 }

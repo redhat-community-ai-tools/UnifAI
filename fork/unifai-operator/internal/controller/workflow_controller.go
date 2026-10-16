@@ -24,7 +24,7 @@ type WorkflowReconciler struct{ Base }
 
 func (r *WorkflowReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	obj := &unifaiv1.UnifaiWorkflow{}
-	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
+	if err := r.get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	api := r.mas(obj)

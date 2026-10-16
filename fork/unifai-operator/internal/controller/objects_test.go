@@ -34,6 +34,9 @@ func phaseOf(obj unifaiv1.Object) func() string {
 		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
 			return "get: " + err.Error()
 		}
+		if obj.GetObjectStatus().Phase == "Error" {
+			GinkgoWriter.Printf("%s %s: %s\n", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), obj.GetObjectStatus().Message)
+		}
 		return obj.GetObjectStatus().Phase
 	}
 }

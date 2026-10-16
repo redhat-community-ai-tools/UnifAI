@@ -16,7 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	ctrl "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -49,10 +49,21 @@ func permanentOn(err error, statuses ...int) error {
 
 // Base holds what every UnifAI object reconciler needs.
 type Base struct {
-	ctrl.Client
+	client.Client
 	Scheme *runtime.Scheme
 	// Endpoints returns the MAS and RAG base URLs for a namespace (overridable in tests).
 	Endpoints func(namespace string) (mas, rag string)
+	// APIReader reads without the informer cache: the status holds the ids of the UnifAI objects, and a stale
+	// cached copy right after a write would make the controller create duplicates or refuse its own objects.
+	APIReader client.Reader
+}
+
+// get reads the object from the API server when an uncached reader is set.
+func (b *Base) get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+	if b.APIReader != nil {
+		return b.APIReader.Get(ctx, key, obj)
+	}
+	return b.Get(ctx, key, obj)
 }
 
 func (b *Base) endpoints(ns string) (string, string) {
@@ -167,8 +178,9 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 		if h.Delete != nil {
 			if err := h.Delete(ctx); err != nil {
 				logger.Info("delete failed, retrying", "error", err.Error())
+				orig := obj.DeepCopyObject().(client.Object)
 				st.Phase, st.Message = "Deleting", unifai.Truncate("cannot delete (still referenced?): "+err.Error(), 500)
-				_ = b.Status().Update(ctx, obj)
+				_ = b.Status().Patch(ctx, obj, client.MergeFrom(orig))
 				return reconcile.Result{RequeueAfter: 3 * retry}, nil
 			}
 		}
@@ -181,13 +193,16 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 			return reconcile.Result{}, err
 		}
 	}
-	// A permanent failure is not retried until the spec changes.
-	// (except a takeover refusal once the adopt annotation is added).
+	// A permanent failure is retried when the spec changes, when the adopt annotation is added after a takeover
+	// refusal, or at the periodic resync (the cause may be outside the spec, e.g. UnifAI configuration).
 	if st.Phase == "Error" && st.ObservedGeneration == obj.GetGeneration() &&
-		!(adopting(obj) && strings.Contains(st.Message, unifaiv1.AdoptAnnotation)) {
-		return reconcile.Result{}, nil
+		!(adopting(obj) && strings.Contains(st.Message, unifaiv1.AdoptAnnotation)) &&
+		st.LastReconciled != nil && time.Since(st.LastReconciled.Time) < resync {
+		return reconcile.Result{RequeueAfter: resync - time.Since(st.LastReconciled.Time)}, nil
 	}
 
+	// Status is written with a merge patch: no resourceVersion conflict can drop the ids of objects just created.
+	orig := obj.DeepCopyObject().(client.Object)
 	var requeue time.Duration
 	err := b.stackGate(ctx, obj.GetNamespace())
 	if err == nil {
@@ -201,7 +216,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 		st.Phase, st.Message, st.ObservedGeneration = "Error", unifai.Truncate(perm.Error(), 500), obj.GetGeneration()
 		meta.SetStatusCondition(&st.Conditions, metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: "InvalidSpec",
 			Message: st.Message, ObservedGeneration: obj.GetGeneration()})
-		requeue = 0
+		requeue = resync
 	case err != nil:
 		if st.Phase == "" || st.Phase == "Ready" {
 			st.Phase = "Pending"
@@ -222,7 +237,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 			requeue = resync
 		}
 	}
-	if uerr := b.Status().Update(ctx, obj); uerr != nil {
+	if uerr := b.Status().Patch(ctx, obj, client.MergeFrom(orig)); uerr != nil {
 		return reconcile.Result{}, uerr
 	}
 	if requeue == 0 {

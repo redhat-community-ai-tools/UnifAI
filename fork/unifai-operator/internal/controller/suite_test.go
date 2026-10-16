@@ -94,7 +94,7 @@ var _ = BeforeSuite(func() {
 	DeferCleanup(srv.Close)
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme.Scheme, Metrics: metricsserver.Options{BindAddress: "0"}})
 	Expect(err).NotTo(HaveOccurred())
-	base := Base{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Endpoints: func(string) (string, string) { return srv.URL, srv.URL }}
+	base := Base{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), APIReader: mgr.GetAPIReader(), Endpoints: func(string) (string, string) { return srv.URL, srv.URL }}
 	for kind, newObj := range ResourceKinds {
 		Expect((&ResourceReconciler{Base: base, Kind: kind, NewObj: newObj}).SetupWithManager(mgr)).To(Succeed())
 	}

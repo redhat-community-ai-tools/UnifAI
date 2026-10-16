@@ -32,7 +32,7 @@ const maxDocumentBytes = 50 << 20 // rag-server limit (DocConfigManager.max_file
 
 func (r *RAGPipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	obj := &unifaiv1.UnifaiRAGPipeline{}
-	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
+	if err := r.get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	return r.run(ctx, obj, Handlers{Apply: func(ctx context.Context) (time.Duration, error) { return 0, r.apply(ctx, obj) }})

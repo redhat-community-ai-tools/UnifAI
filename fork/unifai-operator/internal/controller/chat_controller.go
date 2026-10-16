@@ -27,7 +27,7 @@ var chatTerminal = map[string]string{"COMPLETED": "Completed", "FAILED": "Failed
 
 func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	obj := &unifaiv1.UnifaiChat{}
-	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
+	if err := r.get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	api := r.mas(obj)
