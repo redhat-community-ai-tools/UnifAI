@@ -140,7 +140,7 @@ var Releases = []Release{
 
 // In-namespace URLs of the deployed docling and embedding services.
 const (
-	DoclingURL   = "http://unifai-docling:5001"
+	DoclingURL   = "http://docling-serve:5001" // fullnameOverride of the upstream chart
 	EmbeddingURL = "http://unifai-embedding:8080"
 )
 

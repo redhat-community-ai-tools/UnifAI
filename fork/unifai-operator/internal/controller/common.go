@@ -228,7 +228,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 	default:
 		st.ObservedGeneration = obj.GetGeneration()
 		status := metav1.ConditionFalse
-		if st.Phase == "Ready" || st.Phase == "Completed" || st.Phase == "Suspended" || st.Phase == "Submitted" {
+		if st.Phase == "Ready" || st.Phase == "Completed" || st.Phase == "Suspended" {
 			status = metav1.ConditionTrue
 		}
 		meta.SetStatusCondition(&st.Conditions, metav1.Condition{Type: "Ready", Status: status, Reason: strings.ReplaceAll(st.Phase, " ", ""),

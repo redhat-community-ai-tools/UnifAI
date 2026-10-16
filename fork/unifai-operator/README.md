@@ -41,6 +41,12 @@ fork-specific is applied by the operator at render time:
 - `unifai-stack` NetworkPolicy: ingress only from the namespace, the OpenShift router, monitoring and
   `openshift-operators` (the internal APIs trust an `X-Authenticated-User` header).
 
+RAG: the upstream `unifai-rag` image has neither docling nor sentence-transformers, so conversion and embeddings are
+always remote services. By default (`rag.docling.mode` / `rag.embedding.mode` = `deploy`, `local` is a synonym) the
+stack runs docling-serve (CPU, `quay.io/docling-project/docling-serve-cpu:v1.37.0`, Service `docling-serve`) and
+Hugging Face Text Embeddings Inference (CPU, `unifai-embedding`, model `sentence-transformers/all-MiniLM-L6-v2`,
+dimension 384); `remote` uses `url`. rag-celery needs no GPU unless `rag.gpu: true`.
+
 Phases: shared resources (MongoDB, Qdrant, RabbitMQ, Redis, Redis Insight, Temporal, logging volume), then the
 applications once the shared resources are ready, then the UI once the application Services exist.
 `status.components[]` shows each release, `status.endpoints` the URLs.
@@ -109,7 +115,8 @@ spec:
   installPlanApproval: Automatic
 ```
 
-Files: [`deploy/olm/`](deploy/olm/). Then, in any namespace:
+Files: [`deploy/olm/`](deploy/olm/). To pick up a new catalog image without waiting for the 15 min poll:
+`oc -n openshift-marketplace delete pod -l olm.catalogSource=unifai-operator-catalog`. Then, in any namespace:
 
 ```yaml
 apiVersion: unifai.startx.fr/v1alpha1
@@ -125,5 +132,14 @@ spec:
 
 `api/v1alpha1` types · `internal/unifai` REST client · `internal/controller` reconcilers · `internal/stack` charts,
 values, post-renderer, Keycloak · `config/` kustomize (CRDs, RBAC, manager, CSV base, samples) · `bundle/` OLM
-bundle (generated) · `catalog-template.yaml` → `catalog/` FBC · `examples/` · `legacy-kopf/` first Python version
-(to remove once the Go operator is validated on a cluster).
+bundle (generated) · `catalog-template.yaml` → `catalog/` FBC · `examples/`.
+
+## Implementation notes (learned on demo333)
+
+- Objects are read with the uncached API reader and their status is merge-patched: a stale informer copy right after
+  a write made the operator refuse its own UnifAI objects or create duplicates.
+- The Helm inputs hash is a label of the Helm release (`unifai.startx.fr/hash`), not only in the CR status.
+- Keycloak on Crunchy PostgreSQL 16 needs a per-user schema (`autoCreateUserSchema` annotation + `db.schema`).
+- The host umask (0077) makes build contexts unreadable for non-root images: the Makefile runs `chmod -R a+rX`
+  before the image, bundle and catalog builds.
+- Build with `docker-build-local` when `/home` is short on space (the in-image Go build needs several GB).

@@ -161,6 +161,30 @@ var _ = Describe("UnifAI object controllers", func() {
 		mas.mu.Unlock()
 	})
 
+	It("ingests documents, re-ingests a changed one and removes them on delete", func() {
+		ns := newNamespace("rag")
+		rag := &unifaiv1.UnifaiRAGPipeline{ObjectMeta: metav1.ObjectMeta{Name: "docs", Namespace: ns}, Spec: unifaiv1.UnifaiRAGPipelineSpec{
+			Documents: []unifaiv1.RAGDocument{
+				{Name: "a-" + ns + ".md", Source: unifaiv1.DocumentSource{Inline: "alpha"}},
+				{Name: "b-" + ns + ".md", Source: unifaiv1.DocumentSource{Inline: "beta"}},
+			}}}
+		Expect(k8sClient.Create(ctx, rag)).To(Succeed())
+		Eventually(phaseOf(rag), 60*time.Second, interval).Should(Equal("Ready"))
+		Expect(mas.ragSourceNames()).To(HaveKey("a-" + ns + ".md"))
+		before := mas.ragSourceNames()["a-"+ns+".md"]
+
+		By("changing one document")
+		rag.Spec.Documents[0].Source.Inline = "alpha v2"
+		Expect(k8sClient.Update(ctx, rag)).To(Succeed())
+		Eventually(func() string { return mas.ragSourceNames()["a-"+ns+".md"] }, 60*time.Second, interval).ShouldNot(Equal(before))
+		Eventually(phaseOf(rag), 60*time.Second, interval).Should(Equal("Ready"))
+		Expect(rag.Status.Message).To(Equal("2 document(s) ingested"))
+
+		By("deleting the resource")
+		Expect(k8sClient.Delete(ctx, rag)).To(Succeed())
+		Eventually(func() map[string]string { return mas.ragSourceNames() }, 30*time.Second, interval).ShouldNot(HaveKey("b-" + ns + ".md"))
+	})
+
 	It("waits for the namespace UnifaiStack to be Ready", func() {
 		ns := newNamespace("gate")
 		st := &unifaiv1.UnifaiStack{ObjectMeta: metav1.ObjectMeta{Name: "unifai", Namespace: ns}, Spec: unifaiv1.UnifaiStackSpec{

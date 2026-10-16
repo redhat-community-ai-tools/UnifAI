@@ -97,6 +97,15 @@ func TestRenderDevProfile(t *testing.T) {
 			t.Errorf("rendered stack lacks %q", want)
 		}
 	}
+	// The service URLs given to the rag pods must match the rendered Service names.
+	objs, _ := ParseManifest(m["unifai-docling"])
+	found := false
+	for _, o := range objs {
+		found = found || (o.Kind == "Service" && strings.HasPrefix(DoclingURL, "http://"+o.Name+":"))
+	}
+	if !found {
+		t.Errorf("no docling Service matches DoclingURL %s: %v", DoclingURL, objs)
+	}
 	routes := strings.Count(all, "kind: Route")
 	if routes != 2 {
 		t.Errorf("expected only the ui and identity routes, got %d routes", routes)

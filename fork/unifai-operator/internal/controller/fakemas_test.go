@@ -1,6 +1,9 @@
 package controller
 
 import (
+	"crypto/md5" //nolint:gosec
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,12 +21,15 @@ type fakeMAS struct {
 	schedules  map[string]map[string]any
 	templates  map[string]map[string]any
 	sessions   map[string]string // id -> status
+	ragFiles   map[string]string // name -> md5 of uploaded content
+	ragSources map[string]map[string]any
 	users      []string          // X-Authenticated-User of each call
 }
 
 func newFakeMAS() (*fakeMAS, *httptest.Server) {
 	f := &fakeMAS{resources: map[string]map[string]any{}, blueprints: map[string]map[string]any{},
-		schedules: map[string]map[string]any{}, templates: map[string]map[string]any{}, sessions: map[string]string{}}
+		schedules: map[string]map[string]any{}, templates: map[string]map[string]any{}, sessions: map[string]string{},
+		ragFiles: map[string]string{}, ragSources: map[string]map[string]any{}}
 	return f, httptest.NewServer(f)
 }
 
@@ -169,7 +175,56 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/sessions/session.delete":
 		delete(f.sessions, q.Get("sessionId"))
 		reply(w, 200, map[string]any{})
+	case "/api/docs/upload":
+		for _, file := range body["files"].([]any) {
+			fm := file.(map[string]any)
+			raw, _ := base64.StdEncoding.DecodeString(fm["content"].(string))
+			sum := md5.Sum(raw)
+			f.ragFiles[fm["name"].(string)] = hex.EncodeToString(sum[:])
+		}
+		reply(w, 200, map[string]any{"message": "ok"})
+	case "/api/pipelines/embed":
+		var issues []any
+		n := 0
+		for _, d := range body["data"].([]any) {
+			name := d.(map[string]any)["source_name"].(string)
+			dup := false
+			for _, s := range f.ragSources {
+				dup = dup || s["source_name"] == name
+			}
+			if dup {
+				issues = append(issues, map[string]any{"doc_name": name, "issue_type": "Duplicate filename"})
+				continue
+			}
+			id := f.id("src")
+			f.ragSources[id] = map[string]any{"source_id": id, "source_name": name, "status": "DONE",
+				"type_data": map[string]any{"md5": f.ragFiles[name]}}
+			n++
+		}
+		reply(w, 200, map[string]any{"registration": map[string]any{"issues": issues}, "pipeline_execution": map[string]any{"source_count": n}})
+	case "/api/data_sources/data.sources.get":
+		out := []any{}
+		for _, s := range f.ragSources {
+			out = append(out, s)
+		}
+		reply(w, 200, map[string]any{"sources": out})
+	case "/api/data_sources/data.source.delete":
+		for _, id := range body["pipeline_ids"].([]any) {
+			delete(f.ragSources, id.(string))
+		}
+		reply(w, 200, map[string]any{})
 	default:
 		reply(w, 404, map[string]any{"error": "unknown path " + r.URL.Path})
 	}
+}
+
+// ragSourceNames returns the names and md5 of the RAG sources.
+func (f *fakeMAS) ragSourceNames() map[string]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := map[string]string{}
+	for _, s := range f.ragSources {
+		out[s["source_name"].(string)] = s["type_data"].(map[string]any)["md5"].(string)
+	}
+	return out
 }
