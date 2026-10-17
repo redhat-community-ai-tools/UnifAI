@@ -7,6 +7,7 @@ from core.registration.domain.port import RegistrationPort
 from core.data_sources.domain.repository import DataSourceRepository
 from core.data_sources.types.document.registration import DocumentRegistration
 from core.data_sources.types.slack.registration import SlackRegistration
+from core.data_sources.types.confluence.registration import ConfluenceRegistration
 from core.data_sources.types.document.validators.factory import DocValidators
 from core.data_sources.types.slack.validators.factory import SlackValidators
 
@@ -57,6 +58,14 @@ class RegistrationFactory:
         return registration
 
     def _create(self, normalized, upload_by, instance, skip_validation) -> RegistrationPort:
+        if normalized == "confluence":
+            return ConfluenceRegistration(
+                data_source_repository=self._data_source_repository,
+                upload_by=upload_by,
+                instance=instance,
+                skip_validation=skip_validation,
+            )
+
         if normalized == "slack":
             return SlackRegistration(
                 data_source_repository=self._data_source_repository,

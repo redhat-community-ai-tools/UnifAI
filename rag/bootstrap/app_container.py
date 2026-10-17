@@ -564,6 +564,25 @@ def document_pipeline_handler():
     )
 
 
+def confluence_pipeline_handler():
+    """Confluence pipeline handler; credentials come from CONFLUENCE_USERNAME / CONFLUENCE_TOKEN."""
+    from core.data_sources.types.confluence.pipeline_handler import ConfluencePipelineHandler
+    from infrastructure.sources.confluence.connector import ConfluenceConnector
+    from config.app_config import AppConfig
+    cfg = AppConfig.get_instance()
+
+    def connector(base_url: str) -> ConfluenceConnector:
+        return ConfluenceConnector(base_url, username=cfg.confluence_username, token=cfg.confluence_token,
+                                   verify_tls=cfg.confluence_verify_tls)
+
+    return ConfluencePipelineHandler(
+        connector_factory=connector,
+        chunker=pdf_chunker(),
+        embedder=embedding_generator(),
+        data_source_service=data_source_service(),
+    )
+
+
 def get_pipeline_handler(source_type: str):
     """
     Resolve the appropriate pipeline handler for a source type.
@@ -580,6 +599,7 @@ def get_pipeline_handler(source_type: str):
     handlers = {
         "SLACK": slack_pipeline_handler,
         "DOCUMENT": document_pipeline_handler,
+        "CONFLUENCE": confluence_pipeline_handler,
     }
     
     factory = handlers.get(source_type.upper())

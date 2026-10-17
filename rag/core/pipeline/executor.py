@@ -120,6 +120,9 @@ class PipelineExecutor:
             # Step 4: Store
             current_step = PipelineStatus.STORING
             self._pipeline_svc.update_status(context.pipeline_id, current_step)
+            # Incremental sources name the points their new content replaces.
+            for stale in (getattr(handler, "stale_point_filters", None) or (lambda _ctx: []))(context):
+                vector_repo.delete_by_filter(stale)
             result = vector_repo.store(embeddings)
             
             # Success - update status

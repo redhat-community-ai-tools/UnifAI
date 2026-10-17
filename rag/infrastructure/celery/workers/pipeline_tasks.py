@@ -74,6 +74,9 @@ def build_context(source_type: str, source_data: dict) -> PipelineContext:
     elif source_type.upper() == "DOCUMENT":
         source_id = metadata.get("doc_id", "")
         source_name = metadata.get("doc_name", "")
+    elif source_type.upper() == "CONFLUENCE":
+        source_id = metadata.get("source_id", "")
+        source_name = metadata.get("source_name", "")
     else:
         raise ValueError(f"Unsupported source type: {source_type}")
     

@@ -35,6 +35,12 @@ class AppConfig(SharedConfig):
     # shared sources a search may return. Empty = forwarded tokens are ignored.
     oidc_issuer_url: str = ""
     oidc_verify_tls: bool = True
+
+    # Confluence source: one set of credentials per deployment (basic auth with an API
+    # token, or a bearer token when only the token is set).
+    confluence_username: str = ""
+    confluence_token: str = ""
+    confluence_verify_tls: bool = True
     
     # Slack Configuration
     default_slack_bot_token: str = ""
