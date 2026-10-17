@@ -150,12 +150,24 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 		switch r.rel.Name {
 		case "unifai-ui":
 			r.setHost(md, spec, r.plan.UIHost)
+			// Re-encrypt (was passthrough) so the router sees, and strips, the request headers; the backend
+			// certificate is the service-ca one mounted below, trusted by the router without configuration.
+			tls := mapAt(spec, "tls")
+			tls["termination"] = "reencrypt"
+			spec["tls"] = tls
 		case "unifai-identity":
 			r.setHost(md, spec, r.plan.IdentityHost)
 		default:
 			if r.rel.Internal && !r.plan.Spec.Exposure.ExposeInternal {
 				return false, nil
 			}
+		}
+		stripInternalAuthHeader(spec)
+	case "Service":
+		if r.rel.Name == "unifai-ui" {
+			a := mapAt(md, "annotations")
+			a["service.beta.openshift.io/serving-cert-secret-name"] = UITLSSecret
+			md["annotations"] = a
 		}
 	case "HorizontalPodAutoscaler":
 		if r.plan.Dev() {
@@ -192,6 +204,9 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 		if kind == "Deployment" && r.usesRWO(tpl) {
 			// rollingUpdate: null makes the upgrade patch drop the live rolling settings (rejected with Recreate).
 			spec["strategy"] = map[string]any{"type": "Recreate", "rollingUpdate": nil}
+		}
+		if kind == "Deployment" && r.rel.Name == "unifai-ui" {
+			mountUITLS(tpl)
 		}
 		if err := r.mutatePod(tpl); err != nil {
 			return false, err
@@ -346,4 +361,56 @@ func toMap(v any) map[string]any {
 	m := map[string]any{}
 	_ = json.Unmarshal(b, &m)
 	return m
+}
+
+// InternalAuthHeader is trusted by MAS and RAG as the caller identity when no session cookie is sent; it is meant
+// for pod-to-pod calls only and must never come from outside the cluster.
+const InternalAuthHeader = "X-Authenticated-User"
+
+// UITLSSecret receives the service-ca certificate of the UI Service (OpenShift serving certificate).
+const UITLSSecret = "unifai-ui-tls"
+
+// stripInternalAuthHeader makes the router delete InternalAuthHeader from incoming requests. Passthrough routes
+// cannot change headers (TLS reaches the pod), so the UI route is re-encrypted.
+func stripInternalAuthHeader(spec map[string]any) {
+	if mapAt(spec, "tls")["termination"] == "passthrough" {
+		return
+	}
+	hh := mapAt(spec, "httpHeaders")
+	actions := mapAt(hh, "actions")
+	var req []any
+	for _, a := range asSlice(actions["request"]) {
+		if am, ok := a.(map[string]any); ok && am["name"] == InternalAuthHeader {
+			continue
+		}
+		req = append(req, a)
+	}
+	req = append(req, map[string]any{"name": InternalAuthHeader, "action": map[string]any{"type": "Delete"}})
+	actions["request"] = req
+	hh["actions"] = actions
+	spec["httpHeaders"] = hh
+}
+
+// mountUITLS replaces the self-signed certificate baked in the UI image with the service-ca one.
+func mountUITLS(tpl map[string]any) {
+	ps := mapAt(tpl, "spec")
+	vols := asSlice(ps["volumes"])
+	vols = append(vols, map[string]any{"name": "ui-tls", "secret": map[string]any{
+		"secretName": UITLSSecret,
+		"items": []any{
+			map[string]any{"key": "tls.crt", "path": "unifai.crt"},
+			map[string]any{"key": "tls.key", "path": "unifai.key"},
+		},
+	}})
+	ps["volumes"] = vols
+	for _, c := range asSlice(ps["containers"]) {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		mounts := asSlice(cm["volumeMounts"])
+		cm["volumeMounts"] = append(mounts, map[string]any{"name": "ui-tls", "mountPath": "/etc/nginx/ssl", "readOnly": true})
+		break
+	}
+	tpl["spec"] = ps
 }

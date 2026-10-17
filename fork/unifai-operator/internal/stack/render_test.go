@@ -117,6 +117,18 @@ func TestRenderDevProfile(t *testing.T) {
 	if strings.Contains(m["unifai-rag-server"], "type: Recreate") {
 		t.Errorf("rag-server uses a ReadWriteMany volume and should roll")
 	}
+	for _, rel := range []string{"unifai-ui", "unifai-identity"} {
+		if !strings.Contains(m[rel], "name: X-Authenticated-User") || !strings.Contains(m[rel], "type: Delete") {
+			t.Errorf("%s route does not strip the internal auth header", rel)
+		}
+	}
+	if !strings.Contains(m["unifai-ui"], "termination: reencrypt") || strings.Contains(m["unifai-ui"], "termination: passthrough") {
+		t.Errorf("UI route must be re-encrypted")
+	}
+	if !strings.Contains(m["unifai-ui"], "service.beta.openshift.io/serving-cert-secret-name: "+UITLSSecret) ||
+		!strings.Contains(m["unifai-ui"], "mountPath: /etc/nginx/ssl") {
+		t.Errorf("UI does not use the service-ca certificate")
+	}
 	routes := strings.Count(all, "kind: Route")
 	if routes != 2 {
 		t.Errorf("expected only the ui and identity routes, got %d routes", routes)

@@ -8,6 +8,8 @@ package e2e
 
 import (
 	"context"
+	"crypto/tls"
+	"net/http"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -186,6 +188,31 @@ func TestUnifaiStack(t *testing.T) {
 					len(pvc.Spec.AccessModes) == 1 && pvc.Spec.AccessModes[0] == corev1.ReadWriteOnce && d.Spec.Strategy.Type != appsv1.RecreateDeploymentStrategyType {
 					t.Errorf("deployment %s mounts RWO %s but uses %s", d.Name, pvc.Name, d.Spec.Strategy.Type)
 				}
+			}
+		}
+	})
+
+	t.Run("the internal auth header is not honoured from outside", func(t *testing.T) {
+		hc := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}} //nolint:gosec
+		url := st.Status.Endpoints.UI + "/api2/resources/resources.list?category=llms"
+		eventually(t, "UI route answers", 3*time.Minute, func() (bool, string) {
+			resp, err := hc.Get(st.Status.Endpoints.UI + "/")
+			if err != nil {
+				return false, err.Error()
+			}
+			_ = resp.Body.Close()
+			return resp.StatusCode == http.StatusOK, resp.Status
+		})
+		for _, name := range []string{"X-Authenticated-User", "x-authenticated-user"} {
+			req, _ := http.NewRequest(http.MethodGet, url, nil)
+			req.Header.Set(name, "admin")
+			resp, err := hc.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Errorf("%s through the UI route: got %s, want 401", name, resp.Status)
 			}
 		}
 	})
