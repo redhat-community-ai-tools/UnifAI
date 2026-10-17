@@ -19,6 +19,7 @@ from typing import Optional
 
 from temporalio.worker import Worker, UnsandboxedWorkflowRunner
 from config.app_config import AppConfig
+from global_utils.telemetry import init_telemetry
 from mas.engine.distributed.node_executor import NodeExecutor
 from mas.session.execution.lifecycle_handler import BackgroundLifecycleHandler
 from mas.session.execution.lifecycle import SessionLifecycle
@@ -39,6 +40,11 @@ async def run_worker(
     activity_pollers: int = 5,
 ) -> None:
     cfg = AppConfig.get_instance()
+
+    # Inert unless OTEL_EXPORTER_OTLP_ENDPOINT (or UNIFAI_OTEL_ENABLED) is set.
+    # Must run before the client is created: get_temporal_client() adds the
+    # tracing interceptor that carries context from workflow to activities.
+    init_telemetry("multi-agent-temporal-worker")
 
     node_executor = NodeExecutor(
         session_factory=container.session_factory,

@@ -449,20 +449,52 @@ class AppContainer(metaclass=SingletonMeta):
 
     @staticmethod
     def _create_tracing_service(cfg: AppConfig) -> TracingService:
-        if not cfg.langfuse_enabled:
-            from mas.core.tracing.noop import NoOpTracingService
-            return NoOpTracingService()
-        try:
-            from outbound.langfuse.langfuse_tracing_service import LangfuseTracingService
-            return LangfuseTracingService(
-                secret_key=cfg.langfuse_secret_key,
-                public_key=cfg.langfuse_public_key,
-                base_url=cfg.langfuse_base_url,
-            )
-        except ImportError:
-            logger.warning("langfuse package not installed; tracing disabled")
-            from mas.core.tracing.noop import NoOpTracingService
-            return NoOpTracingService()
+        """Compose the tracing backends enabled by configuration.
+
+        * Langfuse: ``langfuse_enabled`` (unchanged behaviour).
+        * OpenTelemetry: the standard ``OTEL_EXPORTER_OTLP_ENDPOINT`` (or
+          ``UNIFAI_OTEL_ENABLED=true``), see ``global_utils.telemetry``.
+
+        With both on, OpenTelemetry owns the distributed trace context and
+        Langfuse gets a private TracerProvider, so neither backend exports
+        the other's spans.
+        """
+        from mas.core.tracing.noop import NoOpTracingService
+        from global_utils.telemetry import is_enabled as otel_is_enabled, otel_available
+
+        otel_on = otel_is_enabled() and otel_available()
+        if otel_is_enabled() and not otel_on:
+            logger.warning("OpenTelemetry requested but the SDK is not installed; OTel tracing disabled")
+
+        langfuse = None
+        if cfg.langfuse_enabled:
+            try:
+                from outbound.langfuse.langfuse_tracing_service import LangfuseTracingService
+                tracer_provider = None
+                if otel_on:
+                    from opentelemetry.sdk.trace import TracerProvider
+                    tracer_provider = TracerProvider()
+                langfuse = LangfuseTracingService(
+                    secret_key=cfg.langfuse_secret_key,
+                    public_key=cfg.langfuse_public_key,
+                    base_url=cfg.langfuse_base_url,
+                    tracer_provider=tracer_provider,
+                )
+            except ImportError:
+                logger.warning("langfuse package not installed; Langfuse tracing disabled")
+
+        if not otel_on:
+            return langfuse or NoOpTracingService()
+
+        from outbound.otel import ALL_ATTACH_SCOPES, SHARED_ATTACH_SCOPES, OtelTracingService
+        if langfuse is None:
+            return OtelTracingService(attach_scopes=ALL_ATTACH_SCOPES)
+
+        from mas.core.tracing.composite import CompositeTracingService
+        return CompositeTracingService(
+            context_owner=OtelTracingService(attach_scopes=SHARED_ATTACH_SCOPES),
+            others=[langfuse],
+        )
 
     @staticmethod
     def _create_overrides_store():

@@ -5,6 +5,7 @@ from flask_cors import CORS
 from global_utils.flask.request_rules import RequestRules
 from global_utils.flask.error_handlers import register_error_handlers
 from global_utils.utils.logging_config import configure_logging
+from global_utils.telemetry import init_telemetry, instrument_flask_app
 import os
 
 
@@ -16,8 +17,12 @@ def create_app(container, config: AppConfig = None) -> Flask:
     This adapter never creates the container itself — it only consumes it.
     """
     configure_logging("multi-agent")
+    # Inert unless OTEL_EXPORTER_OTLP_ENDPOINT (or UNIFAI_OTEL_ENABLED) is set.
+    # Called here, not in the CLI, so every gunicorn worker initialises it.
+    init_telemetry("multi-agent")
     config = config or AppConfig.get_instance()
     app = Flask(__name__)
+    instrument_flask_app(app)
     app.version = config.get("version", "1.0.0")
     if not config.secret_key:
         raise RuntimeError("secret_key is not configured. Set the SECRET_KEY environment variable.")
