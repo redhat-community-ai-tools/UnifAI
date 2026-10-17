@@ -4,6 +4,7 @@ from mas.elements.retrievers.common.base_retriever import BaseRetriever
 from mas.elements.retrievers.common.protocols import RetrievalIdentity
 from mas.elements.providers.rag_client.config import RagProviderConfig
 from mas.elements.providers.rag_client.rag_provider_factory import RagProviderFactory
+from mas.core.identity_forwarding import IdentityForwarder
 
 
 class DocsRagRetriever(BaseRetriever):
@@ -22,11 +23,13 @@ class DocsRagRetriever(BaseRetriever):
             docs: Optional[List[Dict]] = None,
             tags: Optional[List[str]] = None,
             identity: Optional[RetrievalIdentity] = None,
+            forwarder: Optional[IdentityForwarder] = None,
     ):
         self.threshold = threshold
         self.docs = docs
         self.tags = tags
         self._identity = identity
+        self._forwarder = forwarder
         config = RagProviderConfig(
             top_k=top_k_results,
             timeout=timeout,
@@ -43,6 +46,7 @@ class DocsRagRetriever(BaseRetriever):
             doc_ids=doc_ids,
             tags=self.tags,
             authenticated_user=user_id,
+            extra_headers=self._forwarder.headers(forward_token=True) if self._forwarder else None,
         )
 
         return [
