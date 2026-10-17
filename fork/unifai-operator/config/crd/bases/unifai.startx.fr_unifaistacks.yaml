@@ -62,6 +62,57 @@ spec:
             description: UnifaiStackSpec defines a complete UnifAI deployment in the
               namespace of the resource.
             properties:
+              backup:
+                description: Scheduled backups of MongoDB (mongodump archive) and
+                  Qdrant (one snapshot per collection) to S3.
+                properties:
+                  images:
+                    description: 'Image overrides (defaults: public.ecr.aws/aws-cli/aws-cli
+                      and docker.io/library/mongo, pinned).'
+                    properties:
+                      awsCli:
+                        type: string
+                      mongo:
+                        type: string
+                    type: object
+                  retention:
+                    default: 7
+                    description: Backups kept per store; older ones are deleted after
+                      each successful run.
+                    minimum: 1
+                    type: integer
+                  s3:
+                    description: BackupS3Spec locates the bucket. The credentials
+                      Secret holds AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+                    properties:
+                      bucket:
+                        type: string
+                      credentialsSecret:
+                        type: string
+                      endpoint:
+                        description: Endpoint URL of a non-AWS S3 service (e.g. https://s3.example.com);
+                          empty = AWS.
+                        type: string
+                      prefix:
+                        description: 'Key prefix (default: unifai/<namespace>).'
+                        type: string
+                      region:
+                        default: us-east-1
+                        type: string
+                    required:
+                    - bucket
+                    - credentialsSecret
+                    type: object
+                  schedule:
+                    default: 0 2 * * *
+                    description: Cron schedule of both backup CronJobs.
+                    type: string
+                  suspend:
+                    description: Suspend both CronJobs.
+                    type: boolean
+                required:
+                - s3
+                type: object
               deletionPolicy:
                 default: Retain
                 description: Retain keeps PVCs, the generated secret and the Keycloak

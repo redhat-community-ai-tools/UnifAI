@@ -137,6 +137,33 @@ the page counts of the last sync. The RAG service syncs incrementally (unchanged
 Deleting the resource deletes the source and its vectors. A shared source needs `aclGroups` (admission rule) and
 an owner listed in `sharedPublishers` (otherwise phase `Error`, `ACCESS_DENIED`).
 
+### Backups (spec.backup)
+
+`spec.backup` renders two CronJobs (default schedule `0 2 * * *`, `concurrencyPolicy: Forbid`) that write to an
+S3-compatible bucket, under `<prefix>` (default `unifai/<namespace>`):
+
+- `unifai-backup-mongodb`: `mongodump --archive --gzip` of `mongodb:27017`, uploaded as
+  `<prefix>/mongodb/<UTC timestamp>.archive.gz`;
+- `unifai-backup-qdrant`: one snapshot per collection, uploaded as `<prefix>/qdrant/<UTC timestamp>/<collection>.snapshot`,
+  then deleted from Qdrant.
+
+Each job keeps the `retention` newest backups (default 7) and deletes older ones. The credentials Secret
+(`s3.credentialsSecret`) holds `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`; `s3.endpoint` targets a non-AWS
+service. Removing `spec.backup` deletes the CronJobs, never the backups.
+
+Restore (on-demand, from a pod in the namespace with the aws CLI and the same credentials):
+
+```sh
+# MongoDB: replaces the dumped databases
+aws s3 cp s3://<bucket>/<prefix>/mongodb/<ts>.archive.gz - | mongorestore --uri=mongodb://mongodb:27017 --archive --gzip --drop
+# Qdrant: one collection at a time (recreates it from the snapshot)
+aws s3 cp s3://<bucket>/<prefix>/qdrant/<ts>/<collection>.snapshot /tmp/c.snapshot
+curl -X POST "http://qdrant:6333/collections/<collection>/snapshots/upload?priority=snapshot&wait=true" -F snapshot=@/tmp/c.snapshot
+```
+
+The Qdrant script and this restore were exercised against Qdrant v1.16.0 (two collections, three runs with
+`retention: 2`, deleted collection restored with all its points).
+
 ### Taking over a helmfile deployment
 
 A `UnifaiStack` created in a namespace deployed by the upstream helmfile adopts it in place (done for `unifai-devel`,

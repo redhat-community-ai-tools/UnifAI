@@ -1,0 +1,19 @@
+# Nightly backups of MongoDB and Qdrant to S3 (merge into an existing UnifaiStack spec).
+apiVersion: v1
+kind: Secret
+metadata: {name: unifai-backup-s3}
+stringData:
+  AWS_ACCESS_KEY_ID: REPLACE
+  AWS_SECRET_ACCESS_KEY: REPLACE
+---
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiStack
+metadata: {name: unifai}
+spec:
+  backup:
+    schedule: "0 2 * * *"
+    retention: 7
+    s3:
+      bucket: my-backups
+      region: eu-west-3
+      credentialsSecret: unifai-backup-s3

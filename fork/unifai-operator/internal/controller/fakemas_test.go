@@ -195,7 +195,7 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			id := fmt.Sprintf("conf-%v-%v-%v", d["baseUrl"], d["spaceKey"], d["rootTitle"])
 			f.ragSyncs[id]++
-			f.ragSources[id] = map[string]any{"source_id": id, "source_name": d["name"], "status": "DONE",
+			f.ragSources[id] = map[string]any{"source_id": id, "source_name": d["name"], "source_type": "CONFLUENCE", "status": "DONE",
 				"type_data": map[string]any{"page_count": 3, "pages_changed": 1, "pages_deleted": 0}}
 			reply(w, 200, map[string]any{"registration": map[string]any{
 				"registered": []any{map[string]any{"metadata": map[string]any{"source_id": id}}}, "issues": []any{}}})
@@ -222,7 +222,10 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/data_sources/data.sources.get":
 		out := []any{}
 		for _, s := range f.ragSources {
-			out = append(out, s)
+			// Like the RAG service, list only the requested source type (documents have no source_type here).
+			if st, _ := s["source_type"].(string); st == "" || strings.EqualFold(st, r.URL.Query().Get("source_type")) {
+				out = append(out, s)
+			}
 		}
 		reply(w, 200, map[string]any{"sources": out})
 	case "/api/data_sources/data.source.details.get":
@@ -248,7 +251,9 @@ func (f *fakeMAS) ragSourceNames() map[string]string {
 	defer f.mu.Unlock()
 	out := map[string]string{}
 	for _, s := range f.ragSources {
-		out[s["source_name"].(string)] = s["type_data"].(map[string]any)["md5"].(string)
+		if md5, ok := s["type_data"].(map[string]any)["md5"].(string); ok {
+			out[s["source_name"].(string)] = md5
+		}
 	}
 	return out
 }

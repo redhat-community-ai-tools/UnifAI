@@ -9,6 +9,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -57,7 +58,7 @@ const (
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=apps,resources=deployments;statefulsets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs;cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies;ingresses,verbs=get;list;watch;create;update;patch;delete
@@ -256,6 +257,17 @@ func (r *StackReconciler) apply(ctx context.Context, st *unifaiv1.UnifaiStack, o
 				}
 				o.Annotations[specHashAnnotation] = h
 			}
+		case *batchv1.CronJob:
+			// Same rule as Deployments: replace the spec only when the desired one changes.
+			d := desired.(*batchv1.CronJob)
+			h := hash(d.Spec)
+			if o.Annotations[specHashAnnotation] != h {
+				o.Spec = d.Spec
+				if o.Annotations == nil {
+					o.Annotations = map[string]string{}
+				}
+				o.Annotations[specHashAnnotation] = h
+			}
 		default:
 			return fmt.Errorf("unsupported object %T", obj)
 		}
@@ -297,6 +309,10 @@ func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) 
 		if err := r.Delete(ctx, np); client.IgnoreNotFound(err) != nil {
 			return 0, err
 		}
+	}
+
+	if err := r.reconcileBackups(ctx, st, p); err != nil {
+		return 0, err
 	}
 
 	waiting := []string{}
@@ -518,10 +534,30 @@ func (r *StackReconciler) finalize(ctx context.Context, st *unifaiv1.UnifaiStack
 	return ctrl.Result{}, r.Update(ctx, st)
 }
 
+// reconcileBackups applies the backup CronJobs, or deletes them when spec.backup is unset. The backups
+// themselves live in S3 and are never deleted by the operator.
+func (r *StackReconciler) reconcileBackups(ctx context.Context, st *unifaiv1.UnifaiStack, p *stack.Plan) error {
+	jobs := stack.BackupObjects(p)
+	for _, o := range jobs {
+		if err := r.apply(ctx, st, o); err != nil {
+			return fmt.Errorf("%T %s: %w", o, o.GetName(), err)
+		}
+	}
+	if len(jobs) == 0 {
+		for _, name := range stack.BackupNames {
+			cj := &batchv1.CronJob{ObjectMeta: metav1.ObjectMeta{Namespace: st.Namespace, Name: name}}
+			if err := r.Delete(ctx, cj); client.IgnoreNotFound(err) != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // SetupWithManager registers the controller; owned ConfigMaps/Secrets trigger a reconcile when edited by hand.
 func (r *StackReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiStack{}).
-		Owns(&corev1.ConfigMap{}).Owns(&corev1.Secret{}).Owns(&appsv1.Deployment{}).
+		Owns(&corev1.ConfigMap{}).Owns(&corev1.Secret{}).Owns(&appsv1.Deployment{}).Owns(&batchv1.CronJob{}).
 		Named("unifaistack").Complete(r)
 }
 

@@ -266,6 +266,52 @@ type UnifaiStackSpec struct {
 	// Stop reconciling (nothing is changed or deleted).
 	// +optional
 	Paused bool `json:"paused,omitempty"`
+	// Scheduled backups of MongoDB (mongodump archive) and Qdrant (one snapshot per collection) to S3.
+	// +optional
+	Backup *BackupSpec `json:"backup,omitempty"`
+}
+
+// BackupSpec schedules backups to an S3-compatible bucket, under <prefix>/mongodb/ and <prefix>/qdrant/<timestamp>/.
+type BackupSpec struct {
+	// Cron schedule of both backup CronJobs.
+	// +kubebuilder:default="0 2 * * *"
+	// +optional
+	Schedule string `json:"schedule,omitempty"`
+	S3       BackupS3Spec `json:"s3"`
+	// Backups kept per store; older ones are deleted after each successful run.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=7
+	// +optional
+	Retention int `json:"retention,omitempty"`
+	// Suspend both CronJobs.
+	// +optional
+	Suspend bool `json:"suspend,omitempty"`
+	// Image overrides (defaults: public.ecr.aws/aws-cli/aws-cli and docker.io/library/mongo, pinned).
+	// +optional
+	Images BackupImages `json:"images,omitempty"`
+}
+
+// BackupS3Spec locates the bucket. The credentials Secret holds AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+type BackupS3Spec struct {
+	// Endpoint URL of a non-AWS S3 service (e.g. https://s3.example.com); empty = AWS.
+	// +optional
+	Endpoint string `json:"endpoint,omitempty"`
+	Bucket   string `json:"bucket"`
+	// Key prefix (default: unifai/<namespace>).
+	// +optional
+	Prefix string `json:"prefix,omitempty"`
+	// +kubebuilder:default=us-east-1
+	// +optional
+	Region            string `json:"region,omitempty"`
+	CredentialsSecret string `json:"credentialsSecret"`
+}
+
+// BackupImages overrides the backup tool images.
+type BackupImages struct {
+	// +optional
+	AWSCLI string `json:"awsCli,omitempty"`
+	// +optional
+	Mongo string `json:"mongo,omitempty"`
 }
 
 // ComponentStatus is the state of one Helm release of the stack.
