@@ -235,3 +235,39 @@ func TestRenderOverrides(t *testing.T) {
 		t.Errorf("Delete policy must not keep the MongoDB volume")
 	}
 }
+
+func TestRAGSettings(t *testing.T) {
+	off := renderAll(t, testPlan(t, nil))
+	for _, rel := range []string{"unifai-rag-server", "unifai-rag-celery"} {
+		for _, absent := range []string{"QDRANT_HYBRID_ENABLED", "RAG_SHARED_PUBLISHERS", "OIDC_ISSUER_URL", "confluence_queue"} {
+			if strings.Contains(off[rel], absent) {
+				t.Errorf("%s: %s must not be rendered by default (it would roll existing stacks)", rel, absent)
+			}
+		}
+	}
+	if _, ok := ragSecret(map[string]string{})["CONFLUENCE_TOKEN"]; ok {
+		t.Errorf("unifai-rag-secrets must not gain Confluence keys when Confluence is not configured")
+	}
+
+	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) {
+		s.RAG.Hybrid = true
+		s.RAG.SharedPublishers = []string{"admin"}
+		s.RAG.Confluence = &unifaiv1.ConfluenceSpec{Token: unifaiv1.SecretKeySelector{Name: "conf", Key: "token"}}
+	})
+	p.OIDCURL, p.OIDCRealm = "https://kc.example.com/", "zuno"
+	on := renderAll(t, p)
+	for _, rel := range []string{"unifai-rag-server", "unifai-rag-celery"} {
+		for _, want := range []string{"QDRANT_HYBRID_ENABLED", `["admin"]`, "https://kc.example.com/realms/zuno", "confluence_queue"} {
+			if !strings.Contains(on[rel], want) {
+				t.Errorf("%s lacks %s", rel, want)
+			}
+		}
+	}
+	data := ragSecret(map[string]string{"CONFLUENCE_USERNAME": "u", "CONFLUENCE_TOKEN": "tok"})
+	if data["CONFLUENCE_TOKEN"] != "tok" || data["CONFLUENCE_USERNAME"] != "u" {
+		t.Errorf("unifai-rag-secrets lacks the Confluence credentials: %v", data)
+	}
+	if strings.Contains(on["unifai-rag-server"], "tok") && strings.Contains(on["unifai-rag-server"], "CONFLUENCE_TOKEN") {
+		t.Errorf("the Confluence token must come from unifai-rag-secrets, not plain env")
+	}
+}

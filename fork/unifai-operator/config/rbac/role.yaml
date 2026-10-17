@@ -192,6 +192,7 @@ rules:
   - unifaichats
   - unifaiproviders
   - unifairagpipelines
+  - unifairagsources
   - unifairetrievers
   - unifaisandboxes
   - unifaischedules
@@ -214,6 +215,7 @@ rules:
   - unifaillms/finalizers
   - unifaiproviders/finalizers
   - unifairagpipelines/finalizers
+  - unifairagsources/finalizers
   - unifairetrievers/finalizers
   - unifaisandboxes/finalizers
   - unifaischedules/finalizers
@@ -233,6 +235,7 @@ rules:
   - unifaillms/status
   - unifaiproviders/status
   - unifairagpipelines/status
+  - unifairagsources/status
   - unifairetrievers/status
   - unifaisandboxes/status
   - unifaischedules/status

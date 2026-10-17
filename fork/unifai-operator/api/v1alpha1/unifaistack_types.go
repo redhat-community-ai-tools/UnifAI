@@ -146,6 +146,28 @@ type RAGSpec struct {
 	Docling DoclingSpec `json:"docling,omitempty"`
 	// +optional
 	Embedding EmbeddingSpec `json:"embedding,omitempty"`
+	// Dense + sparse (BM25) search with rank fusion. Uses new `<collection>_hybrid` collections: existing
+	// sources must be re-ingested.
+	// +optional
+	Hybrid bool `json:"hybrid,omitempty"`
+	// Users allowed to publish shared sources (visible to members of the source's ACL groups). Empty =
+	// every source stays private to its uploader. UnifaiRAGSource objects are published as their owner.
+	// +optional
+	SharedPublishers []string `json:"sharedPublishers,omitempty"`
+	// Credentials of the Confluence source type.
+	// +optional
+	Confluence *ConfluenceSpec `json:"confluence,omitempty"`
+}
+
+// ConfluenceSpec holds the credentials the RAG service uses for Confluence sources: basic auth with an API
+// token, or a bearer token when only the token is set.
+type ConfluenceSpec struct {
+	// +optional
+	Username *SecretKeySelector `json:"username,omitempty"`
+	Token    SecretKeySelector  `json:"token"`
+	// +kubebuilder:default=true
+	// +optional
+	VerifyTLS *bool `json:"verifyTLS,omitempty"`
 }
 
 // SlackSpec configures the Slack integration (RAG Slack source and backend socket-mode bot).

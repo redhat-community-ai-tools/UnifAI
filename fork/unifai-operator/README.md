@@ -117,6 +117,26 @@ version emitted:
 Not mapped (listed in `status.unmapped`): per-task tool allow-lists (enforced by mcp-gateway), `rag.top_k`, UI
 fields and prompt examples.
 
+### RAG sources and search settings
+
+`UnifaiStack.spec.rag` also carries:
+
+- `hybrid: true`: dense + BM25 search with rank fusion, in new `<collection>_hybrid` collections (sources are
+  re-ingested; existing collections are untouched).
+- `sharedPublishers`: users allowed to publish shared sources, visible to members of the source's OIDC groups;
+  the RAG service then verifies tokens forwarded by multiagent against the stack's OIDC issuer. Empty = every
+  source stays private to its uploader.
+- `confluence`: the credentials of the Confluence source type (Secret refs, added to `unifai-rag-secrets`).
+
+Every one of these renders only when set: a stack that does not use them keeps byte-identical RAG releases.
+
+`UnifaiRAGSource` ([`examples/rag/ragsource-confluence.yaml`](examples/rag/ragsource-confluence.yaml)) registers a
+Confluence space or page subtree with the RAG service as its `owner`, triggers a sync when the spec changes and
+every `syncInterval` (minimum 10m; unset = on spec change only), and reports `sourceId`, the pipeline status and
+the page counts of the last sync. The RAG service syncs incrementally (unchanged pages are not re-embedded).
+Deleting the resource deletes the source and its vectors. A shared source needs `aclGroups` (admission rule) and
+an owner listed in `sharedPublishers` (otherwise phase `Error`, `ACCESS_DENIED`).
+
 ### Taking over a helmfile deployment
 
 A `UnifaiStack` created in a namespace deployed by the upstream helmfile adopts it in place (done for `unifai-devel`,

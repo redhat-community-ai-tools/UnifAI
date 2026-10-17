@@ -99,6 +99,18 @@ func secret(p *Plan, name, component string, data map[string]string) *corev1.Sec
 	return &corev1.Secret{ObjectMeta: objMeta(p, name, component), Type: corev1.SecretTypeOpaque, StringData: data}
 }
 
+// ragSecret is loaded by both RAG pods. Confluence keys are added only when configured, so stacks
+// without Confluence keep a byte-identical secret (no rollout).
+func ragSecret(s map[string]string) map[string]string {
+	data := map[string]string{
+		"default_slack_bot_token": s["SLACK_BOT_TOKEN"], "default_slack_user_token": s["SLACK_USER_TOKEN"],
+	}
+	if s["CONFLUENCE_TOKEN"] != "" {
+		data["CONFLUENCE_USERNAME"], data["CONFLUENCE_TOKEN"] = s["CONFLUENCE_USERNAME"], s["CONFLUENCE_TOKEN"]
+	}
+	return data
+}
+
 // BaseObjects are the ConfigMaps and Secrets the upstream presync/postsync hooks created before the releases
 // (redis-presync, shared-resources-postsync, rag-presync, multiagent-presync, identity-presync).
 func BaseObjects(p *Plan) []ctrlObject {
@@ -121,9 +133,7 @@ func BaseObjects(p *Plan) []ctrlObject {
 			"LANGFUSE_SECRET_KEY": s["LANGFUSE_SECRET_KEY"], "slack_signing_secret": s["SLACK_SIGNING_SECRET"],
 			"SLACK_APP_TOKEN": s["SLACK_APP_TOKEN"], "SLACK_BOT_TOKEN": s["SLACK_BOT_TOKEN"],
 		}),
-		secret(p, "unifai-rag-secrets", "rag", map[string]string{
-			"default_slack_bot_token": s["SLACK_BOT_TOKEN"], "default_slack_user_token": s["SLACK_USER_TOKEN"],
-		}),
+		secret(p, "unifai-rag-secrets", "rag", ragSecret(s)),
 		secret(p, "multiagent-be-secret", "multiagent", multiagentSecret(p)),
 		configMap(p, "identity-config", "identity", map[string]string{
 			"admin_allowed_users": p.AdminUsersJSON(), "keycloak_base_url": p.OIDCURL, "client_id": p.OIDCClientID,

@@ -385,6 +385,39 @@ spec:
               rag:
                 description: RAGSpec configures the RAG data pipeline.
                 properties:
+                  confluence:
+                    description: Credentials of the Confluence source type.
+                    properties:
+                      token:
+                        description: SecretKeySelector selects a key of a Secret in
+                          the CR's namespace.
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      username:
+                        description: SecretKeySelector selects a key of a Secret in
+                          the CR's namespace.
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      verifyTLS:
+                        default: true
+                        type: boolean
+                    required:
+                    - token
+                    type: object
                   docling:
                     description: |-
                       DoclingSpec configures document conversion. The upstream rag image has no in-process converter: documents are
@@ -439,6 +472,18 @@ spec:
                     description: Request one nvidia.com/gpu for rag-celery (upstream
                       default). Without it, ingestion runs on CPU.
                     type: boolean
+                  hybrid:
+                    description: |-
+                      Dense + sparse (BM25) search with rank fusion. Uses new `<collection>_hybrid` collections: existing
+                      sources must be re-ingested.
+                    type: boolean
+                  sharedPublishers:
+                    description: |-
+                      Users allowed to publish shared sources (visible to members of the source's ACL groups). Empty =
+                      every source stays private to its uploader. UnifaiRAGSource objects are published as their owner.
+                    items:
+                      type: string
+                    type: array
                 type: object
               resources:
                 additionalProperties:

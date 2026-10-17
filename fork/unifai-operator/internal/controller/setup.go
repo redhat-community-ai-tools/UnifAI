@@ -21,6 +21,7 @@ func SetupAll(mgr ctrl.Manager) error {
 		"UnifaiTemplate":    &TemplateReconciler{Base: base},
 		"UnifaiChat":        &ChatReconciler{Base: base},
 		"UnifaiRAGPipeline": &RAGPipelineReconciler{Base: base},
+		"UnifaiRAGSource":   &RAGSourceReconciler{Base: base},
 		"UnifaiAgentBundle": &AgentBundleReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
 		"UnifaiStack":       NewStackReconciler(mgr),
 	} {

@@ -1,6 +1,7 @@
 package stack
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -225,6 +226,26 @@ func ragValues(p *Plan, v map[string]any) map[string]any {
 	set(v, "env.EMBEDDING_SERVICE_MODEL", p.EmbeddingModel())
 	if r.Embedding.Dimension > 0 {
 		set(v, "env.EMBEDDING_DIM", fmt.Sprint(r.Embedding.Dimension))
+	}
+	// Every addition below is conditional: with the new fields unset the release hash is unchanged and
+	// existing stacks do not roll.
+	if r.Hybrid {
+		set(v, "env.QDRANT_HYBRID_ENABLED", "true")
+	}
+	if len(r.SharedPublishers) > 0 {
+		publishers, _ := json.Marshal(r.SharedPublishers)
+		set(v, "env.RAG_SHARED_PUBLISHERS", string(publishers))
+		if p.OIDCURL != "" && p.OIDCRealm != "" {
+			// Lets the RAG service verify user tokens forwarded by multiagent (shared-source ACLs).
+			set(v, "env.OIDC_ISSUER_URL", strings.TrimRight(p.OIDCURL, "/")+"/realms/"+p.OIDCRealm)
+		}
+	}
+	if c := r.Confluence; c != nil {
+		// Celery workers consume one queue per source type.
+		set(v, "env.CELERY_QUEUES", "slack_queue,document_queue,slack_events_queue,confluence_queue")
+		if c.VerifyTLS != nil && !*c.VerifyTLS {
+			set(v, "env.CONFLUENCE_VERIFY_TLS", "false")
+		}
 	}
 	return v
 }

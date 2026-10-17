@@ -186,6 +186,9 @@ func (r *StackReconciler) plan(ctx context.Context, st *unifaiv1.UnifaiStack) (*
 		p.Secrets["UMAMI_URL"], p.Secrets["UMAMI_WEBSITE_NAME"] = u.URL, u.WebsiteName
 		refs["UMAMI_USERNAME"], refs["UMAMI_PASSWORD"] = u.Username, u.Password
 	}
+	if c := st.Spec.RAG.Confluence; c != nil {
+		refs["CONFLUENCE_USERNAME"], refs["CONFLUENCE_TOKEN"] = c.Username, &c.Token
+	}
 	if l := in.Langfuse; l != nil {
 		p.Secrets["LANGFUSE_BASE_URL"] = l.BaseURL
 		refs["LANGFUSE_PUBLIC_KEY"], refs["LANGFUSE_SECRET_KEY"] = &l.PublicKey, &l.SecretKey

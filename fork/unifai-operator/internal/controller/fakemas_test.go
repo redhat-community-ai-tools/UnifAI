@@ -23,13 +23,14 @@ type fakeMAS struct {
 	sessions   map[string]string // id -> status
 	ragFiles   map[string]string // name -> md5 of uploaded content
 	ragSources map[string]map[string]any
+	ragSyncs   map[string]int // source id -> embed calls (incremental syncs)
 	users      []string          // X-Authenticated-User of each call
 }
 
 func newFakeMAS() (*fakeMAS, *httptest.Server) {
 	f := &fakeMAS{resources: map[string]map[string]any{}, blueprints: map[string]map[string]any{},
 		schedules: map[string]map[string]any{}, templates: map[string]map[string]any{}, sessions: map[string]string{},
-		ragFiles: map[string]string{}, ragSources: map[string]map[string]any{}}
+		ragFiles: map[string]string{}, ragSources: map[string]map[string]any{}, ragSyncs: map[string]int{}}
 	return f, httptest.NewServer(f)
 }
 
@@ -184,6 +185,22 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		reply(w, 200, map[string]any{"message": "ok"})
 	case "/api/pipelines/embed":
+		if body["source_type"] == "confluence" {
+			// Mirrors the RAG service: idempotent registration per scope, shared sources for publishers only.
+			d := body["data"].([]any)[0].(map[string]any)
+			if d["visibility"] == "shared" && r.Header.Get("X-Authenticated-User") != "publisher" {
+				reply(w, 200, map[string]any{"registration": map[string]any{"issues": []any{map[string]any{
+					"error": "may not publish shared sources", "error_type": "ACCESS_DENIED"}}}})
+				return
+			}
+			id := fmt.Sprintf("conf-%v-%v-%v", d["baseUrl"], d["spaceKey"], d["rootTitle"])
+			f.ragSyncs[id]++
+			f.ragSources[id] = map[string]any{"source_id": id, "source_name": d["name"], "status": "DONE",
+				"type_data": map[string]any{"page_count": 3, "pages_changed": 1, "pages_deleted": 0}}
+			reply(w, 200, map[string]any{"registration": map[string]any{
+				"registered": []any{map[string]any{"metadata": map[string]any{"source_id": id}}}, "issues": []any{}}})
+			return
+		}
 		var issues []any
 		n := 0
 		for _, d := range body["data"].([]any) {
@@ -208,6 +225,13 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			out = append(out, s)
 		}
 		reply(w, 200, map[string]any{"sources": out})
+	case "/api/data_sources/data.source.details.get":
+		s, ok := f.ragSources[r.URL.Query().Get("source_id")]
+		if !ok {
+			reply(w, 404, map[string]any{"success": false})
+			return
+		}
+		reply(w, 200, map[string]any{"success": true, "source": s})
 	case "/api/data_sources/data.source.delete":
 		for _, id := range body["pipeline_ids"].([]any) {
 			delete(f.ragSources, id.(string))
@@ -227,4 +251,18 @@ func (f *fakeMAS) ragSourceNames() map[string]string {
 		out[s["source_name"].(string)] = s["type_data"].(map[string]any)["md5"].(string)
 	}
 	return out
+}
+
+// ragSyncCount returns how many times a source was (re)synced.
+func (f *fakeMAS) ragSyncCount(id string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ragSyncs[id]
+}
+
+func (f *fakeMAS) hasRAGSource(id string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.ragSources[id]
+	return ok
 }
