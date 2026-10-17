@@ -107,6 +107,14 @@ var _ = Describe("UnifaiRAGSource controller", func() {
 		Eventually(func() string { return get(ok)().Phase }, timeout, interval).Should(Equal("Ready"))
 	})
 
+	It("never re-triggers an accepted sync whose response it cannot read", func() {
+		s := newSource(newNamespace("ragsrc-odd"), "ODDBODY", nil)
+		Expect(k8sClient.Create(ctx, s)).To(Succeed())
+		Eventually(func() string { return get(s)().Phase }, timeout, interval).Should(Equal("Error"))
+		id := "conf-https://x.atlassian.net-ODDBODY-Procedures"
+		Consistently(func() int { return mas.ragSyncCount(id) }, 3*time.Second, interval).Should(Equal(1))
+	})
+
 	It("rejects a shared source without ACL groups at admission", func() {
 		s := newSource(newNamespace("ragsrc-cel"), "SX5", func(s *unifaiv1.UnifaiRAGSource) { s.Spec.Visibility = "shared" })
 		err := k8sClient.Create(ctx, s)

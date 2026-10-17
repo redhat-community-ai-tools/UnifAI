@@ -195,10 +195,16 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			id := fmt.Sprintf("conf-%v-%v-%v", d["baseUrl"], d["spaceKey"], d["rootTitle"])
 			f.ragSyncs[id]++
+			if d["spaceKey"] == "ODDBODY" {
+				// Accepted, but with a body the operator cannot read: it must not retry (each call queues a sync).
+				reply(w, 200, map[string]any{"pipeline_execution": map[string]any{"status": "pipeline_workflow_started"}})
+				return
+			}
 			f.ragSources[id] = map[string]any{"source_id": id, "source_name": d["name"], "source_type": "CONFLUENCE", "status": "DONE",
 				"type_data": map[string]any{"page_count": 3, "pages_changed": 1, "pages_deleted": 0}}
 			reply(w, 200, map[string]any{"registration": map[string]any{
-				"registered": []any{map[string]any{"metadata": map[string]any{"source_id": id}}}, "issues": []any{}}})
+				// Same shape as rag core/registration/service.py.
+				"registered_sources": []any{map[string]any{"metadata": map[string]any{"source_id": id}}}, "issues": []any{}}})
 			return
 		}
 		var issues []any

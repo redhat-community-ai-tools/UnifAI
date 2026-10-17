@@ -98,10 +98,15 @@ func (r *RAGSourceReconciler) apply(ctx context.Context, api *unifai.Client, obj
 	specChanged := st.Hash != h || st.SourceID == ""
 	scheduled := !obj.Spec.Suspend && interval > 0 && st.LastSyncTime != nil && !now.Before(st.LastSyncTime.Add(interval))
 	if specChanged || scheduled {
-		if err := r.trigger(ctx, api, obj, sourceType, instance); err != nil {
+		// The hash and sync time are recorded as soon as the RAG service accepted the request, before its
+		// body is read: a retry must never re-trigger an accepted sync (each one queues a pipeline run).
+		accepted, err := r.trigger(ctx, api, obj, sourceType, instance)
+		if accepted {
+			st.Hash, st.LastSyncTime = h, &metav1.Time{Time: now}
+		}
+		if err != nil {
 			return 0, err
 		}
-		st.Hash, st.LastSyncTime = h, &metav1.Time{Time: now}
 	}
 	st.NextSyncTime = nil
 	if !obj.Spec.Suspend && interval > 0 && st.LastSyncTime != nil {
@@ -128,12 +133,14 @@ func (r *RAGSourceReconciler) apply(ctx context.Context, api *unifai.Client, obj
 	return 0, nil
 }
 
-func (r *RAGSourceReconciler) trigger(ctx context.Context, api *unifai.Client, obj *unifaiv1.UnifaiRAGSource, sourceType string, instance map[string]any) error {
+// trigger registers the source and queues a sync. accepted reports whether the RAG service took the request
+// (HTTP 200), in which case a sync may be running even if the body is unexpected.
+func (r *RAGSourceReconciler) trigger(ctx context.Context, api *unifai.Client, obj *unifaiv1.UnifaiRAGSource, sourceType string, instance map[string]any) (bool, error) {
 	var out struct {
 		Registration struct {
 			Registered []struct {
 				Metadata map[string]any `json:"metadata"`
-			} `json:"registered"`
+			} `json:"registered_sources"`
 			Issues []map[string]any `json:"issues"`
 		} `json:"registration"`
 	}
@@ -141,20 +148,20 @@ func (r *RAGSourceReconciler) trigger(ctx context.Context, api *unifai.Client, o
 	if err := api.Call(ctx, http.MethodPut, "/api/pipelines/embed", nil, map[string]any{
 		"source_type": sourceType, "skip_validation": false, "data": []any{instance},
 	}, &raw); err != nil {
-		return permanentOn(err, http.StatusBadRequest, http.StatusForbidden, http.StatusUnprocessableEntity)
+		return false, permanentOn(err, http.StatusBadRequest, http.StatusForbidden, http.StatusUnprocessableEntity)
 	}
 	_ = json.Unmarshal(raw, &out)
 	if len(out.Registration.Issues) > 0 {
 		b, _ := json.Marshal(out.Registration.Issues)
-		return permanent("rag-server refused the source: %s", unifai.Truncate(string(b), 400))
+		return true, permanent("rag-server refused the source: %s", unifai.Truncate(string(b), 400))
 	}
 	if len(out.Registration.Registered) == 0 {
-		return fmt.Errorf("rag-server registered nothing: %s", unifai.Truncate(string(raw), 300))
+		return true, permanent("rag-server accepted the request but returned no registered source: %s", unifai.Truncate(string(raw), 300))
 	}
 	if id, _ := out.Registration.Registered[0].Metadata["source_id"].(string); id != "" {
 		obj.Status.SourceID = id
 	}
-	return nil
+	return true, nil
 }
 
 // refresh reads the source's pipeline status and page counts; it reports whether a sync is still running.
