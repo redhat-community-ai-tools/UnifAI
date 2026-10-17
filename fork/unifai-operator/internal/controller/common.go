@@ -175,7 +175,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 		if !controllerutil.ContainsFinalizer(obj, Finalizer) {
 			return reconcile.Result{}, nil
 		}
-		if h.Delete != nil {
+		if h.Delete != nil && !b.nothingToClean(ctx, obj.GetNamespace()) {
 			if err := h.Delete(ctx); err != nil {
 				logger.Info("delete failed, retrying", "error", err.Error())
 				orig := obj.DeepCopyObject().(client.Object)
@@ -251,4 +251,17 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 
 func setReady(st *unifaiv1.ObjectStatus, phase, msg string) {
 	st.Phase, st.Message = phase, unifai.Truncate(msg, 500)
+}
+
+// nothingToClean reports whether the UnifAI side is gone with the namespace: when the namespace or its UnifaiStack
+// is being deleted (or the stack no longer exists while the namespace had one), deleting UnifAI objects would retry
+// forever against services that are disappearing, and would block the namespace deletion.
+func (b *Base) nothingToClean(ctx context.Context, ns string) bool {
+	var n corev1.Namespace
+	if err := b.Get(ctx, types.NamespacedName{Name: ns}, &n); err == nil && !n.DeletionTimestamp.IsZero() {
+		return true
+	}
+	var st unifaiv1.UnifaiStack
+	err := b.Get(ctx, types.NamespacedName{Namespace: ns, Name: unifaiv1.StackName}, &st)
+	return err == nil && !st.DeletionTimestamp.IsZero()
 }

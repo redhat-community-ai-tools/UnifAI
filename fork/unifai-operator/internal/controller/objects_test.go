@@ -198,6 +198,32 @@ var _ = Describe("UnifAI object controllers", func() {
 		Eventually(func() map[string]string { return mas.ragSourceNames() }, 30*time.Second, interval).ShouldNot(HaveKey("b-" + ns + ".md"))
 	})
 
+	It("releases objects without calling UnifAI when their stack is being deleted", func() {
+		ns := newNamespace("gone")
+		st := &unifaiv1.UnifaiStack{ObjectMeta: metav1.ObjectMeta{Name: "unifai", Namespace: ns, Finalizers: []string{"e2e/hold"}},
+			Spec: unifaiv1.UnifaiStackSpec{Identity: unifaiv1.IdentitySpec{External: &unifaiv1.ExternalOIDCSpec{URL: "https://kc",
+				ClientSecret: unifaiv1.SecretKeySelector{Name: "s", Key: "k"}}}}}
+		Expect(k8sClient.Create(ctx, st)).To(Succeed())
+		meta.SetStatusCondition(&st.Status.Conditions, metav1.Condition{Type: "Ready", Status: metav1.ConditionTrue, Reason: "Ready"})
+		Expect(k8sClient.Status().Update(ctx, st)).To(Succeed())
+		tool := &unifaiv1.UnifaiTool{ObjectMeta: metav1.ObjectMeta{Name: "t", Namespace: ns}, Spec: unifaiv1.UnifaiToolSpec{
+			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "t-" + ns}, Type: "web_fetch"}}
+		Expect(k8sClient.Create(ctx, tool)).To(Succeed())
+		Eventually(phaseOf(tool), timeout, interval).Should(Equal("Ready"))
+		// Make the UnifAI delete fail: the object is still referenced.
+		mas.mu.Lock()
+		mas.resources["holder-"+ns] = map[string]any{"rid": "holder-" + ns, "name": "holder", "category": "nodes", "type": "x",
+			"cfg_dict": map[string]any{"tools": []any{"$ref:" + tool.Status.RID}}}
+		mas.mu.Unlock()
+		Expect(k8sClient.Delete(ctx, st)).To(Succeed()) // stays (finalizer e2e/hold) with a deletionTimestamp
+		Expect(k8sClient.Delete(ctx, tool)).To(Succeed())
+		Eventually(func() bool { return apierrors.IsNotFound(k8sClient.Get(ctx, client.ObjectKeyFromObject(tool), tool)) },
+			timeout, interval).Should(BeTrue())
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(st), st)).To(Succeed())
+		st.Finalizers = nil
+		Expect(k8sClient.Update(ctx, st)).To(Succeed())
+	})
+
 	It("waits for the namespace UnifaiStack to be Ready", func() {
 		ns := newNamespace("gate")
 		st := &unifaiv1.UnifaiStack{ObjectMeta: metav1.ObjectMeta{Name: "unifai", Namespace: ns}, Spec: unifaiv1.UnifaiStackSpec{
