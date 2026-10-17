@@ -36,8 +36,8 @@ def test_blocking_run_passes_execution_context_to_executor():
 
 
 def test_temporal_executor_puts_execution_context_in_workflow_params():
-    from outbound.temporal.executor import TemporalGraphExecutor
     from mas.engine.domain.models import GraphDefinition
+    from outbound.temporal.executor import TemporalGraphExecutor
 
     client = MagicMock()
     client.execute_workflow = AsyncMock(return_value=GraphState())
