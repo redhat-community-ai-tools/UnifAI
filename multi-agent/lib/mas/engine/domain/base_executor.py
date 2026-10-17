@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
+from mas.core.execution_context import ExecutionContext
 from mas.graph.state.graph_state import GraphState
 
 
@@ -13,7 +14,13 @@ class BaseGraphExecutor(ABC):
     """
 
     @abstractmethod
-    def run(self, initial_state: GraphState, *, session_id: str = "") -> GraphState:
+    def run(
+        self,
+        initial_state: GraphState,
+        *,
+        session_id: str = "",
+        execution_context: Optional[ExecutionContext] = None,
+    ) -> GraphState:
         """
         Drive the graph from its entry to its exit and return the final state.
 
@@ -21,6 +28,10 @@ class BaseGraphExecutor(ABC):
             initial_state: The starting graph state.
             session_id: Optional session identifier used by distributed
                         executors to enable channel-based streaming on workers.
+            execution_context: Who runs the graph and in which scope. In-process
+                        executors ignore it (elements read the session's holder);
+                        distributed executors must ship it to their workers, which
+                        rebuild elements with an empty holder.
         """
         ...
 

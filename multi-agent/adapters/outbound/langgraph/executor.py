@@ -1,7 +1,8 @@
-from typing import Any
+from typing import Any, Optional
 
 from mas.engine.domain.base_executor import BaseGraphExecutor
 from mas.engine.domain.types import DEFAULT_RECURSION_LIMIT
+from mas.core.execution_context import ExecutionContext
 from mas.graph.state.graph_state import GraphState
 
 
@@ -19,7 +20,13 @@ class LangGraphExecutor(BaseGraphExecutor):
         self._compiled = compiled_graph
         self._recursion_limit = recursion_limit
 
-    def run(self, initial_state: GraphState, *, session_id: str = "") -> GraphState:
+    def run(
+        self,
+        initial_state: GraphState,
+        *,
+        session_id: str = "",
+        execution_context: Optional[ExecutionContext] = None,
+    ) -> GraphState:
         result = self._compiled.invoke(
             initial_state,
             config={"recursion_limit": self._recursion_limit},

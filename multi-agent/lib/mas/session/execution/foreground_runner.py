@@ -107,6 +107,7 @@ class ForegroundSessionRunner:
             try:
                 final_state = session.executable_graph.run(
                     session.graph_state, session_id=run_id,
+                    execution_context=session.record.run_context,
                 )
             except Exception as e:
                 self._lifecycle.fail(session.record, e)
@@ -157,6 +158,7 @@ class ForegroundSessionRunner:
                 try:
                     result["state"] = session.executable_graph.run(
                         session.graph_state, session_id=run_id,
+                        execution_context=session.record.run_context,
                     )
                 except Exception as e:
                     result["error"] = e
