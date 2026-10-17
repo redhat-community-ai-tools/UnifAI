@@ -60,6 +60,10 @@ Identity, exactly one of:
   `identity.adminUsers`, secrets passed as placeholders). The realm is imported once: later host changes must be
   applied in Keycloak.
 
+A managed Keycloak whose pod stays running but unready for 10 minutes (typically after a cluster restart: stale
+Infinispan member, "cluster health check" DOWN) is restarted by the operator, at most once every 15 minutes
+(annotation `unifai.startx.fr/last-repair` on the Keycloak CR).
+
 `identity.forwardUserToken: true` (default false) gives the multiagent pods (be and temporal worker) the identity
 service's Keycloak client (`IDENTITY_FORWARDING_ENABLED`, `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, `CLIENT_ID`, and
 `CLIENT_SECRET` through `multiagent-be-secret`), so workflow elements that opt in (`forward_user_token`) can send the
@@ -108,6 +112,10 @@ Requirements: Go 1.26, operator-sdk 1.41, opm, podman, write access to `quay.io/
 
 ```bash
 make test                       # unit tests (chart rendering) + envtest (controllers against a fake UnifAI API, CEL rules)
+make test-e2e E2E_STORAGE_CLASS=gp3-csi E2E_SHARED_STORAGE_CLASS=nfs E2E_NODE_SELECTOR=workload=unifai
+                                # e2e on the current cluster against the installed operator: throwaway namespace
+                                # unifai-e2e-*, stack Ready + invariants, LLM/agent/workflow/chat, no needless Helm
+                                # upgrade, Delete policy cleanup (E2E_FULL=1 also deploys docling + TEI, E2E_KEEP=1)
 make charts                     # refresh internal/stack/assets from ../../helm
 make docker-build-local docker-push   # VERSION=0.1.0 UNIFAI_VERSION=devel (Dockerfile.local; `make docker-build` compiles in the image)
 make bundle bundle-build bundle-push
@@ -115,8 +123,9 @@ make catalog-add                # record VERSION in catalog-template.yaml (CHANN
 make catalog-build catalog-push # quay.io/zuno/unifai-operator-catalog:latest
 ```
 
-A new release: bump `VERSION`, run the steps above (`catalog-add` with `CHANNELS=alpha` for a devel build, then again
-with `CHANNELS=stable` to promote it). The catalog image tag is `latest` and the CatalogSource polls it.
+A new release: bump `VERSION`, run `make test`, build and push the images, `make catalog-add CHANNELS=alpha`, push the
+catalog, let OLM upgrade the cluster, run `make test-e2e`, and only then promote with `make catalog-add CHANNELS=stable`
++ `make catalog-build catalog-push`. The catalog image tag is `latest` and the CatalogSource polls it.
 
 ## Install with OLM (OpenShift)
 

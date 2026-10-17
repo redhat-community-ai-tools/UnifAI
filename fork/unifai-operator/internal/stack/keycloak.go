@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -16,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // Names of the managed Keycloak objects.
@@ -92,6 +94,13 @@ func (k *Keycloak) Ensure(ctx context.Context, p *Plan) (string, error) {
 		return "", err
 	}
 	if !conditionTrue(kc, "Ready") {
+		repaired, err := k.Repair(ctx, kc, time.Now())
+		if err != nil {
+			return "", err
+		}
+		if repaired {
+			return "Keycloak unready for too long: pod restarted", nil
+		}
 		return "waiting for Keycloak to be ready", nil
 	}
 	ri := newU(GVKRealmImport, p.Namespace, RealmImportName)
@@ -434,6 +443,48 @@ func (k *Keycloak) ensureRealm(ctx context.Context, p *Plan) error {
 		},
 	}
 	return k.apply(ctx, ri)
+}
+
+// Repair thresholds: a Keycloak pod running but unready this long is restarted, at most once per repairInterval.
+// After a cluster restart Keycloak can keep a stale Infinispan member and report its cluster health check DOWN
+// forever; a restart clears it.
+const (
+	repairAfter      = 10 * time.Minute
+	repairInterval   = 15 * time.Minute
+	repairAnnotation = "unifai.startx.fr/last-repair"
+)
+
+// Repair restarts the Keycloak pod when it has been running unready for repairAfter; it returns whether it did.
+func (k *Keycloak) Repair(ctx context.Context, kc *unstructured.Unstructured, now time.Time) (bool, error) {
+	if last, err := time.Parse(time.RFC3339, kc.GetAnnotations()[repairAnnotation]); err == nil && now.Sub(last) < repairInterval {
+		return false, nil
+	}
+	pod := &corev1.Pod{}
+	if err := k.Client.Get(ctx, types.NamespacedName{Namespace: kc.GetNamespace(), Name: kc.GetName() + "-0"}, pod); err != nil {
+		return false, client.IgnoreNotFound(err)
+	}
+	if pod.Status.Phase != corev1.PodRunning || !pod.DeletionTimestamp.IsZero() {
+		return false, nil
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Ready || cs.State.Running == nil || now.Sub(cs.State.Running.StartedAt.Time) < repairAfter {
+			return false, nil
+		}
+	}
+	if len(pod.Status.ContainerStatuses) == 0 {
+		return false, nil
+	}
+	a := kc.GetAnnotations()
+	if a == nil {
+		a = map[string]string{}
+	}
+	a[repairAnnotation] = now.UTC().Format(time.RFC3339)
+	kc.SetAnnotations(a)
+	if err := k.Client.Update(ctx, kc); err != nil {
+		return false, err
+	}
+	log.FromContext(ctx).Info("restarting unready Keycloak pod", "pod", pod.Name)
+	return true, client.IgnoreNotFound(k.Client.Delete(ctx, pod))
 }
 
 // Delete removes the Keycloak objects; the database is removed only with removeData.

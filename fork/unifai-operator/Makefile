@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.1.13
+VERSION ?= 0.1.14
 # Tag of the UnifAI images a stack deploys by default (spec.version overrides it).
 UNIFAI_VERSION ?= devel
 CHANNELS ?= alpha,stable
@@ -120,30 +120,18 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # CertManager is installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
-KIND_CLUSTER ?= unifai-operator-test-e2e
-
-.PHONY: setup-test-e2e
-setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
-	@command -v $(KIND) >/dev/null 2>&1 || { \
-		echo "Kind is not installed. Please install Kind manually."; \
-		exit 1; \
-	}
-	@case "$$($(KIND) get clusters)" in \
-		*"$(KIND_CLUSTER)"*) \
-			echo "Kind cluster '$(KIND_CLUSTER)' already exists. Skipping creation." ;; \
-		*) \
-			echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
-			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
-	esac
+# End-to-end test against the operator installed on the current kubeconfig context (OLM or `make deploy`):
+# deploys an UnifaiStack in a throwaway namespace unifai-e2e-*, checks it and deletes it (E2E_KEEP=1 keeps it).
+E2E_STORAGE_CLASS ?=
+E2E_SHARED_STORAGE_CLASS ?=
+E2E_NODE_SELECTOR ?=
+E2E_TIMEOUT ?= 30m
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
-	$(MAKE) cleanup-test-e2e
-
-.PHONY: cleanup-test-e2e
-cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
-	@$(KIND) delete cluster --name $(KIND_CLUSTER)
+test-e2e: ## Run the e2e tests on the current cluster (E2E_STORAGE_CLASS, E2E_SHARED_STORAGE_CLASS, E2E_NODE_SELECTOR, E2E_FULL=1, E2E_KEEP=1).
+	E2E_STORAGE_CLASS=$(E2E_STORAGE_CLASS) E2E_SHARED_STORAGE_CLASS=$(E2E_SHARED_STORAGE_CLASS) \
+	E2E_NODE_SELECTOR=$(E2E_NODE_SELECTOR) E2E_TIMEOUT=$(E2E_TIMEOUT) \
+	go test -tags e2e -count=1 -timeout 90m -v ./test/e2e/
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
