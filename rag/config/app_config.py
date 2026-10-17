@@ -23,6 +23,9 @@ class AppConfig(SharedConfig):
     # Qdrant Configuration
     qdrant_ip: str = "0.0.0.0"
     qdrant_port: str = "6333"
+    # Dense + sparse (BM25) search with reciprocal rank fusion. Uses separate `<name>_hybrid` collections:
+    # existing collections are left untouched and sources must be re-ingested.
+    qdrant_hybrid_enabled: bool = False
     
     # Slack Configuration
     default_slack_bot_token: str = ""

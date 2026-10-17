@@ -9,9 +9,22 @@ from qdrant_client.http import models as qmodels
 
 from core.vector.domain.model import VectorChunk, SearchResult
 from core.vector.domain.repository import VectorRepository
+from infrastructure.qdrant.sparse_encoder import HashingBM25Encoder
 import logging
 
 logger = logging.getLogger("rag_pipeline")
+
+# Hybrid collections carry named vectors and live beside the legacy ones, so enabling hybrid search never
+# rewrites an existing collection: sources are re-ingested into the new one.
+HYBRID_SUFFIX = "_hybrid"
+DENSE_VECTOR = "dense"
+SPARSE_VECTOR = "sparse"
+# Stable point ids: re-running a pipeline overwrites a source's chunks instead of duplicating them.
+POINT_ID_NAMESPACE = uuid.UUID("6f1c3a52-6b4e-4f43-9a55-3d6f5b0e8a1d")
+
+
+class CollectionMismatchError(RuntimeError):
+    """An existing collection was created with another vector size or layout."""
 
 
 class QdrantVectorRepository(VectorRepository):
@@ -33,6 +46,8 @@ class QdrantVectorRepository(VectorRepository):
         on_disk: bool = True,
         replication_factor: int = 1,
         write_consistency_factor: int = 1,
+        hybrid: bool = False,
+        client: Optional[qdrant_client.QdrantClient] = None,
     ):
         """
         Initialize the Qdrant vector repository.
@@ -47,8 +62,12 @@ class QdrantVectorRepository(VectorRepository):
             on_disk: Whether to store vectors on disk (True) or in memory (False)
             replication_factor: Number of replicas for each segment
             write_consistency_factor: How many replicas should confirm write
+            hybrid: Use a dense + sparse (BM25) collection, named <collection_name>_hybrid
+            client: Pre-built client (tests use QdrantClient(":memory:"))
         """
-        self._collection_name = collection_name
+        self._hybrid = hybrid
+        self._collection_name = collection_name + (HYBRID_SUFFIX if hybrid else "")
+        self._sparse = HashingBM25Encoder() if hybrid else None
         self._embedding_dim = embedding_dim
         self._on_disk = on_disk
         self._replication_factor = replication_factor
@@ -61,7 +80,7 @@ class QdrantVectorRepository(VectorRepository):
         self._api_key = api_key or os.getenv("QDRANT_API_KEY")
 
         # Initialize client
-        self._client = self._create_client()
+        self._client = client or self._create_client()
         logger.info(f"Initialized Qdrant client connecting to {self._url}")
 
     def _create_client(self) -> qdrant_client.QdrantClient:
@@ -95,16 +114,20 @@ class QdrantVectorRepository(VectorRepository):
         collection_names = [collection.name for collection in collections]
 
         if self._collection_name in collection_names:
+            self._check_existing_collection()
             logger.info(f"Collection '{self._collection_name}' already exists")
             return
+
+        dense = qmodels.VectorParams(size=self._embedding_dim, distance=qmodels.Distance.COSINE)
+        extra: Dict[str, Any] = {}
+        if self._hybrid:
+            extra["sparse_vectors_config"] = {SPARSE_VECTOR: qmodels.SparseVectorParams(modifier=qmodels.Modifier.IDF)}
 
         # Create collection with vector configuration
         self._client.create_collection(
             collection_name=self._collection_name,
-            vectors_config=qmodels.VectorParams(
-                size=self._embedding_dim,
-                distance=qmodels.Distance.COSINE,
-            ),
+            vectors_config={DENSE_VECTOR: dense} if self._hybrid else dense,
+            **extra,
             optimizers_config=qmodels.OptimizersConfigDiff(
                 indexing_threshold=10000,  # Build index after 10k vectors
             ),
@@ -120,6 +143,38 @@ class QdrantVectorRepository(VectorRepository):
         self._create_payload_index("metadata.owner_id", qmodels.PayloadSchemaType.KEYWORD)
 
         logger.info(f"Created collection '{self._collection_name}' with dimension {self._embedding_dim}")
+
+    def _check_existing_collection(self) -> None:
+        """Refuse to write into a collection whose vectors do not match this repository's settings."""
+        vectors = self._client.get_collection(self._collection_name).config.params.vectors
+        if self._hybrid:
+            params = vectors.get(DENSE_VECTOR) if isinstance(vectors, dict) else None
+            if params is None:
+                raise CollectionMismatchError(
+                    f"Collection '{self._collection_name}' has no named '{DENSE_VECTOR}' vector: it was not created for hybrid search"
+                )
+        else:
+            params = vectors if not isinstance(vectors, dict) else None
+            if params is None:
+                raise CollectionMismatchError(
+                    f"Collection '{self._collection_name}' uses named vectors; enable hybrid search to use it"
+                )
+        if params.size != self._embedding_dim:
+            raise CollectionMismatchError(
+                f"Collection '{self._collection_name}' stores {params.size}-dimension vectors but the embedding model "
+                f"produces {self._embedding_dim}: use another collection or re-create it"
+            )
+
+    @staticmethod
+    def point_id(chunk: VectorChunk) -> str:
+        """The chunk's own id, else a stable id from (source_id, chunk_index), else a random one."""
+        if chunk.id:
+            return chunk.id
+        meta = chunk.metadata or {}
+        source_id, index = meta.get("source_id"), meta.get("chunk_index")
+        if source_id is not None and index is not None:
+            return str(uuid.uuid5(POINT_ID_NAMESPACE, f"{source_id}:{index}"))
+        return str(uuid.uuid4())
 
     def _create_payload_index(self, field_name: str, field_type: qmodels.PayloadSchemaType) -> None:
         """Create an index on a payload field for faster filtering."""
@@ -158,13 +213,16 @@ class QdrantVectorRepository(VectorRepository):
                 logger.warning("Chunk missing embedding, skipping")
                 continue
 
-            # Generate a unique ID if not provided
-            chunk_id = chunk.id or str(uuid.uuid4())
+            vector: Any = chunk.embedding
+            if self._hybrid:
+                sparse = self._sparse.encode_document(chunk.text or "")
+                vector = {DENSE_VECTOR: chunk.embedding,
+                          SPARSE_VECTOR: qmodels.SparseVector(indices=sparse.indices, values=sparse.values)}
 
             # Prepare the point for Qdrant
             point = qmodels.PointStruct(
-                id=chunk_id,
-                vector=chunk.embedding,
+                id=self.point_id(chunk),
+                vector=vector,
                 payload={
                     "text": chunk.text,
                     "metadata": chunk.metadata,
@@ -193,6 +251,7 @@ class QdrantVectorRepository(VectorRepository):
         query_embedding: List[float],
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
+        query_text: Optional[str] = None,
     ) -> List[SearchResult]:
         """
         Search for similar vectors in Qdrant.
@@ -201,6 +260,9 @@ class QdrantVectorRepository(VectorRepository):
             query_embedding: Query vector to search for
             top_k: Number of results to return
             filters: Optional filters to apply to the search
+            query_text: The query as text; in a hybrid collection it adds a sparse (BM25) candidate list
+                fused with the dense one by reciprocal rank fusion. Fused scores are rank-based (about
+                0.01-0.05), not cosine similarities.
             
         Returns:
             List of SearchResult objects with similarity scores
@@ -208,14 +270,31 @@ class QdrantVectorRepository(VectorRepository):
         # Convert filters to Qdrant filter format if provided
         qdrant_filter = self._convert_filters(filters) if filters else None
 
-        # Perform the search
-        search_results = self._client.query_points(
-            collection_name=self._collection_name,
-            query=query_embedding,
-            limit=top_k,
-            query_filter=qdrant_filter,
-            with_payload=True,
-        )
+        if self._hybrid and query_text and query_text.strip():
+            sparse = self._sparse.encode_query(query_text)
+            candidates = max(top_k * 4, 20)
+            search_results = self._client.query_points(
+                collection_name=self._collection_name,
+                prefetch=[
+                    qmodels.Prefetch(query=query_embedding, using=DENSE_VECTOR, limit=candidates, filter=qdrant_filter),
+                    qmodels.Prefetch(query=qmodels.SparseVector(indices=sparse.indices, values=sparse.values),
+                                     using=SPARSE_VECTOR, limit=candidates, filter=qdrant_filter),
+                ],
+                query=qmodels.FusionQuery(fusion=qmodels.Fusion.RRF),
+                limit=top_k,
+                query_filter=qdrant_filter,
+                with_payload=True,
+            )
+        else:
+            # Perform the search
+            search_results = self._client.query_points(
+                collection_name=self._collection_name,
+                query=query_embedding,
+                using=DENSE_VECTOR if self._hybrid else None,
+                limit=top_k,
+                query_filter=qdrant_filter,
+                with_payload=True,
+            )
 
         # Convert to domain SearchResult objects
         results = []
@@ -323,14 +402,12 @@ class QdrantVectorRepository(VectorRepository):
         for field, value in filters.items():
             if isinstance(value, list):
                 # Handle list of values (OR condition)
-                should_conditions = [
+                must_conditions.append(
                     qmodels.FieldCondition(
                         key=field,
-                        match=qmodels.MatchValue(value=v),
+                        match=qmodels.MatchAny(any=list(value)),
                     )
-                    for v in value
-                ]
-                must_conditions.append(qmodels.Filter(should=should_conditions))
+                )
             else:
                 # Handle single value
                 must_conditions.append(

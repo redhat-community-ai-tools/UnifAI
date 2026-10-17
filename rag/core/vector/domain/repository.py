@@ -47,6 +47,7 @@ class VectorRepository(ABC):
         query_embedding: List[float],
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
+        query_text: Optional[str] = None,
     ) -> List[SearchResult]:
         """
         Search for similar vectors.
@@ -55,6 +56,8 @@ class VectorRepository(ABC):
             query_embedding: Query vector to search for
             top_k: Number of results to return
             filters: Optional filters to apply to the search
+            query_text: The query text, for repositories that also match lexically (hybrid search);
+                others ignore it
             
         Returns:
             List of SearchResult objects with similarity scores

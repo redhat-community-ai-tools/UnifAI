@@ -264,6 +264,7 @@ class VectorRepositoryFactory:
                 on_disk=config.get("on_disk", True),
                 replication_factor=config.get("replication_factor", 1),
                 write_consistency_factor=config.get("write_consistency_factor", 1),
+                hybrid=config.get("hybrid", app_config.qdrant_hybrid_enabled),
             )
         else:
             raise ValueError(f"Unknown storage type: {storage_type}")
