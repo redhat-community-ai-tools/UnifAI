@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 from mas.elements.common.base_factory import BaseFactory
 from mas.elements.common.exceptions import PluginConfigurationError
 from mas.core.auth.credentials.credential import AuthCredential
-from .config import McpProviderConfig
+from .config import McpAuthMethod, McpProviderConfig
 from .mcp_provider import McpProvider
 from .identifiers import Identifier
 
@@ -18,6 +18,10 @@ class McpProviderFactory(BaseFactory[McpProviderConfig, McpProvider]):
         return element_type == Identifier.TYPE
 
     def _build_headers(self, cfg: McpProviderConfig) -> Optional[Dict[str, str]]:
+        if cfg.auth_method == McpAuthMethod.FORWARD_USER_TOKEN:
+            # The ForwardedIdentityCredential supplies the bearer token and the
+            # rendered header templates on every request.
+            return None
         headers = dict(cfg.additional_headers) if cfg.additional_headers else {}
         if cfg.bearer_token:
             headers["Authorization"] = f"Bearer {cfg.bearer_token}"

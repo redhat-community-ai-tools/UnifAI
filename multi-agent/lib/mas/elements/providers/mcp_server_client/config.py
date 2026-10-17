@@ -14,6 +14,9 @@ class McpAuthMethod(str, Enum):
     """How the user authenticates to the MCP server."""
     ACCESS_TOKEN = "access_token"
     SIGN_IN = "sign_in"
+    # Present the acting user's own platform sign-in token (refreshed per call).
+    # ``additional_headers`` values are then rendered as templates per request.
+    FORWARD_USER_TOKEN = "forward_user_token"
 
 
 class McpProviderConfig(ProviderBaseConfig):

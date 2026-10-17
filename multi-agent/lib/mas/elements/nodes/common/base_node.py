@@ -6,6 +6,7 @@ from typing import Optional, Any, Mapping, ClassVar
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.core.contracts import SupportsStateContext
 from mas.core.tracing import TracingService
+from mas.core.identity_forwarding import bind_current_node
 from mas.elements.nodes.common.capabilities.streaming_capable import StreamingCapableMixin
 
 
@@ -49,6 +50,19 @@ class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
 
         self._state = wrapped_state
 
+        with bind_current_node(self.uid, self.display_name, type(self).__name__):
+            self._run_traced(wrapped_state)
+
+        result = wrapped_state.backing_state
+
+        self._stream({
+            "type": "complete",
+            "state": result.get_streamable_state(),
+        })
+
+        return result
+
+    def _run_traced(self, wrapped_state: StateView) -> None:
         if self._tracing:
             with self._tracing.trace_node(
                 node_uid=self.uid,
@@ -65,15 +79,6 @@ class BaseNode(StreamingCapableMixin, SupportsStateContext, ABC):
                     raise
         else:
             self.run(wrapped_state)
-
-        result = wrapped_state.backing_state
-
-        self._stream({
-            "type": "complete",
-            "state": result.get_streamable_state(),
-        })
-
-        return result
 
     def _base_stream_data(self) -> dict[str, Any]:
         """Core metadata every chunk must carry. Used by StreamingCapableMixin."""

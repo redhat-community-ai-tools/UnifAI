@@ -21,8 +21,23 @@ from mas.elements.providers.mcp_server_client.mcp_provider_factory import McpPro
 from mas.elements.providers.mcp_server_client.config import McpProviderConfig
 from mas.elements.providers.mcp_server_client.identifiers import Identifier
 from mas.elements.providers.mcp_server_client.transport.enums import McpTransportType
+from mas.core.identity_forwarding import render_header_templates
 
 logger = logging.getLogger(__name__)
+
+FORWARD_USER_TOKEN = "forward_user_token"
+
+
+def _caller_access_token() -> Optional[str]:
+    """The requesting user's access token, when called inside an authenticated request."""
+    try:
+        from flask import g, has_request_context
+        if not has_request_context():
+            return None
+        data = getattr(g, "identity_session", None)
+        return getattr(data, "access_token", None) or None
+    except Exception:
+        return None
 
 
 class ValidateConnectionInput(BaseActionInput):
@@ -87,11 +102,18 @@ class ValidateConnectionAction(BaseAction):
         if not credential and self._auth and input_data.user_id and server_id and is_sign_in:
             auth_cred = self._auth.bind(input_data.user_id, server_id)
 
+        headers = input_data.additional_headers
+        if input_data.auth_method == FORWARD_USER_TOKEN:
+            # No run is executing yet: validate with the caller's own sign-in
+            # token, and drop header templates that need a running session.
+            credential = credential or _caller_access_token()
+            headers = render_header_templates(headers, {})
+
         config = McpProviderConfig(
             mcp_url=input_data.mcp_url,
             bearer_token=credential or None,
             transport_type=input_data.transport_type,
-            additional_headers=input_data.additional_headers,
+            additional_headers=headers,
         )
 
         try:

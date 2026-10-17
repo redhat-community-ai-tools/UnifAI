@@ -56,6 +56,17 @@ class AppConfig(SharedConfig):
     identity_provider_mode: str = ""
     credential_encryption_key: str = ""
 
+    # Identity forwarding: elements that opt in (``forward_user_token``) send
+    # the acting user's own OIDC token downstream. Refreshing it needs the
+    # identity service's Keycloak client; the field names match the identity
+    # service's so both pods can read the same secret.
+    identity_forwarding_enabled: bool = False
+    identity_forwarding_verify_tls: bool = True
+    keycloak_base_url: str = ""
+    keycloak_realm: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+
     # Langfuse tracing (optional — keys come from multiagent-be-secret)
     langfuse_enabled: bool = False
     langfuse_secret_key: str = ""

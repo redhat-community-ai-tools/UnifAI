@@ -4,6 +4,7 @@ from mas.elements.common.exceptions import PluginConfigurationError
 from mas.elements.llms.openai_compatible.config import OpenAICompatibleConfig
 from mas.elements.llms.openai_compatible.openai_compatible import OpenAICompatibleLLM
 from mas.elements.llms.openai_compatible.identifiers import Identifier
+from mas.core.identity_forwarding import IdentityForwarder, NullIdentityTokenSource
 
 
 class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatibleLLM]):
@@ -22,6 +23,12 @@ class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatib
             element_deps = deps.pop("deps", None)
             tracing = element_deps.tracing_service if element_deps else None
 
+            forwarder = None
+            if cfg.forward_user_token or cfg.default_headers:
+                source = getattr(element_deps, "identity_token_source", None) or NullIdentityTokenSource()
+                holder = getattr(element_deps, "execution_ctx", None)
+                forwarder = IdentityForwarder(source, holder)
+
             llm = OpenAICompatibleLLM(
                 model_name=cfg.model_name,
                 api_key=cfg.api_key,
@@ -29,6 +36,9 @@ class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatib
                 temperature=cfg.temperature,
                 max_tokens=cfg.max_tokens,
                 tracing=tracing,
+                forwarder=forwarder,
+                forward_user_token=cfg.forward_user_token,
+                header_templates=cfg.default_headers,
                 **cfg.extra
             )
             return llm

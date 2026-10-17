@@ -25,6 +25,7 @@ from .message_converter import OpenAIMessageConverter
 from .tools_converter import OpenAIToolsConverter
 from .stream_aggregator import StreamToolCallAggregator
 from mas.core.tracing import TracingService
+from mas.core.identity_forwarding import IdentityForwarder
 
 
 class OpenAICompatibleLLM(BaseLLM):
@@ -49,6 +50,9 @@ class OpenAICompatibleLLM(BaseLLM):
         max_tokens: int = 1024,
         api_key: str = "EMPTY",
         tracing: TracingService = None,
+        forwarder: Optional[IdentityForwarder] = None,
+        forward_user_token: bool = False,
+        header_templates: Optional[Dict[str, str]] = None,
         **extra: Any,
     ) -> None:
         self._name = "openai_compatible"
@@ -60,6 +64,9 @@ class OpenAICompatibleLLM(BaseLLM):
         self._rev_names: Dict[str, str] = {}
         self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
         self._tracing = tracing
+        self._forwarder = forwarder
+        self._forward_user_token = forward_user_token
+        self._header_templates = dict(header_templates or {})
 
     # ------------------------------------------------------------------
     # BaseLLM interface
@@ -84,6 +91,7 @@ class OpenAICompatibleLLM(BaseLLM):
                     temperature=self._temperature,
                     max_completion_tokens=self._max_tokens,
                     tools=self._tools or [],
+                    **self._request_options(),
                 )
             except Exception as e:
                 gen.update(
@@ -132,6 +140,7 @@ class OpenAICompatibleLLM(BaseLLM):
                     max_completion_tokens=self._max_tokens,
                     tools=self._tools or [],
                     stream=True,
+                    **self._request_options(),
                     **call_params,
                 )
             except Exception as e:
@@ -178,6 +187,17 @@ class OpenAICompatibleLLM(BaseLLM):
     @property
     def name(self) -> str:
         return self._name
+
+    # ------------------------------------------------------------------
+    # Identity forwarding
+    # ------------------------------------------------------------------
+
+    def _request_options(self) -> Dict[str, Any]:
+        """Per-call headers: rendered templates and, when enabled, the user's token."""
+        if self._forwarder is None:
+            return {}
+        headers = self._forwarder.headers(self._header_templates, self._forward_user_token)
+        return {"extra_headers": headers} if headers else {}
 
     # ------------------------------------------------------------------
     # Name sanitization

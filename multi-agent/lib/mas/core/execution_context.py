@@ -13,6 +13,9 @@ CREDENTIAL_USER_ID_TAG = "credential_user_id"
 
 HITL_ENABLED_TAG = "hitl_enabled"
 
+# Session metadata tags mirrored at staging (see ``with_session_tags``).
+SESSION_TAGS_TAG = "session_tags"
+
 
 class ExecutionContext(BaseModel):
     """Runtime execution context — who, what scope, when.
@@ -81,6 +84,16 @@ class ExecutionContext(BaseModel):
         if self.identity.is_team:
             return ""
         return self.identity.id
+
+    def with_session_tags(self, session_tags: Optional[Dict[str, Any]]) -> ExecutionContext:
+        """Copy with the session's metadata tags mirrored into ``tags``.
+
+        Stamped during staging so elements can reference them (e.g. header
+        templates ``{tag.<key>}``) without reading the session record.
+        """
+        tags = dict(self.tags or {})
+        tags[SESSION_TAGS_TAG] = {str(k): str(v) for k, v in (session_tags or {}).items()}
+        return self.model_copy(update={"tags": tags})
 
     def with_hitl(self, enabled: bool) -> ExecutionContext:
         """Copy with the HITL-enabled flag in ``tags``.

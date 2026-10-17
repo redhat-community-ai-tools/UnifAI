@@ -7,6 +7,16 @@ from mas.core.enums import ResourceCategory
 from mas.core.contracts import SessionRegistry
 from mas.core.element_deps import ElementBuildContext
 from mas.blueprints.models.blueprint import BlueprintSpec, ResourceSpec
+from mas.core.identity_forwarding import (
+    ForwardedIdentityCredential, IdentityForwarder, NullIdentityTokenSource,
+)
+
+FORWARD_USER_TOKEN = "forward_user_token"
+
+
+def _auth_method(cfg: Any) -> str:
+    raw = cfg.get("auth_method", "") if isinstance(cfg, dict) else getattr(cfg, "auth_method", "")
+    return str(getattr(raw, "value", raw) or "")
 
 
 class CategoryBuilder(ABC):
@@ -48,8 +58,17 @@ class CategoryBuilder(ABC):
         Bind a lazy OAuth credential when cfg names a registry auth server.
 
         Static dropdown values (none / access_token) must not bind.
+        ``auth_method: forward_user_token`` binds the acting user's own token.
         Returns the credential or None.
         """
+        if _auth_method(cfg) == FORWARD_USER_TOKEN:
+            source = getattr(deps, "identity_token_source", None) or NullIdentityTokenSource()
+            holder = getattr(deps, "execution_ctx", None)
+            return ForwardedIdentityCredential(
+                IdentityForwarder(source, holder),
+                getattr(cfg, "additional_headers", None) or {},
+            )
+
         server_id = (getattr(cfg, "server_identifier", "") or "").rstrip("/")
         scheme_type = getattr(cfg, "scheme_type", "") or ""
         if (

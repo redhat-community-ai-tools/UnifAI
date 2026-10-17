@@ -1,6 +1,6 @@
 import logging
 
-from flask import Blueprint, jsonify, current_app, Response, request
+from flask import Blueprint, jsonify, current_app, Response, request, g, session as flask_session
 from global_utils.helpers.apiargs import from_body, from_query
 from marshmallow import validate
 from webargs import fields
@@ -22,6 +22,27 @@ sessions_bp = Blueprint("sessions", __name__)
 # Busy statuses per session type.
 _PERSONAL_BUSY_STATUSES = {"QUEUED", "RUNNING"}
 _SHARED_BUSY_STATUSES = {"LOCKED", "IN_USE"}
+
+
+def _bind_forwarded_identity(session_id: str) -> None:
+    """Let elements that forward the user's token resolve it for this run.
+
+    Records MAS session → identity server-session in Redis only; nothing is
+    persisted on the session record. Callers authenticated by the internal
+    header (no signed-in session) get no binding, so forwarding fails closed.
+    """
+    data = getattr(g, "identity_session", None)
+    identity_sid = flask_session.get("session_id")
+    username = getattr(g, "identity_username", "")
+    if not identity_sid or not getattr(data, "access_token", None) or not username:
+        return
+    source = getattr(current_app.container, "identity_token_source", None)
+    if source is None:
+        return
+    try:
+        source.bind(session_id, identity_sid, username)
+    except Exception:
+        logger.warning("Could not record identity binding for session %s", session_id, exc_info=True)
 
 
 def _check_session_busy(session_id: str, session_type: str, svc):
@@ -125,6 +146,8 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
     if busy_response is not None:
         return busy_response
 
+    _bind_forwarded_identity(session_id)
+
     if not stream:
         result = svc.run(
             session_id=session_id,
@@ -179,6 +202,8 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
         busy_response = _check_session_busy(session_id, session_type, svc)
         if busy_response is not None:
             return busy_response
+
+        _bind_forwarded_identity(session_id)
 
         workflow_id = svc.submit(
             session_id=session_id,
