@@ -12,7 +12,7 @@ from typing import Dict, List, Any, Iterator
 
 import numpy as np
 
-from core.vector.domain.embedder import EmbeddingGenerator, EmbeddingPort
+from core.vector.domain.embedder import EmbeddingGenerationError, EmbeddingGenerator, EmbeddingPort
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,8 @@ class DefaultEmbeddingGenerator(EmbeddingGenerator):
             texts = [chunk["text"] for chunk in batch]
             # TODO: consider adding retry logic here for transient remote failures
             embeddings = self._port.encode_texts(texts)
+            for vector in embeddings:
+                self._check_dimension(vector)
 
             for i, chunk in enumerate(batch):
                 enriched_chunk = chunk.copy()
@@ -70,7 +72,22 @@ class DefaultEmbeddingGenerator(EmbeddingGenerator):
     def generate_query_embedding(self, query: str) -> np.ndarray:
         if not query:
             raise ValueError("Query text is empty")
-        return self._port.encode_single(query)
+        vector = self._port.encode_single(query)
+        self._check_dimension(vector)
+        return vector
+
+    def _check_dimension(self, vector: Any) -> None:
+        """Fail at the source when the model and the configured dimension disagree.
+
+        A mismatch otherwise surfaces later as an opaque vector-store error, or not at
+        all for a collection created with the wrong size.
+        """
+        size = len(vector)
+        if size != self.embedding_dim:
+            raise EmbeddingGenerationError(
+                f"The embedding model returned {size}-dimension vectors but EMBEDDING_DIM is "
+                f"{self.embedding_dim}: set EMBEDDING_DIM to the model's output size"
+            )
     
     def test_connection(self) -> bool:
         return self._port.test_connection()

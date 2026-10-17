@@ -102,6 +102,7 @@ class RetrievalService:
             query_embedding=query_embedding.tolist(),
             top_k=limit,
             filters=filters if filters else None,
+            query_text=query,
         )
         
         logger.info(f"Search returned {len(results)} results for query: {query[:50]}...")

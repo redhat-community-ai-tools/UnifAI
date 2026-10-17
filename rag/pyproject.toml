@@ -16,7 +16,7 @@ dependencies = [
     "tiktoken",
     "langchain-text-splitters",
     "numpy",
-    "qdrant-client",
+    "qdrant-client>=1.12",  # named + sparse vectors with the IDF modifier, prefetch and RRF fusion
     "pydantic==2.11.7",
     "umami-analytics",
     "pymongo",
