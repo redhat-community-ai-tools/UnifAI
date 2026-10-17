@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -59,11 +60,18 @@ type Base struct {
 }
 
 // get reads the object from the API server when an uncached reader is set.
+// An object of another operator instance is reported as not found.
 func (b *Base) get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
-	if b.APIReader != nil {
-		return b.APIReader.Get(ctx, key, obj)
+	if b.APIReader == nil {
+		return b.Get(ctx, key, obj)
 	}
-	return b.Get(ctx, key, obj)
+	if err := b.APIReader.Get(ctx, key, obj); err != nil {
+		return err
+	}
+	if !OwnedByInstance(obj) {
+		return apierrors.NewNotFound(schema.GroupResource{Group: unifaiv1.GroupVersion.Group}, key.Name)
+	}
+	return nil
 }
 
 func (b *Base) endpoints(ns string) (string, string) {

@@ -1,0 +1,18 @@
+# Canary instance of the operator, deployed next to the OLM one to test a release candidate (make canary-deploy).
+# It only reconciles UnifAI objects labelled unifai.startx.fr/operator-instance=canary; the OLM instance ignores
+# them. CRDs are not part of this overlay (make canary-deploy applies them first).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: unifai-operator-canary
+namePrefix: unifai-operator-canary-
+resources:
+- ../rbac
+- ../manager
+patches:
+- target:
+    kind: Deployment
+    name: controller-manager
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/env/-
+      value: {name: OPERATOR_INSTANCE, value: canary}

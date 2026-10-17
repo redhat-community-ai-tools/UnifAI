@@ -4,6 +4,7 @@ ARG TARGETOS
 ARG TARGETARCH
 # Default tag of the UnifAI images deployed by UnifaiStack when spec.version is empty.
 ARG UNIFAI_VERSION=devel
+ARG VERSION=0.0.0
 
 WORKDIR /workspace
 COPY go.mod go.mod
@@ -15,7 +16,7 @@ COPY api/ api/
 COPY internal/ internal/
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -trimpath \
-    -ldflags "-s -w -X github.com/startxfr/unifai-operator/internal/stack.DefaultVersion=${UNIFAI_VERSION}" \
+    -ldflags "-s -w -X github.com/startxfr/unifai-operator/internal/stack.DefaultVersion=${UNIFAI_VERSION} -X github.com/startxfr/unifai-operator/internal/controller.OperatorVersion=${VERSION}" \
     -o manager cmd/main.go
 
 FROM gcr.io/distroless/static:nonroot

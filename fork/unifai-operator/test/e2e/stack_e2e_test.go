@@ -99,7 +99,11 @@ func TestUnifaiStack(t *testing.T) {
 
 	// The operator must run (installed by OLM or `make deploy`).
 	var deps appsv1.DeploymentList
-	if err := c.List(ctx, &deps, client.MatchingLabels{"control-plane": "controller-manager", "app.kubernetes.io/name": "unifai-operator"}); err != nil || len(deps.Items) == 0 {
+	opts := []client.ListOption{client.MatchingLabels{"control-plane": "controller-manager", "app.kubernetes.io/name": "unifai-operator"}}
+	if n := os.Getenv("E2E_OPERATOR_NAMESPACE"); n != "" {
+		opts = append(opts, client.InNamespace(n))
+	}
+	if err := c.List(ctx, &deps, opts...); err != nil || len(deps.Items) == 0 {
 		t.Fatalf("no unifai-operator deployment found (err=%v)", err)
 	}
 	t.Logf("operator: %s/%s image %s", deps.Items[0].Namespace, deps.Items[0].Name, deps.Items[0].Spec.Template.Spec.Containers[0].Image)
@@ -111,32 +115,21 @@ func TestUnifaiStack(t *testing.T) {
 	must(t, c.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "e2e-oidc", Namespace: ns},
 		StringData: map[string]string{"client-secret": "not-used-by-the-e2e"}}))
 
-	spec := unifaiv1.UnifaiStackSpec{
-		Profile: "dev",
-		Identity: unifaiv1.IdentitySpec{External: &unifaiv1.ExternalOIDCSpec{
-			URL: env("E2E_OIDC_URL", "https://keycloak.example.invalid"), Realm: "unifai", ClientID: "unifai",
-			ClientSecret: unifaiv1.SecretKeySelector{Name: "e2e-oidc", Key: "client-secret"}}},
-		Storage:        unifaiv1.StorageSpec{ClassName: os.Getenv("E2E_STORAGE_CLASS"), SharedClassName: os.Getenv("E2E_SHARED_STORAGE_CLASS")},
-		DeletionPolicy: "Delete",
-	}
-	if sel := os.Getenv("E2E_NODE_SELECTOR"); sel != "" {
-		k, v, _ := strings.Cut(sel, "=")
-		spec.NodeSelector = map[string]string{k: v}
-	}
-	if os.Getenv("E2E_FULL") == "" { // light run: no docling/TEI images (several GB)
-		spec.RAG.Docling = unifaiv1.DoclingSpec{Mode: "remote", URL: "http://docling.invalid:5001"}
-		spec.RAG.Embedding = unifaiv1.EmbeddingSpec{Mode: "remote", URL: "http://embedding.invalid:8080"}
-	}
+	spec := stackSpec(unifaiv1.IdentitySpec{External: &unifaiv1.ExternalOIDCSpec{
+		URL: env("E2E_OIDC_URL", "https://keycloak.example.invalid"), Realm: "unifai", ClientID: "unifai",
+		ClientSecret: unifaiv1.SecretKeySelector{Name: "e2e-oidc", Key: "client-secret"}}})
 
 	t.Run("a second stack in the namespace is refused", func(t *testing.T) {
-		err := c.Create(ctx, &unifaiv1.UnifaiStack{ObjectMeta: metav1.ObjectMeta{Name: "second", Namespace: ns}, Spec: spec})
+		second := &unifaiv1.UnifaiStack{ObjectMeta: metav1.ObjectMeta{Name: "second", Namespace: ns}, Spec: spec}
+		label(second, instance)
+		err := c.Create(ctx, second)
 		if !apierrors.IsInvalid(err) {
 			t.Fatalf("expected Invalid, got %v", err)
 		}
 	})
 
 	st := &unifaiv1.UnifaiStack{ObjectMeta: metav1.ObjectMeta{Name: unifaiv1.StackName, Namespace: ns}, Spec: spec}
-	must(t, c.Create(ctx, st))
+	create(t, st)
 	eventually(t, "stack Ready", timeout, func() (bool, string) {
 		if err := c.Get(ctx, client.ObjectKeyFromObject(st), st); err != nil {
 			return false, err.Error()
@@ -218,7 +211,7 @@ func TestUnifaiStack(t *testing.T) {
 	})
 
 	t.Run("objects and a chat through the whole chain", func(t *testing.T) {
-		deployMockLLM(t)
+		deployMockLLM(t, ns)
 		llm := &unifaiv1.UnifaiLLM{ObjectMeta: metav1.ObjectMeta{Name: "e2e-llm", Namespace: ns}, Spec: unifaiv1.UnifaiLLMSpec{
 			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "e2e-llm"}, Type: "openai_compatible",
 			ConfigSpec: unifaiv1.ConfigSpec{Config: raw(map[string]any{"model_name": "mock-model", "base_url": "http://e2e-llm:8000/v1", "api_key": "EMPTY"})}}}
@@ -239,12 +232,12 @@ func TestUnifaiStack(t *testing.T) {
 			})}}
 		chat := &unifaiv1.UnifaiChat{ObjectMeta: metav1.ObjectMeta{Name: "e2e-chat", Namespace: ns}, Spec: unifaiv1.UnifaiChatSpec{Workflow: "e2e-wf", Prompt: "ping"}}
 		for _, o := range []client.Object{llm, cond, agent, wf} {
-			must(t, c.Create(ctx, o))
+			create(t, o)
 		}
 		for _, o := range []unifaiv1.Object{llm, cond, agent, wf} {
 			waitPhase(t, o, "Ready", 5*time.Minute)
 		}
-		must(t, c.Create(ctx, chat))
+		create(t, chat)
 		waitPhase(t, chat, "Completed", 5*time.Minute)
 		if !strings.Contains(chat.Status.Result, "pong") {
 			t.Errorf("unexpected chat result %s", chat.Status.Result)
@@ -252,7 +245,7 @@ func TestUnifaiStack(t *testing.T) {
 	})
 
 	t.Run("no Helm release is re-applied without a change", func(t *testing.T) {
-		before := releaseVersions(t)
+		before := releaseVersions(t, ns)
 		must(t, c.Get(ctx, client.ObjectKeyFromObject(st), st))
 		if st.Annotations == nil {
 			st.Annotations = map[string]string{}
@@ -260,7 +253,7 @@ func TestUnifaiStack(t *testing.T) {
 		st.Annotations["e2e/touch"] = time.Now().Format(time.RFC3339) // triggers a reconcile, no spec change
 		must(t, c.Update(ctx, st))
 		time.Sleep(60 * time.Second)
-		after := releaseVersions(t)
+		after := releaseVersions(t, ns)
 		for name, v := range after {
 			if before[name] != v {
 				t.Errorf("release %s went from revision %d to %d", name, before[name], v)
@@ -275,7 +268,7 @@ func TestUnifaiStack(t *testing.T) {
 			err := c.Get(ctx, client.ObjectKeyFromObject(st), st)
 			return apierrors.IsNotFound(err), fmt.Sprintf("phase %s %s", st.Status.Phase, st.Status.Message)
 		})
-		if v := releaseVersions(t); len(v) > 0 {
+		if v := releaseVersions(t, ns); len(v) > 0 {
 			t.Errorf("Helm releases left: %v", v)
 		}
 		var pvcs corev1.PersistentVolumeClaimList
@@ -289,6 +282,54 @@ func TestUnifaiStack(t *testing.T) {
 			t.Errorf("unifai-generated left (err=%v)", err)
 		}
 	})
+}
+
+// instance is the operator instance under test (E2E_OPERATOR_INSTANCE, "" = the OLM one).
+var instance = os.Getenv("E2E_OPERATOR_INSTANCE")
+
+// create creates obj, labelled for the operator instance under test when it is an UnifAI resource.
+func create(t *testing.T, obj client.Object) {
+	t.Helper()
+	label(obj, instance)
+	must(t, c.Create(ctx, obj))
+}
+
+// label assigns an UnifAI resource to an operator instance ("" = default).
+func label(obj client.Object, inst string) {
+	if _, ok := obj.(unifaiv1.Object); !ok {
+		if _, ok := obj.(*unifaiv1.UnifaiStack); !ok {
+			return
+		}
+	}
+	l := obj.GetLabels()
+	if l == nil {
+		l = map[string]string{}
+	}
+	if inst == "" {
+		delete(l, "unifai.startx.fr/operator-instance")
+	} else {
+		l["unifai.startx.fr/operator-instance"] = inst
+	}
+	obj.SetLabels(l)
+}
+
+// stackSpec is the spec of the stacks under test (dev profile, Delete policy, light RAG unless E2E_FULL).
+func stackSpec(identity unifaiv1.IdentitySpec) unifaiv1.UnifaiStackSpec {
+	spec := unifaiv1.UnifaiStackSpec{
+		Profile:        "dev",
+		Identity:       identity,
+		Storage:        unifaiv1.StorageSpec{ClassName: os.Getenv("E2E_STORAGE_CLASS"), SharedClassName: os.Getenv("E2E_SHARED_STORAGE_CLASS")},
+		DeletionPolicy: "Delete",
+	}
+	if sel := os.Getenv("E2E_NODE_SELECTOR"); sel != "" {
+		k, v, _ := strings.Cut(sel, "=")
+		spec.NodeSelector = map[string]string{k: v}
+	}
+	if os.Getenv("E2E_FULL") == "" { // light run: no docling/TEI images (several GB)
+		spec.RAG.Docling = unifaiv1.DoclingSpec{Mode: "remote", URL: "http://docling.invalid:5001"}
+		spec.RAG.Embedding = unifaiv1.EmbeddingSpec{Mode: "remote", URL: "http://embedding.invalid:8080"}
+	}
+	return spec
 }
 
 func must(t *testing.T, err error) {
@@ -313,7 +354,7 @@ func waitPhase(t *testing.T, o unifaiv1.Object, phase string, timeout time.Durat
 }
 
 // releaseVersions returns the latest revision of each Helm release of the namespace.
-func releaseVersions(t *testing.T) map[string]int {
+func releaseVersions(t *testing.T, ns string) map[string]int {
 	t.Helper()
 	var secrets corev1.SecretList
 	must(t, c.List(ctx, &secrets, client.InNamespace(ns), client.MatchingLabels{"owner": "helm"}))
@@ -329,7 +370,7 @@ func releaseVersions(t *testing.T) map[string]int {
 }
 
 // deployMockLLM runs the OpenAI-compatible fake of examples/demo-backends (constant answer "pong ...").
-func deployMockLLM(t *testing.T) {
+func deployMockLLM(t *testing.T, ns string) {
 	t.Helper()
 	src, err := os.ReadFile("../../examples/demo-backends/mock_llm.py")
 	must(t, err)

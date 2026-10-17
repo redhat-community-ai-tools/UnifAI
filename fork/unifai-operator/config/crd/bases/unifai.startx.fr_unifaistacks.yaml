@@ -779,6 +779,9 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              operatorVersion:
+                description: Version of the operator that last reconciled the stack.
+                type: string
               phase:
                 description: Pending, Deploying, Ready, Error, Paused, Deleting.
                 type: string

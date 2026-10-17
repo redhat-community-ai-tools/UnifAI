@@ -354,6 +354,9 @@ type UnifaiStackStatus struct {
 	// UnifAI image tag deployed.
 	// +optional
 	Version string `json:"version,omitempty"`
+	// Version of the operator that last reconciled the stack.
+	// +optional
+	OperatorVersion string `json:"operatorVersion,omitempty"`
 	// +optional
 	Components []ComponentStatus `json:"components,omitempty"`
 	// +optional

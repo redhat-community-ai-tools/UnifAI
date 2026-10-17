@@ -122,15 +122,17 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 # - CERT_MANAGER_INSTALL_SKIP=true
 # End-to-end test against the operator installed on the current kubeconfig context (OLM or `make deploy`):
 # deploys an UnifaiStack in a throwaway namespace unifai-e2e-*, checks it and deletes it (E2E_KEEP=1 keeps it).
-E2E_STORAGE_CLASS ?=
-E2E_SHARED_STORAGE_CLASS ?=
-E2E_NODE_SELECTOR ?=
 E2E_TIMEOUT ?= 30m
+E2E_STORAGE_CLASS ?= gp3-csi
+E2E_SHARED_STORAGE_CLASS ?= nfs
+E2E_NODE_SELECTOR ?= workload=unifai
 
 .PHONY: test-e2e
-test-e2e: ## Run the e2e tests on the current cluster (E2E_STORAGE_CLASS, E2E_SHARED_STORAGE_CLASS, E2E_NODE_SELECTOR, E2E_FULL=1, E2E_KEEP=1).
+test-e2e: ## Run the e2e tests on the current cluster (E2E_STORAGE_CLASS, E2E_SHARED_STORAGE_CLASS, E2E_NODE_SELECTOR, E2E_FULL=1, E2E_KEYCLOAK=1, E2E_KEEP=1).
 	E2E_STORAGE_CLASS=$(E2E_STORAGE_CLASS) E2E_SHARED_STORAGE_CLASS=$(E2E_SHARED_STORAGE_CLASS) \
 	E2E_NODE_SELECTOR=$(E2E_NODE_SELECTOR) E2E_TIMEOUT=$(E2E_TIMEOUT) \
+	E2E_OPERATOR_INSTANCE=$(E2E_OPERATOR_INSTANCE) E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) \
+	E2E_UPGRADE=$(E2E_UPGRADE) E2E_CANDIDATE_VERSION=$(E2E_CANDIDATE_VERSION) E2E_KEYCLOAK=$(E2E_KEYCLOAK) \
 	go test -tags e2e -count=1 -timeout 90m -v ./test/e2e/
 
 .PHONY: lint
@@ -166,7 +168,7 @@ docker-build: ## Build docker image with the manager.
 .PHONY: docker-build-local
 docker-build-local: ## Build the manager on the host, then package it (no Go toolchain in the image build).
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-		-ldflags "-s -w -X github.com/startxfr/unifai-operator/internal/stack.DefaultVersion=$(UNIFAI_VERSION)" \
+		-ldflags "-s -w -X github.com/startxfr/unifai-operator/internal/stack.DefaultVersion=$(UNIFAI_VERSION) -X github.com/startxfr/unifai-operator/internal/controller.OperatorVersion=$(VERSION)" \
 		-o bin/manager-linux-amd64 cmd/main.go
 	$(CONTAINER_TOOL) build --platform linux/amd64 -f Dockerfile.local --build-arg VERSION=$(VERSION) -t ${IMG} .
 
@@ -342,6 +344,36 @@ endif
 # File-based catalog (FBC): catalog-template.yaml (olm.template.basic) lists every released bundle with its
 # channels; `make catalog-add` records the current VERSION, `make catalog` renders catalog/ from the template.
 CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:latest
+
+# Release flow: `make release` (tests, image, canary e2e, bundle, catalog on alpha) then `make promote` (stable).
+# demo333 subscribes to stable: production changes only on promotion.
+CANARY_NS ?= unifai-operator-canary
+
+.PHONY: canary-deploy
+canary-deploy: manifests kustomize ## Deploy IMG as a canary instance (only reconciles objects labelled operator-instance=canary).
+	kubectl apply --server-side --force-conflicts -f config/crd/bases
+	cd config/canary && $(KUSTOMIZE) edit set image controller=$(IMG)
+	$(KUSTOMIZE) build config/canary | kubectl apply -f -
+	kubectl -n $(CANARY_NS) rollout restart deploy/unifai-operator-canary-controller-manager
+	kubectl -n $(CANARY_NS) rollout status deploy/unifai-operator-canary-controller-manager --timeout=300s
+
+.PHONY: canary-e2e
+canary-e2e: ## Run the e2e suite against the canary instance (upgrade test from the OLM instance included).
+	$(MAKE) test-e2e E2E_OPERATOR_INSTANCE=canary E2E_OPERATOR_NAMESPACE=$(CANARY_NS) E2E_UPGRADE=1 E2E_CANDIDATE_VERSION=$(VERSION)
+
+.PHONY: canary-delete
+canary-delete: kustomize ## Remove the canary instance.
+	$(KUSTOMIZE) build config/canary | kubectl delete --ignore-not-found -f -
+
+.PHONY: release
+release: test docker-build-local docker-push canary-deploy canary-e2e canary-delete bundle bundle-build bundle-push ## Test, build, canary e2e, publish VERSION on alpha.
+	$(MAKE) catalog-add CHANNELS=alpha
+	$(MAKE) catalog-build catalog-push
+
+.PHONY: promote
+promote: ## Publish VERSION on stable (production).
+	$(MAKE) catalog-add CHANNELS=stable
+	$(MAKE) catalog-build catalog-push
 
 .PHONY: charts
 charts: ## Copy the upstream UnifAI charts and values into internal/stack/assets (embedded in the operator).

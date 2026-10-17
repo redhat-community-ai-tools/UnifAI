@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"encoding/json"
 	"time"
 
@@ -222,6 +223,25 @@ var _ = Describe("UnifAI object controllers", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(st), st)).To(Succeed())
 		st.Finalizers = nil
 		Expect(k8sClient.Update(ctx, st)).To(Succeed())
+	})
+
+	It("ignores objects of another operator instance", func() {
+		ns := newNamespace("instance")
+		llm := &unifaiv1.UnifaiLLM{ObjectMeta: metav1.ObjectMeta{Name: "canary-llm", Namespace: ns,
+			Labels: map[string]string{InstanceLabel: "canary"}}, Spec: unifaiv1.UnifaiLLMSpec{
+			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "canary-" + ns}, Type: "openai_compatible",
+			ConfigSpec: unifaiv1.ConfigSpec{Config: raw(map[string]any{"model_name": "m", "base_url": "http://llm:8000/v1"})}}}
+		Expect(k8sClient.Create(ctx, llm)).To(Succeed())
+		Consistently(func() string {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(llm), llm)
+			return llm.Status.Phase + strings.Join(llm.Finalizers, ",")
+		}, 5*time.Second, 500*time.Millisecond).Should(BeEmpty())
+		Expect(mas.resourceByName("llms", "canary-"+ns)).To(BeNil())
+
+		By("handing it back to the default instance")
+		delete(llm.Labels, InstanceLabel)
+		Expect(k8sClient.Update(ctx, llm)).To(Succeed())
+		Eventually(phaseOf(llm), timeout, interval).Should(Equal("Ready"))
 	})
 
 	It("waits for the namespace UnifaiStack to be Ready", func() {

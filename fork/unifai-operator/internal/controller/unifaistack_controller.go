@@ -101,6 +101,7 @@ func (r *StackReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 func (r *StackReconciler) setStatus(ctx context.Context, st *unifaiv1.UnifaiStack, phase, msg string, ready metav1.ConditionStatus, reason string) error {
 	st.Status.Phase, st.Status.Message, st.Status.ObservedGeneration = phase, unifai.Truncate(msg, 1000), st.Generation
+	st.Status.OperatorVersion = OperatorVersion
 	meta.SetStatusCondition(&st.Status.Conditions, metav1.Condition{Type: "Ready", Status: ready, Reason: reason,
 		Message: unifai.Truncate(msg, 1000), ObservedGeneration: st.Generation})
 	// Merge patch from an empty status: no resourceVersion conflict (arrays such as components are replaced whole).
