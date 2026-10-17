@@ -85,6 +85,28 @@ config are expanded from the library. Specs are dry-run validated (`config.valid
 without a stack, e.g. deployed by helmfile, are not gated). The operator calls
 `unifai-multiagent-be.<ns>.svc:8003` and `unifai-rag-server.<ns>.svc:13456`.
 
+### Zuno OKF agent bundles (fork-only)
+
+`UnifaiAgentBundle` (`internal/okf`, [`examples/agent/agentbundle-tekos.yaml`](examples/agent/agentbundle-tekos.yaml))
+maps one signed Zuno OKF agent bundle onto the object kinds above. It is Zuno-specific and never proposed upstream.
+
+- **Source**: an OCI artifact pinned by digest (tags are refused at admission). Layout: artifact type
+  `application/vnd.zuno.okf.bundle.v1`, one `application/vnd.zuno.okf.bundle.v1.tar+gzip` layer holding the
+  `agents/<name>/` tree, and the `cosign sign-blob` signature of the bundle digest in the manifest annotation
+  `zuno.okf.signature`. A `kubernetes.io/dockerconfigjson` pull secret is optional.
+- **Verification**: the bundle digest is recomputed exactly as zuno-demo's `sign_okf_bundle.py` does and the ECDSA
+  signature is checked against the PEM public key in `spec.verify` (no cosign binary, no Vault access). An
+  unverified bundle sets `Verified=False`, emits nothing and leaves what a previous verified version emitted.
+- **Emitted objects** (owned, labelled `unifai.startx.fr/agent-bundle`): `<bundle>-direct` condition; per task
+  `<bundle>-<task>` LLM (the `spec.llm` template plus `X-Zuno-Agent`, `X-Zuno-Task`,
+  `X-Zuno-Data-Classification` and `X-Zuno-Run-Id: {session_id}` in `default_headers`) and agent (system prompt
+  from `prompts/<task>.md`, providers and retriever when the task declares tools or knowledge), and a linear
+  workflow, named `<bundle>` for the primary task. Objects of a task removed from the bundle are deleted.
+- **Classification**: the bundle's `zuno.model.preferred_classification`, raised per task by
+  `classificationOverrides`; an override that lowers it is refused (ADR-0565).
+- **Not mapped** (listed in `status.unmapped`): agent entitlement groups, per-task tool allow-lists (enforced by
+  mcp-gateway), `rag.top_k`, UI fields, prompt examples, and the separate stages of the `plan_draft_write` shape.
+
 ### Taking over a helmfile deployment
 
 A `UnifaiStack` created in a namespace deployed by the upstream helmfile adopts it in place (done for `unifai-devel`,

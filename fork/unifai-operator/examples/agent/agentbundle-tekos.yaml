@@ -1,0 +1,35 @@
+# Zuno OKF agent bundle (ADR-0564): the operator pulls the signed bundle pinned by digest, verifies its cosign
+# signature against the platform public key, and emits per task an UnifaiLLM (Zuno headers), an UnifaiAgent and an
+# UnifaiWorkflow (the primary task's workflow is named after the bundle), plus one router_direct UnifaiCondition.
+# Prerequisites in the namespace: the Secret below, and the referenced UnifaiProvider / UnifaiRetriever.
+# The digest is a placeholder: use the one zuno-demo's `make d3 sign agents` records for the bundle.
+apiVersion: v1
+kind: Secret
+metadata: {name: okf-signer}
+stringData:
+  # zuno-demo agents/zuno-platform-signer.pub (public half of the Vault Transit signing key)
+  cosign.pub: |
+    -----BEGIN PUBLIC KEY-----
+    REPLACE-WITH-agents/zuno-platform-signer.pub
+    -----END PUBLIC KEY-----
+---
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiAgentBundle
+metadata: {name: tekos}
+spec:
+  source:
+    oci:
+      ref: quay.io/zuno/okf-tekos@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  verify:
+    publicKeySecretRef: {name: okf-signer, key: cosign.pub}
+  llm:
+    type: openai_compatible
+    config:
+      model_name: auto                      # the ai-gateway routes by classification and ignores the model field
+      base_url: http://ai-gateway.zuno-ai-run.svc:8080/v1
+      forward_user_token: true              # the caller's own Keycloak token (needs spec.identity.forwardUserToken)
+  providers: [mcp-gateway]                  # attached to tasks that declare allowed_tools
+  retriever: knowledge                      # attached to tasks that declare allowed_knowledge
+  agentConfig: {hitl_mode: skip, max_rounds: 10}
+  classificationOverrides:
+    write-code: C2                          # may only raise the bundle's level (C1 < C2 < C3)

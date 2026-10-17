@@ -103,6 +103,7 @@ var _ = BeforeSuite(func() {
 	Expect((&TemplateReconciler{Base: base}).SetupWithManager(mgr)).To(Succeed())
 	Expect((&ChatReconciler{Base: base}).SetupWithManager(mgr)).To(Succeed())
 	Expect((&RAGPipelineReconciler{Base: base}).SetupWithManager(mgr)).To(Succeed())
+	Expect((&AgentBundleReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Fetch: fakeBundles.fetch}).SetupWithManager(mgr)).To(Succeed())
 	go func() {
 		defer GinkgoRecover()
 		Expect(mgr.Start(ctx)).To(Succeed())

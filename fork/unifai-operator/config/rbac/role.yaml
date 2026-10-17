@@ -188,10 +188,8 @@ rules:
 - apiGroups:
   - unifai.startx.fr
   resources:
-  - unifaiagents
+  - unifaiagentbundles
   - unifaichats
-  - unifaiconditions
-  - unifaillms
   - unifaiproviders
   - unifairagpipelines
   - unifairetrievers
@@ -200,7 +198,6 @@ rules:
   - unifaistacks
   - unifaitemplates
   - unifaitools
-  - unifaiworkflows
   verbs:
   - get
   - list
@@ -210,6 +207,7 @@ rules:
 - apiGroups:
   - unifai.startx.fr
   resources:
+  - unifaiagentbundles/finalizers
   - unifaiagents/finalizers
   - unifaichats/finalizers
   - unifaiconditions/finalizers
@@ -228,6 +226,7 @@ rules:
 - apiGroups:
   - unifai.startx.fr
   resources:
+  - unifaiagentbundles/status
   - unifaiagents/status
   - unifaichats/status
   - unifaiconditions/status
@@ -245,3 +244,18 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - unifai.startx.fr
+  resources:
+  - unifaiagents
+  - unifaiconditions
+  - unifaillms
+  - unifaiworkflows
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
