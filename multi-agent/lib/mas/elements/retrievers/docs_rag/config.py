@@ -51,6 +51,15 @@ class DocsRagRetrieverConfig(BaseRetrieverConfig):
         )
     )
 
+    forward_user_token: bool = Field(
+        default=False,
+        description=(
+            "Send the acting user's own sign-in token to the RAG service so that shared "
+            "sources of the user's groups are searched too. Without it only the user's own "
+            "documents are searched."
+        ),
+    )
+
     tags: Optional[List[str]] = Field(
         default=None,
         description="Filter results by tags",

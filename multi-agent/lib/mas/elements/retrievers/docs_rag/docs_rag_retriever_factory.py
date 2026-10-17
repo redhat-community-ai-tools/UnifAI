@@ -5,6 +5,14 @@ from mas.core.element_deps import ElementBuildContext
 from .config import DocsRagRetrieverConfig
 from .docs_rag_retriever import DocsRagRetriever
 from .identifiers import Identifier
+from mas.core.identity_forwarding import IdentityForwarder, NullIdentityTokenSource
+
+
+def _forwarder(cfg: DocsRagRetrieverConfig, deps: ElementBuildContext | None) -> IdentityForwarder | None:
+    if not cfg.forward_user_token:
+        return None
+    source = getattr(deps, "identity_token_source", None) or NullIdentityTokenSource()
+    return IdentityForwarder(source, getattr(deps, "execution_ctx", None))
 
 
 class DocsRagRetrieverFactory(BaseFactory[DocsRagRetrieverConfig, DocsRagRetriever]):
@@ -25,6 +33,7 @@ class DocsRagRetrieverFactory(BaseFactory[DocsRagRetrieverConfig, DocsRagRetriev
                 docs=cfg.docs,
                 tags=cfg.tags,
                 identity=deps.execution_ctx if deps else None,
+                forwarder=_forwarder(cfg, deps),
             )
         except Exception as e:
             raise PluginConfigurationError(
