@@ -13,8 +13,9 @@ automatically — no manual .serialize()/.deserialize() calls needed.
 """
 import asyncio
 import uuid
-from typing import Any
+from typing import Any, Optional
 
+from mas.core.execution_context import ExecutionContext
 from mas.engine.domain.base_executor import BaseGraphExecutor
 from mas.engine.domain.models import GraphDefinition
 from mas.graph.state.graph_state import GraphState
@@ -42,8 +43,16 @@ class TemporalGraphExecutor(BaseGraphExecutor):
     def graph_definition(self) -> GraphDefinition:
         return self._graph_def
 
-    def run(self, initial_state: GraphState, *, session_id: str = "") -> GraphState:
-        return asyncio.run(self._execute(initial_state, session_id=session_id))
+    def run(
+        self,
+        initial_state: GraphState,
+        *,
+        session_id: str = "",
+        execution_context: Optional[ExecutionContext] = None,
+    ) -> GraphState:
+        return asyncio.run(self._execute(
+            initial_state, session_id=session_id, execution_context=execution_context,
+        ))
 
     def get_state(self) -> Any:
         if not self._workflow_id:
@@ -54,7 +63,13 @@ class TemporalGraphExecutor(BaseGraphExecutor):
     #  Internal helpers
     # ------------------------------------------------------------------ #
 
-    async def _execute(self, state: GraphState, *, session_id: str = "") -> GraphState:
+    async def _execute(
+        self,
+        state: GraphState,
+        *,
+        session_id: str = "",
+        execution_context: Optional[ExecutionContext] = None,
+    ) -> GraphState:
         """Start GraphTraversalWorkflow and block until it completes."""
         cfg = AppConfig.get_instance()
         client = await get_temporal_client()
@@ -68,6 +83,10 @@ class TemporalGraphExecutor(BaseGraphExecutor):
             session_id=session_id,
             request_id=get_request_id(),
         )
+        if execution_context is not None:
+            # Workers rebuild elements with an empty context holder; without
+            # this they run as an anonymous "unknown" identity with no session.
+            params.execution_context = execution_context
         return await client.execute_workflow(
             _WORKFLOW_NAME,
             params,
