@@ -42,3 +42,24 @@ def test_default_sends_no_token():
     r = _retriever(False)
     r.retrieve("q")
     assert r._provider.query.call_args.kwargs["extra_headers"] is None
+
+
+def test_source_type_selects_the_generic_endpoint():
+    from unittest.mock import MagicMock as M
+    from mas.elements.providers.rag_client.client import RagClient
+    c = RagClient(base_url="http://rag", authenticated_user="alice")
+    c._client = M()
+    c._client.get.return_value = M(json=lambda: {"matches": []}, raise_for_status=lambda: None)
+    c.query_match("q", source_type="confluence")
+    url, params = c._client.get.call_args.args[0], c._client.get.call_args.kwargs["params"]
+    assert url.endswith("/api/sources/query.match") and params["sourceType"] == "CONFLUENCE"
+    c.query_match("q")
+    assert c._client.get.call_args.args[0].endswith("/api/docs/query.match")
+
+
+def test_retriever_passes_its_source_type():
+    r = DocsRagRetrieverFactory().create(DocsRagRetrieverConfig(source_type="CONFLUENCE"), deps=_deps())
+    r._provider = MagicMock()
+    r._provider.query.return_value = MagicMock(matches=[])
+    r.retrieve("q")
+    assert r._provider.query.call_args.kwargs["source_type"] == "CONFLUENCE"
