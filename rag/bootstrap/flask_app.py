@@ -18,6 +18,7 @@ from config.app_config import AppConfig
 from global_utils.flask.request_rules import RequestRules
 from global_utils.flask.error_handlers import register_error_handlers
 from global_utils.utils.logging_config import configure_logging
+from global_utils.telemetry import init_telemetry, instrument_flask_app
 
 
 def create_app() -> Flask:
@@ -34,7 +35,10 @@ def create_app() -> Flask:
         Configured Flask application
     """
     configure_logging("rag-server")
+    # Inert unless OTEL_EXPORTER_OTLP_ENDPOINT (or UNIFAI_OTEL_ENABLED) is set.
+    init_telemetry("rag-server", celery=True)
     app = Flask(__name__)
+    instrument_flask_app(app)
     config = AppConfig.get_instance()
     
     # Application config

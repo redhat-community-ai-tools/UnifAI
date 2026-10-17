@@ -21,6 +21,15 @@ dependencies = [
     "umami-analytics",
     "pymongo",
     "webargs",
+    # OpenTelemetry (inert unless OTEL_EXPORTER_OTLP_ENDPOINT is set)
+    "opentelemetry-api>=1.45.1",
+    "opentelemetry-sdk>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "opentelemetry-instrumentation-flask>=0.66b1",
+    "opentelemetry-instrumentation-requests>=0.66b1",
+    "opentelemetry-instrumentation-httpx>=0.66b1",
+    "opentelemetry-instrumentation-celery>=0.66b1",
 ]
 
 [tool.setuptools.packages.find]
