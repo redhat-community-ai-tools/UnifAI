@@ -44,6 +44,7 @@ class RagClient:
     TAGS_ENDPOINT = "/api/docs/available.tags.get"
     DOCS_ENDPOINT = "/api/docs/available.docs.get"
     QUERY_ENDPOINT = "/api/docs/query.match"
+    SOURCES_QUERY_ENDPOINT = "/api/sources/query.match"
 
     _AUTH_HEADER = INTERNAL_AUTH_HEADER
 
@@ -185,6 +186,7 @@ class RagClient:
             top_k_results: int = 10,
             doc_ids: Optional[List[str]] = None,
             tags: Optional[List[str]] = None,
+            source_type: str = "DOCUMENT",
     ) -> QueryMatchResponse:
         """
         Query vector database for matching documents.
@@ -208,10 +210,15 @@ class RagClient:
             params["docIds"] = doc_ids
         if tags:
             params["tags"] = tags
+        endpoint = self.QUERY_ENDPOINT
+        if source_type.upper() != "DOCUMENT":
+            # Other source types (CONFLUENCE, SLACK, ...) share the generic endpoint.
+            endpoint = self.SOURCES_QUERY_ENDPOINT
+            params["sourceType"] = source_type.upper()
 
         try:
             response = self._client.get(
-                self._build_url(self.QUERY_ENDPOINT),
+                self._build_url(endpoint),
                 params=params,
             )
             response.raise_for_status()

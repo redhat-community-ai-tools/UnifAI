@@ -51,6 +51,11 @@ class DocsRagRetrieverConfig(BaseRetrieverConfig):
         )
     )
 
+    source_type: str = Field(
+        default="DOCUMENT",
+        description="RAG source type to search: DOCUMENT (uploaded files), CONFLUENCE, SLACK, ...",
+    )
+
     forward_user_token: bool = Field(
         default=False,
         description=(

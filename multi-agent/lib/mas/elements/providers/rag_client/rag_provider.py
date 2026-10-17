@@ -64,6 +64,7 @@ class RagProvider:
             tags: Optional[List[str]] = None,
             authenticated_user: str = "",
             extra_headers: Optional[Dict[str, str]] = None,
+            source_type: str = "DOCUMENT",
     ) -> QueryMatchResponse:
         """
         Query vector database for matching documents.
@@ -86,6 +87,7 @@ class RagProvider:
                 top_k_results=top_k or self.top_k,
                 doc_ids=doc_ids,
                 tags=tags,
+                source_type=source_type,
             )
 
     def get_available_tags(

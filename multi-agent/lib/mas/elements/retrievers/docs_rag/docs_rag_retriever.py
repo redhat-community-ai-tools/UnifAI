@@ -24,12 +24,14 @@ class DocsRagRetriever(BaseRetriever):
             tags: Optional[List[str]] = None,
             identity: Optional[RetrievalIdentity] = None,
             forwarder: Optional[IdentityForwarder] = None,
+            source_type: str = "DOCUMENT",
     ):
         self.threshold = threshold
         self.docs = docs
         self.tags = tags
         self._identity = identity
         self._forwarder = forwarder
+        self._source_type = source_type
         config = RagProviderConfig(
             top_k=top_k_results,
             timeout=timeout,
@@ -47,6 +49,7 @@ class DocsRagRetriever(BaseRetriever):
             tags=self.tags,
             authenticated_user=user_id,
             extra_headers=self._forwarder.headers(forward_token=True) if self._forwarder else None,
+            source_type=self._source_type,
         )
 
         return [
