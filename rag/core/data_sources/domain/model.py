@@ -16,6 +16,9 @@ class DataSource:
     last_sync_at: Optional[datetime] = None
     tags: List[str] = field(default_factory=list)
     type_data: Dict[str, Any] = field(default_factory=dict)
+    # "private" (owner only) or "shared" (owner + members of acl_groups, see AccessScope)
+    visibility: str = "private"
+    acl_groups: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DataSource":
@@ -30,6 +33,8 @@ class DataSource:
             last_sync_at=data.get("last_sync_at"),
             tags=data.get("tags", []),
             type_data=data.get("type_data", {}),
+            visibility=data.get("visibility", "private"),
+            acl_groups=list(data.get("acl_groups", []) or []),
         )
 
     def to_dict(self) -> Dict[str, Any]:

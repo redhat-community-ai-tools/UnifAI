@@ -1,5 +1,5 @@
 """Pipeline Executor - Application use case for orchestrating pipeline execution."""
-from typing import Any, Callable
+from typing import Any, Callable, List
 
 from core.pipeline.domain.port import SourcePipelinePort, PipelineContext
 from core.pipeline.domain.model import PipelineStatus
@@ -54,6 +54,18 @@ class PipelineExecutor:
         self._data_source_svc = data_source_service
         self._vector_repository = vector_repository
     
+    def _stamp_access(self, source_id: str, chunks: List[Any]) -> None:
+        """Copy the source's visibility and ACL groups onto every chunk, where search filters on them."""
+        source = None
+        try:
+            source = self._data_source_svc.get_by_id(source_id)
+        except Exception:
+            logger.warning(f"Could not read access settings of source {source_id}; storing it as private")
+        visibility = getattr(source, "visibility", "private") or "private"
+        groups = list(getattr(source, "acl_groups", []) or [])
+        for chunk in chunks:
+            chunk.metadata = {**(chunk.metadata or {}), "visibility": visibility, "acl_groups": groups}
+
     def execute(
         self, 
         handler: SourcePipelinePort, 
@@ -103,6 +115,7 @@ class PipelineExecutor:
             current_step = PipelineStatus.CHUNKING_AND_EMBEDDING
             self._pipeline_svc.update_status(context.pipeline_id, current_step)
             embeddings = handler.chunk_and_embed(context, processed)
+            self._stamp_access(context.source_id, embeddings)
             
             # Step 4: Store
             current_step = PipelineStatus.STORING

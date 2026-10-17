@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any, Union
 
 from core.vector.domain.repository import VectorRepository
 from core.vector.domain.embedder import EmbeddingGenerator
-from core.vector.domain.model import SearchResult
+from core.vector.domain.model import AccessScope, SearchResult
 from infrastructure.retrieval.source_filter_resolver import SourceFilterResolver
 import logging
 
@@ -59,6 +59,7 @@ class RetrievalService:
         limit: int = 5,
         doc_ids: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
+        caller_groups: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Execute a vector search with optional filtering.
@@ -69,16 +70,20 @@ class RetrievalService:
             owner_id: Owner ID to filter by
             doc_ids: Optional list of document IDs to filter by
             tags: Optional list of tags to filter by
+            caller_groups: The caller's verified groups; shared sources of these groups are
+                searched too. None or empty = own sources only.
             
         Returns:
             List of search result dictionaries ordered by relevance
         """
+        groups = frozenset(g.lstrip("/") for g in (caller_groups or []) if g)
         # 1. Resolve source filters (doc_ids/tags -> source_ids)
         allowed_source_ids = self._filter_resolver.resolve(
             source_type=self._source_type,
             owner_id=owner_id,
             doc_ids=doc_ids,
             tags=tags,
+            caller_groups=groups,
         )
         
         # Early exit if filters applied but no matches
@@ -91,8 +96,6 @@ class RetrievalService:
         
         if allowed_source_ids:
             filters["metadata.source_id"] = list(allowed_source_ids)
-        
-        filters["metadata.owner_id"] = owner_id
 
         # 3. Generate query embedding
         query_embedding = self._embedder.generate_query_embedding(query)
@@ -103,6 +106,7 @@ class RetrievalService:
             top_k=limit,
             filters=filters if filters else None,
             query_text=query,
+            access=AccessScope(owner_id=owner_id, groups=groups),
         )
         
         logger.info(f"Search returned {len(results)} results for query: {query[:50]}...")

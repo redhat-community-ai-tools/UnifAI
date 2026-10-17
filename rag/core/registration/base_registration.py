@@ -33,16 +33,40 @@ class BaseRegistration(RegistrationPort):
         upload_by: str,
         instance: Dict[str, Any],
         skip_validation: bool = False,
+        shared_publishers: frozenset = frozenset(),
     ) -> None:
         self._data_source_repository = data_source_repository
         self.upload_by = upload_by
         self.instance = instance
         self.skip_validation = skip_validation
+        self._shared_publishers = shared_publishers
+
+    def _access(self) -> Tuple[str, list]:
+        """Visibility and ACL groups requested for the source.
+
+        Only users listed in RAG_SHARED_PUBLISHERS may publish a shared source: a
+        shared source is retrieved by other users, so anyone else could otherwise
+        inject content into their answers.
+        """
+        visibility = (self.instance.get("visibility") or "private").strip().lower()
+        groups = self.instance.get("aclGroups", self.instance.get("acl_groups")) or []
+        if visibility not in ("private", "shared"):
+            raise PermissionError(f"unknown visibility {visibility!r} (private or shared)")
+        if visibility == "shared" and self.upload_by not in self._shared_publishers:
+            raise PermissionError(f"{self.upload_by} may not publish shared sources")
+        return visibility, sorted({str(g).lstrip("/") for g in groups if str(g).strip()})
 
     def register(self) -> Tuple[Dict[str, Any] | None, Dict[str, Any] | None]:
         """
         Register a single instance. Returns (registered_source_dict, issue_dict).
         """
+        try:
+            self._visibility, self._acl_groups = self._access()
+        except PermissionError as e:
+            logger.warning(f"Registration refused: {e}")
+            return None, {"source_name": self.instance.get("source_name") or self.instance.get("name", ""),
+                          "error": str(e), "error_type": "ACCESS_DENIED"}
+
         metadata = self._build_metadata()
         type_data = self._build_type_data()
 
@@ -70,6 +94,8 @@ class BaseRegistration(RegistrationPort):
             last_sync_at=now,
             tags=self.instance.get("tags", []),
             type_data=type_data,
+            visibility=getattr(self, "_visibility", "private"),
+            acl_groups=getattr(self, "_acl_groups", []),
         )
         self._data_source_repository.save(source)
 

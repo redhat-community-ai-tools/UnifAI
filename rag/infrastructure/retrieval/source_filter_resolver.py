@@ -47,6 +47,7 @@ class SourceFilterResolver:
         owner_id: str,
         doc_ids: Optional[List[str]] = None,
         tags: Optional[List[str]] = None,
+        caller_groups: Optional[Set[str]] = None,
     ) -> Optional[Set[str]]:
         """
         Resolve filters to source_ids using OR logic.
@@ -70,10 +71,13 @@ class SourceFilterResolver:
         if tags:
             conditions.append({"tags": {"$in": tags}})
         
+        # Own sources, plus shared sources of one of the caller's groups.
+        visible: List[Dict[str, Any]] = [{"upload_by": owner_id}]
+        if caller_groups:
+            visible.append({"visibility": "shared", "acl_groups": {"$in": sorted(caller_groups)}})
         query: Dict[str, Any] = {
             "source_type": source_type.upper(),
-            "upload_by": owner_id,
-            "$or": conditions,
+            "$and": [{"$or": visible}, {"$or": conditions}],
         }
         
         try:

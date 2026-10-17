@@ -2,7 +2,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
 
-from core.vector.domain.model import VectorChunk, SearchResult
+from core.vector.domain.model import AccessScope, VectorChunk, SearchResult
 
 
 class VectorRepository(ABC):
@@ -48,6 +48,7 @@ class VectorRepository(ABC):
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
         query_text: Optional[str] = None,
+        access: Optional[AccessScope] = None,
     ) -> List[SearchResult]:
         """
         Search for similar vectors.
@@ -58,6 +59,8 @@ class VectorRepository(ABC):
             filters: Optional filters to apply to the search
             query_text: The query text, for repositories that also match lexically (hybrid search);
                 others ignore it
+            access: Caller scope (own sources + shared sources of the caller's groups);
+                None searches without ownership restriction
             
         Returns:
             List of SearchResult objects with similarity scores

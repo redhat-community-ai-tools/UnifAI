@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 import qdrant_client
 from qdrant_client.http import models as qmodels
 
-from core.vector.domain.model import VectorChunk, SearchResult
+from core.vector.domain.model import VISIBILITY_SHARED, AccessScope, VectorChunk, SearchResult
 from core.vector.domain.repository import VectorRepository
 from infrastructure.qdrant.sparse_encoder import HashingBM25Encoder
 import logging
@@ -141,6 +141,8 @@ class QdrantVectorRepository(VectorRepository):
         self._create_payload_index("metadata.channel_name", qmodels.PayloadSchemaType.KEYWORD)
         self._create_payload_index("metadata.source_id", qmodels.PayloadSchemaType.KEYWORD)
         self._create_payload_index("metadata.owner_id", qmodels.PayloadSchemaType.KEYWORD)
+        self._create_payload_index("metadata.visibility", qmodels.PayloadSchemaType.KEYWORD)
+        self._create_payload_index("metadata.acl_groups", qmodels.PayloadSchemaType.KEYWORD)
 
         logger.info(f"Created collection '{self._collection_name}' with dimension {self._embedding_dim}")
 
@@ -252,6 +254,7 @@ class QdrantVectorRepository(VectorRepository):
         top_k: int = 5,
         filters: Optional[Dict[str, Any]] = None,
         query_text: Optional[str] = None,
+        access: Optional[AccessScope] = None,
     ) -> List[SearchResult]:
         """
         Search for similar vectors in Qdrant.
@@ -263,12 +266,16 @@ class QdrantVectorRepository(VectorRepository):
             query_text: The query as text; in a hybrid collection it adds a sparse (BM25) candidate list
                 fused with the dense one by reciprocal rank fusion. Fused scores are rank-based (about
                 0.01-0.05), not cosine similarities.
+            access: Restrict results to the caller's own points plus shared points whose
+                acl_groups intersect the caller's groups.
             
         Returns:
             List of SearchResult objects with similarity scores
         """
         # Convert filters to Qdrant filter format if provided
         qdrant_filter = self._convert_filters(filters) if filters else None
+        if access is not None:
+            qdrant_filter = self._with_access(qdrant_filter, access)
 
         if self._hybrid and query_text and query_text.strip():
             sparse = self._sparse.encode_query(query_text)
@@ -386,6 +393,19 @@ class QdrantVectorRepository(VectorRepository):
             Number of vectors deleted
         """
         return self.delete_by_filter({"metadata.source_id": source_id})
+
+    @staticmethod
+    def _with_access(base: Optional[qmodels.Filter], access: AccessScope) -> qmodels.Filter:
+        """Add "own points OR shared points of one of my groups" to a filter."""
+        visible: List[Any] = [qmodels.FieldCondition(key="metadata.owner_id", match=qmodels.MatchValue(value=access.owner_id))]
+        if access.groups:
+            visible.append(qmodels.Filter(must=[
+                qmodels.FieldCondition(key="metadata.visibility", match=qmodels.MatchValue(value=VISIBILITY_SHARED)),
+                qmodels.FieldCondition(key="metadata.acl_groups", match=qmodels.MatchAny(any=sorted(access.groups))),
+            ]))
+        must = list(base.must or []) if base is not None else []
+        must.append(qmodels.Filter(should=visible))
+        return qmodels.Filter(must=must)
 
     def _convert_filters(self, filters: Dict[str, Any]) -> qmodels.Filter:
         """

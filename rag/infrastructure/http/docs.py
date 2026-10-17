@@ -1,5 +1,7 @@
 """Document endpoints - driving adapter."""
 from flask import Blueprint, g, jsonify
+from config.app_config import AppConfig
+from infrastructure.http.caller_groups import caller_groups as _resolve_caller_groups
 from webargs import fields
 
 from bootstrap.app_container import (
@@ -195,6 +197,7 @@ def query_match(query, top_k_results, doc_ids, tags):
             query=query,
             limit=top_k_results,
             owner_id=g.user_id,
+            caller_groups=_caller_groups(),
             doc_ids=doc_ids,
             tags=tags,
         )
@@ -205,3 +208,8 @@ def query_match(query, top_k_results, doc_ids, tags):
         logger.error(f"Failed to query documents: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+
+
+def _caller_groups():
+    cfg = AppConfig.get_instance()
+    return _resolve_caller_groups(cfg.oidc_issuer_url, cfg.oidc_verify_tls)

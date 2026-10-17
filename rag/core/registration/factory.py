@@ -26,7 +26,9 @@ class RegistrationFactory:
         upload_folder: str,
         doc_validators: DocValidators,
         slack_validators: SlackValidators,
+        shared_publishers: frozenset = frozenset(),
     ) -> None:
+        self._shared_publishers = frozenset(shared_publishers)
         self._data_source_repository = data_source_repository
         self._upload_folder = upload_folder
         self._doc_validators = doc_validators
@@ -50,7 +52,11 @@ class RegistrationFactory:
                             MD5 duplicate check is always performed.
         """
         normalized = (source_type or "").strip().lower()
+        registration = self._create(normalized, upload_by, instance, skip_validation)
+        registration._shared_publishers = self._shared_publishers
+        return registration
 
+    def _create(self, normalized, upload_by, instance, skip_validation) -> RegistrationPort:
         if normalized == "slack":
             return SlackRegistration(
                 data_source_repository=self._data_source_repository,

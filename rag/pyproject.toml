@@ -21,6 +21,7 @@ dependencies = [
     "umami-analytics",
     "pymongo",
     "webargs",
+    "PyJWT[crypto]>=2.8",  # verifies forwarded user tokens for shared-source ACLs
 ]
 
 [tool.setuptools.packages.find]
