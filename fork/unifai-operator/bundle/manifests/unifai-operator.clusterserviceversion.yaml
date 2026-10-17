@@ -397,8 +397,8 @@ metadata:
       ]
     capabilities: Seamless Upgrades
     categories: AI/Machine Learning, Developer Tools
-    containerImage: quay.io/zuno/unifai-operator:v0.1.15
-    createdAt: "2026-10-17T10:36:39Z"
+    containerImage: quay.io/zuno/unifai-operator:v0.1.16
+    createdAt: "2026-10-17T10:52:30Z"
     description: Deploys UnifAI stacks and manages UnifAI agents, workflows and RAG
       pipelines declaratively.
     features.operators.openshift.io/disconnected: "false"
@@ -413,12 +413,15 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/startxfr/UnifAI
     support: startx
-  name: unifai-operator.v0.1.15
+  name: unifai-operator.v0.1.16
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
   customresourcedefinitions:
     owned:
+    - kind: UnifaiAgentBundle
+      name: unifaiagentbundles.unifai.startx.fr
+      version: v1alpha1
     - description: UnifaiAgent is an UnifAI Agent (workflow node) (nodes resource).
       displayName: Unifai Agent
       kind: UnifaiAgent
@@ -691,10 +694,8 @@ spec:
         - apiGroups:
           - unifai.startx.fr
           resources:
-          - unifaiagents
+          - unifaiagentbundles
           - unifaichats
-          - unifaiconditions
-          - unifaillms
           - unifaiproviders
           - unifairagpipelines
           - unifairetrievers
@@ -703,7 +704,6 @@ spec:
           - unifaistacks
           - unifaitemplates
           - unifaitools
-          - unifaiworkflows
           verbs:
           - get
           - list
@@ -713,6 +713,7 @@ spec:
         - apiGroups:
           - unifai.startx.fr
           resources:
+          - unifaiagentbundles/finalizers
           - unifaiagents/finalizers
           - unifaichats/finalizers
           - unifaiconditions/finalizers
@@ -731,6 +732,7 @@ spec:
         - apiGroups:
           - unifai.startx.fr
           resources:
+          - unifaiagentbundles/status
           - unifaiagents/status
           - unifaichats/status
           - unifaiconditions/status
@@ -748,6 +750,21 @@ spec:
           - get
           - patch
           - update
+        - apiGroups:
+          - unifai.startx.fr
+          resources:
+          - unifaiagents
+          - unifaiconditions
+          - unifaillms
+          - unifaiworkflows
+          verbs:
+          - create
+          - delete
+          - get
+          - list
+          - patch
+          - update
+          - watch
         - apiGroups:
           - authentication.k8s.io
           resources:
@@ -794,7 +811,7 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.namespace
-                image: quay.io/zuno/unifai-operator:v0.1.15
+                image: quay.io/zuno/unifai-operator:v0.1.16
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -891,4 +908,4 @@ spec:
   provider:
     name: startx
     url: https://www.startx.fr
-  version: 0.1.15
+  version: 0.1.16
