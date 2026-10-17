@@ -38,6 +38,9 @@ fork-specific is applied by the operator at render time:
 - `unifai-generated` Secret: `SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY` (Fernet), `OAUTH_STATE_SECRET`,
   `REDIS_PASSWORD`, Keycloak client/admin/DB passwords. Generated once, never regenerated; `spec.secretsRef`
   overrides any key;
+- the UI Route is re-encrypted with an OpenShift service-ca certificate mounted in nginx (instead of the passthrough
+  of the self-signed certificate baked in the image), and every TLS-terminating Route deletes the
+  `X-Authenticated-User` request header: MAS and RAG trust it as the caller identity when no session cookie is sent;
 - `unifai-stack` NetworkPolicy: ingress only from the namespace, the OpenShift router, monitoring and
   `openshift-operators` (the internal APIs trust an `X-Authenticated-User` header).
 
