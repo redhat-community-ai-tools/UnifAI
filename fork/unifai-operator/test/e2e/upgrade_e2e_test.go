@@ -26,7 +26,9 @@ func newNamespace(t *testing.T, suffix string) string {
 	must(t, c.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}))
 	t.Cleanup(func() {
 		if os.Getenv("E2E_KEEP") == "" {
-			_ = c.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})
+			if err := deleteNamespace(name); err != nil {
+				t.Error(err)
+			}
 		}
 	})
 	return name

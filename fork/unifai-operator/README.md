@@ -190,21 +190,32 @@ its spec changes or when the `unifai.startx.fr/retry` annotation gets a new valu
 Requirements: Go 1.26, operator-sdk 1.41, opm, podman, write access to `quay.io/zuno/unifai-operator{,-bundle,-catalog}`.
 
 ```bash
-make test                       # unit tests (chart rendering) + envtest (controllers against a fake UnifAI API, CEL rules)
-make test-e2e E2E_STORAGE_CLASS=gp3-csi E2E_SHARED_STORAGE_CLASS=nfs E2E_NODE_SELECTOR=workload=unifai
-                                # e2e on the current cluster against the installed operator: throwaway namespace
-                                # unifai-e2e-*, stack Ready + invariants, LLM/agent/workflow/chat, no needless Helm
-                                # upgrade, Delete policy cleanup (E2E_FULL=1 also deploys docling + TEI, E2E_KEEP=1)
-make charts                     # refresh internal/stack/assets from ../../helm
-make docker-build-local docker-push   # VERSION=0.1.0 UNIFAI_VERSION=devel (Dockerfile.local; `make docker-build` compiles in the image)
-make bundle bundle-build bundle-push
-make catalog-add                # record VERSION in catalog-template.yaml (CHANNELS=alpha,stable; replaces the channel head)
-make catalog-build catalog-push # quay.io/zuno/unifai-operator-catalog:latest
+make test        # unit tests (chart rendering, OKF) + envtest (controllers against a fake UnifAI API, CEL rules)
+make release     # VERSION=x.y.z: test, image, canary e2e, bundle, catalog on `alpha`
+make promote     # catalog on `stable` = production (demo333 subscribes to stable)
 ```
 
-A new release: bump `VERSION`, run `make test`, build and push the images, `make catalog-add CHANNELS=alpha`, push the
-catalog, let OLM upgrade the cluster, run `make test-e2e`, and only then promote with `make catalog-add CHANNELS=stable`
-+ `make catalog-build catalog-push`. The catalog image tag is `latest` and the CatalogSource polls it.
+`make release` runs, in order: `test`, `docker-build-local docker-push`, `canary-deploy` (the candidate image as a
+second operator instance, namespace `unifai-operator-canary`, after applying its CRDs), `canary-e2e`, `canary-delete`,
+`bundle bundle-build bundle-push`, then `catalog-add CHANNELS=alpha catalog-build catalog-push`. Production is not
+touched before `make promote`.
+
+Operator instances: `OPERATOR_INSTANCE` names an instance ("" = the OLM one). An UnifAI resource labelled
+`unifai.startx.fr/operator-instance=<name>` is cached and reconciled only by that instance; unlabelled resources only
+by the default one. Relabelling hands a stack over (that is how the upgrade test works). An instance must not be
+removed while objects labelled for it are being deleted (their finalizers would stay): the e2e waits for its
+namespaces to be gone before returning.
+
+e2e (`make test-e2e`, or `canary-e2e` against the canary) on the current cluster, throwaway namespaces
+`unifai-e2e-*`: stack Ready + invariants (singleton, routes, NetworkPolicy, secrets, Recreate on RWO volumes,
+replicas), the internal auth header refused through the UI route, LLM/agent/workflow/chat, no needless Helm upgrade,
+Delete-policy cleanup; `E2E_UPGRADE=1` (canary only): a stack deployed by the OLM instance is handed to the candidate
+(same encryption key, same UnifAI objects, chat); `E2E_KEYCLOAK=1`: managed Keycloak (RHBK install, realm import,
+removal); `E2E_FULL=1`: docling + TEI deployed; `E2E_KEEP=1` keeps the namespaces. Cluster-specific defaults
+(`E2E_STORAGE_CLASS=gp3-csi`, `E2E_SHARED_STORAGE_CLASS=nfs`, `E2E_NODE_SELECTOR=workload=unifai`) are in the Makefile.
+
+`make charts` refreshes `internal/stack/assets` from `../../helm`. `make docker-build` compiles inside the image
+(needs several GB on the container storage); `docker-build-local` (used by `release`) compiles on the host.
 
 ## Install with OLM (OpenShift)
 
@@ -223,7 +234,7 @@ apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata: {name: unifai-operator, namespace: openshift-operators}
 spec:
-  channel: alpha
+  channel: stable
   name: unifai-operator
   source: unifai-operator-catalog
   sourceNamespace: openshift-marketplace

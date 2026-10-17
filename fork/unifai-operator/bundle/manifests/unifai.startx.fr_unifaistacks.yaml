@@ -62,6 +62,57 @@ spec:
             description: UnifaiStackSpec defines a complete UnifAI deployment in the
               namespace of the resource.
             properties:
+              backup:
+                description: Scheduled backups of MongoDB (mongodump archive) and
+                  Qdrant (one snapshot per collection) to S3.
+                properties:
+                  images:
+                    description: 'Image overrides (defaults: public.ecr.aws/aws-cli/aws-cli
+                      and docker.io/library/mongo, pinned).'
+                    properties:
+                      awsCli:
+                        type: string
+                      mongo:
+                        type: string
+                    type: object
+                  retention:
+                    default: 7
+                    description: Backups kept per store; older ones are deleted after
+                      each successful run.
+                    minimum: 1
+                    type: integer
+                  s3:
+                    description: BackupS3Spec locates the bucket. The credentials
+                      Secret holds AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
+                    properties:
+                      bucket:
+                        type: string
+                      credentialsSecret:
+                        type: string
+                      endpoint:
+                        description: Endpoint URL of a non-AWS S3 service (e.g. https://s3.example.com);
+                          empty = AWS.
+                        type: string
+                      prefix:
+                        description: 'Key prefix (default: unifai/<namespace>).'
+                        type: string
+                      region:
+                        default: us-east-1
+                        type: string
+                    required:
+                    - bucket
+                    - credentialsSecret
+                    type: object
+                  schedule:
+                    default: 0 2 * * *
+                    description: Cron schedule of both backup CronJobs.
+                    type: string
+                  suspend:
+                    description: Suspend both CronJobs.
+                    type: boolean
+                required:
+                - s3
+                type: object
               deletionPolicy:
                 default: Retain
                 description: Retain keeps PVCs, the generated secret and the Keycloak
@@ -385,6 +436,39 @@ spec:
               rag:
                 description: RAGSpec configures the RAG data pipeline.
                 properties:
+                  confluence:
+                    description: Credentials of the Confluence source type.
+                    properties:
+                      token:
+                        description: SecretKeySelector selects a key of a Secret in
+                          the CR's namespace.
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      username:
+                        description: SecretKeySelector selects a key of a Secret in
+                          the CR's namespace.
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      verifyTLS:
+                        default: true
+                        type: boolean
+                    required:
+                    - token
+                    type: object
                   docling:
                     description: |-
                       DoclingSpec configures document conversion. The upstream rag image has no in-process converter: documents are
@@ -439,6 +523,18 @@ spec:
                     description: Request one nvidia.com/gpu for rag-celery (upstream
                       default). Without it, ingestion runs on CPU.
                     type: boolean
+                  hybrid:
+                    description: |-
+                      Dense + sparse (BM25) search with rank fusion. Uses new `<collection>_hybrid` collections: existing
+                      sources must be re-ingested.
+                    type: boolean
+                  sharedPublishers:
+                    description: |-
+                      Users allowed to publish shared sources (visible to members of the source's ACL groups). Empty =
+                      every source stays private to its uploader. UnifaiRAGSource objects are published as their owner.
+                    items:
+                      type: string
+                    type: array
                 type: object
               resources:
                 additionalProperties:
@@ -683,6 +779,9 @@ spec:
               observedGeneration:
                 format: int64
                 type: integer
+              operatorVersion:
+                description: Version of the operator that last reconciled the stack.
+                type: string
               phase:
                 description: Pending, Deploying, Ready, Error, Paused, Deleting.
                 type: string

@@ -184,7 +184,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 			return reconcile.Result{}, nil
 		}
 		if h.Delete != nil && !b.nothingToClean(ctx, obj.GetNamespace()) {
-			if err := h.Delete(ctx); err != nil {
+			if err := h.Delete(ctx); err != nil && !b.unifaiGone(ctx, obj.GetNamespace(), err) {
 				logger.Info("delete failed, retrying", "error", err.Error())
 				orig := obj.DeepCopyObject().(client.Object)
 				st.Phase, st.Message = "Deleting", unifai.Truncate("cannot delete (still referenced?): "+err.Error(), 500)
@@ -266,10 +266,25 @@ func setReady(st *unifaiv1.ObjectStatus, phase, msg string) {
 // forever against services that are disappearing, and would block the namespace deletion.
 func (b *Base) nothingToClean(ctx context.Context, ns string) bool {
 	var n corev1.Namespace
-	if err := b.Get(ctx, types.NamespacedName{Name: ns}, &n); err == nil && !n.DeletionTimestamp.IsZero() {
+	reader := client.Reader(b.Client)
+	if b.APIReader != nil {
+		reader = b.APIReader // no namespace informer
+	}
+	if err := reader.Get(ctx, types.NamespacedName{Name: ns}, &n); err == nil && !n.DeletionTimestamp.IsZero() {
 		return true
 	}
 	var st unifaiv1.UnifaiStack
 	err := b.Get(ctx, types.NamespacedName{Namespace: ns, Name: unifaiv1.StackName}, &st)
 	return err == nil && !st.DeletionTimestamp.IsZero()
+}
+
+// unifaiGone reports whether a failed UnifAI delete can be ignored: the call did not reach UnifAI (network error,
+// not an HTTP answer) and the namespace no longer has an UnifaiStack, so the services are gone with their data.
+func (b *Base) unifaiGone(ctx context.Context, ns string, err error) bool {
+	var ae *unifai.APIError
+	if errors.As(err, &ae) {
+		return false
+	}
+	var st unifaiv1.UnifaiStack
+	return apierrors.IsNotFound(b.Get(ctx, types.NamespacedName{Namespace: ns, Name: unifaiv1.StackName}, &st))
 }

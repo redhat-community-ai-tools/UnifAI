@@ -4,7 +4,7 @@ metadata:
   name: unifai-operator
   namespace: openshift-operators
 spec:
-  channel: alpha
+  channel: stable
   name: unifai-operator
   source: unifai-operator-catalog
   sourceNamespace: openshift-marketplace

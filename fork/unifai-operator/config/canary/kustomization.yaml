@@ -9,10 +9,14 @@ resources:
 - ../rbac
 - ../manager
 patches:
-- target:
-    kind: Deployment
-    name: controller-manager
-  patch: |-
+- patch: |-
     - op: add
       path: /spec/template/spec/containers/0/env/-
       value: {name: OPERATOR_INSTANCE, value: canary}
+  target:
+    kind: Deployment
+    name: controller-manager
+images:
+- name: controller
+  newName: quay.io/zuno/unifai-operator
+  newTag: v0.1.17

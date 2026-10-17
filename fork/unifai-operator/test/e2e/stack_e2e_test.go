@@ -87,7 +87,10 @@ func TestMain(m *testing.M) {
 	ns = env("E2E_NAMESPACE", fmt.Sprintf("unifai-e2e-%05d", rand.Intn(100000)))
 	code := m.Run()
 	if os.Getenv("E2E_KEEP") == "" {
-		_ = c.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
+		if err := deleteNamespace(ns); err != nil {
+			fmt.Println(err)
+			code = 1
+		}
 	} else {
 		fmt.Println("E2E_KEEP set: namespace", ns, "kept")
 	}
@@ -330,6 +333,27 @@ func stackSpec(identity unifaiv1.IdentitySpec) unifaiv1.UnifaiStackSpec {
 		spec.RAG.Embedding = unifaiv1.EmbeddingSpec{Mode: "remote", URL: "http://embedding.invalid:8080"}
 	}
 	return spec
+}
+
+// deleteNamespace deletes a test namespace and waits until it is gone: its UnifAI objects carry finalizers only
+// the operator instance under test can release, so the instance must not be removed before (make release runs
+// canary-delete right after the e2e).
+func deleteNamespace(name string) error {
+	err := c.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	deadline := time.Now().Add(15 * time.Minute)
+	for time.Now().Before(deadline) {
+		if apierrors.IsNotFound(c.Get(ctx, client.ObjectKey{Name: name}, &corev1.Namespace{})) {
+			return nil
+		}
+		time.Sleep(5 * time.Second)
+	}
+	return fmt.Errorf("namespace %s still terminating after 15 min", name)
 }
 
 func must(t *testing.T, err error) {
