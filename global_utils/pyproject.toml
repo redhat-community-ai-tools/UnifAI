@@ -26,13 +26,24 @@ embedding       = ["httpx>=0.25.0"]
 async-bridge    = ["anyio"]
 codegen         = ["datamodel-code-generator", "jsonschema"]
 identity-client = ["requests"]
+# Optional OpenTelemetry export (inert unless OTEL_EXPORTER_OTLP_ENDPOINT is set)
+otel            = [
+    "opentelemetry-api>=1.45.1",
+    "opentelemetry-sdk>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "opentelemetry-instrumentation-flask>=0.66b1",
+    "opentelemetry-instrumentation-requests>=0.66b1",
+    "opentelemetry-instrumentation-httpx>=0.66b1",
+]
+otel-celery     = ["global_utils[otel]", "opentelemetry-instrumentation-celery>=0.66b1"]
 
-rag             = ["global_utils[flask,apiargs,celery,docling,embedding,redis]"]
-backend         = ["global_utils[flask,apiargs,redis]"]
-multi-agent     = ["global_utils[flask,apiargs,async-bridge,codegen,identity-client]"]
+rag             = ["global_utils[flask,apiargs,celery,docling,embedding,redis,otel-celery]"]
+backend         = ["global_utils[flask,apiargs,redis,otel]"]
+multi-agent     = ["global_utils[flask,apiargs,async-bridge,codegen,identity-client,otel]"]
 identity        = ["global_utils[flask,redis,identity-client]"]
 
-all             = ["global_utils[flask,apiargs,redis,celery,docling,embedding,async-bridge,codegen,identity-client]"]
+all             = ["global_utils[flask,apiargs,redis,celery,docling,embedding,async-bridge,codegen,identity-client,otel-celery]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
