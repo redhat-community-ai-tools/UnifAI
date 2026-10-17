@@ -234,6 +234,13 @@ func multiagentValues(p *Plan, v map[string]any) map[string]any {
 		return nil
 	}
 	appImage(p, v, "image", "multiagent")
+	if p.Spec.Identity.ForwardUserToken {
+		// CLIENT_SECRET comes from multiagent-be-secret (objects.go), loaded by both multiagent pods.
+		set(v, "env.IDENTITY_FORWARDING_ENABLED", "true")
+		set(v, "env.KEYCLOAK_BASE_URL", p.OIDCURL)
+		set(v, "env.KEYCLOAK_REALM", p.OIDCRealm)
+		set(v, "env.CLIENT_ID", p.OIDCClientID)
+	}
 	lf := p.Spec.Integrations.Langfuse
 	set(v, "env.LANGFUSE_ENABLED", fmt.Sprint(lf != nil))
 	if lf != nil && lf.BaseURL != "" {

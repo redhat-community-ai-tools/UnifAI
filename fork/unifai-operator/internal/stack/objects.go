@@ -124,10 +124,7 @@ func BaseObjects(p *Plan) []ctrlObject {
 		secret(p, "unifai-rag-secrets", "rag", map[string]string{
 			"default_slack_bot_token": s["SLACK_BOT_TOKEN"], "default_slack_user_token": s["SLACK_USER_TOKEN"],
 		}),
-		secret(p, "multiagent-be-secret", "multiagent", map[string]string{
-			"CREDENTIAL_ENCRYPTION_KEY": s[KeyCredentialKey], "OAUTH_STATE_SECRET": s[KeyOAuthState],
-			"LANGFUSE_SECRET_KEY": s["LANGFUSE_SECRET_KEY"], "LANGFUSE_PUBLIC_KEY": s["LANGFUSE_PUBLIC_KEY"],
-		}),
+		secret(p, "multiagent-be-secret", "multiagent", multiagentSecret(p)),
 		configMap(p, "identity-config", "identity", map[string]string{
 			"admin_allowed_users": p.AdminUsersJSON(), "keycloak_base_url": p.OIDCURL, "client_id": p.OIDCClientID,
 			"keycloak_realm": p.OIDCRealm, "directory_provider": "", "directory_url": "", "directory_verify_ssl": "false",
@@ -246,4 +243,17 @@ func EmbeddingObjects(p *Plan) []ctrlObject {
 			Ports: []corev1.ServicePort{{Name: "http", Port: 8080, TargetPort: intstr.FromInt32(8080)}}},
 	}
 	return []ctrlObject{dep, svc}
+}
+
+// multiagentSecret is read (envFrom) by multiagent-be and the temporal worker.
+func multiagentSecret(p *Plan) map[string]string {
+	s := p.Secrets
+	data := map[string]string{
+		"CREDENTIAL_ENCRYPTION_KEY": s[KeyCredentialKey], "OAUTH_STATE_SECRET": s[KeyOAuthState],
+		"LANGFUSE_SECRET_KEY": s["LANGFUSE_SECRET_KEY"], "LANGFUSE_PUBLIC_KEY": s["LANGFUSE_PUBLIC_KEY"],
+	}
+	if p.Spec.Identity.ForwardUserToken {
+		data["CLIENT_SECRET"] = p.OIDCClientSecret
+	}
+	return data
 }

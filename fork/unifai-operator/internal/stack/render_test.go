@@ -157,6 +157,35 @@ func TestLiveVolumesAreKept(t *testing.T) {
 	}
 }
 
+func TestIdentityForwarding(t *testing.T) {
+	off := renderAll(t, testPlan(t, nil))
+	for _, rel := range []string{"unifai-multiagent-be", "unifai-multiagent-temporal-worker"} {
+		if strings.Contains(off[rel], "IDENTITY_FORWARDING_ENABLED") || strings.Contains(off[rel], "KEYCLOAK_BASE_URL") {
+			t.Errorf("%s: identity forwarding must be off by default", rel)
+		}
+	}
+	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) { s.Identity.ForwardUserToken = true })
+	p.OIDCURL, p.OIDCRealm, p.OIDCClientID, p.OIDCClientSecret = "https://kc.example.com", "unifai", "unifai", "s3cr3t"
+	on := renderAll(t, p)
+	for _, rel := range []string{"unifai-multiagent-be", "unifai-multiagent-temporal-worker"} {
+		for _, want := range []string{"IDENTITY_FORWARDING_ENABLED", "https://kc.example.com", "KEYCLOAK_REALM", "CLIENT_ID"} {
+			if !strings.Contains(on[rel], want) {
+				t.Errorf("%s lacks %s", rel, want)
+			}
+		}
+		if strings.Contains(on[rel], "s3cr3t") {
+			t.Errorf("%s: the client secret must come from multiagent-be-secret, not plain env", rel)
+		}
+	}
+	if multiagentSecret(p)["CLIENT_SECRET"] != "s3cr3t" {
+		t.Errorf("multiagent-be-secret lacks CLIENT_SECRET")
+	}
+	pOff := testPlan(t, nil)
+	if _, ok := multiagentSecret(pOff)["CLIENT_SECRET"]; ok {
+		t.Errorf("CLIENT_SECRET must not be set when forwarding is off")
+	}
+}
+
 func TestRenderOverrides(t *testing.T) {
 	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) {
 		s.Profile = "prod"

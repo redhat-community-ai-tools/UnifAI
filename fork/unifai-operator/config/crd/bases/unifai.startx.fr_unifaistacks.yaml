@@ -136,6 +136,11 @@ spec:
                     - clientSecret
                     - url
                     type: object
+                  forwardUserToken:
+                    description: |-
+                      Let workflow elements that opt in (forward_user_token) send the acting user's OIDC token to model and tool
+                      gateways: the multiagent pods get the Keycloak client of the identity service to refresh it.
+                    type: boolean
                   keycloak:
                     description: ManagedKeycloakSpec deploys Keycloak (Red Hat build
                       of Keycloak operator) and the UnifAI realm in the stack namespace.

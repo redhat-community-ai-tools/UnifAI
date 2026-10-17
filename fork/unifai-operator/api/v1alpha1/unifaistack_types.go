@@ -94,6 +94,10 @@ type IdentitySpec struct {
 	// +kubebuilder:default={admin}
 	// +optional
 	AdminUsers []string `json:"adminUsers,omitempty"`
+	// Let workflow elements that opt in (forward_user_token) send the acting user's OIDC token to model and tool
+	// gateways: the multiagent pods get the Keycloak client of the identity service to refresh it.
+	// +optional
+	ForwardUserToken bool `json:"forwardUserToken,omitempty"`
 	// +optional
 	External *ExternalOIDCSpec `json:"external,omitempty"`
 	// +optional

@@ -60,6 +60,12 @@ Identity, exactly one of:
   `identity.adminUsers`, secrets passed as placeholders). The realm is imported once: later host changes must be
   applied in Keycloak.
 
+`identity.forwardUserToken: true` (default false) gives the multiagent pods (be and temporal worker) the identity
+service's Keycloak client (`IDENTITY_FORWARDING_ENABLED`, `KEYCLOAK_BASE_URL`, `KEYCLOAK_REALM`, `CLIENT_ID`, and
+`CLIENT_SECRET` through `multiagent-be-secret`), so workflow elements that opt in (`forward_user_token`) can send the
+acting user's OIDC token to model and tool gateways. It needs a multiagent image with identity forwarding (fork
+commit 4467138fe).
+
 Deletion: releases are uninstalled in reverse order, Keycloak objects and the RHBK subscription removed.
 `deletionPolicy: Retain` (default) keeps PVCs, `unifai-generated` and the Keycloak database, so recreating the stack
 finds its data and encryption key; `Delete` removes them. `paused: true` stops reconciling.
