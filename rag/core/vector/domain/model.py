@@ -19,3 +19,17 @@ class SearchResult:
     score: float
     content: str
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+VISIBILITY_PRIVATE = "private"
+VISIBILITY_SHARED = "shared"
+
+
+@dataclass(frozen=True)
+class AccessScope:
+    """Who is searching: their own sources, plus shared sources whose ACL groups they belong to.
+
+    A shared source with no ACL groups is visible to nobody but its owner (fail closed).
+    """
+    owner_id: str
+    groups: frozenset = frozenset()

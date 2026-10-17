@@ -26,6 +26,15 @@ class AppConfig(SharedConfig):
     # Dense + sparse (BM25) search with reciprocal rank fusion. Uses separate `<name>_hybrid` collections:
     # existing collections are left untouched and sources must be re-ingested.
     qdrant_hybrid_enabled: bool = False
+
+    # Users allowed to register "shared" sources (visible to members of the source's ACL
+    # groups). Empty = nobody: every source stays private to its uploader.
+    rag_shared_publishers: list = []
+    # OIDC issuer used to verify bearer tokens forwarded by internal callers (e.g.
+    # https://keycloak.example.com/realms/zuno); their `groups` claim selects which
+    # shared sources a search may return. Empty = forwarded tokens are ignored.
+    oidc_issuer_url: str = ""
+    oidc_verify_tls: bool = True
     
     # Slack Configuration
     default_slack_bot_token: str = ""

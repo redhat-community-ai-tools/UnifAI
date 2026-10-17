@@ -58,7 +58,7 @@ class TestRetrievalService:
     def test_search_no_doc_filters(self, service, mock_resolver, mock_vector_repo, mock_embedder):
         """A search with no doc_ids/tags must still enforce metadata.owner_id filter.
 
-        Expected: generate_query_embedding called; filters contain only owner_id.
+        Expected: generate_query_embedding called; the owner scope is passed as access; no group means own sources only.
         """
         mock_resolver.resolve.return_value = None
 
@@ -67,7 +67,9 @@ class TestRetrievalService:
         mock_embedder.generate_query_embedding.assert_called_once_with("test query")
         call_kwargs = mock_vector_repo.search.call_args
         filters = call_kwargs.kwargs.get("filters") or call_kwargs[1].get("filters")
-        assert filters["metadata.owner_id"] == "alice"
+        access = call_kwargs.kwargs["access"]
+        assert access.owner_id == "alice" and access.groups == frozenset()
+        assert "metadata.owner_id" not in (filters or {})
 
     def test_search_early_exit_empty_filter(self, service, mock_resolver, mock_vector_repo, mock_embedder):
         """When filters resolve to an empty set, search must return [] without generating embeddings.
@@ -85,7 +87,7 @@ class TestRetrievalService:
     def test_search_with_doc_ids(self, service, mock_resolver, mock_vector_repo):
         """Passing doc_ids must restrict the search to those specific source IDs plus owner_id.
 
-        Expected: filters contain both metadata.source_id and metadata.owner_id.
+        Expected: filters contain metadata.source_id; the owner scope is passed as access.
         """
         mock_resolver.resolve.return_value = {"src_1", "src_2"}
 
@@ -94,12 +96,14 @@ class TestRetrievalService:
         call_kwargs = mock_vector_repo.search.call_args
         filters = call_kwargs.kwargs.get("filters") or call_kwargs[1].get("filters")
         assert set(filters["metadata.source_id"]) == {"src_1", "src_2"}
-        assert filters["metadata.owner_id"] == "alice"
+        access = call_kwargs.kwargs["access"]
+        assert access.owner_id == "alice" and access.groups == frozenset()
+        assert "metadata.owner_id" not in (filters or {})
 
     def test_search_owner_id_always_applied(self, service, mock_resolver, mock_vector_repo):
-        """owner_id filter is mandatory and always present regardless of other filters.
+        """The owner scope is mandatory and always present regardless of other filters.
 
-        Expected: filters['metadata.owner_id'] == 'bob' even with no doc_ids/tags.
+        Expected: access.owner_id == 'bob' even with no doc_ids/tags.
         """
         mock_resolver.resolve.return_value = None
 
@@ -107,7 +111,9 @@ class TestRetrievalService:
 
         call_kwargs = mock_vector_repo.search.call_args
         filters = call_kwargs.kwargs.get("filters") or call_kwargs[1].get("filters")
-        assert filters["metadata.owner_id"] == "bob"
+        access = call_kwargs.kwargs["access"]
+        assert access.owner_id == "bob" and access.groups == frozenset()
+        assert "metadata.owner_id" not in (filters or {})
 
     def test_search_resolver_receives_owner_id(self, service, mock_resolver, mock_vector_repo):
         """The resolver must receive owner_id alongside source_type, doc_ids, and tags.
@@ -123,6 +129,7 @@ class TestRetrievalService:
             owner_id="alice",
             doc_ids=["d1"],
             tags=["t1"],
+            caller_groups=frozenset(),
         )
 
     def test_search_result_mapping(self, service, mock_resolver, mock_vector_repo):
@@ -169,4 +176,5 @@ class TestRetrievalService:
             owner_id="bob",
             doc_ids=["d1"],
             tags=["tag1"],
+            caller_groups=frozenset(),
         )

@@ -388,6 +388,7 @@ def registration_factory():
         upload_folder=AppConfig.get_instance().upload_folder,
         doc_validators=doc_validators(),
         slack_validators=slack_validators(),
+        shared_publishers=frozenset(AppConfig.get_instance().rag_shared_publishers),
     )
 
 
