@@ -82,6 +82,8 @@ from outbound.mongo import (
     MongoAdminConfigReader,
 )
 from outbound.redis import RedisCollaborationStore
+from outbound.redis.identity_token_source import RedisIdentityTokenSource
+from mas.core.identity_forwarding import IdentityTokenSource, NullIdentityTokenSource
 from outbound.mongo.builtin_user_config_repository import MongoBuiltinUserConfigRepository
 from outbound.mongo.builtin_resource_descriptor_repository import (
     MongoBuiltinResourceDescriptorRepository,
@@ -328,6 +330,9 @@ class AppContainer(metaclass=SingletonMeta):
             shared_storage=cfg.shared_storage,
         )
 
+        # ── Identity forwarding (user token to downstream gateways) ───
+        self.identity_token_source = self._create_identity_token_source(cfg)
+
         # ── Session factory ───────────────────────────────────────────
         self.session_factory = WorkflowSessionFactory(
             element_registry=self.element_registry,
@@ -335,6 +340,7 @@ class AppContainer(metaclass=SingletonMeta):
             auth_service=self.auth_service,
             platform_config=self.platform_config,
             tracing_service=self.tracing_service,
+            identity_token_source=self.identity_token_source,
         )
         self.session_repo = MongoSessionRepository(
             mongodb_port=cfg.mongodb_port,
@@ -463,6 +469,29 @@ class AppContainer(metaclass=SingletonMeta):
             logger.warning("langfuse package not installed; tracing disabled")
             from mas.core.tracing.noop import NoOpTracingService
             return NoOpTracingService()
+
+    @staticmethod
+    def _create_identity_token_source(cfg: AppConfig) -> IdentityTokenSource:
+        if not cfg.identity_forwarding_enabled:
+            return NullIdentityTokenSource()
+        token_url = ""
+        if cfg.keycloak_base_url and cfg.keycloak_realm:
+            token_url = (
+                f"{cfg.keycloak_base_url.rstrip('/')}/realms/{cfg.keycloak_realm}"
+                "/protocol/openid-connect/token"
+            )
+        else:
+            logger.warning(
+                "Identity forwarding enabled without KEYCLOAK_BASE_URL/KEYCLOAK_REALM: "
+                "forwarded tokens cannot be refreshed and fail once expired"
+            )
+        return RedisIdentityTokenSource(
+            RedisKVStore(build_redis_client()),
+            token_url=token_url,
+            client_id=cfg.client_id,
+            client_secret=cfg.client_secret,
+            verify_tls=cfg.identity_forwarding_verify_tls,
+        )
 
     @staticmethod
     def _create_overrides_store():

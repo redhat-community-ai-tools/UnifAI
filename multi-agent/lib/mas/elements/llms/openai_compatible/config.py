@@ -28,3 +28,19 @@ class OpenAICompatibleConfig(BaseLLMConfig):
         default_factory=dict,
         description="Provider-specific kwargs passed through as is",
     )
+    forward_user_token: bool = Field(
+        False,
+        description=(
+            "Send the acting user's own sign-in token as the bearer credential instead of "
+            "api_key, for gateways that authorize and account per user. Fails closed when "
+            "no valid user token is available."
+        ),
+    )
+    default_headers: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Headers added to every request. Values may reference {session_id}, {user}, "
+            "{identity}, {identity_type}, {scope}, {node_uid}, {node_name}, {node_type} "
+            "and {tag.<key>} (session tags); a header with an unresolved reference is omitted."
+        ),
+    )
