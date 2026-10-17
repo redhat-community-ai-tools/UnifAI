@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/startxfr/zuno-demo/platform/okf/schema/zuno-okf-prompt-v0.2.schema.json",
+  "title": "Zuno Agent Prompt (OKF v0.2 Markdown bundle frontmatter)",
+  "description": "Schema for the YAML frontmatter block of agents/<name>/prompts/<task>.md (ADR-0038). The Markdown body (everything after the frontmatter block) is the literal prompt text - typically a system prompt for the matching task under agents/<name>/tasks/<task>.md. Consumed by Agent Runtime's AgentRegistry (ADR-0039) so a prompt edit changes agent behavior without a source-code change.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["okf_version", "type", "title"],
+  "properties": {
+    "okf_version": {
+      "description": "[OKF CORE] OKF envelope version this document conforms to.",
+      "type": "string",
+      "const": "v0.2"
+    },
+    "type": {
+      "description": "[OKF CORE] Document kind. Always \"prompt\" for files under agents/<name>/prompts/.",
+      "type": "string",
+      "const": "prompt"
+    },
+    "title": {
+      "description": "[OKF CORE] Human-readable prompt name.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

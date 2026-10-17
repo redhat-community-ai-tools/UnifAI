@@ -19,6 +19,7 @@ type Files map[string][]byte
 // Bundle is the subset of an OKF agent bundle the operator maps onto UnifAI objects.
 type Bundle struct {
 	Name           string
+	OKFVersion     string
 	Title          string
 	Description    string
 	Status         string
@@ -45,6 +46,7 @@ type Task struct {
 }
 
 type agentFrontmatter struct {
+	OKFVersion  string `json:"okf_version"`
 	Type        string `json:"type"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
@@ -78,7 +80,7 @@ type taskFrontmatter struct {
 	} `json:"zuno"`
 }
 
-// Supported graph shapes (ADR-0342) and how they are rendered.
+// Graph shapes (ADR-0342). Only retrieve_reason_respond has a blueprint template today.
 const (
 	ShapeRetrieveReasonRespond = "retrieve_reason_respond"
 	ShapePlanDraftWrite        = "plan_draft_write"
@@ -127,19 +129,9 @@ func Parse(files Files) (*Bundle, error) {
 		return nil, fmt.Errorf("agent.okf.md zuno.model.preferred_classification: %w", err)
 	}
 	b := &Bundle{
-		Name: af.Zuno.Name, Title: af.Title, Description: strings.TrimSpace(af.Description),
+		Name: af.Zuno.Name, OKFVersion: af.OKFVersion, Title: af.Title, Description: strings.TrimSpace(af.Description),
 		Status: af.Zuno.Status, GraphShape: af.Zuno.GraphShape, PrimaryTask: af.Zuno.PrimaryTask,
 		Classification: cls, RAGTopK: af.Zuno.RAG.TopK, AccessGroups: af.Zuno.Access.Groups,
-	}
-	if b.GraphShape == "" {
-		b.GraphShape = ShapeRetrieveReasonRespond
-	}
-	switch b.GraphShape {
-	case ShapeRetrieveReasonRespond:
-	case ShapePlanDraftWrite:
-		b.Unmapped = append(b.Unmapped, "zuno.graph_shape plan_draft_write: rendered as one agent per task; the separate plan/draft/write stages are not reproduced")
-	default:
-		return nil, fmt.Errorf("agent.okf.md: unsupported zuno.graph_shape %q", b.GraphShape)
 	}
 	if len(af.Zuno.Tasks) == 0 {
 		return nil, fmt.Errorf("agent.okf.md: zuno.tasks is empty")
@@ -161,9 +153,6 @@ func Parse(files Files) (*Bundle, error) {
 	}
 	if !seen[b.PrimaryTask] {
 		return nil, fmt.Errorf("agent.okf.md: primary_task %q is not in zuno.tasks", b.PrimaryTask)
-	}
-	if len(b.AccessGroups) > 0 {
-		b.Unmapped = append(b.Unmapped, fmt.Sprintf("zuno.access.groups %v: agent entitlement is enforced by the gateways, not by UnifAI (ADR-0562)", b.AccessGroups))
 	}
 	if b.RAGTopK > 0 {
 		b.Unmapped = append(b.Unmapped, fmt.Sprintf("zuno.rag.top_k %d: set on the referenced retriever, not per agent", b.RAGTopK))
@@ -238,4 +227,29 @@ func (f Files) SortedPaths() []string {
 	}
 	sort.Slice(ps, func(i, j int) bool { return lessByParts(ps[i], ps[j]) })
 	return ps
+}
+
+// DeclaredTools is the union of every task's allowed_tools.
+func (b *Bundle) DeclaredTools() []string {
+	return union(b.Tasks, func(t Task) []string { return t.AllowedTools })
+}
+
+// DeclaredKnowledge is the union of every task's allowed_knowledge.
+func (b *Bundle) DeclaredKnowledge() []string {
+	return union(b.Tasks, func(t Task) []string { return t.AllowedKnowledge })
+}
+
+func union(tasks []Task, f func(Task) []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range tasks {
+		for _, v := range f(t) {
+			if !seen[v] {
+				seen[v] = true
+				out = append(out, v)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }

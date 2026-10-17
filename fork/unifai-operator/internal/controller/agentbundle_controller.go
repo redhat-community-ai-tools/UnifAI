@@ -51,8 +51,15 @@ const (
 	headerRunID          = "X-Zuno-Run-Id"
 )
 
-// ConditionVerified reports the signature check.
-const ConditionVerified = "Verified"
+// Conditions of the ADR-0564 pipeline, in order.
+const (
+	ConditionVerified       = "Verified"
+	ConditionValid          = "Valid"
+	ConditionWithinCeilings = "WithinCeilings"
+	ConditionEmitted        = "Emitted"
+
+	entitlementGatewayOnly = "GatewayOnly"
+)
 
 func (r *AgentBundleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	cr := &unifaiv1.UnifaiAgentBundle{}
@@ -93,10 +100,19 @@ func (r *AgentBundleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.UnifaiAgentBundle) (time.Duration, error) {
 	st := &cr.Status
-	if _, _, err := okf.SplitDigestRef(cr.Spec.Source.OCI.Ref); err != nil {
+	cond := func(typ string, ok bool, reason, msg string) {
+		s := metav1.ConditionFalse
+		if ok {
+			s = metav1.ConditionTrue
+		}
+		meta.SetStatusCondition(&st.Conditions, metav1.Condition{Type: typ, Status: s, Reason: reason,
+			Message: unifai.Truncate(msg, 500), ObservedGeneration: cr.Generation})
+	}
+	ref := cr.Spec.Source.OCI.Reference
+	if _, _, err := okf.SplitDigestRef(ref); err != nil {
 		return 0, &PermanentError{Err: err}
 	}
-	pub, err := r.secretValue(ctx, cr.Namespace, cr.Spec.Verify.PublicKeySecretRef)
+	pub, err := r.secretValue(ctx, cr.Namespace, cr.Spec.Verify.PublicKeyRef)
 	if err != nil {
 		return 0, err
 	}
@@ -108,46 +124,120 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 	if fetch == nil {
 		fetch = okf.Fetch
 	}
-	art, err := fetch(ctx, cr.Spec.Source.OCI.Ref, cred)
-	if err != nil {
-		return 0, fmt.Errorf("pull %s: %w", cr.Spec.Source.OCI.Ref, err)
-	}
-	st.ManifestDigest = art.ManifestDigest
 
+	// 1. Pull the manifest by digest.
+	art, err := fetch(ctx, ref, cred)
+	if err != nil {
+		return 0, fmt.Errorf("pull %s: %w", ref, err)
+	}
+	st.ResolvedDigest = art.ManifestDigest
+
+	// 2. Verify before any byte of the bundle is parsed.
 	digest, err := okf.Digest(art.Files)
 	if err == nil {
 		err = okf.VerifySignature(digest, art.Signature, []byte(pub))
 	}
+	st.BundleDigest = digest
 	if err != nil {
-		st.Verified, st.BundleDigest = false, digest
-		meta.SetStatusCondition(&st.Conditions, metav1.Condition{Type: ConditionVerified, Status: metav1.ConditionFalse,
-			Reason: "SignatureInvalid", Message: unifai.Truncate(err.Error(), 500), ObservedGeneration: cr.Generation})
+		st.Verified = false
+		cond(ConditionVerified, false, "SignatureInvalid", err.Error())
 		return 0, permanent("bundle not verified, nothing emitted: %v", err)
 	}
-	st.Verified, st.BundleDigest = true, digest
-	meta.SetStatusCondition(&st.Conditions, metav1.Condition{Type: ConditionVerified, Status: metav1.ConditionTrue,
-		Reason: "SignatureValid", Message: "bundle digest " + digest, ObservedGeneration: cr.Generation})
+	st.Verified = true
+	cond(ConditionVerified, true, "SignatureValid", "bundle digest "+digest)
 
+	// 3. Validate against the embedded OKF schemas, then the mapping's own preconditions.
+	if err := okf.ValidateSchemas(art.Files); err != nil {
+		cond(ConditionValid, false, "SchemaInvalid", err.Error())
+		return 0, permanent("%v", err)
+	}
 	b, err := okf.Parse(art.Files)
 	if err != nil {
+		cond(ConditionValid, false, "Invalid", err.Error())
 		return 0, permanent("invalid OKF bundle: %v", err)
 	}
+	st.OKFVersion = b.OKFVersion
+	switch b.GraphShape {
+	case okf.ShapeRetrieveReasonRespond:
+	case "":
+		cond(ConditionValid, false, "ShapeMissing", "zuno.graph_shape is not declared")
+		return 0, permanent("bundle %s declares no zuno.graph_shape: nothing emitted", b.Name)
+	default:
+		cond(ConditionValid, false, "ShapeNotImplemented", "no blueprint template for graph shape "+b.GraphShape)
+		return 0, permanent("graph shape %q has no blueprint template in this operator: nothing emitted", b.GraphShape)
+	}
+	if len(b.AccessGroups) > 0 && cr.Spec.Entitlement != entitlementGatewayOnly {
+		msg := fmt.Sprintf("zuno.access.groups %v cannot be enforced by UnifAI visibility yet; set spec.entitlement: GatewayOnly to rely on the gateways", b.AccessGroups)
+		cond(ConditionValid, false, "EntitlementUnsupported", msg)
+		return 0, permanent("%s", msg)
+	}
+	cond(ConditionValid, true, "Valid", fmt.Sprintf("OKF %s, %d tasks, shape %s", b.OKFVersion, len(b.Tasks), b.GraphShape))
+
+	// 4. A bundle can narrow its ceilings, never widen them.
+	if err := checkCeilings(cr, b); err != nil {
+		cond(ConditionWithinCeilings, false, "Widening", err.Error())
+		return 0, permanent("bundle exceeds spec.ceilings, nothing emitted: %v", err)
+	}
+	cond(ConditionWithinCeilings, true, "WithinCeilings", "declared tools, knowledge and classification are within spec.ceilings")
+
+	// 5. Emit the owned children.
 	desired, tasks, err := renderBundle(cr, b)
 	if err != nil {
 		return 0, err
 	}
 	for _, obj := range desired {
 		if err := r.upsert(ctx, cr, obj); err != nil {
+			cond(ConditionEmitted, false, "EmitFailed", err.Error())
 			return 0, err
 		}
 	}
 	if err := r.prune(ctx, cr, desired); err != nil {
 		return 0, err
 	}
-	st.Agent, st.Tasks, st.Unmapped = b.Name, tasks, b.Unmapped
+	unmapped := b.Unmapped
+	if len(b.AccessGroups) > 0 {
+		unmapped = append([]string{fmt.Sprintf("zuno.access.groups %v: enforced by the gateways only (spec.entitlement GatewayOnly)", b.AccessGroups)}, unmapped...)
+	}
+	st.Agent, st.Tasks, st.Unmapped = b.Name, tasks, unmapped
 	st.Children = childNames(desired)
 	st.Message = fmt.Sprintf("%d tasks, %d objects emitted", len(tasks), len(desired))
+	cond(ConditionEmitted, true, "Emitted", st.Message)
 	return 0, nil
+}
+
+// checkCeilings refuses any declared tool, knowledge domain or classification outside spec.ceilings.
+func checkCeilings(cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) error {
+	var problems []string
+	if extra := outside(b.DeclaredTools(), cr.Spec.Ceilings.ToolCapabilities); len(extra) > 0 {
+		problems = append(problems, fmt.Sprintf("tools %v are not in toolCapabilities", extra))
+	}
+	if extra := outside(b.DeclaredKnowledge(), cr.Spec.Ceilings.KnowledgeDomains); len(extra) > 0 {
+		problems = append(problems, fmt.Sprintf("knowledge %v is not in knowledgeDomains", extra))
+	}
+	floor, err := okf.ParseLevel(cr.Spec.Ceilings.MinClassification)
+	if err != nil {
+		problems = append(problems, "ceilings.minClassification: "+err.Error())
+	} else if b.Classification < floor {
+		problems = append(problems, fmt.Sprintf("classification %s is below minClassification %s", b.Classification, floor))
+	}
+	if len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func outside(values, allowed []string) []string {
+	ok := map[string]bool{}
+	for _, a := range allowed {
+		ok[a] = true
+	}
+	var out []string
+	for _, v := range values {
+		if !ok[v] {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // renderBundle maps the bundle onto UnifAI objects: one condition, and per task an LLM carrying the Zuno
@@ -389,10 +479,10 @@ func (r *AgentBundleReconciler) secretValue(ctx context.Context, ns string, sel 
 
 // pullCredential reads the registry's entry of a dockerconfigjson pull secret.
 func (r *AgentBundleReconciler) pullCredential(ctx context.Context, cr *unifaiv1.UnifaiAgentBundle) (*okf.Credential, error) {
-	name := cr.Spec.Source.OCI.PullSecretName
-	if name == "" {
+	if cr.Spec.Source.OCI.PullSecretRef == nil || cr.Spec.Source.OCI.PullSecretRef.Name == "" {
 		return nil, nil
 	}
+	name := cr.Spec.Source.OCI.PullSecretRef.Name
 	raw, err := r.secretValue(ctx, cr.Namespace, unifaiv1.SecretKeySelector{Name: name, Key: corev1.DockerConfigJsonKey})
 	if err != nil {
 		return nil, err
@@ -407,7 +497,7 @@ func (r *AgentBundleReconciler) pullCredential(ctx context.Context, cr *unifaiv1
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		return nil, permanent("pull secret %s: %v", name, err)
 	}
-	registry := strings.SplitN(cr.Spec.Source.OCI.Ref, "/", 2)[0]
+	registry := strings.SplitN(cr.Spec.Source.OCI.Reference, "/", 2)[0]
 	a, ok := cfg.Auths[registry]
 	if !ok {
 		return nil, permanent("pull secret %s has no entry for %s", name, registry)

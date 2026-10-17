@@ -88,24 +88,31 @@ without a stack, e.g. deployed by helmfile, are not gated). The operator calls
 ### Zuno OKF agent bundles (fork-only)
 
 `UnifaiAgentBundle` (`internal/okf`, [`examples/agent/agentbundle-tekos.yaml`](examples/agent/agentbundle-tekos.yaml))
-maps one signed Zuno OKF agent bundle onto the object kinds above. It is Zuno-specific and never proposed upstream.
+maps one signed Zuno OKF agent bundle onto the object kinds above (zuno-demo ADR-0564). It is Zuno-specific and never
+proposed upstream. The pipeline runs in a fixed order and a failed step emits nothing, leaving what a previous good
+version emitted:
 
-- **Source**: an OCI artifact pinned by digest (tags are refused at admission). Layout: artifact type
-  `application/vnd.zuno.okf.bundle.v1`, one `application/vnd.zuno.okf.bundle.v1.tar+gzip` layer holding the
-  `agents/<name>/` tree, and the `cosign sign-blob` signature of the bundle digest in the manifest annotation
-  `zuno.okf.signature`. A `kubernetes.io/dockerconfigjson` pull secret is optional.
-- **Verification**: the bundle digest is recomputed exactly as zuno-demo's `sign_okf_bundle.py` does and the ECDSA
-  signature is checked against the PEM public key in `spec.verify` (no cosign binary, no Vault access). An
-  unverified bundle sets `Verified=False`, emits nothing and leaves what a previous verified version emitted.
-- **Emitted objects** (owned, labelled `unifai.startx.fr/agent-bundle`): `<bundle>-direct` condition; per task
-  `<bundle>-<task>` LLM (the `spec.llm` template plus `X-Zuno-Agent`, `X-Zuno-Task`,
-  `X-Zuno-Data-Classification` and `X-Zuno-Run-Id: {session_id}` in `default_headers`) and agent (system prompt
-  from `prompts/<task>.md`, providers and retriever when the task declares tools or knowledge), and a linear
-  workflow, named `<bundle>` for the primary task. Objects of a task removed from the bundle are deleted.
-- **Classification**: the bundle's `zuno.model.preferred_classification`, raised per task by
-  `classificationOverrides`; an override that lowers it is refused (ADR-0565).
-- **Not mapped** (listed in `status.unmapped`): agent entitlement groups, per-task tool allow-lists (enforced by
-  mcp-gateway), `rag.top_k`, UI fields, prompt examples, and the separate stages of the `plan_draft_write` shape.
+1. **Pull** `spec.source.oci.reference`, pinned by digest (tags are refused at admission); optional
+   `pullSecretRef` (dockerconfigjson). Layout: artifact type `application/vnd.zuno.okf.bundle.v1`, one
+   `application/vnd.zuno.okf.bundle.v1.tar+gzip` layer holding the `agents/<name>/` tree, and the
+   `cosign sign-blob` signature of the bundle digest in the manifest annotation `zuno.okf.signature`.
+2. **Verified**: the digest is recomputed exactly as zuno-demo's `sign_okf_bundle.py` does and the ECDSA signature
+   is checked against the PEM key in `spec.verify.publicKeyRef`, before any file is parsed.
+3. **Valid**: every OKF document's frontmatter is validated against the schemas embedded in `internal/okf/schema/`
+   (copies of zuno-demo `platform/okf/schema/`, OKF v0.2). The bundle must declare a graph shape that has a
+   blueprint template (only `retrieve_reason_respond` today). A bundle declaring `zuno.access.groups` is refused
+   (`EntitlementUnsupported`) unless `spec.entitlement: GatewayOnly`, since UnifAI cannot gate visibility by group.
+4. **WithinCeilings**: the tools and knowledge domains the tasks declare must be in `spec.ceilings`, and the
+   classification must not be below `ceilings.minClassification`.
+5. **Emitted** (owned, labelled `unifai.startx.fr/agent-bundle`): `<bundle>-direct` condition; per task
+   `<bundle>-<task>` LLM (the `spec.llm` template plus `X-Zuno-Agent`, `X-Zuno-Task`,
+   `X-Zuno-Data-Classification` and `X-Zuno-Run-Id: {session_id}` in `default_headers`) and agent (system prompt
+   from `prompts/<task>.md`, providers and retriever when the task declares tools or knowledge), and a linear
+   workflow, named `<bundle>` for the primary task. `classificationOverrides` may only raise a task's level.
+   Objects of a task removed from the bundle are deleted.
+
+Not mapped (listed in `status.unmapped`): per-task tool allow-lists (enforced by mcp-gateway), `rag.top_k`, UI
+fields and prompt examples.
 
 ### Taking over a helmfile deployment
 

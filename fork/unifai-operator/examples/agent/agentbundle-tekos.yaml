@@ -1,6 +1,8 @@
 # Zuno OKF agent bundle (ADR-0564): the operator pulls the signed bundle pinned by digest, verifies its cosign
 # signature against the platform public key, and emits per task an UnifaiLLM (Zuno headers), an UnifaiAgent and an
 # UnifaiWorkflow (the primary task's workflow is named after the bundle), plus one router_direct UnifaiCondition.
+# Pipeline and conditions: Verified (signature) -> Valid (OKF schemas, graph shape, entitlement) ->
+# WithinCeilings -> Emitted. A failed step emits nothing.
 # Prerequisites in the namespace: the Secret below, and the referenced UnifaiProvider / UnifaiRetriever.
 # The digest is a placeholder: use the one zuno-demo's `make d3 sign agents` records for the bundle.
 apiVersion: v1
@@ -19,9 +21,15 @@ metadata: {name: tekos}
 spec:
   source:
     oci:
-      ref: quay.io/zuno/okf-tekos@sha256:0000000000000000000000000000000000000000000000000000000000000000
+      reference: quay.io/zuno/okf-tekos@sha256:0000000000000000000000000000000000000000000000000000000000000000
   verify:
-    publicKeySecretRef: {name: okf-signer, key: cosign.pub}
+    publicKeyRef: {name: okf-signer, key: cosign.pub}
+  ceilings:                                 # reviewed in Git: the bundle may narrow these, never widen them
+    toolCapabilities: [search_confluence, web_search, git.repository.read, git.repository.list,
+                       diagram.generation.create, aap.platform.audit, aap.cluster.audit, list_drive_files]
+    knowledgeDomains: [knowledge.tech, knowledge.project]
+    minClassification: C1
+  entitlement: GatewayOnly                  # tekos declares zuno.access.groups: the gateways check them
   llm:
     type: openai_compatible
     config:

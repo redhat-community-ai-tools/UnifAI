@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -11,11 +12,11 @@ const AgentBundleLabel = "unifai.startx.fr/agent-bundle"
 // OCIBundleSource pins a signed OKF bundle in an OCI registry.
 type OCIBundleSource struct {
 	// Reference pinned by digest, e.g. quay.io/zuno/okf-tekos@sha256:<64 hex>. Tags are refused.
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[^@]+@sha256:[a-f0-9]{64}$')",message="ref must be pinned by a sha256 digest"
-	Ref string `json:"ref"`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[^@]+@sha256:[a-f0-9]{64}$')",message="reference must be pinned by a sha256 digest"
+	Reference string `json:"reference"`
 	// kubernetes.io/dockerconfigjson Secret for a private repository (anonymous pull when unset).
 	// +optional
-	PullSecretName string `json:"pullSecretName,omitempty"`
+	PullSecretRef *corev1.LocalObjectReference `json:"pullSecretRef,omitempty"`
 }
 
 // BundleSource says where the bundle comes from.
@@ -26,7 +27,22 @@ type BundleSource struct {
 // BundleVerify says how the bundle signature is checked. The key is the PEM public half of the signing key
 // (for zuno, the Vault Transit key exported as agents/zuno-platform-signer.pub): no access to Vault is needed.
 type BundleVerify struct {
-	PublicKeySecretRef SecretKeySelector `json:"publicKeySecretRef"`
+	PublicKeyRef SecretKeySelector `json:"publicKeyRef"`
+}
+
+// BundleCeilings bound what a bundle may declare (ADR-0564 clause 3): a bundle can narrow, never widen.
+// They are reviewed in Git with the CR, independently of the bundle content.
+type BundleCeilings struct {
+	// Tool names the bundle's tasks may declare in allowed_tools.
+	// +optional
+	ToolCapabilities []string `json:"toolCapabilities,omitempty"`
+	// Knowledge domains the bundle's tasks may declare in allowed_knowledge.
+	// +optional
+	KnowledgeDomains []string `json:"knowledgeDomains,omitempty"`
+	// The least restrictive classification the bundle may run at (C1 < C2 < C3): a bundle declaring a lower
+	// level than this would allow model classes the CR's reviewers did not accept.
+	// +kubebuilder:validation:Enum=C1;C2;C3
+	MinClassification string `json:"minClassification"`
 }
 
 // BundleLLM is the template of the LLM emitted for every task: the bundle adds the Zuno headers
@@ -45,6 +61,14 @@ type UnifaiAgentBundleSpec struct {
 	CommonSpec `json:",inline"`
 	Source     BundleSource `json:"source"`
 	Verify     BundleVerify `json:"verify"`
+	Ceilings   BundleCeilings `json:"ceilings"`
+	// How zuno.access.groups is honoured. Enforced (default) refuses a bundle declaring groups while UnifAI
+	// cannot gate agent visibility by group; GatewayOnly emits it and relies on the gateways checking the
+	// caller's JWT groups (ADR-0562 interim; a cutover gate for production).
+	// +kubebuilder:validation:Enum=Enforced;GatewayOnly
+	// +kubebuilder:default=Enforced
+	// +optional
+	Entitlement string       `json:"entitlement,omitempty"`
 	LLM        BundleLLM    `json:"llm"`
 	// UnifaiProvider names (MCP servers) attached to the tasks that declare allowed_tools.
 	// +optional
@@ -82,7 +106,10 @@ type UnifaiAgentBundleStatus struct {
 	LastReconciled *metav1.Time `json:"lastReconciled,omitempty"`
 	// Manifest digest that was pulled.
 	// +optional
-	ManifestDigest string `json:"manifestDigest,omitempty"`
+	ResolvedDigest string `json:"resolvedDigest,omitempty"`
+	// okf_version of the bundle.
+	// +optional
+	OKFVersion string `json:"okfVersion,omitempty"`
 	// OKF content digest that the signature covers.
 	// +optional
 	BundleDigest string `json:"bundleDigest,omitempty"`

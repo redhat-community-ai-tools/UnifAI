@@ -67,12 +67,50 @@ spec:
                   agent (e.g. max_rounds, hitl_mode).
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              ceilings:
+                description: |-
+                  BundleCeilings bound what a bundle may declare (ADR-0564 clause 3): a bundle can narrow, never widen.
+                  They are reviewed in Git with the CR, independently of the bundle content.
+                properties:
+                  knowledgeDomains:
+                    description: Knowledge domains the bundle's tasks may declare
+                      in allowed_knowledge.
+                    items:
+                      type: string
+                    type: array
+                  minClassification:
+                    description: |-
+                      The least restrictive classification the bundle may run at (C1 < C2 < C3): a bundle declaring a lower
+                      level than this would allow model classes the CR's reviewers did not accept.
+                    enum:
+                    - C1
+                    - C2
+                    - C3
+                    type: string
+                  toolCapabilities:
+                    description: Tool names the bundle's tasks may declare in allowed_tools.
+                    items:
+                      type: string
+                    type: array
+                required:
+                - minClassification
+                type: object
               classificationOverrides:
                 additionalProperties:
                   type: string
                 description: 'Per-task classification override: C1, C2 or C3. It may
                   only raise the bundle''s level (ADR-0565).'
                 type: object
+              entitlement:
+                default: Enforced
+                description: |-
+                  How zuno.access.groups is honoured. Enforced (default) refuses a bundle declaring groups while UnifAI
+                  cannot gate agent visibility by group; GatewayOnly emits it and relies on the gateways checking the
+                  caller's JWT groups (ADR-0562 interim; a cutover gate for production).
+                enum:
+                - Enforced
+                - GatewayOnly
+                type: string
               llm:
                 description: |-
                   BundleLLM is the template of the LLM emitted for every task: the bundle adds the Zuno headers
@@ -134,19 +172,30 @@ spec:
                     description: OCIBundleSource pins a signed OKF bundle in an OCI
                       registry.
                     properties:
-                      pullSecretName:
+                      pullSecretRef:
                         description: kubernetes.io/dockerconfigjson Secret for a private
                           repository (anonymous pull when unset).
-                        type: string
-                      ref:
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      reference:
                         description: Reference pinned by digest, e.g. quay.io/zuno/okf-tekos@sha256:<64
                           hex>. Tags are refused.
                         type: string
                         x-kubernetes-validations:
-                        - message: ref must be pinned by a sha256 digest
+                        - message: reference must be pinned by a sha256 digest
                           rule: self.matches('^[^@]+@sha256:[a-f0-9]{64}$')
                     required:
-                    - ref
+                    - reference
                     type: object
                 required:
                 - oci
@@ -163,7 +212,7 @@ spec:
                   BundleVerify says how the bundle signature is checked. The key is the PEM public half of the signing key
                   (for zuno, the Vault Transit key exported as agents/zuno-platform-signer.pub): no access to Vault is needed.
                 properties:
-                  publicKeySecretRef:
+                  publicKeyRef:
                     description: SecretKeySelector selects a key of a Secret in the
                       CR's namespace.
                     properties:
@@ -176,9 +225,10 @@ spec:
                     - name
                     type: object
                 required:
-                - publicKeySecretRef
+                - publicKeyRef
                 type: object
             required:
+            - ceilings
             - llm
             - source
             - verify
@@ -257,16 +307,19 @@ spec:
               lastReconciled:
                 format: date-time
                 type: string
-              manifestDigest:
-                description: Manifest digest that was pulled.
-                type: string
               message:
                 type: string
               observedGeneration:
                 format: int64
                 type: integer
+              okfVersion:
+                description: okf_version of the bundle.
+                type: string
               phase:
                 description: Ready, Error, Pending.
+                type: string
+              resolvedDigest:
+                description: Manifest digest that was pulled.
                 type: string
               tasks:
                 items:

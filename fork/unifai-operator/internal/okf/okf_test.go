@@ -112,7 +112,10 @@ func TestParseTekos(t *testing.T) {
 		t.Fatalf("primary task lost its tools/knowledge: %+v", primary)
 	}
 	joined := strings.Join(b.Unmapped, "\n")
-	for _, want := range []string{"zuno.access.groups", "allowed_tools", "zuno.rag.top_k"} {
+	if b.OKFVersion != "v0.2" || len(b.AccessGroups) != 1 || len(b.DeclaredTools()) < 5 || b.DeclaredKnowledge()[0] != "knowledge.project" {
+		t.Fatalf("declarations: %+v tools=%v knowledge=%v", b.AccessGroups, b.DeclaredTools(), b.DeclaredKnowledge())
+	}
+	for _, want := range []string{"allowed_tools", "zuno.rag.top_k"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("unmapped list misses %s:\n%s", want, joined)
 		}
@@ -209,5 +212,28 @@ func TestDecodeArtifact(t *testing.T) {
 	mb, _ = json.Marshal(m)
 	if _, err := decodeArtifact(context.Background(), mb, "sha256:m", fetch); err == nil {
 		t.Fatal("unsigned artifact accepted")
+	}
+}
+
+func TestValidateSchemas(t *testing.T) {
+	files := loadTree(t, "testdata/tekos")
+	if err := ValidateSchemas(files); err != nil {
+		t.Fatalf("tekos should satisfy the embedded schemas: %v", err)
+	}
+	bad := Files{}
+	for k, v := range files {
+		bad[k] = v
+	}
+	bad["tasks/write-code.md"] = []byte(strings.Replace(string(files["tasks/write-code.md"]), "type: task", "type: task\nunexpected_field: 1", 1))
+	if err := ValidateSchemas(bad); err == nil || !strings.Contains(err.Error(), "tasks/write-code.md") {
+		t.Fatalf("an unknown frontmatter field passed: %v", err)
+	}
+	old := Files{}
+	for k, v := range files {
+		old[k] = v
+	}
+	old["agent.okf.md"] = []byte(strings.Replace(string(files["agent.okf.md"]), "okf_version: v0.2", "okf_version: v0.1", 1))
+	if err := ValidateSchemas(old); err == nil || !strings.Contains(err.Error(), "okf_version") {
+		t.Fatalf("an older okf_version passed: %v", err)
 	}
 }

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/startxfr/zuno-demo/platform/okf/schema/zuno-okf-rag-v0.2.schema.json",
+  "title": "Zuno Agent RAG Domain Note (OKF v0.2 Markdown bundle frontmatter)",
+  "description": "Schema for the YAML frontmatter block of agents/<name>/rag/<domain>.md (ADR-0513, promoting agents/<name>/rag/ from the ADR-0502 stub to real Stage-2 content). `rag`/`tool`/`policy` are Zuno-invented document kinds with no OKF-core meaning - every field below is [ZUNO EXT]. One file documents retrieval tuning for exactly one logical knowledge domain (ADR-0202) already reachable by this agent, i.e. present in some agents/<name>/tasks/*.md's `zuno.allowed_knowledge`. This document is descriptive only, like ADR-0503's generated Authorization matrix: it narrows or explains what agent.okf.md (`zuno.rag.top_k`), tasks/*.md (`zuno.allowed_knowledge`) and policies/knowledge/knowledge-policy.yaml already declare/authorize - it never grants retrieval access on its own and must never become an enforcement input (ADR-0503 Security considerations apply identically here). Consumed today only by platform/supply-chain/validate_okf_bundle.py's cross-reference check; no runtime service reads this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["okf_version", "type", "title", "zuno"],
+  "properties": {
+    "okf_version": {
+      "description": "[OKF CORE] OKF envelope version this document conforms to.",
+      "type": "string",
+      "const": "v0.2"
+    },
+    "type": {
+      "description": "[OKF CORE shape, ZUNO-defined kind] Document kind. Always \"rag\" for files under agents/<name>/rag/.",
+      "type": "string",
+      "const": "rag"
+    },
+    "title": {
+      "description": "[OKF CORE] Human-readable title, e.g. \"Technical documentation retrieval\".",
+      "type": "string",
+      "minLength": 1
+    },
+    "zuno": {
+      "description": "[ZUNO EXT] The knowledge domain this note documents, and the retrieval tuning this agent recommends for it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domain", "used_by_tasks"],
+      "properties": {
+        "domain": {
+          "description": "Logical knowledge-domain ID (knowledge/<domain>/domain.yaml, ADR-0202) this note documents. Must be one this agent can actually reach: present in at least one entry of `used_by_tasks` below's own `zuno.allowed_knowledge`.",
+          "type": "string",
+          "pattern": "^knowledge\\.[a-z][a-z0-9_-]*$"
+        },
+        "used_by_tasks": {
+          "description": "Which of this agent's tasks (agents/<name>/tasks/<task>.md) declare `domain` above in their `zuno.allowed_knowledge`. Documents an existing fact; adding a task name here grants nothing - the task's own frontmatter is the actual ceiling.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "uniqueItems": true
+        },
+        "top_k_hint": {
+          "description": "Suggested per-domain override of the agent-wide `zuno.rag.top_k` (agent.okf.md) when this domain benefits from a different result count. Documentary only - Agent Runtime's retrieve node reads agent.okf.md's `zuno.rag.top_k`, not this field; changing this value changes nothing at runtime until a maintainer also edits agent.okf.md.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "filters": {
+          "description": "Narrowing hints for which slice of the domain this agent's tasks actually need, expressed in the domain's own taxonomy (knowledge/<domain>/domain.yaml's `taxonomy`). Documentary/advisory only - components/rag-service does not read this file, so these are not enforced query filters, only a record of intent for whoever tunes ingestion or retrieval prompts.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "technology": {
+              "description": "Subset of the domain's technology_vocabulary (knowledge.tech only) this agent cares about.",
+              "type": "array",
+              "items": { "type": "string" },
+              "uniqueItems": true
+            },
+            "source_classes": {
+              "description": "Subset of the domain's taxonomy.source_classes this agent prioritizes.",
+              "type": "array",
+              "items": { "type": "string" },
+              "uniqueItems": true
+            }
+          }
+        },
+        "freshness_expectation": {
+          "description": "Which of the domain's declared operation classes (knowledge/<domain>/domain.yaml's `freshness.operation_classes`) this agent's use of the domain matches. Documentary cross-reference, not a distinct staleness policy.",
+          "type": "string",
+          "enum": ["semantic-read", "current-state-read"]
+        },
+        "rationale": {
+          "description": "Free-text: why this agent needs this domain.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

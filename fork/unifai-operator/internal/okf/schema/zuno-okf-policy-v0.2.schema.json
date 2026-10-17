@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/startxfr/zuno-demo/platform/okf/schema/zuno-okf-policy-v0.2.schema.json",
+  "title": "Zuno Agent Policy Addendum (OKF v0.2 Markdown bundle frontmatter)",
+  "description": "Schema for the YAML frontmatter block of agents/<name>/policies/<name>.md (ADR-0513, promoting agents/<name>/policies/ from the ADR-0502 stub to real Stage-2 content). `rag`/`tool`/`policy` are Zuno-invented document kinds with no OKF-core meaning - every field below is [ZUNO EXT]. One file documents exactly one additional constraint this agent imposes on itself, on top of the platform policy floor (policies/tools/tool-policy.yaml, policies/knowledge/knowledge-policy.yaml, policies/quotas/quota-policy.yaml, policies/data-classification/classification.yaml). It can only narrow what the platform policies and this agent's own tasks already allow - it can never grant, widen or override them (same ADR-0011/ADR-0203 'ceiling only narrows' rule every other OKF authorization surface in this repository follows). This document is descriptive only, like ADR-0503's generated Authorization matrix, and must never become an enforcement input on its own: a system that wants to actually enforce a constraint recorded here needs its own policy file and code path, this file only records that the constraint is agreed and why. Consumed today only by platform/supply-chain/validate_okf_bundle.py's cross-reference check; no runtime service reads this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["okf_version", "type", "title", "zuno"],
+  "properties": {
+    "okf_version": {
+      "description": "[OKF CORE] OKF envelope version this document conforms to.",
+      "type": "string",
+      "const": "v0.2"
+    },
+    "type": {
+      "description": "[OKF CORE shape, ZUNO-defined kind] Document kind. Always \"policy\" for files under agents/<name>/policies/.",
+      "type": "string",
+      "const": "policy"
+    },
+    "title": {
+      "description": "[OKF CORE] Human-readable title, e.g. \"Web search fallback scope\".",
+      "type": "string",
+      "minLength": 1
+    },
+    "zuno": {
+      "description": "[ZUNO EXT] The additional, narrowing-only constraint this note records.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["narrows_platform_policy", "constraint_type", "applies_to", "rationale", "enforcement"],
+      "properties": {
+        "narrows_platform_policy": {
+          "description": "Self-documenting guardrail: authoring a policy addendum is an explicit acknowledgment that it can only restrict what agent.okf.md/tasks/*.md and the root-level policies/ files already allow, never grant or widen it. Always true - there is no schema-legal way to write a widening addendum.",
+          "type": "boolean",
+          "const": true
+        },
+        "constraint_type": {
+          "description": "What kind of additional constraint this is.",
+          "type": "string",
+          "enum": [
+            "human_review_required",
+            "quota_override",
+            "data_handling_addendum",
+            "escalation_requirement",
+            "other"
+          ]
+        },
+        "applies_to": {
+          "description": "What this constraint narrows. `tasks` is required - a policy addendum with no task scope applies to nothing checkable. `tools`/`knowledge` further scope it to specific declarations those tasks already carry (their own `allowed_tools`/`allowed_knowledge`), never to a tool or domain the task doesn't already declare.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tasks"],
+          "properties": {
+            "tasks": {
+              "description": "Task names (agents/<name>/tasks/<task>.md) this constraint applies to.",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "uniqueItems": true
+            },
+            "tools": {
+              "description": "Optional: restrict this constraint to specific tools among the listed tasks' `allowed_tools`.",
+              "type": "array",
+              "items": { "type": "string" },
+              "uniqueItems": true
+            },
+            "knowledge": {
+              "description": "Optional: restrict this constraint to specific knowledge domains among the listed tasks' `allowed_knowledge`.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^knowledge\\.[a-z][a-z0-9_-]*$"
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "rationale": {
+          "description": "Why this constraint exists - the business, security or operational reason a maintainer would need to know before relaxing it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "enforcement": {
+          "description": "Whether anything actually enforces this constraint today, or whether it is agreed-but-manual.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mechanism"],
+          "properties": {
+            "mechanism": {
+              "description": "`manual-process`: enforced by human process/review, not code. `external-system`: enforced by a named system outside this repository's OKF-consuming services. `none-yet`: agreed but not enforced anywhere - a documented gap, not a false claim of enforcement.",
+              "type": "string",
+              "enum": ["manual-process", "external-system", "none-yet"]
+            },
+            "notes": {
+              "description": "Free-text detail on the mechanism (which process, which system, or what would be needed to close a none-yet gap).",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

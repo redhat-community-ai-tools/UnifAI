@@ -86,10 +86,22 @@ func pubPEM(key *ecdsa.PrivateKey) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
 }
 
+// tekosCeilings admit exactly what the tekos testdata bundle declares.
+func tekosCeilings() unifaiv1.BundleCeilings {
+	return unifaiv1.BundleCeilings{
+		ToolCapabilities: []string{"search_confluence", "web_search", "git.repository.read", "git.repository.list",
+			"diagram.generation.create", "aap.platform.audit", "aap.cluster.audit", "list_drive_files"},
+		KnowledgeDomains:  []string{"knowledge.tech", "knowledge.project"},
+		MinClassification: "C1",
+	}
+}
+
 func newBundle(ns, ref string, overrides map[string]string) *unifaiv1.UnifaiAgentBundle {
 	return &unifaiv1.UnifaiAgentBundle{ObjectMeta: metav1.ObjectMeta{Name: "tekos", Namespace: ns}, Spec: unifaiv1.UnifaiAgentBundleSpec{
-		Source: unifaiv1.BundleSource{OCI: unifaiv1.OCIBundleSource{Ref: ref}},
-		Verify: unifaiv1.BundleVerify{PublicKeySecretRef: unifaiv1.SecretKeySelector{Name: "okf-signer", Key: "cosign.pub"}},
+		Source:      unifaiv1.BundleSource{OCI: unifaiv1.OCIBundleSource{Reference: ref}},
+		Verify:      unifaiv1.BundleVerify{PublicKeyRef: unifaiv1.SecretKeySelector{Name: "okf-signer", Key: "cosign.pub"}},
+		Ceilings:    tekosCeilings(),
+		Entitlement: "GatewayOnly",
 		LLM: unifaiv1.BundleLLM{ConfigSpec: unifaiv1.ConfigSpec{Config: raw(map[string]any{
 			"model_name": "auto", "base_url": "http://ai-gateway.zuno-ai-run.svc:8080/v1", "forward_user_token": true,
 			"default_headers": map[string]any{"X-Extra": "kept"}})}},
@@ -130,6 +142,10 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		Expect(st.Children).To(ContainElements("UnifaiCondition/tekos-direct", "UnifaiWorkflow/tekos",
 			"UnifaiAgent/tekos-answer-technical-question", "UnifaiLLM/tekos-write-code", "UnifaiWorkflow/tekos-write-code"))
 		Expect(strings.Join(st.Unmapped, "\n")).To(ContainSubstring("zuno.access.groups"))
+		Expect(st.OKFVersion).To(Equal("v0.2"))
+		for _, c := range []string{ConditionVerified, ConditionValid, ConditionWithinCeilings, ConditionEmitted} {
+			Expect(meta.IsStatusConditionTrue(st.Conditions, c)).To(BeTrue(), c)
+		}
 
 		var llm unifaiv1.UnifaiLLM
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "tekos-write-code"}, &llm)).To(Succeed())
@@ -189,7 +205,7 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		ref := fakeBundles.put(smaller, sign(key, smaller))
 		var b unifaiv1.UnifaiAgentBundle
 		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "tekos"}, &b)).To(Succeed())
-		b.Spec.Source.OCI.Ref = ref
+		b.Spec.Source.OCI.Reference = ref
 		Expect(k8sClient.Update(ctx, &b)).To(Succeed())
 		Eventually(func() bool {
 			var wf unifaiv1.UnifaiWorkflow
@@ -199,10 +215,51 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		Eventually(func() []unifaiv1.BundleTaskStatus { return status(ns)().Tasks }, timeout, interval).Should(HaveLen(3))
 	})
 
+	refused := func(ns string, mutate func(*unifaiv1.UnifaiAgentBundle), files okf.Files, condition, reason string) {
+		b := newBundle(ns, fakeBundles.put(files, sign(key, files)), nil)
+		mutate(b)
+		Expect(k8sClient.Create(ctx, b)).To(Succeed())
+		Eventually(func() string {
+			c := meta.FindStatusCondition(status(ns)().Conditions, condition)
+			if c == nil || c.Status != metav1.ConditionFalse {
+				return ""
+			}
+			return c.Reason
+		}, timeout, interval).Should(Equal(reason))
+		Expect(status(ns)().Phase).To(Equal("Error"))
+		var agents unifaiv1.UnifaiAgentList
+		Expect(k8sClient.List(ctx, &agents, client.InNamespace(ns))).To(Succeed())
+		Expect(agents.Items).To(BeEmpty())
+	}
+
+	It("refuses a bundle that widens its ceilings", func() {
+		refused(setup("bundle-ceiling"), func(b *unifaiv1.UnifaiAgentBundle) {
+			b.Spec.Ceilings.ToolCapabilities = []string{"web_search"}
+		}, tekosFiles(), ConditionWithinCeilings, "Widening")
+	})
+
+	It("refuses a bundle below the classification floor", func() {
+		refused(setup("bundle-floor"), func(b *unifaiv1.UnifaiAgentBundle) {
+			b.Spec.Ceilings.MinClassification = "C2"
+		}, tekosFiles(), ConditionWithinCeilings, "Widening")
+	})
+
+	It("refuses an entitlement UnifAI cannot enforce unless told to rely on the gateways", func() {
+		refused(setup("bundle-entitlement"), func(b *unifaiv1.UnifaiAgentBundle) {
+			b.Spec.Entitlement = "Enforced"
+		}, tekosFiles(), ConditionValid, "EntitlementUnsupported")
+	})
+
+	It("refuses a bundle without a graph shape", func() {
+		files := tekosFiles()
+		files["agent.okf.md"] = []byte(strings.Replace(string(files["agent.okf.md"]), "  graph_shape: retrieve_reason_respond\n", "", 1))
+		refused(setup("bundle-noshape"), func(*unifaiv1.UnifaiAgentBundle) {}, files, ConditionValid, "ShapeMissing")
+	})
+
 	It("rejects a tag reference at admission", func() {
 		ns := setup("bundle-tag")
 		err := k8sClient.Create(ctx, newBundle(ns, "quay.io/zuno/okf-tekos:latest", nil))
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("pinned by a sha256 digest"))
+		Expect(err.Error()).To(ContainSubstring("reference must be pinned by a sha256 digest"))
 	})
 })
