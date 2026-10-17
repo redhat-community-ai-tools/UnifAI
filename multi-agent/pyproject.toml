@@ -30,8 +30,17 @@ openshell = ["openshell>=0.0.59"]
 rag = ["jsonschema"]
 redis = ["redis"]
 tracing = ["langfuse>=3.0.0"]
+otel = [
+    "opentelemetry-api>=1.45.1",
+    "opentelemetry-sdk>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.45.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1",
+    "opentelemetry-instrumentation-flask>=0.66b1",
+    "opentelemetry-instrumentation-requests>=0.66b1",
+    "opentelemetry-instrumentation-httpx>=0.66b1",
+]
 all = [
-    "mas[flask,mongo,temporal,langgraph,llms,tools,a2a,claude,rag,redis,openshell,tracing]",
+    "mas[flask,mongo,temporal,langgraph,llms,tools,a2a,claude,rag,redis,openshell,tracing,otel]",
 ]
 test = ["pytest>=6.0"]
 

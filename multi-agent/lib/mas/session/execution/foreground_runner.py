@@ -166,7 +166,12 @@ class ForegroundSessionRunner:
                     tracing.flush()
                     channel.close()
 
-        thread = threading.Thread(target=_execute, name=f"graph-exec-{run_id[:8]}")
+        # bind_to_current_context() lets the session trace continue the
+        # caller's trace (e.g. the inbound request) inside the worker thread.
+        thread = threading.Thread(
+            target=tracing.bind_to_current_context(_execute),
+            name=f"graph-exec-{run_id[:8]}",
+        )
         thread.start()
 
         try:

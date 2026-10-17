@@ -30,13 +30,21 @@ class LangfuseTracingService(TracingService):
         secret_key: str = "",
         public_key: str = "",
         base_url: str = "https://us.cloud.langfuse.com",
+        tracer_provider: Any = None,
     ) -> None:
+        # ``tracer_provider``: a private OpenTelemetry TracerProvider, used
+        # when the process also exports OpenTelemetry spans so that Langfuse
+        # neither takes over nor feeds the global provider.
         if secret_key and public_key:
             self._client = Langfuse(
                 secret_key=secret_key,
                 public_key=public_key,
                 host=base_url,
+                tracer_provider=tracer_provider,
             )
+        elif tracer_provider is not None:
+            # Keys and host come from the LANGFUSE_* environment, as with get_client().
+            self._client = Langfuse(tracer_provider=tracer_provider)
         else:
             self._client = get_client()
 

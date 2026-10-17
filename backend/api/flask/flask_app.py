@@ -10,6 +10,7 @@ from flask_cors import CORS
 from global_utils.flask.request_rules import RequestRules
 from global_utils.flask.error_handlers import register_error_handlers
 from global_utils.utils.logging_config import configure_logging
+from global_utils.telemetry import init_telemetry, instrument_flask_app
 
 
 def create_app(config: AppConfig = None) -> Flask:
@@ -23,8 +24,11 @@ def create_app(config: AppConfig = None) -> Flask:
     5) Register request rules
     """
     configure_logging("backend")
+    # Inert unless OTEL_EXPORTER_OTLP_ENDPOINT (or UNIFAI_OTEL_ENABLED) is set.
+    init_telemetry("backend")
     config = config or AppConfig.get_instance()
     app = Flask(__name__)
+    instrument_flask_app(app)
 
     # Application config
     app.version = config.get("version", "1.0.0")

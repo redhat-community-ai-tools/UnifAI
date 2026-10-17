@@ -6,9 +6,17 @@ from core.vector.domain.repository import VectorRepository
 from core.vector.domain.embedder import EmbeddingGenerator
 from core.vector.domain.model import AccessScope, SearchResult
 from infrastructure.retrieval.source_filter_resolver import SourceFilterResolver
+from global_utils.telemetry import histogram, start_span
 import logging
+import time
 
 logger = logging.getLogger(__name__)
+
+_TRACER = "rag.retrieval"
+# No query text, owner or document identifiers on spans or metrics.
+_search_duration = histogram(
+    "rag.search.duration", unit="s", description="Vector search duration", meter_name=_TRACER,
+)
 
 
 @dataclass
@@ -77,6 +85,38 @@ class RetrievalService:
             List of search result dictionaries ordered by relevance
         """
         groups = frozenset(g.lstrip("/") for g in (caller_groups or []) if g)
+        start = time.perf_counter()
+        outcome = "error"
+        with start_span(
+            "rag.search",
+            {
+                "rag.source_type": self._source_type,
+                "rag.top_k": limit,
+                "rag.filter.doc_ids.count": len(doc_ids) if doc_ids else 0,
+                "rag.filter.tags.count": len(tags) if tags else 0,
+            },
+            tracer_name=_TRACER,
+        ) as span:
+            try:
+                results = self._search(query, owner_id, limit, doc_ids, tags, groups)
+                outcome = "ok"
+            finally:
+                _search_duration.record(
+                    time.perf_counter() - start,
+                    {"rag.source_type": self._source_type, "rag.outcome": outcome},
+                )
+            span.set_attribute("rag.results.count", len(results))
+            return results
+
+    def _search(
+        self,
+        query: str,
+        owner_id: str,
+        limit: int,
+        doc_ids: Optional[List[str]],
+        tags: Optional[List[str]],
+        groups: frozenset,
+    ) -> List[Dict[str, Any]]:
         # 1. Resolve source filters (doc_ids/tags -> source_ids)
         allowed_source_ids = self._filter_resolver.resolve(
             source_type=self._source_type,
@@ -98,16 +138,18 @@ class RetrievalService:
             filters["metadata.source_id"] = list(allowed_source_ids)
 
         # 3. Generate query embedding
-        query_embedding = self._embedder.generate_query_embedding(query)
+        with start_span("rag.embed_query", tracer_name=_TRACER):
+            query_embedding = self._embedder.generate_query_embedding(query)
         
         # 4. Execute vector search
-        results = self._vector_repo.search(
-            query_embedding=query_embedding.tolist(),
-            top_k=limit,
-            filters=filters if filters else None,
-            query_text=query,
-            access=AccessScope(owner_id=owner_id, groups=groups),
-        )
+        with start_span("rag.vector_search", {"rag.top_k": limit}, tracer_name=_TRACER):
+            results = self._vector_repo.search(
+                query_embedding=query_embedding.tolist(),
+                top_k=limit,
+                filters=filters if filters else None,
+                query_text=query,
+                access=AccessScope(owner_id=owner_id, groups=groups),
+            )
         
         logger.info(f"Search returned {len(results)} results for query: {query[:50]}...")
         

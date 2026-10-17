@@ -7,9 +7,20 @@ from core.vector.domain.repository import VectorRepository
 from core.pipeline.service import PipelineService
 from core.monitoring.service import MonitoringService
 from core.data_sources.service import DataSourceService
+from global_utils.telemetry import counter, histogram, start_span
 import logging
+import time
 
 logger = logging.getLogger("rag_pipeline")
+
+_TRACER = "rag.pipeline"
+_pipeline_duration = histogram(
+    "rag.pipeline.duration", unit="s", description="Ingestion pipeline duration", meter_name=_TRACER,
+)
+_stored_embeddings = counter(
+    "rag.pipeline.embeddings.stored", unit="{chunk}",
+    description="Embedded chunks stored by ingestion pipelines", meter_name=_TRACER,
+)
 
 
 class PipelineExecutor:
@@ -85,6 +96,37 @@ class PipelineExecutor:
             Exception: Re-raises any exception after recording error and cleanup
         """
         source_type = handler.source_type
+        start = time.perf_counter()
+        outcome = "error"
+        # Identifiers are internal object ids; no source names or content.
+        with start_span(
+            "rag.pipeline",
+            {
+                "rag.source_type": source_type,
+                "rag.pipeline.id": context.pipeline_id,
+                "rag.source.id": context.source_id,
+            },
+            tracer_name=_TRACER,
+        ) as span:
+            try:
+                result = self._execute(handler, context)
+                outcome = "ok"
+            finally:
+                _pipeline_duration.record(
+                    time.perf_counter() - start,
+                    {"rag.source_type": source_type, "rag.outcome": outcome},
+                )
+            if isinstance(result, int) and not isinstance(result, bool):
+                span.set_attribute("rag.pipeline.embeddings.stored", result)
+                _stored_embeddings.add(result, {"rag.source_type": source_type})
+            return result
+
+    def _execute(
+        self,
+        handler: SourcePipelinePort,
+        context: PipelineContext,
+    ) -> Any:
+        source_type = handler.source_type
         vector_repo = self._vector_repository(f"{source_type.lower()}_data")
         
         # Register pipeline
@@ -104,26 +146,30 @@ class PipelineExecutor:
             # Step 1: Collect
             current_step = PipelineStatus.COLLECTING
             self._pipeline_svc.update_status(context.pipeline_id, current_step)
-            collected = handler.collect(context)
+            with start_span("rag.pipeline.collect", tracer_name=_TRACER):
+                collected = handler.collect(context)
             
             # Step 2: Process
             current_step = PipelineStatus.PROCESSING
             self._pipeline_svc.update_status(context.pipeline_id, current_step)
-            processed = handler.process(context, collected)
+            with start_span("rag.pipeline.process", tracer_name=_TRACER):
+                processed = handler.process(context, collected)
             
             # Step 3: Chunk & Embed
             current_step = PipelineStatus.CHUNKING_AND_EMBEDDING
             self._pipeline_svc.update_status(context.pipeline_id, current_step)
-            embeddings = handler.chunk_and_embed(context, processed)
+            with start_span("rag.pipeline.chunk_and_embed", tracer_name=_TRACER):
+                embeddings = handler.chunk_and_embed(context, processed)
             self._stamp_access(context.source_id, embeddings)
             
             # Step 4: Store
             current_step = PipelineStatus.STORING
             self._pipeline_svc.update_status(context.pipeline_id, current_step)
-            # Incremental sources name the points their new content replaces.
-            for stale in (getattr(handler, "stale_point_filters", None) or (lambda _ctx: []))(context):
-                vector_repo.delete_by_filter(stale)
-            result = vector_repo.store(embeddings)
+            with start_span("rag.pipeline.store", tracer_name=_TRACER):
+                # Incremental sources name the points their new content replaces.
+                for stale in (getattr(handler, "stale_point_filters", None) or (lambda _ctx: []))(context):
+                    vector_repo.delete_by_filter(stale)
+                result = vector_repo.store(embeddings)
             
             # Success - update status
             self._pipeline_svc.update_status(context.pipeline_id, PipelineStatus.DONE)

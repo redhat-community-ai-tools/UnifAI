@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional, TypeVar
 
 from mas.core.tracing.models import ObservationHandle
+
+F = TypeVar("F", bound=Callable[..., Any])
 
 
 class TracingService(ABC):
@@ -65,6 +67,15 @@ class TracingService(ABC):
 
     @abstractmethod
     def flush(self) -> None: ...
+
+    def bind_to_current_context(self, fn: F) -> F:
+        """Return ``fn`` bound to the caller's trace context.
+
+        Use it for work handed to another thread, so spans opened there
+        nest under the caller's current span.  The default is the
+        identity; backends with thread-local context override it.
+        """
+        return fn
 
     def get_session_cost(self, session_id: str) -> Optional[float]:
         """Fetch the total USD cost for a session from the tracing backend.
