@@ -68,7 +68,7 @@ class GraphNodeActivities:
 
     @activity.defn(name="evaluate_condition")
     def evaluate_condition(self, params: EvaluateConditionParams) -> str:
-        bind_correlation_ids(params.request_id)
+        bind_correlation_ids(params.request_id, params.session_id)
         return self._executor.evaluate_condition(
             condition_rid=params.condition_rid,
             condition_blueprint=params.condition_blueprint,

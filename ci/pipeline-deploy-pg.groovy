@@ -43,6 +43,7 @@ def secret_lists = [
     global_config: ['secret_key', 'vault_role_id', 'vault_secret_id', 'langfuse_base_url', 'langfuse_public_key', 'langfuse_secret_key', 'slack_signing_secret', 'slack_app_token', 'slack_bot_token'],
     multiagent: ['CREDENTIAL_ENCRYPTION_KEY', 'OAUTH_STATE_SECRET', 'GCP_SA_KEY_JSON_B64', 'langfuse_public_key', 'langfuse_secret_key'],
     rag: ['default_slack_bot_token', 'default_slack_user_token'],
+    logging: ['otel_auth_token', 'otel_endpoint', 'sumologic_endpoint']
 ]
 
 def generateVaultSecretsEnvFile(String vaultBasePath, Map secretMap) {

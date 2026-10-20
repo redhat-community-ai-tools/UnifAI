@@ -114,6 +114,7 @@ class GraphTraversalWorkflow:
             condition_blueprint=cond.condition_blueprint,
             step_context=cond.step_context,
             state=state,
+            session_id=self._session_id,
             request_id=self._request_id,
         )
         return await workflow.execute_activity(

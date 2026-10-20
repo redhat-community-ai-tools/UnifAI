@@ -8,6 +8,9 @@ env:
   SHARED_STORAGE: "/app/shared"
   CELERY_QUEUES: "slack_queue,document_queue,slack_events_queue"
   CELERY_WORKER: 1
+  OTEL_LOGS_ENABLED: "true"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://unifai-logging:4317"
+  OTEL_EXPORTER_OTLP_INSECURE: "true"
 
 debug: false
 

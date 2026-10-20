@@ -183,7 +183,8 @@ class LdapDirectoryProvider(DirectoryProvider):
                 return results
             except LDAPException:
                 logger.exception(
-                    "LDAP search failed: base=%s filter=%s", base_dn, search_filter,
+                    "LDAP search failed: base=%s filter_len=%d",
+                    base_dn, len(search_filter),
                 )
                 try:
                     if self._conn is not None:
@@ -276,9 +277,10 @@ class LdapDirectoryProvider(DirectoryProvider):
         name_filter = self._user_name_substrings_filter(q)
         search_filter = f"(&{oc_filter}{name_filter})"
         logger.info(
-            "LDAP user search: base=%s filter=%s",
-            self._user_base, search_filter,
+            "LDAP user search: base=%s query_len=%d",
+            self._user_base, len(query),
         )
+        logger.debug("LDAP user search filter: %s", search_filter)
         entries = self._search(self._user_base, search_filter,
                                self._user_attrs, limit=limit)
         users = [self._entry_to_user(e) for e in entries]
@@ -332,9 +334,10 @@ class LdapDirectoryProvider(DirectoryProvider):
         oc_filter = self._object_class_filter()
         search_filter = f"(&{oc_filter}({cn}=*{q}*))"
         logger.info(
-            "LDAP group search: base=%s filter=%s",
-            self._group_base, search_filter,
+            "LDAP group search: base=%s query_len=%d",
+            self._group_base, len(query),
         )
+        logger.debug("LDAP group search filter: %s", search_filter)
         entries = self._search(self._group_base, search_filter,
                                self._group_attrs, limit=limit)
         return [self._entry_to_group(e) for e in entries]
@@ -361,7 +364,11 @@ class LdapDirectoryProvider(DirectoryProvider):
         # Match the member DN pattern: uid=<user_id>,<user_base_dn>
         member_dn = f"uid={q},{self._user_base}"
         search_filter = f"(&{oc_filter}({member_attr}={member_dn}))"
-        logger.info("LDAP user-groups lookup: user=%s filter=%s", user_id, search_filter)
+        logger.info(
+            "LDAP user-groups lookup",
+            extra={"event": "ldap.user_groups_lookup", "user_id": user_id},
+        )
+        logger.debug("LDAP user-groups filter: %s", search_filter)
         entries = self._search(self._group_base, search_filter,
                                self._group_attrs, limit=0)
         return [self._entry_to_group(e) for e in entries]

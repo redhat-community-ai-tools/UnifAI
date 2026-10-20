@@ -49,6 +49,9 @@ multiagent_temporal_worker:
     LANGFUSE_ENABLED: true
     LANGFUSE_BASE_URL: "https://us.cloud.langfuse.com"
     VERSION: ""
+    OTEL_LOGS_ENABLED: "true"
+    OTEL_EXPORTER_OTLP_ENDPOINT: "http://unifai-logging:4317"
+    OTEL_EXPORTER_OTLP_INSECURE: "true"
 
 storage:
   volumeName: unifai-multiagent-shared-storage

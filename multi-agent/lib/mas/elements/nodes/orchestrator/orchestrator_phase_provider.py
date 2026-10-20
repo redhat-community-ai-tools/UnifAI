@@ -1274,7 +1274,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
                 combined_context_console = self._current_orch_context.format_context(plan_snapshot_console)
 
                 # Log truncated context for debugging
-                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": phase_name, "detail": "dynamic_context_provided", "context": combined_context_console})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": phase_name, "detail": "dynamic_context_provided", "context": {"orchestration_snapshot": combined_context_console}})
 
                 # Send FULL context to LLM
                 messages.append(ChatMessage(
@@ -1294,7 +1294,7 @@ class OrchestratorPhaseProvider(PhaseProvider):
                 fallback_context_console = f"Current Work Plan:\n{plan_snapshot_console}"
 
                 # Log truncated fallback context for debugging
-                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": phase_name, "detail": "dynamic_context_fallback", "context": fallback_context_console})
+                logger.info("phase.decision", extra={"thread_id": self._thread_id, "phase": phase_name, "detail": "dynamic_context_fallback", "context": {"orchestration_snapshot": fallback_context_console}})
 
                 # Send FULL context to LLM
                 messages.append(ChatMessage(
