@@ -7,6 +7,7 @@ from flask import Flask, request
 from global_utils.flask.decorators import validate_session
 from global_utils.internal_auth import (
     internal_auth_headers,
+    is_trusted_target,
     is_trusted_internal_request,
     trusted_header_user,
 )
@@ -83,3 +84,46 @@ def test_validate_session_accepts_trusted_header(monkeypatch):
     monkeypatch.setenv("INTERNAL_AUTH_SECRET", SECRET)
     data, err = _validate({"X-Authenticated-User": "svc-user", "X-Internal-Auth": SECRET})
     assert err is None and data.username == "svc-user"
+
+
+@pytest.mark.parametrize("url", [
+    "http://unifai-rag-server:13456/api/x",
+    "https://unifai-multiagent-be:8003",
+    "http://unifai-rag-server.team-a.svc:13456",
+    "http://unifai-rag-server.team-a.svc.cluster.local:13456/",
+    "http://custom-rag:9000",
+])
+def test_trusted_targets(monkeypatch, url):
+    monkeypatch.setenv("POD_NAMESPACE", "team-a")
+    monkeypatch.setenv("INTERNAL_AUTH_HOSTS", "custom-rag, other")
+    assert is_trusted_target(url)
+
+
+@pytest.mark.parametrize("url", [
+    "https://attacker.example/x",
+    "http://unifai-rag-server.evil.com:13456",
+    "http://unifai-rag-server@evil.com/x",
+    "http://evil.com@unifai-rag-server/x",
+    "http://unifai-rag-server.other-ns.svc:13456",
+    "http://unifai-rag-server.team-a.svc.evil.com",
+    "ftp://unifai-rag-server/x",
+    "http://unifai-rag-server:notaport/x",
+    "unifai-rag-server:13456",
+    "",
+])
+def test_untrusted_targets(monkeypatch, url):
+    monkeypatch.setenv("POD_NAMESPACE", "team-a")
+    assert not is_trusted_target(url)
+
+
+def test_namespace_forms_need_pod_namespace():
+    assert not is_trusted_target("http://unifai-rag-server.team-a.svc:13456")
+
+
+def test_headers_withheld_from_untrusted_url(monkeypatch):
+    monkeypatch.setenv("INTERNAL_AUTH_SECRET", SECRET)
+    assert internal_auth_headers("alice", url="https://attacker.example") == {}
+    assert internal_auth_headers("alice", url="http://unifai-rag-server:13456") == {
+        "X-Internal-Auth": SECRET, "X-Authenticated-User": "alice"}
+    # Callers with a configured (non user-editable) URL keep the previous behaviour.
+    assert internal_auth_headers("alice")["X-Internal-Auth"] == SECRET
