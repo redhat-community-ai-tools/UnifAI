@@ -11,6 +11,7 @@ For newer OpenAI models (GPT-5+) that require the Responses API, use the
 from __future__ import annotations
 
 import copy
+import uuid
 from typing import Any, Dict, Iterator, List, Optional, Union
 
 import httpx
@@ -89,6 +90,7 @@ class OpenAICompatibleLLM(BaseLLM):
         metadata_lookup_url: Optional[str] = None,
         metadata_lookup_timeout: float = DEFAULT_LOOKUP_TIMEOUT_S,
         lookup_forwarder: Any = None,
+        request_id_header: str = "",
         tracing: TracingService = None,
         forwarder: Optional[IdentityForwarder] = None,
         forward_user_token: bool = False,
@@ -117,6 +119,7 @@ class OpenAICompatibleLLM(BaseLLM):
         self._metadata_lookup_url = metadata_lookup_url
         self._metadata_lookup_timeout = metadata_lookup_timeout
         self._lookup_forwarder = lookup_forwarder if lookup_forwarder is not None else forwarder
+        self._request_id_header = request_id_header or ""
         self._lookup_transport = None  # test seam
 
     # ------------------------------------------------------------------
@@ -126,6 +129,7 @@ class OpenAICompatibleLLM(BaseLLM):
     def chat(self, messages: List[ChatMessage]) -> ChatMessage:
         raw_messages = OpenAIMessageConverter.to_openai(messages)
         self._sanitize_outbound_names(raw_messages)
+        request_id = self._new_request_id()
 
         with self._tracing.trace_llm(
             model=self._model,
@@ -142,7 +146,7 @@ class OpenAICompatibleLLM(BaseLLM):
                     temperature=self._temperature,
                     max_completion_tokens=self._max_tokens,
                     tools=self._tools or [],
-                    **self._request_options(),
+                    **self._request_options(request_id),
                 )
             except Exception as e:
                 rate_limited = self._as_rate_limit(e)
@@ -164,6 +168,7 @@ class OpenAICompatibleLLM(BaseLLM):
                     getattr(response, "id", None),
                     getattr(response, "model", None),
                     extract_extra_fields(response),
+                    request_id,
                 ),
             )
             usage = {}
@@ -183,6 +188,7 @@ class OpenAICompatibleLLM(BaseLLM):
     ) -> Iterator[Union[str, ChatMessage]]:
         raw_messages = OpenAIMessageConverter.to_openai(messages)
         self._sanitize_outbound_names(raw_messages)
+        request_id = self._new_request_id()
         aggregator = StreamToolCallAggregator()
         collector = StreamMetadataCollector()
         accumulated_content = ""
@@ -204,7 +210,7 @@ class OpenAICompatibleLLM(BaseLLM):
                     max_completion_tokens=self._max_tokens,
                     tools=self._tools or [],
                     stream=True,
-                    **self._request_options(),
+                    **self._request_options(request_id),
                     **call_params,
                 )
             except Exception as e:
@@ -236,7 +242,7 @@ class OpenAICompatibleLLM(BaseLLM):
             gen.update(output=accumulated_content)
 
         response_metadata = self._response_metadata(
-            collector.response_id, collector.model, collector.fields,
+            collector.response_id, collector.model, collector.fields, request_id,
         )
         if aggregator.has_tool_calls or response_metadata:
             # A final message is emitted for plain-text streams only when
@@ -263,9 +269,10 @@ class OpenAICompatibleLLM(BaseLLM):
         response_id: Optional[str],
         model: Optional[str],
         fields: Dict[str, Any],
+        request_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Build the metadata entry and enrich it with the server-side routing lookup."""
-        meta = build_response_metadata(response_id, model, fields, self._metadata_lookup_url)
+        meta = build_response_metadata(response_id, model, fields, self._metadata_lookup_url, request_id)
         entry = meta.get(RESPONSE_METADATA_KEY)
         if entry is None:
             return meta
@@ -277,6 +284,7 @@ class OpenAICompatibleLLM(BaseLLM):
             self._lookup_forwarder,
             self._metadata_lookup_timeout,
             self._lookup_transport,
+            request_id,
         )
         if routing:
             entry["routing"] = routing
@@ -300,11 +308,19 @@ class OpenAICompatibleLLM(BaseLLM):
     # Identity forwarding
     # ------------------------------------------------------------------
 
-    def _request_options(self) -> Dict[str, Any]:
-        """Per-call headers: rendered templates and, when enabled, the user's token."""
-        if self._forwarder is None:
-            return {}
-        headers = self._forwarder.headers(self._header_templates, self._forward_user_token)
+    def _new_request_id(self) -> Optional[str]:
+        """A fresh id for this call, or ``None`` when no request-id header is configured."""
+        return uuid.uuid4().hex if self._request_id_header else None
+
+    def _request_options(self, request_id: Optional[str] = None) -> Dict[str, Any]:
+        """Per-call headers: rendered templates, the user's token when enabled, the request id."""
+        headers: Dict[str, str] = {}
+        if self._forwarder is not None:
+            headers.update(
+                self._forwarder.headers(self._header_templates, self._forward_user_token) or {}
+            )
+        if request_id and self._request_id_header:
+            headers[self._request_id_header] = request_id
         return {"extra_headers": headers} if headers else {}
 
     # Error mapping

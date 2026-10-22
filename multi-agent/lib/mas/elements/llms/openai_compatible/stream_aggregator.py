@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from ..common.chat.message import RESPONSE_METADATA_KEY, ToolCall
+from .response_lookup import resolve_lookup_url
 
 
 @dataclass
@@ -105,6 +106,7 @@ def build_response_metadata(
     model: Optional[str],
     fields: Dict[str, Any],
     lookup_url_template: Optional[str],
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build the ``ChatMessage.metadata`` entry, or ``{}`` when nothing applies.
 
@@ -112,12 +114,12 @@ def build_response_metadata(
     a ``metadata_lookup_url`` is configured, so endpoints that return plain
     OpenAI responses see no behaviour change.
     """
-    lookup_url = None
-    if lookup_url_template and response_id:
-        lookup_url = lookup_url_template.replace("{response_id}", response_id)
+    lookup_url = resolve_lookup_url(lookup_url_template, response_id, request_id)
     if not fields and not lookup_url:
         return {}
     entry: Dict[str, Any] = {"response_id": response_id, "model": model, "fields": fields}
+    if request_id:
+        entry["request_id"] = request_id
     if lookup_url:
         entry["lookup_url"] = lookup_url
     return {RESPONSE_METADATA_KEY: entry}

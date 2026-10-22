@@ -140,3 +140,89 @@ def test_no_identity_means_no_request(forwarder):
     msg = _chat(llm, x_provider="p")
     assert calls == []
     assert "routing" not in msg.metadata[RESPONSE_METADATA_KEY]
+
+
+# --- request id header -------------------------------------------------------
+
+REQ_LOOKUP = "http://gw/v1/routing-decisions/{request_id}"
+HEADER = "X-Request-Id"
+
+
+def _llm_with_header(handler, header=HEADER, lookup=REQ_LOOKUP, forwarder="default"):
+    llm = _llm(handler, forwarder=forwarder, lookup=lookup)
+    llm._request_id_header = header
+    return llm
+
+
+def _sent_headers(llm):
+    return llm._client.chat.completions.create.call_args.kwargs.get("extra_headers")
+
+
+@pytest.mark.parametrize("mode", ["chat", "stream"])
+def test_request_id_header_sent_and_used_for_lookup(mode):
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json=ROUTING)
+
+    llm = _llm_with_header(handler)
+    msg = _chat(llm) if mode == "chat" else _stream_final(llm)
+    rid = _sent_headers(llm)[HEADER]
+    assert len(rid) == 32 and int(rid, 16) >= 0
+    assert seen["url"] == f"http://gw/v1/routing-decisions/{rid}"
+    entry = msg.metadata[RESPONSE_METADATA_KEY]
+    assert entry["request_id"] == rid
+    assert entry["response_id"] == "resp-1"
+    assert entry["routing"] == ROUTING
+
+
+@pytest.mark.parametrize("mode", ["chat", "stream"])
+def test_request_id_header_merges_with_identity_headers(mode):
+    fwd = FakeForwarder({"Authorization": "Bearer tok", "X-User": "u"})
+    llm = _llm_with_header(_ok)
+    llm._forwarder = fwd
+    _chat(llm) if mode == "chat" else _stream_final(llm)
+    headers = _sent_headers(llm)
+    assert headers["Authorization"] == "Bearer tok"
+    assert headers["X-User"] == "u"
+    assert HEADER in headers
+
+
+def test_request_id_is_fresh_per_call():
+    llm = _llm_with_header(_ok)
+    _chat(llm)
+    first = _sent_headers(llm)[HEADER]
+    _chat(llm)
+    assert _sent_headers(llm)[HEADER] != first
+
+
+@pytest.mark.parametrize("mode", ["chat", "stream"])
+def test_response_id_template_unchanged_with_header_set(mode):
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        return httpx.Response(200, json=ROUTING)
+
+    llm = _llm_with_header(handler, lookup=LOOKUP)
+    _chat(llm) if mode == "chat" else _stream_final(llm)
+    assert seen["url"] == "http://gw/v1/routing-decisions/resp-1"
+
+
+@pytest.mark.parametrize("mode", ["chat", "stream"])
+def test_no_header_when_unset(mode):
+    llm = _llm_with_header(_ok, header="", lookup=LOOKUP)
+    msg = _chat(llm) if mode == "chat" else _stream_final(llm)
+    headers = _sent_headers(llm)
+    assert not headers or HEADER not in headers
+    assert "request_id" not in msg.metadata[RESPONSE_METADATA_KEY]
+
+
+def test_request_id_template_without_header_fetches_nothing():
+    called = []
+    llm = _llm_with_header(lambda r: called.append(1) or httpx.Response(200, json=ROUTING),
+                           header="")
+    msg = _chat(llm)
+    assert not called
+    assert RESPONSE_METADATA_KEY not in msg.metadata

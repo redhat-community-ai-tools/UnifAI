@@ -19,22 +19,46 @@ logger = logging.getLogger(__name__)
 DEFAULT_LOOKUP_TIMEOUT_S = 2.0
 
 
+def resolve_lookup_url(
+    url_template: Optional[str],
+    response_id: Optional[str],
+    request_id: Optional[str] = None,
+) -> Optional[str]:
+    """Fill ``{response_id}`` / ``{request_id}`` in *url_template*.
+
+    Returns ``None`` when there is no template or when a placeholder used by
+    the template has no value to substitute.
+    """
+    if not url_template:
+        return None
+    for placeholder, value in (("{response_id}", response_id), ("{request_id}", request_id)):
+        if placeholder in url_template and not value:
+            return None
+    return (
+        url_template
+        .replace("{response_id}", response_id or "")
+        .replace("{request_id}", request_id or "")
+    )
+
+
 def fetch_routing(
     url_template: Optional[str],
     response_id: Optional[str],
     forwarder: Any,
     timeout_s: float = DEFAULT_LOOKUP_TIMEOUT_S,
     transport: Optional[httpx.BaseTransport] = None,
+    request_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Return the JSON object served at the resolved lookup URL, or ``None``.
 
-    ``forwarder`` must expose ``headers(templates, forward_token)`` (the
+    The template may use ``{response_id}`` (the completion id) and/or
+    ``{request_id}`` (the id this client sent with the call).  ``forwarder`` must expose ``headers(templates, forward_token)`` (the
     ``IdentityForwarder`` contract).  Without a forwarder, or when it cannot
     produce an ``Authorization`` header, nothing is fetched.
     """
-    if not url_template or not response_id or forwarder is None:
+    url = resolve_lookup_url(url_template, response_id, request_id)
+    if not url or forwarder is None:
         return None
-    url = url_template.replace("{response_id}", response_id)
     try:
         headers = forwarder.headers({}, True)
         if not headers or "Authorization" not in headers:
