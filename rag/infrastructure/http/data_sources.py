@@ -161,6 +161,9 @@ def update_source(source_id, updates):
                 "message": f"Source {source_id} not found"
             }), 404
             
+    except ValueError as e:
+        logger.warning(f"Rejected update of data source {source_id}: {e}")
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error(f"Failed to update data source {source_id}: {str(e)}")
         return jsonify({"error": str(e)}), 500
