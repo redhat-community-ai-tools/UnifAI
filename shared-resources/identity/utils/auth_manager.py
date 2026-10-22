@@ -545,6 +545,13 @@ class AuthManager:
             self.redis_store.hset(
                 identity_session_key(session.get('session_id')), session_data, ttl_seconds=ttl_seconds
             )
+            # Re-derive groups from the new token so a group removed upstream
+            # stops granting team access (and the cache does not lapse).
+            svc = current_app.extensions.get('team_service')
+            if svc and session_data.get('username'):
+                svc.cache_user_groups(
+                    session_data.get('username'), token.get('access_token'),
+                )
             logger.info("Access token refreshed successfully")
             return True
         

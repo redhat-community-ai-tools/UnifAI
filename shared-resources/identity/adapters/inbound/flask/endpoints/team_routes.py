@@ -10,7 +10,13 @@ def _is_member(svc, team, username: str) -> bool:
         return False
     if team.created_by == username:
         return True
-    return any(t.team_id == team.team_id for t in svc.list_user_teams(username))
+    # Group membership is resolved from Identity's own groups cache, never
+    # from request input.
+    group_ids = svc.cached_group_ids(username)
+    return any(
+        t.team_id == team.team_id
+        for t in svc.list_user_teams(username, group_ids=group_ids)
+    )
 
 
 def _can_access(svc, team, caller) -> bool:
@@ -59,17 +65,25 @@ def list_teams():
     if not user_id:
         return jsonify({"error": "userId parameter is required"}), 400
 
-    # ``groupIds`` omitted => unknown / legacy (do not filter by Rover groups).
-    # Present but empty => caller knows the user has no Rover groups (strict).
+    # Group resolution. The authority is Identity's server-side groups cache
+    # (computed from the verified token / directory at login and refresh).
+    # ``None`` = no group information (legacy behaviour); ``[]`` = known empty.
+    cached = svc.cached_group_ids(user_id)
+    group_ids = cached
     if "groupIds" in request.args:
         group_ids_str = request.args.get("groupIds", "").strip()
-        group_ids = (
+        requested = (
             [p.strip() for p in group_ids_str.split(",") if p.strip()]
             if group_ids_str
             else []
         )
-    else:
-        group_ids = None
+        if caller.is_service:
+            # Trusted internal caller: an explicit list is honoured as before.
+            group_ids = requested
+        elif cached is not None and set(requested) <= set(cached):
+            # Session caller may only narrow, never widen, its cached groups.
+            group_ids = requested
+        # else: unverifiable or widening request -> ignored, cached groups win.
 
     try:
         teams = svc.list_user_teams(user_id, group_ids=group_ids)
