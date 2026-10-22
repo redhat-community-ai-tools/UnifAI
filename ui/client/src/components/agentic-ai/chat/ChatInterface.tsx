@@ -24,6 +24,8 @@ import ResponseMetadataBadge from "./ResponseMetadataBadge";
 import { Message, ResponseMetadata, StreamLogEntry, WorkPlanSnapshot, ApprovalDecision, ApprovalStatus, AutoRuleAction, isSessionCancellation } from "./types";
 import { StreamLogDisplay } from "./StreamLogDisplay";
 import { ApprovalBadge } from "./ApprovalBadge";
+import { RateLimitNotice } from "./RateLimitNotice";
+import { parseRateLimitNotice } from "./helpers/rateLimit";
 import { submitApproval, submitApprovalRule } from "@/api/sessions";
 import { useToast } from "@/hooks/use-toast";
 import { UmamiTrack } from '@/components/ui/umamitrack';
@@ -1437,26 +1439,36 @@ export default function ChatInterface({
           )}
 
           {/* Final answer with markdown rendering */}
-          {message.finalAnswer && (
-            <div
-              className="mt-3 p-3 rounded-lg"
-              style={{
-                border: `1px solid hsl(var(--primary) / 0.3)`,
-              }}
-            >
-              <div className="text-sm text-gray-100">
-                <ReactMarkdown
-                  components={MarkdownComponents}
-                  remarkPlugins={[remarkGfm]}
-                >
-                  {preprocessText(message.finalAnswer)}
-                </ReactMarkdown>
+          {message.finalAnswer && (() => {
+            const rateLimit = parseRateLimitNotice(message.finalAnswer);
+            if (rateLimit) {
+              return (
+                <div className="mt-3">
+                  <RateLimitNotice notice={rateLimit} />
+                </div>
+              );
+            }
+            return (
+              <div
+                className="mt-3 p-3 rounded-lg"
+                style={{
+                  border: `1px solid hsl(var(--primary) / 0.3)`,
+                }}
+              >
+                <div className="text-sm text-gray-100">
+                  <ReactMarkdown
+                    components={MarkdownComponents}
+                    remarkPlugins={[remarkGfm]}
+                  >
+                    {preprocessText(message.finalAnswer)}
+                  </ReactMarkdown>
+                </div>
+                {message.responseMetadata && (
+                  <ResponseMetadataBadge metadata={message.responseMetadata} />
+                )}
               </div>
-              {message.responseMetadata && (
-                <ResponseMetadataBadge metadata={message.responseMetadata} />
-              )}
-            </div>
-          )}
+            );
+          })()}
         </div>
       );
     }
