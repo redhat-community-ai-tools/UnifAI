@@ -15,6 +15,7 @@ from typing import Optional
 
 import requests as http_requests
 
+from global_utils.internal_auth import internal_auth_headers
 from global_utils.redis.team_cache import TeamMembershipCache
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ class IdentityClient:
 
     def _directory_headers(self, token: Optional[str] = None) -> dict:
         from global_utils.flask.correlation import correlation_headers
-        h: dict = {**correlation_headers()}
+        h: dict = {**correlation_headers(), **internal_auth_headers()}
         if token:
             h["X-User-Token"] = token
         return h
@@ -99,7 +100,7 @@ class IdentityClient:
         resp = http_requests.get(
             f"{self._base}/api/teams/teams.list",
             params={"userId": username},
-            headers=correlation_headers(),
+            headers={**correlation_headers(), **internal_auth_headers()},
             timeout=self._timeout,
         )
         resp.raise_for_status()

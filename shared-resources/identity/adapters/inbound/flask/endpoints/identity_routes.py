@@ -1,10 +1,12 @@
 from flask import Blueprint, jsonify, current_app, request
 from models.identity import Identity
+from utils.caller import require_caller
 
 identity_bp = Blueprint("identity", __name__)
 
 
 @identity_bp.route("/identity.resolve", methods=["GET"])
+@require_caller
 def resolve_identity():
     """Resolve an identity id to its full object.
 

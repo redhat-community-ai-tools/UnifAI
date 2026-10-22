@@ -3,6 +3,7 @@ from typing import Callable
 
 from flask import Blueprint, jsonify, current_app, request
 
+from utils.caller import require_caller
 from utils.directory_cache import DirectoryCache
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ def directory_status():
 
 
 @directory_bp.route("/directory.search_users", methods=["GET"])
+@require_caller
 def search_users():
     svc = current_app.extensions["team_service"]
     if not svc.has_directory:
@@ -73,6 +75,7 @@ def search_users():
 
 
 @directory_bp.route("/directory.search_groups", methods=["GET"])
+@require_caller
 def search_groups():
     svc = current_app.extensions["team_service"]
     if not svc.has_directory:
@@ -95,6 +98,7 @@ def search_groups():
 
 
 @directory_bp.route("/directory.search", methods=["GET"])
+@require_caller
 def search_all():
     """Unified search returning both users and groups."""
     svc = current_app.extensions["team_service"]
@@ -153,6 +157,7 @@ def search_all():
 
 
 @directory_bp.route("/directory.get_user", methods=["GET"])
+@require_caller
 def get_user():
     svc = current_app.extensions["team_service"]
     if not svc.has_directory:
@@ -173,6 +178,7 @@ def get_user():
 
 
 @directory_bp.route("/directory.get_group", methods=["GET"])
+@require_caller
 def get_group():
     svc = current_app.extensions["team_service"]
     if not svc.has_directory:
