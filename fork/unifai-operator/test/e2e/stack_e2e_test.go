@@ -217,6 +217,13 @@ func TestUnifaiStack(t *testing.T) {
 		}
 	})
 
+	t.Run("the internal auth header needs the shared secret inside the cluster", func(t *testing.T) {
+		if os.Getenv("E2E_INTERNAL_AUTH") == "0" {
+			t.Skip("E2E_INTERNAL_AUTH=0: images without the internal authentication")
+		}
+		checkInternalAuth(t, ns)
+	})
+
 	t.Run("objects and a chat through the whole chain", func(t *testing.T) {
 		deployMockLLM(t, ns)
 		llm := &unifaiv1.UnifaiLLM{ObjectMeta: metav1.ObjectMeta{Name: "e2e-llm", Namespace: ns}, Spec: unifaiv1.UnifaiLLMSpec{
@@ -374,6 +381,7 @@ func stackSpec(identity unifaiv1.IdentitySpec) unifaiv1.UnifaiStackSpec {
 		Identity:       identity,
 		Storage:        unifaiv1.StorageSpec{ClassName: os.Getenv("E2E_STORAGE_CLASS"), SharedClassName: os.Getenv("E2E_SHARED_STORAGE_CLASS")},
 		DeletionPolicy: "Delete",
+		Version:        os.Getenv("E2E_VERSION"), // UnifAI images tag ("" = the operator's default)
 	}
 	if sel := os.Getenv("E2E_NODE_SELECTOR"); sel != "" {
 		k, v, _ := strings.Cut(sel, "=")
@@ -470,4 +478,58 @@ func deployMockLLM(t *testing.T, ns string) {
 		}
 		return d.Status.AvailableReplicas == 1, fmt.Sprintf("%d available", d.Status.AvailableReplicas)
 	})
+}
+
+// internalAuthProbe calls MAS and RAG from inside the namespace (allowed by the stack NetworkPolicy) with the
+// internal identity header, without and with the shared secret; it exits 0 when only the secret is accepted.
+const internalAuthProbe = `
+import os, sys, urllib.request, urllib.error
+def code(url, headers):
+    try:
+        return urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30).status
+    except urllib.error.HTTPError as e:
+        return e.code
+secret = os.environ["INTERNAL_AUTH_SECRET"]
+urls = {"mas": "http://unifai-multiagent-be:8003/api/resources/resources.list?category=llms",
+        "rag": "http://unifai-rag-server:13456/api/data_sources/data.sources.get?source_type=DOCUMENT"}
+out, ok = [], True
+for name, url in urls.items():
+    bare = code(url, {"X-Authenticated-User": "admin"})
+    wrong = code(url, {"X-Authenticated-User": "admin", "X-Internal-Auth": "wrong"})
+    good = code(url, {"X-Authenticated-User": "admin", "X-Internal-Auth": secret})
+    out.append("%s header-only=%d wrong-secret=%d secret=%d" % (name, bare, wrong, good))
+    ok = ok and bare in (401, 403) and wrong in (401, 403) and good == 200
+open("/dev/termination-log", "w").write("; ".join(out))
+sys.exit(0 if ok else 1)
+`
+
+// checkInternalAuth runs internalAuthProbe in a pod of the namespace and fails unless MAS and RAG refuse the
+// internal identity header without the right X-Internal-Auth and accept it with the stack's secret.
+func checkInternalAuth(t *testing.T, ns string) {
+	t.Helper()
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "e2e-internal-auth", Namespace: ns}, Spec: corev1.PodSpec{
+		RestartPolicy: corev1.RestartPolicyNever,
+		Containers: []corev1.Container{{Name: "probe", Image: "registry.access.redhat.com/ubi9/python-312:latest",
+			Command: []string{"python", "-c", internalAuthProbe},
+			Env: []corev1.EnvVar{{Name: "INTERNAL_AUTH_SECRET", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "unifai-internal-auth"}, Key: "INTERNAL_AUTH_SECRET"}}}}}},
+	}}
+	must(t, c.Create(ctx, pod))
+	defer func() { _ = c.Delete(ctx, pod) }()
+	var msg string
+	eventually(t, "internal auth probe finished", 5*time.Minute, func() (bool, string) {
+		if err := c.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
+			return false, err.Error()
+		}
+		for _, cs := range pod.Status.ContainerStatuses {
+			if term := cs.State.Terminated; term != nil {
+				msg = term.Message
+			}
+		}
+		return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed, string(pod.Status.Phase)
+	})
+	t.Log(msg)
+	if pod.Status.Phase != corev1.PodSucceeded {
+		t.Errorf("MAS/RAG must accept X-Authenticated-User only with the internal secret: %s", msg)
+	}
 }
