@@ -7,6 +7,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,62 @@ class MongoFactStore:
         return list(self._col.find({"scope_id": scope_id}, {"_id": 0}).sort("updated_at", -1).limit(limit))
 
 
+def _parse_port(raw: str, var: str) -> Tuple[Optional[str], Optional[int]]:
+    """Parse QDRANT_PORT: a plain integer or a Kubernetes service-link value ``tcp://host:port``."""
+    raw = raw.strip()
+    if not raw:
+        return None, None
+    bad = f"{var}={raw!r} is not a valid port or service-link value (expected 6333 or tcp://host:6333)"
+    host: Optional[str] = None
+    value: Any = raw
+    if "://" in raw:
+        parsed = urlparse(raw)
+        try:
+            value, host = parsed.port, parsed.hostname
+        except ValueError:
+            raise ValueError(bad) from None
+        if value is None:
+            raise ValueError(bad)
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(bad) from None
+    if not 0 < port < 65536:
+        raise ValueError(f"{var}={raw!r}: port must be between 1 and 65535")
+    return host, port
+
+
+def resolve_qdrant_url(url: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> str:
+    """Build the Qdrant URL from an explicit ``url`` or the QDRANT_IP / QDRANT_PORT environment.
+
+    QDRANT_IP may carry a scheme and/or a port (``qdrant``, ``http://qdrant``, ``https://q:6334``).
+    QDRANT_PORT may be a plain integer or the ``tcp://host:port`` value Kubernetes injects for a
+    Service named ``qdrant``; the host of a service link is only used when QDRANT_IP is empty.
+    """
+    if url:
+        parsed = urlparse(url.strip())
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError(f"qdrant_url={url!r} must be an absolute http(s) URL")
+        return url.strip().rstrip("/")
+    env = os.environ if env is None else env
+    link_host, port = _parse_port(env.get("QDRANT_PORT", ""), "QDRANT_PORT")
+    raw_ip = env.get("QDRANT_IP", "").strip()
+    scheme, host, ip_port = "http", link_host or "0.0.0.0", None
+    if raw_ip:
+        parsed = urlparse(raw_ip if "://" in raw_ip else f"//{raw_ip}")
+        try:
+            ip_port = parsed.port
+        except ValueError:
+            raise ValueError(f"QDRANT_IP={raw_ip!r} carries an invalid port") from None
+        if not parsed.hostname or (parsed.scheme and parsed.scheme not in ("http", "https")):
+            raise ValueError(f"QDRANT_IP={raw_ip!r} must be a host, optionally with an http(s) scheme and a port")
+        scheme, host = parsed.scheme or "http", parsed.hostname
+    final_port = ip_port or port or 6333
+    if ":" in host:
+        host = f"[{host}]"
+    return f"{scheme}://{host}:{final_port}"
+
+
 def _point_id(scope_id: str, memory_id: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"memory://{scope_id}/{memory_id}"))
 
@@ -79,7 +136,7 @@ class QdrantMemoryIndex:
         from qdrant_client.http import models as qmodels
         self._models = qmodels
         self._collection = collection
-        self._client = qdrant_client.QdrantClient(url=url or f"http://{os.getenv('QDRANT_IP', '0.0.0.0')}:{os.getenv('QDRANT_PORT', '6333')}")
+        self._client = qdrant_client.QdrantClient(url=resolve_qdrant_url(url))
         if not self._client.collection_exists(collection):
             self._client.create_collection(
                 collection_name=collection,

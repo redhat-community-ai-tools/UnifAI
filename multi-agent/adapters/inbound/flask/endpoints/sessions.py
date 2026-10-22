@@ -10,7 +10,7 @@ from pydantic.json import pydantic_encoder
 from mas.core.channels import with_heartbeats
 from mas.core.identity import Identity, IdentityType
 from mas.core.hitl.models import ApprovalOverrides, ApprovalRuleSet
-from mas.session.domain.exceptions import BlueprintNotFoundError
+from mas.session.domain.exceptions import BlueprintNotFoundError, SessionBuildError
 from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.session.domain.models import SessionMeta
 from mas.session.domain.dto import SessionListFilter, PaginationMeta, PaginatedSessions
@@ -45,6 +45,15 @@ def _bind_forwarded_identity(session_id: str) -> None:
         source.bind(session_id, identity_sid, username)
     except Exception:
         logger.warning("Could not record identity binding for session %s", session_id, exc_info=True)
+
+
+def _session_build_failed_body(e: SessionBuildError) -> dict:
+    """Error body in the endpoint's usual ``error`` / ``error_type`` shape; the message is secret-free."""
+    return {"error": e.message, "error_type": e.error_type, "sessionId": e.session_id}
+
+
+def _session_build_failed_response(e: SessionBuildError) -> Response:
+    return jsonify(_session_build_failed_body(e))
 
 
 def _check_session_busy(session_id: str, session_type: str, svc):
@@ -153,25 +162,32 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
 
     _bind_forwarded_identity(session_id)
 
-    if not stream:
+    try:
+        # Staging and the session build happen eagerly inside ``svc.run`` (even
+        # when streaming), so a build failure is reported as a clean error before
+        # any streamed byte is sent.
         result = svc.run(
             session_id=session_id,
             inputs=inputs,
             scope=scope,
+            stream=stream,
             logged_in_user=logged_in_user,
         )
+    except SessionBuildError as e:
+        return _session_build_failed_response(e), 500
+
+    if not stream:
         return json.dumps(result, default=pydantic_encoder), 200
 
     def generate():
-        stream_iter = svc.run(
-            session_id=session_id,
-            inputs=inputs,
-            scope=scope,
-            stream=True,
-            logged_in_user=logged_in_user,
-        )
-        for chunk in with_heartbeats(stream_iter):
-            yield json.dumps(chunk, default=pydantic_encoder) + "\n"
+        stream_iter = result
+        try:
+            for chunk in with_heartbeats(stream_iter):
+                yield json.dumps(chunk, default=pydantic_encoder) + "\n"
+        except SessionBuildError as e:
+            # Defensive: a lazy runner that fails to build mid-stream still
+            # ends with a structured NDJSON error event.
+            yield json.dumps(_session_build_failed_body(e)) + "\n"
 
     resp = Response(
         generate(),

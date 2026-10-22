@@ -139,7 +139,7 @@ config that takes the scope from the session identity (`ExecutionContext.identit
 ## Config
 
 `scope_id` (required), `mongo_db`, `mongo_collection` (memories), `facts_collection`,
-`qdrant_collection`, `embedding_service_url`, `embedding_model`, `embedding_dim`,
+`qdrant_collection`, `qdrant_url`, `embedding_service_url`, `embedding_model`, `embedding_dim`,
 `top_k`, `min_score`, `author`, `classification`, `access.mode`.
 
 ## Environment
@@ -147,7 +147,10 @@ config that takes the scope from the session identity (`ExecutionContext.identit
 Defaults mirror the RAG service:
 
 - `MONGODB_IP`, `MONGODB_PORT` (shared config).
-- `QDRANT_IP`, `QDRANT_PORT`.
+- `QDRANT_IP`, `QDRANT_PORT`. `QDRANT_IP` may be a bare host or carry a scheme and/or port
+  (`qdrant`, `http://qdrant`, `https://qdrant:6334`). `QDRANT_PORT` may be an integer or the
+  `tcp://host:port` value Kubernetes injects for a Service named `qdrant` (the port is taken; the host is
+  only used when `QDRANT_IP` is empty). The `qdrant_url` config field overrides both.
 - `EMBEDDING_SERVICE_URL`, `EMBEDDING_SERVICE_MODEL`, `EMBEDDING_SERVICE_TIMEOUT`.
 
 ## Extending

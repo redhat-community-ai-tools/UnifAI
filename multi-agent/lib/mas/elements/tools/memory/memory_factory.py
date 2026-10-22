@@ -24,7 +24,7 @@ class MemoryToolFactory(BaseFactory[MemoryToolConfig, MemoryTool]):
                 from .adapters import MongoFactStore, MongoMemoryTextStore, QdrantMemoryIndex, ServiceEmbedder
                 facts = facts or MongoFactStore(cfg.mongo_db, cfg.facts_collection)
                 store = store or MongoMemoryTextStore(cfg.mongo_db, cfg.mongo_collection)
-                index = index or QdrantMemoryIndex(cfg.qdrant_collection, cfg.embedding_dim)
+                index = index or QdrantMemoryIndex(cfg.qdrant_collection, cfg.embedding_dim, url=cfg.qdrant_url)
                 embedder = embedder or ServiceEmbedder(cfg.embedding_service_url, cfg.embedding_model)
             deps = kwargs.get("deps")
             checker = kwargs.get("access_checker") or build_access_checker(

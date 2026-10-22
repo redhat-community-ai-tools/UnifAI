@@ -56,3 +56,18 @@ class BlueprintNotFoundError(SessionBlueprintError):
             msg = f"Blueprint '{blueprint_id}' does not exist or has been deleted"
             
         super().__init__(msg)
+
+
+class SessionBuildError(Exception):
+    """Raised when a session's elements cannot be built (e.g. a misconfigured tool).
+
+    ``message`` is safe to show to the caller (no configuration values, no traceback);
+    the original exception is chained as ``__cause__`` for server-side logging.
+    """
+
+    error_type = "session_build_failed"
+
+    def __init__(self, session_id: str, message: str):
+        self.session_id = session_id
+        self.message = message
+        super().__init__(message)
