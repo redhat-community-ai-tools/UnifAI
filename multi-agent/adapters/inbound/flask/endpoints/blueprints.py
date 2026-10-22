@@ -24,6 +24,8 @@ from inbound.flask.decorators import (
 
 logger = logging.getLogger(__name__)
 
+_NOT_FOUND_MSG = "Blueprint not found"
+
 blueprints_bp = Blueprint("blueprints", __name__)
 
 
@@ -136,6 +138,7 @@ def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, 
 
         # Single blueprint by ID
         if blueprint_id:
+            svc.get_accessible_doc(blueprint_id, identity)
             resolved = svc.get_resolved_doc(blueprint_id=blueprint_id, caller=caller)
             return jsonify(resolved.model_dump(mode="json")), 200
 
@@ -151,8 +154,8 @@ def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, 
             "limit": limit,
         }), 200
 
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
+    except (BlueprintNotFoundError, BlueprintAccessDeniedError):
+        return jsonify({"error": _NOT_FOUND_MSG}), 404
     except Exception as e:
         # Referenced-resource-not-found is already handled without raising
         # (see BlueprintResolver.resolve_tolerant) — any KeyError reaching
@@ -248,28 +251,30 @@ def update_blueprint(identity, blueprint_id, blueprint_raw):
 
 
 @blueprints_bp.route("/blueprint.info.get", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True)
 })
-def get_blueprint_info(blueprint_id):
+def get_blueprint_info(identity, blueprint_id):
     """
     Get blueprint information.
+
+    The owner gets the full document; any authenticated caller gets a minimal
+    view (name, prompt shortcuts, usage scope) of a public blueprint.
     """
     try:
         svc = current_app.container.blueprint_service
-        doc = svc.get_blueprint_draft_doc(blueprint_id)
-        return jsonify(doc.model_dump(mode="json")), 200
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except KeyError:
-        return jsonify({"error": "Blueprint not found"}), 404
+        return jsonify(svc.get_info_for(blueprint_id, identity)), 200
+    except (BlueprintNotFoundError, BlueprintAccessDeniedError, KeyError):
+        return jsonify({"error": _NOT_FOUND_MSG}), 404
     except Exception as e:
         logger.exception(f"Unexpected error getting blueprint info for {blueprint_id}")
         return jsonify({"error": str(e)}), 500
 
 
 @blueprints_bp.route("/blueprint.draft.schema.get", methods=["GET"])
-def blueprint_draft_schema_get():
+@with_require_identity_authorization
+def blueprint_draft_schema_get(identity):
     """
     Returns the schema for blueprint drafts.
     """
@@ -282,26 +287,22 @@ def blueprint_draft_schema_get():
 
 
 @blueprints_bp.route("/remove.blueprint", methods=["DELETE"])
+@with_require_identity_authorization
 @from_query({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True)
 })
-def remove_blueprint(blueprint_id):
+def remove_blueprint(identity, blueprint_id):
     """
-    Delete a blueprint by its ID.
+    Delete a blueprint by its ID (owning user or team only).
     """
-    # TODO: Add authorization check - verify user has permission to delete this blueprint
     try:
         svc = current_app.container.blueprint_service
-        
-        # Check if blueprint exists before attempting deletion
-        if not svc.exists(blueprint_id):
-            return jsonify({
-                "status": "error",
-                "error": f"Blueprint with ID '{blueprint_id}' not found"
-            }), 404
-        
-        # Attempt to delete the blueprint
-        deleted = svc.delete(blueprint_id)
+
+        # Missing and not-owned blueprints are indistinguishable to the caller
+        try:
+            deleted = svc.delete_owned(blueprint_id, identity)
+        except (BlueprintNotFoundError, BlueprintAccessDeniedError):
+            return jsonify({"status": "error", "error": _NOT_FOUND_MSG}), 404
         
         if deleted:
             return jsonify({
@@ -364,17 +365,18 @@ def get_prompt_shortcuts(identity, blueprint_id):
 
 
 @blueprints_bp.route("/blueprint.metadata.set", methods=["PUT"])
+@with_require_identity_authorization
 @from_body({
     "blueprint_id": fields.Str(data_key="blueprintId", required=True),
     "metadata": fields.Dict(required=True),
 })
-def set_metadata(blueprint_id, metadata):
+def set_metadata(identity, blueprint_id, metadata):
     """
     Merge keys into a blueprint's metadata (key-level upsert, not full replace).
     """
     try:
         svc = current_app.container.blueprint_service
-        success = svc.set_metadata(blueprint_id=blueprint_id, metadata=metadata)
+        success = svc.set_metadata_owned(blueprint_id, metadata, identity)
         
         if not success:
             return jsonify({"error": "Failed to update metadata"}), 500
@@ -382,8 +384,8 @@ def set_metadata(blueprint_id, metadata):
         return jsonify({"status": "success"}), 200
     except InvalidMetadataKeysError as e:
         return jsonify({"error": str(e)}), 400
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
+    except (BlueprintNotFoundError, BlueprintAccessDeniedError):
+        return jsonify({"error": _NOT_FOUND_MSG}), 404
     except BlueprintMetadataError as e:
         logger.exception(f"Failed to update metadata for blueprint {blueprint_id}")
         return jsonify({"error": str(e)}), 500
@@ -408,6 +410,7 @@ def validate_blueprint(
     svc = current_app.container.blueprint_service
     authenticated_user = getattr(g, G_IDENTITY_USERNAME, "")
     try:
+        svc.get_accessible_doc(blueprint_id, identity, allow_public=True)
         result = svc.validate_blueprint(
             blueprint_id=blueprint_id,
             caller=resolve_caller_scope(identity),
@@ -416,10 +419,8 @@ def validate_blueprint(
             credential_user_id=authenticated_user,
         )
         return jsonify(result.model_dump()), 200
-    except BlueprintNotFoundError as e:
-        return jsonify({"error": str(e)}), 404
-    except KeyError as e:
-        return jsonify({"error": f"Blueprint not found: {e}"}), 404
+    except (BlueprintNotFoundError, BlueprintAccessDeniedError, KeyError):
+        return jsonify({"error": _NOT_FOUND_MSG}), 404
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
@@ -428,11 +429,12 @@ def validate_blueprint(
 
 
 @blueprints_bp.route("/draft.validate", methods=["POST"])
+@with_require_identity_authorization
 @from_body({
     "draft": fields.Str(required=False),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_draft(draft=None, timeout_seconds=10.0):
+def validate_draft(identity, draft=None, timeout_seconds=10.0):
     """
     Validate a blueprint draft before saving.
     

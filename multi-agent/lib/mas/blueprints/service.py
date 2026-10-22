@@ -32,6 +32,23 @@ logger = logging.getLogger(__name__)
 _VALID_METADATA_KEY = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_-]*$")
 
 
+# Metadata keys that API clients may set; everything else is server-managed.
+CLIENT_SETTABLE_METADATA_KEYS = frozenset({"usageScope"})
+_USAGE_SCOPES = frozenset({"public", "private"})
+PUBLIC_VIEW_MAX_SHORTCUTS = 3
+
+
+def validate_client_metadata(metadata: Dict[str, Any]) -> None:
+    """Restrict client-supplied metadata to the allowed keys and values."""
+    validate_metadata_keys(metadata)
+    unknown = [k for k in metadata if k not in CLIENT_SETTABLE_METADATA_KEYS]
+    if unknown:
+        raise InvalidMetadataKeysError(unknown)
+    scope = metadata.get("usageScope")
+    if "usageScope" in metadata and scope not in _USAGE_SCOPES:
+        raise InvalidMetadataKeysError(["usageScope"])
+
+
 def validate_metadata_keys(metadata: Dict[str, Any]) -> None:
     """Reject metadata keys that would corrupt Mongo dot-notation paths or clash with operators."""
     bad = [k for k in metadata if not _VALID_METADATA_KEY.match(k)]
@@ -158,6 +175,58 @@ class BlueprintService:
         )
 
     def delete(self, blueprint_id: str) -> bool:
+        return self._repo.delete(blueprint_id)
+
+    # ────────── Object-level access ──────────
+    @staticmethod
+    def _is_owner(doc: BlueprintDocument, identity: Identity) -> bool:
+        return doc.identity.type == identity.type and doc.identity.id == identity.id
+
+    @staticmethod
+    def _is_public(doc: BlueprintDocument) -> bool:
+        return (doc.metadata or {}).get("usageScope") == "public"
+
+    def get_accessible_doc(
+        self, blueprint_id: str, identity: Identity, *, allow_public: bool = False,
+    ) -> BlueprintDocument:
+        """Load a blueprint the caller may use.
+
+        Access is granted to the owning identity (user or team) and, when
+        ``allow_public`` is set, to anyone for a blueprint whose usageScope is
+        public. Raises ``BlueprintAccessDeniedError`` otherwise and
+        ``BlueprintNotFoundError`` when the blueprint does not exist.
+        """
+        try:
+            doc = self._repo.load(blueprint_id)
+        except KeyError as exc:
+            raise BlueprintNotFoundError(blueprint_id) from exc
+        if self._is_owner(doc, identity):
+            return doc
+        if allow_public and self._is_public(doc):
+            return doc
+        raise BlueprintAccessDeniedError(blueprint_id, identity.id)
+
+    def get_info_for(self, blueprint_id: str, identity: Identity) -> Dict[str, Any]:
+        """Blueprint info for the caller: full document for the owner,
+        a minimal view (name, shortcuts, scope) for a public blueprint."""
+        doc = self.get_accessible_doc(blueprint_id, identity, allow_public=True)
+        if self._is_owner(doc, identity):
+            return doc.model_dump(mode="json")
+        spec = doc.spec_dict or {}
+        shortcuts = spec.get("prompt_shortcuts") or []
+        return {
+            "blueprint_id": doc.blueprint_id,
+            "user_id": doc.identity.id if doc.identity.is_user else "",
+            "spec_dict": {
+                "name": spec.get("name", ""),
+                "prompt_shortcuts": shortcuts[:PUBLIC_VIEW_MAX_SHORTCUTS],
+            },
+            "metadata": {"usageScope": "public"},
+        }
+
+    def delete_owned(self, blueprint_id: str, identity: Identity) -> bool:
+        """Delete a blueprint owned by ``identity``."""
+        self.get_accessible_doc(blueprint_id, identity)
         return self._repo.delete(blueprint_id)
 
     def load_many(self, blueprint_ids: List[str]) -> List[BlueprintDocument]:
@@ -302,6 +371,14 @@ class BlueprintService:
         return PromptShortcuts.from_spec(doc.spec_dict)
 
     # ────────── Blueprint Metadata ──────────
+    def set_metadata_owned(
+        self, blueprint_id: str, metadata: Dict[str, Any], identity: Identity,
+    ) -> bool:
+        """Set client-settable metadata keys on a blueprint owned by ``identity``."""
+        validate_client_metadata(metadata)
+        self.get_accessible_doc(blueprint_id, identity)
+        return self.set_metadata(blueprint_id, metadata)
+
     def set_metadata(self, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
         """
         Merge keys into a blueprint's metadata (key-level upsert, not full replace).
