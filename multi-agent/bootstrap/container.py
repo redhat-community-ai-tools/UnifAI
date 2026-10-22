@@ -400,6 +400,7 @@ class AppContainer(metaclass=SingletonMeta):
         self.identity_provider: IdentityProvider = self._build_identity_auth_provider(
             cfg, self.identity_client
         )
+        self.session_factory.set_identity_provider(self.identity_provider)
 
         self.directory_provider = self._build_directory_provider(cfg, self.identity_client)
 

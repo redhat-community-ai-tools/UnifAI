@@ -2,6 +2,7 @@ from typing import Any
 
 from mas.elements.common.base_factory import BaseFactory
 from mas.elements.common.exceptions import PluginConfigurationError
+from .access import build_access_checker
 from .config import MemoryToolConfig
 from .identifiers import Identifier
 from .memory import MemoryTool
@@ -25,9 +26,16 @@ class MemoryToolFactory(BaseFactory[MemoryToolConfig, MemoryTool]):
                 store = store or MongoMemoryTextStore(cfg.mongo_db, cfg.mongo_collection)
                 index = index or QdrantMemoryIndex(cfg.qdrant_collection, cfg.embedding_dim)
                 embedder = embedder or ServiceEmbedder(cfg.embedding_service_url, cfg.embedding_model)
+            deps = kwargs.get("deps")
+            checker = kwargs.get("access_checker") or build_access_checker(
+                cfg.access.mode,
+                getattr(deps, "identity_provider", None),
+                getattr(deps, "execution_ctx", None),
+            )
             return MemoryTool(
                 cfg.scope_id, store, index, embedder, top_k=cfg.top_k, min_score=cfg.min_score,
                 facts=facts, author=cfg.author, classification=cfg.classification,
+                access_checker=checker,
             )
         except Exception as e:
             raise PluginConfigurationError(

@@ -5,8 +5,9 @@ from typing import Any, Dict, List, Optional
 
 from mas.core.hitl.models import ToolAccessMode
 from mas.elements.tools.common.base_tool import BaseTool
+from .access import ACCESS_REFUSED_PREFIX, ScopeAccessDenied
 from .models import FactEntry, MemoryArgs, MemoryEntry, MemoryResponse
-from .ports import Embedder, FactStore, MemoryTextStore, VectorIndex
+from .ports import Embedder, FactStore, MemoryTextStore, ScopeAccessChecker, VectorIndex
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ class MemoryTool(BaseTool):
         facts: Optional[FactStore] = None,
         author: Optional[str] = None,
         classification: Optional[str] = None,
+        access_checker: Optional[ScopeAccessChecker] = None,
     ) -> None:
         if not scope_id:
             raise ValueError("scope_id must not be empty")
@@ -73,6 +75,7 @@ class MemoryTool(BaseTool):
         self._facts = facts
         self._author = author
         self._classification = classification
+        self._access_checker = access_checker
         self._agent: Optional[str] = None
         self._session_id: Optional[str] = None
 
@@ -89,7 +92,25 @@ class MemoryTool(BaseTool):
             "classification": self._classification,
         }
 
+    def _denial(self, operation: str) -> Optional[Dict[str, Any]]:
+        """Check scope access before anything else; None when allowed (or no checker configured)."""
+        if self._access_checker is None:
+            return None
+        try:
+            self._access_checker.authorize(self._scope_id)
+            return None
+        except ScopeAccessDenied as exc:
+            message = str(exc)
+        except Exception:
+            logger.error("memory.access.check_failed", extra={"scope_id": self._scope_id}, exc_info=True)
+            message = f"{ACCESS_REFUSED_PREFIX}: access could not be verified"
+        logger.warning("memory.access.denied", extra={"scope_id": self._scope_id, "operation": operation})
+        return MemoryResponse(success=False, operation=operation, error=message).model_dump()
+
     def run(self, **kwargs: Any) -> Dict[str, Any]:
+        denied = self._denial(str(kwargs.get("operation")))
+        if denied is not None:
+            return denied
         try:
             args = MemoryArgs(**kwargs)
         except ValueError as exc:
