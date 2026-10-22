@@ -20,6 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 flask = ["flask", "flask-cors", "gunicorn"]
 mongo = ["pymongo"]
+memory = ["pymongo", "qdrant-client"]
 temporal = ["temporalio"]
 langgraph = ["langgraph", "langchain", "langchain-core", "deepagents"]
 llms = ["openai", "langchain-openai", "langchain-google-genai"]
@@ -31,7 +32,7 @@ rag = ["jsonschema"]
 redis = ["redis"]
 tracing = ["langfuse>=3.0.0"]
 all = [
-    "mas[flask,mongo,temporal,langgraph,llms,tools,a2a,claude,rag,redis,openshell,tracing]",
+    "mas[flask,mongo,memory,temporal,langgraph,llms,tools,a2a,claude,rag,redis,openshell,tracing]",
 ]
 test = ["pytest>=6.0"]
 
