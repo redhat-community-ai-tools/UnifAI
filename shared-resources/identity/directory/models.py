@@ -45,3 +45,21 @@ class LdapConfig(BaseModel):
     attr_group_cn: str = "cn"
     attr_group_description: str = "description"
     attr_group_member: str = "uniqueMember"
+
+
+class OidcClaimsConfig(BaseModel):
+    """Settings for the ``oidc-claims`` directory provider."""
+    # Claim holding the group list; a dotted path (``realm_access.roles``)
+    # is resolved when no claim has that exact name.
+    claim: str = "groups"
+    # Claim that must equal the user being queried.
+    username_claim: str = "preferred_username"
+    # Removed from the start of each group after the leading ``/`` is stripped.
+    group_prefix: str = ""
+    # Case is preserved by default; set to match case-insensitively.
+    lowercase: bool = False
+    # Optional signature verification (PyJWT). Empty jwks_url = no verification
+    # (token provenance is the identity service's own token exchange).
+    jwks_url: str = ""
+    issuer: str = ""
+    audience: str = ""

@@ -1,4 +1,4 @@
-from directory.models import DirectoryUser, DirectoryGroup, LdapConfig
+from directory.models import DirectoryUser, DirectoryGroup, LdapConfig, OidcClaimsConfig
 from directory.provider import DirectoryProvider
 
 
@@ -8,6 +8,9 @@ def __getattr__(name: str):
     if name == "LdapDirectoryProvider":
         from directory.ldap_provider import LdapDirectoryProvider
         return LdapDirectoryProvider
+    if name == "OidcClaimsDirectoryProvider":
+        from directory.oidc_claims_provider import OidcClaimsDirectoryProvider
+        return OidcClaimsDirectoryProvider
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -16,5 +19,7 @@ __all__ = [
     "DirectoryGroup",
     "DirectoryProvider",
     "LdapConfig",
+    "OidcClaimsConfig",
+    "OidcClaimsDirectoryProvider",
     "LdapDirectoryProvider",
 ]

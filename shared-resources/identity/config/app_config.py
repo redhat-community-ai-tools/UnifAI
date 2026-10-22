@@ -81,6 +81,17 @@ class AppConfig(SharedConfig):
     directory_ldap_bind_dn: str = ""
     directory_ldap_bind_password: str = ""
 
+    # OIDC-claims settings (used when directory_provider="oidc-claims")
+    directory_oidc_claim: str = "groups"
+    directory_oidc_username_claim: str = "preferred_username"
+    directory_oidc_group_prefix: str = ""
+    directory_oidc_lowercase: bool = False
+    # Optional signature verification; empty jwks_url = decode without verifying
+    # (tokens come from the service's own token exchange).
+    directory_oidc_jwks_url: str = ""
+    directory_oidc_issuer: str = ""
+    directory_oidc_audience: str = ""
+
     # User-groups cache TTL (seconds). Groups are fetched on login and
     # cached in Redis so we don't hit LDAP on every request.
     user_groups_cache_ttl: int = 3600

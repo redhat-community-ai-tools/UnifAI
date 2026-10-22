@@ -12,7 +12,7 @@ from directory.provider import DirectoryProvider
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_PROVIDERS = {"ldap"}
+_SUPPORTED_PROVIDERS = {"ldap", "oidc-claims"}
 
 
 def _is_placeholder_user_base_dn(user_base_dn: str) -> bool:
@@ -106,7 +106,26 @@ def build_directory_provider(cfg) -> Optional[DirectoryProvider]:
     if provider_name == "ldap":
         return _build_ldap(cfg)
 
+    if provider_name == "oidc-claims":
+        return _build_oidc_claims(cfg)
+
     return None
+
+
+def _build_oidc_claims(cfg) -> DirectoryProvider:
+    from directory import OidcClaimsConfig, OidcClaimsDirectoryProvider
+
+    oidc_cfg = OidcClaimsConfig(
+        claim=cfg.directory_oidc_claim,
+        username_claim=cfg.directory_oidc_username_claim,
+        group_prefix=cfg.directory_oidc_group_prefix,
+        lowercase=cfg.directory_oidc_lowercase,
+        jwks_url=cfg.directory_oidc_jwks_url,
+        issuer=cfg.directory_oidc_issuer,
+        audience=cfg.directory_oidc_audience,
+    )
+    logger.info("Directory provider: oidc-claims (claim=%s)", oidc_cfg.claim)
+    return OidcClaimsDirectoryProvider(config=oidc_cfg)
 
 
 def _build_ldap(cfg) -> DirectoryProvider:
