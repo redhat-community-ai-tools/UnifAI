@@ -21,7 +21,7 @@ export const ResponseMetadataBadge: React.FC<ResponseMetadataBadgeProps> = ({ me
   const fields = metadata.fields ?? {};
   // Any field named "provider" or "<prefix>_provider" identifies the serving provider.
   const providerKey = Object.keys(fields).find((k) => k === "provider" || k.endsWith("_provider"));
-  const provider = providerKey ? fields[providerKey] : undefined;
+  const provider = metadata.routing?.provider ?? (providerKey ? fields[providerKey] : undefined);
   const summary = [provider && display(provider), metadata.model].filter(Boolean).join(" · ");
 
   return (
