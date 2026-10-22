@@ -121,6 +121,9 @@ class UnifAIClient:
             "Content-Type": "application/json",
             "X-Authenticated-User": config.user_shortcut,
         })
+        _secret = os.environ.get("INTERNAL_AUTH_SECRET", "").strip()
+        if _secret:
+            self.session.headers["X-Internal-Auth"] = _secret
         self.session.verify = False  # Disable SSL verification for internal routes
 
     def _url(self, endpoint: str) -> str:

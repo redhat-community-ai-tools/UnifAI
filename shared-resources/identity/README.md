@@ -48,6 +48,20 @@ curl ${KEYCLOACK_BASE_URL}/realms/${KEYCLOACK_REALM}/protocol/openid-connect/log
 -d client_secret=$CLIENT_SECRET \
 -d refresh_token=$REFRESH_TOKEN
 
+## Caller authentication
+
+Team, directory and `identity.resolve` routes require an authenticated caller:
+either a browser session (cookie) or a trusted internal service presenting the
+shared secret.
+
+| Variable | Used by | Purpose |
+|----------|---------|---------|
+| `INTERNAL_AUTH_SECRET` | identity, multi-agent, rag, backend | Shared secret sent in `X-Internal-Auth` by service-to-service callers; `X-Authenticated-User` is honoured only with a matching secret. Use the same value everywhere. |
+| `UNIFAI_DEV_MODE` | all | Set to `true` for local development only: trusts `X-Authenticated-User` without the secret and allows the permissive dev identity provider. |
+
+With a session, team ownership and membership are derived from the session user;
+`createdBy` / `requestedBy` are only read from internal service callers.
+
 ## Directory providers
 
 `DIRECTORY_PROVIDER` selects where users and groups come from: `ldap` or

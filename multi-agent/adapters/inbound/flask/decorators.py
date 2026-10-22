@@ -24,6 +24,7 @@ from typing import Any, Callable
 from flask import current_app, g, jsonify, request, session
 
 from global_utils.constants import INTERNAL_AUTH_HEADER
+from global_utils.internal_auth import trusted_header_user
 from global_utils.flask.decorators import validate_session, G_IDENTITY_SESSION
 from global_utils.flask.correlation import bind_session_id
 from mas.core.caller_scope import CallerScope
@@ -71,19 +72,16 @@ _AUTH_HEADER = INTERNAL_AUTH_HEADER
 
 
 def _get_fallback_user() -> str | None:
-    """Fallback authentication for non-browser callers.
+    """Fallback authentication for trusted internal callers.
 
-    Reads the ``X-Authenticated-User`` header set by trusted internal
-    services (e.g. the backend relaying Slack commands).  The value is
-    the Slack *username* (e.g. ``sfiresht``), which matches the identity
-    stored in MongoDB for session ownership.
+    Reads the ``X-Authenticated-User`` header, honoured only when the request
+    carries the shared internal secret (or dev mode is on); see
+    ``global_utils.internal_auth``.
     """
-    user = request.headers.get(_AUTH_HEADER, "").strip()
+    user = trusted_header_user(request.headers)
     if user:
-        logger.debug("Authenticated via %s header: %s", _AUTH_HEADER, user)
-        return user
-
-    return None
+        logger.debug("Authenticated via %s header", _AUTH_HEADER)
+    return user
 
 
 # ──────────────────────────────────────────────────────────────────────────────
