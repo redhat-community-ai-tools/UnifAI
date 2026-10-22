@@ -28,6 +28,7 @@ class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatib
                 base_url=str(cfg.base_url),
                 temperature=cfg.temperature,
                 max_tokens=cfg.max_tokens,
+                metadata_lookup_url=cfg.metadata_lookup_url,
                 tracing=tracing,
                 **cfg.extra
             )

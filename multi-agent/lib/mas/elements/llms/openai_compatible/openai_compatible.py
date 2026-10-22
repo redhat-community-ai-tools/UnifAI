@@ -23,7 +23,12 @@ from ..common.tool_name_restorer import restore_tool_names
 from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import OpenAIMessageConverter
 from .tools_converter import OpenAIToolsConverter
-from .stream_aggregator import StreamToolCallAggregator
+from .stream_aggregator import (
+    StreamMetadataCollector,
+    StreamToolCallAggregator,
+    build_response_metadata,
+    extract_extra_fields,
+)
 from mas.core.tracing import TracingService
 
 
@@ -48,6 +53,7 @@ class OpenAICompatibleLLM(BaseLLM):
         temperature: float = 0.7,
         max_tokens: int = 1024,
         api_key: str = "EMPTY",
+        metadata_lookup_url: Optional[str] = None,
         tracing: TracingService = None,
         **extra: Any,
     ) -> None:
@@ -60,6 +66,7 @@ class OpenAICompatibleLLM(BaseLLM):
         self._rev_names: Dict[str, str] = {}
         self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
         self._tracing = tracing
+        self._metadata_lookup_url = metadata_lookup_url
 
     # ------------------------------------------------------------------
     # BaseLLM interface
@@ -95,6 +102,15 @@ class OpenAICompatibleLLM(BaseLLM):
                 response.choices[0].message,
             )
             result_msg = restore_tool_names(self._rev_names, result_msg)
+            result_msg = self._with_response_metadata(
+                result_msg,
+                build_response_metadata(
+                    getattr(response, "id", None),
+                    getattr(response, "model", None),
+                    extract_extra_fields(response),
+                    self._metadata_lookup_url,
+                ),
+            )
             usage = {}
             if response.usage:
                 usage = {
@@ -113,6 +129,7 @@ class OpenAICompatibleLLM(BaseLLM):
         raw_messages = OpenAIMessageConverter.to_openai(messages)
         self._sanitize_outbound_names(raw_messages)
         aggregator = StreamToolCallAggregator()
+        collector = StreamMetadataCollector()
         accumulated_content = ""
 
         with self._tracing.trace_llm(
@@ -141,6 +158,7 @@ class OpenAICompatibleLLM(BaseLLM):
                 )
                 raise
             for chunk in stream_iter:
+                collector.absorb(chunk)
                 if not chunk.choices:
                     if hasattr(chunk, "usage") and chunk.usage:
                         gen.update(usage_details={
@@ -157,12 +175,20 @@ class OpenAICompatibleLLM(BaseLLM):
                     aggregator.absorb(delta.tool_calls)
             gen.update(output=accumulated_content)
 
-        if aggregator.has_tool_calls:
-            tool_calls = aggregator.build()
+        response_metadata = build_response_metadata(
+            collector.response_id,
+            collector.model,
+            collector.fields,
+            self._metadata_lookup_url,
+        )
+        if aggregator.has_tool_calls or response_metadata:
+            # A final message is emitted for plain-text streams only when
+            # response metadata exists; otherwise the stream is unchanged.
             result = ChatMessage(
                 role=Role.ASSISTANT,
                 content=accumulated_content,
-                tool_calls=tool_calls,
+                tool_calls=aggregator.build() if aggregator.has_tool_calls else None,
+                metadata=response_metadata,
             )
             yield restore_tool_names(self._rev_names, result)
 
@@ -174,6 +200,15 @@ class OpenAICompatibleLLM(BaseLLM):
         clone._tools = OpenAIToolsConverter.to_openai(tools)
         self._sanitize_tool_defs(clone._tools, clone._fwd_names)
         return clone
+
+    @staticmethod
+    def _with_response_metadata(
+        msg: ChatMessage, response_metadata: Dict[str, Any],
+    ) -> ChatMessage:
+        """Return *msg* carrying *response_metadata* (unchanged when empty)."""
+        if not response_metadata:
+            return msg
+        return msg.model_copy(update={"metadata": {**msg.metadata, **response_metadata}})
 
     @property
     def name(self) -> str:

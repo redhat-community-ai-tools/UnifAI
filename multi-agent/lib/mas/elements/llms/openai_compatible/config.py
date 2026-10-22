@@ -1,4 +1,4 @@
-from typing import Literal, Dict, Any
+from typing import Literal, Dict, Any, Optional
 from pydantic import Field, HttpUrl
 from mas.core.field_hints import CardHint, CardContext
 from ..common.base_config import BaseLLMConfig
@@ -23,6 +23,14 @@ class OpenAICompatibleConfig(BaseLLMConfig):
         ge=1,
         description="Maximum number of tokens to generate",
         json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
+    )
+    metadata_lookup_url: Optional[str] = Field(
+        None,
+        description=(
+            "Optional URL template containing '{response_id}'. When set, the "
+            "UI can fetch an explanation of how a response was produced "
+            "(e.g. which model served it and why) on demand."
+        ),
     )
     extra: Dict[str, Any] = Field(
         default_factory=dict,
