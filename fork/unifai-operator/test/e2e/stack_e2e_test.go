@@ -9,10 +9,10 @@ package e2e
 import (
 	"context"
 	"crypto/tls"
-	"net/http"
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
