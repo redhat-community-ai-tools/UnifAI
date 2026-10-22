@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from mas.core.hitl.models import ToolAccessMode
 from mas.elements.tools.common.base_tool import BaseTool
-from .access import ScopeAccessDenied
+from .access import ACCESS_REFUSED_PREFIX, ScopeAccessDenied
 from .models import FactEntry, MemoryArgs, MemoryEntry, MemoryResponse
 from .ports import Embedder, FactStore, MemoryTextStore, ScopeAccessChecker, VectorIndex
 
@@ -103,7 +103,7 @@ class MemoryTool(BaseTool):
             message = str(exc)
         except Exception:
             logger.error("memory.access.check_failed", extra={"scope_id": self._scope_id}, exc_info=True)
-            message = "memory access refused: access could not be verified"
+            message = f"{ACCESS_REFUSED_PREFIX}: access could not be verified"
         logger.warning("memory.access.denied", extra={"scope_id": self._scope_id, "operation": operation})
         return MemoryResponse(success=False, operation=operation, error=message).model_dump()
 

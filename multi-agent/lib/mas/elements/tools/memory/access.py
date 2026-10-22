@@ -14,6 +14,9 @@ from .config import AccessMode
 logger = logging.getLogger(__name__)
 
 
+ACCESS_REFUSED_PREFIX = "memory access refused"
+
+
 class ScopeAccessDenied(Exception):
     """The acting user may not use the scope. The message is safe to show to the model."""
 
@@ -21,14 +24,14 @@ class ScopeAccessDenied(Exception):
 def acting_user(holder: Optional[ExecutionContextHolder]) -> str:
     """Return the acting user id from the execution context, or raise ``ScopeAccessDenied``."""
     if holder is None:
-        raise ScopeAccessDenied("memory access refused: no execution context is bound")
+        raise ScopeAccessDenied(f"{ACCESS_REFUSED_PREFIX}: no execution context is bound")
     try:
         user = holder.context.credential_user_id()
     except RuntimeError:
-        raise ScopeAccessDenied("memory access refused: no execution context is bound") from None
+        raise ScopeAccessDenied(f"{ACCESS_REFUSED_PREFIX}: no execution context is bound") from None
     user = (user or "").strip()
     if not user:
-        raise ScopeAccessDenied("memory access refused: the acting user cannot be identified")
+        raise ScopeAccessDenied(f"{ACCESS_REFUSED_PREFIX}: the acting user cannot be identified")
     return user
 
 
@@ -45,9 +48,9 @@ class TeamScopeAccessChecker:
             member = self._provider.is_member(user, scope_id)
         except Exception:
             logger.warning("memory.access.provider_error", extra={"scope_id": scope_id}, exc_info=True)
-            raise ScopeAccessDenied("memory access refused: team membership could not be verified") from None
+            raise ScopeAccessDenied(f"{ACCESS_REFUSED_PREFIX}: team membership could not be verified") from None
         if member is not True:
-            raise ScopeAccessDenied("memory access refused: the acting user is not a member of this scope")
+            raise ScopeAccessDenied(f"{ACCESS_REFUSED_PREFIX}: the acting user is not a member of this scope")
 
 
 class OwnerScopeAccessChecker:
@@ -58,7 +61,7 @@ class OwnerScopeAccessChecker:
 
     def authorize(self, scope_id: str) -> None:
         if acting_user(self._holder) != scope_id:
-            raise ScopeAccessDenied("memory access refused: this scope is owned by another user")
+            raise ScopeAccessDenied(f"{ACCESS_REFUSED_PREFIX}: this scope is owned by another user")
 
 
 def build_access_checker(
