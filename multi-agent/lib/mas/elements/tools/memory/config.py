@@ -1,7 +1,9 @@
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from urllib.parse import urlparse
+
+from pydantic import BaseModel, Field, field_validator
 
 from mas.elements.tools.common.base_config import BaseToolConfig
 from .identifiers import Identifier
@@ -49,6 +51,9 @@ class MemoryToolConfig(BaseToolConfig):
     classification: Optional[str] = Field(None, description="Optional data classification recorded as provenance on every write")
     mongo_collection: str = Field("memories", description="MongoDB collection holding the memory texts")
     qdrant_collection: str = Field("memories", description="Qdrant collection holding the memory embeddings")
+    qdrant_url: Optional[str] = Field(
+        None, description="Explicit Qdrant URL (http or https); overrides the QDRANT_IP and QDRANT_PORT environment variables",
+    )
     embedding_service_url: Optional[str] = Field(
         None, description="Embedding service base URL; defaults to the EMBEDDING_SERVICE_URL environment variable, as in the RAG service",
     )
@@ -58,3 +63,13 @@ class MemoryToolConfig(BaseToolConfig):
     embedding_dim: int = Field(384, gt=0, description="Dimension of the embedding vectors")
     top_k: int = Field(5, gt=0, le=50, description="Default number of memories returned by a read")
     min_score: float = Field(0.0, ge=0.0, le=1.0, description="Minimum similarity score for a read result")
+
+    @field_validator("qdrant_url")
+    @classmethod
+    def _validate_qdrant_url(cls, value: Optional[str]) -> Optional[str]:
+        if value is None or not value.strip():
+            return None
+        parsed = urlparse(value.strip())
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError("qdrant_url must be an absolute http(s) URL, e.g. http://qdrant:6333")
+        return value.strip()
