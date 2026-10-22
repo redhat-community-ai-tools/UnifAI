@@ -199,7 +199,6 @@ rules:
   resources:
   - unifaiagentbundles
   - unifaichats
-  - unifaiproviders
   - unifairagpipelines
   - unifairagsources
   - unifairetrievers
@@ -262,6 +261,7 @@ rules:
   - unifaiagents
   - unifaiconditions
   - unifaillms
+  - unifaiproviders
   - unifaiworkflows
   verbs:
   - create

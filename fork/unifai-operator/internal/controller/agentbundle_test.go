@@ -166,6 +166,35 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		Expect(acfg["system_message"]).To(HavePrefix("You are Tekos"))
 	})
 
+	It("emits a per-task MCP provider carrying the Zuno headers when spec.mcp is set", func() {
+		ns := setup("bundle-mcp")
+		files := tekosFiles()
+		ref := fakeBundles.put(files, sign(key, files))
+		b := newBundle(ns, ref, nil)
+		b.Spec.MCP = &unifaiv1.BundleMCP{ConfigSpec: unifaiv1.ConfigSpec{Config: raw(map[string]any{
+			"mcp_url": "http://mcp-gateway.zuno-ai-run.svc:8080/mcp", "transport_type": "streamable http",
+			"auth_method": "forward_user_token", "additional_headers": map[string]any{"X-Extra": "kept"}})}}
+		Expect(k8sClient.Create(ctx, b)).To(Succeed())
+		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Ready"))
+		Expect(status(ns)().Children).To(ContainElement("UnifaiProvider/tekos-answer-technical-question"))
+
+		var p unifaiv1.UnifaiProvider
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "tekos-answer-technical-question"}, &p)).To(Succeed())
+		Expect(p.OwnerReferences).To(HaveLen(1))
+		Expect(p.Spec.Type).To(Equal("mcp_server"))
+		cfg := map[string]any{}
+		Expect(json.Unmarshal(p.Spec.Config.Raw, &cfg)).To(Succeed())
+		Expect(cfg["auth_method"]).To(Equal("forward_user_token"))
+		Expect(cfg["additional_headers"]).To(Equal(map[string]any{"X-Extra": "kept", "X-Zuno-Agent": "tekos",
+			"X-Zuno-Task": "answer-technical-question", "X-Zuno-Data-Classification": "C1", "X-Zuno-Run-Id": "{session_id}"}))
+
+		var agent unifaiv1.UnifaiAgent
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "tekos-answer-technical-question"}, &agent)).To(Succeed())
+		acfg := map[string]any{}
+		Expect(json.Unmarshal(agent.Spec.Config.Raw, &acfg)).To(Succeed())
+		Expect(acfg["providers"]).To(Equal([]any{"$ref:provider/tekos-answer-technical-question", "$ref:provider/mcp-gateway"}))
+	})
+
 	It("emits nothing for a tampered bundle", func() {
 		ns := setup("bundle-tampered")
 		files := tekosFiles()

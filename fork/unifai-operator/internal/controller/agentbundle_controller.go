@@ -41,7 +41,7 @@ type AgentBundleReconciler struct {
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaiagentbundles,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaiagentbundles/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaiagentbundles/finalizers,verbs=update
-// +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaillms;unifaiagents;unifaiconditions;unifaiworkflows,verbs=create;delete
+// +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaillms;unifaiagents;unifaiconditions;unifaiworkflows;unifaiproviders,verbs=create;delete
 
 // Zuno headers the emitted LLMs send to the model gateway (ADR-0563, ADR-0565).
 const (
@@ -297,8 +297,27 @@ func renderBundle(cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) ([]client.Objec
 		if _, ok := agent["strategy_type"]; !ok {
 			agent["strategy_type"] = "react"
 		}
-		if len(t.AllowedTools) > 0 && len(cr.Spec.Providers) > 0 {
+		if len(t.AllowedTools) > 0 && (cr.Spec.MCP != nil || len(cr.Spec.Providers) > 0) {
 			refs := []any{}
+			if cr.Spec.MCP != nil {
+				mcp, err := rawMap(cr.Spec.MCP.Config)
+				if err != nil {
+					return nil, nil, err
+				}
+				mcpHeaders := map[string]any{}
+				if h, ok := mcp["additional_headers"].(map[string]any); ok {
+					mcpHeaders = h
+				}
+				mcpHeaders[headerAgent] = b.Name
+				mcpHeaders[headerTask] = t.Name
+				mcpHeaders[headerClassification] = level.String()
+				mcpHeaders[headerRunID] = "{session_id}"
+				mcp["additional_headers"] = mcpHeaders
+				objs = append(objs, &unifaiv1.UnifaiProvider{ObjectMeta: childMeta(cr, name), Spec: unifaiv1.UnifaiProviderSpec{
+					CommonSpec: common, Type: "mcp_server",
+					ConfigSpec: unifaiv1.ConfigSpec{Config: rawJSON(mcp), SecretRefs: cr.Spec.MCP.SecretRefs}}})
+				refs = append(refs, "$ref:provider/"+name)
+			}
 			for _, p := range cr.Spec.Providers {
 				refs = append(refs, "$ref:provider/"+p)
 			}
@@ -403,6 +422,8 @@ func specOf(o client.Object) any {
 		return &v.Spec
 	case *unifaiv1.UnifaiWorkflow:
 		return &v.Spec
+	case *unifaiv1.UnifaiProvider:
+		return &v.Spec
 	}
 	return nil
 }
@@ -442,7 +463,7 @@ func (r *AgentBundleReconciler) prune(ctx context.Context, cr *unifaiv1.UnifaiAg
 		keep[o] = true
 	}
 	sel := client.MatchingLabels{unifaiv1.AgentBundleLabel: cr.Name}
-	lists := []client.ObjectList{&unifaiv1.UnifaiLLMList{}, &unifaiv1.UnifaiAgentList{}, &unifaiv1.UnifaiConditionList{}, &unifaiv1.UnifaiWorkflowList{}}
+	lists := []client.ObjectList{&unifaiv1.UnifaiLLMList{}, &unifaiv1.UnifaiAgentList{}, &unifaiv1.UnifaiConditionList{}, &unifaiv1.UnifaiWorkflowList{}, &unifaiv1.UnifaiProviderList{}}
 	for _, l := range lists {
 		if err := r.List(ctx, l, client.InNamespace(cr.Namespace), sel); err != nil {
 			return err
@@ -517,6 +538,6 @@ func (r *AgentBundleReconciler) pullCredential(ctx context.Context, cr *unifaiv1
 func (r *AgentBundleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiAgentBundle{}).
 		Owns(&unifaiv1.UnifaiLLM{}).Owns(&unifaiv1.UnifaiAgent{}).
-		Owns(&unifaiv1.UnifaiCondition{}).Owns(&unifaiv1.UnifaiWorkflow{}).
+		Owns(&unifaiv1.UnifaiCondition{}).Owns(&unifaiv1.UnifaiWorkflow{}).Owns(&unifaiv1.UnifaiProvider{}).
 		Named("unifaiagentbundle").Complete(r)
 }

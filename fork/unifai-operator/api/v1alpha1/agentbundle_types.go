@@ -55,6 +55,13 @@ type BundleLLM struct {
 	ConfigSpec `json:",inline"`
 }
 
+// BundleMCP is the template of the MCP provider emitted for every task that declares allowed_tools: the
+// bundle adds the Zuno headers (agent, task, effective classification, run id) to `config.additional_headers`,
+// so the gateway behind it can apply that agent task's own tool declaration.
+type BundleMCP struct {
+	ConfigSpec `json:",inline"`
+}
+
 // UnifaiAgentBundleSpec maps one signed OKF agent bundle onto UnifAI objects.
 type UnifaiAgentBundleSpec struct {
 	// Owner and team of the emitted objects.
@@ -70,7 +77,12 @@ type UnifaiAgentBundleSpec struct {
 	// +optional
 	Entitlement string    `json:"entitlement,omitempty"`
 	LLM         BundleLLM `json:"llm"`
-	// UnifaiProvider names (MCP servers) attached to the tasks that declare allowed_tools.
+	// MCP provider emitted per task that declares allowed_tools, carrying the Zuno headers. It is attached
+	// before `providers`.
+	// +optional
+	MCP *BundleMCP `json:"mcp,omitempty"`
+	// UnifaiProvider names (MCP servers) attached to the tasks that declare allowed_tools, shared by all
+	// tasks and sent without the Zuno headers.
 	// +optional
 	Providers []string `json:"providers,omitempty"`
 	// UnifaiRetriever name attached to the tasks that declare allowed_knowledge.

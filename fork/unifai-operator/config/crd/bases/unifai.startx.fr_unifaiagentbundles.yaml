@@ -151,13 +151,49 @@ spec:
                     - openai_compatible
                     type: string
                 type: object
+              mcp:
+                description: |-
+                  MCP provider emitted per task that declares allowed_tools, carrying the Zuno headers. It is attached
+                  before `providers`.
+                properties:
+                  config:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  secretRefs:
+                    items:
+                      description: SecretRef injects a Secret value at a dotted path
+                        of the UnifAI config.
+                      properties:
+                        path:
+                          description: Dotted path in the config, e.g. `api_key` or
+                            `headers.token`.
+                          type: string
+                        secretKeyRef:
+                          description: SecretKeySelector selects a key of a Secret
+                            in the CR's namespace.
+                          properties:
+                            key:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                          - key
+                          - name
+                          type: object
+                      required:
+                      - path
+                      - secretKeyRef
+                      type: object
+                    type: array
+                type: object
               owner:
                 default: admin
                 description: UnifAI user owning the object (workspace identity).
                 type: string
               providers:
-                description: UnifaiProvider names (MCP servers) attached to the tasks
-                  that declare allowed_tools.
+                description: |-
+                  UnifaiProvider names (MCP servers) attached to the tasks that declare allowed_tools, shared by all
+                  tasks and sent without the Zuno headers.
                 items:
                   type: string
                 type: array
