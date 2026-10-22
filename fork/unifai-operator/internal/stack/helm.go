@@ -83,6 +83,9 @@ func Render(p *Plan, r Release) (*Rendered, error) {
 	if r.Traced {
 		otelEnv(p, vals, r.Name)
 	}
+	if r.IdentityEnv != "" {
+		set(vals, "env."+r.IdentityEnv, IdentityServiceURL)
+	}
 	_, digest, err := loadChart(r.Chart)
 	if err != nil {
 		return nil, err

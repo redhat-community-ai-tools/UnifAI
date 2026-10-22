@@ -480,7 +480,7 @@ func deployMockLLM(t *testing.T, ns string) {
 	})
 }
 
-// internalAuthProbe calls MAS and RAG from inside the namespace (allowed by the stack NetworkPolicy) with the
+// internalAuthProbe calls MAS, RAG and identity (through its Service, as the apps do) from inside the namespace (allowed by the stack NetworkPolicy) with the
 // internal identity header, without and with the shared secret; it exits 0 when only the secret is accepted.
 const internalAuthProbe = `
 import os, sys, urllib.request, urllib.error
@@ -491,7 +491,8 @@ def code(url, headers):
         return e.code
 secret = os.environ["INTERNAL_AUTH_SECRET"]
 urls = {"mas": "http://unifai-multiagent-be:8003/api/resources/resources.list?category=llms",
-        "rag": "http://unifai-rag-server:13456/api/data_sources/data.sources.get?source_type=DOCUMENT"}
+        "rag": "http://unifai-rag-server:13456/api/data_sources/data.sources.get?source_type=DOCUMENT",
+        "identity": "http://identity:13456/api/teams/teams.list"}
 out, ok = [], True
 for name, url in urls.items():
     bare = code(url, {"X-Authenticated-User": "admin"})
@@ -503,7 +504,7 @@ open("/dev/termination-log", "w").write("; ".join(out))
 sys.exit(0 if ok else 1)
 `
 
-// checkInternalAuth runs internalAuthProbe in a pod of the namespace and fails unless MAS and RAG refuse the
+// checkInternalAuth runs internalAuthProbe in a pod of the namespace and fails unless MAS, RAG and identity refuse the
 // internal identity header without the right X-Internal-Auth and accept it with the stack's secret.
 func checkInternalAuth(t *testing.T, ns string) {
 	t.Helper()

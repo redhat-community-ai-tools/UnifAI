@@ -366,6 +366,19 @@ func TestInternalAuthAndExtraEnv(t *testing.T) {
 			t.Errorf("UI route does not delete %s", h)
 		}
 	}
+	for _, rel := range []string{"unifai-rag-server", "unifai-rag-celery", "unifai-backend"} {
+		if !strings.Contains(out[rel], "value: "+IdentityServiceURL) || strings.Contains(out[rel], "value: https://"+p.IdentityHost) {
+			t.Errorf("%s: IDENTITY_HOST must be the identity Service, not the public route", rel)
+		}
+	}
+	for _, rel := range []string{"unifai-multiagent-be", "unifai-multiagent-temporal-worker"} {
+		if !strings.Contains(out[rel], "DIRECTORY_SSO_URL") || !strings.Contains(out[rel], "value: "+IdentityServiceURL) {
+			t.Errorf("%s: DIRECTORY_SSO_URL must be the identity Service", rel)
+		}
+		if !strings.Contains(out[rel], "value: https://"+p.IdentityHost) {
+			t.Errorf("%s: IDENTITY_HOST must stay public (OAuth callback)", rel)
+		}
+	}
 	var found bool
 	for _, o := range BaseObjects(p) {
 		if s, ok := o.(*corev1.Secret); ok && s.Name == InternalAuthSecret {

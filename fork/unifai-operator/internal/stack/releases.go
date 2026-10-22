@@ -22,8 +22,12 @@ type Release struct {
 	Traced bool
 	// InternalAuth releases get INTERNAL_AUTH_SECRET (secretKeyRef to InternalAuthSecret).
 	InternalAuth bool
-	Enabled      func(p *Plan) bool
-	Values       func(p *Plan) (map[string]any, error)
+	// IdentityEnv is the variable through which the release calls the identity API service to service; it is set
+	// to the identity Service (the public Route strips X-Internal-Auth). Releases that also need the public URL
+	// (OAuth callbacks) keep it in IDENTITY_HOST and get the internal one in DIRECTORY_SSO_URL.
+	IdentityEnv string
+	Enabled     func(p *Plan) bool
+	Values      func(p *Plan) (map[string]any, error)
 }
 
 // IsEnabled reports whether the release is part of the plan.
@@ -69,11 +73,11 @@ var Releases = []Release{
 		v, err := storage(p, map[string]any{"storage": s}, err, "ragShared", "storage.className", "storage.requestedSize", "100Gi", true)
 		return withGlobal(p, v, err, false)
 	}},
-	{Name: "unifai-rag-server", Chart: "unifai-rag-server", Component: "rag", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-rag-server", IdentityEnv: "IDENTITY_HOST", Chart: "unifai-rag-server", Component: "rag", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("rag-resource-values.yaml", "unifai_rag_server")
 		return withGlobal(p, ragValues(p, v), err, false)
 	}},
-	{Name: "unifai-rag-celery", Chart: "unifai-rag-celery", Component: "ragCelery", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-rag-celery", IdentityEnv: "IDENTITY_HOST", Chart: "unifai-rag-celery", Component: "ragCelery", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("rag-resource-values.yaml", "unifai_rag_celery")
 		return withGlobal(p, ragValues(p, v), err, false)
 	}},
@@ -82,15 +86,15 @@ var Releases = []Release{
 		v, err := storage(p, map[string]any{"storage": s}, err, "multiagentShared", "storage.className", "storage.requestedSize", "50Gi", true)
 		return withGlobal(p, v, err, true)
 	}},
-	{Name: "unifai-multiagent-be", Chart: "be", Component: "multiagent", Phase: 1, Internal: true, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-multiagent-be", IdentityEnv: "DIRECTORY_SSO_URL", Chart: "be", Component: "multiagent", Phase: 1, Internal: true, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("multiagent-resource-values.yaml", "multiagent_server")
 		return withGlobal(p, multiagentValues(p, v), err, true)
 	}},
-	{Name: "unifai-multiagent-temporal-worker", Chart: "temporal-worker", Component: "multiagentWorker", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-multiagent-temporal-worker", IdentityEnv: "DIRECTORY_SSO_URL", Chart: "temporal-worker", Component: "multiagentWorker", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("multiagent-resource-values.yaml", "multiagent_temporal_worker")
 		return withGlobal(p, multiagentValues(p, v), err, true)
 	}},
-	{Name: "unifai-backend", Chart: "unifai-backend", Component: "backend", Phase: 1, Internal: true, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-backend", IdentityEnv: "IDENTITY_HOST", Chart: "unifai-backend", Component: "backend", Phase: 1, Internal: true, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("backend-resource-values.yaml", "unifai_backend")
 		if err != nil {
 			return nil, err

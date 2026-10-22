@@ -35,6 +35,10 @@ const (
 	KeyInternalAuth = "INTERNAL_AUTH_SECRET"
 )
 
+// IdentityServiceURL is the identity API inside the namespace (Service of the identity chart): service-to-service
+// calls must not go through the public Route, which strips X-Internal-Auth.
+const IdentityServiceURL = "http://identity:13456"
+
 // InternalAuthSecret holds the effective KeyInternalAuth (generated, or overridden by spec.secretsRef): the services
 // read it through a secretKeyRef, the operator's UnifAI client sends it.
 const InternalAuthSecret = "unifai-internal-auth"

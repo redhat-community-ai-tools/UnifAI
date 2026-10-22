@@ -78,7 +78,9 @@ Internal authentication: the services honour `X-Authenticated-User` from callers
 generates it once in `unifai-generated` (override: key `INTERNAL_AUTH_SECRET` of `spec.secretsRef`), copies the
 effective value to the Secret `unifai-internal-auth`, injects it (secretKeyRef) into identity, multiagent (server and
 worker), RAG (server and Celery) and backend, sends it from its own UnifAI client, and every Route deletes both
-headers from incoming requests.
+headers from incoming requests. Service-to-service identity calls go to the identity Service (`http://identity:13456`: `IDENTITY_HOST` of RAG
+and backend, `DIRECTORY_SSO_URL` of multiagent, whose `IDENTITY_HOST` stays public for its OAuth callback), since the
+public Route strips `X-Internal-Auth`.
 
 `extraEnv` adds variables to a component's containers (keys `multiagent`, `multiagentWorker`, `rag`, `ragCelery`,
 `backend`, `identity`, `ui`; full `EnvVar`, so `valueFrom` works); a chart variable with the same name is replaced:
