@@ -8,6 +8,7 @@ blueprint or live graph.
 from typing import Any, Dict, Optional, Set, Tuple
 
 from mas.core.enums import ResourceCategory
+from mas.core.ref import RefWalker
 from mas.graph.models.step_context import StepContext
 from mas.session.domain.session_registry import SessionRegistry
 from mas.graph.models.workflow import RTStep
@@ -34,14 +35,9 @@ class NodeDeploymentExtractor:
 
         node_elem = self._session.get(ResourceCategory.NODE, step.rid)
         node_spec = node_elem.resource_spec
-        dep_rids = _collect_refs(node_spec.config.model_dump(mode="json"))
 
         llms, providers, tools, retrievers, sandboxes = [], [], [], [], []
-        for rid in dep_rids:
-            found = self._find_resource_spec(rid)
-            if found is None:
-                continue
-            category, spec = found
+        for category, spec in self._collect_dependencies(node_spec):
             if category == ResourceCategory.LLM:
                 llms.append(spec)
             elif category == ResourceCategory.PROVIDER:
@@ -98,6 +94,38 @@ class NodeDeploymentExtractor:
         distances, etc.) at compile time.
         """
         return step.func._ctx
+
+    def _collect_dependencies(self, node_spec: Any) -> list:
+        """Resources the node needs, directly or through other resources.
+
+        A reference is a ``Ref`` field of a typed config: it is either
+        ``$ref:<id>`` (stored resource) or a plain ``<id>`` (resource defined
+        inline in the blueprint). Both are keys of the session registry, so
+        both are collected; ids absent from the registry (e.g. a node ref)
+        are skipped. Dependencies are followed transitively (a tool may need
+        a provider).
+        """
+        found: list = []
+        seen: Set[str] = set()
+        pending = self._config_rids(node_spec.config)
+        while pending:
+            rid = pending.pop()
+            if rid in seen:
+                continue
+            seen.add(rid)
+            hit = self._find_resource_spec(rid)
+            if hit is None:
+                continue
+            found.append(hit)
+            pending |= self._config_rids(hit[1].config)
+        return found
+
+    @staticmethod
+    def _config_rids(config: Any) -> Set[str]:
+        rids = set(RefWalker.all_rids(config))
+        # Also catch "$ref:" strings held by untyped fields (dicts of free-form values).
+        rids |= _collect_refs(config.model_dump(mode="json"))
+        return rids
 
     def _find_resource_spec(self, rid: str) -> Optional[Tuple[ResourceCategory, Any]]:
         """Look up a rid across all resource categories."""
