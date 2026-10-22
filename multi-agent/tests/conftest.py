@@ -17,6 +17,10 @@ import os
 from unittest.mock import Mock, MagicMock
 from typing import List, Dict, Any
 
+# The suites exercise the header-based identity fallback, which is honoured
+# only in dev mode (or with the internal secret) outside tests.
+os.environ.setdefault("UNIFAI_DEV_MODE", "true")
+
 # Add the multi-agent directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
