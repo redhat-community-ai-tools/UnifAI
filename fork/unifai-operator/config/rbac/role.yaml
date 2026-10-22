@@ -206,7 +206,6 @@ rules:
   - unifaisandboxes
   - unifaischedules
   - unifaistacks
-  - unifaiteams
   - unifaitemplates
   - unifaitools
   verbs:
@@ -266,6 +265,7 @@ rules:
   - unifaiconditions
   - unifaillms
   - unifaiproviders
+  - unifaiteams
   - unifaiworkflows
   verbs:
   - create

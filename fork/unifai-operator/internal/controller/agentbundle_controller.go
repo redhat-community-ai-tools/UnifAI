@@ -41,7 +41,8 @@ type AgentBundleReconciler struct {
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaiagentbundles,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaiagentbundles/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaiagentbundles/finalizers,verbs=update
-// +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaillms;unifaiagents;unifaiconditions;unifaiworkflows;unifaiproviders,verbs=create;delete
+// +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaillms;unifaiagents;unifaiconditions;unifaiworkflows;unifaiproviders;unifaiteams,verbs=create;delete
+// +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaiteams,verbs=get;list;watch
 
 // Zuno headers the emitted LLMs send to the model gateway (ADR-0563, ADR-0565).
 const (
@@ -59,6 +60,7 @@ const (
 	ConditionEmitted        = "Emitted"
 
 	entitlementGatewayOnly = "GatewayOnly"
+	entitlementEnforced    = "Enforced"
 	phaseReady             = "Ready"
 )
 
@@ -168,8 +170,20 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 		cond(ConditionValid, false, "ShapeNotImplemented", "no blueprint template for graph shape "+b.GraphShape)
 		return permanent("graph shape %q has no blueprint template in this operator: nothing emitted", b.GraphShape)
 	}
-	if len(b.AccessGroups) > 0 && cr.Spec.Entitlement != entitlementGatewayOnly {
-		msg := fmt.Sprintf("zuno.access.groups %v cannot be enforced by UnifAI visibility yet; set spec.entitlement: GatewayOnly to rely on the gateways", b.AccessGroups)
+	if cr.Spec.GroupTeam && (cr.Spec.TeamID != "" || cr.Spec.TeamRef != "") {
+		cond(ConditionValid, false, "TeamConflict", "spec.groupTeam is exclusive with spec.teamId and spec.teamRef")
+		return permanent("spec.groupTeam is exclusive with spec.teamId and spec.teamRef")
+	}
+	if cr.Spec.GroupTeam && len(b.AccessGroups) == 0 {
+		cond(ConditionValid, false, "NoAccessGroups", "spec.groupTeam needs zuno.access.groups in the bundle")
+		return permanent("spec.groupTeam is set but bundle %s declares no zuno.access.groups", b.Name)
+	}
+	covered, err := r.teamCoversGroups(ctx, cr, b)
+	if err != nil {
+		return err
+	}
+	if len(b.AccessGroups) > 0 && cr.Spec.Entitlement != entitlementGatewayOnly && !covered {
+		msg := fmt.Sprintf("zuno.access.groups %v cannot be enforced by UnifAI visibility yet; set spec.groupTeam (or a spec.teamRef whose group members cover them), or spec.entitlement: GatewayOnly to rely on the gateways", b.AccessGroups)
 		cond(ConditionValid, false, "EntitlementUnsupported", msg)
 		return permanent("%s", msg)
 	}
@@ -246,7 +260,20 @@ func outside(values, allowed []string) []string {
 // headers, a custom agent and a linear workflow (question -> agent -> answer). The primary task's workflow
 // takes the bundle's own name.
 func renderBundle(cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) ([]client.Object, []unifaiv1.BundleTaskStatus, error) {
-	common := unifaiv1.CommonSpec{Owner: cr.Spec.Owner, TeamID: cr.Spec.TeamID}
+	common := unifaiv1.CommonSpec{Owner: cr.Spec.Owner, TeamID: cr.Spec.TeamID, TeamRef: cr.Spec.TeamRef}
+	objs := make([]client.Object, 0, 2+4*len(b.Tasks))
+	if cr.Spec.GroupTeam {
+		// The bundle owns its team, and may take back the team it created before a status loss (adopt).
+		common.TeamRef = groupTeamName(cr)
+		tm := childMeta(cr, common.TeamRef)
+		tm.Annotations = map[string]string{unifaiv1.AdoptAnnotation: "true"}
+		members := make([]unifaiv1.TeamMember, 0, len(b.AccessGroups))
+		for _, g := range b.AccessGroups {
+			members = append(members, unifaiv1.TeamMember{Type: "group", ID: g})
+		}
+		objs = append(objs, &unifaiv1.UnifaiTeam{ObjectMeta: tm, Spec: unifaiv1.UnifaiTeamSpec{
+			CommonSpec: unifaiv1.CommonSpec{Owner: cr.Spec.Owner}, Members: members}})
+	}
 	llmBase, err := rawMap(cr.Spec.LLM.Config)
 	if err != nil {
 		return nil, nil, err
@@ -265,8 +292,8 @@ func renderBundle(cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) ([]client.Objec
 		llmType = "openai_compatible"
 	}
 	cond := cr.Name + "-direct"
-	objs := []client.Object{&unifaiv1.UnifaiCondition{ObjectMeta: childMeta(cr, cond), Spec: unifaiv1.UnifaiConditionSpec{
-		CommonSpec: common, Type: "router_direct", ConfigSpec: unifaiv1.ConfigSpec{Config: rawJSON(map[string]any{})}}}}
+	objs = append(objs, &unifaiv1.UnifaiCondition{ObjectMeta: childMeta(cr, cond), Spec: unifaiv1.UnifaiConditionSpec{
+		CommonSpec: common, Type: "router_direct", ConfigSpec: unifaiv1.ConfigSpec{Config: rawJSON(map[string]any{})}}})
 	tasks := make([]unifaiv1.BundleTaskStatus, 0, len(b.Tasks))
 	for _, t := range b.Tasks {
 		level, err := okf.Effective(b.Classification, cr.Spec.ClassificationOverrides[t.Name])
@@ -384,6 +411,39 @@ func childName(bundle, task string) string {
 	}, n)
 }
 
+// teamCoversGroups reports whether the objects will live in a team workspace limited to (at least) the
+// bundle's access groups, which makes UnifAI's own visibility enforce them: the team the bundle emits
+// (spec.groupTeam) or the referenced UnifaiTeam whose group members cover them. A team that does not exist
+// yet does not cover anything (the caller then reports the usual refusal).
+func (r *AgentBundleReconciler) teamCoversGroups(ctx context.Context, cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) (bool, error) {
+	if len(b.AccessGroups) == 0 {
+		return true, nil
+	}
+	if cr.Spec.GroupTeam {
+		return true, nil
+	}
+	if cr.Spec.TeamRef == "" {
+		return false, nil
+	}
+	var team unifaiv1.UnifaiTeam
+	if err := r.Get(ctx, client.ObjectKey{Namespace: cr.Namespace, Name: cr.Spec.TeamRef}, &team); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	var groups []string
+	for _, m := range team.Spec.Members {
+		if m.Type == "group" {
+			groups = append(groups, strings.TrimPrefix(m.ID, "/"))
+		}
+	}
+	return len(outside(b.AccessGroups, groups)) == 0, nil
+}
+
+// groupTeamName is the name of the UnifaiTeam a bundle emits for spec.groupTeam.
+func groupTeamName(cr *unifaiv1.UnifaiAgentBundle) string { return "agent-" + cr.Name }
+
 func childMeta(cr *unifaiv1.UnifaiAgentBundle, name string) metav1.ObjectMeta {
 	return metav1.ObjectMeta{Name: name, Namespace: cr.Namespace, Labels: map[string]string{unifaiv1.AgentBundleLabel: cr.Name}}
 }
@@ -426,6 +486,8 @@ func specOf(o client.Object) any {
 		return &v.Spec
 	case *unifaiv1.UnifaiProvider:
 		return &v.Spec
+	case *unifaiv1.UnifaiTeam:
+		return &v.Spec
 	}
 	return nil
 }
@@ -465,7 +527,7 @@ func (r *AgentBundleReconciler) prune(ctx context.Context, cr *unifaiv1.UnifaiAg
 		keep[o] = true
 	}
 	sel := client.MatchingLabels{unifaiv1.AgentBundleLabel: cr.Name}
-	lists := []client.ObjectList{&unifaiv1.UnifaiLLMList{}, &unifaiv1.UnifaiAgentList{}, &unifaiv1.UnifaiConditionList{}, &unifaiv1.UnifaiWorkflowList{}, &unifaiv1.UnifaiProviderList{}}
+	lists := []client.ObjectList{&unifaiv1.UnifaiLLMList{}, &unifaiv1.UnifaiAgentList{}, &unifaiv1.UnifaiConditionList{}, &unifaiv1.UnifaiWorkflowList{}, &unifaiv1.UnifaiProviderList{}, &unifaiv1.UnifaiTeamList{}}
 	for _, l := range lists {
 		if err := r.List(ctx, l, client.InNamespace(cr.Namespace), sel); err != nil {
 			return err
@@ -540,6 +602,6 @@ func (r *AgentBundleReconciler) pullCredential(ctx context.Context, cr *unifaiv1
 func (r *AgentBundleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiAgentBundle{}).
 		Owns(&unifaiv1.UnifaiLLM{}).Owns(&unifaiv1.UnifaiAgent{}).
-		Owns(&unifaiv1.UnifaiCondition{}).Owns(&unifaiv1.UnifaiWorkflow{}).Owns(&unifaiv1.UnifaiProvider{}).
+		Owns(&unifaiv1.UnifaiCondition{}).Owns(&unifaiv1.UnifaiWorkflow{}).Owns(&unifaiv1.UnifaiProvider{}).Owns(&unifaiv1.UnifaiTeam{}).
 		Named("unifaiagentbundle").Complete(r)
 }

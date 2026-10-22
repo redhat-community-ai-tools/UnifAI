@@ -111,6 +111,13 @@ spec:
                 - Enforced
                 - GatewayOnly
                 type: string
+              groupTeam:
+                description: |-
+                  GroupTeam emits an owned UnifaiTeam named agent-<bundle> whose members are the bundle's
+                  zuno.access.groups (type group) and puts every emitted object in its workspace, so UnifAI's own
+                  visibility restricts the agent to those groups. It satisfies the Enforced entitlement. Exclusive with
+                  teamId and teamRef; the bundle must declare access groups.
+                type: boolean
               llm:
                 description: |-
                   BundleLLM is the template of the LLM emitted for every task: the bundle adds the Zuno headers

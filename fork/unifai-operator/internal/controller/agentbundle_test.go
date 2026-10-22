@@ -267,6 +267,48 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		}, tekosFiles(), ConditionWithinCeilings, "Widening")
 	})
 
+	It("emits a group-bound team and puts the objects in it when spec.groupTeam is set", func() {
+		ns := setup("bundle-groupteam")
+		files := tekosFiles()
+		ref := fakeBundles.put(files, sign(key, files))
+		b := newBundle(ns, ref, nil)
+		b.Spec.Entitlement = entitlementEnforced
+		b.Spec.GroupTeam = true
+		Expect(k8sClient.Create(ctx, b)).To(Succeed())
+		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Ready"))
+		Expect(status(ns)().Children).To(ContainElement("UnifaiTeam/agent-tekos"))
+
+		var team unifaiv1.UnifaiTeam
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "agent-tekos"}, &team)).To(Succeed())
+		Expect(team.Annotations).To(HaveKeyWithValue(unifaiv1.AdoptAnnotation, "true"))
+		Expect(team.Spec.Members).To(ConsistOf(unifaiv1.TeamMember{Type: "group", ID: "agent_tekos"}))
+		Expect(metav1.IsControlledBy(&team, &unifaiv1.UnifaiAgentBundle{ObjectMeta: metav1.ObjectMeta{UID: team.OwnerReferences[0].UID}})).To(BeTrue())
+
+		var llm unifaiv1.UnifaiLLM
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "tekos-write-code"}, &llm)).To(Succeed())
+		Expect(llm.Spec.TeamRef).To(Equal("agent-tekos"))
+	})
+
+	It("accepts Enforced when the referenced team's groups cover the bundle's access groups", func() {
+		ns := setup("bundle-teamref")
+		Expect(k8sClient.Create(ctx, &unifaiv1.UnifaiTeam{ObjectMeta: metav1.ObjectMeta{Name: "tekos-people", Namespace: ns},
+			Spec: unifaiv1.UnifaiTeamSpec{Members: []unifaiv1.TeamMember{{Type: "group", ID: "/agent_tekos"}}}})).To(Succeed())
+		files := tekosFiles()
+		ref := fakeBundles.put(files, sign(key, files))
+		b := newBundle(ns, ref, nil)
+		b.Spec.Entitlement = entitlementEnforced
+		b.Spec.TeamRef = "tekos-people"
+		Expect(k8sClient.Create(ctx, b)).To(Succeed())
+		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Ready"))
+	})
+
+	It("refuses spec.groupTeam together with spec.teamRef", func() {
+		refused(setup("bundle-groupteam-conflict"), func(b *unifaiv1.UnifaiAgentBundle) {
+			b.Spec.GroupTeam = true
+			b.Spec.TeamRef = "other"
+		}, tekosFiles(), ConditionValid, "TeamConflict")
+	})
+
 	It("refuses a bundle below the classification floor", func() {
 		refused(setup("bundle-floor"), func(b *unifaiv1.UnifaiAgentBundle) {
 			b.Spec.Ceilings.MinClassification = "C2"
@@ -275,7 +317,7 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 
 	It("refuses an entitlement UnifAI cannot enforce unless told to rely on the gateways", func() {
 		refused(setup("bundle-entitlement"), func(b *unifaiv1.UnifaiAgentBundle) {
-			b.Spec.Entitlement = "Enforced"
+			b.Spec.Entitlement = entitlementEnforced
 		}, tekosFiles(), ConditionValid, "EntitlementUnsupported")
 	})
 

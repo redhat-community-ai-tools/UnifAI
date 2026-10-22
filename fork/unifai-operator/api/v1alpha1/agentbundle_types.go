@@ -75,8 +75,14 @@ type UnifaiAgentBundleSpec struct {
 	// +kubebuilder:validation:Enum=Enforced;GatewayOnly
 	// +kubebuilder:default=Enforced
 	// +optional
-	Entitlement string    `json:"entitlement,omitempty"`
-	LLM         BundleLLM `json:"llm"`
+	Entitlement string `json:"entitlement,omitempty"`
+	// GroupTeam emits an owned UnifaiTeam named agent-<bundle> whose members are the bundle's
+	// zuno.access.groups (type group) and puts every emitted object in its workspace, so UnifAI's own
+	// visibility restricts the agent to those groups. It satisfies the Enforced entitlement. Exclusive with
+	// teamId and teamRef; the bundle must declare access groups.
+	// +optional
+	GroupTeam bool      `json:"groupTeam,omitempty"`
+	LLM       BundleLLM `json:"llm"`
 	// MCP provider emitted per task that declares allowed_tools, carrying the Zuno headers. It is attached
 	// before `providers`.
 	// +optional
