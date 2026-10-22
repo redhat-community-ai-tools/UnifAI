@@ -16,7 +16,7 @@ def _res(content, meta=None):
 
 
 def test_single_result_with_metadata_becomes_message_with_metadata():
-    entry = {"response_id": "r", "model": "m", "fields": {"zuno_provider": "p"}}
+    entry = {"response_id": "r", "model": "m", "fields": {"x_provider": "p"}}
     node = _node(_res("hi", {RESPONSE_METADATA_KEY: entry}))
     out = node._as_message("hi")
     assert isinstance(out, ChatMessage)
@@ -29,6 +29,6 @@ def test_without_metadata_the_plain_string_is_kept():
 
 
 def test_multiple_results_are_not_attributed_to_one_model():
-    entry = {"fields": {"zuno_provider": "p"}}
+    entry = {"fields": {"x_provider": "p"}}
     node = _node(_res("a", {RESPONSE_METADATA_KEY: entry}), _res("b"))
     assert node._as_message("a\n\nb") == "a\n\nb"

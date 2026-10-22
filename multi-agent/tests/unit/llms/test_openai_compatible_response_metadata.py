@@ -61,10 +61,10 @@ USER = [ChatMessage(role=Role.USER, content="hi")]
 
 def test_chat_passes_extra_fields_through_unrenamed():
     llm = _llm()
-    llm._client.chat.completions.create.return_value = _completion(zuno_provider="vllm-a")
+    llm._client.chat.completions.create.return_value = _completion(x_provider="vllm-a")
     msg = llm.chat(USER)
     entry = msg.metadata[RESPONSE_METADATA_KEY]
-    assert entry["fields"] == {"zuno_provider": "vllm-a"}
+    assert entry["fields"] == {"x_provider": "vllm-a"}
     assert entry["response_id"] == "resp-1"
     assert entry["model"] == "served-model"
     assert "lookup_url" not in entry
@@ -91,7 +91,7 @@ def test_stream_passes_extra_fields_and_emits_final_message():
     llm = _llm(LOOKUP)
     llm._client.chat.completions.create.return_value = iter([
         _chunk("hel"),
-        _chunk("lo", zuno_provider="vllm-a"),
+        _chunk("lo", x_provider="vllm-a"),
         _chunk(finish="stop"),
     ])
     out = list(llm.stream(USER))
@@ -100,7 +100,7 @@ def test_stream_passes_extra_fields_and_emits_final_message():
     assert isinstance(final, ChatMessage)
     assert final.content == "hello"
     entry = final.metadata[RESPONSE_METADATA_KEY]
-    assert entry["fields"] == {"zuno_provider": "vllm-a"}
+    assert entry["fields"] == {"x_provider": "vllm-a"}
     assert entry["lookup_url"].endswith("/resp-1")
 
 
@@ -116,7 +116,7 @@ def test_stream_tool_call_message_keeps_metadata():
     llm = _llm()
     tc_chunk = ChatCompletionChunk.model_validate({
         "id": "resp-2", "object": "chat.completion.chunk", "created": 1, "model": "m",
-        "zuno_provider": "p",
+        "x_provider": "p",
         "choices": [{"index": 0, "finish_reason": None, "delta": {"tool_calls": [{
             "index": 0, "id": "c1", "type": "function",
             "function": {"name": "t", "arguments": "{}"},
@@ -125,7 +125,7 @@ def test_stream_tool_call_message_keeps_metadata():
     llm._client.chat.completions.create.return_value = iter([tc_chunk])
     final = list(llm.stream(USER))[-1]
     assert final.tool_calls[0].name == "t"
-    assert final.metadata[RESPONSE_METADATA_KEY]["fields"] == {"zuno_provider": "p"}
+    assert final.metadata[RESPONSE_METADATA_KEY]["fields"] == {"x_provider": "p"}
 
 
 def test_config_and_factory_carry_lookup_url():
