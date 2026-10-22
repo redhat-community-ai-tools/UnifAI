@@ -47,3 +47,56 @@ curl ${KEYCLOACK_BASE_URL}/realms/${KEYCLOACK_REALM}/protocol/openid-connect/log
 -d client_id=$CLIENT_ID \
 -d client_secret=$CLIENT_SECRET \
 -d refresh_token=$REFRESH_TOKEN
+
+## Directory providers
+
+`DIRECTORY_PROVIDER` selects where users and groups come from: `ldap` or
+`oidc-claims` (empty disables the directory).
+
+### `oidc-claims`
+
+Groups are read from the claims of the user's access token, so an OIDC
+group (for example the Keycloak group `/team-a`) can be a team member
+source without any LDAP server.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DIRECTORY_OIDC_CLAIM` | `groups` | Claim holding the group list. A dotted path such as `realm_access.roles` is resolved when no claim has that exact name. |
+| `DIRECTORY_OIDC_USERNAME_CLAIM` | `preferred_username` | Claim that must equal the user being queried. |
+| `DIRECTORY_OIDC_GROUP_PREFIX` | empty | Removed from the start of each group (after the leading `/`). |
+| `DIRECTORY_OIDC_LOWERCASE` | `false` | Lower-case group ids. Case is preserved by default. |
+| `DIRECTORY_OIDC_JWKS_URL` | **required** | JWKS endpoint used to verify token signatures, e.g. `https://<keycloak>/realms/<realm>/protocol/openid-connect/certs`. |
+| `DIRECTORY_OIDC_ISSUER` | **required** | Expected `iss`, e.g. `https://<keycloak>/realms/<realm>`. |
+| `DIRECTORY_OIDC_AUDIENCE` | empty | Expected `aud`; checked only when set. |
+
+**Claim format.** A list of strings (a single string is accepted). Keycloak's
+"Group Membership" mapper emits full paths: `["/team-a", "/org/team-b"]`.
+Group ids are normalised by trimming whitespace and the leading `/`:
+`team-a`, `org/team-b`. Non-string and empty entries are ignored.
+
+**Referencing a group in a team.** Add a member `{"type": "group", "id":
+"team-a"}` using the normalised id. A user belongs to the team when their
+token carries that group; the UI/API passes the user's group ids (from
+`/api/auth/user/groups`) when listing teams.
+
+**Limitations.** A token only describes one user, so the provider supports
+the calling user's groups (`get_user_groups`, `get_group`, `search_groups`
+over those groups) and nothing else:
+
+- `search_users` returns an empty list (logged); users cannot be enumerated.
+- Group member lists cannot be produced, so `DirectoryGroup.members` is
+  empty and stored `group_members` snapshots are never refreshed from this
+  provider (the member count shown for such a group stays as stored).
+- Group changes are picked up at the next login or cache refresh
+  (`USER_GROUPS_CACHE_TTL`, `/api/auth/user/groups?fresh=1`).
+
+**Security.** Tokens are always verified; there is no unverified mode. The
+provider refuses to start (clear error at startup) unless
+`DIRECTORY_OIDC_JWKS_URL` and `DIRECTORY_OIDC_ISSUER` are set. Signature,
+`exp` (required) and `iss` are checked, plus `aud` when configured. Only
+`RS256` and `ES256` are accepted, never `none` or HMAC. Keys are cached for
+five minutes. Any failure (bad signature, expired token, wrong issuer, JWKS
+unreachable) fails closed: no groups are returned and the reason is logged
+as a warning. Nothing client-supplied is trusted. A token whose username
+claim differs from the requested user is ignored, and the token is held per
+thread so it cannot leak between requests.

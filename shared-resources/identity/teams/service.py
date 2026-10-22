@@ -159,7 +159,14 @@ class TeamService:
     def refresh_group_members(self, groups: List[dict]) -> None:
         """Update ``group_members`` on every team that references any of
         the given groups.  *groups* is a list of directory-group dicts,
-        each containing at least ``group_id`` and ``members``."""
+        each containing at least ``group_id`` and ``members``.
+
+        Skipped when the provider cannot list a group's members (e.g.
+        token-claims), so a partial list never overwrites stored snapshots."""
+        if self._directory is not None and not getattr(
+            self._directory, "group_members_authoritative", True
+        ):
+            return
         for g in groups:
             group_id = g.get("group_id")
             members = g.get("members")
