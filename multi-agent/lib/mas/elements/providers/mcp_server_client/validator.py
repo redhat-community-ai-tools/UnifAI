@@ -12,6 +12,7 @@ from concurrent.futures import CancelledError
 from typing import List
 from urllib.parse import urlparse
 
+import httpx
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.elements.common.validator import (
     BaseElementValidator,
@@ -46,6 +47,9 @@ class McpProviderValidator(BaseElementValidator):
         config: McpProviderConfig,
         context: ValidationContext,
     ) -> ValidatorReport:
+        if config.auth_method == McpAuthMethod.FORWARD_USER_TOKEN:
+            return self._validate_forwarded(config, context)
+
         messages: List[ValidationMessage] = []
 
         try:
@@ -67,6 +71,43 @@ class McpProviderValidator(BaseElementValidator):
                 field="mcp_url",
             ))
 
+        return self._build_report(messages=messages)
+
+    def _validate_forwarded(
+        self,
+        config: McpProviderConfig,
+        context: ValidationContext,
+    ) -> ValidatorReport:
+        """Reachability-only check for an MCP server that gets the user's token.
+
+        The token only exists at run time, so a real MCP handshake can only fail
+        against an authenticating gateway (and the MCP client then reports an
+        anyio cancel-scope error instead of the HTTP status). Any HTTP answer, a
+        401 included, proves the endpoint is up; only a connection failure or a
+        timeout is an error.
+        """
+        messages: List[ValidationMessage] = []
+        try:
+            with httpx.Client(timeout=context.timeout_seconds) as http_client:
+                http_client.get(str(config.mcp_url))
+            messages.append(self._info(
+                "CONNECTION_CHECK_SKIPPED",
+                "Endpoint reachable; the MCP handshake is not probed because requests "
+                "carry the acting user's token, which only exists at run time",
+                field="mcp_url",
+            ))
+        except httpx.TimeoutException:
+            messages.append(self._error(
+                ValidationCode.NETWORK_TIMEOUT.value,
+                f"Connection timed out after {context.timeout_seconds}s",
+                field="mcp_url",
+            ))
+        except httpx.HTTPError:
+            messages.append(self._error(
+                ValidationCode.ENDPOINT_UNREACHABLE.value,
+                "Cannot connect to MCP endpoint",
+                field="mcp_url",
+            ))
         return self._build_report(messages=messages)
 
     async def _check_connection(

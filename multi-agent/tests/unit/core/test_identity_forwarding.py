@@ -327,3 +327,61 @@ def test_validator_reports_an_unreachable_forwarding_endpoint(monkeypatch):
     cfg = OpenAICompatibleConfig(model_name="auto", base_url="http://gw:8080/v1", forward_user_token=True)
     report, _ = _validate(cfg, monkeypatch, get=refuse)
     assert [m.severity.value for m in report.messages] == ["error"]
+
+
+# ── MCP validator ────────────────────────────────────────────────────────────
+
+def _validate_mcp(cfg, monkeypatch, *, get=None):
+    import httpx
+    from mas.elements.common.validator import ValidationContext
+    from mas.elements.providers.mcp_server_client import validator as mod
+
+    calls = []
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url):
+            calls.append(url)
+            if get is not None:
+                return get(url)
+            return httpx.Response(401, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(mod.httpx, "Client", FakeClient)
+    factory = MagicMock()
+    factory.create_async.side_effect = AssertionError("no MCP handshake without the user's token")
+    report = mod.McpProviderValidator(factory=factory).validate(cfg, ValidationContext())
+    return report, calls
+
+
+def test_mcp_validator_does_not_handshake_when_forwarding(monkeypatch):
+    from mas.elements.providers.mcp_server_client.config import McpProviderConfig
+
+    cfg = McpProviderConfig(
+        mcp_url="http://mcp-gateway:8080/mcp", transport_type="streamable http", auth_method="forward_user_token",
+    )
+    report, calls = _validate_mcp(cfg, monkeypatch)
+    assert calls == ["http://mcp-gateway:8080/mcp"]
+    assert [m.code for m in report.messages] == ["CONNECTION_CHECK_SKIPPED"]
+    assert all(m.severity.value != "error" for m in report.messages)
+
+
+def test_mcp_validator_reports_an_unreachable_forwarding_endpoint(monkeypatch):
+    import httpx
+    from mas.elements.providers.mcp_server_client.config import McpProviderConfig
+
+    def refuse(url):
+        raise httpx.ConnectError("refused", request=httpx.Request("GET", url))
+
+    cfg = McpProviderConfig(
+        mcp_url="http://mcp-gateway:8080/mcp", transport_type="streamable http", auth_method="forward_user_token",
+    )
+    report, _ = _validate_mcp(cfg, monkeypatch, get=refuse)
+    assert [m.severity.value for m in report.messages] == ["error"]
