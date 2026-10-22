@@ -35,7 +35,8 @@ def test_build_error_marks_session_failed_and_stores_safe_error(caplog):
     manager.save_record.assert_called_with(record)
     stored = record.metadata.error
     assert stored["type"] == "session_build_failed"
-    assert "Invalid qdrant settings" in stored["message"]
+    assert "invalid configuration" in stored["message"]
+    assert "Invalid qdrant settings" not in stored["message"]
     assert secret not in stored["message"] and secret not in str(exc.value)
     assert exc.value.__cause__ is err
     assert any(r.exc_info for r in caplog.records)  # full exception logged server-side
@@ -48,7 +49,7 @@ def test_unexpected_error_message_does_not_leak_exception_text():
     with pytest.raises(SessionBuildError) as exc:
         svc.run("s-1", {})
 
-    assert exc.value.message == "Session build failed (RuntimeError)"
+    assert exc.value.message == "Session build failed: build error (RuntimeError)"
     assert "hunter2" not in record.metadata.status_message
 
 

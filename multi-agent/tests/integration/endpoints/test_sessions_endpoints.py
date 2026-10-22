@@ -191,6 +191,16 @@ class TestExecuteSessionBuildFailure:
             "sessionId": "s-1",
         }
 
+    def test_build_failure_body_never_carries_config(self, client, user_headers, session_service) -> None:
+        err = SessionBuildError("s-1", "MemoryToolFactory.create() failed: [Errno 111] refused | config={'qdrant_url': 'http://u:pw@qdrant.internal:6333'}")
+        session_service.run.side_effect = err
+
+        resp = self._post(client, user_headers)
+
+        assert resp.status_code == 500
+        body = resp.get_data(as_text=True)
+        assert "config=" not in body and "qdrant" not in body and "pw@" not in body
+
     def test_build_failure_is_raised_before_the_stream_starts(self, client, user_headers, session_service) -> None:
         session_service.run.side_effect = SessionBuildError("s-1", "boom")
 
@@ -240,6 +250,16 @@ class TestSubmitSession:
 
         assert resp.status_code == 202
         assert resp.get_json() == {"sessionId": "s-1", "workflowId": "wf-1"}
+
+    def test_build_failure_body_never_carries_config(self, client, user_headers, session_service) -> None:
+        err = SessionBuildError("s-1", "MemoryToolFactory.create() failed: [Errno 111] refused | config={'qdrant_url': 'http://u:pw@qdrant.internal:6333'}")
+        session_service.submit.side_effect = err
+
+        resp = self._post(client, user_headers)
+
+        assert resp.status_code == 500
+        body = resp.get_data(as_text=True)
+        assert "config=" not in body and "qdrant" not in body and "pw@" not in body
 
     def test_build_failure_returns_structured_error_without_config(self, client, user_headers, session_service) -> None:
         session_service.submit.side_effect = SessionBuildError("s-1", "Session build failed (PluginConfigurationError): bad tool")

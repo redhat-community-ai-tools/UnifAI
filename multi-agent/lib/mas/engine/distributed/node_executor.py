@@ -144,4 +144,4 @@ class NodeExecutor:
 def _build_error(session_id: str, uid: str, e: Exception) -> SessionBuildError:
     """Log the full build failure and return its secret-free, session-level form."""
     logger.exception("Session %s: building node %s failed on the worker", session_id, uid)
-    return SessionBuildError(session_id, session_build_error_message(e))
+    return SessionBuildError(session_id, session_build_error_message(e, uid))

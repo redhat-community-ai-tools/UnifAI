@@ -74,7 +74,7 @@ def test_error_message_is_length_limited():
     svc, *_ = _service(err)
     with pytest.raises(SessionBuildError) as exc:
         svc.submit("s-1", {})
-    assert len(exc.value.message) <= 500
+    assert len(exc.value.message) <= 200
 
 
 # ── worker side ──────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ def test_worker_build_error_becomes_a_safe_session_build_error():
         _executor(err)._execute_node_inner("n1", bp, None, MagicMock(), None,
                                             SimpleNamespace(session_id="s-1"))
     assert exc.value.session_id == "s-1"
-    assert "Invalid tool" in exc.value.message and SECRET not in exc.value.message
+    assert "n1" in exc.value.message and "Invalid tool" not in exc.value.message and SECRET not in exc.value.message
 
 
 def test_activity_error_is_non_retryable_and_hides_the_cause():
@@ -125,7 +125,7 @@ def test_fail_session_records_the_build_error_in_metadata():
 
     assert record.status == SessionStatus.FAILED
     assert record.metadata.error["type"] == "session_build_failed"
-    assert len(record.metadata.error["message"]) <= 500
+    assert len(record.metadata.error["message"]) <= 200
 
 
 def test_fail_session_without_error_type_is_unchanged():

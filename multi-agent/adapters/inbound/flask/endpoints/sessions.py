@@ -10,7 +10,7 @@ from pydantic.json import pydantic_encoder
 from mas.core.channels import with_heartbeats
 from mas.core.identity import Identity, IdentityType
 from mas.core.hitl.models import ApprovalOverrides, ApprovalRuleSet
-from mas.session.domain.exceptions import BlueprintNotFoundError, SessionBuildError
+from mas.session.domain.exceptions import BlueprintNotFoundError, SessionBuildError, scrub_error_message
 from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.session.domain.models import SessionMeta
 from mas.session.domain.dto import SessionListFilter, PaginationMeta, PaginatedSessions
@@ -48,8 +48,13 @@ def _bind_forwarded_identity(session_id: str) -> None:
 
 
 def _session_build_failed_body(e: SessionBuildError) -> dict:
-    """Error body in the endpoint's usual ``error`` / ``error_type`` shape; the message is secret-free."""
-    return {"error": e.message, "error_type": e.error_type, "sessionId": e.session_id}
+    """Error body in the endpoint's usual ``error`` / ``error_type`` shape.
+
+    The message is a short summary built from structured fields (element type, exception
+    class, generic reason) and scrubbed again here; the exception text and the element
+    config only go to the server log.
+    """
+    return {"error": scrub_error_message(e.message), "error_type": e.error_type, "sessionId": e.session_id}
 
 
 def _session_build_failed_response(e: SessionBuildError) -> Response:
