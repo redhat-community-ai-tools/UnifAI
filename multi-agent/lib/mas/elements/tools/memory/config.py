@@ -21,6 +21,9 @@ class MemoryToolConfig(BaseToolConfig):
         description="Identifier of the memory scope (e.g. a project id). Entries are never shared across scopes.",
     )
     mongo_db: str = Field("UnifAI", description="MongoDB database holding the memory texts")
+    facts_collection: str = Field("facts", description="MongoDB collection holding the structured facts")
+    author: Optional[str] = Field(None, description="Optional author recorded as provenance on every write")
+    classification: Optional[str] = Field(None, description="Optional data classification recorded as provenance on every write")
     mongo_collection: str = Field("memories", description="MongoDB collection holding the memory texts")
     qdrant_collection: str = Field("memories", description="Qdrant collection holding the memory embeddings")
     embedding_service_url: Optional[str] = Field(

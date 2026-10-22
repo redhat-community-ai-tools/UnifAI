@@ -1,9 +1,11 @@
 """Ports of the memory tool: text store, vector index and embedder."""
-from typing import List, Protocol, Tuple
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 
 class MemoryTextStore(Protocol):
-    def insert_if_absent(self, scope_id: str, memory_id: str, text: str, kind: str) -> bool:
+    def insert_if_absent(
+        self, scope_id: str, memory_id: str, text: str, kind: str, provenance: Dict[str, Optional[str]],
+    ) -> bool:
         """Store the entry; return False when (scope_id, memory_id) already exists."""
         ...
 
@@ -13,6 +15,22 @@ class MemoryTextStore(Protocol):
 
     def list_recent(self, scope_id: str, limit: int) -> List[dict]:
         """Return the most recently written entries of *scope_id*."""
+        ...
+
+
+class FactStore(Protocol):
+    """Structured facts: one JSON value per (scope_id, key), last write wins."""
+
+    def set(
+        self, scope_id: str, key: str, value: Any, provenance: Dict[str, Optional[str]],
+    ) -> bool:
+        """Upsert the fact; return True when the key did not exist yet."""
+        ...
+
+    def get(self, scope_id: str, key: str) -> Optional[dict]: ...
+
+    def list(self, scope_id: str, limit: int) -> List[dict]:
+        """Most recently updated facts of *scope_id*."""
         ...
 
 

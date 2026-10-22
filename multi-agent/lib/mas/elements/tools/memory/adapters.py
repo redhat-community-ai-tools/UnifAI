@@ -7,7 +7,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +21,13 @@ class MongoMemoryTextStore:
         self._col.create_index([("scope_id", 1), ("memory_id", 1)], unique=True)
         self._col.create_index([("scope_id", 1), ("created_at", -1)])
 
-    def insert_if_absent(self, scope_id: str, memory_id: str, text: str, kind: str) -> bool:
+    def insert_if_absent(
+        self, scope_id: str, memory_id: str, text: str, kind: str, provenance: Dict[str, Optional[str]],
+    ) -> bool:
         result = self._col.update_one(
             {"scope_id": scope_id, "memory_id": memory_id},
             {"$setOnInsert": {
-                "scope_id": scope_id, "memory_id": memory_id, "text": text, "kind": kind,
+                "scope_id": scope_id, "memory_id": memory_id, "text": text, "kind": kind, **provenance,
                 "created_at": datetime.now(timezone.utc),
             }},
             upsert=True,
@@ -37,6 +39,34 @@ class MongoMemoryTextStore:
 
     def list_recent(self, scope_id: str, limit: int) -> List[dict]:
         return list(self._col.find({"scope_id": scope_id}, {"_id": 0}).sort("created_at", -1).limit(limit))
+
+
+class MongoFactStore:
+    """Structured facts in MongoDB: unique (scope_id, key), last write wins."""
+
+    def __init__(self, db_name: str, coll_name: str, mongo_url: Optional[str] = None) -> None:
+        import pymongo
+        from global_utils.utils.util import get_mongo_url
+
+        self._col = pymongo.MongoClient(mongo_url or get_mongo_url())[db_name][coll_name]
+        self._col.create_index([("scope_id", 1), ("key", 1)], unique=True)
+        self._col.create_index([("scope_id", 1), ("updated_at", -1)])
+
+    def set(self, scope_id: str, key: str, value: Any, provenance: Dict[str, Optional[str]]) -> bool:
+        now = datetime.now(timezone.utc)
+        result = self._col.update_one(
+            {"scope_id": scope_id, "key": key},
+            {"$set": {"value": value, "updated_at": now, **provenance},
+             "$setOnInsert": {"scope_id": scope_id, "key": key, "created_at": now}},
+            upsert=True,
+        )
+        return result.upserted_id is not None
+
+    def get(self, scope_id: str, key: str) -> Optional[dict]:
+        return self._col.find_one({"scope_id": scope_id, "key": key}, {"_id": 0})
+
+    def list(self, scope_id: str, limit: int) -> List[dict]:
+        return list(self._col.find({"scope_id": scope_id}, {"_id": 0}).sort("updated_at", -1).limit(limit))
 
 
 def _point_id(scope_id: str, memory_id: str) -> str:
