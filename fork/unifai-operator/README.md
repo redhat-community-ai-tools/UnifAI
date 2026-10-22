@@ -185,6 +185,21 @@ use the `Recreate` strategy; the dev profile disables chart autoscaling (fixed `
 `kubectl rollout status` (no pod of an older revision left). An `UnifaiRAGPipeline` in phase `Failed` is retried when
 its spec changes or when the `unifai.startx.fr/retry` annotation gets a new value.
 
+### Events and metrics
+Every phase change of an UnifAI object or an UnifaiStack is recorded as an Event (`events.k8s.io`, reporting
+controller `unifai-operator`, reason = the new phase; `Warning` for `Error` and `Failed`, plus `DeleteFailed` when the
+UnifAI side of an object cannot be removed): `oc get events -n <ns> --field-selector reportingComponent=unifai-operator`.
+The manager metrics endpoint (`:8443/metrics`, HTTPS, token reviewed) adds to the controller-runtime metrics:
+
+| Metric | Labels | Meaning |
+|---|---|---|
+| `unifai_operator_phase_transitions_total` | kind, phase | phase changes |
+| `unifai_operator_stack_ready` | namespace | 1 when the stack is Ready |
+| `unifai_operator_helm_apply_seconds` | release, result | Helm install/upgrade duration |
+| `unifai_operator_keycloak_repairs_total` | namespace | restarts of a managed Keycloak left unready |
+
+No ServiceMonitor is shipped for the operator itself yet (fork/ROADMAP.md R-203).
+
 ## Build and release
 
 Requirements: Go 1.26, operator-sdk 1.41, opm, podman, write access to `quay.io/zuno/unifai-operator{,-bundle,-catalog}`.

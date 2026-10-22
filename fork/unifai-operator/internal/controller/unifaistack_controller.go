@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/recorder"
 
 	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"
 	"github.com/startxfr/unifai-operator/internal/stack"
@@ -35,11 +36,14 @@ type StackReconciler struct {
 	Engine *stack.Engine
 	// OperatorNamespace is allowed through the stack NetworkPolicy.
 	OperatorNamespace string
+	// Recorder records an Event at each phase change (optional).
+	Recorder recorder.EventRecorder
 }
 
 // NewStackReconciler builds the reconciler from the manager.
 func NewStackReconciler(mgr ctrl.Manager) *StackReconciler {
-	return &StackReconciler{Client: mgr.GetClient(), Engine: &stack.Engine{Config: mgr.GetConfig()}, OperatorNamespace: os.Getenv("POD_NAMESPACE")}
+	return &StackReconciler{Client: mgr.GetClient(), Engine: &stack.Engine{Config: mgr.GetConfig()}, OperatorNamespace: os.Getenv("POD_NAMESPACE"),
+		Recorder: mgr.GetEventRecorder(EventSource)}
 }
 
 // specHashAnnotation records the desired spec of the Deployments the operator manages directly.
@@ -101,6 +105,7 @@ func (r *StackReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 }
 
 func (r *StackReconciler) setStatus(ctx context.Context, st *unifaiv1.UnifaiStack, phase, msg string, ready metav1.ConditionStatus, reason string) error {
+	prev := st.Status.Phase
 	st.Status.Phase, st.Status.Message, st.Status.ObservedGeneration = phase, unifai.Truncate(msg, 1000), st.Generation
 	st.Status.OperatorVersion = OperatorVersion
 	meta.SetStatusCondition(&st.Status.Conditions, metav1.Condition{Type: "Ready", Status: ready, Reason: reason,
@@ -108,7 +113,16 @@ func (r *StackReconciler) setStatus(ctx context.Context, st *unifaiv1.UnifaiStac
 	// Merge patch from an empty status: no resourceVersion conflict (arrays such as components are replaced whole).
 	base := st.DeepCopy()
 	base.Status = unifaiv1.UnifaiStackStatus{}
-	return r.Status().Patch(ctx, st, client.MergeFrom(base))
+	if err := r.Status().Patch(ctx, st, client.MergeFrom(base)); err != nil {
+		return err
+	}
+	recordPhase(r.Recorder, st, prev, phase, msg)
+	v := 0.0
+	if ready == metav1.ConditionTrue {
+		v = 1
+	}
+	stackReady.WithLabelValues(st.Namespace).Set(v)
+	return nil
 }
 
 // clusterDomain returns the OpenShift apps domain ("" elsewhere).
@@ -439,7 +453,13 @@ func (r *StackReconciler) applyRelease(ctx context.Context, p *stack.Plan, rel s
 	deployed := cur != nil && cur.Info != nil && cur.Info.Status == "deployed"
 	if !deployed || cur.Labels[stack.HashLabel] != rr.Hash {
 		log.FromContext(ctx).Info("applying release", "release", rel.Name, "upgrade", cur != nil)
+		start := time.Now()
 		cur, err = r.Engine.Apply(ctx, p, rr)
+		result := "ok"
+		if err != nil {
+			result = "error"
+		}
+		helmApplySeconds.WithLabelValues(rel.Name, result).Observe(time.Since(start).Seconds())
 		if err != nil {
 			return cs, fmt.Errorf("release %s: %w", rel.Name, err)
 		}
@@ -532,6 +552,7 @@ func (r *StackReconciler) finalize(ctx context.Context, st *unifaiv1.UnifaiStack
 		}
 	}
 	r.Engine.Forget(st.Namespace)
+	stackReady.DeleteLabelValues(st.Namespace)
 	controllerutil.RemoveFinalizer(st, Finalizer)
 	return ctrl.Result{}, r.Update(ctx, st)
 }

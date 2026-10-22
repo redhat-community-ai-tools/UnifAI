@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/recorder"
 
 	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"
 	"github.com/startxfr/unifai-operator/internal/unifai"
@@ -57,6 +58,8 @@ type Base struct {
 	// APIReader reads without the informer cache: the status holds the ids of the UnifAI objects, and a stale
 	// cached copy right after a write would make the controller create duplicates or refuse its own objects.
 	APIReader client.Reader
+	// Recorder records an Event at each phase change (optional).
+	Recorder recorder.EventRecorder
 }
 
 // get reads the object from the API server when an uncached reader is set.
@@ -178,6 +181,7 @@ type Handlers struct {
 func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 	st := obj.GetObjectStatus()
+	prev := st.Phase
 
 	if !obj.GetDeletionTimestamp().IsZero() {
 		if !controllerutil.ContainsFinalizer(obj, Finalizer) {
@@ -189,6 +193,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 				orig := obj.DeepCopyObject().(client.Object)
 				st.Phase, st.Message = "Deleting", unifai.Truncate("cannot delete (still referenced?): "+err.Error(), 500)
 				_ = b.Status().Patch(ctx, obj, client.MergeFrom(orig))
+				recordDeleteFailed(b.Recorder, obj, prev, st.Message)
 				return reconcile.Result{RequeueAfter: 3 * retry}, nil
 			}
 		}
@@ -251,6 +256,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 	if uerr := b.Status().Patch(ctx, obj, client.MergeFrom(orig)); uerr != nil {
 		return reconcile.Result{}, uerr
 	}
+	recordPhase(b.Recorder, obj, prev, st.Phase, st.Message)
 	if requeue == 0 {
 		return reconcile.Result{}, nil
 	}

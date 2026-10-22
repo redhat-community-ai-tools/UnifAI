@@ -99,6 +99,7 @@ func (k *Keycloak) Ensure(ctx context.Context, p *Plan) (string, error) {
 			return "", err
 		}
 		if repaired {
+			keycloakRepairs.WithLabelValues(p.Namespace).Inc()
 			return "Keycloak unready for too long: pod restarted", nil
 		}
 		return "waiting for Keycloak to be ready", nil

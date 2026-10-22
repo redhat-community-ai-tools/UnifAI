@@ -58,10 +58,13 @@ type Client struct {
 	HTTP   *http.Client
 }
 
+// DefaultUser is the identity used when a spec names no owner.
+const DefaultUser = "admin"
+
 // New returns a client with a default timeout.
 func New(base, user, teamID string) *Client {
 	if user == "" {
-		user = "admin"
+		user = DefaultUser
 	}
 	return &Client{Base: strings.TrimRight(base, "/"), User: user, TeamID: teamID, HTTP: &http.Client{Timeout: 60 * time.Second}}
 }

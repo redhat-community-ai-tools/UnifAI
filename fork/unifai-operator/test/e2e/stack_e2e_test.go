@@ -251,6 +251,53 @@ func TestUnifaiStack(t *testing.T) {
 		}
 	})
 
+	t.Run("schedule, template and RAG pipeline on the real services", func(t *testing.T) {
+		sch := &unifaiv1.UnifaiSchedule{ObjectMeta: metav1.ObjectMeta{Name: "e2e-every", Namespace: ns}, Spec: unifaiv1.UnifaiScheduleSpec{
+			Workflow: "e2e-wf", Inputs: map[string]string{"user_prompt": "ping"}, Schedule: unifaiv1.ScheduleDefinition{Interval: "PT12H"}}}
+		tpl := &unifaiv1.UnifaiTemplate{ObjectMeta: metav1.ObjectMeta{Name: "e2e-template", Namespace: ns}, Spec: unifaiv1.UnifaiTemplateSpec{
+			Draft: *raw(map[string]any{
+				"name": "E2E Template", "description": "e2e",
+				"llms": []any{map[string]any{"rid": "llm_rid", "name": "mock", "type": "openai_compatible",
+					"config": map[string]any{"type": "openai_compatible", "model_name": "mock-model", "base_url": "http://e2e-llm:8000/v1", "api_key": "PLACEHOLDER_API_KEY"}}},
+				"nodes": []any{
+					map[string]any{"rid": "user_question", "name": "User Question Node", "type": "user_question_node", "config": map[string]any{"type": "user_question_node"}},
+					map[string]any{"rid": "final_answer", "name": "Final Answer Node", "type": "final_answer_node", "config": map[string]any{"type": "final_answer_node"}},
+					map[string]any{"rid": "agent_rid", "name": "Assistant", "type": "custom_agent_node",
+						"config": map[string]any{"type": "custom_agent_node", "llm": "llm_rid", "hitl_mode": "skip"}}},
+				"plan": []any{
+					map[string]any{"uid": "ask", "node": "user_question"},
+					map[string]any{"uid": "answer", "node": "agent_rid", "after": "ask"},
+					map[string]any{"uid": "finish", "node": "final_answer", "after": "answer"}},
+			}),
+			Placeholders: raw(map[string]any{"categories": []any{map[string]any{"category": "llms", "resources": []any{
+				map[string]any{"rid": "llm_rid", "placeholders": []any{map[string]any{"field_path": "api_key", "required": true, "label": "API key"}}}}}}}),
+			Metadata: raw(map[string]any{"author": "e2e", "version": "1.0.0", "is_public": false, "category": "Chat"}),
+		}}
+		for _, o := range []client.Object{sch, tpl} {
+			create(t, o)
+		}
+		waitPhase(t, sch, "Ready", 5*time.Minute)
+		if sch.Status.ScheduleID == "" {
+			t.Errorf("schedule Ready without an id")
+		}
+		waitPhase(t, tpl, "Ready", 5*time.Minute)
+
+		must(t, c.Get(ctx, client.ObjectKeyFromObject(sch), sch))
+		sch.Spec.Suspend = true
+		must(t, c.Update(ctx, sch))
+		waitPhase(t, sch, "Suspended", 5*time.Minute)
+
+		if os.Getenv("E2E_FULL") == "" {
+			t.Log("RAG pipeline skipped: docling and the embedding service are only deployed with E2E_FULL=1")
+			return
+		}
+		rag := &unifaiv1.UnifaiRAGPipeline{ObjectMeta: metav1.ObjectMeta{Name: "e2e-docs", Namespace: ns}, Spec: unifaiv1.UnifaiRAGPipelineSpec{
+			Documents: []unifaiv1.RAGDocument{{Name: "e2e-notes.md", Tags: []string{"e2e"},
+				Source: unifaiv1.DocumentSource{Inline: "# E2E\nThe UnifAI operator ingests this document through docling and TEI."}}}}}
+		create(t, rag)
+		waitPhase(t, rag, "Ready", 15*time.Minute)
+	})
+
 	t.Run("no Helm release is re-applied without a change", func(t *testing.T) {
 		before := releaseVersions(t, ns)
 		must(t, c.Get(ctx, client.ObjectKeyFromObject(st), st))
