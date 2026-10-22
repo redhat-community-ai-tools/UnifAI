@@ -11,6 +11,9 @@ from core.pipeline.domain.repository import PipelineRepository
 from core.vector.domain.repository import VectorRepository
 import logging
 
+# Fields a client may change on an existing source (ownership and access are not editable).
+EDITABLE_SOURCE_FIELDS = frozenset({"source_name", "tags"})
+
 logger = logging.getLogger(__name__)
 
 
@@ -129,14 +132,19 @@ class DataSourceService:
     def update(
         self, source_id: str, updates: Dict[str, Any], upload_by: Optional[str] = None
     ) -> bool:
-        """Update specific fields of a source."""
+        """Update the client-editable fields of a source.
+
+        Raises:
+            ValueError: if ``updates`` contains a field that is not editable.
+        """
+        rejected = sorted(set(updates) - EDITABLE_SOURCE_FIELDS)
+        if rejected:
+            raise ValueError(f"Fields not editable: {rejected}")
         source = self._source_repo.find_by_id(source_id, upload_by=upload_by)
         if not source:
             return False
-        # Apply updates to domain model
         for key, value in updates.items():
-            if hasattr(source, key):
-                setattr(source, key, value)
+            setattr(source, key, value)
         self._source_repo.save(source)
         return True
 
