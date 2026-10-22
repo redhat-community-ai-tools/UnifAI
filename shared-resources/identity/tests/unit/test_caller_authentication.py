@@ -58,6 +58,9 @@ class FakeTeamService:
     def get(self, team_id):
         return self.teams[team_id]
 
+    def cached_group_ids(self, username):
+        return None
+
     def list_user_teams(self, user_id, group_ids=None):
         return [t for t in self.teams.values() if any(m.id == user_id for m in t.members)]
 

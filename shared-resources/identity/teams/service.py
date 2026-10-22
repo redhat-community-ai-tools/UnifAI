@@ -72,6 +72,21 @@ class TeamService:
                         group_ids: Optional[List[str]] = None) -> List[Team]:
         return self._repo.find_by_member(user_id, group_ids=group_ids)
 
+    def cached_group_ids(self, username: str) -> Optional[List[str]]:
+        """Group ids Identity itself resolved for *username* (server-side cache).
+
+        These come from the directory provider (for ``oidc-claims``: the
+        verified access token) at login / token refresh, never from a client.
+        Returns ``None`` when nothing is cached (unknown), which callers must
+        treat as "no group information" rather than "no groups".
+        """
+        if not username or not self._groups_cache:
+            return None
+        cached = self._groups_cache.get_groups(username)
+        if cached is None:
+            return None
+        return [g["group_id"] for g in cached if g.get("group_id")]
+
     def update(self, team_id: str, name: Optional[str] = None,
                members: Optional[List[dict]] = None) -> Team:
         team = self._repo.get(team_id)
