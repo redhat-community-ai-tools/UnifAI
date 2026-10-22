@@ -6,6 +6,17 @@ export interface ChatMessage {
   metadata?: Record<string, any>;
 }
 
+/**
+ * Non-fatal structured error the backend attaches to a message's `metadata.error`
+ * (and sends on `agent_error` stream events), e.g. a model rate limit or quota.
+ */
+export interface MessageError {
+  type: string; // "rate_limited"
+  message: string;
+  /** Seconds to wait before retrying; null when unknown. */
+  retry_after: number | null;
+}
+
 // Shared ChatSession interface used across components
 export interface ChatSession {
   id: string;

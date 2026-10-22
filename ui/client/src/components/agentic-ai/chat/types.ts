@@ -12,6 +12,9 @@ export function isSessionCancellation(error: unknown): boolean {
   return (error as SessionError)?.sessionStatus === 'CANCELLED';
 }
 
+export type { MessageError } from '@/types/session';
+import type { MessageError } from '@/types/session';
+
 /** LLM response metadata attached by the backend (names as sent by the endpoint). */
 export interface ResponseMetadata {
   response_id?: string | null;
@@ -31,6 +34,8 @@ export interface Message {
   streamLogs?: StreamLogEntry[];
   workPlans?: WorkPlanSnapshot[];
   responseMetadata?: ResponseMetadata;
+  /** Non-fatal structured error (e.g. rate limit); rendered as a notice, not a failure. */
+  error?: MessageError;
 }
 
 export interface StreamLogEntry {
@@ -78,6 +83,8 @@ export interface NodeEntry {
   tools: ToolEntry[];
   workplans: WorkPlanSnapshot[];
   approvals: ApprovalEntry[];
+  /** Set by an `agent_error` stream event carrying a structured error. */
+  error?: MessageError;
 }
 
 // WorkPlan Types based on the streaming guide

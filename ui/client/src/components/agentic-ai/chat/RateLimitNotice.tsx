@@ -1,11 +1,17 @@
 import { Clock } from "lucide-react";
-import { formatRetryDelay, type RateLimitNotice as Notice } from "./helpers/rateLimit";
+import { formatRetryDelay } from "./helpers/rateLimit";
 
 /**
  * Non-fatal notice shown when the model endpoint rejected a call with HTTP 429
  * (rate limit or quota). The run did not crash; the user can retry later.
  */
-export function RateLimitNotice({ notice }: { notice: Notice }) {
+export function RateLimitNotice({
+  message,
+  retryAfterSeconds,
+}: {
+  message: string;
+  retryAfterSeconds?: number | null;
+}) {
   return (
     <div
       role="status"
@@ -15,10 +21,10 @@ export function RateLimitNotice({ notice }: { notice: Notice }) {
       <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" aria-hidden />
       <div>
         <div className="font-medium">Rate limit reached</div>
-        <div className="text-amber-100/80">{notice.message.replace(/^Rate limit reached:\s*/, "")}</div>
-        {notice.retryAfterSeconds !== null && (
+        <div className="text-amber-100/80">{message.replace(/^Rate limit reached:\s*/, "")}</div>
+        {retryAfterSeconds != null && (
           <div className="mt-1 text-xs text-amber-200">
-            You can retry in {formatRetryDelay(notice.retryAfterSeconds)}.
+            You can retry in {formatRetryDelay(retryAfterSeconds)}.
           </div>
         )}
       </div>

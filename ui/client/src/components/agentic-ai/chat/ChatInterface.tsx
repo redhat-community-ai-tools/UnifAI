@@ -21,11 +21,10 @@ import { MarkdownComponents, preprocessText } from "./helpers/TextComponents";
 import { SessionPayload } from "../ExecutionTab";
 import { useStreamingData } from "../StreamingDataContext";
 import ResponseMetadataBadge from "./ResponseMetadataBadge";
-import { Message, ResponseMetadata, StreamLogEntry, WorkPlanSnapshot, ApprovalDecision, ApprovalStatus, AutoRuleAction, isSessionCancellation } from "./types";
+import { Message, MessageError, ResponseMetadata, StreamLogEntry, WorkPlanSnapshot, ApprovalDecision, ApprovalStatus, AutoRuleAction, isSessionCancellation } from "./types";
 import { StreamLogDisplay } from "./StreamLogDisplay";
 import { ApprovalBadge } from "./ApprovalBadge";
 import { RateLimitNotice } from "./RateLimitNotice";
-import { parseRateLimitNotice } from "./helpers/rateLimit";
 import { submitApproval, submitApprovalRule } from "@/api/sessions";
 import { useToast } from "@/hooks/use-toast";
 import { UmamiTrack } from '@/components/ui/umamitrack';
@@ -158,6 +157,8 @@ export default function ChatInterface({
     const preview = words.length <= 3 ? prompt.text : words.slice(0, 3).join(" ") + "...";
     return preview.length > 40 ? preview.slice(0, 37) + "..." : preview;
   };
+
+  const liveErrorSeenRef = useRef<Set<string>>(new Set());
 
   const updateMessageById = useCallback(
     (messageId: string, updates: Partial<Message>) => {
@@ -338,6 +339,9 @@ export default function ChatInterface({
           finalAnswer: msg.content,
         }),
         ...(msg.metadata?.is_cancelled && { isCancelled: true }),
+        ...(msg.role === "assistant" && msg.metadata?.error
+          ? { error: msg.metadata.error as MessageError }
+          : {}),
         ...(msg.role === "assistant" && msg.metadata?.llm_response
           ? { responseMetadata: msg.metadata.llm_response as ResponseMetadata }
           : {}),
@@ -490,6 +494,14 @@ export default function ChatInterface({
 
         // Process each entry from nodeListRef for stream logs only
         list.forEach((entry) => {
+          // A typed non-fatal error reported live (e.g. rate limit)
+          if (entry.error && !liveErrorSeenRef.current.has(messageId)) {
+            liveErrorSeenRef.current.add(messageId);
+            const liveError = entry.error;
+            setMessages((prev) =>
+              prev.map((m) => (m.id === messageId && !m.error ? { ...m, error: liveError } : m)),
+            );
+          }
           // Process stream logs
           const existingLog = currentLogs.find(
             (log) => log.nodeId === entry.node_name,
@@ -1440,11 +1452,13 @@ export default function ChatInterface({
 
           {/* Final answer with markdown rendering */}
           {message.finalAnswer && (() => {
-            const rateLimit = parseRateLimitNotice(message.finalAnswer);
-            if (rateLimit) {
+            if (message.error?.type === "rate_limited") {
               return (
                 <div className="mt-3">
-                  <RateLimitNotice notice={rateLimit} />
+                  <RateLimitNotice
+                    message={message.error.message}
+                    retryAfterSeconds={message.error.retry_after}
+                  />
                 </div>
               );
             }
