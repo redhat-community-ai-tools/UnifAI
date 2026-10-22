@@ -1,0 +1,1 @@
+{"critical":{"identity":{"docker-reference":"quay.io/zuno/okf-tekos"},"image":{"docker-manifest-digest":"sha256:bf429d3e6173781f10c858ed81a7f7c23073d9b0ba7ddd1044651d3868fcadba"},"type":"cosign container image signature"},"optional":null}

@@ -24,10 +24,28 @@ type BundleSource struct {
 	OCI OCIBundleSource `json:"oci"`
 }
 
-// BundleVerify says how the bundle signature is checked. The key is the PEM public half of the signing key
-// (for zuno, the Vault Transit key exported as agents/zuno-platform-signer.pub): no access to Vault is needed.
+// BundleVerify says how the bundle signature is checked: with a public key, or keyless (ADR-0578). Exactly one.
+// +kubebuilder:validation:XValidation:rule="has(self.publicKeyRef) != has(self.keyless)",message="set exactly one of publicKeyRef or keyless"
 type BundleVerify struct {
-	PublicKeyRef SecretKeySelector `json:"publicKeyRef"`
+	// PEM public half of the signing key (for zuno, the Vault Transit key exported as
+	// agents/zuno-platform-signer.pub): no access to Vault is needed. Checks the bundle content digest.
+	// +optional
+	PublicKeyRef *SecretKeySelector `json:"publicKeyRef,omitempty"`
+	// Keyless cosign signature of the artifact manifest digest, checked offline against a Sigstore trusted root.
+	// +optional
+	Keyless *KeylessVerify `json:"keyless,omitempty"`
+}
+
+// KeylessVerify accepts an artifact signed by a CI workflow identity (Fulcio certificate + Rekor entry).
+type KeylessVerify struct {
+	// OIDC issuer of the signing certificate, e.g. https://token.actions.githubusercontent.com.
+	// +kubebuilder:validation:MinLength=1
+	Issuer string `json:"issuer"`
+	// Regular expression the certificate subject (the workflow identity) must match; anchor it.
+	// +kubebuilder:validation:MinLength=1
+	SubjectRegExp string `json:"subjectRegExp"`
+	// Sigstore trusted_root.json (Fulcio, Rekor and CT log keys), in a Secret of the bundle's namespace.
+	TrustedRootRef SecretKeySelector `json:"trustedRootRef"`
 }
 
 // BundleCeilings bound what a bundle may declare (ADR-0564 clause 3): a bundle can narrow, never widen.
@@ -133,6 +151,9 @@ type UnifaiAgentBundleStatus struct {
 	BundleDigest string `json:"bundleDigest,omitempty"`
 	// +optional
 	Verified bool `json:"verified,omitempty"`
+	// Certificate subject that signed the artifact (keyless verification only).
+	// +optional
+	Signer string `json:"signer,omitempty"`
 	// zuno.name of the bundle.
 	// +optional
 	Agent string `json:"agent,omitempty"`

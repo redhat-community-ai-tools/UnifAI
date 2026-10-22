@@ -256,13 +256,44 @@ spec:
                 description: Name in UnifAI (defaults to metadata.name).
                 type: string
               verify:
-                description: |-
-                  BundleVerify says how the bundle signature is checked. The key is the PEM public half of the signing key
-                  (for zuno, the Vault Transit key exported as agents/zuno-platform-signer.pub): no access to Vault is needed.
+                description: 'BundleVerify says how the bundle signature is checked:
+                  with a public key, or keyless (ADR-0578). Exactly one.'
                 properties:
+                  keyless:
+                    description: Keyless cosign signature of the artifact manifest
+                      digest, checked offline against a Sigstore trusted root.
+                    properties:
+                      issuer:
+                        description: OIDC issuer of the signing certificate, e.g.
+                          https://token.actions.githubusercontent.com.
+                        minLength: 1
+                        type: string
+                      subjectRegExp:
+                        description: Regular expression the certificate subject (the
+                          workflow identity) must match; anchor it.
+                        minLength: 1
+                        type: string
+                      trustedRootRef:
+                        description: Sigstore trusted_root.json (Fulcio, Rekor and
+                          CT log keys), in a Secret of the bundle's namespace.
+                        properties:
+                          key:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                    required:
+                    - issuer
+                    - subjectRegExp
+                    - trustedRootRef
+                    type: object
                   publicKeyRef:
-                    description: SecretKeySelector selects a key of a Secret in the
-                      CR's namespace.
+                    description: |-
+                      PEM public half of the signing key (for zuno, the Vault Transit key exported as
+                      agents/zuno-platform-signer.pub): no access to Vault is needed. Checks the bundle content digest.
                     properties:
                       key:
                         type: string
@@ -272,9 +303,10 @@ spec:
                     - key
                     - name
                     type: object
-                required:
-                - publicKeyRef
                 type: object
+                x-kubernetes-validations:
+                - message: set exactly one of publicKeyRef or keyless
+                  rule: has(self.publicKeyRef) != has(self.keyless)
             required:
             - ceilings
             - llm
@@ -368,6 +400,10 @@ spec:
                 type: string
               resolvedDigest:
                 description: Manifest digest that was pulled.
+                type: string
+              signer:
+                description: Certificate subject that signed the artifact (keyless
+                  verification only).
                 type: string
               tasks:
                 items:

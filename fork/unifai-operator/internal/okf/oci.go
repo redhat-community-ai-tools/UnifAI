@@ -28,6 +28,11 @@ const (
 	SignatureAnnotation = "zuno.okf.signature"
 	DigestAnnotation    = "zuno.okf.digest"
 
+	// v2 (zuno-demo-agents, ADR-0578): runtime files only, signed keyless as a whole artifact, so the
+	// manifest carries no signature annotation.
+	ArtifactTypeV2   = "application/vnd.zuno.okf.bundle.v2"
+	LayerMediaTypeV2 = "application/vnd.zuno.okf.bundle.v2.tar+gzip"
+
 	maxManifestBytes = 1 << 20
 	maxLayerBytes    = 16 << 20
 	maxBundleBytes   = 32 << 20
@@ -44,6 +49,8 @@ type Artifact struct {
 	Signature []byte
 	// ManifestDigest is the digest the reference pinned.
 	ManifestDigest string
+	// V2 marks a keyless-signed artifact (no Signature): its signature is the cosign image next to it.
+	V2 bool
 }
 
 // Fetcher pulls a bundle; replaceable in tests.
@@ -107,24 +114,28 @@ func decodeArtifact(ctx context.Context, manifest []byte, manifestDigest string,
 	if err := json.Unmarshal(manifest, &m); err != nil {
 		return nil, fmt.Errorf("manifest: %w", err)
 	}
-	if m.ArtifactType != ArtifactType && m.Config.MediaType != ArtifactType {
-		return nil, fmt.Errorf("artifact type is %q, want %s", m.ArtifactType, ArtifactType)
+	v2 := m.ArtifactType == ArtifactTypeV2 || m.Config.MediaType == ArtifactTypeV2
+	if !v2 && m.ArtifactType != ArtifactType && m.Config.MediaType != ArtifactType {
+		return nil, fmt.Errorf("artifact type is %q, want %s or %s", m.ArtifactType, ArtifactType, ArtifactTypeV2)
 	}
+	layerType := LayerMediaType
 	sig := m.Annotations[SignatureAnnotation]
-	if sig == "" {
+	if v2 {
+		layerType = LayerMediaTypeV2
+	} else if sig == "" {
 		return nil, fmt.Errorf("manifest has no %s annotation: the bundle is unsigned", SignatureAnnotation)
 	}
 	var layer *ocispec.Descriptor
 	for i := range m.Layers {
-		if m.Layers[i].MediaType == LayerMediaType {
+		if m.Layers[i].MediaType == layerType {
 			if layer != nil {
-				return nil, fmt.Errorf("manifest has more than one %s layer", LayerMediaType)
+				return nil, fmt.Errorf("manifest has more than one %s layer", layerType)
 			}
 			layer = &m.Layers[i]
 		}
 	}
 	if layer == nil {
-		return nil, fmt.Errorf("manifest has no %s layer", LayerMediaType)
+		return nil, fmt.Errorf("manifest has no %s layer", layerType)
 	}
 	if layer.Size > maxLayerBytes {
 		return nil, fmt.Errorf("bundle layer is too large (%d bytes)", layer.Size)
@@ -137,7 +148,7 @@ func decodeArtifact(ctx context.Context, manifest []byte, manifestDigest string,
 	if err != nil {
 		return nil, err
 	}
-	return &Artifact{Files: files, Signature: []byte(sig), ManifestDigest: manifestDigest}, nil
+	return &Artifact{Files: files, Signature: []byte(sig), ManifestDigest: manifestDigest, V2: v2}, nil
 }
 
 // Untar reads a gzipped tar of regular files. Paths are normalised and must stay inside the bundle.

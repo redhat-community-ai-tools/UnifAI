@@ -36,6 +36,9 @@ type AgentBundleReconciler struct {
 	Scheme *runtime.Scheme
 	// Fetch pulls the bundle (okf.Fetch by default; replaced in tests).
 	Fetch okf.Fetcher
+	// FetchSignatures pulls the cosign signatures of an artifact for keyless verification (okf.FetchKeylessSignatures
+	// by default; replaced in tests).
+	FetchSignatures func(ctx context.Context, ref string, cred *okf.Credential) ([]okf.KeylessSignature, error)
 }
 
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaiagentbundles,verbs=get;list;watch;update;patch
@@ -116,7 +119,7 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 	if _, _, err := okf.SplitDigestRef(ref); err != nil {
 		return &PermanentError{Err: err}
 	}
-	pub, err := r.secretValue(ctx, cr.Namespace, cr.Spec.Verify.PublicKeyRef)
+	verifier, err := r.verifierFor(ctx, cr)
 	if err != nil {
 		return err
 	}
@@ -137,18 +140,19 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 	st.ResolvedDigest = art.ManifestDigest
 
 	// 2. Verify before any byte of the bundle is parsed.
-	digest, err := okf.Digest(art.Files)
-	if err == nil {
-		err = okf.VerifySignature(digest, art.Signature, []byte(pub))
-	}
+	digest, signer, err := verifier(ctx, ref, cred, art)
 	st.BundleDigest = digest
 	if err != nil {
-		st.Verified = false
+		st.Verified, st.Signer = false, ""
 		cond(ConditionVerified, false, "SignatureInvalid", err.Error())
 		return permanent("bundle not verified, nothing emitted: %v", err)
 	}
-	st.Verified = true
-	cond(ConditionVerified, true, "SignatureValid", "bundle digest "+digest)
+	st.Verified, st.Signer = true, signer
+	msg := "bundle digest " + digest
+	if signer != "" {
+		msg += ", signed by " + signer
+	}
+	cond(ConditionVerified, true, "SignatureValid", msg)
 
 	// 3. Validate against the embedded OKF schemas, then the mapping's own preconditions.
 	if err := okf.ValidateSchemas(art.Files); err != nil {
@@ -409,6 +413,56 @@ func childName(bundle, task string) string {
 		}
 		return '-'
 	}, n)
+}
+
+// bundleVerifier checks a pulled artifact and returns the bundle content digest and, for keyless
+// verification, the signer's certificate subject.
+type bundleVerifier func(ctx context.Context, ref string, cred *okf.Credential, art *okf.Artifact) (digest, signer string, err error)
+
+// verifierFor reads the trust material of spec.verify (a public key, or a Sigstore trusted root) and returns
+// the check to run on the pulled artifact.
+func (r *AgentBundleReconciler) verifierFor(ctx context.Context, cr *unifaiv1.UnifaiAgentBundle) (bundleVerifier, error) {
+	v := cr.Spec.Verify
+	switch {
+	case v.Keyless != nil && v.PublicKeyRef == nil:
+		rootJSON, err := r.secretValue(ctx, cr.Namespace, v.Keyless.TrustedRootRef)
+		if err != nil {
+			return nil, err
+		}
+		id := okf.KeylessIdentity{Issuer: v.Keyless.Issuer, SubjectRegExp: v.Keyless.SubjectRegExp}
+		fetchSigs := r.FetchSignatures
+		if fetchSigs == nil {
+			fetchSigs = okf.FetchKeylessSignatures
+		}
+		return func(ctx context.Context, ref string, cred *okf.Credential, art *okf.Artifact) (string, string, error) {
+			digest, err := okf.Digest(art.Files)
+			if err != nil {
+				return digest, "", err
+			}
+			sigs, err := fetchSigs(ctx, ref, cred)
+			if err != nil {
+				return digest, "", err
+			}
+			signer, err := okf.VerifyKeyless([]byte(rootJSON), art.ManifestDigest, sigs, id)
+			return digest, signer, err
+		}, nil
+	case v.PublicKeyRef != nil && v.Keyless == nil:
+		pub, err := r.secretValue(ctx, cr.Namespace, *v.PublicKeyRef)
+		if err != nil {
+			return nil, err
+		}
+		return func(_ context.Context, _ string, _ *okf.Credential, art *okf.Artifact) (string, string, error) {
+			if art.V2 {
+				return "", "", errors.New("a v2 artifact is signed keyless: set spec.verify.keyless")
+			}
+			digest, err := okf.Digest(art.Files)
+			if err == nil {
+				err = okf.VerifySignature(digest, art.Signature, []byte(pub))
+			}
+			return digest, "", err
+		}, nil
+	}
+	return nil, permanent("spec.verify needs exactly one of publicKeyRef or keyless")
 }
 
 // teamCoversGroups reports whether the objects will live in a team workspace limited to (at least) the

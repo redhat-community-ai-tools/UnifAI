@@ -20,6 +20,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,6 +46,33 @@ func (r *bundleRegistry) fetch(_ context.Context, ref string, _ *okf.Credential)
 		return nil, fmt.Errorf("manifest unknown: %s", ref)
 	}
 	return a, nil
+}
+
+// keylessFixtures are a real dev-signed zuno-demo-agents artifact (see internal/okf/testdata/keyless).
+const keylessDigest = "sha256:bf429d3e6173781f10c858ed81a7f7c23073d9b0ba7ddd1044651d3868fcadba"
+
+func keylessFile(name string) []byte {
+	b, err := os.ReadFile(filepath.Join("..", "okf", "testdata", "keyless", name))
+	Expect(err).NotTo(HaveOccurred())
+	return b
+}
+
+// fetchSignatures serves the real cosign signatures for the keyless reference only.
+func (r *bundleRegistry) fetchSignatures(ctx context.Context, ref string, _ *okf.Credential) ([]okf.KeylessSignature, error) {
+	if !strings.HasSuffix(ref, "@"+keylessDigest) {
+		return nil, fmt.Errorf("no cosign signature for %s", ref)
+	}
+	payload := keylessFile("payload.json")
+	return okf.DecodeKeylessSignatures(ctx, keylessFile("sig-manifest.json"), func(context.Context, ocispec.Descriptor) ([]byte, error) { return payload, nil })
+}
+
+// putV2 registers a v2 artifact under the digest the real signatures are about.
+func (r *bundleRegistry) putV2(files okf.Files) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ref := "quay.io/zuno/okf-test@" + keylessDigest
+	r.artifacts[ref] = &okf.Artifact{Files: files, ManifestDigest: keylessDigest, V2: true}
+	return ref
 }
 
 func (r *bundleRegistry) put(files okf.Files, sig []byte) string {
@@ -99,7 +127,7 @@ func tekosCeilings() unifaiv1.BundleCeilings {
 func newBundle(ns, ref string, overrides map[string]string) *unifaiv1.UnifaiAgentBundle {
 	return &unifaiv1.UnifaiAgentBundle{ObjectMeta: metav1.ObjectMeta{Name: "tekos", Namespace: ns}, Spec: unifaiv1.UnifaiAgentBundleSpec{
 		Source:      unifaiv1.BundleSource{OCI: unifaiv1.OCIBundleSource{Reference: ref}},
-		Verify:      unifaiv1.BundleVerify{PublicKeyRef: unifaiv1.SecretKeySelector{Name: "okf-signer", Key: "cosign.pub"}},
+		Verify:      unifaiv1.BundleVerify{PublicKeyRef: &unifaiv1.SecretKeySelector{Name: "okf-signer", Key: "cosign.pub"}},
 		Ceilings:    tekosCeilings(),
 		Entitlement: "GatewayOnly",
 		LLM: unifaiv1.BundleLLM{ConfigSpec: unifaiv1.ConfigSpec{Config: raw(map[string]any{
@@ -307,6 +335,52 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 			b.Spec.GroupTeam = true
 			b.Spec.TeamRef = "other"
 		}, tekosFiles(), ConditionValid, "TeamConflict")
+	})
+
+	It("verifies a keyless-signed v2 artifact against the trusted root and records the signer", func() {
+		ns := setup("bundle-keyless")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "sigstore-root", Namespace: ns},
+			Data: map[string][]byte{"trusted_root.json": keylessFile("trusted_root.json")}})).To(Succeed())
+		b := newBundle(ns, fakeBundles.putV2(tekosFiles()), nil)
+		b.Spec.Verify = unifaiv1.BundleVerify{Keyless: &unifaiv1.KeylessVerify{
+			Issuer:         "https://token.actions.githubusercontent.com",
+			SubjectRegExp:  `^https://github\.com/startxfr/zuno-demo-agents/\.github/workflows/publish-dev\.yml@refs/heads/(devel|main)$`,
+			TrustedRootRef: unifaiv1.SecretKeySelector{Name: "sigstore-root", Key: "trusted_root.json"}}}
+		Expect(k8sClient.Create(ctx, b)).To(Succeed())
+		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Ready"), func() string { return status(ns)().Message })
+		st := status(ns)()
+		Expect(st.Verified).To(BeTrue())
+		Expect(st.Signer).To(HaveSuffix("publish-dev.yml@refs/heads/devel"))
+	})
+
+	It("refuses a keyless artifact signed by an identity the CR does not accept", func() {
+		ns := setup("bundle-keyless-identity")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "sigstore-root", Namespace: ns},
+			Data: map[string][]byte{"trusted_root.json": keylessFile("trusted_root.json")}})).To(Succeed())
+		b := newBundle(ns, fakeBundles.putV2(tekosFiles()), nil)
+		b.Spec.Verify = unifaiv1.BundleVerify{Keyless: &unifaiv1.KeylessVerify{
+			Issuer:         "https://token.actions.githubusercontent.com",
+			SubjectRegExp:  `^https://github\.com/startxfr/zuno-demo-agents/\.github/workflows/publish\.yml@refs/tags/v`,
+			TrustedRootRef: unifaiv1.SecretKeySelector{Name: "sigstore-root", Key: "trusted_root.json"}}}
+		Expect(k8sClient.Create(ctx, b)).To(Succeed())
+		Eventually(func() string {
+			c := meta.FindStatusCondition(status(ns)().Conditions, ConditionVerified)
+			if c == nil || c.Status != metav1.ConditionFalse {
+				return ""
+			}
+			return c.Reason
+		}, timeout, interval).Should(Equal("SignatureInvalid"))
+		Expect(status(ns)().Verified).To(BeFalse())
+	})
+
+	It("rejects a verify block with both a key and keyless, or neither", func() {
+		ns := setup("bundle-verify-xor")
+		both := newBundle(ns, "quay.io/zuno/okf-test@sha256:"+strings.Repeat("a", 64), nil)
+		both.Spec.Verify.Keyless = &unifaiv1.KeylessVerify{Issuer: "i", SubjectRegExp: "s", TrustedRootRef: unifaiv1.SecretKeySelector{Name: "x", Key: "y"}}
+		Expect(k8sClient.Create(ctx, both)).To(MatchError(ContainSubstring("exactly one of publicKeyRef or keyless")))
+		none := newBundle(ns, "quay.io/zuno/okf-test@sha256:"+strings.Repeat("a", 64), nil)
+		none.Spec.Verify = unifaiv1.BundleVerify{}
+		Expect(k8sClient.Create(ctx, none)).To(MatchError(ContainSubstring("exactly one of publicKeyRef or keyless")))
 	})
 
 	It("refuses a bundle below the classification floor", func() {
