@@ -28,9 +28,15 @@ class OpenAICompatibleConfig(BaseLLMConfig):
         None,
         description=(
             "Optional URL template containing '{response_id}'. When set, the "
-            "UI can fetch an explanation of how a response was produced "
-            "(e.g. which model served it and why) on demand."
+            "backend fetches an explanation of how a response was produced "
+            "(e.g. which model served it and why) with the acting user's "
+            "identity and attaches it to the response metadata. Best effort: "
+            "failures are ignored."
         ),
+    )
+    metadata_lookup_timeout: float = Field(
+        2.0, gt=0.0, le=30.0,
+        description="Timeout in seconds for the metadata_lookup_url request",
     )
     extra: Dict[str, Any] = Field(
         default_factory=dict,

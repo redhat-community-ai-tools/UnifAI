@@ -17,7 +17,7 @@ from openai import OpenAI
 from openai.types.chat import ChatCompletionToolParam
 
 from ..common.base_llm import BaseLLM
-from ..common.chat.message import ChatMessage, Role
+from ..common.chat.message import RESPONSE_METADATA_KEY, ChatMessage, Role
 from ..common.name_sanitizer import build_name_maps, map_name
 from ..common.tool_name_restorer import restore_tool_names
 from ...tools.common.tool_definition import ToolDefinition
@@ -29,6 +29,7 @@ from .stream_aggregator import (
     build_response_metadata,
     extract_extra_fields,
 )
+from .response_lookup import DEFAULT_LOOKUP_TIMEOUT_S, fetch_routing
 from mas.core.tracing import TracingService
 
 
@@ -54,6 +55,8 @@ class OpenAICompatibleLLM(BaseLLM):
         max_tokens: int = 1024,
         api_key: str = "EMPTY",
         metadata_lookup_url: Optional[str] = None,
+        metadata_lookup_timeout: float = DEFAULT_LOOKUP_TIMEOUT_S,
+        lookup_forwarder: Any = None,
         tracing: TracingService = None,
         **extra: Any,
     ) -> None:
@@ -67,6 +70,9 @@ class OpenAICompatibleLLM(BaseLLM):
         self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
         self._tracing = tracing
         self._metadata_lookup_url = metadata_lookup_url
+        self._metadata_lookup_timeout = metadata_lookup_timeout
+        self._lookup_forwarder = lookup_forwarder
+        self._lookup_transport = None  # test seam
 
     # ------------------------------------------------------------------
     # BaseLLM interface
@@ -104,11 +110,10 @@ class OpenAICompatibleLLM(BaseLLM):
             result_msg = restore_tool_names(self._rev_names, result_msg)
             result_msg = self._with_response_metadata(
                 result_msg,
-                build_response_metadata(
+                self._response_metadata(
                     getattr(response, "id", None),
                     getattr(response, "model", None),
                     extract_extra_fields(response),
-                    self._metadata_lookup_url,
                 ),
             )
             usage = {}
@@ -175,11 +180,8 @@ class OpenAICompatibleLLM(BaseLLM):
                     aggregator.absorb(delta.tool_calls)
             gen.update(output=accumulated_content)
 
-        response_metadata = build_response_metadata(
-            collector.response_id,
-            collector.model,
-            collector.fields,
-            self._metadata_lookup_url,
+        response_metadata = self._response_metadata(
+            collector.response_id, collector.model, collector.fields,
         )
         if aggregator.has_tool_calls or response_metadata:
             # A final message is emitted for plain-text streams only when
@@ -200,6 +202,31 @@ class OpenAICompatibleLLM(BaseLLM):
         clone._tools = OpenAIToolsConverter.to_openai(tools)
         self._sanitize_tool_defs(clone._tools, clone._fwd_names)
         return clone
+
+    def _response_metadata(
+        self,
+        response_id: Optional[str],
+        model: Optional[str],
+        fields: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Build the metadata entry and enrich it with the server-side routing lookup."""
+        meta = build_response_metadata(response_id, model, fields, self._metadata_lookup_url)
+        entry = meta.get(RESPONSE_METADATA_KEY)
+        if entry is None:
+            return meta
+        # The URL is consumed here; the browser never needs (or gets) it.
+        entry.pop("lookup_url", None)
+        routing = fetch_routing(
+            self._metadata_lookup_url,
+            response_id,
+            self._lookup_forwarder,
+            self._metadata_lookup_timeout,
+            self._lookup_transport,
+        )
+        if routing:
+            entry["routing"] = routing
+        # A lookup URL alone (no extra fields, no routing result) adds nothing.
+        return meta if (entry["fields"] or routing) else {}
 
     @staticmethod
     def _with_response_metadata(

@@ -17,6 +17,18 @@ class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatib
     def accepts(self, cfg: OpenAICompatibleConfig, element_type: str) -> bool:
         return element_type == Identifier.TYPE
 
+    @staticmethod
+    def _lookup_forwarder(element_deps: Any, cfg: OpenAICompatibleConfig) -> Any:
+        """Identity forwarder for the metadata lookup, when the platform offers one."""
+        if not cfg.metadata_lookup_url or element_deps is None:
+            return None
+        try:
+            from mas.core.identity_forwarding import IdentityForwarder, NullIdentityTokenSource
+        except ImportError:
+            return None
+        source = getattr(element_deps, "identity_token_source", None) or NullIdentityTokenSource()
+        return IdentityForwarder(source, getattr(element_deps, "execution_ctx", None))
+
     def create(self, cfg: OpenAICompatibleConfig, **deps: Any) -> OpenAICompatibleLLM:
         try:
             element_deps = deps.pop("deps", None)
@@ -29,6 +41,8 @@ class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatib
                 temperature=cfg.temperature,
                 max_tokens=cfg.max_tokens,
                 metadata_lookup_url=cfg.metadata_lookup_url,
+                metadata_lookup_timeout=cfg.metadata_lookup_timeout,
+                lookup_forwarder=self._lookup_forwarder(element_deps, cfg),
                 tracing=tracing,
                 **cfg.extra
             )
