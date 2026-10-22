@@ -14,8 +14,9 @@ from mas.session.repository.repository import SessionRepository
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.status import SessionStatus
 from mas.session.domain.constants import CANCELLED_TAG, CANCELLED_STATUS_MESSAGE
+from mas.elements.llms.common.chat.message import ERROR_METADATA_KEY, ChatMessage, Role
 from mas.session.domain.exceptions import (
-    BUILD_ERROR_MESSAGE_LIMIT, SessionAlreadyCancelledError, SessionBuildError,
+    SessionAlreadyCancelledError, SessionBuildError, scrub_error_message,
 )
 
 
@@ -78,9 +79,13 @@ class SessionLifecycle:
         record.status = SessionStatus.FAILED
         if isinstance(error, SessionBuildError):
             # Same secret-free shape the foreground build failure stores.
-            message = error.message[:BUILD_ERROR_MESSAGE_LIMIT]
+            message = scrub_error_message(error.message)
+            error_info = {"type": error.error_type, "message": message}
             record.metadata.status_message = message
-            setattr(record.metadata, "error", {"type": error.error_type, "message": message})
+            setattr(record.metadata, "error", error_info)
+            record.graph_state.messages.append(ChatMessage(
+                role=Role.ASSISTANT, content=message, metadata={ERROR_METADATA_KEY: error_info},
+            ))
         self._repo.save(record)
 
     def cancel(

@@ -23,6 +23,7 @@ from mas.session.domain.exceptions import (
     BlueprintNotFoundError, SessionBuildError, session_build_error_message,
 )
 from mas.core.identity import Identity
+from mas.elements.llms.common.chat.message import ERROR_METADATA_KEY, ChatMessage, Role
 from mas.core.dto import GroupedCount
 
 logger = logging.getLogger(__name__)
@@ -320,7 +321,13 @@ class SessionService:
                     record.update_context(engine_handle=None)
                 record.status = SessionStatus.FAILED
                 record.metadata.status_message = message
-                setattr(record.metadata, "error", {"type": SessionBuildError.error_type, "message": message})
+                error = {"type": SessionBuildError.error_type, "message": message}
+                setattr(record.metadata, "error", error)
+                # Show the failure in the conversation too (same ``metadata.error`` shape
+                # as a rate-limit error message).
+                record.graph_state.messages.append(ChatMessage(
+                    role=Role.ASSISTANT, content=message, metadata={ERROR_METADATA_KEY: error},
+                ))
                 self._manager.save_record(record)
             except Exception:
                 logger.exception("Session %s: could not mark it FAILED after a build error", session_id)
