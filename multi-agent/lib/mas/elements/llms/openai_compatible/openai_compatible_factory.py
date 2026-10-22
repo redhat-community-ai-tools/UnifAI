@@ -40,6 +40,8 @@ class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatib
                 base_url=str(cfg.base_url),
                 temperature=cfg.temperature,
                 max_tokens=cfg.max_tokens,
+                max_retries=cfg.max_retries,
+                timeout_seconds=cfg.timeout_seconds,
                 metadata_lookup_url=cfg.metadata_lookup_url,
                 metadata_lookup_timeout=cfg.metadata_lookup_timeout,
                 lookup_forwarder=self._lookup_forwarder(element_deps, cfg),

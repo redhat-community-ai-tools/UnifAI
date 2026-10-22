@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, Iterator, List, Optional, Union
 
+import httpx
 from openai import APIStatusError, OpenAI
 from openai.types.chat import ChatCompletionToolParam
 
@@ -32,6 +33,33 @@ from .stream_aggregator import (
 )
 from .response_lookup import DEFAULT_LOOKUP_TIMEOUT_S, fetch_routing
 from mas.core.tracing import TracingService
+
+
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_TIMEOUT_S = 120.0
+
+
+def _mark_429_not_retryable(response: httpx.Response) -> None:
+    """Tell the SDK never to retry a 429.
+
+    A rate limit or quota rejection will not clear within the SDK's backoff,
+    so retrying only delays the error the user needs to see.  Connection
+    errors and 5xx responses keep the normal retry behaviour.
+    """
+    if response.status_code == 429:
+        response.headers["x-should-retry"] = "false"
+
+
+def build_http_client(
+    timeout_seconds: float = DEFAULT_TIMEOUT_S,
+    transport: Optional[httpx.BaseTransport] = None,
+) -> httpx.Client:
+    """HTTP client for the OpenAI SDK that surfaces 429 immediately."""
+    return httpx.Client(
+        timeout=timeout_seconds,
+        transport=transport,
+        event_hooks={"response": [_mark_429_not_retryable]},
+    )
 
 
 class OpenAICompatibleLLM(BaseLLM):
@@ -55,6 +83,8 @@ class OpenAICompatibleLLM(BaseLLM):
         temperature: float = 0.7,
         max_tokens: int = 1024,
         api_key: str = "EMPTY",
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        timeout_seconds: float = DEFAULT_TIMEOUT_S,
         metadata_lookup_url: Optional[str] = None,
         metadata_lookup_timeout: float = DEFAULT_LOOKUP_TIMEOUT_S,
         lookup_forwarder: Any = None,
@@ -68,7 +98,14 @@ class OpenAICompatibleLLM(BaseLLM):
         self._tools: Optional[List[ChatCompletionToolParam]] = None
         self._fwd_names: Dict[str, str] = {}
         self._rev_names: Dict[str, str] = {}
-        self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
+        extra.setdefault("http_client", build_http_client(timeout_seconds))
+        self._client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            max_retries=max_retries,
+            timeout=timeout_seconds,
+            **extra,
+        )
         self._tracing = tracing
         self._metadata_lookup_url = metadata_lookup_url
         self._metadata_lookup_timeout = metadata_lookup_timeout

@@ -24,6 +24,17 @@ class OpenAICompatibleConfig(BaseLLMConfig):
         description="Maximum number of tokens to generate",
         json_schema_extra=CardHint(contexts=[CardContext.BUILTIN, CardContext.CUSTOM]).to_hints(),
     )
+    max_retries: int = Field(
+        2, ge=0, le=5,
+        description=(
+            "Automatic retries on connection errors and 5xx responses. "
+            "HTTP 429 is never retried: it is reported to the user at once."
+        ),
+    )
+    timeout_seconds: float = Field(
+        120.0, gt=0.0,
+        description="Request timeout in seconds",
+    )
     metadata_lookup_url: Optional[str] = Field(
         None,
         description=(
