@@ -140,7 +140,9 @@ var _ = Describe("UnifAI object controllers", func() {
 		for _, o := range []client.Object{chat, sch, wf, agent, llm} { // reverse dependency order on purpose
 			Expect(k8sClient.Create(ctx, o)).To(Succeed())
 		}
-		Eventually(phaseOf(wf), timeout, interval).Should(Equal("Ready"))
+		// Created in reverse order, the chain llm -> agent -> workflow becomes Ready one retry period per hop.
+		chain := 3*retry + timeout
+		Eventually(phaseOf(wf), chain, interval).Should(Equal("Ready"))
 		Eventually(phaseOf(agent), timeout, interval).Should(Equal("Ready"))
 		mas.mu.Lock()
 		spec := mas.blueprints[wf.Status.BlueprintID]["spec"].(map[string]any)
@@ -151,9 +153,9 @@ var _ = Describe("UnifAI object controllers", func() {
 		Expect(spec["plan"].([]any)[1].(map[string]any)["node"]).To(Equal(agent.Status.RID))
 		Expect(spec["name"]).To(Equal("wf-" + ns))
 
-		Eventually(phaseOf(sch), timeout, interval).Should(Equal("Ready"))
+		Eventually(phaseOf(sch), chain, interval).Should(Equal("Ready"))
 		Expect(sch.Status.ScheduleID).NotTo(BeEmpty())
-		Eventually(phaseOf(chat), timeout, interval).Should(Equal("Completed"))
+		Eventually(phaseOf(chat), chain, interval).Should(Equal("Completed"))
 		Expect(chat.Status.Result).To(ContainSubstring("pong"))
 
 		By("suspending the schedule")
