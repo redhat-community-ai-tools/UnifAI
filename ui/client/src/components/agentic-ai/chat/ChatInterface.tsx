@@ -20,7 +20,8 @@ import axios from "../../../http/axiosAgentConfig";
 import { MarkdownComponents, preprocessText } from "./helpers/TextComponents";
 import { SessionPayload } from "../ExecutionTab";
 import { useStreamingData } from "../StreamingDataContext";
-import { Message, StreamLogEntry, WorkPlanSnapshot, ApprovalDecision, ApprovalStatus, AutoRuleAction, isSessionCancellation } from "./types";
+import ResponseMetadataBadge from "./ResponseMetadataBadge";
+import { Message, ResponseMetadata, StreamLogEntry, WorkPlanSnapshot, ApprovalDecision, ApprovalStatus, AutoRuleAction, isSessionCancellation } from "./types";
 import { StreamLogDisplay } from "./StreamLogDisplay";
 import { ApprovalBadge } from "./ApprovalBadge";
 import { submitApproval, submitApprovalRule } from "@/api/sessions";
@@ -335,6 +336,9 @@ export default function ChatInterface({
           finalAnswer: msg.content,
         }),
         ...(msg.metadata?.is_cancelled && { isCancelled: true }),
+        ...(msg.role === "assistant" && msg.metadata?.llm_response
+          ? { responseMetadata: msg.metadata.llm_response as ResponseMetadata }
+          : {}),
       }));
     },
     [],
@@ -1448,6 +1452,9 @@ export default function ChatInterface({
                   {preprocessText(message.finalAnswer)}
                 </ReactMarkdown>
               </div>
+              {message.responseMetadata && (
+                <ResponseMetadataBadge metadata={message.responseMetadata} />
+              )}
             </div>
           )}
         </div>

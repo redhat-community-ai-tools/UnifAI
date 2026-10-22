@@ -3,6 +3,7 @@ export interface ChatMessage {
   content: string;
   role: "user" | "assistant";
   sender_id?: string;
+  metadata?: Record<string, any>;
 }
 
 // Shared ChatSession interface used across components

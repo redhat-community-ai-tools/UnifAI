@@ -12,6 +12,14 @@ export function isSessionCancellation(error: unknown): boolean {
   return (error as SessionError)?.sessionStatus === 'CANCELLED';
 }
 
+/** LLM response metadata attached by the backend (names as sent by the endpoint). */
+export interface ResponseMetadata {
+  response_id?: string | null;
+  model?: string | null;
+  fields?: Record<string, unknown>;
+  lookup_url?: string;
+}
+
 export interface Message {
   id: string;
   content: string;
@@ -21,6 +29,7 @@ export interface Message {
   isCancelled?: boolean;
   streamLogs?: StreamLogEntry[];
   workPlans?: WorkPlanSnapshot[];
+  responseMetadata?: ResponseMetadata;
 }
 
 export interface StreamLogEntry {
