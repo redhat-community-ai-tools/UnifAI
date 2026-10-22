@@ -58,8 +58,8 @@ class OidcClaimsConfig(BaseModel):
     group_prefix: str = ""
     # Case is preserved by default; set to match case-insensitively.
     lowercase: bool = False
-    # Optional signature verification (PyJWT). Empty jwks_url = no verification
-    # (token provenance is the identity service's own token exchange).
-    jwks_url: str = ""
-    issuer: str = ""
+    # Token verification is mandatory: JWKS endpoint and expected issuer.
+    jwks_url: str
+    issuer: str
+    # Checked only when set (Keycloak access tokens often carry ``aud=account``).
     audience: str = ""

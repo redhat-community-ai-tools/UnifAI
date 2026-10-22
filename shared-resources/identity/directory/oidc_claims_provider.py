@@ -24,20 +24,19 @@ a user is a member when their token carries the group.
 
 Security
 --------
-Groups are only ever read from a token that the identity service obtained
-itself from the provider's token endpoint (code exchange / password grant),
-never from client-supplied data.  When ``jwks_url`` is configured the token
-signature (and optionally issuer/audience) is additionally verified with
-PyJWT before any claim is trusted; otherwise the payload is decoded without
-signature verification, which is acceptable only because of that provenance.
+Groups are only ever read from a token whose signature, expiry and issuer
+(and audience, when configured) were verified against the provider's JWKS
+with PyJWT.  There is no unverified mode: ``jwks_url`` and ``issuer`` are
+mandatory and the provider refuses to start without them.  Only asymmetric
+algorithms (RS256, ES256) are accepted -- never ``none`` or HMAC.  Any
+failure (bad signature, expired, wrong issuer, JWKS unreachable) fails
+closed: no groups are returned and the reason is logged.
 The token's username claim must match the user being queried, so a stale
 token left on a shared provider instance can never grant another user's
 groups.
 """
 from __future__ import annotations
 
-import base64
-import json
 import logging
 import threading
 from typing import Any, List, Optional
@@ -46,6 +45,9 @@ from directory.models import DirectoryGroup, DirectoryUser, OidcClaimsConfig
 from directory.provider import DirectoryProvider
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_ALGORITHMS = ["RS256", "ES256"]
+_JWKS_CACHE_SECONDS = 300
 
 
 def normalize_group(
@@ -69,17 +71,6 @@ def normalize_group(
     return value or None
 
 
-def _decode_unverified(token: str) -> dict:
-    parts = token.split(".")
-    if len(parts) < 2:
-        raise ValueError("not a JWT")
-    payload = parts[1] + "=" * (-len(parts[1]) % 4)
-    data = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
-    if not isinstance(data, dict):
-        raise ValueError("JWT payload is not an object")
-    return data
-
-
 def _lookup(claims: dict, path: str) -> Any:
     """Exact key first (claim names may contain dots), then dotted path."""
     if path in claims:
@@ -97,13 +88,23 @@ class OidcClaimsDirectoryProvider(DirectoryProvider):
 
     group_members_authoritative = False
 
-    def __init__(self, config: Optional[OidcClaimsConfig] = None):
-        self._cfg = config or OidcClaimsConfig()
+    def __init__(self, config: OidcClaimsConfig):
+        self._cfg = config
         self._local = threading.local()
-        self._jwk_client = None
-        if self._cfg.jwks_url:
-            import jwt  # PyJWT (already an identity dependency)
-            self._jwk_client = jwt.PyJWKClient(self._cfg.jwks_url)
+        if not self._cfg.jwks_url or not self._cfg.issuer:
+            raise ValueError(
+                "oidc-claims requires jwks_url (DIRECTORY_OIDC_JWKS_URL) and "
+                "issuer (DIRECTORY_OIDC_ISSUER): unverified tokens are never trusted"
+            )
+        import jwt  # PyJWT (already an identity dependency)
+        # Keys are cached (set + per-kid) so a request does not hit the IdP.
+        self._jwk_client = jwt.PyJWKClient(
+            self._cfg.jwks_url,
+            cache_keys=True,
+            cache_jwk_set=True,
+            lifespan=_JWKS_CACHE_SECONDS,
+            timeout=10,
+        )
 
     # ── token handling ─────────────────────────────────────────────────
 
@@ -118,21 +119,21 @@ class OidcClaimsDirectoryProvider(DirectoryProvider):
             logger.debug("oidc-claims: no user token set")
             return {}
         try:
-            if self._jwk_client is not None:
-                import jwt
-                key = self._jwk_client.get_signing_key_from_jwt(token).key
-                options = {"verify_aud": bool(self._cfg.audience)}
-                return jwt.decode(
-                    token,
-                    key,
-                    algorithms=["RS256", "RS384", "RS512", "ES256", "ES384"],
-                    audience=self._cfg.audience or None,
-                    issuer=self._cfg.issuer or None,
-                    options=options,
-                )
-            return _decode_unverified(token)
+            import jwt
+            key = self._jwk_client.get_signing_key_from_jwt(token).key
+            return jwt.decode(
+                token,
+                key,
+                algorithms=_ALLOWED_ALGORITHMS,
+                issuer=self._cfg.issuer,
+                audience=self._cfg.audience or None,
+                options={
+                    "require": ["exp", "iss"],
+                    "verify_aud": bool(self._cfg.audience),
+                },
+            )
         except Exception as exc:
-            logger.warning("oidc-claims: token rejected (%s)", type(exc).__name__)
+            logger.warning("oidc-claims: token rejected (%s: %s)", type(exc).__name__, exc)
             return {}
 
     def _claims_for(self, user_id: str) -> dict:

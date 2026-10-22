@@ -1,11 +1,12 @@
 """Unit tests: ``oidc-claims`` directory provider (fake tokens, no network)."""
 
-import base64
-import json
 import logging
+import time
 from types import SimpleNamespace
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from directory.factory import build_directory_provider
 from directory.models import OidcClaimsConfig
@@ -20,16 +21,25 @@ def _reset_fake_stores():
     """Shadow the conftest autouse fixture: these tests need no Flask app/Mongo."""
 
 
-def _b64(obj) -> str:
-    return base64.urlsafe_b64encode(json.dumps(obj).encode()).rstrip(b"=").decode()
+ISS = "https://idp.example/realms/demo"
+JWKS = "https://idp.example/realms/demo/protocol/openid-connect/certs"
+KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
-def make_token(claims: dict) -> str:
-    return f"{_b64({'alg': 'none'})}.{_b64(claims)}.sig"
+def make_token(claims: dict, *, key=KEY, alg: str = "RS256", iss=ISS, exp=3600) -> str:
+    body = {"iss": iss, "exp": int(time.time()) + exp, **claims}
+    return jwt.encode(body, key, algorithm=alg)
 
 
 def provider(**kw) -> OidcClaimsDirectoryProvider:
-    return OidcClaimsDirectoryProvider(OidcClaimsConfig(**kw))
+    kw.setdefault("jwks_url", JWKS)
+    kw.setdefault("issuer", ISS)
+    p = OidcClaimsDirectoryProvider(OidcClaimsConfig(**kw))
+    p._jwk_client = SimpleNamespace(
+        get_signing_key_from_jwt=lambda _t: SimpleNamespace(key=KEY.public_key())
+    )
+    return p
 
 
 def ids(groups):
@@ -102,7 +112,7 @@ class TestUserGroups:
     def test_token_missing(self):
         assert provider().get_user_groups("alice") == []
 
-    @pytest.mark.parametrize("bad", ["garbage", "a.b.c", "a." + _b64([1]) + ".c"])
+    @pytest.mark.parametrize("bad", ["garbage", "a.b.c", "a.WzFd.c"])
     def test_malformed_token(self, bad):
         p = provider()
         p.set_user_token(bad)
@@ -176,61 +186,86 @@ class TestFactory:
             directory_oidc_username_claim="email",
             directory_oidc_group_prefix="",
             directory_oidc_lowercase=False,
-            directory_oidc_jwks_url="",
-            directory_oidc_issuer="",
+            directory_oidc_jwks_url=JWKS,
+            directory_oidc_issuer=ISS,
             directory_oidc_audience="",
         )
         p = build_directory_provider(cfg)
         assert isinstance(p, OidcClaimsDirectoryProvider)
+        p._jwk_client = provider()._jwk_client
         p.set_user_token(make_token({"email": "a@x", "roles": ["r"]}))
         assert ids(p.get_user_groups("a@x")) == ["r"]
 
-
-class TestVerifiedMode:
-    """With a JWKS URL configured, only correctly signed tokens are trusted."""
-
-    @pytest.fixture
-    def keys(self):
-        pytest.importorskip("cryptography")
-        from cryptography.hazmat.primitives.asymmetric import rsa
-
-        return rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-    def _provider(self, verify_key, **kw):
-        p = provider(jwks_url="https://idp.example/jwks", **kw)
-        p._jwk_client = SimpleNamespace(
-            get_signing_key_from_jwt=lambda _t: SimpleNamespace(key=verify_key)
+    @pytest.mark.parametrize("missing", ["directory_oidc_jwks_url", "directory_oidc_issuer"])
+    def test_refuses_to_start_without_jwks_or_issuer(self, missing):
+        cfg = SimpleNamespace(
+            directory_provider="oidc-claims", directory_oidc_claim="groups",
+            directory_oidc_username_claim="preferred_username",
+            directory_oidc_group_prefix="", directory_oidc_lowercase=False,
+            directory_oidc_jwks_url=JWKS, directory_oidc_issuer=ISS,
+            directory_oidc_audience="",
         )
-        return p
+        setattr(cfg, missing, "")
+        with pytest.raises(ValueError, match="required"):
+            build_directory_provider(cfg)
 
-    def test_valid_signature_accepted(self, keys):
-        import jwt
+    def test_provider_itself_refuses_without_jwks(self):
+        with pytest.raises(ValueError):
+            OidcClaimsDirectoryProvider(OidcClaimsConfig(jwks_url="", issuer=ISS))
 
-        tok = jwt.encode(
-            {"preferred_username": "alice", "groups": ["/ops"], "iss": "https://idp.example"},
-            keys, algorithm="RS256",
-        )
-        p = self._provider(keys.public_key(), issuer="https://idp.example")
+    def test_jwks_client_is_cached(self):
+        p = OidcClaimsDirectoryProvider(OidcClaimsConfig(jwks_url=JWKS, issuer=ISS))
+        assert p._jwk_client.jwk_set_cache is not None
+        assert p._jwk_client.jwk_set_cache.lifespan == 300
+
+
+class TestVerification:
+    def _groups(self, p, tok):
         p.set_user_token(tok)
-        assert ids(p.get_user_groups("alice")) == ["ops"]
+        return p.get_user_groups("alice")
 
-    def test_forged_signature_rejected(self, keys):
-        import jwt
-        from cryptography.hazmat.primitives.asymmetric import rsa
+    claims = {"preferred_username": "alice", "groups": ["/ops"]}
 
-        other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        tok = jwt.encode({"preferred_username": "alice", "groups": ["/ops"]}, other, algorithm="RS256")
-        p = self._provider(keys.public_key())
-        p.set_user_token(tok)
-        assert p.get_user_groups("alice") == []
+    def test_valid_token_accepted(self):
+        assert ids(self._groups(provider(), make_token(self.claims))) == ["ops"]
 
-    def test_wrong_issuer_rejected(self, keys):
-        import jwt
+    def test_forged_signature_rejected(self):
+        assert self._groups(provider(), make_token(self.claims, key=OTHER_KEY)) == []
 
-        tok = jwt.encode(
-            {"preferred_username": "alice", "groups": ["/ops"], "iss": "https://evil"},
-            keys, algorithm="RS256",
-        )
-        p = self._provider(keys.public_key(), issuer="https://idp.example")
-        p.set_user_token(tok)
-        assert p.get_user_groups("alice") == []
+    def test_expired_rejected(self):
+        assert self._groups(provider(), make_token(self.claims, exp=-60)) == []
+
+    def test_missing_exp_rejected(self):
+        tok = jwt.encode({"iss": ISS, **self.claims}, KEY, algorithm="RS256")
+        assert self._groups(provider(), tok) == []
+
+    def test_wrong_issuer_rejected(self):
+        assert self._groups(provider(), make_token(self.claims, iss="https://evil")) == []
+
+    def test_alg_none_rejected(self):
+        tok = jwt.encode({"iss": ISS, "exp": int(time.time()) + 60, **self.claims},
+                         None, algorithm="none")
+        assert self._groups(provider(), tok) == []
+
+    def test_hs256_rejected(self):
+        tok = jwt.encode({"iss": ISS, "exp": int(time.time()) + 60, **self.claims},
+                         "k" * 32, algorithm="HS256")
+        assert self._groups(provider(), tok) == []
+
+    def test_audience_enforced_only_when_configured(self):
+        tok = make_token({**self.claims, "aud": "other"})
+        assert ids(self._groups(provider(), tok)) == ["ops"]
+        assert self._groups(provider(audience="mine"), tok) == []
+        ok = make_token({**self.claims, "aud": "mine"})
+        assert ids(self._groups(provider(audience="mine"), ok)) == ["ops"]
+
+    def test_jwks_unreachable_fails_closed_and_logs(self, caplog):
+        p = provider()
+
+        def boom(_t):
+            raise jwt.PyJWKClientConnectionError("unreachable")
+
+        p._jwk_client = SimpleNamespace(get_signing_key_from_jwt=boom)
+        with caplog.at_level(logging.WARNING):
+            assert self._groups(p, make_token(self.claims)) == []
+        assert "token rejected" in caplog.text

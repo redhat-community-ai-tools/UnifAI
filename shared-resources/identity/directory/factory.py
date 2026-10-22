@@ -115,6 +115,11 @@ def build_directory_provider(cfg) -> Optional[DirectoryProvider]:
 def _build_oidc_claims(cfg) -> DirectoryProvider:
     from directory import OidcClaimsConfig, OidcClaimsDirectoryProvider
 
+    if not cfg.directory_oidc_jwks_url or not cfg.directory_oidc_issuer:
+        raise ValueError(
+            "directory_oidc_jwks_url and directory_oidc_issuer are required when "
+            "directory_provider='oidc-claims' (tokens are always verified)"
+        )
     oidc_cfg = OidcClaimsConfig(
         claim=cfg.directory_oidc_claim,
         username_claim=cfg.directory_oidc_username_claim,

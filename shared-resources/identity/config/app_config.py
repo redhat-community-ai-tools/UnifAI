@@ -86,8 +86,7 @@ class AppConfig(SharedConfig):
     directory_oidc_username_claim: str = "preferred_username"
     directory_oidc_group_prefix: str = ""
     directory_oidc_lowercase: bool = False
-    # Optional signature verification; empty jwks_url = decode without verifying
-    # (tokens come from the service's own token exchange).
+    # Required: tokens are always verified (signature, exp, issuer).
     directory_oidc_jwks_url: str = ""
     directory_oidc_issuer: str = ""
     directory_oidc_audience: str = ""
