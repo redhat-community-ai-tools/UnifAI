@@ -35,10 +35,9 @@ Deploy UnifAI autonomously on our OpenShift cluster, evolve it, and contribute s
 - Upstream chart defects found by `make helm-lint`: `helm/multiagent/be` (template without extension), `helm/shared-resources/rabbitmq` (missing `common` dependency).
 - Upstream has no CONTRIBUTING; PRs come from in-repo branches; review gate = CodeRabbit + Cursor pipeline (arch APPROVE, score >= 8/10) needing secrets forks do not get.
 
-## Open TODO (manual)
-1. Create quay.io repos `unifai-*`; `cp fork.mk.example fork.mk` and fill it; install helmfile (+helm-diff), gh, ruff, gitleaks.
-2. Contact upstream maintainers (CODEOWNERS) before the first PR.
-3. Validate `make deploy-diff` then deploy on a test namespace; decide TLS (nginx certs vs OpenShift Route).
+## Backlog
+Single backlog, working rules and area owners (multi-session): `fork/ROADMAP.md`. Weekly: `make upstream-check`.
+CI: `.github/workflows/unifai-operator.yml` (fork-only, checks the operator on push/PR to devel).
 
 ## Key commands
 `make help`, `make init`, `make status`, `make sync-all`, `make overlay`, `make helm-lint`, `make images-devel`, `make contrib-check`.
@@ -62,10 +61,6 @@ Deploy UnifAI autonomously on our OpenShift cluster, evolve it, and contribute s
 - quay.io: images are public under `quay.io/zuno/unifai-*` (`:devel`, `:devel-<sha>`); push needs a login with write access to `zuno` (a robot of another org gets "authentication required").
 - Security: charts create public Routes for mongodb, qdrant, redis-insight, temporal, backend, multiagent-be (no auth on qdrant/redis-insight/temporal): review or remove. The `admin` password is weak (user's choice): change it before wider exposure.
 
-## Open TODO
-1. GPU for rag-celery (or drop the request), docling + embedding services for RAG ingestion, Slack tokens for the backend sidecar.
-2. Dev-sized resource requests overlay; remove public routes; scale `unifai-worker-a` down when idle.
-3. Contact upstream maintainers before the first PR (candidate: `fix/multiagent-optional-corp-ca`).
 
 ## UnifAI operator (`fork/unifai-operator/`, Go, since 2026-10-16)
 - operator-sdk/controller-runtime operator, group `unifai.startx.fr/v1alpha1`: `UnifaiStack` (one per namespace, name `unifai`, CEL) + 12 object kinds. Replaced the first kopf prototype (removed). Details: `fork/unifai-operator/README.md`.

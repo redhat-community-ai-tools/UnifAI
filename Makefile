@@ -29,7 +29,7 @@ TAG                  ?= $(DEVEL_TAG)
 export REGISTRY IMAGE_PREFIX UI_HOST IDENTITY_HOST_NAME STORAGE_CLASS SHARED_STORAGE_CLASS DOCLING_URL EMBEDDING_URL
 
 .DEFAULT_GOAL := help
-.PHONY: ui-perms multiagent-perms help init status login sync-main merge-main-to-devel sync-all feature-start feature-to-devel \
+.PHONY: ui-perms multiagent-perms help init status upstream-check login sync-main merge-main-to-devel sync-all feature-start feature-to-devel \
         ui-certs build-all push-all images-devel overlay helm-lint deploy-shared deploy-diff deploy \
         release contrib-update contrib-check contrib-pr contrib-ready
 
@@ -67,6 +67,14 @@ status: ## main vs upstream/main, devel vs main
 	@git fetch upstream --no-tags -q
 	@echo "main  vs upstream/main : $$(git rev-list --left-right --count main...upstream/main | awk '{print "ahead " $$1 ", behind " $$2}')"
 	@echo "devel vs main          : $$(git rev-list --left-right --count devel...main | awk '{print "ahead " $$1 ", behind " $$2}')"
+
+upstream-check: ## Upstream commits not yet in devel, and whether helm/ changes since the operator charts sync (weekly routine)
+	@git fetch upstream --no-tags -q
+	@n=$$(git rev-list --count devel..upstream/main); echo "upstream/main commits not in devel: $$n"; \
+	  [ "$$n" = 0 ] || { git log --oneline devel..upstream/main | head -20; echo "-> make sync-all"; }
+	@n=$$(git log --oneline devel..upstream/main -- helm | wc -l); [ "$$n" = 0 ] || \
+	  echo "$$n of them touch helm/: after sync-all run 'make -C fork/unifai-operator charts' and release the operator"
+	@$(MAKE) -s -C fork/unifai-operator charts-check
 
 login: check-quay ## podman login quay.io
 	$(ENGINE) login quay.io

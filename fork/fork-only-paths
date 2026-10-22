@@ -4,3 +4,4 @@ fork.mk.example
 MEMORY.md
 fork/
 .fork/
+.github/workflows/unifai-operator.yml

@@ -116,10 +116,6 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
-# TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
-# The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
-# CertManager is installed by default; skip with:
-# - CERT_MANAGER_INSTALL_SKIP=true
 # End-to-end test against the operator installed on the current kubeconfig context (OLM or `make deploy`):
 # deploys an UnifaiStack in a throwaway namespace unifai-e2e-*, checks it and deletes it (E2E_KEEP=1 keeps it).
 E2E_TIMEOUT ?= 30m
@@ -380,6 +376,10 @@ promote: ## Publish VERSION on stable (production).
 .PHONY: charts
 charts: ## Copy the upstream UnifAI charts and values into internal/stack/assets (embedded in the operator).
 	./hack/sync-charts.sh ../../helm
+
+.PHONY: charts-check
+charts-check: ## Fail when the embedded charts differ from the upstream helm/ directory.
+	./hack/sync-charts.sh --check ../../helm
 
 .PHONY: catalog-add
 catalog-add: ## Add bundle VERSION to catalog-template.yaml in CHANNELS (comma-separated), replacing each channel head.

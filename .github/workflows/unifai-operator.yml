@@ -1,0 +1,71 @@
+# Fork-only (fork/fork-only-paths): checks of the UnifAI operator (fork/unifai-operator) on every change.
+# No cluster, no registry, no secret: e2e tests and releases run from the workstation (make release / make promote).
+name: unifai-operator
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - fork/unifai-operator/**
+      - helm/**
+      - .github/workflows/unifai-operator.yml
+  pull_request:
+    branches: [devel]
+    paths:
+      - fork/unifai-operator/**
+      - helm/**
+      - .github/workflows/unifai-operator.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unifai-operator-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: fork/unifai-operator
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: fork/unifai-operator/go.mod
+          cache-dependency-path: fork/unifai-operator/go.sum
+
+      - name: Embedded charts match helm/
+        run: make charts-check
+
+      - name: Unit and envtest tests
+        run: make test
+
+      - name: Generated code, CRDs, RBAC and formatting are committed
+        run: git diff --exit-code -- .
+
+      - name: Build
+        run: make build
+
+      - name: e2e tests compile
+        run: go vet -tags e2e ./test/e2e/
+
+      - name: Lint (new issues only)
+        run: |
+          base=${{ github.event.pull_request.base.sha || github.event.before }}
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then base=HEAD~1; fi
+          make golangci-lint
+          bin/golangci-lint run --new-from-rev="$base"
+
+      - name: OLM bundle and catalog are valid
+        run: |
+          make operator-sdk opm
+          bin/operator-sdk bundle validate ./bundle
+          bin/opm validate catalog
