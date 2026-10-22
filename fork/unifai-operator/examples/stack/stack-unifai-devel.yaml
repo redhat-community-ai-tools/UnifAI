@@ -6,6 +6,8 @@ metadata:
   namespace: unifai-devel
 spec:
   profile: dev
+  # Immutable tag of the UnifAI images (fork devel with the internal authentication fix, 2026-10-22).
+  version: devel-8fb04e165
   identity:
     adminUsers: [admin]
     external:

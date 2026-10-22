@@ -57,7 +57,7 @@ Order: smallest and least controversial first, each with `make contrib-check` / 
 |---|---|---|---|
 | R-401 | Chart defects: `helm/multiagent/be` template without extension, rabbitmq missing `common` dependency | todo | — |
 | R-402 | `fix/multiagent-optional-corp-ca` | todo | — |
-| R-403 | Internal auth header trusted from outside: private report to the maintainers first (security advisory), PR after | todo (needs decision) | user |
+| R-403 | Internal auth header trusted from outside: fixed in the fork (shared INTERNAL_AUTH_SECRET, object-level checks, secret only sent to stack hosts; images devel-8fb04e165, operator 0.1.22+, deployed on demo333 2026-10-22). Upstream: private report (text ready), PR after | doing (upstream report) | user |
 | R-404 | forwardUserToken + validator without model probe (`feat/forward-user-token`, `fix/openai-compatible-validator-forwarded-token`) | todo | zuno-demo-68 |
 | R-405 | Qdrant hybrid search, shared ACL, Confluence source, OTel instrumentation | todo | — |
 
