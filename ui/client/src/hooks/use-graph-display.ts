@@ -16,6 +16,7 @@ import {
   type LayoutNode,
 } from "@/utils/graphFlowLayout";
 import { getBlueprintInfo } from "@/api/blueprints";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import type { BuildingBlock } from "@/types/graph";
 import { safeFlushSync } from "@/lib/reactUtils";
 import {
@@ -88,6 +89,7 @@ export function useGraphDisplay({
   centerInView = false,
   animated = false,
 }: UseGraphDisplayOptions): UseGraphDisplayReturn {
+  const { teamId } = useWorkspaceIdentity();
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<dia.Graph | null>(null);
   const layoutNodesRef = useRef<LayoutNode[]>([]);
@@ -316,7 +318,7 @@ export function useGraphDisplay({
         if (specDict) {
           spec = specDict as GraphFlow;
         } else if (blueprintId) {
-          const blueprintInfo = await getBlueprintInfo(blueprintId);
+          const blueprintInfo = await getBlueprintInfo(blueprintId, teamId);
           if (cancelled) return;
           if (!blueprintInfo?.spec_dict) {
             setError("Workflow not found");
@@ -494,7 +496,7 @@ export function useGraphDisplay({
       layoutNodesRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blueprintId, specDict, showBackground, interactive, centerInView, animated, rebuildOverlays]);
+  }, [blueprintId, teamId, specDict, showBackground, interactive, centerInView, animated, rebuildOverlays]);
 
   // ── Lightweight theme-color update (avoids full graph rebuild) ──────
   useEffect(() => {

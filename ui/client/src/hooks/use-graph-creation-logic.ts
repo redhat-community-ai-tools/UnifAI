@@ -728,6 +728,7 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
           editBlueprintId,
           allBlocksData,
           conditionsData,
+          teamId,
         );
         if (cancelled) return;
 
