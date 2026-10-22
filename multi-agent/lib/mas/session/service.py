@@ -19,7 +19,7 @@ from mas.session.domain.models import (
     SessionChat, SessionMeta, ScheduleRunSummary,
     TimeSeriesPoint, SystemAnalyticsData,
 )
-from mas.session.domain.exceptions import BlueprintNotFoundError
+from mas.session.domain.exceptions import BlueprintNotFoundError, SessionBuildError
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 
@@ -94,7 +94,7 @@ class SessionService:
         configured with ``hitl_mode: dynamic`` can check it at runtime.
         """
         self._stage(session_id, inputs, logged_in_user=logged_in_user)
-        session = self._manager.get_session(session_id)
+        session = self._build_session(session_id)
         return self._foreground.run(
             session=session,
             scope=scope,
@@ -293,6 +293,32 @@ class SessionService:
         self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
         record.run_context = record.run_context.with_hitl(record.metadata.hitl_enabled)
         self._manager.save_record(record)
+
+    def _build_session(self, session_id: str) -> WorkflowSession:
+        """Build the session, turning an element build failure into a FAILED session.
+
+        The full exception is logged here; only a short, secret-free message
+        is stored in the session metadata and carried by ``SessionBuildError``.
+        """
+        try:
+            return self._manager.get_session(session_id)
+        except BlueprintNotFoundError:
+            raise
+        except Exception as e:
+            logger.exception("Session %s: building its elements failed", session_id)
+            # PluginConfigurationError.message omits the config; str(e) would include it.
+            detail = getattr(e, "message", None) if isinstance(getattr(e, "message", None), str) else None
+            message = f"Session build failed ({type(e).__name__})" + (f": {detail}" if detail else "")
+            try:
+                record = self._manager.get_record(session_id)
+                record.run_context = record.run_context.mark_finished()
+                record.status = SessionStatus.FAILED
+                record.metadata.status_message = message
+                setattr(record.metadata, "error", {"type": SessionBuildError.error_type, "message": message})
+                self._manager.save_record(record)
+            except Exception:
+                logger.exception("Session %s: could not mark it FAILED after a build error", session_id)
+            raise SessionBuildError(session_id, message) from e
 
     def list_for_user(self, identity: Identity) -> list:
         """

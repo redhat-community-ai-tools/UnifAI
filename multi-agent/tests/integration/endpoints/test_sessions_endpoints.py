@@ -10,9 +10,11 @@ raised an unhandled ``TypeError`` (surfaced as a 500).
 import json
 from unittest.mock import Mock
 
+import pytest
 from flask.testing import FlaskClient
 
 from mas.session.domain.dto import SessionListFilter
+from mas.session.domain.exceptions import SessionBuildError
 
 
 class TestListUserSessionsFilters:
@@ -159,3 +161,61 @@ class TestListUserSessionsHasMore:
 
         assert resp.status_code == 200
         assert resp.get_json()["pagination"]["has_more"] is False
+
+
+class TestExecuteSessionBuildFailure:
+    """A session whose elements cannot be built must fail cleanly, not as a raw HTML 500."""
+
+    BODY = {"sessionId": "s-1", "inputs": {"query": "hi"}}
+
+    @pytest.fixture(autouse=True)
+    def _bypass_session_checks(self, monkeypatch) -> None:
+        monkeypatch.setattr("inbound.flask.session_access.authorize_session", lambda sid: (Mock(), None))
+        monkeypatch.setattr("inbound.flask.endpoints.sessions._check_session_busy", lambda *a, **k: None)
+        monkeypatch.setattr("inbound.flask.endpoints.sessions._bind_forwarded_identity", lambda *a, **k: None)
+
+    def _post(self, client, headers, **extra):
+        return client.post("/api/sessions/user.session.execute", json={**self.BODY, **extra}, headers=headers)
+
+    @pytest.mark.parametrize("stream", [True, False])
+    def test_build_failure_returns_structured_json_error(self, client, user_headers, session_service, stream) -> None:
+        session_service.run.side_effect = SessionBuildError("s-1", "Session build failed (PluginConfigurationError): bad tool")
+
+        resp = self._post(client, user_headers, stream=stream)
+
+        assert resp.status_code == 500
+        assert resp.mimetype == "application/json"
+        assert resp.get_json() == {
+            "error": "Session build failed (PluginConfigurationError): bad tool",
+            "error_type": "session_build_failed",
+            "sessionId": "s-1",
+        }
+
+    def test_build_failure_is_raised_before_the_stream_starts(self, client, user_headers, session_service) -> None:
+        session_service.run.side_effect = SessionBuildError("s-1", "boom")
+
+        resp = self._post(client, user_headers, stream=True)
+
+        assert resp.mimetype != "application/x-ndjson"
+        assert "<html" not in resp.get_data(as_text=True).lower()
+
+    def test_build_failure_inside_the_stream_becomes_an_ndjson_error_event(self, client, user_headers, session_service) -> None:
+        def broken():
+            raise SessionBuildError("s-1", "boom")
+            yield  # pragma: no cover
+
+        session_service.run.return_value = broken()
+
+        resp = self._post(client, user_headers, stream=True)
+
+        assert resp.status_code == 200
+        lines = [json.loads(line) for line in resp.get_data(as_text=True).splitlines() if line.strip()]
+        assert lines[-1] == {"error": "boom", "error_type": "session_build_failed", "sessionId": "s-1"}
+
+    def test_successful_stream_is_unchanged(self, client, user_headers, session_service) -> None:
+        session_service.run.return_value = iter([{"event": "a"}])
+
+        resp = self._post(client, user_headers, stream=True)
+
+        assert resp.mimetype == "application/x-ndjson"
+        assert json.loads(resp.get_data(as_text=True).splitlines()[0]) == {"event": "a"}
