@@ -63,10 +63,12 @@ var _ = Describe("UnifaiTeam and teamRef", func() {
 		Eventually(phaseOf(team), timeout, interval).Should(Equal("Deleting"))
 		Expect(team.Status.Message).To(ContainSubstring("UnifaiLLM/llm"))
 		Expect(teamByName("agent-tekos-" + ns)).NotTo(BeNil())
+		By("deleting the object from the workspace of its Deleting team")
 		Expect(k8sClient.Delete(ctx, llm)).To(Succeed())
 		Eventually(func() bool { return apierrors.IsNotFound(k8sClient.Get(ctx, client.ObjectKeyFromObject(team), team)) },
 			60*time.Second, interval).Should(BeTrue())
 		Expect(teamByName("agent-tekos-" + ns)).To(BeNil())
+		Expect(mas.resourceByName("llms", "llm-"+ns)).To(BeNil())
 	})
 
 	It("never takes over a team it did not create, and needs the adopt annotation for the owner's", func() {

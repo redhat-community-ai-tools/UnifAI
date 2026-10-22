@@ -272,6 +272,17 @@ func TestUnifaiStack(t *testing.T) {
 		if team.Status.TeamID == "" {
 			t.Errorf("team Ready without an id")
 		}
+
+		// The team is deleted first: it waits (Deleting) for the object, which is still deleted from its workspace.
+		must(t, c.Delete(ctx, team))
+		waitPhase(t, team, "Deleting", 2*time.Minute)
+		must(t, c.Delete(ctx, llm))
+		for _, o := range []client.Object{llm, team} {
+			eventually(t, "deleted "+o.GetName(), 3*time.Minute, func() (bool, string) {
+				err := c.Get(ctx, client.ObjectKeyFromObject(o), o)
+				return apierrors.IsNotFound(err), fmt.Sprintf("%v", err)
+			})
+		}
 	})
 
 	t.Run("schedule, template and RAG pipeline on the real services", func(t *testing.T) {

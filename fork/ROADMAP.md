@@ -69,7 +69,7 @@ Order: smallest and least controversial first, each with `make contrib-check` / 
 | R-503 | UnifaiRAGSource on `zuno-unifai`: two Confluence sources (90 + 411 pages) ingested with group ACLs, no resync storm; Day-3 backup and restore drill in zuno-demo (`make d3 backup|check|restore unifai`) | done | zuno-demo-68 |
 | R-504 | WP-147 operator part: `UnifaiStack.spec.openTelemetry` (OTEL_* env on multiagent, RAG, backend) | done (0.1.20) | operator |
 | R-505 | Internal auth secret (`INTERNAL_AUTH_SECRET` / `X-Internal-Auth`, generated, injected, sent by the operator) and `spec.extraEnv` per component, for the access-control fixes of zuno-demo-59 | done (0.1.22) | operator |
-| R-506 | `UnifaiTeam` (identity teams with user/group members) and `spec.teamRef` on every object, for group-entitled agent bundles (bundle side: zuno-demo-68) | doing (0.1.24) | operator |
+| R-506 | `UnifaiTeam` (identity teams with user/group members) and `spec.teamRef` on every object, for group-entitled agent bundles (bundle side: zuno-demo-68) | done (0.1.24; delete deadlock team→object fixed in 0.1.25) | operator |
 
 ## Older TODO carried over from MEMORY.md
 - Slack tokens for the backend sidecar; scale `unifai-worker-a` down when idle.

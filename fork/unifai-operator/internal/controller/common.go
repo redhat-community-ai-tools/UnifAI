@@ -115,25 +115,29 @@ func (b *Base) identity(ctx context.Context, o unifaiv1.Object) *unifai.Client {
 }
 
 // client returns an UnifAI client acting as the object's owner, in its team workspace (teamId, or the team of the
-// UnifaiTeam named by teamRef). Until that team is Ready every call fails, so nothing lands in the personal workspace.
+// UnifaiTeam named by teamRef). Until that team is Ready every call fails, so nothing lands in the personal workspace;
+// an object being deleted only needs the team id (the team waits for it while Deleting).
 func (b *Base) client(ctx context.Context, o unifaiv1.Object, base string) *unifai.Client {
 	common := o.GetCommon()
 	c := unifai.New(base, common.Owner, common.TeamID)
 	c.InternalAuth = b.internalAuth(ctx, o.GetNamespace())
 	if common.TeamRef != "" {
-		c.TeamID, c.Err = b.teamOf(ctx, o.GetNamespace(), common)
+		c.TeamID, c.Err = b.teamOf(ctx, o.GetNamespace(), common, !o.GetDeletionTimestamp().IsZero())
 	}
 	return c
 }
 
-// teamOf resolves spec.teamRef to the id of a Ready UnifaiTeam.
-func (b *Base) teamOf(ctx context.Context, ns string, common *unifaiv1.CommonSpec) (string, error) {
+// teamOf resolves spec.teamRef to the id of a Ready UnifaiTeam, or of any UnifaiTeam that has one when deleting.
+func (b *Base) teamOf(ctx context.Context, ns string, common *unifaiv1.CommonSpec, deleting bool) (string, error) {
 	if common.TeamID != "" {
 		return "", permanent("teamId and teamRef are exclusive")
 	}
 	team := &unifaiv1.UnifaiTeam{}
 	if err := b.Get(ctx, types.NamespacedName{Namespace: ns, Name: common.TeamRef}, team); err != nil {
 		return "", fmt.Errorf("teamRef %s: %w", common.TeamRef, err)
+	}
+	if deleting && team.Status.TeamID != "" {
+		return team.Status.TeamID, nil
 	}
 	if team.Status.Phase != PhaseReady || team.Status.TeamID == "" || !team.DeletionTimestamp.IsZero() {
 		return "", fmt.Errorf("waiting for UnifaiTeam %s to be Ready", common.TeamRef)
