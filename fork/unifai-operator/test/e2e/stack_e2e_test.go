@@ -492,7 +492,7 @@ def code(url, headers):
 secret = os.environ["INTERNAL_AUTH_SECRET"]
 urls = {"mas": "http://unifai-multiagent-be:8003/api/resources/resources.list?category=llms",
         "rag": "http://unifai-rag-server:13456/api/data_sources/data.sources.get?source_type=DOCUMENT",
-        "identity": "http://identity:13456/api/teams/teams.list"}
+        "identity": "http://identity:13456/api/teams/teams.list?userId=admin"}
 out, ok = [], True
 for name, url in urls.items():
     bare = code(url, {"X-Authenticated-User": "admin"})
