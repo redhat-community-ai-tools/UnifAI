@@ -65,8 +65,9 @@ source without any LDAP server.
 | `DIRECTORY_OIDC_USERNAME_CLAIM` | `preferred_username` | Claim that must equal the user being queried. |
 | `DIRECTORY_OIDC_GROUP_PREFIX` | empty | Removed from the start of each group (after the leading `/`). |
 | `DIRECTORY_OIDC_LOWERCASE` | `false` | Lower-case group ids. Case is preserved by default. |
-| `DIRECTORY_OIDC_JWKS_URL` | empty | When set, the token signature is verified against this JWKS. |
-| `DIRECTORY_OIDC_ISSUER` / `DIRECTORY_OIDC_AUDIENCE` | empty | Checked only when set (and only in verified mode). |
+| `DIRECTORY_OIDC_JWKS_URL` | **required** | JWKS endpoint used to verify token signatures, e.g. `https://<keycloak>/realms/<realm>/protocol/openid-connect/certs`. |
+| `DIRECTORY_OIDC_ISSUER` | **required** | Expected `iss`, e.g. `https://<keycloak>/realms/<realm>`. |
+| `DIRECTORY_OIDC_AUDIENCE` | empty | Expected `aud`; checked only when set. |
 
 **Claim format.** A list of strings (a single string is accepted). Keycloak's
 "Group Membership" mapper emits full paths: `["/team-a", "/org/team-b"]`.
@@ -89,10 +90,13 @@ over those groups) and nothing else:
 - Group changes are picked up at the next login or cache refresh
   (`USER_GROUPS_CACHE_TTL`, `/api/auth/user/groups?fresh=1`).
 
-**Security.** Groups come only from a token the identity service obtained
-itself from the OIDC token endpoint; nothing client-supplied is trusted. By
-default the payload is decoded without signature verification, which relies
-on that provenance; set `DIRECTORY_OIDC_JWKS_URL` (plus issuer/audience) to
-verify signatures as well. A token whose username claim differs from the
-requested user is ignored, and the token is held per thread so it cannot
-leak between requests.
+**Security.** Tokens are always verified; there is no unverified mode. The
+provider refuses to start (clear error at startup) unless
+`DIRECTORY_OIDC_JWKS_URL` and `DIRECTORY_OIDC_ISSUER` are set. Signature,
+`exp` (required) and `iss` are checked, plus `aud` when configured. Only
+`RS256` and `ES256` are accepted, never `none` or HMAC. Keys are cached for
+five minutes. Any failure (bad signature, expired token, wrong issuer, JWKS
+unreachable) fails closed: no groups are returned and the reason is logged
+as a warning. Nothing client-supplied is trusted. A token whose username
+claim differs from the requested user is ignored, and the token is held per
+thread so it cannot leak between requests.
