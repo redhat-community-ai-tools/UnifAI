@@ -13,7 +13,7 @@ from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.session.domain.models import SessionMeta
 from mas.session.domain.dto import SessionListFilter, PaginationMeta, PaginatedSessions
-from inbound.flask.decorators import bind_session_id_arg, with_require_identity_authorization, with_authenticated_user, require_session_identity
+from inbound.flask.decorators import acting_user, bind_session_id_arg, with_require_identity_authorization, with_authenticated_user, require_session_identity
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
     (set at creation via ``/user.session.create`` or updated via
     ``/session.meta``).
     """
-    logged_in_user = identity.id
+    logged_in_user = acting_user(identity)
     svc = current_app.container.session_service
 
     busy_response = _check_session_busy(session_id, session_type, svc)
@@ -209,7 +209,7 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
             session_id=session_id,
             inputs=inputs,
             scope=scope,
-            logged_in_user=identity.id,
+            logged_in_user=acting_user(identity),
         )
         return jsonify({"sessionId": session_id, "workflowId": workflow_id}), 202
     except TypeError as e:

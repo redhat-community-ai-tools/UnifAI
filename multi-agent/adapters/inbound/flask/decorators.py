@@ -219,6 +219,18 @@ def with_authenticated_user(f: Callable) -> Callable:
     return require_session_identity(bridge)
 
 
+def acting_user(identity) -> str:
+    """The signed-in person running the session.
+
+    In a team workspace ``identity`` is the team: its id is never a valid
+    credential or sender id, so a team session would run with no acting user
+    (forwarded tokens and per-user OAuth credentials could not resolve).
+    The authenticated username is the person to use; for a personal workspace
+    both are the same.
+    """
+    return getattr(g, "identity_username", "") or identity.id
+
+
 def with_require_identity_authorization(f: Callable) -> Callable:
     """Legacy wrapper: validates session + resolves identity.
 
