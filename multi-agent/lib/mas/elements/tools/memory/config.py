@@ -1,9 +1,28 @@
+from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from mas.elements.tools.common.base_config import BaseToolConfig
 from .identifiers import Identifier
+
+
+class AccessMode(str, Enum):
+    NONE = "none"
+    TEAM = "team"
+    OWNER = "owner"
+
+
+class MemoryAccessConfig(BaseModel):
+    """Who may use the scope.
+
+    ``none``: no check (default, backward compatible). ``team``: ``scope_id`` is a team id and
+    the acting user must be a member. ``owner``: ``scope_id`` is the id of the acting user.
+    With any mode but ``none`` the acting user is taken from the execution context and every
+    operation is refused when it cannot be established or verified.
+    """
+
+    mode: AccessMode = AccessMode.NONE
 
 
 class MemoryToolConfig(BaseToolConfig):
@@ -19,6 +38,10 @@ class MemoryToolConfig(BaseToolConfig):
     scope_id: str = Field(
         ..., min_length=1,
         description="Identifier of the memory scope (e.g. a project id). Entries are never shared across scopes.",
+    )
+    access: MemoryAccessConfig = Field(
+        default_factory=MemoryAccessConfig,
+        description="Scope access control; mode 'none' (default), 'team' or 'owner'",
     )
     mongo_db: str = Field("UnifAI", description="MongoDB database holding the memory texts")
     facts_collection: str = Field("facts", description="MongoDB collection holding the structured facts")

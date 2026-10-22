@@ -46,3 +46,14 @@ class VectorIndex(Protocol):
 
 class Embedder(Protocol):
     def embed(self, text: str) -> List[float]: ...
+
+
+class ScopeAccessChecker(Protocol):
+    """Decides whether the acting user may use a memory scope. Must fail closed."""
+
+    def authorize(self, scope_id: str) -> None:
+        """Return normally when access is granted; raise ``ScopeAccessDenied`` otherwise.
+
+        Any other exception raised here is treated as a denial by the tool.
+        """
+        ...
