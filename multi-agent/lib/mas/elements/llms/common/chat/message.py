@@ -3,6 +3,11 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict
 
 
+#: Key under which an LLM backend attaches response metadata (response id,
+#: non-standard top-level fields, optional lookup URL) to ``ChatMessage.metadata``.
+RESPONSE_METADATA_KEY = "llm_response"
+
+
 class Role(str, Enum):
     SYSTEM = "system"
     USER = "user"

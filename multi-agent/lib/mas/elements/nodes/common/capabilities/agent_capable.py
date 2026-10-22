@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Any, TypeVar, Generic, Iterator, Callable
 from enum import Enum
 
-from mas.elements.llms.common.chat.message import ChatMessage, Role
+from mas.elements.llms.common.chat.message import RESPONSE_METADATA_KEY, ChatMessage, Role
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.execution import ToolExecutorManager, ExecutorConfig
 from mas.elements.tools.common.execution.models import (
@@ -463,6 +463,15 @@ class AgentCapableMixin(Generic[T]):
             "strategy": strategy.strategy_name,
             "execution_mode": config.execution_mode.value
         }
+
+        # Surface the last LLM response metadata (e.g. serving provider,
+        # response id) on the execution record, unchanged.
+        for step in reversed(iterator.history):
+            if step.type == StepType.PLANNING and isinstance(step.data, ChatMessage):
+                llm_response = step.data.metadata.get(RESPONSE_METADATA_KEY)
+                if llm_response:
+                    result["metadata"][RESPONSE_METADATA_KEY] = llm_response
+                    break
         
         # Include intermediate data if requested
         if config.return_intermediate:

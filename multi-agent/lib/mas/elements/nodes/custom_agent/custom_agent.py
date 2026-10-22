@@ -2,7 +2,7 @@ import logging
 from typing import Optional, Any, List, ClassVar, Set, Dict
 from copy import deepcopy
 from mas.graph.state.state_view import StateView
-from mas.elements.llms.common.chat.message import ChatMessage, Role
+from mas.elements.llms.common.chat.message import RESPONSE_METADATA_KEY, ChatMessage, Role
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
@@ -303,7 +303,10 @@ class CustomAgentNode(
                 "output": assistant_msg.content,
                 "error": None,
                 "reasoning": "",
-                "metadata": {},
+                "metadata": {
+                    k: v for k, v in assistant_msg.metadata.items()
+                    if k == RESPONSE_METADATA_KEY
+                },
                 "metrics": {}
             }
 

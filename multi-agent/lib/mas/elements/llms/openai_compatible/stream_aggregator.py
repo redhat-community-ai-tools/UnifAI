@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from ..common.chat.message import ToolCall
+from ..common.chat.message import RESPONSE_METADATA_KEY, ToolCall
 
 
 @dataclass
@@ -66,10 +66,6 @@ class StreamToolCallAggregator:
         if not self._fragments:
             return None
         return [frag.to_tool_call() for frag in self._fragments.values()]
-
-
-#: Key under which response metadata is attached to ``ChatMessage.metadata``.
-RESPONSE_METADATA_KEY = "llm_response"
 
 
 def extract_extra_fields(obj: object) -> Dict[str, Any]:
