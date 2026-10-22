@@ -158,8 +158,9 @@ http {
            proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
            proxy_set_header X-Authenticated-User "";
            proxy_set_header X-Internal-Auth "";
-           proxy_set_header X-Username ${DOLLAR}http_x_username;
-           proxy_set_header X-User-Id ${DOLLAR}http_x_user_id;
+           # Never forward identity headers chosen by the client.
+           proxy_set_header X-Username "";
+           proxy_set_header X-User-Id "";
            proxy_cookie_path / /;
         }
 

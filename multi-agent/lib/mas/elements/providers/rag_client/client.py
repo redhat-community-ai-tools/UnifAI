@@ -69,8 +69,9 @@ class RagClient:
         self._timeout = timeout
         self._headers = dict(headers or {})
         if authenticated_user:
-            self._headers[self._AUTH_HEADER] = authenticated_user
-            self._headers.update(internal_auth_headers())
+            # base_url comes from the RAG provider configuration, which users can edit: the identity and the
+            # shared secret only go to the stack's services.
+            self._headers.update(internal_auth_headers(authenticated_user, url=self._base_url))
         self._client: Optional[httpx.Client] = None
 
     def __enter__(self) -> "RagClient":
@@ -78,6 +79,7 @@ class RagClient:
         headers = {**correlation_headers(), **self._headers}
         self._client = httpx.Client(
             headers=headers,
+            follow_redirects=False,  # never replay the internal headers to another host
             timeout=httpx.Timeout(
                 connect=10.0,
                 read=self._timeout,

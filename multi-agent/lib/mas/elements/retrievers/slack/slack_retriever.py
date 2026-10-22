@@ -41,13 +41,16 @@ class SlackRetriever(BaseRetriever):
             "top_k_results": self.top_k,
         }
 
-        headers = internal_auth_headers(user_id) if user_id else {}
+        # api_url is user configuration: the identity and the shared secret only go to the stack's services,
+        # and a redirect must not replay them to another host.
+        headers = internal_auth_headers(user_id, url=self.api_url) if user_id else {}
 
         resp = requests.get(
             self.api_url,
             params=params,
             headers=headers,
             timeout=self.timeout,
+            allow_redirects=False,
         )
         resp.raise_for_status()
         data = resp.json()
