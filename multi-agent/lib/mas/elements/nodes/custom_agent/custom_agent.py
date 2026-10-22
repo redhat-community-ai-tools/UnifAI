@@ -2,7 +2,7 @@ import logging
 from typing import Optional, Any, List, ClassVar, Set, Dict
 from copy import deepcopy
 from mas.graph.state.state_view import StateView
-from mas.elements.llms.common.chat.message import RESPONSE_METADATA_KEY, ChatMessage, Role
+from mas.elements.llms.common.chat.message import ERROR_METADATA_KEY, RESPONSE_METADATA_KEY, ChatMessage, Role
 from mas.elements.llms.common.exceptions import LLMRateLimitError
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.nodes.common.base_node import BaseNode
@@ -183,12 +183,14 @@ class CustomAgentNode(
 
         except Exception as e:
             logger.error("CustomAgent %s: error processing task: %s", self.uid, e)
+            rate_limited = isinstance(e, LLMRateLimitError)
             error_result = AgentResult(
-                content=f"Error processing task: {str(e)}",
+                content=str(e) if rate_limited else f"Error processing task: {str(e)}",
                 agent_id=self.uid,
                 agent_name=self.display_name,
                 success=False,
-                error=str(e)
+                error=str(e),
+                execution_metadata=self._rate_limit_metadata(e) if rate_limited else {},
             )
             if task.thread_id:
                 self._add_agent_result_to_workspace(task.thread_id, error_result)
@@ -306,7 +308,7 @@ class CustomAgentNode(
                     "output": "",
                     "error": str(e),
                     "reasoning": "",
-                    "metadata": {"error_type": "rate_limited", "retry_after": e.retry_after},
+                    "metadata": self._rate_limit_metadata(e),
                     "metrics": {}
                 }
             # Create a result dict that matches run_agent format
@@ -393,6 +395,18 @@ class CustomAgentNode(
             result=agent_result
         )
         self.broadcast_task(forked_task)
+
+    def _rate_limit_metadata(self, error: LLMRateLimitError) -> Dict[str, Any]:
+        """Result metadata for a rate limit; also tells a live stream about it."""
+        info = error.to_dict()
+        if self.is_streaming():
+            self._stream({
+                "type": "agent_error",
+                "error_type": info["type"],
+                "error": info["message"],
+                "retry_after": info["retry_after"],
+            })
+        return {"error_type": info["type"], "retry_after": info["retry_after"], ERROR_METADATA_KEY: info}
 
     def _create_agent_result(self, execution_result: Dict[str, Any]) -> AgentResult:
         """

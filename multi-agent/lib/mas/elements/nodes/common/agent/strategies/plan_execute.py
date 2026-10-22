@@ -245,6 +245,7 @@ class PlanAndExecuteStrategy(AgentStrategy):
                 metadata={
                     "phase": self._current_phase,
                     "error_type": "rate_limited",
+                    "retry_after": e.retry_after,
                     "recoverable": False,
                 }
             )]

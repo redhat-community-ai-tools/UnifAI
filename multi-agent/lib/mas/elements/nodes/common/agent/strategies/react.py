@@ -323,13 +323,16 @@ class ReActStrategy(AgentStrategy):
 
     def _create_error_step(self, error: Exception, error_type: str) -> AgentStep:
         """Create clean error step."""
+        metadata = {
+            "strategy": StrategyType.REACT.value,
+            "error_type": error_type,
+            "step_count": self._step_count,
+            "recoverable": getattr(error, 'recoverable', error_type == "parse_error")
+        }
+        if isinstance(error, LLMRateLimitError):
+            metadata["retry_after"] = error.retry_after
         return AgentStep(
             type=StepType.ERROR,
             data=error,
-            metadata={
-                "strategy": StrategyType.REACT.value,
-                "error_type": error_type,
-                "step_count": self._step_count,
-                "recoverable": getattr(error, 'recoverable', error_type == "parse_error")
-            }
+            metadata=metadata
         )

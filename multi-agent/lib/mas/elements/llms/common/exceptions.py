@@ -7,22 +7,13 @@ These let callers distinguish *expected, non-fatal* provider conditions
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
-#: Prefix that marks a rate-limit message in plain-text channels (agent
-#: results, final answers) so that clients can render it as a non-fatal
-#: notice.  Format: ``[rate_limited retry_after=<seconds>] <message>``
-#: (the ``retry_after`` attribute is omitted when unknown).
-RATE_LIMIT_MARKER = "rate_limited"
-
-_MARKER_RE = re.compile(
-    r"^\[" + RATE_LIMIT_MARKER + r"(?:\s+retry_after=(?P<retry>\d+(?:\.\d+)?))?\]\s*(?P<msg>.*)$",
-    re.DOTALL,
-)
+#: ``type`` value of the structured error attached to message / result metadata.
+RATE_LIMITED_TYPE = "rate_limited"
 
 
 class LLMRateLimitError(Exception):
@@ -53,11 +44,16 @@ class LLMRateLimitError(Exception):
             msg += f" Please retry in {format_delay(self.retry_after)}."
         return msg
 
+    def to_dict(self) -> dict[str, Any]:
+        """Structured form carried in metadata (``ERROR_METADATA_KEY``)."""
+        return {
+            "type": RATE_LIMITED_TYPE,
+            "message": self.user_message(),
+            "retry_after": self.retry_after,
+        }
+
     def __str__(self) -> str:
-        attr = ""
-        if self.retry_after is not None:
-            attr = f" retry_after={self.retry_after:g}"
-        return f"[{RATE_LIMIT_MARKER}{attr}] {self.user_message()}"
+        return self.user_message()
 
 
 def format_delay(seconds: float) -> str:
@@ -114,12 +110,3 @@ def rate_limit_from_response(
 ) -> LLMRateLimitError:
     retry = parse_retry_after(headers.get("retry-after") if headers else None)
     return LLMRateLimitError(extract_error_detail(body), retry)
-
-
-def parse_rate_limit_marker(text: str) -> tuple[str, float | None] | None:
-    """Inverse of ``str(LLMRateLimitError)``: return ``(message, retry_after)``."""
-    m = _MARKER_RE.match(text.strip())
-    if not m:
-        return None
-    retry = m.group("retry")
-    return m.group("msg"), float(retry) if retry is not None else None

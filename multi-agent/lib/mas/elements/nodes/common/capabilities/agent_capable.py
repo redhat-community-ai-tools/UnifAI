@@ -18,7 +18,8 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Any, TypeVar, Generic, Iterator, Callable
 from enum import Enum
 
-from mas.elements.llms.common.chat.message import RESPONSE_METADATA_KEY, ChatMessage, Role
+from mas.elements.llms.common.chat.message import ERROR_METADATA_KEY, RESPONSE_METADATA_KEY, ChatMessage, Role
+from mas.elements.llms.common.exceptions import LLMRateLimitError
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.tools.common.execution import ToolExecutorManager, ExecutorConfig
 from mas.elements.tools.common.execution.models import (
@@ -473,6 +474,20 @@ class AgentCapableMixin(Generic[T]):
                     result["metadata"][RESPONSE_METADATA_KEY] = llm_response
                     break
         
+        # A rate limit is a non-fatal, structured condition: expose it as such.
+        for step in reversed(iterator.history):
+            if step.type == StepType.ERROR and isinstance(step.data, LLMRateLimitError):
+                info = step.data.to_dict()
+                result["metadata"][ERROR_METADATA_KEY] = info
+                if self.is_streaming():
+                    self._stream({
+                        "type": "agent_error",
+                        "error_type": info["type"],
+                        "error": info["message"],
+                        "retry_after": info["retry_after"],
+                    })
+                break
+
         # Include intermediate data if requested
         if config.return_intermediate:
             result["observations"] = iterator.observations
@@ -566,7 +581,8 @@ class AgentCapableMixin(Generic[T]):
                         "data": {
                             "error": str(step.data),
                             "recoverable": getattr(step.data, 'recoverable', False),
-                            "execution_time": time.time() - start_time
+                            "execution_time": time.time() - start_time,
+                            **self._error_event_fields(step.data),
                         },
                         "timestamp": time.time(),
                         "metadata": {"error": True}
@@ -586,6 +602,14 @@ class AgentCapableMixin(Generic[T]):
                 "metadata": {"unexpected_error": True}
             }
     
+    @staticmethod
+    def _error_event_fields(error: Any) -> Dict[str, Any]:
+        """Typed fields (``error_type``, ``retry_after``) for known non-fatal errors."""
+        if isinstance(error, LLMRateLimitError):
+            info = error.to_dict()
+            return {"error_type": info["type"], "retry_after": info["retry_after"]}
+        return {}
+
     def _serialize_step(self, step: AgentStep) -> Dict[str, Any]:
         """
         Serialize step data for streaming/API consumption.

@@ -1,6 +1,6 @@
 from typing import List, ClassVar, Dict, Any
 import logging
-from mas.elements.llms.common.chat.message import RESPONSE_METADATA_KEY, ChatMessage, Role
+from mas.elements.llms.common.chat.message import ERROR_METADATA_KEY, RESPONSE_METADATA_KEY, ChatMessage, Role
 from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.graph.state.graph_state import Channel
@@ -68,12 +68,19 @@ class FinalAnswerNode(IEMCapableMixin, BaseNode):
         Returns the plain string unchanged when there is no such metadata.
         """
         if len(self._collected_results) == 1:
-            llm_response = self._collected_results[0].execution_metadata.get(RESPONSE_METADATA_KEY)
+            result = self._collected_results[0]
+            metadata: Dict[str, Any] = {}
+            llm_response = result.execution_metadata.get(RESPONSE_METADATA_KEY)
             if llm_response:
+                metadata[RESPONSE_METADATA_KEY] = llm_response
+            error_info = result.execution_metadata.get(ERROR_METADATA_KEY)
+            if error_info and not result.success:
+                metadata[ERROR_METADATA_KEY] = error_info
+            if metadata:
                 return ChatMessage(
                     role=Role.ASSISTANT,
                     content=final_answer,
-                    metadata={RESPONSE_METADATA_KEY: llm_response},
+                    metadata=metadata,
                 )
         return final_answer
 
