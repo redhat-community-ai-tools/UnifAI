@@ -15,7 +15,7 @@ from typing import Optional
 
 import requests as http_requests
 
-from global_utils.internal_auth import internal_auth_headers
+from global_utils.internal_auth import dev_mode_enabled, internal_auth_headers
 from global_utils.redis.team_cache import TeamMembershipCache
 
 logger = logging.getLogger(__name__)
@@ -133,14 +133,15 @@ class IdentityClient:
     def is_member(self, username: str, team_id: str) -> bool:
         """Check team membership.
 
-        Fails **open** (returns ``True``) when not configured so local-dev
-        works without an Identity pod.  When configured, checks cached team
+        When not configured, returns ``True`` only in the explicit dev mode
+        (``UNIFAI_DEV_MODE``) and ``False`` otherwise (fail closed).
+        When configured, checks cached team
         IDs first; on a cache miss (team not found), invalidates the cache
         and retries with a fresh HTTP call so that newly-created teams are
         recognised immediately instead of waiting for the cache TTL.
         """
         if not self._base:
-            return True
+            return dev_mode_enabled()
         team_ids = self.get_team_ids(username)
         if team_id in team_ids:
             return True

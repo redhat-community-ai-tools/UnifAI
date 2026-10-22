@@ -96,6 +96,7 @@ from outbound.http.httpx_client import HttpxClient
 
 from mas.core.identity.ports import IdentityProvider, AdminConfigReaderPort
 from global_utils.identity_client import IdentityClient
+from global_utils.internal_auth import dev_mode_enabled
 from global_utils.redis import RedisKVStore, TeamMembershipCache, build_redis_client
 from global_utils.utils.crypto import FieldCipher
 from global_utils.utils.singleton import SingletonMeta
@@ -602,12 +603,25 @@ class AppContainer(metaclass=SingletonMeta):
         - "pod"  → production HTTP adapter (requires Identity pod)
         - "dev"  → permissive local-dev adapter (no external calls)
         - "noop" → single-user mode (no teams)
-        - ""     → auto-detect: "pod" when identity_client is configured, else "dev"
+        - ""     → auto-detect: "pod" when identity_client is configured; otherwise
+          "dev" only when UNIFAI_DEV_MODE is set, else startup fails
         """
         mode = (cfg.identity_provider_mode or "").strip().lower()
 
         if not mode:
-            mode = "pod" if identity_client.configured else "dev"
+            if identity_client.configured:
+                mode = "pod"
+            elif dev_mode_enabled():
+                mode = "dev"
+            else:
+                raise RuntimeError(
+                    "Identity service is not configured (IDENTITY_HOST / "
+                    "directory_sso_url) and identity_provider_mode is unset: "
+                    "refusing to start with the permissive dev identity "
+                    "provider. Configure the Identity service, set "
+                    "identity_provider_mode explicitly, or set "
+                    "UNIFAI_DEV_MODE=true for local development."
+                )
 
         if mode == "pod":
             from outbound.identity.identity_pod_provider import IdentityPodProvider
