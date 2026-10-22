@@ -45,6 +45,8 @@ class AppConfig(SharedConfig):
     # Slack Configuration
     default_slack_bot_token: str = ""
     default_slack_user_token: str = ""
+    # Signing secret used to verify Slack Events API requests. Empty = events are rejected.
+    slack_signing_secret: str = ""
 
     # Flask Configuration
     frontend_url: str = "http://localhost:5000"

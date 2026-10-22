@@ -13,6 +13,7 @@ from bootstrap.app_container import (
 )
 from global_utils.helpers.apiargs import from_query
 from infrastructure.http.auth import rag_require_session
+from infrastructure.http.slack_signature import verify_slack_signature
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ DEFAULT_PROJECT_ID = "default"
 
 
 @slack_bp.route("/fetch.available.slack.channels", methods=["PUT"])
+@rag_require_session
 def fetch_slack_channels():
     """Fetch and cache Slack channels from the API."""
     try:
@@ -36,6 +38,7 @@ def fetch_slack_channels():
 
 
 @slack_bp.route("/available.slack.channels.get", methods=["GET"])
+@rag_require_session
 @from_query({
     "types": fields.Str(required=True, data_key="types"),
     "cursor": fields.Str(required=False, load_default="", data_key="cursor"),
@@ -68,6 +71,7 @@ def get_available_channels(types, cursor, limit, search_regex):
 
 
 @slack_bp.route("/slack.channel.chunks", methods=["GET"])
+@rag_require_session
 @from_query({"channel_name": fields.Str(required=True)})
 def get_channel_chunks(channel_name):
     """Get chunk count for a specific Slack channel."""
@@ -87,6 +91,7 @@ def get_channel_chunks(channel_name):
 
 
 @slack_bp.route("/user.info.get", methods=["GET"])
+@rag_require_session
 @from_query({
     "user_id": fields.Str(required=False, load_default=None, data_key="user_id"),
     "include_locale": fields.Bool(required=False, load_default=False, data_key="include_locale"),
@@ -138,6 +143,7 @@ def query_match(query, top_k_results):
 
 
 @slack_bp.route("/stats", methods=["GET"])
+@rag_require_session
 def slack_stats():
     """Get aggregated Slack statistics."""
     try:
@@ -157,6 +163,14 @@ def slack_events():
     - URL verification challenge
     - Event callbacks (dispatched to Celery)
     """
+    if not verify_slack_signature(
+        AppConfig.get_instance().slack_signing_secret,
+        request.get_data(),
+        request.headers.get("X-Slack-Request-Timestamp", ""),
+        request.headers.get("X-Slack-Signature", ""),
+    ):
+        return jsonify({"error": "invalid signature"}), 401
+
     try:
         payload = request.get_json()
         result = slack_event_dispatch_service().handle_webhook(payload)
