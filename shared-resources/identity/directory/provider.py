@@ -16,6 +16,11 @@ from directory.models import DirectoryUser, DirectoryGroup
 class DirectoryProvider(ABC):
     """Port for an external user/group directory."""
 
+    #: True when ``DirectoryGroup.members`` is the full member list, so it may
+    #: overwrite stored ``group_members`` snapshots.  Providers that only know
+    #: the calling user (e.g. token-claims) set this to False.
+    group_members_authoritative: bool = True
+
     def set_user_token(self, token: str) -> None:
         """Supply the calling user's access token for providers that
         authenticate on behalf of the logged-in user rather than using
