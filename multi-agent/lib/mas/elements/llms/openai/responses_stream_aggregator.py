@@ -14,11 +14,11 @@ events:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from ..common.chat.message import ToolCall
+from ..common.chat.tool_arguments import parse_tool_arguments
 
 
 @dataclass
@@ -32,7 +32,7 @@ class _FunctionCallFragment:
     def to_tool_call(self) -> ToolCall:
         return ToolCall(
             name=self.name,
-            args=json.loads(self.arguments) if self.arguments else {},
+            args=parse_tool_arguments(self.arguments),
             tool_call_id=self.call_id or self.item_id,
         )
 

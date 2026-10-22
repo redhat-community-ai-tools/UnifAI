@@ -8,11 +8,12 @@ complete ToolCall domain objects.
 
 from __future__ import annotations
 
-import json
+import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from ..common.chat.message import RESPONSE_METADATA_KEY, ToolCall
+from ..common.chat.tool_arguments import is_complete_json, parse_tool_arguments, split_json_objects
 from .response_lookup import resolve_lookup_url
 
 
@@ -23,16 +24,33 @@ class _ToolCallFragment:
     name: str = ""
     arguments: str = ""
 
-    def to_tool_call(self) -> ToolCall:
-        return ToolCall(
+    def to_tool_calls(self) -> List[ToolCall]:
+        """Build the tool call(s) for this fragment.
+
+        A fragment normally yields one call.  Only when the server gave no
+        call id, and the arguments are several concatenated JSON objects,
+        is the fragment split into one call per object.
+        """
+        if not self.id and self.arguments and not is_complete_json(self.arguments):
+            objs = split_json_objects(self.arguments)
+            if len(objs) > 1 and all(isinstance(o, dict) for o in objs):
+                return [
+                    ToolCall(name=self.name, args=o, tool_call_id=f"call_{uuid.uuid4().hex[:24]}")
+                    for o in objs
+                ]
+        return [ToolCall(
             name=self.name,
-            args=json.loads(self.arguments) if self.arguments else {},
+            args=parse_tool_arguments(self.arguments),
             tool_call_id=self.id,
-        )
+        )]
 
 
 class StreamToolCallAggregator:
     """Collects streaming tool-call deltas and produces final ToolCall objects.
+
+    Deltas are merged by ``index``.  Some servers reuse one index for several
+    calls, so a delta carrying a different ``id`` (or, without an id, a new
+    function name once the previous arguments are complete) starts a new call.
 
     Usage::
 
@@ -44,16 +62,30 @@ class StreamToolCallAggregator:
     """
 
     def __init__(self) -> None:
-        self._fragments: Dict[int, _ToolCallFragment] = {}
+        self._fragments: List[_ToolCallFragment] = []
+        self._current: Dict[int, _ToolCallFragment] = {}
 
     @property
     def has_tool_calls(self) -> bool:
         return bool(self._fragments)
 
+    def _starts_new_call(self, cur: _ToolCallFragment, delta: Any) -> bool:
+        if delta.id and cur.id and delta.id != cur.id:
+            return True
+        fn = delta.function
+        name = getattr(fn, "name", None) if fn else None
+        if not delta.id and name and cur.name and cur.arguments and is_complete_json(cur.arguments):
+            return True
+        return False
+
     def absorb(self, deltas: list) -> None:
         """Merge a list of ``ChoiceDeltaToolCall`` objects into the accumulator."""
         for delta in deltas:
-            frag = self._fragments.setdefault(delta.index, _ToolCallFragment())
+            frag = self._current.get(delta.index)
+            if frag is None or self._starts_new_call(frag, delta):
+                frag = _ToolCallFragment()
+                self._current[delta.index] = frag
+                self._fragments.append(frag)
             if delta.id:
                 frag.id = delta.id
             if delta.function:
@@ -66,7 +98,7 @@ class StreamToolCallAggregator:
         """Return assembled ToolCall list, or *None* if nothing was collected."""
         if not self._fragments:
             return None
-        return [frag.to_tool_call() for frag in self._fragments.values()]
+        return [tc for frag in self._fragments for tc in frag.to_tool_calls()]
 
 
 def extract_extra_fields(obj: object) -> Dict[str, Any]:
