@@ -1,0 +1,24 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: unifai-operator
+    control-plane: controller-manager
+  name: unifai-operator-controller-manager-metrics-monitor
+spec:
+  endpoints:
+  - authorization:
+      credentials:
+        key: token
+        name: unifai-operator-metrics-token
+      type: Bearer
+    path: /metrics
+    port: https
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: true
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: unifai-operator
+      control-plane: controller-manager

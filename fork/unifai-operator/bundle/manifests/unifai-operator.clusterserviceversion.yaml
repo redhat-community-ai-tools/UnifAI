@@ -397,23 +397,22 @@ metadata:
       ]
     capabilities: Seamless Upgrades
     categories: AI/Machine Learning, Developer Tools
-    containerImage: quay.io/zuno/unifai-operator:v0.1.20
-    createdAt: "2026-10-22T14:03:07Z"
-    description: Deploys UnifAI stacks and manages UnifAI agents, workflows and RAG
-      pipelines declaratively.
-    features.operators.openshift.io/disconnected: "false"
-    features.operators.openshift.io/fips-compliant: "false"
-    features.operators.openshift.io/proxy-aware: "false"
-    features.operators.openshift.io/tls-profiles: "false"
-    features.operators.openshift.io/token-auth-aws: "false"
-    features.operators.openshift.io/token-auth-azure: "false"
-    features.operators.openshift.io/token-auth-gcp: "false"
-    operatorframework.io/suggested-namespace: openshift-operators
+    containerImage: quay.io/zuno/unifai-operator:v0.1.21
+    createdAt: '2026-10-22T14:52:20Z'
+    description: Deploys UnifAI stacks and manages UnifAI agents, workflows and RAG pipelines declaratively.
+    features.operators.openshift.io/disconnected: 'false'
+    features.operators.openshift.io/fips-compliant: 'false'
+    features.operators.openshift.io/proxy-aware: 'false'
+    features.operators.openshift.io/tls-profiles: 'false'
+    features.operators.openshift.io/token-auth-aws: 'false'
+    features.operators.openshift.io/token-auth-azure: 'false'
+    features.operators.openshift.io/token-auth-gcp: 'false'
+    operatorframework.io/suggested-namespace: unifai-operator
     operators.operatorframework.io/builder: operator-sdk-v1.41.1
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/startxfr/UnifAI
     support: startx
-  name: unifai-operator.v0.1.20
+  name: unifai-operator.v0.1.21
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -427,8 +426,7 @@ spec:
       kind: UnifaiAgent
       name: unifaiagents.unifai.startx.fr
       version: v1alpha1
-    - description: UnifaiChat runs one prompt on a workflow; the transcript lands
-        in status.result.
+    - description: UnifaiChat runs one prompt on a workflow; the transcript lands in status.result.
       displayName: Unifai Chat
       kind: UnifaiChat
       name: unifaichats.unifai.startx.fr
@@ -448,8 +446,7 @@ spec:
       kind: UnifaiProvider
       name: unifaiproviders.unifai.startx.fr
       version: v1alpha1
-    - description: UnifaiRAGPipeline uploads documents and dispatches the document
-        pipeline (chunk, embed, store in Qdrant).
+    - description: UnifaiRAGPipeline uploads documents and dispatches the document pipeline (chunk, embed, store in Qdrant).
       displayName: Unifai RAGPipeline
       kind: UnifaiRAGPipeline
       name: unifairagpipelines.unifai.startx.fr
@@ -472,14 +469,12 @@ spec:
       kind: UnifaiSchedule
       name: unifaischedules.unifai.startx.fr
       version: v1alpha1
-    - description: UnifaiStack deploys a complete UnifAI platform in its namespace
-        (at most one per namespace, named `unifai`).
+    - description: UnifaiStack deploys a complete UnifAI platform in its namespace (at most one per namespace, named `unifai`).
       displayName: Unifai Stack
       kind: UnifaiStack
       name: unifaistacks.unifai.startx.fr
       version: v1alpha1
-    - description: 'UnifaiTemplate is an UnifAI catalog template (no update API: changes
-        delete and recreate it).'
+    - description: 'UnifaiTemplate is an UnifAI catalog template (no update API: changes delete and recreate it).'
       displayName: Unifai Template
       kind: UnifaiTemplate
       name: unifaitemplates.unifai.startx.fr
@@ -514,7 +509,7 @@ spec:
       clusterPermissions:
       - rules:
         - apiGroups:
-          - ""
+          - ''
           resources:
           - configmaps
           - endpoints
@@ -531,7 +526,7 @@ spec:
           - update
           - watch
         - apiGroups:
-          - ""
+          - ''
           resources:
           - namespaces
           verbs:
@@ -539,7 +534,7 @@ spec:
           - list
           - watch
         - apiGroups:
-          - ""
+          - ''
           resources:
           - pods
           verbs:
@@ -548,7 +543,7 @@ spec:
           - list
           - watch
         - apiGroups:
-          - ""
+          - ''
           - events.k8s.io
           resources:
           - events
@@ -794,6 +789,12 @@ spec:
           verbs:
           - create
         serviceAccountName: unifai-operator-controller-manager
+      - serviceAccountName: unifai-operator-metrics-scraper
+        rules:
+        - nonResourceURLs:
+          - /metrics
+          verbs:
+          - get
       deployments:
       - label:
           app.kubernetes.io/managed-by: kustomize
@@ -827,7 +828,7 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.namespace
-                image: quay.io/zuno/unifai-operator:v0.1.20
+                image: quay.io/zuno/unifai-operator:v0.1.21
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -861,7 +862,7 @@ spec:
       permissions:
       - rules:
         - apiGroups:
-          - ""
+          - ''
           resources:
           - configmaps
           verbs:
@@ -885,7 +886,7 @@ spec:
           - patch
           - delete
         - apiGroups:
-          - ""
+          - ''
           resources:
           - events
           verbs:
@@ -924,4 +925,4 @@ spec:
   provider:
     name: startx
     url: https://www.startx.fr
-  version: 0.1.20
+  version: 0.1.21
