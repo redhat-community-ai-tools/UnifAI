@@ -39,6 +39,7 @@ class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatib
                 timeout_seconds=cfg.timeout_seconds,
                 metadata_lookup_url=cfg.metadata_lookup_url,
                 metadata_lookup_timeout=cfg.metadata_lookup_timeout,
+                request_id_header=cfg.request_id_header,
                 tracing=tracing,
                 forwarder=forwarder,
                 forward_user_token=cfg.forward_user_token,

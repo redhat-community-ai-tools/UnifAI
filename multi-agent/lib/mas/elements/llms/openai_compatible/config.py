@@ -38,11 +38,22 @@ class OpenAICompatibleConfig(BaseLLMConfig):
     metadata_lookup_url: Optional[str] = Field(
         None,
         description=(
-            "Optional URL template containing '{response_id}'. When set, the "
+            "Optional URL template containing '{response_id}' (the completion id "
+            "returned by the endpoint) and/or '{request_id}' (the id sent in "
+            "request_id_header). When set, the "
             "backend fetches an explanation of how a response was produced "
             "(e.g. which model served it and why) with the acting user's "
             "identity and attaches it to the response metadata. Best effort: "
             "failures are ignored."
+        ),
+    )
+    request_id_header: str = Field(
+        "",
+        description=(
+            "Optional header name. When set, a fresh request id (uuid4 hex) is sent under "
+            "this header on every call, and can be used as '{request_id}' in "
+            "metadata_lookup_url for endpoints that publish explanations under the "
+            "caller-supplied id rather than the completion id. Empty = not sent."
         ),
     )
     metadata_lookup_timeout: float = Field(
