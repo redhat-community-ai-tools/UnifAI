@@ -8,12 +8,14 @@ import json
 from pydantic import ValidationError
 from pydantic.json import pydantic_encoder
 from mas.core.channels import with_heartbeats
+from mas.core.identity import Identity, IdentityType
 from mas.core.hitl.models import ApprovalOverrides, ApprovalRuleSet
 from mas.session.domain.exceptions import BlueprintNotFoundError
 from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.session.domain.models import SessionMeta
 from mas.session.domain.dto import SessionListFilter, PaginationMeta, PaginatedSessions
-from inbound.flask.decorators import acting_user, bind_session_id_arg, with_require_identity_authorization, with_authenticated_user, require_session_identity
+from inbound.flask.decorators import acting_user, bind_session_id_arg, with_require_identity_authorization, with_authenticated_user, require_session_identity, is_admin_user
+from inbound.flask.session_access import authorize_session, can_use_blueprint, caller_username, require_session_access
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +101,8 @@ def _check_session_busy(session_id: str, session_type: str, svc):
 })
 def create_user_session(identity, blueprint_id, metadata, hitl_enabled):
     try:
+        if not can_use_blueprint(blueprint_id, caller_username()):
+            raise BlueprintNotFoundError(blueprint_id)
         metadata.setdefault("hitl_enabled", hitl_enabled)
         session_svc = current_app.container.session_service
         run_id = session_svc.create(identity=identity,
@@ -126,6 +130,7 @@ def create_user_session(identity, blueprint_id, metadata, hitl_enabled):
     "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
 })
 @bind_session_id_arg
+@require_session_access
 def execute_user_session(identity, session_id, inputs, stream_mode, stream, scope, session_type):
     """
     Execute (or stream) an existing session.
@@ -185,6 +190,7 @@ def execute_user_session(identity, session_id, inputs, stream_mode, stream, scop
     "session_type": fields.Str(data_key="sessionType", load_default="Personal"),
 })
 @bind_session_id_arg
+@require_session_access
 def submit_user_session(identity, session_id, inputs, scope, session_type):
     """
     Fire-and-forget execute for Temporal-backed sessions.
@@ -221,11 +227,13 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
 
 
 @sessions_bp.route("/session.cancel", methods=["POST"])
+@with_authenticated_user
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
 @bind_session_id_arg
-def cancel_session(session_id):
+@require_session_access
+def cancel_session(authenticated_user, session_id):
     try:
         svc = current_app.container.session_service
         cancelled = svc.cancel(session_id=session_id)
@@ -240,11 +248,13 @@ def cancel_session(session_id):
 
 
 @sessions_bp.route("/session.state.get", methods=["GET"])
+@with_authenticated_user
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
 @bind_session_id_arg
-def get_session_state(session_id):
+@require_session_access
+def get_session_state(authenticated_user, session_id):
     try:
         svc = current_app.container.session_service
         state = svc.get_state(run_id=session_id)
@@ -254,11 +264,13 @@ def get_session_state(session_id):
 
 
 @sessions_bp.route("/session.chat.get", methods=["GET"])
+@with_authenticated_user
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
 @bind_session_id_arg
-def get_session_chat(session_id):
+@require_session_access
+def get_session_chat(authenticated_user, session_id):
     try:
         svc = current_app.container.session_service
         chat = svc.get_chat(run_id=session_id)
@@ -268,11 +280,13 @@ def get_session_chat(session_id):
 
 
 @sessions_bp.route("/session.status.get", methods=["GET"])
+@with_authenticated_user
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
 @bind_session_id_arg
-def get_session_status(session_id):
+@require_session_access
+def get_session_status(authenticated_user, session_id):
     try:
         svc = current_app.container.session_service
         status = svc.get_status(run_id=session_id)
@@ -380,16 +394,17 @@ def get_user_blueprints(identity):
 
 
 @sessions_bp.route("/session.delete", methods=["DELETE"])
+@with_authenticated_user
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
 @bind_session_id_arg
-def delete_session(session_id):
+@require_session_access
+def delete_session(authenticated_user, session_id):
     """
     Delete a session by session_id.
     Returns success: true if deleted, false if not found.
     """
-    # TODO: Add authorization check - verify user has permission to delete this session
     try:
         svc = current_app.container.session_service
         deleted = svc.delete(run_id=session_id)
@@ -401,11 +416,13 @@ def delete_session(session_id):
 # ---------- Stream monitoring ----------
 
 @sessions_bp.route("/session.stream.status", methods=["GET"])
+@with_authenticated_user
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
 @bind_session_id_arg
-def get_stream_status(session_id):
+@require_session_access
+def get_stream_status(authenticated_user, session_id):
     """Return metadata about a session's event stream."""
     monitor = current_app.container.channel_factory.create_monitor()
     if monitor is None or not monitor.is_available():
@@ -420,13 +437,25 @@ def get_stream_status(session_id):
 
 
 @sessions_bp.route("/session.stream.active", methods=["GET"])
-def list_active_streams():
-    """List all currently active (running) session streams."""
+@with_authenticated_user
+def list_active_streams(authenticated_user):
+    """List the caller's active (running) session streams; admins see all."""
     monitor = current_app.container.channel_factory.create_monitor()
     if monitor is None or not monitor.is_available():
         return jsonify({"error": "Stream monitoring not available — no distributed channel configured"}), 501
     try:
         active = monitor.list_active()
+        if not is_admin_user(authenticated_user):
+            container = current_app.container
+            owners = [Identity(type=IdentityType.USER, id=authenticated_user)]
+            owners += [
+                Identity(type=IdentityType.TEAM, id=team_id)
+                for team_id in container.identity_provider.get_team_ids(authenticated_user)
+            ]
+            allowed = set()
+            for owner in owners:
+                allowed.update(container.session_repo.list_runs(owner))
+            active = [sid for sid in active if sid in allowed]
         return jsonify({"active_sessions": active, "count": len(active)}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -442,6 +471,7 @@ def list_active_streams():
     "modified_args": fields.Dict(data_key="modifiedArgs", load_default=lambda: {}),
 })
 @bind_session_id_arg
+@require_session_access
 def submit_approval(identity, session_id, request_id, decision, feedback, modified_args):
     """Submit a human decision for a pending HITL approval request.
 
@@ -485,6 +515,7 @@ def submit_approval(identity, session_id, request_id, decision, feedback, modifi
     "action": fields.Str(data_key="action", required=True),
 })
 @bind_session_id_arg
+@require_session_access
 def add_approval_rule(identity, session_id, node_uid, tool_name, action):
     """Add or clear an auto-approval rule for this session.
 
@@ -541,6 +572,7 @@ def add_approval_rule(identity, session_id, node_uid, tool_name, action):
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
 @bind_session_id_arg
+@require_session_access
 def get_approval_rules(identity, session_id):
     """Return the current auto-approval rules for this session."""
     svc = current_app.container.session_service
@@ -625,11 +657,13 @@ def _remove_tool_from_overrides(overrides, node_uid, tool_name):
 
 
 @sessions_bp.route("/session.subscribe", methods=["GET"])
+@with_authenticated_user
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
 @bind_session_id_arg
-def subscribe_session(session_id):
+@require_session_access
+def subscribe_session(authenticated_user, session_id):
     """
     Stream session events as NDJSON.
     Late-joining clients receive the full event history (replay)
@@ -664,6 +698,7 @@ def subscribe_session(session_id):
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
 @bind_session_id_arg
+@require_session_access
 def get_session_meta(authenticated_user, session_id):
     """Return the full metadata object for a session.
 
@@ -734,6 +769,10 @@ def update_session_meta(authenticated_user):
         if not session_id:
             return jsonify({"error": "sessionId is required"}), 400
 
+        _, denied = authorize_session(session_id)
+        if denied is not None:
+            return denied
+
         raw_meta = body.get("meta")
         if raw_meta is None:
             return jsonify({"error": "meta is required"}), 400
@@ -750,9 +789,13 @@ def update_session_meta(authenticated_user):
         # new list, clear for users present in Redis but absent from the list.
         collab = getattr(current_app.container, "collaboration_service", None)
         if collab is not None and collab.is_available() and meta.typing_users is not None:
-            new_typing = set(meta.typing_users)
+            # Only the caller's own typing state can be changed here.
+            new_typing = {u for u in meta.typing_users if u.casefold() == authenticated_user.casefold()}
             try:
-                current_typing = set(collab.get_typing_users(session_id) or [])
+                current_typing = {
+                    u for u in (collab.get_typing_users(session_id) or [])
+                    if u.casefold() == authenticated_user.casefold()
+                }
                 for user_id in current_typing - new_typing:
                     collab.clear_typing(session_id=session_id, user_id=user_id)
             except Exception:
