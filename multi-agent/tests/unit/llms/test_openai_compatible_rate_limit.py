@@ -10,7 +10,10 @@ from mas.elements.llms.common.exceptions import (
     LLMRateLimitError,
     parse_retry_after,
 )
-from mas.elements.llms.openai_compatible.openai_compatible import OpenAICompatibleLLM, build_http_client
+from mas.elements.llms.openai_compatible.openai_compatible import (
+    OpenAICompatibleLLM,
+    build_http_client,
+)
 
 QUOTA_BODY = {
     "error": "quota_exceeded",
@@ -195,7 +198,9 @@ class TestStructuredErrorPropagation:
         assert "retry in 9s" in msg.content
 
     def test_stream_agent_error_event_has_typed_fields(self):
-        from mas.elements.nodes.common.capabilities.agent_capable import AgentCapableMixin
+        from mas.elements.nodes.common.capabilities.agent_capable import (
+            AgentCapableMixin,
+        )
 
         fields = AgentCapableMixin._error_event_fields(LLMRateLimitError("x", 4))
         assert fields == {"error_type": "rate_limited", "retry_after": 4}
