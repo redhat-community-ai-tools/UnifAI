@@ -12,6 +12,7 @@ Design Principles:
 - SOLID compliance: Clean dependencies and interfaces
 """
 
+import logging
 import time
 import asyncio
 from dataclasses import dataclass
@@ -40,6 +41,8 @@ from mas.elements.nodes.common.agent.constants import (
 )
 from mas.core.contracts import SupportsStreaming
 from global_utils.utils.async_bridge import get_async_bridge
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=SupportsStreaming)
 
@@ -383,6 +386,28 @@ class AgentCapableMixin(Generic[T]):
         
         return iterator
     
+    WRAP_UP_PROMPT = (
+        "You have used all the tool calls available for this request. Do not call any tool. "
+        "Answer the user now using only what you have gathered so far. If it does not contain "
+        "what was asked, say so plainly and mention what you looked for."
+    )
+
+    def _wrap_up_answer(self, iterator, strategy) -> Optional[str]:
+        """One tool-less model call asking for a final answer once the rounds are exhausted.
+
+        Returns the answer, or ``None`` when the call fails or comes back empty, in
+        which case the caller keeps the plain "no output" outcome.
+        """
+        try:
+            context = strategy.build_context(list(iterator.messages))
+            context.append(ChatMessage(role=Role.USER, content=self.WRAP_UP_PROMPT))
+            reply = self.chat(context)
+        except Exception:  # noqa: BLE001 - the wrap-up is best effort
+            logger.warning("agent wrap-up call failed", exc_info=True)
+            return None
+        text = (getattr(reply, "content", "") or "").strip()
+        return text or None
+
     def run_agent(
         self,
         messages: List[ChatMessage],
@@ -420,7 +445,8 @@ class AgentCapableMixin(Generic[T]):
         }
         
         start_time = time.time()
-        
+        wrapped_up = False
+
         try:
             for step in iterator:
                 if config.return_intermediate:
@@ -447,10 +473,18 @@ class AgentCapableMixin(Generic[T]):
                         result["success"] = False
                         break
             
-            # If no output set and no error, agent completed without output
+            # If no output set and no error, the agent ran out of rounds (or stopped)
+            # without answering: ask the model for a final answer from what it gathered
+            # before giving up, so the user gets an explanation instead of nothing.
             if result["output"] is None and not result["error"]:
-                result["output"] = "Agent completed without producing output"
-                result["success"] = False
+                wrapped = self._wrap_up_answer(iterator, strategy)
+                if wrapped:
+                    result["output"] = wrapped
+                    result["success"] = True
+                    wrapped_up = True
+                else:
+                    result["output"] = "Agent completed without producing output"
+                    result["success"] = False
                 
         except Exception as e:
             result["error"] = f"Unexpected error: {e}"
@@ -464,6 +498,8 @@ class AgentCapableMixin(Generic[T]):
             "strategy": strategy.strategy_name,
             "execution_mode": config.execution_mode.value
         }
+        if wrapped_up:
+            result["metadata"]["wrapped_up"] = True
 
         # Surface the last LLM response metadata (e.g. serving provider,
         # response id) on the execution record, unchanged.
