@@ -15,10 +15,10 @@ class FakeStore:
     def __init__(self) -> None:
         self.docs: List[dict] = []
 
-    def insert_if_absent(self, scope_id, memory_id, text, kind):
+    def insert_if_absent(self, scope_id, memory_id, text, kind, provenance):
         if any(d["scope_id"] == scope_id and d["memory_id"] == memory_id for d in self.docs):
             return False
-        self.docs.append({"scope_id": scope_id, "memory_id": memory_id, "text": text, "kind": kind})
+        self.docs.append({"scope_id": scope_id, "memory_id": memory_id, "text": text, "kind": kind, **provenance})
         return True
 
     def get_many(self, scope_id, memory_ids):
@@ -26,6 +26,26 @@ class FakeStore:
 
     def list_recent(self, scope_id, limit):
         return [d for d in reversed(self.docs) if d["scope_id"] == scope_id][:limit]
+
+
+class FakeFacts:
+    def __init__(self) -> None:
+        self.docs: dict = {}
+
+    def set(self, scope_id, key, value, provenance):
+        created = (scope_id, key) not in self.docs
+        prev = self.docs.get((scope_id, key), {})
+        self.docs[(scope_id, key)] = {
+            "scope_id": scope_id, "key": key, "value": value, **provenance,
+            "created_at": prev.get("created_at", "t0"), "updated_at": "t%d" % len(self.docs),
+        }
+        return created
+
+    def get(self, scope_id, key):
+        return self.docs.get((scope_id, key))
+
+    def list(self, scope_id, limit):
+        return [d for (sid, _), d in self.docs.items() if sid == scope_id][:limit]
 
 
 class FakeIndex:
@@ -62,12 +82,12 @@ class FakeEmbedder:
 
 @pytest.fixture
 def backend():
-    return FakeStore(), FakeIndex(), FakeEmbedder()
+    return FakeStore(), FakeIndex(), FakeEmbedder(), FakeFacts()
 
 
 def make_tool(scope, backend, **kw):
-    store, index, embedder = backend
-    return MemoryTool(scope, store, index, embedder, **kw)
+    store, index, embedder, facts = backend
+    return MemoryTool(scope, store, index, embedder, facts=facts, **kw)
 
 
 def test_write_then_read_round_trip(backend):
@@ -116,7 +136,7 @@ def test_vector_hit_missing_from_scoped_store_is_dropped(backend):
 
 
 def test_dedup_same_scope_ignores_case_and_whitespace(backend):
-    store, index, _ = backend
+    store, index = backend[0], backend[1]
     tool = make_tool("p1", backend)
     assert tool.run(operation="write", text="Uses  Postgres")["created"] is True
     assert tool.run(operation="write", text="uses postgres ")["created"] is False
@@ -124,7 +144,7 @@ def test_dedup_same_scope_ignores_case_and_whitespace(backend):
 
 
 def test_same_text_in_two_scopes_is_stored_twice(backend):
-    store, _, _ = backend
+    store = backend[0]
     make_tool("a", backend).run(operation="write", text="same text")
     assert make_tool("b", backend).run(operation="write", text="same text")["created"] is True
     assert len(store.docs) == 2
@@ -132,7 +152,7 @@ def test_same_text_in_two_scopes_is_stored_twice(backend):
 
 
 def test_embedding_failure_writes_nothing_and_reports_error(backend):
-    store, index, embedder = backend
+    store, index, embedder, _ = backend
 
     def boom(_):
         raise RuntimeError("embedding service down")
@@ -162,10 +182,89 @@ def test_empty_scope_is_rejected(backend):
 
 
 def test_factory_builds_tool_from_config_with_injected_backends(backend):
-    store, index, embedder = backend
+    store, index, embedder, _ = backend
     cfg = MemoryToolConfig(scope_id="p9", top_k=3)
     factory = MemoryToolFactory()
     assert factory.accepts(cfg, "memory")
-    tool = factory.create(cfg, store=store, index=index, embedder=embedder)
+    tool = factory.create(cfg, store=store, index=index, embedder=embedder, facts=FakeFacts())
     tool.run(operation="write", text="Budget note")
     assert store.docs[0]["scope_id"] == "p9"
+
+
+# --- structured facts and provenance -------------------------------------------------------------
+
+def test_fact_round_trip_and_json_values(backend):
+    tool = make_tool("p1", backend)
+    value = {"version": "4.22", "nodes": [1, 2, 3], "ha": True, "note": None}
+    assert tool.run(operation="set_fact", key="platform", value=value)["created"] is True
+    out = tool.run(operation="get_fact", key="platform")
+    assert out["success"] is True and out["facts"][0]["value"] == value
+    assert [f["key"] for f in tool.run(operation="list_facts")["facts"]] == ["platform"]
+    assert tool.run(operation="set_fact", key="n", value=None)["success"] is True  # JSON null is a value
+
+
+def test_set_fact_upserts_last_value_wins(backend):
+    tool = make_tool("p1", backend)
+    tool.run(operation="set_fact", key="k", value=1)
+    assert tool.run(operation="set_fact", key="k", value=2)["created"] is False
+    facts = tool.run(operation="list_facts")["facts"]
+    assert len(facts) == 1 and facts[0]["value"] == 2
+    assert facts[0]["created_at"] == "t0"
+
+
+def test_fact_scope_isolation(backend):
+    a, b = make_tool("a", backend), make_tool("b", backend)
+    a.run(operation="set_fact", key="k", value="from-a")
+    b.run(operation="set_fact", key="k", value="from-b")
+    assert a.run(operation="get_fact", key="k")["facts"][0]["value"] == "from-a"
+    assert [f["value"] for f in b.run(operation="list_facts")["facts"]] == ["from-b"]
+    only_a = make_tool("a", backend)
+    make_tool("c", backend).run(operation="set_fact", key="secret", value=1)
+    assert only_a.run(operation="get_fact", key="secret", scope_id="c")["success"] is False
+
+
+def test_get_missing_fact_reports_error(backend):
+    out = make_tool("p1", backend).run(operation="get_fact", key="nope")
+    assert out["success"] is False and "nope" in out["error"]
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"operation": "set_fact", "value": 1},                          # no key
+    {"operation": "set_fact", "key": "  ", "value": 1},
+    {"operation": "set_fact", "key": "k"},                          # no value
+    {"operation": "set_fact", "key": "k", "value": float("nan")},   # not JSON
+    {"operation": "set_fact", "key": "k", "value": {1, 2}},         # set is not JSON
+    {"operation": "set_fact", "key": "k", "value": "x" * 70000},    # too large
+    {"operation": "set_fact", "key": "k" * 201, "value": 1},
+    {"operation": "get_fact"},
+])
+def test_invalid_fact_calls_are_rejected_and_store_nothing(backend, kwargs):
+    out = make_tool("p1", backend).run(**kwargs)
+    assert out["success"] is False and out["error"]
+    assert backend[3].docs == {}
+
+
+def test_fact_provenance_from_bound_context_and_config(backend):
+    tool = make_tool("p1", backend, author="alice", classification="C2")
+    tool.bind_context(session_id="s-1", agent_id="agent-7")
+    tool.run(operation="set_fact", key="k", value=1)
+    f = tool.run(operation="get_fact", key="k")["facts"][0]
+    assert (f["author"], f["agent"], f["session_id"], f["classification"]) == ("alice", "agent-7", "s-1", "C2")
+
+
+def test_memory_provenance_and_defaults_to_none(backend):
+    unbound = make_tool("p1", backend)
+    unbound.run(operation="write", text="plain note")
+    m = unbound.run(operation="read")["memories"][0]
+    assert "author" not in m and "agent" not in m and "session_id" not in m  # None fields are omitted
+    bound = make_tool("p2", backend)
+    bound.bind_context(session_id="s-2", agent_id="a-2")
+    bound.run(operation="write", text="bound note")
+    m = bound.run(operation="read")["memories"][0]
+    assert m["agent"] == "a-2" and m["session_id"] == "s-2"
+
+
+def test_fact_operations_fail_cleanly_without_fact_store(backend):
+    store, index, embedder, _ = backend
+    out = MemoryTool("p1", store, index, embedder).run(operation="get_fact", key="k")
+    assert out["success"] is False and "not configured" in out["error"]
