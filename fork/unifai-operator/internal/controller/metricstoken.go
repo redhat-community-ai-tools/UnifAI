@@ -6,7 +6,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -18,6 +21,10 @@ const (
 	MetricsScraper = "unifai-operator-metrics-scraper"
 	// MetricsTokenSecret holds the scraper token referenced by the operator ServiceMonitor.
 	MetricsTokenSecret = "unifai-operator-metrics-token"
+	// MetricsMonitor is the operator ServiceMonitor shipped in the bundle.
+	MetricsMonitor = "unifai-operator-controller-manager-metrics-monitor"
+	// tokenReadyAnnotation is set on the ServiceMonitor once its token Secret exists.
+	tokenReadyAnnotation = "unifai.startx.fr/token-ready"
 )
 
 // MetricsToken keeps the scraper token Secret of the operator ServiceMonitor. A token Secret shipped in the bundle
@@ -74,5 +81,20 @@ func (m *MetricsToken) ensure(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	log.FromContext(ctx).Info("created the metrics scraper token Secret", "namespace", m.Namespace)
-	return true, nil
+	return true, m.touchMonitor(ctx)
+}
+
+// touchMonitor annotates the ServiceMonitor: prometheus-operator skips a ServiceMonitor whose token Secret is missing
+// and does not look at it again when the Secret appears, only when the ServiceMonitor itself changes.
+func (m *MetricsToken) touchMonitor(ctx context.Context) error {
+	sm := &unstructured.Unstructured{}
+	sm.SetGroupVersionKind(schema.GroupVersionKind{Group: "monitoring.coreos.com", Version: "v1", Kind: "ServiceMonitor"})
+	sm.SetNamespace(m.Namespace)
+	sm.SetName(MetricsMonitor)
+	patch := []byte(`{"metadata":{"annotations":{"` + tokenReadyAnnotation + `":"` + time.Now().UTC().Format(time.RFC3339) + `"}}}`)
+	err := m.Client.Patch(ctx, sm, client.RawPatch(types.MergePatchType, patch))
+	if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+		return nil // no ServiceMonitor (not installed by OLM) or no monitoring stack
+	}
+	return err
 }

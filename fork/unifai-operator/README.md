@@ -213,7 +213,9 @@ The manager metrics endpoint (`:8443/metrics`, HTTPS, token reviewed) adds to th
 | `unifai_operator_helm_apply_seconds` | release, result | Helm install/upgrade duration |
 | `unifai_operator_keycloak_repairs_total` | namespace | restarts of a managed Keycloak left unready |
 
-The bundle ships a ServiceMonitor for these metrics (see "Install with OLM").
+The bundle ships a ServiceMonitor for these metrics (see "Install with OLM"). In Prometheus the `namespace` label is the
+operator's (target) namespace: the stack namespace of `unifai_operator_stack_ready` and
+`unifai_operator_keycloak_repairs_total` is `exported_namespace`.
 
 ## Build and release
 

@@ -36,7 +36,7 @@ are referenced, not duplicated. No secrets, no unpublished vulnerability details
 |---|---|---|---|
 | R-201 | envtest for Provider, Retriever, Sandbox, Template; unit tests for `internal/unifai` (client, refs) | done (0.1.19) | operator |
 | R-202 | Kubernetes Events on phase changes and errors (`EventRecorder` in `controller.Base`) | done (0.1.19) | operator |
-| R-203 | Custom metrics (0.1.19) and operator ServiceMonitor scraped by user-workload monitoring: operator moved to its own namespace `unifai-operator` (0.1.21) | doing | operator |
+| R-203 | Custom metrics (0.1.19); operator moved to namespace `unifai-operator` with a ServiceMonitor scraped by user-workload monitoring (0.1.21, demo333 2026-10-22) | done | operator |
 | R-204 | e2e: Schedule, Template (done, 0.1.19), RAGPipeline with `E2E_FULL=1`; periodic `E2E_FULL=1 E2E_KEYCLOAK=1` run | doing | operator |
 | R-205 | Tests of the UnifaiStack reconciler (post-render, plan) | todo | operator |
 | R-206 | Canary used to run the previous release image (fixed in 0.1.18; e2e now checks the operator version) | done | operator |
