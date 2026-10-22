@@ -12,6 +12,7 @@ from .models.blueprint import (
     BlueprintSpec
 )
 from mas.resources.ports import ResourceReader
+from .exceptions import UnresolvedResourceEntryError
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -112,8 +113,20 @@ class BlueprintResolver:
     def _stash_inline(
         self, cat: ResourceCategory, res: BlueprintResource, session: _ResolveSession,
     ) -> None:
-        """Put an inline/frozen entry straight into the bucket."""
+        """Put an inline/frozen entry straight into the bucket.
+
+        An entry with a plain id and no config cannot be built (the plain id only
+        names a resource defined inline); it is reported as such rather than
+        crashing with a pydantic error. Tolerant resolution records it as a
+        broken ref instead of raising.
+        """
         concrete = res.config  # already a validated Pydantic model
+        if concrete is None:
+            err = UnresolvedResourceEntryError(cat.value, res.rid.ref)
+            if session.strict:
+                raise err
+            session.broken_refs[res.rid.ref] = err.message
+            return
         session.bucket.setdefault(cat.value, []).append(
             ResourceSpec[type(concrete)](
                 rid=res.rid, name=res.name, type=res.type, config=concrete
@@ -159,3 +172,11 @@ class BlueprintResolver:
         """
         for child_rid in RefWalker.external_rids(node):
             self._walk_live(child_rid, None, session)
+
+
+def check_inline_entries(draft: BlueprintDraft) -> None:
+    """Fail early when a resource entry is neither inline (has a config) nor ``$ref:``."""
+    for cat in ResourceCategory:
+        for res in getattr(draft, cat.value):
+            if res.config is None and not res.rid.is_external_ref():
+                raise UnresolvedResourceEntryError(cat.value, res.rid.ref)

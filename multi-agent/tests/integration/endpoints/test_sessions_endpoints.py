@@ -219,3 +219,36 @@ class TestExecuteSessionBuildFailure:
 
         assert resp.mimetype == "application/x-ndjson"
         assert json.loads(resp.get_data(as_text=True).splitlines()[0]) == {"event": "a"}
+
+
+class TestSubmitSession:
+    BODY = {"sessionId": "s-1", "inputs": {"query": "hi"}}
+
+    @pytest.fixture(autouse=True)
+    def _bypass_session_checks(self, monkeypatch) -> None:
+        monkeypatch.setattr("inbound.flask.session_access.authorize_session", lambda sid: (Mock(), None))
+        monkeypatch.setattr("inbound.flask.endpoints.sessions._check_session_busy", lambda *a, **k: None)
+        monkeypatch.setattr("inbound.flask.endpoints.sessions._bind_forwarded_identity", lambda *a, **k: None)
+
+    def _post(self, client, headers):
+        return client.post("/api/sessions/user.session.submit", json=self.BODY, headers=headers)
+
+    def test_normal_path_returns_202(self, client, user_headers, session_service) -> None:
+        session_service.submit.return_value = "wf-1"
+
+        resp = self._post(client, user_headers)
+
+        assert resp.status_code == 202
+        assert resp.get_json() == {"sessionId": "s-1", "workflowId": "wf-1"}
+
+    def test_build_failure_returns_structured_error_without_config(self, client, user_headers, session_service) -> None:
+        session_service.submit.side_effect = SessionBuildError("s-1", "Session build failed (PluginConfigurationError): bad tool")
+
+        resp = self._post(client, user_headers)
+
+        assert resp.status_code == 500
+        assert resp.get_json() == {
+            "error": "Session build failed (PluginConfigurationError): bad tool",
+            "error_type": "session_build_failed",
+            "sessionId": "s-1",
+        }

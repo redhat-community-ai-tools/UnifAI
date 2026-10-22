@@ -341,6 +341,8 @@ Ports: `AuthStrategy`, `CredentialStore`, `ServerConfigStore`, `HttpClient`, `Fl
 
 `Ref` hierarchy: NodeRef, LLMRef, ToolRef, ProviderRef, RetrieverRef, ConditionRef. `RefWalker` resolves `$ref:resource_id` during Draft → Spec transformation.
 
+**Reference forms.** A `Ref` is either `$ref:<id>` (a stored resource, fetched by the resolver) or a plain `<id>` naming a resource defined inline, with a `config`, in the same blueprint. Both resolve through the session registry, and the distributed deployment extractor ships both (plus transitive dependencies) to the Temporal worker. A resource-list entry with a plain id and no `config` cannot be built: saving it is rejected with a 400 that tells you to write `$ref:<id>`, and validation reports it as a failing element.
+
 **blueprints — Workflow Definitions**
 
 Port: `BlueprintRepository`. Service: `BlueprintService` — save_draft, load_resolved, validate. Models: `BlueprintDraft` ($ref) → `BlueprintSpec` (resolved) → `GraphPlan`. Central to the build and execution lifecycle.

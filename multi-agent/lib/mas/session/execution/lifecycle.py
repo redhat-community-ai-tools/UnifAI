@@ -14,7 +14,9 @@ from mas.session.repository.repository import SessionRepository
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.status import SessionStatus
 from mas.session.domain.constants import CANCELLED_TAG, CANCELLED_STATUS_MESSAGE
-from mas.session.domain.exceptions import SessionAlreadyCancelledError
+from mas.session.domain.exceptions import (
+    BUILD_ERROR_MESSAGE_LIMIT, SessionAlreadyCancelledError, SessionBuildError,
+)
 
 
 class SessionLifecycle:
@@ -74,6 +76,11 @@ class SessionLifecycle:
             return
         record.run_context = record.run_context.mark_finished()
         record.status = SessionStatus.FAILED
+        if isinstance(error, SessionBuildError):
+            # Same secret-free shape the foreground build failure stores.
+            message = error.message[:BUILD_ERROR_MESSAGE_LIMIT]
+            record.metadata.status_message = message
+            setattr(record.metadata, "error", {"type": error.error_type, "message": message})
         self._repo.save(record)
 
     def cancel(

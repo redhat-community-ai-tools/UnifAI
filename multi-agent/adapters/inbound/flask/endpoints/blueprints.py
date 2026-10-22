@@ -7,6 +7,7 @@ from werkzeug.exceptions import BadRequest
 from typing import Optional
 from mas.core.identity import Identity
 from mas.blueprints.exceptions import (
+    UnresolvedResourceEntryError,
     BlueprintNotFoundError,
     BlueprintAccessDeniedError,
     BlueprintSaveError,
@@ -156,6 +157,8 @@ def available_resolved_doc_list(identity, blueprint_id=None, skip=0, limit=100, 
 
     except (BlueprintNotFoundError, BlueprintAccessDeniedError):
         return jsonify({"error": _NOT_FOUND_MSG}), 404
+    except UnresolvedResourceEntryError as e:
+        return jsonify({"error": str(e)}), 422
     except Exception as e:
         # Referenced-resource-not-found is already handled without raising
         # (see BlueprintResolver.resolve_tolerant) — any KeyError reaching
@@ -201,7 +204,8 @@ def save_blueprint(identity, blueprint_raw=None, metadata=None):
 
     except BlueprintDuplicateNameError as e:
         return jsonify({"status": "error", "error": str(e)}), 409
-    except (BadRequest, InvalidMetadataKeysError, PromptShortcutsValidationError) as e:
+    except (BadRequest, InvalidMetadataKeysError, PromptShortcutsValidationError,
+            UnresolvedResourceEntryError) as e:
         return jsonify({"status": "error", "error": str(e)}), 400
     except BlueprintSaveError as e:
         logger.exception("Failed to save blueprint for identity %s", identity.id)
@@ -243,7 +247,7 @@ def update_blueprint(identity, blueprint_id, blueprint_raw):
         return jsonify({"status": "error", "error": "You do not have permission to modify this blueprint"}), 403
     except BlueprintNotFoundError as e:
         return jsonify({"status": "error", "error": str(e)}), 404
-    except (BadRequest, PromptShortcutsValidationError) as e:
+    except (BadRequest, PromptShortcutsValidationError, UnresolvedResourceEntryError) as e:
         return jsonify({"status": "error", "error": str(e)}), 400
     except Exception as e:
         logger.exception(f"Unexpected error updating blueprint {blueprint_id}")

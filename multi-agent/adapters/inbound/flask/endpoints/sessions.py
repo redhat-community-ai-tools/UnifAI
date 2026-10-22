@@ -234,6 +234,8 @@ def submit_user_session(identity, session_id, inputs, scope, session_type):
             logged_in_user=acting_user(identity),
         )
         return jsonify({"sessionId": session_id, "workflowId": workflow_id}), 202
+    except SessionBuildError as e:
+        return _session_build_failed_response(e), 500
     except TypeError as e:
         return jsonify({"error": str(e)}), 400
     except ValueError as e:

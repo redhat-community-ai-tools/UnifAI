@@ -123,6 +123,8 @@ class FailSessionParams(BaseModel):
     """Input to the fail_session activity."""
     run_id: str
     error_message: str = ""
+    # Set to "session_build_failed" when a node could not be built on the worker.
+    error_type: Optional[str] = None
     request_id: Optional[str] = None
 
 
