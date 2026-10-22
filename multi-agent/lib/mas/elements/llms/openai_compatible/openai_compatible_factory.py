@@ -24,7 +24,7 @@ class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatib
             tracing = element_deps.tracing_service if element_deps else None
 
             forwarder = None
-            if cfg.forward_user_token or cfg.default_headers:
+            if cfg.forward_user_token or cfg.default_headers or cfg.metadata_lookup_url:
                 source = getattr(element_deps, "identity_token_source", None) or NullIdentityTokenSource()
                 holder = getattr(element_deps, "execution_ctx", None)
                 forwarder = IdentityForwarder(source, holder)
@@ -35,6 +35,10 @@ class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatib
                 base_url=str(cfg.base_url),
                 temperature=cfg.temperature,
                 max_tokens=cfg.max_tokens,
+                max_retries=cfg.max_retries,
+                timeout_seconds=cfg.timeout_seconds,
+                metadata_lookup_url=cfg.metadata_lookup_url,
+                metadata_lookup_timeout=cfg.metadata_lookup_timeout,
                 tracing=tracing,
                 forwarder=forwarder,
                 forward_user_token=cfg.forward_user_token,

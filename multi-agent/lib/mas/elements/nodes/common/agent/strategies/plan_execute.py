@@ -24,6 +24,7 @@ from ..constants import (
 )
 from ..phases.phase_protocols import PhaseState, WorkPlanStatus
 from ..phases.unified_phase_provider import PhaseProvider  # Uses PhaseProvider abstraction
+from mas.elements.llms.common.exceptions import LLMRateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +237,19 @@ class PlanAndExecuteStrategy(AgentStrategy):
                 }
             )]
         
+        except LLMRateLimitError as e:
+            # Expected, non-fatal condition: terminal ERROR step, no retry feedback.
+            return [AgentStep(
+                StepType.ERROR,
+                e,
+                metadata={
+                    "phase": self._current_phase,
+                    "error_type": "rate_limited",
+                    "retry_after": e.retry_after,
+                    "recoverable": False,
+                }
+            )]
+
         except Exception as e:
             # Fatal strategy error
             import traceback
