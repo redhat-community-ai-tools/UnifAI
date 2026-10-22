@@ -22,14 +22,17 @@ from functools import wraps
 from typing import Any, Callable
 
 from flask import current_app, g, jsonify, request, session
+from werkzeug.exceptions import HTTPException
 
 from global_utils.constants import INTERNAL_AUTH_HEADER
 from global_utils.internal_auth import trusted_header_user
 from global_utils.flask.decorators import validate_session, G_IDENTITY_SESSION
 from global_utils.flask.correlation import bind_session_id
+from mas.blueprints.exceptions import BlueprintAccessDeniedError
 from mas.core.caller_scope import CallerScope
 from mas.core.identity import Identity, resolve_identity
 from mas.core.identity.ports import IdentityProvider
+from mas.resources.errors import ResourceAccessDeniedError
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +65,23 @@ def _identity_provider() -> IdentityProvider:
 
 def _get_redis_store():
     return current_app.container.redis_kv_store
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Uniform "forbidden" response
+# ──────────────────────────────────────────────────────────────────────────────
+
+#: Domain exceptions meaning "the caller is authenticated but may not act on
+#: this object". They are a client error (403), never a server error.
+ACCESS_DENIED_ERRORS = (ResourceAccessDeniedError, BlueprintAccessDeniedError)
+
+
+def forbidden_response() -> tuple[Any, int]:
+    """Uniform 403 body for object-level access denials.
+
+    Deliberately carries no detail about the object (id, owner, existence).
+    """
+    return jsonify({"error": "Forbidden", "error_type": "ACCESS_CONTROL_ERROR"}), 403
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -189,6 +209,12 @@ def require_session_identity(f: Callable) -> Callable:
 
         except ValueError as e:
             return jsonify({"error": str(e), "error_type": "INVALID_IDENTITY"}), 400
+        except HTTPException:
+            # Let Flask render deliberate HTTP errors (e.g. request-validation
+            # 4xx) instead of masking them as a 500.
+            raise
+        except ACCESS_DENIED_ERRORS:
+            return forbidden_response()
         except Exception:
             logger.exception("Identity resolution failed unexpectedly")
             return jsonify({
@@ -349,6 +375,10 @@ def require_admin_access(f: Callable[..., Any]) -> Callable[..., Any]:
                 }), 403
 
             return f(*args, **kwargs)
+        except HTTPException:
+            raise
+        except ACCESS_DENIED_ERRORS:
+            return forbidden_response()
         except Exception:
             logger.exception("Admin access check failed unexpectedly")
             return jsonify({

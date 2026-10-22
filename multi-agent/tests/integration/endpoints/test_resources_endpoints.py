@@ -282,3 +282,87 @@ class TestResourceCards:
         _, kwargs = resources_service.get_cards.call_args
         assert kwargs["rids"] == ["r1"]
         assert kwargs["caller"].is_admin is False
+
+
+FORBIDDEN_BODY = {"error": "Forbidden", "error_type": "ACCESS_CONTROL_ERROR"}
+
+
+class TestUniformForbiddenBody:
+    """Object-level denials are a uniform 403 with no detail about the object."""
+
+    def test_update_and_delete_denied_use_uniform_body(
+        self, client, user_headers, resources_service,
+    ):
+        resources_service.guard_write_access.side_effect = ResourceAccessDeniedError("secret-rid")
+
+        upd = client.put(
+            "/api/resources/resource.update",
+            json={"resourceId": "secret-rid", "config": {}},
+            headers=user_headers,
+        )
+        dele = client.delete(
+            "/api/resources/resource.delete?resourceId=secret-rid",
+            headers=user_headers,
+        )
+
+        for resp in (upd, dele):
+            assert resp.status_code == 403
+            assert resp.get_json() == FORBIDDEN_BODY
+            assert "secret-rid" not in resp.get_data(as_text=True)
+        resources_service.update.assert_not_called()
+        resources_service.delete.assert_not_called()
+
+    def test_validate_denied_returns_403_not_500(
+        self, client, user_headers, resources_service,
+    ):
+        # ResourceAccessDeniedError is a RuntimeError subclass: it must not be
+        # swallowed by the generic RuntimeError -> 500 branch.
+        resources_service.validate_resource.side_effect = ResourceAccessDeniedError("r1")
+
+        resp = client.post(
+            "/api/resources/resource.validate",
+            json={"resourceId": "r1"},
+            headers=user_headers,
+        )
+
+        assert resp.status_code == 403
+        assert resp.get_json() == FORBIDDEN_BODY
+
+    def test_denial_escaping_an_endpoint_is_mapped_by_the_decorator(
+        self, app, client, user_headers,
+    ):
+        """Defense in depth: an access-denied error that a route forgot to
+        catch must surface as 403, never as the decorator's 500."""
+        from inbound.flask.decorators import with_require_identity_authorization
+        from mas.blueprints.exceptions import BlueprintAccessDeniedError
+
+        @app.route("/probe/resource")
+        @with_require_identity_authorization
+        def _probe_resource(identity):
+            raise ResourceAccessDeniedError("secret-rid")
+
+        @app.route("/probe/blueprint")
+        @with_require_identity_authorization
+        def _probe_blueprint(identity):
+            raise BlueprintAccessDeniedError("secret-bp", "bob")
+
+        for path in ("/probe/resource", "/probe/blueprint"):
+            resp = client.get(path, headers=user_headers)
+            assert resp.status_code == 403
+            assert resp.get_json() == FORBIDDEN_BODY
+
+    def test_request_validation_error_is_not_a_500(
+        self, client, user_headers,
+    ):
+        resp = client.delete("/api/resources/resource.delete", headers=user_headers)
+
+        assert resp.status_code == 422
+
+    def test_owner_and_admin_still_succeed(
+        self, client, user_headers, admin_headers, resources_service,
+    ):
+        for headers in (user_headers, admin_headers):
+            resp = client.delete(
+                "/api/resources/resource.delete?resourceId=r1", headers=headers,
+            )
+            assert resp.status_code == 200

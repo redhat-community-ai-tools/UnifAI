@@ -14,6 +14,7 @@ from inbound.flask.decorators import (
     with_require_identity_authorization,
     with_authenticated_user,
     resolve_caller_scope,
+    forbidden_response,
     G_IDENTITY_USERNAME,
 )
 from mas.core.identity import Identity
@@ -190,8 +191,8 @@ def update_resource(identity: Identity, resource_id: str, config: dict, name: st
         }), 409
     except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
-    except ResourceAccessDeniedError as e:
-        return jsonify({"error": str(e)}), 403
+    except ResourceAccessDeniedError:
+        return forbidden_response()
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except ValueError as e:
@@ -225,8 +226,8 @@ def delete_resource(identity: Identity, resource_id: str) -> tuple[Response, int
         }), 409
     except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
-    except ResourceAccessDeniedError as e:
-        return jsonify({"error": str(e)}), 403
+    except ResourceAccessDeniedError:
+        return forbidden_response()
     except ResourceInUseError as e:
         return jsonify({"error": str(e),
                         "blueprints": e.by_blueprints,
@@ -270,6 +271,8 @@ def validate_resource(identity: Identity, resource_id: str, user_id: str, timeou
         return jsonify(result.model_dump()), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ResourceAccessDeniedError:
+        return forbidden_response()
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
@@ -325,6 +328,8 @@ def validate_resources(identity: Identity, resource_ids: list[str], user_id: str
             credential_user_id=authenticated_user,
         )
         return jsonify([r.model_dump() for r in results]), 200
+    except ResourceAccessDeniedError:
+        return forbidden_response()
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
@@ -349,6 +354,8 @@ def get_resource_card(identity: Identity, resource_id: str) -> tuple[Response, i
         return jsonify(card.model_dump(mode="json")), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ResourceAccessDeniedError:
+        return forbidden_response()
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
@@ -381,6 +388,8 @@ def get_resource_cards(identity: Identity, resource_ids: list[str]) -> tuple[Res
         }), 200
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ResourceAccessDeniedError:
+        return forbidden_response()
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
@@ -414,6 +423,8 @@ def validate_config(category, type, config, name=None, timeout_seconds=10.0):
         return jsonify(result.model_dump()), 200
     except ValueError as e:
         return jsonify({"error": f"Schema validation failed: {e}"}), 400
+    except ResourceAccessDeniedError:
+        return forbidden_response()
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
     except Exception as e:
