@@ -61,6 +61,12 @@ class OpenAICompatibleLLMValidator(BaseElementValidator):
     ) -> ValidatorReport:
         messages: List[ValidationMessage] = []
 
+        if config.forward_user_token:
+            # The credential is the acting user's token, which only exists at
+            # run time: probing the model with the static api_key would only
+            # test a key that is never sent. Check reachability instead.
+            return self._validate_forwarded(config, context)
+
         try:
             with httpx.Client(
                 verify=config.verify_ssl,
@@ -129,4 +135,41 @@ class OpenAICompatibleLLMValidator(BaseElementValidator):
                 field="base_url",
             ))
 
+        return self._build_report(messages=messages)
+
+    def _validate_forwarded(
+        self,
+        config: OpenAICompatibleConfig,
+        context: ValidationContext,
+    ) -> ValidatorReport:
+        """Reachability-only check for an LLM that forwards the user's token.
+
+        Any HTTP answer (a 401 from an authenticating gateway included) proves
+        the endpoint is up; only a connection failure or a timeout is an error.
+        """
+        messages: List[ValidationMessage] = []
+        try:
+            with httpx.Client(
+                verify=config.verify_ssl,
+                timeout=context.timeout_seconds,
+            ) as http_client:
+                http_client.get(str(config.base_url).rstrip("/") + "/models")
+            messages.append(self._info(
+                "MODEL_CHECK_SKIPPED",
+                "Endpoint reachable; the model is not probed because requests "
+                "carry the acting user's token, which only exists at run time",
+                field="model_name",
+            ))
+        except httpx.TimeoutException:
+            messages.append(self._error(
+                ValidationCode.NETWORK_TIMEOUT.value,
+                f"Connection timed out after {context.timeout_seconds}s",
+                field="base_url",
+            ))
+        except httpx.HTTPError:
+            messages.append(self._error(
+                ValidationCode.ENDPOINT_UNREACHABLE.value,
+                "Cannot connect to API endpoint",
+                field="base_url",
+            ))
         return self._build_report(messages=messages)

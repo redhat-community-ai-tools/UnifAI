@@ -273,3 +273,57 @@ def test_mcp_forward_mode_binds_forwarded_credential_and_no_static_headers():
     with bind_current_node("n", "tekos"):
         assert asyncio.run(cred.get_headers()) == {"X-Zuno-Agent": "tekos", "Authorization": "Bearer u"}
     assert McpProviderFactory()._build_headers(cfg) is None
+
+
+# ── validator ────────────────────────────────────────────────────────────────
+
+def _validate(cfg, monkeypatch, *, get=None):
+    import httpx
+    from mas.elements.common.validator import ValidationContext
+    from mas.elements.llms.openai_compatible import validator as mod
+
+    calls = []
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url):
+            calls.append(url)
+            if get is not None:
+                return get(url)
+            return httpx.Response(401, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(mod.httpx, "Client", FakeClient)
+    probed = MagicMock(side_effect=AssertionError("the model must not be probed"))
+    monkeypatch.setattr(mod, "OpenAI", probed)
+    report = mod.OpenAICompatibleLLMValidator().validate(cfg, ValidationContext())
+    return report, calls
+
+
+def test_validator_does_not_probe_the_model_when_forwarding(monkeypatch):
+    from mas.elements.llms.openai_compatible.config import OpenAICompatibleConfig
+
+    cfg = OpenAICompatibleConfig(model_name="auto", base_url="http://gw:8080/v1/", forward_user_token=True)
+    report, calls = _validate(cfg, monkeypatch)
+    assert calls == ["http://gw:8080/v1/models"]
+    assert [m.code for m in report.messages] == ["MODEL_CHECK_SKIPPED"]
+    assert all(m.severity.value != "error" for m in report.messages)
+
+
+def test_validator_reports_an_unreachable_forwarding_endpoint(monkeypatch):
+    import httpx
+    from mas.elements.llms.openai_compatible.config import OpenAICompatibleConfig
+
+    def refuse(url):
+        raise httpx.ConnectError("refused", request=httpx.Request("GET", url))
+
+    cfg = OpenAICompatibleConfig(model_name="auto", base_url="http://gw:8080/v1", forward_user_token=True)
+    report, _ = _validate(cfg, monkeypatch, get=refuse)
+    assert [m.severity.value for m in report.messages] == ["error"]
