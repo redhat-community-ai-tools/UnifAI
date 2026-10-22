@@ -59,6 +59,7 @@ const (
 	ConditionEmitted        = "Emitted"
 
 	entitlementGatewayOnly = "GatewayOnly"
+	phaseReady             = "Ready"
 )
 
 func (r *AgentBundleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -70,7 +71,8 @@ func (r *AgentBundleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil // children are garbage-collected through their owner references
 	}
 	orig := cr.DeepCopy()
-	requeue, err := r.reconcile(ctx, cr)
+	var requeue time.Duration
+	err := r.reconcile(ctx, cr)
 	st := &cr.Status
 	now := metav1.Now()
 	st.LastReconciled = &now
@@ -84,13 +86,13 @@ func (r *AgentBundleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		st.Phase, st.Message = "Pending", unifai.Truncate(err.Error(), 500)
 		requeue = retry
 	default:
-		st.Phase, st.ObservedGeneration = "Ready", cr.Generation
+		st.Phase, st.ObservedGeneration = phaseReady, cr.Generation
 	}
 	ready := metav1.ConditionFalse
-	if st.Phase == "Ready" {
+	if st.Phase == phaseReady {
 		ready = metav1.ConditionTrue
 	}
-	meta.SetStatusCondition(&st.Conditions, metav1.Condition{Type: "Ready", Status: ready, Reason: st.Phase,
+	meta.SetStatusCondition(&st.Conditions, metav1.Condition{Type: phaseReady, Status: ready, Reason: st.Phase,
 		Message: st.Message, ObservedGeneration: cr.Generation})
 	if uerr := r.Status().Patch(ctx, cr, client.MergeFrom(orig)); uerr != nil {
 		return ctrl.Result{}, uerr
@@ -98,7 +100,7 @@ func (r *AgentBundleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
-func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.UnifaiAgentBundle) (time.Duration, error) {
+func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.UnifaiAgentBundle) error {
 	st := &cr.Status
 	cond := func(typ string, ok bool, reason, msg string) {
 		s := metav1.ConditionFalse
@@ -110,15 +112,15 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 	}
 	ref := cr.Spec.Source.OCI.Reference
 	if _, _, err := okf.SplitDigestRef(ref); err != nil {
-		return 0, &PermanentError{Err: err}
+		return &PermanentError{Err: err}
 	}
 	pub, err := r.secretValue(ctx, cr.Namespace, cr.Spec.Verify.PublicKeyRef)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	cred, err := r.pullCredential(ctx, cr)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	fetch := r.Fetch
 	if fetch == nil {
@@ -128,7 +130,7 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 	// 1. Pull the manifest by digest.
 	art, err := fetch(ctx, ref, cred)
 	if err != nil {
-		return 0, fmt.Errorf("pull %s: %w", ref, err)
+		return fmt.Errorf("pull %s: %w", ref, err)
 	}
 	st.ResolvedDigest = art.ManifestDigest
 
@@ -141,7 +143,7 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 	if err != nil {
 		st.Verified = false
 		cond(ConditionVerified, false, "SignatureInvalid", err.Error())
-		return 0, permanent("bundle not verified, nothing emitted: %v", err)
+		return permanent("bundle not verified, nothing emitted: %v", err)
 	}
 	st.Verified = true
 	cond(ConditionVerified, true, "SignatureValid", "bundle digest "+digest)
@@ -149,50 +151,50 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 	// 3. Validate against the embedded OKF schemas, then the mapping's own preconditions.
 	if err := okf.ValidateSchemas(art.Files); err != nil {
 		cond(ConditionValid, false, "SchemaInvalid", err.Error())
-		return 0, permanent("%v", err)
+		return permanent("%v", err)
 	}
 	b, err := okf.Parse(art.Files)
 	if err != nil {
 		cond(ConditionValid, false, "Invalid", err.Error())
-		return 0, permanent("invalid OKF bundle: %v", err)
+		return permanent("invalid OKF bundle: %v", err)
 	}
 	st.OKFVersion = b.OKFVersion
 	switch b.GraphShape {
 	case okf.ShapeRetrieveReasonRespond:
 	case "":
 		cond(ConditionValid, false, "ShapeMissing", "zuno.graph_shape is not declared")
-		return 0, permanent("bundle %s declares no zuno.graph_shape: nothing emitted", b.Name)
+		return permanent("bundle %s declares no zuno.graph_shape: nothing emitted", b.Name)
 	default:
 		cond(ConditionValid, false, "ShapeNotImplemented", "no blueprint template for graph shape "+b.GraphShape)
-		return 0, permanent("graph shape %q has no blueprint template in this operator: nothing emitted", b.GraphShape)
+		return permanent("graph shape %q has no blueprint template in this operator: nothing emitted", b.GraphShape)
 	}
 	if len(b.AccessGroups) > 0 && cr.Spec.Entitlement != entitlementGatewayOnly {
 		msg := fmt.Sprintf("zuno.access.groups %v cannot be enforced by UnifAI visibility yet; set spec.entitlement: GatewayOnly to rely on the gateways", b.AccessGroups)
 		cond(ConditionValid, false, "EntitlementUnsupported", msg)
-		return 0, permanent("%s", msg)
+		return permanent("%s", msg)
 	}
 	cond(ConditionValid, true, "Valid", fmt.Sprintf("OKF %s, %d tasks, shape %s", b.OKFVersion, len(b.Tasks), b.GraphShape))
 
 	// 4. A bundle can narrow its ceilings, never widen them.
 	if err := checkCeilings(cr, b); err != nil {
 		cond(ConditionWithinCeilings, false, "Widening", err.Error())
-		return 0, permanent("bundle exceeds spec.ceilings, nothing emitted: %v", err)
+		return permanent("bundle exceeds spec.ceilings, nothing emitted: %v", err)
 	}
 	cond(ConditionWithinCeilings, true, "WithinCeilings", "declared tools, knowledge and classification are within spec.ceilings")
 
 	// 5. Emit the owned children.
 	desired, tasks, err := renderBundle(cr, b)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	for _, obj := range desired {
 		if err := r.upsert(ctx, cr, obj); err != nil {
 			cond(ConditionEmitted, false, "EmitFailed", err.Error())
-			return 0, err
+			return err
 		}
 	}
 	if err := r.prune(ctx, cr, desired); err != nil {
-		return 0, err
+		return err
 	}
 	unmapped := b.Unmapped
 	if len(b.AccessGroups) > 0 {
@@ -202,7 +204,7 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 	st.Children = childNames(desired)
 	st.Message = fmt.Sprintf("%d tasks, %d objects emitted", len(tasks), len(desired))
 	cond(ConditionEmitted, true, "Emitted", st.Message)
-	return 0, nil
+	return nil
 }
 
 // checkCeilings refuses any declared tool, knowledge domain or classification outside spec.ceilings.
@@ -265,7 +267,7 @@ func renderBundle(cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) ([]client.Objec
 	cond := cr.Name + "-direct"
 	objs := []client.Object{&unifaiv1.UnifaiCondition{ObjectMeta: childMeta(cr, cond), Spec: unifaiv1.UnifaiConditionSpec{
 		CommonSpec: common, Type: "router_direct", ConfigSpec: unifaiv1.ConfigSpec{Config: rawJSON(map[string]any{})}}}}
-	var tasks []unifaiv1.BundleTaskStatus
+	tasks := make([]unifaiv1.BundleTaskStatus, 0, len(b.Tasks))
 	for _, t := range b.Tasks {
 		level, err := okf.Effective(b.Classification, cr.Spec.ClassificationOverrides[t.Name])
 		if err != nil {

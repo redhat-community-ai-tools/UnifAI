@@ -20,7 +20,9 @@ import (
 // made with the throwaway key testdata/fixture-cosign.pub.
 const tekosDigest = "5d12482fa2a04ef926506709a2586266864e0087a8ec52f1b0a11f321faa781c"
 
-func loadTree(t *testing.T, root string) Files {
+// loadTekos reads the testdata copy of agents/tekos.
+func loadTekos(t *testing.T) Files {
+	const root = "testdata/tekos"
 	t.Helper()
 	files := Files{}
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -51,7 +53,7 @@ func read(t *testing.T, p string) []byte {
 }
 
 func TestDigestMatchesSignOkfBundlePy(t *testing.T) {
-	got, err := Digest(loadTree(t, "testdata/tekos"))
+	got, err := Digest(loadTekos(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +81,7 @@ func TestVerifyRealCosignSignature(t *testing.T) {
 	if err := VerifySignature(tekosDigest, sig, pub); err != nil {
 		t.Fatalf("real cosign signature rejected: %v", err)
 	}
-	tampered := loadTree(t, "testdata/tekos")
+	tampered := loadTekos(t)
 	tampered["agent.okf.md"] = append(tampered["agent.okf.md"], '\n')
 	d, _ := Digest(tampered)
 	if err := VerifySignature(d, sig, pub); err == nil {
@@ -91,7 +93,7 @@ func TestVerifyRealCosignSignature(t *testing.T) {
 }
 
 func TestParseTekos(t *testing.T) {
-	b, err := Parse(loadTree(t, "testdata/tekos"))
+	b, err := Parse(loadTekos(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +125,7 @@ func TestParseTekos(t *testing.T) {
 }
 
 func TestParseRejectsBrokenBundles(t *testing.T) {
-	base := loadTree(t, "testdata/tekos")
+	base := loadTekos(t)
 	missing := Files{}
 	for k, v := range base {
 		missing[k] = v
@@ -216,7 +218,7 @@ func TestDecodeArtifact(t *testing.T) {
 }
 
 func TestValidateSchemas(t *testing.T) {
-	files := loadTree(t, "testdata/tekos")
+	files := loadTekos(t)
 	if err := ValidateSchemas(files); err != nil {
 		t.Fatalf("tekos should satisfy the embedded schemas: %v", err)
 	}

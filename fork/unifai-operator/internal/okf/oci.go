@@ -83,11 +83,11 @@ func Fetch(ctx context.Context, ref string, cred *Credential) (*Artifact, error)
 		return nil, fmt.Errorf("fetch manifest %s: %w", ref, err)
 	}
 	if mdesc.Size > maxManifestBytes {
-		rc.Close()
+		_ = rc.Close()
 		return nil, fmt.Errorf("manifest of %s is too large (%d bytes)", ref, mdesc.Size)
 	}
 	mb, err := content.ReadAll(rc, mdesc)
-	rc.Close()
+	_ = rc.Close()
 	if err != nil {
 		return nil, fmt.Errorf("read manifest %s: %w", ref, err)
 	}
@@ -96,7 +96,7 @@ func Fetch(ctx context.Context, ref string, cred *Credential) (*Artifact, error)
 		if err != nil {
 			return nil, err
 		}
-		defer r.Close()
+		defer func() { _ = r.Close() }()
 		return content.ReadAll(r, d)
 	})
 }

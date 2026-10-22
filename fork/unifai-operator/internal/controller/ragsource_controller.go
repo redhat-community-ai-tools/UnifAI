@@ -29,7 +29,10 @@ type RAGSourceReconciler struct {
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifairagsources/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifairagsources/finalizers,verbs=update
 
-const minSyncInterval = 10 * time.Minute
+const (
+	minSyncInterval      = 10 * time.Minute
+	sourceTypeConfluence = "confluence"
+)
 
 func (r *RAGSourceReconciler) now() time.Time {
 	if r.Now != nil {
@@ -63,7 +66,7 @@ func (r *RAGSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // instance is what the RAG service registers; its hash decides whether the spec changed.
 func ragSourceInstance(obj *unifaiv1.UnifaiRAGSource) (string, map[string]any, error) {
 	switch obj.Spec.Type {
-	case "confluence":
+	case sourceTypeConfluence:
 		c := obj.Spec.Confluence
 		if c == nil {
 			return "", nil, permanent("spec.confluence is required for type confluence")
@@ -72,7 +75,7 @@ func ragSourceInstance(obj *unifaiv1.UnifaiRAGSource) (string, map[string]any, e
 		if visibility == "" {
 			visibility = "private"
 		}
-		return "confluence", map[string]any{
+		return sourceTypeConfluence, map[string]any{
 			"name": unifaiName(obj), "baseUrl": c.BaseURL, "spaceKey": c.SpaceKey, "rootTitle": c.RootTitle,
 			"excludeLabels": append([]string{}, c.ExcludeLabels...), "visibility": visibility,
 			"aclGroups": append([]string{}, obj.Spec.ACLGroups...),
