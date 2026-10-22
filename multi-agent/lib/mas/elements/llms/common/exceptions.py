@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from datetime import datetime, timezone
-from typing import Any, Mapping, Optional
+from typing import Any
 
 #: Prefix that marks a rate-limit message in plain-text channels (agent
 #: results, final answers) so that clients can render it as a non-fatal
@@ -41,7 +42,7 @@ class LLMRateLimitError(Exception):
     #: Retrying inside the agent loop is pointless.
     recoverable = False
 
-    def __init__(self, detail: Optional[str] = None, retry_after: Optional[float] = None) -> None:
+    def __init__(self, detail: str | None = None, retry_after: float | None = None) -> None:
         self.detail = detail or "The model endpoint is rate limiting requests."
         self.retry_after = retry_after
         super().__init__(self.detail)
@@ -67,7 +68,7 @@ def format_delay(seconds: float) -> str:
     return f"{minutes}min" if rest == 0 else f"{minutes}min {rest}s"
 
 
-def parse_retry_after(value: Optional[str]) -> Optional[float]:
+def parse_retry_after(value: str | None) -> float | None:
     """Parse a ``Retry-After`` header (delta-seconds or HTTP-date)."""
     if not value:
         return None
@@ -82,11 +83,11 @@ def parse_retry_after(value: Optional[str]) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
 
-def extract_error_detail(body: Any) -> Optional[str]:
+def extract_error_detail(body: Any) -> str | None:
     """Best-effort human text from an error body (OpenAI or FastAPI style)."""
     if isinstance(body, str):
         return body.strip() or None
@@ -109,13 +110,13 @@ def extract_error_detail(body: Any) -> Optional[str]:
 
 
 def rate_limit_from_response(
-    headers: Optional[Mapping[str, str]], body: Any
+    headers: Mapping[str, str] | None, body: Any
 ) -> LLMRateLimitError:
     retry = parse_retry_after(headers.get("retry-after") if headers else None)
     return LLMRateLimitError(extract_error_detail(body), retry)
 
 
-def parse_rate_limit_marker(text: str) -> Optional[tuple[str, Optional[float]]]:
+def parse_rate_limit_marker(text: str) -> tuple[str, float | None] | None:
     """Inverse of ``str(LLMRateLimitError)``: return ``(message, retry_after)``."""
     m = _MARKER_RE.match(text.strip())
     if not m:

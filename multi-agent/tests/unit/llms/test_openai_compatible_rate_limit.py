@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
-
 from mas.elements.llms.common.chat.message import ChatMessage, Role
 from mas.elements.llms.common.exceptions import (
     LLMRateLimitError,
