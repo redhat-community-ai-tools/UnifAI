@@ -58,6 +58,21 @@ class WorkflowSessionFactory:
     def engine_name(self) -> str:
         return self._engine_name
 
+    def _build_context(self, holder: ExecutionContextHolder) -> ElementBuildContext:
+        """The single place where the cross-cutting dependencies given to element factories are assembled.
+
+        Every build path goes through here so that none of them can run without, for example, the
+        identity provider (which a memory tool with an access mode needs at construction time).
+        """
+        return ElementBuildContext(
+            execution_ctx=holder,
+            auth_service=self._auth_service,
+            platform_config=self._platform_config,
+            tracing_service=self._tracing_service,
+            identity_token_source=self._identity_token_source,
+            identity_provider=self._identity_provider,
+        )
+
     def build_runtime_plan(
         self,
         blueprint_spec: BlueprintSpec,
@@ -70,14 +85,7 @@ class WorkflowSessionFactory:
         The caller owns the ExecutionContextHolder and passes it in.
         """
         holder = ctx_holder if ctx_holder is not None else ExecutionContextHolder()
-        deps = ElementBuildContext(
-            execution_ctx=holder,
-            auth_service=self._auth_service,
-            platform_config=self._platform_config,
-            tracing_service=self._tracing_service,
-            identity_token_source=self._identity_token_source,
-            identity_provider=self._identity_provider,
-        )
+        deps = self._build_context(holder)
         logical_plan = PlanBuilder(self._elements).build(blueprint_spec)
         registry = self._session_builder.build(blueprint_spec, deps=deps)
         return RTGraphPlan(logical_plan, registry, self._elements)
@@ -89,7 +97,9 @@ class WorkflowSessionFactory:
         Creates element instances without building a plan or binding callables.
         Used by Temporal condition activities (conditions don't need a plan).
         """
-        return self._session_builder.build(blueprint_spec)
+        return self._session_builder.build(
+            blueprint_spec, deps=self._build_context(ExecutionContextHolder()),
+        )
 
     def build_session(self, record: SessionRecord, blueprint_spec: BlueprintSpec) -> WorkflowSession:
         """

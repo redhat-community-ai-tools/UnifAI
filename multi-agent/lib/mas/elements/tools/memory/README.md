@@ -74,6 +74,68 @@ before any model is called. Without a classification the default `llm` is used.
 `persist` writes through `MemoryTool.run`, so scope access, limits, deduplication and provenance all
 apply; the first access refusal stops the run, and a failed extraction is never written.
 
+## Extraction node (`type: memory_extractor_node`)
+
+Blueprints run an extraction with the `memory_extractor_node` node (`lib/mas/elements/nodes/memory_extractor`).
+It reads the session transcript (`messages`), calls `MemoryExtractor.extract` with `llm`, then `persist`s through
+the memory tool referenced by `memory`, so the scope and the `access` block stay on the tool.
+
+| field | meaning |
+| --- | --- |
+| `llm` | LLM used for the extraction (required). |
+| `memory` | Reference to the memory tool (required). |
+| `classification` | Optional classification of the transcript. |
+| `local_llm` | Optional LLM allowed to see restricted classifications. |
+| `restricted_classifications` | Case-insensitive list, default `restricted`, `confidential`, `secret`. |
+
+Classification fallback: a classification outside `restricted_classifications` uses `llm`. A restricted one is only
+ever sent to `local_llm`; **when no `local_llm` is configured the extraction is refused** before any model call and
+nothing is written. The tool's own `classification` (provenance) is configured separately on the tool.
+
+The node never raises: invalid model output, a model error, an access refusal or a failed write end up in a one-line
+summary stored in `nodes_output[<node uid>]`, e.g. `memory extraction ok: 2 facts, 1 memories written, 0 dropped` or
+`memory extraction failed: no model is approved for classification 'restricted'`.
+
+## Example blueprint fragment
+
+```yaml
+llms:
+  - {rid: extract_llm, name: extractor, type: openai, config: {type: openai, model_name: my-model}}
+tools:
+  - rid: project_memory
+    name: project memory
+    type: memory
+    config:
+      type: memory
+      scope_id: "{project_id}"      # see "Placeholders" below: must be a literal id when the blueprint is stored
+      access:
+        mode: team                  # the acting user must be a member of the team "{project_id}"
+nodes:
+  - rid: remember
+    name: Remember
+    type: memory_extractor_node
+    config:
+      type: memory_extractor_node
+      llm: extract_llm
+      memory: project_memory
+      classification: internal
+plan:
+  - {uid: remember, after: answer, node: remember}   # after the node that produces the answer
+```
+
+Agent nodes can also list `project_memory` in their `tools` to read and write it during the run.
+
+## Placeholders
+
+Nothing in the platform resolves `{project_id}`. The blueprint loader, the resolver, the element builders and the
+factories pass `scope_id` through verbatim; the only `{...}` substitution that exists is for forwarded identity
+headers (`{session_id}`, `{node_uid}`), and it does not apply to element configs. A literal `"{project_id}"` would be
+used as the scope id (and, with `access.mode: team`, the membership check would run against that string and refuse).
+Whatever creates or instantiates the blueprint must therefore replace it by the real id before the blueprint is stored
+or built. A minimal in-platform mechanism, not implemented here, would be a `scope_from: team` option on the tool
+config that takes the scope from the session identity (`ExecutionContext.identity.id`) at call time, which also fits
+`access.mode: team`.
+
 ## Config
 
 `scope_id` (required), `mongo_db`, `mongo_collection` (memories), `facts_collection`,

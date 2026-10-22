@@ -11,6 +11,7 @@ from mas.elements.nodes.orchestrator.config import OrchestratorNodeConfig
 from mas.elements.nodes.a2a_agent.config import A2AAgentNodeConfig
 from mas.elements.nodes.deep_agent.config import DeepAgentNodeConfig
 from mas.elements.nodes.claude_agent.config import ClaudeAgentNodeConfig
+from mas.elements.nodes.memory_extractor.config import MemoryExtractorNodeConfig
 
 # Union type for backward compatibility with blueprints
 NodeSpec = Annotated[
@@ -26,6 +27,7 @@ NodeSpec = Annotated[
         DeepAgentNodeConfig,
         A2AAgentNodeConfig,
         ClaudeAgentNodeConfig,
+        MemoryExtractorNodeConfig,
     ],
     Field(discriminator="type")
 ]
