@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"
+	"github.com/startxfr/unifai-operator/internal/stack"
 )
 
 var _ = Describe("Library kinds without a dedicated scenario", func() {
@@ -116,5 +117,20 @@ var _ = Describe("Library kinds without a dedicated scenario", func() {
 		mas.mu.Lock()
 		Expect(mas.templates).NotTo(HaveKey(id))
 		mas.mu.Unlock()
+	})
+})
+
+var _ = Describe("Internal authentication", func() {
+	It("sends the stack's internal secret with the acting user", func() {
+		ns := newNamespace("internal")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: stack.InternalAuthSecret, Namespace: ns},
+			StringData: map[string]string{stack.KeyInternalAuth: "in-" + ns}})).To(Succeed())
+		tool := &unifaiv1.UnifaiTool{ObjectMeta: metav1.ObjectMeta{Name: "t", Namespace: ns}, Spec: unifaiv1.UnifaiToolSpec{
+			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "t-" + ns}, Type: "web_fetch"}}
+		Expect(k8sClient.Create(ctx, tool)).To(Succeed())
+		Eventually(phaseOf(tool), 20*time.Second, 200*time.Millisecond).Should(Equal("Ready"))
+		mas.mu.Lock()
+		defer mas.mu.Unlock()
+		Expect(mas.internal).To(ContainElement("in-" + ns))
 	})
 })

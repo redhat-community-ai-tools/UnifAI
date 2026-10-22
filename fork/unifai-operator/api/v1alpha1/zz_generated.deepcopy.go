@@ -1805,6 +1805,24 @@ func (in *UnifaiStackSpec) DeepCopyInto(out *UnifaiStackSpec) {
 			(*out)[key] = *val.DeepCopy()
 		}
 	}
+	if in.ExtraEnv != nil {
+		in, out := &in.ExtraEnv, &out.ExtraEnv
+		*out = make(map[string][]v1.EnvVar, len(*in))
+		for key, val := range *in {
+			var outVal []v1.EnvVar
+			if val == nil {
+				(*out)[key] = nil
+			} else {
+				inVal := (*in)[key]
+				in, out := &inVal, &outVal
+				*out = make([]v1.EnvVar, len(*in))
+				for i := range *in {
+					(*in)[i].DeepCopyInto(&(*out)[i])
+				}
+			}
+			(*out)[key] = outVal
+		}
+	}
 	if in.NodeSelector != nil {
 		in, out := &in.NodeSelector, &out.NodeSelector
 		*out = make(map[string]string, len(*in))

@@ -30,7 +30,14 @@ const (
 	KeyClientSecret      = "keycloak-client-secret"
 	KeyKeycloakAdminPass = "keycloak-admin-password"
 	KeyKeycloakDBPass    = "keycloak-db-password"
+	// KeyInternalAuth is the secret shared by the UnifAI services: they honour X-Authenticated-User only from callers
+	// sending it in X-Internal-Auth (fork access-control fixes; ignored by older images).
+	KeyInternalAuth = "INTERNAL_AUTH_SECRET"
 )
+
+// InternalAuthSecret holds the effective KeyInternalAuth (generated, or overridden by spec.secretsRef): the services
+// read it through a secretKeyRef, the operator's UnifAI client sends it.
+const InternalAuthSecret = "unifai-internal-auth"
 
 // generators produce each generated key.
 var generators = map[string]func() string{
@@ -41,6 +48,7 @@ var generators = map[string]func() string{
 	KeyClientSecret:      func() string { return randomAlnum(32) },
 	KeyKeycloakAdminPass: func() string { return randomAlnum(20) },
 	KeyKeycloakDBPass:    func() string { return randomAlnum(24) },
+	KeyInternalAuth:      func() string { return randomHex(32) },
 }
 
 // FillGenerated adds the missing generated keys to data and reports whether it changed.
@@ -135,6 +143,7 @@ func BaseObjects(p *Plan) []ctrlObject {
 		}),
 		secret(p, "unifai-rag-secrets", "rag", ragSecret(s)),
 		secret(p, "multiagent-be-secret", "multiagent", multiagentSecret(p)),
+		secret(p, InternalAuthSecret, "shared", map[string]string{KeyInternalAuth: s[KeyInternalAuth]}),
 		configMap(p, "identity-config", "identity", map[string]string{
 			"admin_allowed_users": p.AdminUsersJSON(), "keycloak_base_url": p.OIDCURL, "client_id": p.OIDCClientID,
 			"keycloak_realm": p.OIDCRealm, "directory_provider": "", "directory_url": "", "directory_verify_ssl": "false",

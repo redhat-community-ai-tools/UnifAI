@@ -73,6 +73,23 @@ service's Keycloak client (`IDENTITY_FORWARDING_ENABLED`, `KEYCLOAK_BASE_URL`, `
 acting user's OIDC token to model and tool gateways. It needs a multiagent image with identity forwarding (fork
 commit 4467138fe).
 
+Internal authentication: the services honour `X-Authenticated-User` from callers that also send the shared
+`INTERNAL_AUTH_SECRET` in `X-Internal-Auth` (fork access-control fixes; older images ignore both). The operator
+generates it once in `unifai-generated` (override: key `INTERNAL_AUTH_SECRET` of `spec.secretsRef`), copies the
+effective value to the Secret `unifai-internal-auth`, injects it (secretKeyRef) into identity, multiagent (server and
+worker), RAG (server and Celery) and backend, sends it from its own UnifAI client, and every Route deletes both
+headers from incoming requests.
+
+`extraEnv` adds variables to a component's containers (keys `multiagent`, `multiagentWorker`, `rag`, `ragCelery`,
+`backend`, `identity`, `ui`; full `EnvVar`, so `valueFrom` works); a chart variable with the same name is replaced:
+```yaml
+spec:
+  extraEnv:
+    identity:
+      - {name: DIRECTORY_PROVIDER, value: oidc-claims}
+      - {name: DIRECTORY_OIDC_ISSUER, value: https://keycloak.example.com/realms/unifai}
+```
+
 `openTelemetry` exports traces and metrics (OTLP) of the multiagent server and Temporal worker, the RAG server and
 Celery worker and the backend, through the global_utils telemetry bootstrap (fork commit c918f732b, images built from
 it): `UNIFAI_OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`/`_PROTOCOL`, `OTEL_SERVICE_NAME` (the Helm release name,

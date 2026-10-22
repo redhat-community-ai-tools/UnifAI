@@ -36,7 +36,7 @@ func (r *RAGPipelineReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	api := r.rag(obj)
+	api := r.rag(ctx, obj)
 	return r.run(ctx, obj, Handlers{
 		Apply:  func(ctx context.Context) (time.Duration, error) { return r.apply(ctx, api, obj) },
 		Delete: func(ctx context.Context) error { return r.remove(ctx, api, obj) },

@@ -159,3 +159,20 @@ func TestSetPath(t *testing.T) {
 		t.Errorf("SetPath = %#v, want %#v", m, want)
 	}
 }
+
+func TestCallSendsInternalAuth(t *testing.T) {
+	l, c := newLibrary(t)
+	if _, err := c.ListResources(context.Background(), "llms"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := l.last.Header["X-Internal-Auth"]; ok {
+		t.Errorf("X-Internal-Auth sent without a secret")
+	}
+	c.InternalAuth = "s3cr3t"
+	if _, err := c.ListResources(context.Background(), "llms"); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.last.Header.Get("X-Internal-Auth"); got != "s3cr3t" {
+		t.Errorf("X-Internal-Auth = %q", got)
+	}
+}

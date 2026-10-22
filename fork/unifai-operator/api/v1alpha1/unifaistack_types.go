@@ -243,6 +243,12 @@ type UnifaiStackSpec struct {
 	// Resource overrides by component (same keys as images, plus ragCelery, multiagentWorker).
 	// +optional
 	Resources map[string]corev1.ResourceRequirements `json:"resources,omitempty"`
+	// Extra environment variables by component (multiagent, multiagentWorker, rag, ragCelery, backend, identity, ui),
+	// added to every container of its Deployments; a variable of the chart with the same name is replaced. Values can
+	// come from Secrets or ConfigMaps of the namespace (valueFrom).
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k in ['multiagent', 'multiagentWorker', 'rag', 'ragCelery', 'backend', 'identity', 'ui'])",message="extraEnv keys: multiagent, multiagentWorker, rag, ragCelery, backend, identity, ui"
+	// +optional
+	ExtraEnv map[string][]corev1.EnvVar `json:"extraEnv,omitempty"`
 	// Added to every UnifAI pod.
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`

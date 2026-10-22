@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/recorder"
 
 	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"
+	"github.com/startxfr/unifai-operator/internal/stack"
 	"github.com/startxfr/unifai-operator/internal/unifai"
 )
 
@@ -84,16 +85,29 @@ func (b *Base) endpoints(ns string) (string, string) {
 	return unifai.Endpoints(ns)
 }
 
-func (b *Base) mas(o unifaiv1.Object) *unifai.Client {
+func (b *Base) mas(ctx context.Context, o unifaiv1.Object) *unifai.Client {
 	m, _ := b.endpoints(o.GetNamespace())
-	return unifai.New(m, o.GetCommon().Owner, o.GetCommon().TeamID)
+	c := unifai.New(m, o.GetCommon().Owner, o.GetCommon().TeamID)
+	c.InternalAuth = b.internalAuth(ctx, o.GetNamespace())
+	return c
 }
 
-func (b *Base) rag(o unifaiv1.Object) *unifai.Client {
+func (b *Base) rag(ctx context.Context, o unifaiv1.Object) *unifai.Client {
 	_, r := b.endpoints(o.GetNamespace())
 	c := unifai.New(r, o.GetCommon().Owner, o.GetCommon().TeamID)
+	c.InternalAuth = b.internalAuth(ctx, o.GetNamespace())
 	c.HTTP.Timeout = 5 * time.Minute
 	return c
+}
+
+// internalAuth returns the shared secret the stack's services require with X-Authenticated-User ("" when the
+// stack has none yet: older operator, or not reconciled; the call then fails with 401 and is retried).
+func (b *Base) internalAuth(ctx context.Context, ns string) string {
+	var s corev1.Secret
+	if err := b.Get(ctx, types.NamespacedName{Namespace: ns, Name: stack.InternalAuthSecret}, &s); err != nil {
+		return ""
+	}
+	return string(s.Data[stack.KeyInternalAuth])
 }
 
 func unifaiName(o unifaiv1.Object) string {

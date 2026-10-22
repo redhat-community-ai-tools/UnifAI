@@ -322,3 +322,57 @@ func TestOpenTelemetry(t *testing.T) {
 		}
 	}
 }
+
+func TestInternalAuthAndExtraEnv(t *testing.T) {
+	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) {
+		s.ExtraEnv = map[string][]corev1.EnvVar{
+			"identity": {{Name: "DIRECTORY_PROVIDER", Value: "oidc-claims"},
+				{Name: "DIRECTORY_OIDC_ISSUER", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "directory"}, Key: "issuer"}}}},
+			"backend": {{Name: "RAG_URL", Value: "http://override:1"}},
+		}
+	})
+	p.Secrets[KeyInternalAuth] = "s3cr3t"
+	out := renderAll(t, p)
+	ref := "name: " + KeyInternalAuth + "\n          valueFrom:\n            secretKeyRef:\n              key: " + KeyInternalAuth +
+		"\n              name: " + InternalAuthSecret
+	for _, rel := range []string{"unifai-identity", "unifai-multiagent-be", "unifai-multiagent-temporal-worker",
+		"unifai-rag-server", "unifai-rag-celery", "unifai-backend"} {
+		if !strings.Contains(out[rel], ref) {
+			t.Errorf("%s: no INTERNAL_AUTH_SECRET secretKeyRef", rel)
+		}
+	}
+	for rel, m := range out {
+		if strings.Contains(m, "s3cr3t") {
+			t.Errorf("%s: the internal secret must not be rendered in clear", rel)
+		}
+	}
+	for _, rel := range []string{"unifai-ui", "unifai-mongodb"} {
+		if strings.Contains(out[rel], KeyInternalAuth) {
+			t.Errorf("%s must not get INTERNAL_AUTH_SECRET", rel)
+		}
+	}
+	if !strings.Contains(out["unifai-identity"], "value: oidc-claims") || !strings.Contains(out["unifai-identity"], "DIRECTORY_OIDC_ISSUER") {
+		t.Errorf("identity lacks its extraEnv")
+	}
+	if strings.Contains(out["unifai-multiagent-be"], "DIRECTORY_PROVIDER") {
+		t.Errorf("extraEnv of identity leaked to multiagent")
+	}
+	if !strings.Contains(out["unifai-backend"], "http://override:1") || strings.Count(out["unifai-backend"], "name: RAG_URL") != 1 {
+		t.Errorf("backend: extraEnv must replace the chart's RAG_URL, not duplicate it")
+	}
+	for _, h := range []string{InternalAuthHeader, InternalSecretHeader} {
+		if !strings.Contains(out["unifai-ui"], "name: "+h) {
+			t.Errorf("UI route does not delete %s", h)
+		}
+	}
+	var found bool
+	for _, o := range BaseObjects(p) {
+		if s, ok := o.(*corev1.Secret); ok && s.Name == InternalAuthSecret {
+			found = s.StringData[KeyInternalAuth] == "s3cr3t" || string(s.Data[KeyInternalAuth]) == "s3cr3t"
+		}
+	}
+	if !found {
+		t.Errorf("BaseObjects lacks %s with the effective secret", InternalAuthSecret)
+	}
+}

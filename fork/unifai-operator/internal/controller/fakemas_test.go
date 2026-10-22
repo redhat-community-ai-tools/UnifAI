@@ -25,6 +25,7 @@ type fakeMAS struct {
 	ragSources map[string]map[string]any
 	ragSyncs   map[string]int // source id -> embed calls (incremental syncs)
 	users      []string       // X-Authenticated-User of each call
+	internal   []string       // X-Internal-Auth of each call
 }
 
 func newFakeMAS() (*fakeMAS, *httptest.Server) {
@@ -64,6 +65,7 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.users = append(f.users, r.Header.Get("X-Authenticated-User"))
+	f.internal = append(f.internal, r.Header.Get("X-Internal-Auth"))
 	body := map[string]any{}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&body)

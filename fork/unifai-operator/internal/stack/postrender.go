@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -315,6 +316,9 @@ func (r *postRenderer) mutatePod(tpl map[string]any) error {
 				return err
 			}
 			cm["resources"] = res
+			if key == "containers" {
+				r.env(cm)
+			}
 		}
 	}
 	if !r.plan.Spec.RAG.GPU {
@@ -329,6 +333,36 @@ func (r *postRenderer) mutatePod(tpl map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// env adds INTERNAL_AUTH_SECRET (secretKeyRef) to the services that check it, then spec.extraEnv of the component;
+// a variable of the chart with the same name is replaced.
+func (r *postRenderer) env(c map[string]any) {
+	extra := r.plan.Spec.ExtraEnv[r.rel.Component]
+	add := make([]map[string]any, 0, len(extra)+1)
+	if r.rel.InternalAuth {
+		add = append(add, map[string]any{"name": KeyInternalAuth, "valueFrom": map[string]any{
+			"secretKeyRef": map[string]any{"name": InternalAuthSecret, "key": KeyInternalAuth}}})
+	}
+	for _, e := range extra {
+		add = append(add, toMap(e))
+	}
+	if len(add) == 0 {
+		return
+	}
+	env := asSlice(c["env"])
+	for _, a := range add {
+		replaced := false
+		for i, e := range env {
+			if em, ok := e.(map[string]any); ok && em["name"] == a["name"] {
+				env[i], replaced = a, true
+			}
+		}
+		if !replaced {
+			env = append(env, a)
+		}
+	}
+	c["env"] = env
 }
 
 // resources applies, in order: the spec override of the component (main container only), the dev ceilings, the GPU switch.
@@ -367,10 +401,16 @@ func toMap(v any) map[string]any {
 // for pod-to-pod calls only and must never come from outside the cluster.
 const InternalAuthHeader = "X-Authenticated-User"
 
+// InternalSecretHeader carries the shared INTERNAL_AUTH_SECRET that makes the services honour InternalAuthHeader.
+const InternalSecretHeader = "X-Internal-Auth"
+
+// internalHeaders are deleted from every request coming through a Route.
+var internalHeaders = []string{InternalAuthHeader, InternalSecretHeader}
+
 // UITLSSecret receives the service-ca certificate of the UI Service (OpenShift serving certificate).
 const UITLSSecret = "unifai-ui-tls"
 
-// stripInternalAuthHeader makes the router delete InternalAuthHeader from incoming requests. Passthrough routes
+// stripInternalAuthHeader makes the router delete the internal headers from incoming requests. Passthrough routes
 // cannot change headers (TLS reaches the pod), so the UI route is re-encrypted.
 func stripInternalAuthHeader(spec map[string]any) {
 	if mapAt(spec, "tls")["termination"] == "passthrough" {
@@ -380,12 +420,14 @@ func stripInternalAuthHeader(spec map[string]any) {
 	actions := mapAt(hh, "actions")
 	var req []any
 	for _, a := range asSlice(actions["request"]) {
-		if am, ok := a.(map[string]any); ok && am["name"] == InternalAuthHeader {
+		if am, ok := a.(map[string]any); ok && slices.Contains(internalHeaders, fmt.Sprint(am["name"])) {
 			continue
 		}
 		req = append(req, a)
 	}
-	req = append(req, map[string]any{"name": InternalAuthHeader, "action": map[string]any{"type": "Delete"}})
+	for _, h := range internalHeaders {
+		req = append(req, map[string]any{"name": h, "action": map[string]any{"type": "Delete"}})
+	}
 	actions["request"] = req
 	hh["actions"] = actions
 	spec["httpHeaders"] = hh

@@ -1,7 +1,8 @@
 // Package unifai is a thin client for the UnifAI multiagent (MAS) and RAG REST APIs.
 //
-// In-cluster calls authenticate with the X-Authenticated-User header that both services accept without a session
-// (the stack restricts who can reach them with a NetworkPolicy).
+// In-cluster calls authenticate with the X-Authenticated-User header, which the services accept without a session
+// from callers that also send the shared secret in X-Internal-Auth (older images ignore it; the stack restricts who
+// can reach them with a NetworkPolicy).
 package unifai
 
 import (
@@ -55,7 +56,9 @@ type Client struct {
 	Base   string
 	User   string
 	TeamID string
-	HTTP   *http.Client
+	// InternalAuth is the stack's INTERNAL_AUTH_SECRET, sent in X-Internal-Auth ("" = not sent).
+	InternalAuth string
+	HTTP         *http.Client
 }
 
 // DefaultUser is the identity used when a spec names no owner.
@@ -94,6 +97,9 @@ func (c *Client) Call(ctx context.Context, method, path string, params url.Value
 		return err
 	}
 	req.Header.Set("X-Authenticated-User", c.User)
+	if c.InternalAuth != "" {
+		req.Header.Set("X-Internal-Auth", c.InternalAuth)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

@@ -88,13 +88,13 @@ func Render(p *Plan, r Release) (*Rendered, error) {
 		return nil, err
 	}
 	s := p.Spec
-	h := hashOf(digest, vals, s.Profile, s.Resources[r.Component], s.NodeSelector, s.Tolerations, s.ImagePullSecrets,
+	h := hashOf(digest, vals, s.Profile, s.Resources[r.Component], s.ExtraEnv[r.Component], s.NodeSelector, s.Tolerations, s.ImagePullSecrets,
 		s.RAG.GPU, s.DeletionPolicy, s.Exposure.ExposeInternal, p.UIHost, p.IdentityHost, p.ConfigHash, postRenderVersion)
 	return &Rendered{Release: r, Values: vals, Hash: h}, nil
 }
 
 // postRenderVersion changes when the post-renderer behaviour changes, forcing upgrades.
-const postRenderVersion = 4
+const postRenderVersion = 5
 
 // Apply installs the release, or upgrades it; it repairs releases left pending by an interrupted operation.
 func (e *Engine) Apply(ctx context.Context, p *Plan, rr *Rendered) (*release.Release, error) {

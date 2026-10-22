@@ -33,7 +33,7 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
-	api := r.mas(obj)
+	api := r.mas(ctx, obj)
 	st := obj.GetObjectStatus()
 	return r.run(ctx, obj, Handlers{
 		Apply: func(ctx context.Context) (time.Duration, error) { return 0, r.apply(ctx, api, obj) },

@@ -19,9 +19,11 @@ type Release struct {
 	// Internal releases only keep their upstream Route with spec.exposure.exposeInternal.
 	Internal bool
 	// Traced releases get the OTEL_* environment of spec.openTelemetry.
-	Traced  bool
-	Enabled func(p *Plan) bool
-	Values  func(p *Plan) (map[string]any, error)
+	Traced bool
+	// InternalAuth releases get INTERNAL_AUTH_SECRET (secretKeyRef to InternalAuthSecret).
+	InternalAuth bool
+	Enabled      func(p *Plan) bool
+	Values       func(p *Plan) (map[string]any, error)
 }
 
 // IsEnabled reports whether the release is part of the plan.
@@ -67,11 +69,11 @@ var Releases = []Release{
 		v, err := storage(p, map[string]any{"storage": s}, err, "ragShared", "storage.className", "storage.requestedSize", "100Gi", true)
 		return withGlobal(p, v, err, false)
 	}},
-	{Name: "unifai-rag-server", Chart: "unifai-rag-server", Component: "rag", Phase: 1, Traced: true, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-rag-server", Chart: "unifai-rag-server", Component: "rag", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("rag-resource-values.yaml", "unifai_rag_server")
 		return withGlobal(p, ragValues(p, v), err, false)
 	}},
-	{Name: "unifai-rag-celery", Chart: "unifai-rag-celery", Component: "ragCelery", Phase: 1, Traced: true, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-rag-celery", Chart: "unifai-rag-celery", Component: "ragCelery", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("rag-resource-values.yaml", "unifai_rag_celery")
 		return withGlobal(p, ragValues(p, v), err, false)
 	}},
@@ -80,15 +82,15 @@ var Releases = []Release{
 		v, err := storage(p, map[string]any{"storage": s}, err, "multiagentShared", "storage.className", "storage.requestedSize", "50Gi", true)
 		return withGlobal(p, v, err, true)
 	}},
-	{Name: "unifai-multiagent-be", Chart: "be", Component: "multiagent", Phase: 1, Internal: true, Traced: true, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-multiagent-be", Chart: "be", Component: "multiagent", Phase: 1, Internal: true, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("multiagent-resource-values.yaml", "multiagent_server")
 		return withGlobal(p, multiagentValues(p, v), err, true)
 	}},
-	{Name: "unifai-multiagent-temporal-worker", Chart: "temporal-worker", Component: "multiagentWorker", Phase: 1, Traced: true, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-multiagent-temporal-worker", Chart: "temporal-worker", Component: "multiagentWorker", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("multiagent-resource-values.yaml", "multiagent_temporal_worker")
 		return withGlobal(p, multiagentValues(p, v), err, true)
 	}},
-	{Name: "unifai-backend", Chart: "unifai-backend", Component: "backend", Phase: 1, Internal: true, Traced: true, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-backend", Chart: "unifai-backend", Component: "backend", Phase: 1, Internal: true, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("backend-resource-values.yaml", "unifai_backend")
 		if err != nil {
 			return nil, err
@@ -100,7 +102,7 @@ var Releases = []Release{
 		set(v, "slackSocket.enabled", slack != nil && slack.AppToken != nil)
 		return withGlobal(p, v, nil, false)
 	}},
-	{Name: "unifai-identity", Chart: "identity", Component: "identity", Phase: 1, Values: func(p *Plan) (map[string]any, error) {
+	{Name: "unifai-identity", Chart: "identity", Component: "identity", Phase: 1, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("identity-values.yaml", "")
 		if err != nil {
 			return nil, err

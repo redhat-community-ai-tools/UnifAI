@@ -67,7 +67,8 @@ Order: smallest and least controversial first, each with `make contrib-check` / 
 | R-501 | v0.11 work packages WP-146..157 (memory/routing/quota parity, gateway guardrails, ...) | doing | zuno-demo-59 |
 | R-502 | WP-152 UnifaiAgentBundle `spec.mcp` per-task provider (committed dbfc4752e, ships in operator 0.1.19) | doing | zuno-demo-68 |
 | R-503 | UnifaiRAGSource on `zuno-unifai` (waits for the GPU embedding service) | blocked | zuno-demo-68 |
-| R-504 | WP-147 operator part: `UnifaiStack.spec.openTelemetry` (OTEL_* env on multiagent, RAG, backend) | doing (0.1.20) | operator |
+| R-504 | WP-147 operator part: `UnifaiStack.spec.openTelemetry` (OTEL_* env on multiagent, RAG, backend) | done (0.1.20) | operator |
+| R-505 | Internal auth secret (`INTERNAL_AUTH_SECRET` / `X-Internal-Auth`, generated, injected, sent by the operator) and `spec.extraEnv` per component, for the access-control fixes of zuno-demo-59 | doing (0.1.22) | operator |
 
 ## Older TODO carried over from MEMORY.md
 - Slack tokens for the backend sidecar; scale `unifai-worker-a` down when idle.
