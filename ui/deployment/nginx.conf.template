@@ -62,13 +62,8 @@ http {
         # Add an HSTS header (Highly recommended for security)
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-        # Block external requests carrying the internal auth header.
-        # X-Authenticated-User is reserved for pod-to-pod communication
-        # and must never arrive from outside the cluster.
-        # This will be uncommented once the token authentication is pushed to main.
-        #if (${DOLLAR}http_x_authenticated_user) {
-        #    return 403;
-        #}
+        # X-Authenticated-User and X-Internal-Auth are reserved for pod-to-pod
+        # traffic: they are cleared on every proxied location below.
 
         root         /usr/share/nginx/html  ;
         client_max_body_size 75M;
@@ -82,6 +77,8 @@ http {
            proxy_set_header X-Real-IP         ${DOLLAR}remote_addr;
            proxy_set_header X-Forwarded-For   ${DOLLAR}proxy_add_x_forwarded_for;
            proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
+           proxy_set_header X-Authenticated-User "";
+           proxy_set_header X-Internal-Auth "";
            proxy_cookie_path / /;
         }
 
@@ -90,6 +87,8 @@ http {
            proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
            proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
            proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
+           proxy_set_header X-Authenticated-User "";
+           proxy_set_header X-Internal-Auth "";
            proxy_cookie_path / /;
 
            # Using nginx default timeouts (60s) for regular API calls
@@ -105,6 +104,8 @@ http {
            proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
            proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
            proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
+           proxy_set_header X-Authenticated-User "";
+           proxy_set_header X-Internal-Auth "";
            proxy_cookie_path / /;
 
            # Extended timeout settings for long-running workflows (10 minutes)
@@ -124,6 +125,8 @@ http {
            proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
            proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
            proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
+           proxy_set_header X-Authenticated-User "";
+           proxy_set_header X-Internal-Auth "";
            proxy_cookie_path / /;
 
            proxy_connect_timeout 600s;
@@ -140,6 +143,8 @@ http {
            proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
            proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
            proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
+           proxy_set_header X-Authenticated-User "";
+           proxy_set_header X-Internal-Auth "";
            proxy_cookie_path / /;
 
            # Using nginx default timeouts (60s) for regular API calls
@@ -151,6 +156,8 @@ http {
            proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
            proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
            proxy_set_header X-Forwarded-Proto ${DOLLAR}scheme;
+           proxy_set_header X-Authenticated-User "";
+           proxy_set_header X-Internal-Auth "";
            proxy_set_header X-Username ${DOLLAR}http_x_username;
            proxy_set_header X-User-Id ${DOLLAR}http_x_user_id;
            proxy_cookie_path / /;

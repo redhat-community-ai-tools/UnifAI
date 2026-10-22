@@ -5,6 +5,7 @@ from mas.elements.retrievers.common.base_retriever import BaseRetriever
 from mas.elements.retrievers.common.protocols import RetrievalIdentity
 from pydantic import HttpUrl
 from global_utils.constants import INTERNAL_AUTH_HEADER
+from global_utils.internal_auth import internal_auth_headers
 
 
 
@@ -40,7 +41,7 @@ class SlackRetriever(BaseRetriever):
             "top_k_results": self.top_k,
         }
 
-        headers = {self._AUTH_HEADER: user_id} if user_id else {}
+        headers = internal_auth_headers(user_id) if user_id else {}
 
         resp = requests.get(
             self.api_url,

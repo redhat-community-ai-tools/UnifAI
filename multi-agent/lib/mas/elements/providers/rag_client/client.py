@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 import httpx
 from pydantic import HttpUrl
 from global_utils.constants import INTERNAL_AUTH_HEADER
+from global_utils.internal_auth import internal_auth_headers
 from global_utils.flask.correlation import correlation_headers
 
 from .models import (
@@ -69,6 +70,7 @@ class RagClient:
         self._headers = dict(headers or {})
         if authenticated_user:
             self._headers[self._AUTH_HEADER] = authenticated_user
+            self._headers.update(internal_auth_headers())
         self._client: Optional[httpx.Client] = None
 
     def __enter__(self) -> "RagClient":

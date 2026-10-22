@@ -11,6 +11,7 @@ import logging
 from flask import current_app, request
 
 from global_utils.constants import INTERNAL_AUTH_HEADER
+from global_utils.internal_auth import trusted_header_user
 from global_utils.flask.decorators import require_team_session
 
 logger = logging.getLogger(__name__)
@@ -19,16 +20,15 @@ _AUTH_HEADER = INTERNAL_AUTH_HEADER
 
 
 def _get_internal_user() -> str | None:
-    """Read user identity from internal service header.
+    """Read the user identity stamped by a trusted internal service.
 
-    Internal services (MAS, Slack WS, etc.) stamp this header after
-    resolving the caller's identity at their own entry point.  External
-    traffic carrying this header is blocked at the Nginx gateway.
+    Honoured only with the shared internal secret (or dev mode); see
+    ``global_utils.internal_auth``.
     """
-    user = request.headers.get(_AUTH_HEADER, "").strip()
+    user = trusted_header_user(request.headers)
     if user:
         logger.debug("Authenticated via %s header", _AUTH_HEADER)
-    return user or None
+    return user
 
 
 rag_require_session = require_team_session(

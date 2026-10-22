@@ -4,6 +4,7 @@ import logging
 import requests
 
 from global_utils.constants import INTERNAL_AUTH_HEADER
+from global_utils.internal_auth import internal_auth_headers
 from global_utils.flask.correlation import correlation_headers
 from slack_commands.models import SlackResponse
 
@@ -18,7 +19,7 @@ def mas_get(
     url: str, user_id: str, params: dict = None, **kwargs,
 ) -> requests.Response:
     """GET from MAS with user identity header."""
-    headers = {**correlation_headers(), _AUTH_HEADER: user_id}
+    headers = {**correlation_headers(), **internal_auth_headers(user_id)}
     return requests.get(
         url, params=params, headers=headers, **kwargs,
     )
@@ -30,7 +31,7 @@ def mas_post(
     """POST JSON to MAS with user identity header."""
     headers = {
         **correlation_headers(),
-        _AUTH_HEADER: user_id,
+        **internal_auth_headers(user_id),
         "Content-Type": "application/json",
     }
     return requests.post(url, json=payload, headers=headers, **kwargs)
@@ -40,7 +41,7 @@ def mas_delete(
     url: str, user_id: str, params: dict = None, **kwargs,
 ) -> requests.Response:
     """DELETE from MAS with user identity header."""
-    headers = {**correlation_headers(), _AUTH_HEADER: user_id}
+    headers = {**correlation_headers(), **internal_auth_headers(user_id)}
     return requests.delete(
         url, params=params, headers=headers, **kwargs,
     )

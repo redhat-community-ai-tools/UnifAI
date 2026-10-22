@@ -50,8 +50,8 @@ def validate_session(
     When *get_fallback_user* is provided and session validation fails (missing
     or invalid session), the callback is tried before returning 401.  If it
     returns a non-empty username, a minimal :class:`UserSessionData` is
-    synthesised.  This supports legacy CI/CD scripts that send
-    ``X-Authenticated-User`` until API-token auth is available.
+    synthesised.  The callback must only return a user for requests that
+    proved they are trusted internal callers (``trusted_header_user``).
     """
     sid = get_session_id()
     if not sid:
