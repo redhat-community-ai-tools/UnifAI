@@ -17,6 +17,7 @@ from mas.blueprints.models.blueprint import BlueprintSpec
 from mas.core.auth.service import AuthService
 from mas.core.platform_config import PlatformConfig
 from mas.core.tracing import TracingService
+from mas.core.identity.ports import IdentityProvider
 from mas.core.identity_forwarding import IdentityTokenSource
 
 
@@ -38,6 +39,7 @@ class WorkflowSessionFactory:
             platform_config: Optional[PlatformConfig] = None,
             tracing_service: Optional[TracingService] = None,
             identity_token_source: Optional[IdentityTokenSource] = None,
+            identity_provider: Optional[IdentityProvider] = None,
     ):
         self._elements = element_registry
         self._engine_name = engine_name
@@ -45,7 +47,12 @@ class WorkflowSessionFactory:
         self._platform_config = platform_config
         self._tracing_service = tracing_service
         self._identity_token_source = identity_token_source
+        self._identity_provider = identity_provider
         self._session_builder = SessionElementBuilder(element_registry)
+
+    def set_identity_provider(self, identity_provider: Optional[IdentityProvider]) -> None:
+        """Late-bind the team-membership provider (built after the factory in the container)."""
+        self._identity_provider = identity_provider
 
     @property
     def engine_name(self) -> str:
@@ -69,6 +76,7 @@ class WorkflowSessionFactory:
             platform_config=self._platform_config,
             tracing_service=self._tracing_service,
             identity_token_source=self._identity_token_source,
+            identity_provider=self._identity_provider,
         )
         logical_plan = PlanBuilder(self._elements).build(blueprint_spec)
         registry = self._session_builder.build(blueprint_spec, deps=deps)

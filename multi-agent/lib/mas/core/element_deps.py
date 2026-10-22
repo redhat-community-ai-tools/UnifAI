@@ -5,6 +5,7 @@ from mas.core.execution_context import ExecutionContextHolder
 from mas.core.auth.service import AuthService
 from mas.core.platform_config import PlatformConfig
 from mas.core.tracing import TracingService
+from mas.core.identity.ports import IdentityProvider
 from mas.core.identity_forwarding import IdentityTokenSource
 
 
@@ -25,3 +26,4 @@ class ElementBuildContext:
     platform_config: Optional[PlatformConfig] = field(default=None)
     tracing_service: Optional[TracingService] = field(default=None)
     identity_token_source: Optional[IdentityTokenSource] = field(default=None)
+    identity_provider: Optional[IdentityProvider] = field(default=None)
