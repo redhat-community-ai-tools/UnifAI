@@ -88,6 +88,9 @@ class CategoryBuilder(ABC):
 
         return deps.auth_service.bind_lazy(resolver, server_id, scheme_type)
 
+    def _category_name(self) -> str:
+        return getattr(self.category, "value", str(self.category))
+
     # ––– shared factory construction with error handling ––––––––––––––
     def _create_instance(
         self,
@@ -101,7 +104,8 @@ class CategoryBuilder(ABC):
             schema_cls = self._registry_elements.get_schema(self.category, resource_spec.type)
         except KeyError as e:
             raise PluginConfigurationError(
-                f"No plugin for {self.category!r} type={resource_spec.type!r}", resource_spec.config.dict()
+                f"No plugin for {self.category!r} type={resource_spec.type!r}", resource_spec.config.dict(),
+                category=self._category_name(), element_type=resource_spec.type,
             ) from e
 
         raw = resource_spec.config.dict(exclude_unset=True)
@@ -109,13 +113,15 @@ class CategoryBuilder(ABC):
             validated = schema_cls(**raw) if schema_cls else raw
         except ValidationError as ve:
             raise PluginConfigurationError(
-                f"Config validation failed for {self.category}/{resource_spec.type}: {ve}", raw
+                f"Config validation failed for {self.category}/{resource_spec.type}: {ve}", raw,
+                category=self._category_name(), element_type=resource_spec.type,
             ) from ve
 
         factory = factory_cls()
         if not factory.accepts(cfg=validated, element_type=resource_spec.type):
             raise PluginConfigurationError(
-                f"{factory_cls.__name__} rejects config of element resource type `{resource_spec.type}`", validated
+                f"{factory_cls.__name__} rejects config of element resource type `{resource_spec.type}`", validated,
+                category=self._category_name(), element_type=resource_spec.type,
             )
 
         try:
@@ -123,7 +129,8 @@ class CategoryBuilder(ABC):
             return factory.create(validated, deps=deps, **extra)
         except Exception as e:
             raise PluginConfigurationError(
-                f"{factory_cls.__name__}.create() failed: {e}", validated
+                f"{factory_cls.__name__}.create() failed: {e}", validated,
+                category=self._category_name(), element_type=resource_spec.type,
             ) from e
 
     # subclasses may override
