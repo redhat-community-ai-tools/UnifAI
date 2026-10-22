@@ -13,6 +13,7 @@ from mas.core.identity import IdentityType
 from mas.core.identity.ports import IdentityProvider
 from mas.session.domain.session_record import SessionRecord
 from mas.session.repository.repository import SessionRepository
+from .access import check_session_access
 from .models import (
     Participant,
     ParticipantRole,
@@ -68,13 +69,9 @@ class CollaborationService:
         Raises ``KeyError`` if the session does not exist.
         Raises ``PermissionError`` if the user does not have access.
         """
-        record = self._session_repo.fetch(session_id)
-        if record.identity.type == IdentityType.TEAM:
-            if not self._identity_provider.is_member(user_id, record.identity.id):
-                raise PermissionError("Access denied")
-        elif user_id.casefold() != record.identity.id.casefold():
-            raise PermissionError("Access denied")
-        return record
+        return check_session_access(
+            self._session_repo, self._identity_provider, user_id, session_id,
+        )
 
     def check_team_membership(self, user_id: str, team_id: str) -> None:
         """Verify the user is a member of the team.
