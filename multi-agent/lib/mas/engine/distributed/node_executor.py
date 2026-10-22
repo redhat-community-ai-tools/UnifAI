@@ -12,6 +12,7 @@ no ``hasattr`` duck-typing.
 Tracing is owned here so that every distributed engine (Temporal,
 Celery, …) gets session-level traces for free — adapters stay thin.
 """
+import logging
 from typing import Any, Dict, Optional
 
 from mas.blueprints.models.blueprint import BlueprintSpec
@@ -23,6 +24,9 @@ from mas.core.tracing import TracingService
 from mas.graph.models.step_context import StepContext
 from mas.graph.state.graph_state import GraphState
 from mas.session.building.workflow_session_factory import WorkflowSessionFactory
+from mas.session.domain.exceptions import SessionBuildError, session_build_error_message
+
+logger = logging.getLogger(__name__)
 
 
 class NodeExecutor:
@@ -94,15 +98,17 @@ class NodeExecutor:
         bindings: Optional[NodeRuntimeBindings] = None,
         execution_context: Optional[ExecutionContext] = None,
     ) -> GraphState:
-        mini_bp = BlueprintSpec.model_validate(node_blueprint)
-
+        session_id = (execution_context.session_id if execution_context else "") or ""
         ctx_holder = ExecutionContextHolder()
-        rt_plan = self._factory.build_runtime_plan(mini_bp, ctx_holder=ctx_holder)
+        try:
+            mini_bp = BlueprintSpec.model_validate(node_blueprint)
+            rt_plan = self._factory.build_runtime_plan(mini_bp, ctx_holder=ctx_holder)
+            step = rt_plan.get_step(node_uid)
+        except Exception as e:
+            raise _build_error(session_id, node_uid, e) from e
 
         if execution_context:
             ctx_holder.context = execution_context
-
-        step = rt_plan.get_step(node_uid)
 
         if step_context:
             step.func.set_context(step_context)
@@ -122,11 +128,20 @@ class NodeExecutor:
         """
         Build a condition from its mini-blueprint, inject context, run it.
         """
-        mini_bp = BlueprintSpec.model_validate(condition_blueprint)
-        registry = self._factory.build_session_registry(mini_bp)
-        condition = registry.get_instance(ResourceCategory.CONDITION, condition_rid)
+        try:
+            mini_bp = BlueprintSpec.model_validate(condition_blueprint)
+            registry = self._factory.build_session_registry(mini_bp)
+            condition = registry.get_instance(ResourceCategory.CONDITION, condition_rid)
+        except Exception as e:
+            raise _build_error("", condition_rid, e) from e
 
         if step_context and isinstance(condition, SupportsStepContext):
             condition.set_context(step_context)
 
         return condition(state)
+
+
+def _build_error(session_id: str, uid: str, e: Exception) -> SessionBuildError:
+    """Log the full build failure and return its secret-free, session-level form."""
+    logger.exception("Session %s: building node %s failed on the worker", session_id, uid)
+    return SessionBuildError(session_id, session_build_error_message(e))

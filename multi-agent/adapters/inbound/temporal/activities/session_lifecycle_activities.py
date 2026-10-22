@@ -39,7 +39,7 @@ class SessionLifecycleActivities:
     def fail_session(self, params: FailSessionParams) -> None:
         from global_utils.utils.logging_config import bind_correlation_ids
         bind_correlation_ids(params.request_id, params.run_id)
-        self._handler.fail(params.run_id, params.error_message)
+        self._handler.fail(params.run_id, params.error_message, params.error_type)
 
     @activity.defn(name="cancel_session")
     def cancel_session(self, params: CancelSessionParams) -> None:

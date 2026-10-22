@@ -71,3 +71,18 @@ class SessionBuildError(Exception):
         self.session_id = session_id
         self.message = message
         super().__init__(message)
+
+
+BUILD_ERROR_MESSAGE_LIMIT = 500
+
+
+def session_build_error_message(e: BaseException) -> str:
+    """Secret-free, length-limited description of an element build failure.
+
+    ``PluginConfigurationError.message`` omits the config; ``str(e)`` would include it,
+    so only the ``message`` attribute is ever used as detail.
+    """
+    detail = getattr(e, "message", None)
+    detail = detail if isinstance(detail, str) and detail else None
+    message = f"Session build failed ({type(e).__name__})" + (f": {detail}" if detail else "")
+    return message[:BUILD_ERROR_MESSAGE_LIMIT]

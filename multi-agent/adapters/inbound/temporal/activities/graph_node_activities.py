@@ -17,12 +17,14 @@ automatically — no manual .serialize()/.deserialize() calls needed.
 from typing import Optional
 
 from temporalio import activity
+from temporalio.exceptions import ApplicationError
 
 from mas.core.channels import ChannelFactory
 from mas.core.hitl.ports import ApprovalGateFactory
 from mas.core.runtime_binder import NodeRuntimeBindings
 from mas.engine.distributed.node_executor import NodeExecutor
 from mas.graph.state.graph_state import GraphState
+from mas.session.domain.exceptions import SessionBuildError
 from global_utils.utils.logging_config import bind_correlation_ids
 from inbound.temporal.activities.heartbeat import heartbeat
 from temporal.models import ExecuteNodeParams, EvaluateConditionParams
@@ -62,6 +64,8 @@ class GraphNodeActivities:
                 bindings=bindings,
                 execution_context=params.execution_context,
             )
+        except SessionBuildError as e:
+            raise _as_non_retryable(e) from None
         finally:
             if self._gate_factory is not None:
                 self._gate_factory.remove(params.session_id)
@@ -69,12 +73,15 @@ class GraphNodeActivities:
     @activity.defn(name="evaluate_condition")
     def evaluate_condition(self, params: EvaluateConditionParams) -> str:
         bind_correlation_ids(params.request_id)
-        return self._executor.evaluate_condition(
-            condition_rid=params.condition_rid,
-            condition_blueprint=params.condition_blueprint,
-            step_context=params.step_context,
-            state=params.state,
-        )
+        try:
+            return self._executor.evaluate_condition(
+                condition_rid=params.condition_rid,
+                condition_blueprint=params.condition_blueprint,
+                step_context=params.step_context,
+                state=params.state,
+            )
+        except SessionBuildError as e:
+            raise _as_non_retryable(e) from None
 
     # ── Bindings construction ────────────────────────────────────
 
@@ -105,3 +112,15 @@ class GraphNodeActivities:
             approval_gate=gate,
             approval_policy=policy,
         )
+
+
+def _as_non_retryable(e: SessionBuildError) -> ApplicationError:
+    """A build failure is deterministic: retrying the activity cannot fix it.
+
+    Raised ``from None`` so the original exception (whose text may hold config)
+    is not serialised into the Temporal failure chain.
+
+    Only the secret-free message crosses the Temporal boundary; the workflow
+    recognises ``type`` to record it on the session.
+    """
+    return ApplicationError(e.message, type=SessionBuildError.error_type, non_retryable=True)

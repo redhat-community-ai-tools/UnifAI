@@ -19,7 +19,9 @@ from mas.session.domain.models import (
     SessionChat, SessionMeta, ScheduleRunSummary,
     TimeSeriesPoint, SystemAnalyticsData,
 )
-from mas.session.domain.exceptions import BlueprintNotFoundError, SessionBuildError
+from mas.session.domain.exceptions import (
+    BlueprintNotFoundError, SessionBuildError, session_build_error_message,
+)
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 
@@ -124,7 +126,7 @@ class SessionService:
         record.update_context(engine_handle=handle)
         self._projector.apply(record, inputs or {}, logged_in_user=logged_in_user)
 
-        session = self._manager.get_session(session_id)
+        session = self._build_session(session_id, reset_engine_handle=True)
         hitl = session.record.metadata.hitl_enabled
         execution_ctx = (session.run_context
                          .with_scope(scope)
@@ -294,7 +296,9 @@ class SessionService:
         record.run_context = record.run_context.with_hitl(record.metadata.hitl_enabled)
         self._manager.save_record(record)
 
-    def _build_session(self, session_id: str) -> WorkflowSession:
+    def _build_session(
+        self, session_id: str, *, reset_engine_handle: bool = False,
+    ) -> WorkflowSession:
         """Build the session, turning an element build failure into a FAILED session.
 
         The full exception is logged here; only a short, secret-free message
@@ -306,12 +310,14 @@ class SessionService:
             raise
         except Exception as e:
             logger.exception("Session %s: building its elements failed", session_id)
-            # PluginConfigurationError.message omits the config; str(e) would include it.
-            detail = getattr(e, "message", None) if isinstance(getattr(e, "message", None), str) else None
-            message = f"Session build failed ({type(e).__name__})" + (f": {detail}" if detail else "")
+            message = session_build_error_message(e)
             try:
                 record = self._manager.get_record(session_id)
                 record.run_context = record.run_context.mark_finished()
+                if reset_engine_handle:
+                    # No workflow was started: drop the handle staged by submit()
+                    # so a retry starts from a clean slate.
+                    record.update_context(engine_handle=None)
                 record.status = SessionStatus.FAILED
                 record.metadata.status_message = message
                 setattr(record.metadata, "error", {"type": SessionBuildError.error_type, "message": message})

@@ -21,6 +21,7 @@ from typing import Optional
 from mas.core.channels import ChannelFactory
 from mas.core.execution_context import ExecutionContext
 from mas.graph.state.graph_state import GraphState
+from mas.session.domain.exceptions import SessionBuildError
 from mas.session.execution.lifecycle import SessionLifecycle
 from mas.session.management.user_session_manager import UserSessionManager
 
@@ -52,9 +53,12 @@ class BackgroundLifecycleHandler:
         self._lifecycle.complete(record, final_state)
         self._close_channel(run_id)
 
-    def fail(self, run_id: str, error_message: str) -> None:
+    def fail(self, run_id: str, error_message: str, error_type: Optional[str] = None) -> None:
         record = self._manager.get_record(run_id)
-        self._lifecycle.fail(record, RuntimeError(error_message))
+        error: Exception = RuntimeError(error_message)
+        if error_type == SessionBuildError.error_type:
+            error = SessionBuildError(run_id, error_message)
+        self._lifecycle.fail(record, error)
         self._close_channel(run_id)
 
     def cancel(self, run_id: str) -> None:

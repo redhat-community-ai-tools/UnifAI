@@ -20,10 +20,10 @@ from datetime import timedelta
 
 from temporalio import workflow
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import is_cancelled_exception
+from temporalio.exceptions import ApplicationError, is_cancelled_exception
 
 from mas.graph.state.graph_state import GraphState
-from mas.session.domain.exceptions import SessionCancelledException
+from mas.session.domain.exceptions import SessionBuildError, SessionCancelledException
 from mas.session.execution.background_runner import BackgroundSessionRunner
 from temporal.models import (
     SessionWorkflowParams,
@@ -122,12 +122,14 @@ class SessionWorkflow:
         )
 
     async def fail(self, error: Exception) -> None:
-        """Mark FAILED, persist."""
+        """Mark FAILED, persist (build failures keep their secret-free message)."""
+        build = _find_build_failure(error)
         await workflow.execute_activity(
             "fail_session",
             FailSessionParams(
                 run_id=self._params.run_id,
-                error_message=str(error),
+                error_message=build if build is not None else str(error),
+                error_type=SessionBuildError.error_type if build is not None else None,
                 request_id=self._params.request_id,
             ),
             start_to_close_timeout=_LIFECYCLE_TIMEOUT,
@@ -145,3 +147,14 @@ class SessionWorkflow:
             start_to_close_timeout=_LIFECYCLE_TIMEOUT,
             retry_policy=_LIFECYCLE_RETRY,
         )
+
+
+def _find_build_failure(error: BaseException) -> str | None:
+    """Return the safe message of a worker-side build failure in *error*'s cause chain."""
+    seen = 0
+    while error is not None and seen < 20:
+        if isinstance(error, ApplicationError) and error.type == SessionBuildError.error_type:
+            return error.message
+        error = error.__cause__
+        seen += 1
+    return None
