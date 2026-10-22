@@ -15,7 +15,7 @@ metadata:
     features.operators.openshift.io/token-auth-aws: "false"
     features.operators.openshift.io/token-auth-azure: "false"
     features.operators.openshift.io/token-auth-gcp: "false"
-    operatorframework.io/suggested-namespace: openshift-operators
+    operatorframework.io/suggested-namespace: unifai-operator
     repository: https://github.com/startxfr/UnifAI
     support: startx
   name: unifai-operator.v0.0.0

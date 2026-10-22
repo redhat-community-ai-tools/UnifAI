@@ -1,0 +1,6 @@
+# The operator runs in its own namespace (not openshift-operators) so that the OpenShift user-workload monitoring
+# scrapes its ServiceMonitor; the global OperatorGroup keeps it watching every namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: unifai-operator

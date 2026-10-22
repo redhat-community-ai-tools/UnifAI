@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.1.20
+VERSION ?= 0.1.21
 # Tag of the UnifAI images a stack deploys by default (spec.version overrides it).
 UNIFAI_VERSION ?= devel
 CHANNELS ?= alpha,stable
@@ -309,6 +309,7 @@ bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metada
 	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	sed -i 's#containerImage: .*#containerImage: $(IMG)#' bundle/manifests/unifai-operator.clusterserviceversion.yaml
+	python3 hack/csv_metrics_scraper.py bundle/manifests/unifai-operator.clusterserviceversion.yaml unifai-operator-metrics-scraper
 	$(OPERATOR_SDK) bundle validate ./bundle
 
 .PHONY: bundle-build

@@ -41,8 +41,8 @@ fork-specific is applied by the operator at render time:
 - the UI Route is re-encrypted with an OpenShift service-ca certificate mounted in nginx (instead of the passthrough
   of the self-signed certificate baked in the image), and every TLS-terminating Route deletes the
   `X-Authenticated-User` request header: MAS and RAG trust it as the caller identity when no session cookie is sent;
-- `unifai-stack` NetworkPolicy: ingress only from the namespace, the OpenShift router, monitoring and
-  `openshift-operators` (the internal APIs trust an `X-Authenticated-User` header).
+- `unifai-stack` NetworkPolicy: ingress only from the namespace, the OpenShift router, monitoring, the operator's
+  namespace and `openshift-operators` (the internal APIs trust an `X-Authenticated-User` header).
 
 RAG: the upstream `unifai-rag` image has neither docling nor sentence-transformers, so conversion and embeddings are
 always remote services. By default (`rag.docling.mode` / `rag.embedding.mode` = `deploy`, `local` is a synonym) the
@@ -213,7 +213,7 @@ The manager metrics endpoint (`:8443/metrics`, HTTPS, token reviewed) adds to th
 | `unifai_operator_helm_apply_seconds` | release, result | Helm install/upgrade duration |
 | `unifai_operator_keycloak_repairs_total` | namespace | restarts of a managed Keycloak left unready |
 
-No ServiceMonitor is shipped for the operator itself yet (fork/ROADMAP.md R-203).
+The bundle ships a ServiceMonitor for these metrics (see "Install with OLM").
 
 ## Build and release
 
@@ -260,9 +260,18 @@ spec:
   publisher: startx
   updateStrategy: {registryPoll: {interval: 15m}}
 ---
+apiVersion: v1
+kind: Namespace
+metadata: {name: unifai-operator}
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata: {name: unifai-operator, namespace: unifai-operator}
+spec: {}  # AllNamespaces
+---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
-metadata: {name: unifai-operator, namespace: openshift-operators}
+metadata: {name: unifai-operator, namespace: unifai-operator}
 spec:
   channel: stable
   name: unifai-operator
@@ -270,6 +279,13 @@ spec:
   sourceNamespace: openshift-marketplace
   installPlanApproval: Automatic
 ```
+
+The operator gets its own namespace (suggested `unifai-operator`) rather than `openshift-operators`: OpenShift
+monitoring ignores `openshift-*` namespaces, and the bundle ships a ServiceMonitor scraped by the user-workload
+monitoring. It authenticates with the token of the `unifai-operator-metrics-scraper` ServiceAccount (created by OLM
+from the CSV `clusterPermissions`, allowed to GET `/metrics`), stored in the Secret `unifai-operator-metrics-token`
+that the operator creates. Moving an existing install: delete the Subscription and the CSV in the old namespace (CRDs
+and UnifAI resources are kept, stacks keep running), then create the three objects above.
 
 Files: [`deploy/olm/`](deploy/olm/). To pick up a new catalog image without waiting for the 15 min poll:
 `oc -n openshift-marketplace delete pod -l olm.catalogSource=unifai-operator-catalog`. Then, in any namespace:

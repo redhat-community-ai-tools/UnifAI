@@ -2,7 +2,7 @@ apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
 metadata:
   name: unifai-operator
-  namespace: openshift-operators
+  namespace: unifai-operator
 spec:
   channel: stable
   name: unifai-operator

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"os"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -28,6 +29,9 @@ func SetupAll(mgr ctrl.Manager) error {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
 		}
+	}
+	if err := mgr.Add(&MetricsToken{Client: mgr.GetClient(), Reader: mgr.GetAPIReader(), Namespace: os.Getenv("POD_NAMESPACE")}); err != nil {
+		return fmt.Errorf("metrics token: %w", err)
 	}
 	return nil
 }

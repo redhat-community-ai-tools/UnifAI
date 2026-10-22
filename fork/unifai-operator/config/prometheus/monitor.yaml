@@ -1,4 +1,8 @@
-# Prometheus Monitor Service (Metrics)
+# Scraped by the OpenShift user-workload monitoring when the operator runs in its own namespace (unifai-operator):
+# both Prometheus stacks ignore openshift-* namespaces. User-workload monitoring rejects bearerTokenFile, so the
+# token of the scraper ServiceAccount (CSV clusterPermissions, GET /metrics) comes from a Secret the operator creates
+# (internal/controller/metricstoken.go). The metrics server certificate is self-signed: the token is what protects
+# the endpoint.
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -11,15 +15,14 @@ metadata:
 spec:
   endpoints:
     - path: /metrics
-      port: https # Ensure this is the name of the port that exposes HTTPS metrics
+      port: https
       scheme: https
-      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      authorization:
+        type: Bearer
+        credentials:
+          name: unifai-operator-metrics-token
+          key: token
       tlsConfig:
-        # TODO(user): The option insecureSkipVerify: true is not recommended for production since it disables
-        # certificate verification, exposing the system to potential man-in-the-middle attacks.
-        # For production environments, it is recommended to use cert-manager for automatic TLS certificate management.
-        # To apply this configuration, enable cert-manager and use the patch located at config/prometheus/servicemonitor_tls_patch.yaml,
-        # which securely references the certificate from the 'metrics-server-cert' secret.
         insecureSkipVerify: true
   selector:
     matchLabels:
