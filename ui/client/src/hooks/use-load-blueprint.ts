@@ -438,8 +438,9 @@ export async function loadBlueprintForEditing(
   blueprintId: string,
   allBlocksData: BuildingBlock[],
   conditionsData: BuildingBlock[],
+  teamId?: string,
 ): Promise<ReconstructedGraph> {
-  const blueprintInfo = await getBlueprintInfo(blueprintId);
+  const blueprintInfo = await getBlueprintInfo(blueprintId, teamId);
   const specDict = blueprintInfo.spec_dict;
   const graph = reconstructBlueprintGraph(
     specDict,

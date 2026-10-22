@@ -135,9 +135,14 @@ export async function fetchResolvedBlueprint(
 /**
  * Get blueprint information including metadata
  */
-export async function getBlueprintInfo(blueprintId: string): Promise<BlueprintInfoResponse> {
+export async function getBlueprintInfo(
+  blueprintId: string,
+  teamId?: string,
+): Promise<BlueprintInfoResponse> {
+  const params: Record<string, string> = { blueprintId };
+  if (teamId) params.teamId = teamId;
   const { data } = await axios.get<BlueprintInfoResponse>('/blueprints/blueprint.info.get', {
-    params: { blueprintId },
+    params,
   });
   return data;
 }
@@ -145,9 +150,14 @@ export async function getBlueprintInfo(blueprintId: string): Promise<BlueprintIn
 /**
  * Delete a blueprint by ID
  */
-export async function deleteBlueprint(blueprintId: string): Promise<DeleteBlueprintResponse> {
+export async function deleteBlueprint(
+  blueprintId: string,
+  teamId?: string,
+): Promise<DeleteBlueprintResponse> {
+  const params: Record<string, string> = { blueprintId };
+  if (teamId) params.teamId = teamId;
   const { data } = await axios.delete<DeleteBlueprintResponse>('/blueprints/remove.blueprint', {
-    params: { blueprintId },
+    params,
   });
   return data;
 }
@@ -189,13 +199,12 @@ export async function updateBlueprint(
 export async function setBlueprintMetadata(
   blueprintId: string,
   metadata: { usageScope?: "public" | "private"; [key: string]: any },
-  userId: string
+  userId: string,
+  teamId?: string,
 ): Promise<SetMetadataResponse> {
-  const { data } = await axios.put<SetMetadataResponse>('/blueprints/blueprint.metadata.set', {
-    blueprintId,
-    metadata,
-    userId,
-  });
+  const body: Record<string, any> = { blueprintId, metadata, userId };
+  if (teamId) body.teamId = teamId;
+  const { data } = await axios.put<SetMetadataResponse>('/blueprints/blueprint.metadata.set', body);
   return data;
 }
 
@@ -221,12 +230,12 @@ export async function validateBlueprint(request: BlueprintValidationRequest): Pr
  */
 export async function validateDraft(
   draft: string,
-  timeoutSeconds: number = 10.0
+  timeoutSeconds: number = 10.0,
+  teamId?: string,
 ): Promise<BlueprintValidationResult> {
-  const response = await axios.post('/blueprints/draft.validate', {
-    draft,
-    timeoutSeconds,
-  });
+  const body: Record<string, any> = { draft, timeoutSeconds };
+  if (teamId) body.teamId = teamId;
+  const response = await axios.post('/blueprints/draft.validate', body);
   return response.data;
 }
 
