@@ -57,11 +57,25 @@ class LocalFileStorage:
         for file in files:
             if "name" not in file or "content" not in file:
                 raise ValueError("File must have 'name' and 'content' keys")
+            self._reject_unsafe_name(file["name"])
             
             path = self.save_base64(file["name"], file["content"])
             saved_paths.append(path)
         
         return saved_paths
+
+    @staticmethod
+    def _reject_unsafe_name(name: object) -> None:
+        """Reject names that are not a plain file name (separators, dot segments, NUL)."""
+        if (
+            not isinstance(name, str)
+            or not name.strip()
+            or "\x00" in name
+            or "/" in name
+            or "\\" in name
+            or name.strip() in (".", "..")
+        ):
+            raise ValueError("Invalid file name")
 
     def save_base64(self, filename: str, base64_content: str) -> str:
         """
@@ -90,7 +104,10 @@ class LocalFileStorage:
         """
         safe_name = secure_filename(filename)
         path = os.path.join(self._upload_folder, safe_name)
-        
+        root = os.path.realpath(self._upload_folder)
+        if os.path.commonpath([root, os.path.realpath(path)]) != root:
+            raise ValueError("Invalid file name")
+
         with open(path, "wb") as f:
             f.write(content)
         

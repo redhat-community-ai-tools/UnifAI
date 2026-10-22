@@ -22,6 +22,7 @@ docs_bp = Blueprint("docs", __name__)
 
 
 @docs_bp.route("/upload", methods=["POST"])
+@rag_require_session
 @from_body({
     "files": fields.List(fields.Dict(), required=True),
 })
@@ -37,6 +38,10 @@ def upload_docs(files):
         storage.save_files(files)
         
         return jsonify({"message": "Files uploaded successfully"}), 200
+
+    except ValueError as e:
+        logger.warning(f"Rejected upload: {e}")
+        return jsonify({"error": str(e)}), 400
         
     except Exception as e:
         logger.error(f"Failed to upload files: {str(e)}")
