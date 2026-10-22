@@ -14,6 +14,9 @@ import (
 // EventSource is the reporting controller of the Events the operator records.
 const EventSource = "unifai-operator"
 
+// PhaseDeleting is the phase of an object whose deletion is in progress.
+const PhaseDeleting = "Deleting"
+
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // warningPhases are the phases recorded as Warning Events.
@@ -39,7 +42,7 @@ func recordPhase(rec recorder.EventRecorder, obj runtime.Object, from, to, msg s
 
 // recordDeleteFailed records a Warning Event the first time the UnifAI side of an object cannot be deleted.
 func recordDeleteFailed(rec recorder.EventRecorder, obj runtime.Object, from, msg string) {
-	if rec == nil || from == "Deleting" {
+	if rec == nil || from == PhaseDeleting {
 		return
 	}
 	record(rec, obj, corev1.EventTypeWarning, "DeleteFailed", msg)

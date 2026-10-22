@@ -503,8 +503,8 @@ func (r *StackReconciler) finalize(ctx context.Context, st *unifaiv1.UnifaiStack
 		return ctrl.Result{}, nil
 	}
 	removeData := st.Spec.DeletionPolicy == "Delete"
-	if st.Status.Phase != "Deleting" {
-		_ = r.setStatus(ctx, st, "Deleting", "removing the stack", metav1.ConditionFalse, "Deleting")
+	if st.Status.Phase != PhaseDeleting {
+		_ = r.setStatus(ctx, st, PhaseDeleting, "removing the stack", metav1.ConditionFalse, PhaseDeleting)
 	}
 	var pvcs []string
 	for i := len(stack.Releases) - 1; i >= 0; i-- {

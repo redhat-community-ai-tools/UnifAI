@@ -191,7 +191,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 			if err := h.Delete(ctx); err != nil && !b.unifaiGone(ctx, obj.GetNamespace(), err) {
 				logger.Info("delete failed, retrying", "error", err.Error())
 				orig := obj.DeepCopyObject().(client.Object)
-				st.Phase, st.Message = "Deleting", unifai.Truncate("cannot delete (still referenced?): "+err.Error(), 500)
+				st.Phase, st.Message = PhaseDeleting, unifai.Truncate("cannot delete (still referenced?): "+err.Error(), 500)
 				_ = b.Status().Patch(ctx, obj, client.MergeFrom(orig))
 				recordDeleteFailed(b.Recorder, obj, prev, st.Message)
 				return reconcile.Result{RequeueAfter: 3 * retry}, nil
