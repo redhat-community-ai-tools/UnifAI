@@ -6,7 +6,8 @@ Two trustworthy origins only:
   token in the Redis session after login, so its ``groups`` claim is read as is;
 - an internal caller (e.g. MAS) forwarding the user's own token as
   ``Authorization: Bearer``: the token is verified against the issuer's JWKS
-  (``OIDC_ISSUER_URL``) and must belong to the user the request acts for.
+  (``OIDC_ISSUER_URL``) and must belong to the user the request acts for, or to a
+  member of the team workspace it acts for.
 
 Anything else yields no group, so only the caller's own sources are searched.
 """
@@ -78,7 +79,27 @@ def caller_groups(issuer: str = "", verify_tls: bool = True) -> list[str]:
     claims = verify_bearer(auth.split(" ", 1)[1].strip(), issuer, verify_tls)
     if not claims:
         return []
-    if claims.get("preferred_username") != getattr(g, "user_id", None):
+    username = claims.get("preferred_username")
+    workspace = getattr(g, "user_id", None)
+    if username != workspace and not _member_of_workspace(username, workspace):
         logger.warning("Forwarded bearer token belongs to another user than the request; ignoring it")
         return []
     return _groups(claims)
+
+
+def _member_of_workspace(username: Any, workspace: Any) -> bool:
+    """True when the token's person is a member of the team workspace the request acts for.
+
+    In a team workspace the request is made for the team id, while the forwarded token
+    is the signed-in person's own: their groups are the right ones as long as they
+    belong to that team. Anything unverifiable counts as not a member.
+    """
+    if not username or not workspace or username == workspace:
+        return False
+    try:
+        from bootstrap.app_container import identity_client
+
+        return bool(identity_client().is_member(str(username), str(workspace)))
+    except Exception:  # noqa: BLE001 - membership must never raise into a search
+        logger.warning("Team membership check failed; ignoring the forwarded token", exc_info=True)
+        return False
