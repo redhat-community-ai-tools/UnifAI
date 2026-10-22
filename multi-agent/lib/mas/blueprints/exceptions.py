@@ -68,3 +68,20 @@ class PromptShortcutsValidationError(BlueprintError):
         self.message = message
         super().__init__(self.message)
 
+
+
+class UnresolvedResourceEntryError(BlueprintError, ValueError):
+    """A blueprint resource entry has neither an inline config nor a ``$ref:`` rid.
+
+    Plain ids only name resources defined inline (with a ``config``) in the same
+    blueprint; stored resources must be referenced as ``$ref:<id>``.
+    """
+
+    def __init__(self, category: str, rid: str):
+        self.category = category
+        self.rid = rid
+        self.message = (
+            f"{category} entry '{rid}' has no config: a plain id names a resource defined "
+            f"inline in this blueprint. To use a stored resource, reference it as '$ref:{rid}'."
+        )
+        super().__init__(self.message)

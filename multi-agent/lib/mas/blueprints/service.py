@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from mas.blueprints.models.blueprint import BlueprintSpec, BlueprintDraft, BlueprintDocument, BlueprintSummary
 from mas.blueprints.repository.repository import BlueprintRepository
-from mas.blueprints.resolver import BlueprintResolver
+from mas.blueprints.resolver import BlueprintResolver, check_inline_entries
 from mas.blueprints.collector import BlueprintConfigCollector
 from mas.blueprints.exceptions import (
     BlueprintNotFoundError,
@@ -80,6 +80,7 @@ class BlueprintService:
         if metadata:
             validate_metadata_keys(metadata)
         draft_bp = BlueprintDraft(**draft_dict)
+        check_inline_entries(draft_bp)
         if not skip_name_check and self._repo.name_exists_for_identity(identity, draft_bp.name):
             raise BlueprintDuplicateNameError(draft_bp.name)
         rid_refs = list(RefWalker.external_rids(draft_bp))
@@ -110,6 +111,7 @@ class BlueprintService:
                 draft_dict = {**draft_dict, "prompt_shortcuts": existing.to_storage()}
 
         draft = BlueprintDraft(**draft_dict)
+        check_inline_entries(draft)
         new_name = draft.name
         old_name = doc.spec_dict.get("name")
         if new_name != old_name and self._repo.name_exists_for_identity(
