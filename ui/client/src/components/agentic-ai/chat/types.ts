@@ -17,7 +17,8 @@ export interface ResponseMetadata {
   response_id?: string | null;
   model?: string | null;
   fields?: Record<string, unknown>;
-  lookup_url?: string;
+  /** Routing explanation fetched server-side (why this model served the response). */
+  routing?: Record<string, unknown>;
 }
 
 export interface Message {
