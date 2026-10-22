@@ -24,6 +24,19 @@ from test_memory_extraction import FakeLLM, GOOD  # noqa: E402
 from test_memory_access import FakeProvider, holder_for  # noqa: E402
 from test_memory_tool import FakeEmbedder, FakeFacts, FakeIndex, FakeStore  # noqa: E402
 
+def discovered_registry():
+    """Discover every spec like ``ElementRegistry.auto_discover`` but tolerate duplicates left by other test modules."""
+    from mas.catalog.spec_discoverer import SpecDiscoverer
+
+    reg = ElementRegistry()
+    for spec_cls in SpecDiscoverer().discover():
+        try:
+            reg.register_spec_class(spec_cls)
+        except ValueError:
+            pass
+    return reg
+
+
 MSGS = [
     ChatMessage(role=Role.USER, content="We chose Postgres 17. Deadline is Friday."),
     ChatMessage(role=Role.ASSISTANT, content="Noted."),
@@ -130,8 +143,7 @@ def test_config_in_blueprint_union_and_defaults():
 
 
 def test_spec_is_discovered_and_factory_builds_the_node():
-    reg = ElementRegistry()
-    reg.auto_discover()
+    reg = discovered_registry()
     assert reg.get_spec(ResourceCategory.NODE, "memory_extractor_node")
     cfg = MemoryExtractorNodeConfig(llm="m", memory="mem", classification="restricted")
     built = MemoryExtractorNodeFactory().create(
@@ -140,3 +152,17 @@ def test_spec_is_discovered_and_factory_builds_the_node():
     assert isinstance(built, MemoryExtractorNode)
     assert built.extract_and_persist(MSGS).startswith("memory extraction failed")
     assert MemoryExtractorNodeFactory().accepts(cfg, "memory_extractor_node")
+
+
+def test_readme_example_fragment_is_valid():
+    import re
+    import yaml
+    from mas.elements.tools.memory.config import MemoryToolConfig
+
+    readme = (Path(__file__).resolve().parents[3] / "lib/mas/elements/tools/memory/README.md").read_text()
+    fragment = yaml.safe_load(re.search(r"## Example blueprint fragment\s+```yaml\n(.*?)```", readme, re.S).group(1))
+    tool_cfg = MemoryToolConfig(**fragment["tools"][0]["config"])
+    assert tool_cfg.scope_id == "{project_id}" and tool_cfg.access.mode.value == "team"
+    node_cfg = TypeAdapter(NodeSpec).validate_python(fragment["nodes"][0]["config"])
+    assert str(node_cfg.memory.root) == fragment["tools"][0]["rid"]
+    assert fragment["plan"][0]["node"] == fragment["nodes"][0]["rid"]

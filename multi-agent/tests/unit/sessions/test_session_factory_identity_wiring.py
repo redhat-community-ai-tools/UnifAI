@@ -29,8 +29,14 @@ class Provider:
 
 @pytest.fixture(scope="module")
 def element_registry():
+    from mas.catalog.spec_discoverer import SpecDiscoverer
+
     reg = ElementRegistry()
-    reg.auto_discover()
+    for spec_cls in SpecDiscoverer().discover():
+        try:
+            reg.register_spec_class(spec_cls)
+        except ValueError:  # duplicates left in the subclass tree by other test modules
+            pass
     return reg
 
 
