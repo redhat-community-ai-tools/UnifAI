@@ -138,8 +138,12 @@ type ChunkData = {
     | "tool_calling"
     | "tool_result"
     | "workplan_snapshot"
-    | "approval_required";
+    | "approval_required"
+    | "agent_error";
   chunk?: string;
+  error_type?: string;
+  error?: string;
+  retry_after?: number | null;
   tool?: string;
   output?: string;
   call_id?: string;
@@ -286,6 +290,7 @@ export function useSessionHub({
         node, display_name, type, chunk, state, tool, output,
         call_id, args, action, plan_id, thread_id, owner_uid, workplan,
         request_id, origin, tool_name, tool_args, tool_description, tool_access_mode,
+        error_type, error, retry_after,
       } = chunkData;
       const map = nodeListRef.current;
       let existing = map.get(node);
@@ -306,6 +311,16 @@ export function useSessionHub({
       switch (type) {
         case "llm_token":
           if (chunk) existing.text += chunk;
+          break;
+        case "agent_error":
+          // Typed, non-fatal errors only; untyped ones follow the normal failure path.
+          if (error_type && error) {
+            existing.error = {
+              type: error_type,
+              message: error,
+              retry_after: typeof retry_after === "number" ? retry_after : null,
+            };
+          }
           break;
         case "tool_calling":
           if (call_id && tool) {

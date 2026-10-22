@@ -20,6 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 flask = ["flask", "flask-cors", "gunicorn"]
 mongo = ["pymongo"]
+memory = ["pymongo", "qdrant-client"]
 temporal = ["temporalio"]
 langgraph = ["langgraph", "langchain", "langchain-core", "deepagents"]
 llms = ["openai", "langchain-openai", "langchain-google-genai"]
@@ -40,7 +41,7 @@ otel = [
     "opentelemetry-instrumentation-httpx>=0.66b1",
 ]
 all = [
-    "mas[flask,mongo,temporal,langgraph,llms,tools,a2a,claude,rag,redis,openshell,tracing,otel]",
+    "mas[flask,mongo,memory,temporal,langgraph,llms,tools,a2a,claude,rag,redis,openshell,tracing,otel]",
 ]
 test = ["pytest>=6.0"]
 

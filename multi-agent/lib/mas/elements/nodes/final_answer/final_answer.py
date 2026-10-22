@@ -1,5 +1,6 @@
 from typing import List, ClassVar, Dict, Any
 import logging
+from mas.elements.llms.common.chat.message import ERROR_METADATA_KEY, RESPONSE_METADATA_KEY, ChatMessage, Role
 from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
 from mas.graph.state.graph_state import Channel
@@ -36,7 +37,7 @@ class FinalAnswerNode(IEMCapableMixin, BaseNode):
         # Create final answer if we have collected results
         if self._collected_results:
             final_answer = self._merge_results()
-            self.promote_to_messages(final_answer)
+            self.promote_to_messages(self._as_message(final_answer))
             state[Channel.OUTPUT] = final_answer
             
             # Clear collected results
@@ -60,6 +61,28 @@ class FinalAnswerNode(IEMCapableMixin, BaseNode):
 
         except Exception as e:
             logger.error("final_answer.collect_error", extra={"node_uid": self.uid, "error": str(e)})
+
+    def _as_message(self, final_answer: str):
+        """Carry the LLM response metadata of a single result onto the message.
+
+        Returns the plain string unchanged when there is no such metadata.
+        """
+        if len(self._collected_results) == 1:
+            result = self._collected_results[0]
+            metadata: Dict[str, Any] = {}
+            llm_response = result.execution_metadata.get(RESPONSE_METADATA_KEY)
+            if llm_response:
+                metadata[RESPONSE_METADATA_KEY] = llm_response
+            error_info = result.execution_metadata.get(ERROR_METADATA_KEY)
+            if error_info and not result.success:
+                metadata[ERROR_METADATA_KEY] = error_info
+            if metadata:
+                return ChatMessage(
+                    role=Role.ASSISTANT,
+                    content=final_answer,
+                    metadata=metadata,
+                )
+        return final_answer
 
     def _merge_results(self) -> str:
         """

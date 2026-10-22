@@ -100,6 +100,10 @@ class BaseLLMChatModelAdapter(BaseChatModel):
                     message=AIMessageChunk(content=token_or_msg),
                 )
             elif isinstance(token_or_msg, ChatMessage):
+                if not token_or_msg.tool_calls:
+                    # Text was already streamed token by token; a trailing
+                    # message without tool calls only carries metadata.
+                    token_or_msg = token_or_msg.model_copy(update={"content": ""})
                 yield ChatGenerationChunk(
                     message=LangChainConverter.to_lc_message_chunk(token_or_msg),
                 )

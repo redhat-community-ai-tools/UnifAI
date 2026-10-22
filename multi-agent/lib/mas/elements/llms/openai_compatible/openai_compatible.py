@@ -13,19 +13,54 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, Iterator, List, Optional, Union
 
-from openai import OpenAI
+import httpx
+from openai import APIStatusError, OpenAI
 from openai.types.chat import ChatCompletionToolParam
 
 from ..common.base_llm import BaseLLM
-from ..common.chat.message import ChatMessage, Role
+from ..common.chat.message import RESPONSE_METADATA_KEY, ChatMessage, Role
+from ..common.exceptions import LLMRateLimitError, rate_limit_from_response
 from ..common.name_sanitizer import build_name_maps, map_name
 from ..common.tool_name_restorer import restore_tool_names
 from ...tools.common.tool_definition import ToolDefinition
 from .message_converter import OpenAIMessageConverter
 from .tools_converter import OpenAIToolsConverter
-from .stream_aggregator import StreamToolCallAggregator
+from .stream_aggregator import (
+    StreamMetadataCollector,
+    StreamToolCallAggregator,
+    build_response_metadata,
+    extract_extra_fields,
+)
+from .response_lookup import DEFAULT_LOOKUP_TIMEOUT_S, fetch_routing
 from mas.core.tracing import TracingService
 from mas.core.identity_forwarding import IdentityForwarder
+
+
+DEFAULT_MAX_RETRIES = 2
+DEFAULT_TIMEOUT_S = 120.0
+
+
+def _mark_429_not_retryable(response: httpx.Response) -> None:
+    """Tell the SDK never to retry a 429.
+
+    A rate limit or quota rejection will not clear within the SDK's backoff,
+    so retrying only delays the error the user needs to see.  Connection
+    errors and 5xx responses keep the normal retry behaviour.
+    """
+    if response.status_code == 429:
+        response.headers["x-should-retry"] = "false"
+
+
+def build_http_client(
+    timeout_seconds: float = DEFAULT_TIMEOUT_S,
+    transport: Optional[httpx.BaseTransport] = None,
+) -> httpx.Client:
+    """HTTP client for the OpenAI SDK that surfaces 429 immediately."""
+    return httpx.Client(
+        timeout=timeout_seconds,
+        transport=transport,
+        event_hooks={"response": [_mark_429_not_retryable]},
+    )
 
 
 class OpenAICompatibleLLM(BaseLLM):
@@ -49,6 +84,11 @@ class OpenAICompatibleLLM(BaseLLM):
         temperature: float = 0.7,
         max_tokens: int = 1024,
         api_key: str = "EMPTY",
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        timeout_seconds: float = DEFAULT_TIMEOUT_S,
+        metadata_lookup_url: Optional[str] = None,
+        metadata_lookup_timeout: float = DEFAULT_LOOKUP_TIMEOUT_S,
+        lookup_forwarder: Any = None,
         tracing: TracingService = None,
         forwarder: Optional[IdentityForwarder] = None,
         forward_user_token: bool = False,
@@ -62,11 +102,22 @@ class OpenAICompatibleLLM(BaseLLM):
         self._tools: Optional[List[ChatCompletionToolParam]] = None
         self._fwd_names: Dict[str, str] = {}
         self._rev_names: Dict[str, str] = {}
-        self._client = OpenAI(api_key=api_key, base_url=base_url, **extra)
+        extra.setdefault("http_client", build_http_client(timeout_seconds))
+        self._client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            max_retries=max_retries,
+            timeout=timeout_seconds,
+            **extra,
+        )
         self._tracing = tracing
         self._forwarder = forwarder
         self._forward_user_token = forward_user_token
         self._header_templates = dict(header_templates or {})
+        self._metadata_lookup_url = metadata_lookup_url
+        self._metadata_lookup_timeout = metadata_lookup_timeout
+        self._lookup_forwarder = lookup_forwarder if lookup_forwarder is not None else forwarder
+        self._lookup_transport = None  # test seam
 
     # ------------------------------------------------------------------
     # BaseLLM interface
@@ -94,6 +145,10 @@ class OpenAICompatibleLLM(BaseLLM):
                     **self._request_options(),
                 )
             except Exception as e:
+                rate_limited = self._as_rate_limit(e)
+                if rate_limited is not None:
+                    gen.update(level="WARNING", status_message=str(rate_limited))
+                    raise rate_limited from e
                 gen.update(
                     level="ERROR",
                     status_message=f"OpenAI API error: {type(e).__name__}: {e}",
@@ -103,6 +158,14 @@ class OpenAICompatibleLLM(BaseLLM):
                 response.choices[0].message,
             )
             result_msg = restore_tool_names(self._rev_names, result_msg)
+            result_msg = self._with_response_metadata(
+                result_msg,
+                self._response_metadata(
+                    getattr(response, "id", None),
+                    getattr(response, "model", None),
+                    extract_extra_fields(response),
+                ),
+            )
             usage = {}
             if response.usage:
                 usage = {
@@ -121,6 +184,7 @@ class OpenAICompatibleLLM(BaseLLM):
         raw_messages = OpenAIMessageConverter.to_openai(messages)
         self._sanitize_outbound_names(raw_messages)
         aggregator = StreamToolCallAggregator()
+        collector = StreamMetadataCollector()
         accumulated_content = ""
 
         with self._tracing.trace_llm(
@@ -144,12 +208,17 @@ class OpenAICompatibleLLM(BaseLLM):
                     **call_params,
                 )
             except Exception as e:
+                rate_limited = self._as_rate_limit(e)
+                if rate_limited is not None:
+                    gen.update(level="WARNING", status_message=str(rate_limited))
+                    raise rate_limited from e
                 gen.update(
                     level="ERROR",
                     status_message=f"OpenAI API error: {type(e).__name__}: {e}",
                 )
                 raise
             for chunk in stream_iter:
+                collector.absorb(chunk)
                 if not chunk.choices:
                     if hasattr(chunk, "usage") and chunk.usage:
                         gen.update(usage_details={
@@ -166,12 +235,17 @@ class OpenAICompatibleLLM(BaseLLM):
                     aggregator.absorb(delta.tool_calls)
             gen.update(output=accumulated_content)
 
-        if aggregator.has_tool_calls:
-            tool_calls = aggregator.build()
+        response_metadata = self._response_metadata(
+            collector.response_id, collector.model, collector.fields,
+        )
+        if aggregator.has_tool_calls or response_metadata:
+            # A final message is emitted for plain-text streams only when
+            # response metadata exists; otherwise the stream is unchanged.
             result = ChatMessage(
                 role=Role.ASSISTANT,
                 content=accumulated_content,
-                tool_calls=tool_calls,
+                tool_calls=aggregator.build() if aggregator.has_tool_calls else None,
+                metadata=response_metadata,
             )
             yield restore_tool_names(self._rev_names, result)
 
@@ -183,6 +257,40 @@ class OpenAICompatibleLLM(BaseLLM):
         clone._tools = OpenAIToolsConverter.to_openai(tools)
         self._sanitize_tool_defs(clone._tools, clone._fwd_names)
         return clone
+
+    def _response_metadata(
+        self,
+        response_id: Optional[str],
+        model: Optional[str],
+        fields: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Build the metadata entry and enrich it with the server-side routing lookup."""
+        meta = build_response_metadata(response_id, model, fields, self._metadata_lookup_url)
+        entry = meta.get(RESPONSE_METADATA_KEY)
+        if entry is None:
+            return meta
+        # The URL is consumed here; the browser never needs (or gets) it.
+        entry.pop("lookup_url", None)
+        routing = fetch_routing(
+            self._metadata_lookup_url,
+            response_id,
+            self._lookup_forwarder,
+            self._metadata_lookup_timeout,
+            self._lookup_transport,
+        )
+        if routing:
+            entry["routing"] = routing
+        # A lookup URL alone (no extra fields, no routing result) adds nothing.
+        return meta if (entry["fields"] or routing) else {}
+
+    @staticmethod
+    def _with_response_metadata(
+        msg: ChatMessage, response_metadata: Dict[str, Any],
+    ) -> ChatMessage:
+        """Return *msg* carrying *response_metadata* (unchanged when empty)."""
+        if not response_metadata:
+            return msg
+        return msg.model_copy(update={"metadata": {**msg.metadata, **response_metadata}})
 
     @property
     def name(self) -> str:
@@ -198,6 +306,25 @@ class OpenAICompatibleLLM(BaseLLM):
             return {}
         headers = self._forwarder.headers(self._header_templates, self._forward_user_token)
         return {"extra_headers": headers} if headers else {}
+
+    # Error mapping
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _as_rate_limit(exc: Exception) -> Optional[LLMRateLimitError]:
+        """Map an HTTP 429 from the endpoint to ``LLMRateLimitError``."""
+        if not isinstance(exc, APIStatusError) or exc.status_code != 429:
+            return None
+        response = getattr(exc, "response", None)
+        headers = getattr(response, "headers", None)
+        body = getattr(exc, "body", None)
+        try:
+            # The SDK unwraps a top-level "error" key; the raw payload keeps
+            # any sibling fields (limits, window, ...) worth showing.
+            body = response.json()
+        except Exception:
+            pass
+        return rate_limit_from_response(headers, body)
 
     # ------------------------------------------------------------------
     # Name sanitization
