@@ -191,6 +191,32 @@ def test_forwarded_token_is_verified_and_bound_to_the_request_user(app):
         assert cg.caller_groups(ISSUER) == []
 
 
+def test_forwarded_token_of_a_team_member_is_accepted_for_the_team_workspace(app):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _signed(key, preferred_username="alice", groups=["/agent_tekos"])
+    client = MagicMock()
+    client.is_member.side_effect = lambda user, team: (user, team) == ("alice", "team-1")
+    with _verify_with(key), patch("bootstrap.app_container.identity_client", return_value=client), \
+            app.test_request_context("/", headers={"Authorization": f"Bearer {token}"}):
+        g.identity_session = SimpleNamespace(access_token=None)
+        g.user_id = "team-1"
+        assert cg.caller_groups(ISSUER) == ["agent_tekos"]
+        g.user_id = "team-2"
+        assert cg.caller_groups(ISSUER) == []
+
+
+def test_membership_lookup_failure_yields_no_group(app):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _signed(key, preferred_username="alice", groups=["/agent_tekos"])
+    client = MagicMock()
+    client.is_member.side_effect = RuntimeError("identity down")
+    with _verify_with(key), patch("bootstrap.app_container.identity_client", return_value=client), \
+            app.test_request_context("/", headers={"Authorization": f"Bearer {token}"}):
+        g.identity_session = SimpleNamespace(access_token=None)
+        g.user_id = "team-1"
+        assert cg.caller_groups(ISSUER) == []
+
+
 def test_forged_or_expired_tokens_yield_no_group(app):
     key, other = (rsa.generate_private_key(public_exponent=65537, key_size=2048) for _ in range(2))
     forged = _signed(other, preferred_username="alice", groups=["finance"])
