@@ -24,6 +24,7 @@ from inbound.flask.decorators import (
     with_require_identity_authorization,
     with_authenticated_user,
     require_admin_access,
+    forbidden_response,
     is_admin_user,
     G_IDENTITY,
     G_IDENTITY_USERNAME,
@@ -107,8 +108,8 @@ def get_builtin_schema(identity: Identity, resource_id: str) -> tuple[Response, 
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
-    except ResourceAccessDeniedError as e:
-        return jsonify({"error": str(e)}), 403
+    except ResourceAccessDeniedError:
+        return forbidden_response()
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception:
@@ -174,7 +175,9 @@ def configure_builtin(identity: Identity, resource_id: str, config: dict) -> tup
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except BuiltinConfigUnavailableError as e:
         return jsonify({"error": str(e)}), 503
-    except (BuiltInWriteProtectedError, ResourceAccessDeniedError) as e:
+    except ResourceAccessDeniedError:
+        return forbidden_response()
+    except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
