@@ -223,6 +223,27 @@ metadata:
         },
         {
           "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiTeam",
+          "metadata": {
+            "name": "demo-team"
+          },
+          "spec": {
+            "members": [
+              {
+                "displayName": "UnifAI users",
+                "id": "unifai-users",
+                "type": "group"
+              },
+              {
+                "id": "alice",
+                "type": "user"
+              }
+            ],
+            "owner": "admin"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
           "kind": "UnifaiTemplate",
           "metadata": {
             "name": "demo-chat-quickstart"
@@ -397,8 +418,8 @@ metadata:
       ]
     capabilities: Seamless Upgrades
     categories: AI/Machine Learning, Developer Tools
-    containerImage: quay.io/zuno/unifai-operator:v0.1.23
-    createdAt: '2026-10-22T18:03:43Z'
+    containerImage: quay.io/zuno/unifai-operator:v0.1.24
+    createdAt: '2026-10-22T22:01:33Z'
     description: Deploys UnifAI stacks and manages UnifAI agents, workflows and RAG pipelines declaratively.
     features.operators.openshift.io/disconnected: 'false'
     features.operators.openshift.io/fips-compliant: 'false'
@@ -412,7 +433,7 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/startxfr/UnifAI
     support: startx
-  name: unifai-operator.v0.1.23
+  name: unifai-operator.v0.1.24
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -473,6 +494,9 @@ spec:
       displayName: Unifai Stack
       kind: UnifaiStack
       name: unifaistacks.unifai.startx.fr
+      version: v1alpha1
+    - kind: UnifaiTeam
+      name: unifaiteams.unifai.startx.fr
       version: v1alpha1
     - description: 'UnifaiTemplate is an UnifAI catalog template (no update API: changes delete and recreate it).'
       displayName: Unifai Template
@@ -710,6 +734,7 @@ spec:
           - unifaisandboxes
           - unifaischedules
           - unifaistacks
+          - unifaiteams
           - unifaitemplates
           - unifaitools
           verbs:
@@ -733,6 +758,7 @@ spec:
           - unifaisandboxes/finalizers
           - unifaischedules/finalizers
           - unifaistacks/finalizers
+          - unifaiteams/finalizers
           - unifaitemplates/finalizers
           - unifaitools/finalizers
           - unifaiworkflows/finalizers
@@ -753,6 +779,7 @@ spec:
           - unifaisandboxes/status
           - unifaischedules/status
           - unifaistacks/status
+          - unifaiteams/status
           - unifaitemplates/status
           - unifaitools/status
           - unifaiworkflows/status
@@ -828,7 +855,7 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.namespace
-                image: quay.io/zuno/unifai-operator:v0.1.23
+                image: quay.io/zuno/unifai-operator:v0.1.24
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -925,4 +952,4 @@ spec:
   provider:
     name: startx
     url: https://www.startx.fr
-  version: 0.1.23
+  version: 0.1.24

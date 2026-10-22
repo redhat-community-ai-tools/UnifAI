@@ -74,6 +74,11 @@ spec:
                 description: Team workspace to use instead of the user's personal
                   one.
                 type: string
+              teamRef:
+                description: |-
+                  UnifaiTeam (same namespace) whose team workspace to use; the object waits until the team is Ready.
+                  Exclusive with teamId.
+                type: string
               title:
                 description: Session title (defaults to metadata.name).
                 type: string
@@ -180,6 +185,9 @@ spec:
               scheduleId:
                 type: string
               sessionId:
+                type: string
+              teamId:
+                description: Id of the identity team (UnifaiTeam).
                 type: string
               templateId:
                 type: string

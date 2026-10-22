@@ -97,6 +97,11 @@ spec:
                 description: Team workspace to use instead of the user's personal
                   one.
                 type: string
+              teamRef:
+                description: |-
+                  UnifaiTeam (same namespace) whose team workspace to use; the object waits until the team is Ready.
+                  Exclusive with teamId.
+                type: string
               type:
                 description: UnifAI element type. The accepted set is what the deployed
                   UnifAI serves (GET /api/catalog/elements.list.get).
@@ -200,6 +205,9 @@ spec:
               scheduleId:
                 type: string
               sessionId:
+                type: string
+              teamId:
+                description: Id of the identity team (UnifaiTeam).
                 type: string
               templateId:
                 type: string
