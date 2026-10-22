@@ -148,6 +148,26 @@ class IdentityClient:
         self._invalidate_cached_teams(username)
         return team_id in self.get_team_ids(username)
 
+    def team_exists(self, team_id: str) -> bool:
+        """Whether Identity still knows the team (service-level lookup).
+
+        Returns ``True`` when not configured. Raises on any response other
+        than 200 or 404 so callers can fail closed.
+        """
+        if not self._base:
+            return True
+        from global_utils.flask.correlation import correlation_headers
+        resp = http_requests.get(
+            f"{self._base}/api/teams/team.get",
+            params={"teamId": team_id},
+            headers={**correlation_headers(), **internal_auth_headers()},
+            timeout=self._timeout,
+        )
+        if resp.status_code == 404:
+            return False
+        resp.raise_for_status()
+        return True
+
     def resolve_team_id(
         self, username: str, team_name_or_id: str,
     ) -> Optional[str]:

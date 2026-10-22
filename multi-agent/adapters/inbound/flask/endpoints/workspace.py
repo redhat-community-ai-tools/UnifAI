@@ -60,5 +60,14 @@ def _may_clean(username: str, identity: Identity) -> bool:
     if is_admin_user(username):
         return True
     if identity.type == IdentityType.TEAM:
-        return current_app.container.identity_provider.is_member(username, identity.id)
+        provider = current_app.container.identity_provider
+        if provider.is_member(username, identity.id):
+            return True
+        # The UI cleans up after deleting the team: an orphaned team has no
+        # member left to authorize. Any lookup failure denies.
+        try:
+            return not provider.team_exists(identity.id)
+        except Exception:
+            logger.exception("team existence check failed for %s", identity.id)
+            return False
     return identity.id.casefold() == username.casefold()

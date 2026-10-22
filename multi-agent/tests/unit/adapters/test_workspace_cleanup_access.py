@@ -38,6 +38,14 @@ class FakeIdentityProvider:
     def is_member(self, username, team_id):
         return username in TEAM_MEMBERS.get(team_id, set())
 
+    existing_teams = {"team-1"}
+    unreachable = False
+
+    def team_exists(self, team_id):
+        if self.unreachable:
+            raise RuntimeError("identity down")
+        return team_id in self.existing_teams
+
     def get_team_ids(self, username):
         return frozenset(t for t, m in TEAM_MEMBERS.items() if username in m)
 
@@ -155,3 +163,23 @@ def test_cleanup_requires_authentication(env):
     resp = client.delete("/workspace.cleanup",
                          json={"identityType": "user", "identityId": "alice"})
     assert resp.status_code in (401, 403)
+
+
+def test_cleanup_orphaned_team_allowed(env):
+    _, client, *_ = env
+    assert _cleanup(client, "carol", "team", "deleted-team").status_code == 200
+
+
+def test_cleanup_orphaned_team_does_not_open_user_workspaces(env):
+    _, client, *_ = env
+    assert _cleanup(client, "mallory", "user", "alice").status_code == 403
+
+
+def test_cleanup_team_fails_closed_when_identity_unreachable(env):
+    app, client, *_ = env
+    app.container.identity_provider.unreachable = True
+    try:
+        assert _cleanup(client, "mallory", "team", "deleted-team").status_code == 403
+        assert _cleanup(client, "mallory", "team", "team-1").status_code == 403
+    finally:
+        app.container.identity_provider.unreachable = False

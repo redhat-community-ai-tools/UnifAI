@@ -73,3 +73,10 @@ class AdminConfigReaderPort(ABC):
         support general section reads should override this.
         """
         return None
+
+    def team_exists(self, team_id: str) -> bool:
+        """Whether the team still exists.
+
+        Raises if the answer cannot be determined; callers must fail closed.
+        """
+        return True

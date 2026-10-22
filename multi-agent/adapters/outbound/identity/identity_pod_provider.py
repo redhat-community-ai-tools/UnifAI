@@ -26,6 +26,9 @@ class IdentityPodProvider(IdentityProvider):
     def is_member(self, username: str, team_id: str) -> bool:
         return self._client.is_member(username, team_id)
 
+    def team_exists(self, team_id: str) -> bool:
+        return self._client.team_exists(team_id)
+
     def get_team_ids(self, username: str) -> frozenset[str]:
         return self._client.get_team_ids(username)
 
