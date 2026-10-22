@@ -271,3 +271,54 @@ func TestRAGSettings(t *testing.T) {
 		t.Errorf("the Confluence token must come from unifai-rag-secrets, not plain env")
 	}
 }
+
+func TestOpenTelemetry(t *testing.T) {
+	traced := []string{"unifai-rag-server", "unifai-rag-celery", "unifai-multiagent-be", "unifai-multiagent-temporal-worker", "unifai-backend"}
+	off := renderAll(t, testPlan(t, nil))
+	for _, rel := range traced {
+		if strings.Contains(off[rel], "OTEL_EXPORTER_OTLP_ENDPOINT") || strings.Contains(off[rel], "UNIFAI_OTEL_ENABLED") {
+			t.Errorf("%s: OpenTelemetry must be off by default", rel)
+		}
+	}
+	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) {
+		s.OpenTelemetry = &unifaiv1.OpenTelemetrySpec{Endpoint: "http://collector.monitoring.svc:4318", Protocol: "http/protobuf",
+			Sampler: "parentbased_traceidratio", SamplerArg: "0.25", DisableMetrics: true,
+			ResourceAttributes: map[string]string{"deployment.environment": "demo"}}
+	})
+	on := renderAll(t, p)
+	for _, rel := range traced {
+		for _, want := range []string{"UNIFAI_OTEL_ENABLED", "http://collector.monitoring.svc:4318", "http/protobuf",
+			"parentbased_traceidratio", "0.25", "OTEL_METRICS_EXPORTER",
+			"deployment.environment=demo,k8s.namespace.name=team-a"} {
+			if !strings.Contains(on[rel], want) {
+				t.Errorf("%s lacks %s", rel, want)
+			}
+		}
+		if !strings.Contains(on[rel], rel) {
+			t.Errorf("%s: OTEL_SERVICE_NAME should be the release name", rel)
+		}
+	}
+	for _, rel := range []string{"unifai-identity", "unifai-ui", "unifai-mongodb"} {
+		if strings.Contains(on[rel], "OTEL_EXPORTER_OTLP_ENDPOINT") {
+			t.Errorf("%s is not traced", rel)
+		}
+	}
+	// Only the traced releases change: the others keep their hash (no needless Helm upgrade).
+	pOff := testPlan(t, nil)
+	for _, r := range Releases {
+		if !r.IsEnabled(p) {
+			continue
+		}
+		a, err := Render(pOff, r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := Render(p, r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (a.Hash != b.Hash) != r.Traced {
+			t.Errorf("%s: hash changed=%v, traced=%v", r.Name, a.Hash != b.Hash, r.Traced)
+		}
+	}
+}

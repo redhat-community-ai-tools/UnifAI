@@ -422,6 +422,49 @@ spec:
                   type: string
                 description: Added to every UnifAI pod.
                 type: object
+              openTelemetry:
+                description: OpenTelemetry export (OTLP) of the multiagent, RAG and
+                  backend services (global_utils telemetry bootstrap).
+                properties:
+                  disableMetrics:
+                    description: Export traces only (OTEL_METRICS_EXPORTER=none).
+                    type: boolean
+                  endpoint:
+                    description: OTLP endpoint of the collector, e.g. http://otel-collector.monitoring.svc:4318.
+                    minLength: 1
+                    type: string
+                  protocol:
+                    description: OTLP protocol; empty = the SDK default (grpc). Port
+                      4318 is http/protobuf.
+                    enum:
+                    - grpc
+                    - http/protobuf
+                    type: string
+                  resourceAttributes:
+                    additionalProperties:
+                      type: string
+                    description: 'Added to OTEL_RESOURCE_ATTRIBUTES, e.g. deployment.environment:
+                      demo.'
+                    type: object
+                  sampler:
+                    description: Trace sampler (OTEL_TRACES_SAMPLER); empty = the
+                      SDK default (parentbased_always_on).
+                    enum:
+                    - always_on
+                    - always_off
+                    - traceidratio
+                    - parentbased_always_on
+                    - parentbased_always_off
+                    - parentbased_traceidratio
+                    type: string
+                  samplerArg:
+                    description: Sampler argument (OTEL_TRACES_SAMPLER_ARG), e.g.
+                      "0.1" for a ratio sampler.
+                    pattern: ^(0(\.[0-9]+)?|1(\.0+)?)$
+                    type: string
+                required:
+                - endpoint
+                type: object
               paused:
                 description: Stop reconciling (nothing is changed or deleted).
                 type: boolean

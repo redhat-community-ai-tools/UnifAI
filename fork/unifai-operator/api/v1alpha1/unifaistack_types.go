@@ -269,6 +269,36 @@ type UnifaiStackSpec struct {
 	// Scheduled backups of MongoDB (mongodump archive) and Qdrant (one snapshot per collection) to S3.
 	// +optional
 	Backup *BackupSpec `json:"backup,omitempty"`
+	// OpenTelemetry export (OTLP) of the multiagent, RAG and backend services (global_utils telemetry bootstrap).
+	// +optional
+	OpenTelemetry *OpenTelemetrySpec `json:"openTelemetry,omitempty"`
+}
+
+// OpenTelemetrySpec sets the OTEL_* environment of the multiagent (server and Temporal worker), RAG (server and
+// Celery) and backend pods. Each one reports as its Helm release name (OTEL_SERVICE_NAME), with the attribute
+// k8s.namespace.name.
+type OpenTelemetrySpec struct {
+	// OTLP endpoint of the collector, e.g. http://otel-collector.monitoring.svc:4318.
+	// +kubebuilder:validation:MinLength=1
+	Endpoint string `json:"endpoint"`
+	// OTLP protocol; empty = the SDK default (grpc). Port 4318 is http/protobuf.
+	// +kubebuilder:validation:Enum=grpc;http/protobuf
+	// +optional
+	Protocol string `json:"protocol,omitempty"`
+	// Trace sampler (OTEL_TRACES_SAMPLER); empty = the SDK default (parentbased_always_on).
+	// +kubebuilder:validation:Enum=always_on;always_off;traceidratio;parentbased_always_on;parentbased_always_off;parentbased_traceidratio
+	// +optional
+	Sampler string `json:"sampler,omitempty"`
+	// Sampler argument (OTEL_TRACES_SAMPLER_ARG), e.g. "0.1" for a ratio sampler.
+	// +kubebuilder:validation:Pattern=`^(0(\.[0-9]+)?|1(\.0+)?)$`
+	// +optional
+	SamplerArg string `json:"samplerArg,omitempty"`
+	// Export traces only (OTEL_METRICS_EXPORTER=none).
+	// +optional
+	DisableMetrics bool `json:"disableMetrics,omitempty"`
+	// Added to OTEL_RESOURCE_ATTRIBUTES, e.g. deployment.environment: demo.
+	// +optional
+	ResourceAttributes map[string]string `json:"resourceAttributes,omitempty"`
 }
 
 // BackupSpec schedules backups to an S3-compatible bucket, under <prefix>/mongodb/ and <prefix>/qdrant/<timestamp>/.

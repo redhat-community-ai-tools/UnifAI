@@ -73,6 +73,21 @@ service's Keycloak client (`IDENTITY_FORWARDING_ENABLED`, `KEYCLOAK_BASE_URL`, `
 acting user's OIDC token to model and tool gateways. It needs a multiagent image with identity forwarding (fork
 commit 4467138fe).
 
+`openTelemetry` exports traces and metrics (OTLP) of the multiagent server and Temporal worker, the RAG server and
+Celery worker and the backend, through the global_utils telemetry bootstrap (fork commit c918f732b, images built from
+it): `UNIFAI_OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`/`_PROTOCOL`, `OTEL_SERVICE_NAME` (the Helm release name,
+e.g. `unifai-multiagent-be`), `OTEL_TRACES_SAMPLER`/`_ARG`, `OTEL_METRICS_EXPORTER=none` with `disableMetrics`, and
+`OTEL_RESOURCE_ATTRIBUTES` (`k8s.namespace.name` plus `resourceAttributes`). Only those five releases are upgraded
+when it changes.
+```yaml
+spec:
+  openTelemetry:
+    endpoint: http://zuno-otel-collector-collector.zuno-monitoring.svc:4318
+    protocol: http/protobuf
+    sampler: parentbased_traceidratio
+    samplerArg: "0.2"
+```
+
 Deletion: releases are uninstalled in reverse order, Keycloak objects and the RHBK subscription removed.
 `deletionPolicy: Retain` (default) keeps PVCs, `unifai-generated` and the Keycloak database, so recreating the stack
 finds its data and encryption key; `Delete` removes them. `paused: true` stops reconciling.

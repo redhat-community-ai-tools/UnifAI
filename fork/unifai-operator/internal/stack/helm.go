@@ -80,6 +80,9 @@ func Render(p *Plan, r Release) (*Rendered, error) {
 		// Charts only render `replicas` when autoscaling is off: dropping the HPA alone would keep its last scale.
 		set(vals, "autoscaling.enabled", false)
 	}
+	if r.Traced {
+		otelEnv(p, vals, r.Name)
+	}
 	_, digest, err := loadChart(r.Chart)
 	if err != nil {
 		return nil, err
