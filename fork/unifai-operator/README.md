@@ -120,7 +120,26 @@ config are expanded from the library. Specs are dry-run validated (`config.valid
 `Error` until the spec changes. An object that already exists in UnifAI is only taken over with the annotation
 `unifai.startx.fr/adopt: "true"`. While the namespace's `UnifaiStack` is not Ready, objects wait (namespaces
 without a stack, e.g. deployed by helmfile, are not gated). The operator calls
-`unifai-multiagent-be.<ns>.svc:8003` and `unifai-rag-server.<ns>.svc:13456`.
+`unifai-multiagent-be.<ns>.svc:8003`, `unifai-rag-server.<ns>.svc:13456` and `identity.<ns>.svc:13456`.
+
+`UnifaiTeam` is an identity team (`members`: `{type: user|group, id, displayName}`; a group is an OIDC group of the
+users' tokens, a leading `/` is removed). Team names are global in identity: a team of the same name created by
+another user is never taken over, one created by the owner only with the adopt annotation; `status.teamId` holds its
+id. Any object can live in its workspace with `spec.teamRef: <UnifaiTeam name>` (exclusive with `teamId`): it waits
+until the team is Ready and never falls back to the owner's personal workspace. The team is deleted from identity
+only when no object of the namespace references it any more (it stays `Deleting` with the list of its users).
+```yaml
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiTeam
+metadata: {name: tekos}
+spec:
+  members: [{type: group, id: agent_tekos}]
+---
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiLLM
+metadata: {name: tekos-llm}
+spec: {teamRef: tekos, type: openai_compatible, config: {model_name: m, base_url: "http://llm:8000/v1"}}
+```
 
 ### Zuno OKF agent bundles (fork-only)
 

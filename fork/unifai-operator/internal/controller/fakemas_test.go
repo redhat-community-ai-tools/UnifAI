@@ -20,8 +20,9 @@ type fakeMAS struct {
 	blueprints map[string]map[string]any // id -> {name, spec}
 	schedules  map[string]map[string]any
 	templates  map[string]map[string]any
-	sessions   map[string]string // id -> status
-	ragFiles   map[string]string // name -> md5 of uploaded content
+	teams      map[string]map[string]any // identity teams by team_id
+	sessions   map[string]string         // id -> status
+	ragFiles   map[string]string         // name -> md5 of uploaded content
 	ragSources map[string]map[string]any
 	ragSyncs   map[string]int // source id -> embed calls (incremental syncs)
 	users      []string       // X-Authenticated-User of each call
@@ -30,7 +31,7 @@ type fakeMAS struct {
 
 func newFakeMAS() (*fakeMAS, *httptest.Server) {
 	f := &fakeMAS{resources: map[string]map[string]any{}, blueprints: map[string]map[string]any{},
-		schedules: map[string]map[string]any{}, templates: map[string]map[string]any{}, sessions: map[string]string{},
+		schedules: map[string]map[string]any{}, templates: map[string]map[string]any{}, teams: map[string]map[string]any{}, sessions: map[string]string{},
 		ragFiles: map[string]string{}, ragSources: map[string]map[string]any{}, ragSyncs: map[string]int{}}
 	return f, httptest.NewServer(f)
 }
@@ -93,7 +94,8 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(w, 200, map[string]any{"resources": out})
 	case "/api/resources/resource.save":
 		rid := f.id("rid")
-		f.resources[rid] = map[string]any{"rid": rid, "name": body["name"], "type": body["type"], "category": body["category"], "cfg_dict": body["config"]}
+		f.resources[rid] = map[string]any{"rid": rid, "name": body["name"], "type": body["type"], "category": body["category"], "cfg_dict": body["config"],
+			"team_id": q.Get("teamId")}
 		reply(w, 201, f.resources[rid])
 	case "/api/resources/resource.update":
 		res, ok := f.resources[body["resourceId"].(string)]
@@ -153,6 +155,56 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/schedules/schedule.delete":
 		delete(f.schedules, body["scheduleId"].(string))
 		reply(w, 200, map[string]any{"deleted": true})
+	case "/api/teams/team.create":
+		for _, t := range f.teams {
+			if t["name"] == body["name"] {
+				reply(w, 400, map[string]any{"error": fmt.Sprintf("Team with name '%v' already exists", body["name"])})
+				return
+			}
+		}
+		id := f.id("team")
+		f.teams[id] = map[string]any{"team_id": id, "name": body["name"], "created_by": body["createdBy"], "members": body["members"]}
+		reply(w, 201, f.teams[id])
+	case "/api/teams/team.get":
+		t, ok := f.teams[q.Get("teamId")]
+		if !ok {
+			reply(w, 404, map[string]any{"error": "Team not found"})
+			return
+		}
+		reply(w, 200, t)
+	case "/api/teams/team.update":
+		t, ok := f.teams[fmt.Sprint(body["teamId"])]
+		if !ok {
+			reply(w, 404, map[string]any{"error": "Team not found"})
+			return
+		}
+		if n, ok := body["name"]; ok {
+			t["name"] = n
+		}
+		if m, ok := body["members"]; ok {
+			t["members"] = m
+		}
+		reply(w, 200, t)
+	case "/api/teams/team.delete":
+		t, ok := f.teams[q.Get("teamId")]
+		if !ok {
+			reply(w, 404, map[string]any{"error": "Team not found"})
+			return
+		}
+		if t["created_by"] != q.Get("requestedBy") {
+			reply(w, 403, map[string]any{"error": "Forbidden"})
+			return
+		}
+		delete(f.teams, q.Get("teamId"))
+		reply(w, 200, map[string]any{"status": "deleted"})
+	case "/api/teams/teams.list":
+		out := []any{}
+		for _, t := range f.teams {
+			if t["created_by"] == q.Get("userId") {
+				out = append(out, t)
+			}
+		}
+		reply(w, 200, map[string]any{"teams": out})
 	case "/api/templates/template.create":
 		id := f.id("tpl")
 		f.templates[id] = body

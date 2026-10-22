@@ -258,6 +258,22 @@ func TestUnifaiStack(t *testing.T) {
 		}
 	})
 
+	t.Run("a team with a group member and an object in its workspace", func(t *testing.T) {
+		team := &unifaiv1.UnifaiTeam{ObjectMeta: metav1.ObjectMeta{Name: "e2e-team", Namespace: ns}, Spec: unifaiv1.UnifaiTeamSpec{
+			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "e2e-team-" + ns},
+			Members:    []unifaiv1.TeamMember{{Type: "group", ID: "/e2e-group"}}}}
+		llm := &unifaiv1.UnifaiLLM{ObjectMeta: metav1.ObjectMeta{Name: "e2e-team-llm", Namespace: ns}, Spec: unifaiv1.UnifaiLLMSpec{
+			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "e2e-team-llm", TeamRef: "e2e-team"}, Type: "openai_compatible",
+			ConfigSpec: unifaiv1.ConfigSpec{Config: raw(map[string]any{"model_name": "mock-model", "base_url": "http://e2e-llm:8000/v1", "api_key": "EMPTY"})}}}
+		create(t, team)
+		create(t, llm)
+		waitPhase(t, team, "Ready", 5*time.Minute)
+		waitPhase(t, llm, "Ready", 5*time.Minute)
+		if team.Status.TeamID == "" {
+			t.Errorf("team Ready without an id")
+		}
+	})
+
 	t.Run("schedule, template and RAG pipeline on the real services", func(t *testing.T) {
 		sch := &unifaiv1.UnifaiSchedule{ObjectMeta: metav1.ObjectMeta{Name: "e2e-every", Namespace: ns}, Spec: unifaiv1.UnifaiScheduleSpec{
 			Workflow: "e2e-wf", Inputs: map[string]string{"user_prompt": "ping"}, Schedule: unifaiv1.ScheduleDefinition{Interval: "PT12H"}}}

@@ -13,4 +13,5 @@ resources:
 - unifai_v1alpha1_unifaitemplate.yaml
 - unifai_v1alpha1_unifaichat.yaml
 - unifai_v1alpha1_unifairagpipeline.yaml
+- unifai_v1alpha1_unifaiteam.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

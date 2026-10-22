@@ -35,6 +35,11 @@ const (
 	resync    = 10 * time.Minute
 )
 
+// InUseError refuses a deletion while other objects still depend on the object; it is never ignored.
+type InUseError struct{ Users []string }
+
+func (e *InUseError) Error() string { return "still used by " + strings.Join(e.Users, ", ") }
+
 // PermanentError is a spec problem: the object is not retried until its spec changes.
 type PermanentError struct{ Err error }
 
@@ -56,6 +61,8 @@ type Base struct {
 	Scheme *runtime.Scheme
 	// Endpoints returns the MAS and RAG base URLs for a namespace (overridable in tests).
 	Endpoints func(namespace string) (mas, rag string)
+	// Identity returns the identity API base URL for a namespace (overridable in tests).
+	Identity func(namespace string) string
 	// APIReader reads without the informer cache: the status holds the ids of the UnifAI objects, and a stale
 	// cached copy right after a write would make the controller create duplicates or refuse its own objects.
 	APIReader client.Reader
@@ -87,17 +94,51 @@ func (b *Base) endpoints(ns string) (string, string) {
 
 func (b *Base) mas(ctx context.Context, o unifaiv1.Object) *unifai.Client {
 	m, _ := b.endpoints(o.GetNamespace())
-	c := unifai.New(m, o.GetCommon().Owner, o.GetCommon().TeamID)
-	c.InternalAuth = b.internalAuth(ctx, o.GetNamespace())
-	return c
+	return b.client(ctx, o, m)
 }
 
 func (b *Base) rag(ctx context.Context, o unifaiv1.Object) *unifai.Client {
 	_, r := b.endpoints(o.GetNamespace())
-	c := unifai.New(r, o.GetCommon().Owner, o.GetCommon().TeamID)
-	c.InternalAuth = b.internalAuth(ctx, o.GetNamespace())
+	c := b.client(ctx, o, r)
 	c.HTTP.Timeout = 5 * time.Minute
 	return c
+}
+
+func (b *Base) identity(ctx context.Context, o unifaiv1.Object) *unifai.Client {
+	base := unifai.IdentityEndpoint(o.GetNamespace())
+	if b.Identity != nil {
+		base = b.Identity(o.GetNamespace())
+	}
+	c := unifai.New(base, o.GetCommon().Owner, "")
+	c.InternalAuth = b.internalAuth(ctx, o.GetNamespace())
+	return c
+}
+
+// client returns an UnifAI client acting as the object's owner, in its team workspace (teamId, or the team of the
+// UnifaiTeam named by teamRef). Until that team is Ready every call fails, so nothing lands in the personal workspace.
+func (b *Base) client(ctx context.Context, o unifaiv1.Object, base string) *unifai.Client {
+	common := o.GetCommon()
+	c := unifai.New(base, common.Owner, common.TeamID)
+	c.InternalAuth = b.internalAuth(ctx, o.GetNamespace())
+	if common.TeamRef != "" {
+		c.TeamID, c.Err = b.teamOf(ctx, o.GetNamespace(), common)
+	}
+	return c
+}
+
+// teamOf resolves spec.teamRef to the id of a Ready UnifaiTeam.
+func (b *Base) teamOf(ctx context.Context, ns string, common *unifaiv1.CommonSpec) (string, error) {
+	if common.TeamID != "" {
+		return "", permanent("teamId and teamRef are exclusive")
+	}
+	team := &unifaiv1.UnifaiTeam{}
+	if err := b.Get(ctx, types.NamespacedName{Namespace: ns, Name: common.TeamRef}, team); err != nil {
+		return "", fmt.Errorf("teamRef %s: %w", common.TeamRef, err)
+	}
+	if team.Status.Phase != PhaseReady || team.Status.TeamID == "" || !team.DeletionTimestamp.IsZero() {
+		return "", fmt.Errorf("waiting for UnifaiTeam %s to be Ready", common.TeamRef)
+	}
+	return team.Status.TeamID, nil
 }
 
 // internalAuth returns the shared secret the stack's services require with X-Authenticated-User ("" when the
@@ -302,7 +343,8 @@ func (b *Base) nothingToClean(ctx context.Context, ns string) bool {
 // not an HTTP answer) and the namespace no longer has an UnifaiStack, so the services are gone with their data.
 func (b *Base) unifaiGone(ctx context.Context, ns string, err error) bool {
 	var ae *unifai.APIError
-	if errors.As(err, &ae) {
+	var inUse *InUseError
+	if errors.As(err, &ae) || errors.As(err, &inUse) {
 		return false
 	}
 	var st unifaiv1.UnifaiStack

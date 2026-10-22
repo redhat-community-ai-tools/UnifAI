@@ -20,6 +20,7 @@ func SetupAll(mgr ctrl.Manager) error {
 		"UnifaiWorkflow":    &WorkflowReconciler{Base: base},
 		"UnifaiSchedule":    &ScheduleReconciler{Base: base},
 		"UnifaiTemplate":    &TemplateReconciler{Base: base},
+		"UnifaiTeam":        &TeamReconciler{Base: base},
 		"UnifaiChat":        &ChatReconciler{Base: base},
 		"UnifaiRAGPipeline": &RAGPipelineReconciler{Base: base},
 		"UnifaiRAGSource":   &RAGSourceReconciler{Base: base},

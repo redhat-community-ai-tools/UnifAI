@@ -34,6 +34,10 @@ type CommonSpec struct {
 	// Team workspace to use instead of the user's personal one.
 	// +optional
 	TeamID string `json:"teamId,omitempty"`
+	// UnifaiTeam (same namespace) whose team workspace to use; the object waits until the team is Ready.
+	// Exclusive with teamId.
+	// +optional
+	TeamRef string `json:"teamRef,omitempty"`
 	// Name in UnifAI (defaults to metadata.name).
 	// +optional
 	UnifaiName string `json:"unifaiName,omitempty"`
@@ -73,6 +77,9 @@ type ObjectStatus struct {
 	ScheduleID string `json:"scheduleId,omitempty"`
 	// +optional
 	TemplateID string `json:"templateId,omitempty"`
+	// Id of the identity team (UnifaiTeam).
+	// +optional
+	TeamID string `json:"teamId,omitempty"`
 	// +optional
 	SessionID string `json:"sessionId,omitempty"`
 	// Chat transcript (truncated JSON).

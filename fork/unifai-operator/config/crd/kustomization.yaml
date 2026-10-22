@@ -17,6 +17,7 @@ resources:
 - bases/unifai.startx.fr_unifairagpipelines.yaml
 - bases/unifai.startx.fr_unifaiagentbundles.yaml
 - bases/unifai.startx.fr_unifairagsources.yaml
+- bases/unifai.startx.fr_unifaiteams.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

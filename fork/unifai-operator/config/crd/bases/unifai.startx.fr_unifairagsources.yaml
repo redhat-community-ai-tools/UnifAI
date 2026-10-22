@@ -107,6 +107,11 @@ spec:
                 description: Team workspace to use instead of the user's personal
                   one.
                 type: string
+              teamRef:
+                description: |-
+                  UnifaiTeam (same namespace) whose team workspace to use; the object waits until the team is Ready.
+                  Exclusive with teamId.
+                type: string
               type:
                 enum:
                 - confluence
@@ -238,6 +243,9 @@ spec:
                 type: string
               sourceId:
                 description: Id of the source in the RAG service.
+                type: string
+              teamId:
+                description: Id of the identity team (UnifaiTeam).
                 type: string
               templateId:
                 type: string

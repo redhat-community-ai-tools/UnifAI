@@ -23,6 +23,15 @@ const (
 	RAGPort = 13456
 )
 
+// IdentityPort is the port of the identity Service.
+const IdentityPort = 13456
+
+// IdentityEndpoint returns the identity API base URL of the stack running in namespace (its Service: the public
+// Route strips X-Internal-Auth).
+func IdentityEndpoint(namespace string) string {
+	return fmt.Sprintf("http://identity.%s.svc:%d", namespace, IdentityPort)
+}
+
 // Endpoints returns the MAS and RAG base URLs of the stack running in namespace.
 func Endpoints(namespace string) (mas, rag string) {
 	return fmt.Sprintf("http://unifai-multiagent-be.%s.svc:%d", namespace, MASPort),
@@ -59,6 +68,8 @@ type Client struct {
 	// InternalAuth is the stack's INTERNAL_AUTH_SECRET, sent in X-Internal-Auth ("" = not sent).
 	InternalAuth string
 	HTTP         *http.Client
+	// Err, when set, is returned by every call (e.g. the team workspace of the object is not resolved yet).
+	Err error
 }
 
 // DefaultUser is the identity used when a spec names no owner.
@@ -74,6 +85,9 @@ func New(base, user, teamID string) *Client {
 
 // Call sends a request; body is JSON-encoded when not nil; out (if not nil) receives the JSON answer.
 func (c *Client) Call(ctx context.Context, method, path string, params url.Values, body, out any) error {
+	if c.Err != nil {
+		return c.Err
+	}
 	if params == nil {
 		params = url.Values{}
 	}

@@ -17,6 +17,9 @@ const EventSource = "unifai-operator"
 // PhaseDeleting is the phase of an object whose deletion is in progress.
 const PhaseDeleting = "Deleting"
 
+// PhaseReady is the phase of an object in sync with UnifAI.
+const PhaseReady = "Ready"
+
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // warningPhases are the phases recorded as Warning Events.
