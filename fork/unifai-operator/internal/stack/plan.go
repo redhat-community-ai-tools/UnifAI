@@ -3,8 +3,8 @@ package stack
 import (
 	"encoding/json"
 
-	corev1 "k8s.io/api/core/v1"
 	"fmt"
+	corev1 "k8s.io/api/core/v1"
 	"strings"
 
 	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"

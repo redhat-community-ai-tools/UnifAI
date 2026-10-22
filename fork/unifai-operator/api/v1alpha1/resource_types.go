@@ -40,11 +40,11 @@ type UnifaiLLMList struct {
 	Items           []UnifaiLLM `json:"items"`
 }
 
-func (o *UnifaiLLM) GetCommon() *CommonSpec          { return &o.Spec.CommonSpec }
-func (o *UnifaiLLM) GetObjectStatus() *ObjectStatus  { return &o.Status }
-func (o *UnifaiLLM) Category() string                { return "llms" }
-func (o *UnifaiLLM) GetType() string                 { return o.Spec.Type }
-func (o *UnifaiLLM) GetConfigSpec() *ConfigSpec      { return &o.Spec.ConfigSpec }
+func (o *UnifaiLLM) GetCommon() *CommonSpec         { return &o.Spec.CommonSpec }
+func (o *UnifaiLLM) GetObjectStatus() *ObjectStatus { return &o.Status }
+func (o *UnifaiLLM) Category() string               { return "llms" }
+func (o *UnifaiLLM) GetType() string                { return o.Spec.Type }
+func (o *UnifaiLLM) GetConfigSpec() *ConfigSpec     { return &o.Spec.ConfigSpec }
 
 func init() {
 	SchemeBuilder.Register(&UnifaiLLM{}, &UnifaiLLMList{})
@@ -74,7 +74,7 @@ type UnifaiProvider struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   UnifaiProviderSpec `json:"spec"`
-	Status ObjectStatus  `json:"status,omitempty"`
+	Status ObjectStatus       `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -86,11 +86,11 @@ type UnifaiProviderList struct {
 	Items           []UnifaiProvider `json:"items"`
 }
 
-func (o *UnifaiProvider) GetCommon() *CommonSpec          { return &o.Spec.CommonSpec }
-func (o *UnifaiProvider) GetObjectStatus() *ObjectStatus  { return &o.Status }
-func (o *UnifaiProvider) Category() string                { return "providers" }
-func (o *UnifaiProvider) GetType() string                 { return o.Spec.Type }
-func (o *UnifaiProvider) GetConfigSpec() *ConfigSpec      { return &o.Spec.ConfigSpec }
+func (o *UnifaiProvider) GetCommon() *CommonSpec         { return &o.Spec.CommonSpec }
+func (o *UnifaiProvider) GetObjectStatus() *ObjectStatus { return &o.Status }
+func (o *UnifaiProvider) Category() string               { return "providers" }
+func (o *UnifaiProvider) GetType() string                { return o.Spec.Type }
+func (o *UnifaiProvider) GetConfigSpec() *ConfigSpec     { return &o.Spec.ConfigSpec }
 
 func init() {
 	SchemeBuilder.Register(&UnifaiProvider{}, &UnifaiProviderList{})
@@ -120,7 +120,7 @@ type UnifaiTool struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   UnifaiToolSpec `json:"spec"`
-	Status ObjectStatus  `json:"status,omitempty"`
+	Status ObjectStatus   `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -132,11 +132,11 @@ type UnifaiToolList struct {
 	Items           []UnifaiTool `json:"items"`
 }
 
-func (o *UnifaiTool) GetCommon() *CommonSpec          { return &o.Spec.CommonSpec }
-func (o *UnifaiTool) GetObjectStatus() *ObjectStatus  { return &o.Status }
-func (o *UnifaiTool) Category() string                { return "tools" }
-func (o *UnifaiTool) GetType() string                 { return o.Spec.Type }
-func (o *UnifaiTool) GetConfigSpec() *ConfigSpec      { return &o.Spec.ConfigSpec }
+func (o *UnifaiTool) GetCommon() *CommonSpec         { return &o.Spec.CommonSpec }
+func (o *UnifaiTool) GetObjectStatus() *ObjectStatus { return &o.Status }
+func (o *UnifaiTool) Category() string               { return "tools" }
+func (o *UnifaiTool) GetType() string                { return o.Spec.Type }
+func (o *UnifaiTool) GetConfigSpec() *ConfigSpec     { return &o.Spec.ConfigSpec }
 
 func init() {
 	SchemeBuilder.Register(&UnifaiTool{}, &UnifaiToolList{})
@@ -166,7 +166,7 @@ type UnifaiCondition struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   UnifaiConditionSpec `json:"spec"`
-	Status ObjectStatus  `json:"status,omitempty"`
+	Status ObjectStatus        `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -178,11 +178,11 @@ type UnifaiConditionList struct {
 	Items           []UnifaiCondition `json:"items"`
 }
 
-func (o *UnifaiCondition) GetCommon() *CommonSpec          { return &o.Spec.CommonSpec }
-func (o *UnifaiCondition) GetObjectStatus() *ObjectStatus  { return &o.Status }
-func (o *UnifaiCondition) Category() string                { return "conditions" }
-func (o *UnifaiCondition) GetType() string                 { return o.Spec.Type }
-func (o *UnifaiCondition) GetConfigSpec() *ConfigSpec      { return &o.Spec.ConfigSpec }
+func (o *UnifaiCondition) GetCommon() *CommonSpec         { return &o.Spec.CommonSpec }
+func (o *UnifaiCondition) GetObjectStatus() *ObjectStatus { return &o.Status }
+func (o *UnifaiCondition) Category() string               { return "conditions" }
+func (o *UnifaiCondition) GetType() string                { return o.Spec.Type }
+func (o *UnifaiCondition) GetConfigSpec() *ConfigSpec     { return &o.Spec.ConfigSpec }
 
 func init() {
 	SchemeBuilder.Register(&UnifaiCondition{}, &UnifaiConditionList{})
@@ -212,7 +212,7 @@ type UnifaiRetriever struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   UnifaiRetrieverSpec `json:"spec"`
-	Status ObjectStatus  `json:"status,omitempty"`
+	Status ObjectStatus        `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -224,11 +224,11 @@ type UnifaiRetrieverList struct {
 	Items           []UnifaiRetriever `json:"items"`
 }
 
-func (o *UnifaiRetriever) GetCommon() *CommonSpec          { return &o.Spec.CommonSpec }
-func (o *UnifaiRetriever) GetObjectStatus() *ObjectStatus  { return &o.Status }
-func (o *UnifaiRetriever) Category() string                { return "retrievers" }
-func (o *UnifaiRetriever) GetType() string                 { return o.Spec.Type }
-func (o *UnifaiRetriever) GetConfigSpec() *ConfigSpec      { return &o.Spec.ConfigSpec }
+func (o *UnifaiRetriever) GetCommon() *CommonSpec         { return &o.Spec.CommonSpec }
+func (o *UnifaiRetriever) GetObjectStatus() *ObjectStatus { return &o.Status }
+func (o *UnifaiRetriever) Category() string               { return "retrievers" }
+func (o *UnifaiRetriever) GetType() string                { return o.Spec.Type }
+func (o *UnifaiRetriever) GetConfigSpec() *ConfigSpec     { return &o.Spec.ConfigSpec }
 
 func init() {
 	SchemeBuilder.Register(&UnifaiRetriever{}, &UnifaiRetrieverList{})
@@ -258,7 +258,7 @@ type UnifaiSandbox struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   UnifaiSandboxSpec `json:"spec"`
-	Status ObjectStatus  `json:"status,omitempty"`
+	Status ObjectStatus      `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -270,11 +270,11 @@ type UnifaiSandboxList struct {
 	Items           []UnifaiSandbox `json:"items"`
 }
 
-func (o *UnifaiSandbox) GetCommon() *CommonSpec          { return &o.Spec.CommonSpec }
-func (o *UnifaiSandbox) GetObjectStatus() *ObjectStatus  { return &o.Status }
-func (o *UnifaiSandbox) Category() string                { return "sandboxes" }
-func (o *UnifaiSandbox) GetType() string                 { return o.Spec.Type }
-func (o *UnifaiSandbox) GetConfigSpec() *ConfigSpec      { return &o.Spec.ConfigSpec }
+func (o *UnifaiSandbox) GetCommon() *CommonSpec         { return &o.Spec.CommonSpec }
+func (o *UnifaiSandbox) GetObjectStatus() *ObjectStatus { return &o.Status }
+func (o *UnifaiSandbox) Category() string               { return "sandboxes" }
+func (o *UnifaiSandbox) GetType() string                { return o.Spec.Type }
+func (o *UnifaiSandbox) GetConfigSpec() *ConfigSpec     { return &o.Spec.ConfigSpec }
 
 func init() {
 	SchemeBuilder.Register(&UnifaiSandbox{}, &UnifaiSandboxList{})
@@ -304,7 +304,7 @@ type UnifaiAgent struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec   UnifaiAgentSpec `json:"spec"`
-	Status ObjectStatus  `json:"status,omitempty"`
+	Status ObjectStatus    `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -316,11 +316,11 @@ type UnifaiAgentList struct {
 	Items           []UnifaiAgent `json:"items"`
 }
 
-func (o *UnifaiAgent) GetCommon() *CommonSpec          { return &o.Spec.CommonSpec }
-func (o *UnifaiAgent) GetObjectStatus() *ObjectStatus  { return &o.Status }
-func (o *UnifaiAgent) Category() string                { return "nodes" }
-func (o *UnifaiAgent) GetType() string                 { return o.Spec.Type }
-func (o *UnifaiAgent) GetConfigSpec() *ConfigSpec      { return &o.Spec.ConfigSpec }
+func (o *UnifaiAgent) GetCommon() *CommonSpec         { return &o.Spec.CommonSpec }
+func (o *UnifaiAgent) GetObjectStatus() *ObjectStatus { return &o.Status }
+func (o *UnifaiAgent) Category() string               { return "nodes" }
+func (o *UnifaiAgent) GetType() string                { return o.Spec.Type }
+func (o *UnifaiAgent) GetConfigSpec() *ConfigSpec     { return &o.Spec.ConfigSpec }
 
 func init() {
 	SchemeBuilder.Register(&UnifaiAgent{}, &UnifaiAgentList{})

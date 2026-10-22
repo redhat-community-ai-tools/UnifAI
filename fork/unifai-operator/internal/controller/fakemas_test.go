@@ -24,7 +24,7 @@ type fakeMAS struct {
 	ragFiles   map[string]string // name -> md5 of uploaded content
 	ragSources map[string]map[string]any
 	ragSyncs   map[string]int // source id -> embed calls (incremental syncs)
-	users      []string          // X-Authenticated-User of each call
+	users      []string       // X-Authenticated-User of each call
 }
 
 func newFakeMAS() (*fakeMAS, *httptest.Server) {

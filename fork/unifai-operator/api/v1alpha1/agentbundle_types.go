@@ -59,8 +59,8 @@ type BundleLLM struct {
 type UnifaiAgentBundleSpec struct {
 	// Owner and team of the emitted objects.
 	CommonSpec `json:",inline"`
-	Source     BundleSource `json:"source"`
-	Verify     BundleVerify `json:"verify"`
+	Source     BundleSource   `json:"source"`
+	Verify     BundleVerify   `json:"verify"`
 	Ceilings   BundleCeilings `json:"ceilings"`
 	// How zuno.access.groups is honoured. Enforced (default) refuses a bundle declaring groups while UnifAI
 	// cannot gate agent visibility by group; GatewayOnly emits it and relies on the gateways checking the
@@ -68,8 +68,8 @@ type UnifaiAgentBundleSpec struct {
 	// +kubebuilder:validation:Enum=Enforced;GatewayOnly
 	// +kubebuilder:default=Enforced
 	// +optional
-	Entitlement string       `json:"entitlement,omitempty"`
-	LLM        BundleLLM    `json:"llm"`
+	Entitlement string    `json:"entitlement,omitempty"`
+	LLM         BundleLLM `json:"llm"`
 	// UnifaiProvider names (MCP servers) attached to the tasks that declare allowed_tools.
 	// +optional
 	Providers []string `json:"providers,omitempty"`

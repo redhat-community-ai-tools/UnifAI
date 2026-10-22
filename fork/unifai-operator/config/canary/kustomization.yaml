@@ -16,7 +16,8 @@ patches:
   target:
     kind: Deployment
     name: controller-manager
+# Matched by its full name: config/manager already rewrote the `controller` placeholder to the last release.
 images:
-- name: controller
+- name: quay.io/zuno/unifai-operator
   newName: quay.io/zuno/unifai-operator
-  newTag: v0.1.17
+  newTag: v0.1.18

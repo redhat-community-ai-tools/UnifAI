@@ -139,6 +139,10 @@ func TestUnifaiStack(t *testing.T) {
 		}
 		return meta.IsStatusConditionTrue(st.Status.Conditions, "Ready"), st.Status.Phase + ": " + st.Status.Message
 	})
+	// The suite must exercise the release candidate, not whatever image the instance happens to run.
+	if want := os.Getenv("E2E_CANDIDATE_VERSION"); want != "" && st.Status.OperatorVersion != want {
+		t.Fatalf("stack reconciled by operator %q, want the candidate %q", st.Status.OperatorVersion, want)
+	}
 
 	t.Run("stack invariants", func(t *testing.T) {
 		for _, comp := range st.Status.Components {

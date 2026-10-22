@@ -2,8 +2,8 @@ package controller
 
 import (
 	"context"
-	"strings"
 	"encoding/json"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -60,7 +60,10 @@ var _ = Describe("UnifAI object controllers", func() {
 			ConfigSpec: unifaiv1.ConfigSpec{Config: raw(map[string]any{"llm": "$ref:llm/gpt-" + ns, "system_message": "hi"})},
 		}}
 		Expect(k8sClient.Create(ctx, agent)).To(Succeed())
-		Eventually(func() string { _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(agent), agent); return agent.Status.Message },
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(agent), agent)
+			return agent.Status.Message
+		},
 			timeout, interval).Should(ContainSubstring("not found in UnifAI"))
 		Expect(k8sClient.Create(ctx, llm)).To(Succeed())
 		Eventually(phaseOf(llm), timeout, interval).Should(Equal("Ready"))
@@ -75,7 +78,7 @@ var _ = Describe("UnifAI object controllers", func() {
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(llm), llm)).To(Succeed())
 		llm.Spec.Config = raw(map[string]any{"model_name": "m2", "base_url": "https://api.example.com/v1"})
 		Expect(k8sClient.Update(ctx, llm)).To(Succeed())
-		Eventually(func() any { return mas.resourceByName("llms", "gpt-" + ns)["cfg_dict"].(map[string]any)["model_name"] },
+		Eventually(func() any { return mas.resourceByName("llms", "gpt-"+ns)["cfg_dict"].(map[string]any)["model_name"] },
 			timeout, interval).Should(Equal("m2"))
 
 		By("refusing to delete a referenced LLM until the agent is gone")
@@ -252,7 +255,10 @@ var _ = Describe("UnifAI object controllers", func() {
 		cond := &unifaiv1.UnifaiCondition{ObjectMeta: metav1.ObjectMeta{Name: "direct", Namespace: ns}, Spec: unifaiv1.UnifaiConditionSpec{
 			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "direct-" + ns}, Type: "router_direct"}}
 		Expect(k8sClient.Create(ctx, cond)).To(Succeed())
-		Eventually(func() string { _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cond), cond); return cond.Status.Message },
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(cond), cond)
+			return cond.Status.Message
+		},
 			timeout, interval).Should(ContainSubstring("waiting for UnifaiStack"))
 		Expect(cond.Status.Phase).To(Equal("Pending"))
 		meta.SetStatusCondition(&st.Status.Conditions, metav1.Condition{Type: "Ready", Status: metav1.ConditionTrue, Reason: "Ready"})

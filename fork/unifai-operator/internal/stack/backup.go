@@ -108,7 +108,7 @@ func BackupObjects(p *Plan) []ctrlObject {
 	mongoJob := cronJob(p, BackupMongoName, b, corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
 		InitContainers: []corev1.Container{{Name: "dump", Image: mongoImage, SecurityContext: restricted(),
-			Command: []string{"mongodump", "--uri=mongodb://mongodb:27017", "--archive=/backup/mongodb.archive.gz", "--gzip"},
+			Command:      []string{"mongodump", "--uri=mongodb://mongodb:27017", "--archive=/backup/mongodb.archive.gz", "--gzip"},
 			VolumeMounts: mount}},
 		Containers: []corev1.Container{mongo},
 		Volumes:    []corev1.Volume{scratch},

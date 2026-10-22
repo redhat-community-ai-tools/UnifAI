@@ -120,7 +120,9 @@ func conditionTrue(u *unstructured.Unstructured, typ string) bool {
 	return conditionField(u, typ, "status") == "True"
 }
 
-func conditionMessage(u *unstructured.Unstructured, typ string) string { return conditionField(u, typ, "message") }
+func conditionMessage(u *unstructured.Unstructured, typ string) string {
+	return conditionField(u, typ, "message")
+}
 
 func conditionField(u *unstructured.Unstructured, typ, field string) string {
 	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
@@ -360,10 +362,10 @@ func (k *Keycloak) ensureKeycloak(ctx context.Context, p *Plan, dbHost string, u
 	spec := map[string]any{
 		"instances": int64(1),
 		"db":        db,
-		"http":     map[string]any{"httpEnabled": true},
-		"hostname": map[string]any{"hostname": "https://" + p.KeycloakHost},
-		"proxy":    map[string]any{"headers": "xforwarded"},
-		"ingress":  map[string]any{"enabled": false},
+		"http":      map[string]any{"httpEnabled": true},
+		"hostname":  map[string]any{"hostname": "https://" + p.KeycloakHost},
+		"proxy":     map[string]any{"headers": "xforwarded"},
+		"ingress":   map[string]any{"enabled": false},
 	}
 	if p.Dev() {
 		spec["resources"] = map[string]any{

@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.1.17
+VERSION ?= 0.1.18
 # Tag of the UnifAI images a stack deploys by default (spec.version overrides it).
 UNIFAI_VERSION ?= devel
 CHANNELS ?= alpha,stable
@@ -352,10 +352,12 @@ CANARY_NS ?= unifai-operator-canary
 .PHONY: canary-deploy
 canary-deploy: manifests kustomize ## Deploy IMG as a canary instance (only reconciles objects labelled operator-instance=canary).
 	kubectl apply --server-side --force-conflicts -f config/crd/bases
-	cd config/canary && $(KUSTOMIZE) edit set image controller=$(IMG)
+	cd config/canary && $(KUSTOMIZE) edit set image $(IMAGE_TAG_BASE)=$(IMG)
 	$(KUSTOMIZE) build config/canary | kubectl apply -f -
 	kubectl -n $(CANARY_NS) rollout restart deploy/unifai-operator-canary-controller-manager
 	kubectl -n $(CANARY_NS) rollout status deploy/unifai-operator-canary-controller-manager --timeout=300s
+	@img=$$(kubectl -n $(CANARY_NS) get deploy/unifai-operator-canary-controller-manager -o jsonpath='{.spec.template.spec.containers[0].image}'); \
+	  [ "$$img" = "$(IMG)" ] || { echo "canary runs $$img, expected $(IMG)"; exit 1; }
 
 .PHONY: canary-e2e
 canary-e2e: ## Run the e2e suite against the canary instance (upgrade test from the OLM instance included).

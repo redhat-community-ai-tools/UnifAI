@@ -30,7 +30,9 @@ type Resolver struct {
 }
 
 // NewResolver returns a resolver for the client's identity.
-func NewResolver(c *Client) *Resolver { return &Resolver{c: c, cache: map[string]map[string]Resource{}} }
+func NewResolver(c *Client) *Resolver {
+	return &Resolver{c: c, cache: map[string]map[string]Resource{}}
+}
 
 func (r *Resolver) load(ctx context.Context, category string) (map[string]Resource, error) {
 	if m, ok := r.cache[category]; ok {

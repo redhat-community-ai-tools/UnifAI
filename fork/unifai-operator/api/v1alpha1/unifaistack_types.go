@@ -276,7 +276,7 @@ type BackupSpec struct {
 	// Cron schedule of both backup CronJobs.
 	// +kubebuilder:default="0 2 * * *"
 	// +optional
-	Schedule string `json:"schedule,omitempty"`
+	Schedule string       `json:"schedule,omitempty"`
 	S3       BackupS3Spec `json:"s3"`
 	// Backups kept per store; older ones are deleted after each successful run.
 	// +kubebuilder:validation:Minimum=1

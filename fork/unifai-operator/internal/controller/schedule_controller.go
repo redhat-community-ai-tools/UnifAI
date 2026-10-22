@@ -28,7 +28,7 @@ func (r *ScheduleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 	api := r.mas(obj)
 	return r.run(ctx, obj, Handlers{
-		Apply: func(ctx context.Context) (time.Duration, error) { return 0, r.apply(ctx, api, obj) },
+		Apply:  func(ctx context.Context) (time.Duration, error) { return 0, r.apply(ctx, api, obj) },
 		Delete: func(ctx context.Context) error { return deleteSchedule(ctx, api, obj.Status.ScheduleID) },
 	})
 }
