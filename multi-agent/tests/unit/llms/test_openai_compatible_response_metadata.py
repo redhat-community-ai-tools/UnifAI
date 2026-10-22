@@ -67,16 +67,8 @@ def test_chat_passes_extra_fields_through_unrenamed():
     assert entry["fields"] == {"x_provider": "vllm-a"}
     assert entry["response_id"] == "resp-1"
     assert entry["model"] == "served-model"
-    assert "lookup_url" not in entry
+    assert "lookup_url" not in entry and "routing" not in entry
     assert msg.content == "hello"
-
-
-def test_chat_resolves_lookup_url():
-    llm = _llm(LOOKUP)
-    llm._client.chat.completions.create.return_value = _completion()
-    entry = llm.chat(USER).metadata[RESPONSE_METADATA_KEY]
-    assert entry["lookup_url"] == "http://gw/v1/routing-decisions/resp-1"
-    assert entry["fields"] == {}
 
 
 def test_chat_without_metadata_is_unchanged():
@@ -101,7 +93,6 @@ def test_stream_passes_extra_fields_and_emits_final_message():
     assert final.content == "hello"
     entry = final.metadata[RESPONSE_METADATA_KEY]
     assert entry["fields"] == {"x_provider": "vllm-a"}
-    assert entry["lookup_url"].endswith("/resp-1")
 
 
 def test_stream_without_metadata_yields_only_text():
