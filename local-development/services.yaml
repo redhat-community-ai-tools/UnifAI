@@ -43,6 +43,7 @@ services:
     env_entries:
       hostname_local: "127.0.0.1"
       BACKEND_ENV: "development"
+      UNIFAI_DEV_MODE: "true"
       secret_key: "<AUTO_GENERATE>"
     venv:
       strategy: "toml"
@@ -61,6 +62,7 @@ services:
       hostname_local: "127.0.0.1"
       port: "13457"
       BACKEND_ENV: "development"
+      UNIFAI_DEV_MODE: "true"
       secret_key: "<AUTO_GENERATE>"
     venv:
       strategy: "toml"
@@ -78,6 +80,7 @@ services:
     env_entries:
       BASE_URL: "http://127.0.0.1:13457" # RAG_BASE_URL
       BACKEND_ENV: "development"
+      UNIFAI_DEV_MODE: "true"
       secret_key: "<AUTO_GENERATE>"
       # Allow http / private-IP OAuth endpoints for local/lab IdPs (e.g. Keycloak).
       # http://localhost is always allowed without this; leave unset in prod Helm.
@@ -107,6 +110,7 @@ services:
       port: "13456"
       frontend_url: "http://127.0.0.1:5000"
       BACKEND_ENV: "development"
+      UNIFAI_DEV_MODE: "true"
       secret_key: "<AUTO_GENERATE>"
     venv:
       strategy: "toml"
