@@ -19,6 +19,7 @@ Reference:
 import time
 from typing import List, Tuple, Callable, Optional, Dict, Any
 from mas.elements.llms.common.chat.message import ChatMessage, Role
+from mas.elements.llms.common.exceptions import LLMRateLimitError
 from mas.elements.tools.common.base_tool import BaseTool
 from ..primitives import AgentAction, AgentObservation, AgentFinish, AgentStep, StepType, SystemError
 from ..parsers import OutputParser, ParseError, ParseErrorType
@@ -157,6 +158,11 @@ class ReActStrategy(AgentStrategy):
             messages.append(error_feedback)
             
             steps = [self._create_error_step(e, "parse_error")]
+
+        except LLMRateLimitError as e:
+            # Expected, non-fatal condition: no retry, no "try another approach"
+            # feedback (the model never ran).  ERROR steps are terminal.
+            steps = [self._create_error_step(e, "rate_limited")]
 
         except Exception as e:
             import traceback

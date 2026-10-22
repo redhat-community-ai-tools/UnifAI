@@ -3,6 +3,7 @@ from typing import Optional, Any, List, ClassVar, Set, Dict
 from copy import deepcopy
 from mas.graph.state.state_view import StateView
 from mas.elements.llms.common.chat.message import RESPONSE_METADATA_KEY, ChatMessage, Role
+from mas.elements.llms.common.exceptions import LLMRateLimitError
 from mas.elements.tools.common.base_tool import BaseTool
 from mas.elements.nodes.common.base_node import BaseNode
 from mas.elements.nodes.common.capabilities.iem_capable import IEMCapableMixin
@@ -296,7 +297,18 @@ class CustomAgentNode(
             return result
         else:
             # No tools - use basic chat
-            assistant_msg = self.chat(conversation_context)
+            try:
+                assistant_msg = self.chat(conversation_context)
+            except LLMRateLimitError as e:
+                # Non-fatal: surface the notice as the agent's answer.
+                return {
+                    "success": False,
+                    "output": "",
+                    "error": str(e),
+                    "reasoning": "",
+                    "metadata": {"error_type": "rate_limited", "retry_after": e.retry_after},
+                    "metrics": {}
+                }
             # Create a result dict that matches run_agent format
             return {
                 "success": True,

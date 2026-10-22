@@ -13,11 +13,12 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, Iterator, List, Optional, Union
 
-from openai import OpenAI
+from openai import APIStatusError, OpenAI
 from openai.types.chat import ChatCompletionToolParam
 
 from ..common.base_llm import BaseLLM
 from ..common.chat.message import RESPONSE_METADATA_KEY, ChatMessage, Role
+from ..common.exceptions import LLMRateLimitError, rate_limit_from_response
 from ..common.name_sanitizer import build_name_maps, map_name
 from ..common.tool_name_restorer import restore_tool_names
 from ...tools.common.tool_definition import ToolDefinition
@@ -99,6 +100,10 @@ class OpenAICompatibleLLM(BaseLLM):
                     tools=self._tools or [],
                 )
             except Exception as e:
+                rate_limited = self._as_rate_limit(e)
+                if rate_limited is not None:
+                    gen.update(level="WARNING", status_message=str(rate_limited))
+                    raise rate_limited from e
                 gen.update(
                     level="ERROR",
                     status_message=f"OpenAI API error: {type(e).__name__}: {e}",
@@ -157,6 +162,10 @@ class OpenAICompatibleLLM(BaseLLM):
                     **call_params,
                 )
             except Exception as e:
+                rate_limited = self._as_rate_limit(e)
+                if rate_limited is not None:
+                    gen.update(level="WARNING", status_message=str(rate_limited))
+                    raise rate_limited from e
                 gen.update(
                     level="ERROR",
                     status_message=f"OpenAI API error: {type(e).__name__}: {e}",
@@ -240,6 +249,26 @@ class OpenAICompatibleLLM(BaseLLM):
     @property
     def name(self) -> str:
         return self._name
+
+    # ------------------------------------------------------------------
+    # Error mapping
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _as_rate_limit(exc: Exception) -> Optional[LLMRateLimitError]:
+        """Map an HTTP 429 from the endpoint to ``LLMRateLimitError``."""
+        if not isinstance(exc, APIStatusError) or exc.status_code != 429:
+            return None
+        response = getattr(exc, "response", None)
+        headers = getattr(response, "headers", None)
+        body = getattr(exc, "body", None)
+        try:
+            # The SDK unwraps a top-level "error" key; the raw payload keeps
+            # any sibling fields (limits, window, ...) worth showing.
+            body = response.json()
+        except Exception:
+            pass
+        return rate_limit_from_response(headers, body)
 
     # ------------------------------------------------------------------
     # Name sanitization
