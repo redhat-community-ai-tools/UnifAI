@@ -317,6 +317,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 			requeue = resync
 		}
 	}
+	specWarnings(b.Recorder, obj, &st.Conditions)
 	if !statusChanged(orig.(unifaiv1.Object).GetObjectStatus(), st) {
 		st.LastReconciled = orig.(unifaiv1.Object).GetObjectStatus().LastReconciled // nothing to write
 	} else if uerr := b.Status().Patch(ctx, obj, client.MergeFrom(orig)); uerr != nil {

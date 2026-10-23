@@ -20,8 +20,12 @@ var (
 		Help:    "Duration of the Helm install/upgrade of a stack release.",
 		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600},
 	}, []string{"release", "result"})
+	specWarningsGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "unifai_operator_spec_warnings",
+		Help: "Static rules an object breaks (they will be refused at admission in a later release), by object.",
+	}, []string{"namespace", "kind", "name"})
 )
 
 func init() {
-	metrics.Registry.MustRegister(phaseTransitions, stackReady, helmApplySeconds)
+	metrics.Registry.MustRegister(phaseTransitions, stackReady, helmApplySeconds, specWarningsGauge)
 }

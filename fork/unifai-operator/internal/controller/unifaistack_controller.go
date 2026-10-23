@@ -127,6 +127,7 @@ func (r *StackReconciler) setStatus(ctx context.Context, st *unifaiv1.UnifaiStac
 		isolation.Message = "spec.exposure.networkPolicy is false: any pod of the cluster can reach the UnifAI APIs and data stores"
 	}
 	meta.SetStatusCondition(&st.Status.Conditions, isolation)
+	specWarnings(r.Recorder, st, &st.Status.Conditions)
 	// Merge patch from an empty status: no resourceVersion conflict (arrays such as components are replaced whole).
 	base := st.DeepCopy()
 	base.Status = unifaiv1.UnifaiStackStatus{}

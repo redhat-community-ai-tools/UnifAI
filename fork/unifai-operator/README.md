@@ -279,6 +279,18 @@ The bundle ships a ServiceMonitor for these metrics (see "Install with OLM"). In
 operator's (target) namespace: the stack namespace of `unifai_operator_stack_ready` and
 `unifai_operator_keycloak_repairs_total` is `exported_namespace`.
 
+### Spec rules (R-304)
+
+Static rules of the custom resources (checked on the object alone, `internal/validate`): `teamId`/`teamRef`
+exclusive; resource `config.type` equal to `spec.type`; bundle `groupTeam` exclusive with `teamId`/`teamRef`,
+`classificationOverrides` in C1-C3, `providers`/`retriever` names; RAG source `syncInterval` >= 10m and http(s) web
+URLs; RAG pipeline unique document names (pdf, docx, md, pptx) and http(s) URLs; schedule `user_prompt` input, ISO-8601
+`interval` >= PT1M, 5-field cron, `remaining_actions` >= 1, `start_at` < `end_at`; chat non-empty prompt; workflow
+`display` icon and colour; stack `images`/`resources`/`storage.sizes` keys and size quantities, 5-field backup cron.
+A violation is reported, not refused: condition `SpecWarnings`, a Warning Event `SpecInvalid` and the metric
+`unifai_operator_spec_warnings`. A later release refuses them at admission (CEL in the CRDs). Rendered manifests can
+be checked beforehand: `helm template ... | make validate-manifests FILES=-`.
+
 ## Build and release
 
 Requirements: Go 1.26, operator-sdk 1.41, opm, podman, write access to `quay.io/zuno/unifai-operator{,-bundle,-catalog}`.

@@ -111,6 +111,7 @@ func (r *AgentBundleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	meta.SetStatusCondition(&st.Conditions, metav1.Condition{Type: phaseReady, Status: ready, Reason: st.Phase,
 		Message: st.Message, ObservedGeneration: cr.Generation})
+	specWarnings(nil, cr, &cr.Status.Conditions)
 	if uerr := r.Status().Patch(ctx, cr, client.MergeFrom(orig)); uerr != nil {
 		return ctrl.Result{}, uerr
 	}

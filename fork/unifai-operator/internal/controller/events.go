@@ -1,14 +1,19 @@
 package controller
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/recorder"
 
 	"github.com/startxfr/unifai-operator/internal/unifai"
+	"github.com/startxfr/unifai-operator/internal/validate"
 )
 
 // EventSource is the reporting controller of the Events the operator records.
@@ -67,4 +72,31 @@ func recordDeleteFailed(rec recorder.EventRecorder, obj runtime.Object, from, ms
 func record(rec recorder.EventRecorder, obj runtime.Object, typ, reason, msg string) {
 	// Event notes are limited to 1 kB; the message may hold API answers with format verbs.
 	rec.Eventf(obj, nil, typ, reason, "Reconcile", "%s", unifai.Truncate(msg, 1000))
+}
+
+// ConditionSpecWarnings lists the static rules the spec breaks (R-304): reported now, refused at admission later.
+const ConditionSpecWarnings = "SpecWarnings"
+
+// specWarnings records the static rules the object breaks in its conditions, as a Warning Event when they change
+// and in the unifai_operator_spec_warnings metric. Nothing is refused.
+func specWarnings(rec recorder.EventRecorder, obj client.Object, conds *[]metav1.Condition) {
+	kind := fmt.Sprintf("%T", obj)
+	kind = kind[strings.LastIndex(kind, ".")+1:]
+	vs := validate.Check(obj)
+	if len(vs) == 0 {
+		meta.RemoveStatusCondition(conds, ConditionSpecWarnings)
+		specWarningsGauge.DeleteLabelValues(obj.GetNamespace(), kind, obj.GetName())
+		return
+	}
+	msgs := make([]string, 0, len(vs))
+	for _, v := range vs {
+		msgs = append(msgs, v.String())
+	}
+	msg := unifai.Truncate("refused at admission in a later release: "+strings.Join(msgs, "; "), 1000)
+	if prev := meta.FindStatusCondition(*conds, ConditionSpecWarnings); rec != nil && (prev == nil || prev.Message != msg) {
+		record(rec, obj, corev1.EventTypeWarning, "SpecInvalid", msg)
+	}
+	meta.SetStatusCondition(conds, metav1.Condition{Type: ConditionSpecWarnings, Status: metav1.ConditionTrue,
+		Reason: "InvalidSpec", Message: msg, ObservedGeneration: obj.GetGeneration()})
+	specWarningsGauge.WithLabelValues(obj.GetNamespace(), kind, obj.GetName()).Set(float64(len(vs)))
 }

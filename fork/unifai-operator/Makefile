@@ -132,6 +132,10 @@ test-e2e: ## Run the e2e tests on the current cluster (E2E_STORAGE_CLASS, E2E_SH
 	E2E_VERSION=$(E2E_VERSION) E2E_INTERNAL_AUTH=$(E2E_INTERNAL_AUTH) \
 	go test -tags e2e -count=1 -timeout 90m -v ./test/e2e/
 
+.PHONY: validate-manifests
+validate-manifests: ## Check rendered manifests against the static rules of the UnifAI resources (FILES=a.yaml b.yaml, - for stdin).
+	go run ./cmd/validate $(FILES)
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
