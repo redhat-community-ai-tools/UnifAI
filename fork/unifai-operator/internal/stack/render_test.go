@@ -260,7 +260,7 @@ func TestRAGSettings(t *testing.T) {
 	p.OIDCURL, p.OIDCRealm = "https://kc.example.com/", "zuno"
 	on := renderAll(t, p)
 	for _, rel := range []string{"unifai-rag-server", "unifai-rag-celery"} {
-		for _, want := range []string{"QDRANT_HYBRID_ENABLED", `["admin"]`, "https://kc.example.com/realms/zuno", "confluence_queue"} {
+		for _, want := range []string{"QDRANT_HYBRID_ENABLED", `["admin"]`, "https://kc.example.com/realms/zuno", "confluence_queue", "web_queue"} {
 			if !strings.Contains(on[rel], want) {
 				t.Errorf("%s lacks %s", rel, want)
 			}

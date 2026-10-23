@@ -259,8 +259,9 @@ func ragValues(p *Plan, v map[string]any) map[string]any {
 		}
 	}
 	if c := r.Confluence; c != nil {
-		// Celery workers consume one queue per source type.
-		set(v, "env.CELERY_QUEUES", "slack_queue,document_queue,slack_events_queue,confluence_queue")
+		// Celery workers consume one queue per source type (confluence and web sources share this switch:
+		// the default queues stay unchanged so existing stacks do not roll).
+		set(v, "env.CELERY_QUEUES", "slack_queue,document_queue,slack_events_queue,confluence_queue,web_queue")
 		if c.VerifyTLS != nil && !*c.VerifyTLS {
 			set(v, "env.CONFLUENCE_VERIFY_TLS", "false")
 		}
