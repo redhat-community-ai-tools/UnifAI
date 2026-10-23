@@ -171,3 +171,14 @@ var _ = Describe("UnifaiRestore", func() {
 		Eventually(quiescedBy(st), timeout, interval).Should(Equal("b"))
 	})
 })
+
+var _ = Describe("Secret and ConfigMap cache", func() {
+	It("reads a Secret without the part-of label (user Secrets are not cached, they are read live)", func() {
+		ns := newNamespace("secretread")
+		s := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "user-owned", Namespace: ns}, StringData: map[string]string{"k": "v"}}
+		Expect(k8sClient.Create(ctx, s)).To(Succeed())
+		got := &corev1.Secret{}
+		Expect(mgrClient.Get(ctx, client.ObjectKeyFromObject(s), got)).To(Succeed())
+		Expect(string(got.Data["k"])).To(Equal("v"))
+	})
+})

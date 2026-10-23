@@ -1,0 +1,48 @@
+# User roles over every unifai.startx.fr kind (R-301). A custom resource carries spec.owner and the operator acts
+# in UnifAI as that user, so creating one is a privileged action: only unifai-view is aggregated (OpenShift
+# view/edit/admin all get it); unifai-edit and unifai-admin are bound explicitly by a cluster admin.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: unifai-view
+  labels:
+    app.kubernetes.io/name: unifai-operator
+    app.kubernetes.io/managed-by: kustomize
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+rules:
+- apiGroups: [unifai.startx.fr]
+  resources: ["*"]
+  verbs: [get, list, watch]
+---
+# UnifAI objects (library, workflows, chats, schedules, templates, RAG, teams); not the stack, the agent bundles
+# nor the restores.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: unifai-edit
+  labels:
+    app.kubernetes.io/name: unifai-operator
+    app.kubernetes.io/managed-by: kustomize
+rules:
+- apiGroups: [unifai.startx.fr]
+  resources: ["*"]
+  verbs: [get, list, watch]
+- apiGroups: [unifai.startx.fr]
+  resources: [unifaillms, unifaiproviders, unifaitools, unifaiconditions, unifairetrievers, unifaisandboxes, unifaiagents,
+    unifaiworkflows, unifaischedules, unifaitemplates, unifaichats, unifairagpipelines, unifairagsources, unifaiteams]
+  verbs: [create, update, patch, delete, deletecollection]
+---
+# Everything, including UnifaiStack, UnifaiAgentBundle and UnifaiRestore (structuring or destructive).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: unifai-admin
+  labels:
+    app.kubernetes.io/name: unifai-operator
+    app.kubernetes.io/managed-by: kustomize
+rules:
+- apiGroups: [unifai.startx.fr]
+  resources: ["*"]
+  verbs: ["*"]

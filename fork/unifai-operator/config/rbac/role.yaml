@@ -8,7 +8,6 @@ rules:
   - ""
   resources:
   - configmaps
-  - endpoints
   - persistentvolumeclaims
   - secrets
   - serviceaccounts
@@ -106,22 +105,8 @@ rules:
   - update
   - watch
 - apiGroups:
-  - monitoring.coreos.com
-  resources:
-  - prometheusrules
-  - servicemonitors
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - networking.k8s.io
   resources:
-  - ingresses
   - networkpolicies
   verbs:
   - create
@@ -135,6 +120,14 @@ rules:
   - operators.coreos.com
   resources:
   - clusterserviceversions
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - operators.coreos.com
+  resources:
   - operatorgroups
   - subscriptions
   verbs:
@@ -142,8 +135,6 @@ rules:
   - delete
   - get
   - list
-  - patch
-  - update
   - watch
 - apiGroups:
   - policy
@@ -185,19 +176,6 @@ rules:
   - clusterroles
   verbs:
   - bind
-- apiGroups:
-  - rbac.authorization.k8s.io
-  resources:
-  - rolebindings
-  - roles
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
 - apiGroups:
   - route.openshift.io
   resources:
@@ -294,3 +272,17 @@ rules:
   - patch
   - update
   - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: manager-role
+  namespace: system
+rules:
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - get
+  - patch

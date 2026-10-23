@@ -27,6 +27,9 @@ const (
 	tokenReadyAnnotation = "unifai.startx.fr/token-ready"
 )
 
+// The operator namespace only: its ServiceMonitor (touched once the token exists).
+// +kubebuilder:rbac:groups=monitoring.coreos.com,namespace=system,resources=servicemonitors,verbs=get;patch
+
 // MetricsToken keeps the scraper token Secret of the operator ServiceMonitor. A token Secret shipped in the bundle
 // could be created before OLM creates its ServiceAccount and be removed by the token controller, so the operator
 // creates it once the ServiceAccount exists. Without that ServiceAccount (canary, make deploy) it does nothing.

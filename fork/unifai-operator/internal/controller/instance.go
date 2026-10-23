@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -53,5 +54,16 @@ func CacheByObject(scheme *runtime.Scheme) map[client.Object]cache.ByObject {
 			out[co] = cache.ByObject{Label: sel}
 		}
 	}
+	// Only the stack's own Secrets and ConfigMaps are cached (and watched): not every Secret of the cluster.
+	partOf := labels.SelectorFromSet(labels.Set{"app.kubernetes.io/part-of": "unifai"})
+	out[&corev1.Secret{}] = cache.ByObject{Label: partOf}
+	out[&corev1.ConfigMap{}] = cache.ByObject{Label: partOf}
 	return out
+}
+
+// ClientOptions makes the manager's client read Secrets and ConfigMaps from the API server: the cache only holds
+// the stack's own ones, and the operator also reads Secrets the user names (secretsRef, OIDC client secret, S3
+// credentials, OKF keys, pull secrets) that do not carry the part-of label.
+func ClientOptions() client.Options {
+	return client.Options{Cache: &client.CacheOptions{DisableFor: []client.Object{&corev1.Secret{}, &corev1.ConfigMap{}}}}
 }

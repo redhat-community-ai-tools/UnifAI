@@ -49,6 +49,8 @@ var (
 	testEnv   *envtest.Environment
 	cfg       *rest.Config
 	k8sClient client.Client
+	// mgrClient is the manager's client (cache, with the operator's client options).
+	mgrClient client.Client
 	mas       *fakeMAS
 )
 
@@ -94,8 +96,9 @@ var _ = BeforeSuite(func() {
 	mas, srv = newFakeMAS()
 	DeferCleanup(srv.Close)
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{Scheme: scheme.Scheme, Metrics: metricsserver.Options{BindAddress: "0"},
-		Cache: cache.Options{ByObject: CacheByObject(scheme.Scheme)}})
+		Cache: cache.Options{ByObject: CacheByObject(scheme.Scheme)}, Client: ClientOptions()})
 	Expect(err).NotTo(HaveOccurred())
+	mgrClient = mgr.GetClient()
 	base := Base{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), APIReader: mgr.GetAPIReader(), Recorder: mgr.GetEventRecorder(EventSource), Endpoints: func(string) (string, string) { return srv.URL, srv.URL },
 		Identity: func(string) string { return srv.URL }}
 	for kind, newObj := range ResourceKinds {
