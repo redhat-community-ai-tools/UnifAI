@@ -28,7 +28,7 @@ are referenced, not duplicated. No secrets, no unpublished vulnerability details
 | R-101 | This backlog and the working rules | done | operator |
 | R-102 | GitHub Actions `unifai-operator.yml`: charts drift, unit+envtest, generated files committed, build, e2e compile, lint (new issues), bundle/catalog validation | done (runs once `devel` is pushed) | operator |
 | R-103 | `make upstream-check` + `make -C fork/unifai-operator charts-check` | done | operator |
-| R-104 | Lint debt: 30 existing golangci-lint findings (goconst, prealloc, gocyclo, errcheck in `internal/okf`, ...) then lint on the whole tree in CI | todo | operator (+ zuno-demo-68 for okf/agentbundle) |
+| R-104 | Lint debt: existing golangci-lint findings fixed, CI lints the whole tree (`make lint`) | done | operator (+ zuno-demo-68 for okf/agentbundle) |
 | R-105 | Release from CI (image, bundle, catalog) with a quay robot secret; e2e stays on the cluster | todo (needs decision) | — |
 
 ## 2. Operator quality
