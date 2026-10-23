@@ -234,6 +234,9 @@ func TestUnifaiStack(t *testing.T) {
 		must(t, c.Get(ctx, client.ObjectKeyFromObject(st), st))
 		st.Spec.Exposure.RAGClients = []unifaiv1.RAGClient{{Namespace: other}}
 		must(t, c.Update(ctx, st))
+		if len(st.Spec.Exposure.RAGClients) == 0 {
+			t.Skip("the installed CRD has no spec.exposure.ragClients (operator older than 0.1.28)")
+		}
 		eventually(t, "RAG clients policy", 3*time.Minute, func() (bool, string) {
 			err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: "unifai-rag-clients"}, &networkingv1.NetworkPolicy{})
 			return err == nil, fmt.Sprint(err)
