@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -97,17 +101,36 @@ func (r *WorkflowReconciler) apply(ctx context.Context, api *unifai.Client, obj 
 	if err != nil {
 		return permanentOn(err, http.StatusBadRequest, http.StatusConflict, http.StatusUnprocessableEntity)
 	}
-	if changed && obj.Spec.Display != nil {
+	msg := "blueprint " + name
+	if obj.Spec.Display == nil {
+		meta.RemoveStatusCondition(&obj.Status.Conditions, conditionDisplay)
+	} else if changed || !meta.IsStatusConditionTrue(obj.Status.Conditions, conditionDisplay) {
 		// Server side the key is validated: public fields only, bounded plain text (multi-agent blueprints service).
-		if err := api.Call(ctx, http.MethodPut, "/api/blueprints/blueprint.metadata.set", nil,
-			map[string]any{"blueprintId": bid, "metadata": map[string]any{"display": obj.Spec.Display}}, nil); err != nil {
+		err := api.Call(ctx, http.MethodPut, "/api/blueprints/blueprint.metadata.set", nil,
+			map[string]any{"blueprintId": bid, "metadata": map[string]any{"display": obj.Spec.Display}}, nil)
+		cond := metav1.Condition{Type: conditionDisplay, Status: metav1.ConditionTrue, Reason: "Stored", ObservedGeneration: obj.Generation}
+		switch {
+		case err == nil:
+		case unifai.IsStatus(err, http.StatusBadRequest) && strings.Contains(err.Error(), "display"):
+			// A multiagent image older than the display key: the workflow works without its public sheet, which
+			// is sent again at each resync until the image accepts it.
+			cond.Status, cond.Reason = metav1.ConditionFalse, "NotSupported"
+			cond.Message = unifai.Truncate(err.Error(), 300)
+		default:
 			return permanentOn(err, http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound)
 		}
+		meta.SetStatusCondition(&obj.Status.Conditions, cond)
+	}
+	if meta.IsStatusConditionFalse(obj.Status.Conditions, conditionDisplay) {
+		msg += " (display not stored: the multiagent image does not accept it yet)"
 	}
 	obj.Status.BlueprintID, obj.Status.Hash = bid, h
-	setReady(&obj.Status, "Ready", "blueprint "+name)
+	setReady(&obj.Status, "Ready", msg)
 	return nil
 }
+
+// conditionDisplay reports whether the public sheet (spec.display) is stored in the blueprint metadata.
+const conditionDisplay = "DisplayStored"
 
 // SetupWithManager registers the controller.
 func (r *WorkflowReconciler) SetupWithManager(mgr ctrl.Manager) error {

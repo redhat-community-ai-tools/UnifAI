@@ -27,6 +27,8 @@ type fakeMAS struct {
 	ragSyncs   map[string]int // source id -> embed calls (incremental syncs)
 	users      []string       // X-Authenticated-User of each call
 	internal   []string       // X-Internal-Auth of each call
+	// noDisplay plays a multiagent image older than the display metadata key (HTTP 400).
+	noDisplay bool
 }
 
 func newFakeMAS() (*fakeMAS, *httptest.Server) {
@@ -135,6 +137,19 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.blueprints[id] = map[string]any{"name": spec["name"], "spec": spec}
 		reply(w, 201, map[string]any{"blueprint_id": id})
+	case "/api/blueprints/blueprint.metadata.set":
+		md, _ := body["metadata"].(map[string]any)
+		if _, ok := md["display"]; ok && f.noDisplay {
+			reply(w, 400, map[string]any{"error": "Invalid metadata key(s): ['display']"})
+			return
+		}
+		b := f.blueprints[fmt.Sprint(body["blueprintId"])]
+		if b == nil {
+			reply(w, 404, map[string]any{"error": "not found"})
+			return
+		}
+		b["metadata"] = md
+		reply(w, 200, map[string]any{})
 	case "/api/blueprints/remove.blueprint":
 		delete(f.blueprints, q.Get("blueprintId"))
 		reply(w, 200, map[string]any{})
