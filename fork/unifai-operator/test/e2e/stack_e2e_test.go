@@ -338,6 +338,13 @@ func TestUnifaiStack(t *testing.T) {
 		checkAgentBundleKeyless(t, ns)
 	})
 
+	t.Run("an UnifaiRestore brings back the MongoDB and Qdrant data of a backup", func(t *testing.T) {
+		if os.Getenv("E2E_RESTORE") == "0" {
+			t.Skip("E2E_RESTORE=0")
+		}
+		checkRestore(t, ns, st)
+	})
+
 	t.Run("a team with a group member and an object in its workspace", func(t *testing.T) {
 		team := &unifaiv1.UnifaiTeam{ObjectMeta: metav1.ObjectMeta{Name: "e2e-team", Namespace: ns}, Spec: unifaiv1.UnifaiTeamSpec{
 			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "e2e-team-" + ns},

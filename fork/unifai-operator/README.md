@@ -207,18 +207,34 @@ Each job keeps the `retention` newest backups (default 7) and deletes older ones
 (`s3.credentialsSecret`) holds `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`; `s3.endpoint` targets a non-AWS
 service. Removing `spec.backup` deletes the CronJobs, never the backups.
 
-Restore (on-demand, from a pod in the namespace with the aws CLI and the same credentials):
+Each MongoDB backup also writes `<prefix>/mongodb/<UTC timestamp>.meta.json` with the fingerprint of the stack's
+`CREDENTIAL_ENCRYPTION_KEY` (`status.credentialKeyFingerprint`): the credentials stored in MongoDB are encrypted with it.
 
-```sh
-# MongoDB: replaces the dumped databases
-aws s3 cp s3://<bucket>/<prefix>/mongodb/<ts>.archive.gz - | mongorestore --uri=mongodb://mongodb:27017 --archive --gzip --drop
-# Qdrant: one collection at a time (recreates it from the snapshot)
-aws s3 cp s3://<bucket>/<prefix>/qdrant/<ts>/<collection>.snapshot /tmp/c.snapshot
-curl -X POST "http://qdrant:6333/collections/<collection>/snapshots/upload?priority=snapshot&wait=true" -F snapshot=@/tmp/c.snapshot
+#### Restore (UnifaiRestore)
+
+```yaml
+apiVersion: unifai.startx.fr/v1alpha1
+kind: UnifaiRestore
+metadata: {name: restore-20261023, namespace: <stack namespace>}
+spec:
+  backup: latest            # or 20261023T020000Z: each store's newest backup at or before that time
+  stores: [mongodb, qdrant] # default both
+  collections: [docs]       # Qdrant collections (default: all of the backup)
+  # source: {bucket, prefix, endpoint, credentialsSecret}  # another stack's backups (default: spec.backup.s3)
 ```
 
-The Qdrant script and this restore were exercised against Qdrant v1.16.0 (two collections, three runs with
-`retention: 2`, deleted collection restored with all its points).
+The restore is immutable and runs once (`Pending`, `Stopping`, `Restoring`, `Starting`, `Completed` or `Failed`):
+
+1. the operator annotates the stack `unifai.startx.fr/quiesced-by=<restore>`: the UnifAI applications (UI, MAS and its
+   worker, RAG server and workers, backend, identity) are scaled to 0, without HPA; the data stores keep running;
+2. the Job `unifai-restore-<name>` picks the backups, checks the MongoDB key fingerprint (refused when it differs,
+   unless `spec.allowKeyMismatch`: the stored credentials would then have to be entered again), restores the Qdrant
+   collections from their snapshots, then MongoDB (`mongorestore --drop`, the dumped databases are replaced);
+3. the annotation is removed and the applications restart; `status.restored` lists `<store>/<timestamp>`.
+
+A failed restore restarts the applications too (the Job runs once: look at its pod before retrying with a new
+UnifaiRestore). One restore at a time per namespace; deleting an active one gives the applications back. UnifAI
+objects created after the backup are recreated by their custom resources at the next reconcile.
 
 ### Taking over a helmfile deployment
 

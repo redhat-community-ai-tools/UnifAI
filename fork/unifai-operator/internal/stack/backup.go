@@ -1,6 +1,8 @@
 package stack
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -30,9 +32,11 @@ const backupShellHelpers = `set -eu
 export HOME=/tmp
 AWS="aws ${S3_ENDPOINT:+--endpoint-url $S3_ENDPOINT}"
 TS=$(date -u +%Y%m%dT%H%M%SZ)
+# Keeps the KEEP newest backups: a backup is every key starting with its timestamp (<ts>.archive.gz and
+# <ts>.meta.json, or the <ts>/ folder of snapshots).
 prune() {
-  $AWS s3 ls "$1/" | awk '{print $NF}' | sort | head -n "-$KEEP" | while read -r old; do
-    [ -n "$old" ] && $AWS s3 rm --recursive "$1/$old"
+  $AWS s3 ls "$1/" | awk '{print $NF}' | sed 's#[./].*##' | sort -u | head -n "-$KEEP" | while read -r old; do
+    [ -n "$old" ] && $AWS s3 rm --recursive "$1/" --exclude "*" --include "$old*"
   done
 }
 `
@@ -40,6 +44,8 @@ prune() {
 // mongoUpload uploads the archive the init container dumped, then prunes.
 const mongoUpload = backupShellHelpers + `
 $AWS s3 cp /backup/mongodb.archive.gz "$DEST/$TS.archive.gz"
+printf '{"credentialKeyFingerprint":"%s"}' "$FINGERPRINT" > /backup/meta.json
+$AWS s3 cp /backup/meta.json "$DEST/$TS.meta.json"
 prune "$DEST"
 echo "mongodb backup $DEST/$TS.archive.gz"
 `
@@ -59,6 +65,15 @@ done
 prune "$DEST"
 echo "qdrant backup $DEST/$TS ($(echo $cols | wc -w) collections)"
 `
+
+// KeyFingerprint identifies the credential encryption key without revealing it.
+func KeyFingerprint(key string) string {
+	if key == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:8])
+}
 
 // BackupObjects renders the two backup CronJobs, or nothing when spec.backup is unset.
 func BackupObjects(p *Plan) []ctrlObject {
@@ -104,7 +119,7 @@ func BackupObjects(p *Plan) []ctrlObject {
 	}
 
 	mongo := uploader(mongoUpload)
-	mongo.Env = env("mongodb")
+	mongo.Env = append(env("mongodb"), corev1.EnvVar{Name: "FINGERPRINT", Value: KeyFingerprint(p.Secrets[KeyCredentialKey])})
 	mongoJob := cronJob(p, BackupMongoName, b, corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
 		InitContainers: []corev1.Container{{Name: "dump", Image: mongoImage, SecurityContext: restricted(),

@@ -105,6 +105,7 @@ var _ = BeforeSuite(func() {
 	Expect((&ScheduleReconciler{Base: base}).SetupWithManager(mgr)).To(Succeed())
 	Expect((&TemplateReconciler{Base: base}).SetupWithManager(mgr)).To(Succeed())
 	Expect((&TeamReconciler{Base: base}).SetupWithManager(mgr)).To(Succeed())
+	Expect((&RestoreReconciler{Client: mgr.GetClient()}).SetupWithManager(mgr)).To(Succeed())
 	Expect((&ChatReconciler{Base: base}).SetupWithManager(mgr)).To(Succeed())
 	Expect((&RAGPipelineReconciler{Base: base}).SetupWithManager(mgr)).To(Succeed())
 	Expect((&RAGSourceReconciler{Base: base, Now: ragClock.now}).SetupWithManager(mgr)).To(Succeed())

@@ -1005,6 +1005,11 @@ spec:
                   - type
                   type: object
                 type: array
+              credentialKeyFingerprint:
+                description: |-
+                  First 16 hex digits of the SHA-256 of CREDENTIAL_ENCRYPTION_KEY, written with each MongoDB backup and
+                  checked by UnifaiRestore (the credentials stored in MongoDB are encrypted with that key).
+                type: string
               endpoints:
                 description: StackEndpoints are the URLs of the stack.
                 properties:

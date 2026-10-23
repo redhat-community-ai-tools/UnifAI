@@ -28,6 +28,8 @@ type Plan struct {
 	OIDCURL, OIDCRealm, OIDCClientID, OIDCClientSecret string
 	// OperatorNamespace is allowed through the stack NetworkPolicy.
 	OperatorNamespace string
+	// Quiesced stops the UnifAI applications (replicas 0) while an UnifaiRestore replaces the data.
+	Quiesced bool
 	// ConfigHash changes with the ConfigMaps/Secrets read by the pods; it is set on pod templates so they restart.
 	ConfigHash string
 	// LiveVolumes holds the specs of the PVCs ("pvc/<name>") and StatefulSet claim templates ("<sts>/<claim>")
@@ -42,7 +44,8 @@ type Plan struct {
 // NewPlan derives hosts and the image version; secrets and OIDC are filled by the controller.
 func NewPlan(st *unifaiv1.UnifaiStack, clusterDomain, operatorNS string) (*Plan, error) {
 	s := &st.Spec
-	p := &Plan{Namespace: st.Namespace, Spec: s, Version: s.Version, Domain: s.Exposure.Domain, OperatorNamespace: operatorNS}
+	p := &Plan{Namespace: st.Namespace, Spec: s, Version: s.Version, Domain: s.Exposure.Domain, OperatorNamespace: operatorNS,
+		Quiesced: st.Annotations[QuiesceAnnotation] != ""}
 	if p.Version == "" {
 		p.Version = DefaultVersion
 	}

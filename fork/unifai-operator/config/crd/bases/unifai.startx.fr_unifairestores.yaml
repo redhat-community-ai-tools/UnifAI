@@ -1,0 +1,200 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: unifairestores.unifai.startx.fr
+spec:
+  group: unifai.startx.fr
+  names:
+    categories:
+    - unifai
+    kind: UnifaiRestore
+    listKind: UnifaiRestoreList
+    plural: unifairestores
+    shortNames:
+    - urestore
+    singular: unifairestore
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.backup
+      name: Backup
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.message
+      name: Message
+      priority: 1
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: UnifaiRestore is a one-shot restore of the stack data from its
+          S3 backups.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              UnifaiRestoreSpec restores the MongoDB and/or Qdrant data of the namespace's stack from the backups written by
+              spec.backup. The UnifAI applications are stopped while the data is replaced, then restarted.
+            properties:
+              allowKeyMismatch:
+                description: |-
+                  Restore a MongoDB backup whose encryption-key fingerprint differs from this stack's
+                  CREDENTIAL_ENCRYPTION_KEY: the credentials it holds then cannot be decrypted (they must be entered again).
+                type: boolean
+              backup:
+                default: latest
+                description: |-
+                  Backup to restore: "latest", or a UTC time in the backup format (e.g. 20261023T020000Z); each store then
+                  uses its newest backup taken at or before that time.
+                pattern: ^(latest|[0-9]{8}T[0-9]{6}Z)$
+                type: string
+              collections:
+                description: 'Qdrant collections to restore (default: every collection
+                  of the backup).'
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              source:
+                description: |-
+                  Backups to read; default: the stack's spec.backup.s3. Set it to restore another stack's backups (same
+                  bucket layout); its credentials Secret must be in this namespace.
+                properties:
+                  bucket:
+                    type: string
+                  credentialsSecret:
+                    type: string
+                  endpoint:
+                    description: Endpoint URL of a non-AWS S3 service (e.g. https://s3.example.com);
+                      empty = AWS.
+                    type: string
+                  prefix:
+                    description: 'Key prefix (default: unifai/<namespace>).'
+                    type: string
+                  region:
+                    default: us-east-1
+                    type: string
+                required:
+                - bucket
+                - credentialsSecret
+                type: object
+              stores:
+                description: Stores to restore (default both). A MongoDB restore replaces
+                  the dumped databases (mongorestore --drop).
+                items:
+                  description: RestoreStore is a store of the stack data.
+                  enum:
+                  - mongodb
+                  - qdrant
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+            type: object
+            x-kubernetes-validations:
+            - message: 'an UnifaiRestore is immutable: create a new one'
+              rule: self == oldSelf
+          status:
+            description: UnifaiRestoreStatus reports the progress of a restore.
+            properties:
+              completedAt:
+                format: date-time
+                type: string
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              message:
+                type: string
+              phase:
+                description: Pending, Stopping, Restoring, Starting, Completed, Failed.
+                type: string
+              restored:
+                description: Backups restored, as <store>/<timestamp>.
+                items:
+                  type: string
+                type: array
+              startedAt:
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

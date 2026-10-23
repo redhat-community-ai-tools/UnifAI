@@ -421,6 +421,10 @@ type UnifaiStackStatus struct {
 	Components []ComponentStatus `json:"components,omitempty"`
 	// +optional
 	Endpoints StackEndpoints `json:"endpoints,omitempty"`
+	// First 16 hex digits of the SHA-256 of CREDENTIAL_ENCRYPTION_KEY, written with each MongoDB backup and
+	// checked by UnifaiRestore (the credentials stored in MongoDB are encrypted with that key).
+	// +optional
+	CredentialKeyFingerprint string `json:"credentialKeyFingerprint,omitempty"`
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }

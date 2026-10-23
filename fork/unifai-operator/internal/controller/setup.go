@@ -26,6 +26,7 @@ func SetupAll(mgr ctrl.Manager) error {
 		"UnifaiRAGSource":   &RAGSourceReconciler{Base: base},
 		"UnifaiAgentBundle": &AgentBundleReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()},
 		"UnifaiStack":       NewStackReconciler(mgr),
+		"UnifaiRestore":     &RestoreReconciler{Client: mgr.GetClient()},
 	} {
 		if err := r.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("%s: %w", name, err)

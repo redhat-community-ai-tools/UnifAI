@@ -91,8 +91,12 @@ func Render(p *Plan, r Release) (*Rendered, error) {
 		return nil, err
 	}
 	s := p.Spec
-	h := hashOf(digest, vals, s.Profile, s.Resources[r.Component], s.ExtraEnv[r.Component], s.NodeSelector, s.Tolerations, s.ImagePullSecrets,
-		s.RAG.GPU, s.DeletionPolicy, s.Exposure.ExposeInternal, p.UIHost, p.IdentityHost, p.ConfigHash, postRenderVersion)
+	in := []any{digest, vals, s.Profile, s.Resources[r.Component], s.ExtraEnv[r.Component], s.NodeSelector, s.Tolerations, s.ImagePullSecrets,
+		s.RAG.GPU, s.DeletionPolicy, s.Exposure.ExposeInternal, p.UIHost, p.IdentityHost, p.ConfigHash, postRenderVersion}
+	if p.Quiesced && r.Quiescable() {
+		in = append(in, "quiesced") // only then: the hash of running stacks is unchanged
+	}
+	h := hashOf(in...)
 	return &Rendered{Release: r, Values: vals, Hash: h}, nil
 }
 

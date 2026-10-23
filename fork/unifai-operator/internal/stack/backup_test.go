@@ -60,3 +60,58 @@ func TestBackupScriptsParse(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoreScriptsParse(t *testing.T) {
+	for name, script := range map[string]string{"fetch": restoreFetch, "mongorestore": restoreMongo} {
+		if out, err := exec.Command("sh", "-n", "-c", script).CombinedOutput(); err != nil {
+			t.Errorf("%s script does not parse: %v %s", name, err, out)
+		}
+	}
+}
+
+func TestKeyFingerprint(t *testing.T) {
+	a, b := KeyFingerprint("key-a"), KeyFingerprint("key-b")
+	if len(a) != 16 || a == b || a != KeyFingerprint("key-a") || strings.Contains(a, "key") {
+		t.Errorf("fingerprints %q %q", a, b)
+	}
+	if KeyFingerprint("") != "" {
+		t.Error("fingerprint of no key")
+	}
+}
+
+func TestQuiesce(t *testing.T) {
+	running := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) { s.Profile = ProfileProd })
+	quiesced := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) { s.Profile = ProfileProd })
+	quiesced.Quiesced = true
+	on, off := renderAll(t, quiesced), renderAll(t, running)
+	for _, r := range Releases {
+		if !r.IsEnabled(running) {
+			continue
+		}
+		hr, _ := Render(running, r)
+		hq, _ := Render(quiesced, r)
+		if (hr.Hash != hq.Hash) != r.Quiescable() {
+			t.Errorf("%s: hash changed=%v, quiescable=%v (a running stack must not roll)", r.Name, hr.Hash != hq.Hash, r.Quiescable())
+		}
+		if !r.Quiescable() {
+			continue
+		}
+		if !strings.Contains(on[r.Name], "replicas: 0") || strings.Contains(on[r.Name], "kind: HorizontalPodAutoscaler") {
+			t.Errorf("%s: not stopped while quiesced", r.Name)
+		}
+		if strings.Contains(off[r.Name], "replicas: 0") {
+			t.Errorf("%s: stopped while running", r.Name)
+		}
+	}
+	for _, name := range QuiescedDeployments {
+		found := false
+		for _, r := range Releases {
+			if r.Quiescable() && strings.Contains(on[r.Name], "name: "+name+"\n") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("QuiescedDeployments lists %s, which no quiescable release renders", name)
+		}
+	}
+}

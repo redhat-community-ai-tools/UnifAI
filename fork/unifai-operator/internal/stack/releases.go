@@ -219,6 +219,10 @@ func withGlobal(p *Plan, v map[string]any, err error, globalFirst bool) (map[str
 	return merge(v, g), nil
 }
 
+// Quiescable reports whether the release is an UnifAI application stopped during a restore (the data stores,
+// docling and the embedding service keep running).
+func (r Release) Quiescable() bool { return r.InternalAuth || r.Name == uiRelease }
+
 func ragValues(p *Plan, v map[string]any) map[string]any {
 	if v == nil {
 		return nil

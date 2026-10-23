@@ -311,6 +311,9 @@ func (r *StackReconciler) apply(ctx context.Context, st *unifaiv1.UnifaiStack, o
 //nolint:gocyclo // sequential deployment steps; each is a short, independent block
 func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) (time.Duration, error) {
 	p, err := r.plan(ctx, st)
+	if err == nil {
+		st.Status.CredentialKeyFingerprint = stack.KeyFingerprint(p.Secrets[stack.KeyCredentialKey])
+	}
 	if err != nil {
 		return 0, err
 	}

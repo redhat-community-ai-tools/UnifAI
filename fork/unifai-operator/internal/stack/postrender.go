@@ -33,6 +33,11 @@ const (
 	kindStatefulSet = "StatefulSet"
 )
 
+// QuiesceAnnotation on the UnifaiStack (value: the UnifaiRestore name) stops the UnifAI applications.
+const QuiesceAnnotation = "unifai.startx.fr/quiesced-by"
+
+func (r *postRenderer) quiesced() bool { return r.plan.Quiesced && r.rel.Quiescable() }
+
 // devCaps are the request ceilings of the dev profile (limits are kept).
 var devCaps = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("512Mi")}
 
@@ -186,7 +191,7 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 		// (Temporal, Redis Insight): NetworkPolicies add up, so they would undo the stack ones.
 		return false, nil
 	case "HorizontalPodAutoscaler":
-		if r.plan.Dev() {
+		if r.plan.Dev() || r.quiesced() {
 			return false, nil
 		}
 	case "PersistentVolumeClaim":
@@ -194,28 +199,14 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 		r.liveVolume(spec, "pvc/"+name(obj))
 	case kindDeployment, kindStatefulSet:
 		if kind == kindStatefulSet {
-			for _, t := range asSlice(spec["volumeClaimTemplates"]) {
-				if tm, ok := t.(map[string]any); ok {
-					tmd := mapAt(tm, "metadata")
-					if live, ok := r.plan.LiveClaimTemplates[name(obj)+"/"+fmt.Sprint(tmd["name"])]; ok {
-						lm := toMap(live)
-						delete(lm, "status")
-						for k := range tm {
-							delete(tm, k)
-						}
-						for k, v := range lm {
-							tm[k] = v
-						}
-						continue
-					}
-					r.keepPVC(tmd)
-					tm["metadata"] = tmd
-				}
-			}
+			r.claimTemplates(name(obj), spec)
 		}
 		tpl := mapAt(spec, "template")
 		if kind == kindDeployment && r.plan.Dev() && spec["replicas"] == nil {
 			spec["replicas"] = 1 // no HPA in dev: never keep the replicas an HPA left behind
+		}
+		if kind == kindDeployment && r.quiesced() {
+			spec["replicas"] = 0
 		}
 		if kind == kindDeployment && r.usesRWO(tpl) {
 			// rollingUpdate: null makes the upgrade patch drop the live rolling settings (rejected with Recreate).
@@ -233,6 +224,30 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 		obj["spec"] = spec
 	}
 	return true, nil
+}
+
+// claimTemplates keeps the live claim templates of a StatefulSet (immutable) and the PVC retention of new ones.
+func (r *postRenderer) claimTemplates(sts string, spec map[string]any) {
+	for _, t := range asSlice(spec["volumeClaimTemplates"]) {
+		tm, ok := t.(map[string]any)
+		if !ok {
+			continue
+		}
+		tmd := mapAt(tm, "metadata")
+		if live, ok := r.plan.LiveClaimTemplates[sts+"/"+fmt.Sprint(tmd["name"])]; ok {
+			lm := toMap(live)
+			delete(lm, "status")
+			for k := range tm {
+				delete(tm, k)
+			}
+			for k, v := range lm {
+				tm[k] = v
+			}
+			continue
+		}
+		r.keepPVC(tmd)
+		tm["metadata"] = tmd
+	}
 }
 
 func (r *postRenderer) setHost(md, spec map[string]any, host string) {
