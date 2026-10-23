@@ -397,6 +397,46 @@ spec:
                   - type
                   type: object
                 type: array
+              display:
+                description: Display is the public sheet built from the admitted bundle
+                  (never from a field set by hand).
+                properties:
+                  classification:
+                    description: Classification ceiling.
+                    type: string
+                  color:
+                    description: 'A CSS color keyword or #rrggbb.'
+                    type: string
+                  description:
+                    type: string
+                  displayName:
+                    type: string
+                  icon:
+                    description: Short keyword for an icon, lower case letters, digits
+                      and hyphens.
+                    type: string
+                  maintainer:
+                    type: string
+                  state:
+                    description: Lifecycle state, such as active or placeholder.
+                    type: string
+                  tasks:
+                    items:
+                      description: DisplayTask is the public name of one task.
+                      properties:
+                        name:
+                          type: string
+                        title:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  tileDescription:
+                    type: string
+                  title:
+                    type: string
+                type: object
               lastReconciled:
                 format: date-time
                 type: string

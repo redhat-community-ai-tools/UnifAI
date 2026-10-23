@@ -28,7 +28,10 @@ type Bundle struct {
 	Classification Level
 	RAGTopK        int
 	AccessGroups   []string
-	Tasks          []Task
+	Maintainer     string
+	// UI is the tile presentation (displayName, tileDescription, color, icon); string values only.
+	UI    map[string]string
+	Tasks []Task
 	// Unmapped lists OKF content with no UnifAI equivalent, reported in the CR status instead of being dropped.
 	Unmapped []string
 }
@@ -60,7 +63,10 @@ type agentFrontmatter struct {
 	Type        string `json:"type"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
-	Zuno        struct {
+	Provenance  struct {
+		Maintainer string `json:"maintainer"`
+	} `json:"provenance"`
+	Zuno struct {
 		Name        string   `json:"name"`
 		Status      string   `json:"status"`
 		GraphShape  string   `json:"graph_shape"`
@@ -157,6 +163,7 @@ func Parse(files Files) (*Bundle, error) {
 		Name: af.Zuno.Name, OKFVersion: af.OKFVersion, Title: af.Title, Description: strings.TrimSpace(af.Description),
 		Status: af.Zuno.Status, GraphShape: af.Zuno.GraphShape, PrimaryTask: af.Zuno.PrimaryTask,
 		Classification: cls, RAGTopK: af.Zuno.RAG.TopK, AccessGroups: af.Zuno.Access.Groups,
+		Maintainer: strings.TrimSpace(af.Provenance.Maintainer), UI: stringValues(af.Zuno.UI),
 	}
 	if len(af.Zuno.Tasks) == 0 {
 		return nil, fmt.Errorf("agent.okf.md: zuno.tasks is empty")
@@ -183,7 +190,7 @@ func Parse(files Files) (*Bundle, error) {
 		b.Unmapped = append(b.Unmapped, fmt.Sprintf("zuno.rag.top_k %d: set on the referenced retriever, not per agent", b.RAGTopK))
 	}
 	if len(af.Zuno.UI) > 0 {
-		b.Unmapped = append(b.Unmapped, "zuno.ui: tile presentation has no UnifAI equivalent")
+		b.Unmapped = append(b.Unmapped, "zuno.ui: tile presentation is carried as the public sheet (status.display), not as a UnifAI tile")
 	}
 	if b.GraphShape == ShapePlanDraftWrite {
 		b.Unmapped = append(b.Unmapped, "graph_shape plan_draft_write: three chained agents (plan, draft, write); the plan and write stages run without tools, the draft stage carries the retriever and the tools")
@@ -346,5 +353,16 @@ func union(tasks []Task, f func(Task) []string) []string {
 		}
 	}
 	sort.Strings(out)
+	return out
+}
+
+// stringValues keeps the string-valued entries of an OKF map (the tile presentation is all strings).
+func stringValues(m map[string]any) map[string]string {
+	out := map[string]string{}
+	for k, v := range m {
+		if sv, ok := v.(string); ok {
+			out[k] = strings.TrimSpace(sv)
+		}
+	}
 	return out
 }
