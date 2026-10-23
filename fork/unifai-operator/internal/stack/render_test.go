@@ -180,7 +180,7 @@ func TestIdentityForwarding(t *testing.T) {
 		}
 	}
 	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) { s.Identity.ForwardUserToken = true })
-	p.OIDCURL, p.OIDCRealm, p.OIDCClientID, p.OIDCClientSecret = "https://kc.example.com", "unifai", "unifai", testSecret
+	p.OIDCURL, p.OIDCRealm, p.OIDCClientID, p.OIDCClientSecret = "https://kc.example.com", RealmName, ClientID, testSecret
 	on := renderAll(t, p)
 	for _, rel := range []string{"unifai-multiagent-be", "unifai-multiagent-temporal-worker"} {
 		for _, want := range []string{"IDENTITY_FORWARDING_ENABLED", "https://kc.example.com", "KEYCLOAK_REALM", "CLIENT_ID"} {
@@ -203,7 +203,7 @@ func TestIdentityForwarding(t *testing.T) {
 
 func TestRenderOverrides(t *testing.T) {
 	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) {
-		s.Profile = "prod"
+		s.Profile = ProfileProd
 		s.Version = "v1.2.3"
 		s.Exposure.ExposeInternal = true
 		s.RAG.GPU = true

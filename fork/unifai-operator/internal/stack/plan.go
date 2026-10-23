@@ -66,8 +66,11 @@ func NewPlan(st *unifaiv1.UnifaiStack, clusterDomain, operatorNS string) (*Plan,
 	return p, nil
 }
 
+// ProfileProd is the production profile (any other profile is dev).
+const ProfileProd = "prod"
+
 // Dev reports whether the small-footprint profile is used.
-func (p *Plan) Dev() bool { return p.Spec.Profile != "prod" }
+func (p *Plan) Dev() bool { return p.Spec.Profile != ProfileProd }
 
 // AdminUsers returns the UnifAI administrators (default admin).
 func (p *Plan) AdminUsers() []string {
