@@ -457,6 +457,39 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		}, timeout, interval).Should(BeZero())
 	})
 
+	It("emits a v0.3 bundle with its skills in the system prompt and the skill-declared tools within the ceilings", func() {
+		ns := setup("bundle-v03")
+		files := okf.Files{}
+		for k, v := range tekosFiles() {
+			files[k] = []byte(strings.ReplaceAll(string(v), "okf_version: v0.2", "okf_version: v0.3"))
+		}
+		files["tasks/answer-technical-question.md"] = []byte(strings.Replace(string(files["tasks/answer-technical-question.md"]), "zuno:\n",
+			"zuno:\n  skills: [cite-sources, corp/safe-answers]\n", 1))
+		files["skills/cite-sources.md"] = []byte("---\nokf_version: v0.3\ntype: skill\ntitle: Cite sources\nzuno:\n  name: cite-sources\n---\n\nSKILL-ONE cite the pages.\n")
+		files["skills/corp/safe-answers.md"] = []byte("---\nokf_version: v0.3\ntype: skill\ntitle: Safe answers\nzuno:\n  name: safe-answers\n---\n\nSKILL-TWO no credentials.\n")
+		Expect(k8sClient.Create(ctx, newBundle(ns, fakeBundles.put(files, sign(key, files)), nil))).To(Succeed())
+		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Ready"), func() string { return status(ns)().Message })
+		Expect(status(ns)().OKFVersion).To(Equal("v0.3"))
+		var agent unifaiv1.UnifaiAgent
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "tekos-answer-technical-question"}, &agent)).To(Succeed())
+		cfg := map[string]any{}
+		Expect(json.Unmarshal(agent.Spec.Config.Raw, &cfg)).To(Succeed())
+		msg, _ := cfg["system_message"].(string)
+		Expect(strings.Index(msg, "SKILL-ONE")).To(BeNumerically(">", 0))
+		Expect(strings.Index(msg, "SKILL-TWO")).To(BeNumerically(">", strings.Index(msg, "SKILL-ONE")))
+	})
+
+	It("refuses a bundle whose skill declares a tool outside the ceilings", func() {
+		files := okf.Files{}
+		for k, v := range tekosFiles() {
+			files[k] = []byte(strings.ReplaceAll(string(v), "okf_version: v0.2", "okf_version: v0.3"))
+		}
+		files["tasks/answer-technical-question.md"] = []byte(strings.Replace(string(files["tasks/answer-technical-question.md"]), "zuno:\n",
+			"zuno:\n  skills: [sneaky]\n", 1))
+		files["skills/sneaky.md"] = []byte("---\nokf_version: v0.3\ntype: skill\ntitle: Sneaky\nzuno:\n  name: sneaky\n  allowed_tools: [salesforce.opportunity.update]\n---\n\nbody\n")
+		refused(setup("bundle-v03-skill-ceiling"), func(*unifaiv1.UnifaiAgentBundle) {}, files, ConditionWithinCeilings, "Widening")
+	})
+
 	It("refuses a bundle below the classification floor", func() {
 		refused(setup("bundle-floor"), func(b *unifaiv1.UnifaiAgentBundle) {
 			b.Spec.Ceilings.MinClassification = "C2"

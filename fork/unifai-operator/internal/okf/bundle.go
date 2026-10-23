@@ -43,6 +43,16 @@ type Task struct {
 	AllowedKnowledge []string
 	LiveReadTool     string
 	PromptExamples   []string
+	// Skills are the instruction bodies of the task's skills (OKF v0.3, ADR-0579), in declaration order.
+	Skills []Skill
+	// Platform-enforced v0.3 settings, reported as unmapped.
+	Models, Limits map[string]any
+}
+
+// Skill is one `skills/<name>.md` (or `skills/corp/<name>.md` for a corp skill) a task declares.
+type Skill struct {
+	Name string
+	Body string
 }
 
 type agentFrontmatter struct {
@@ -66,6 +76,10 @@ type agentFrontmatter struct {
 			Groups []string `json:"groups"`
 		} `json:"access"`
 		UI map[string]any `json:"ui"`
+		// OKF v0.3 (ADR-0579): enforced by the platform (ai-gateway, quotas), not by UnifAI.
+		Models     map[string]any `json:"models"`
+		Guardrails map[string]any `json:"guardrails"`
+		Limits     map[string]any `json:"limits"`
 	} `json:"zuno"`
 }
 
@@ -73,10 +87,21 @@ type taskFrontmatter struct {
 	Type  string `json:"type"`
 	Title string `json:"title"`
 	Zuno  struct {
+		AllowedTools     []string       `json:"allowed_tools"`
+		AllowedKnowledge []string       `json:"allowed_knowledge"`
+		LiveReadTool     string         `json:"live_read_tool"`
+		PromptExamples   []string       `json:"prompt_examples"`
+		Skills           []string       `json:"skills"`
+		Models           map[string]any `json:"models"`
+		Limits           map[string]any `json:"limits"`
+	} `json:"zuno"`
+}
+
+type skillFrontmatter struct {
+	Type string `json:"type"`
+	Zuno struct {
 		AllowedTools     []string `json:"allowed_tools"`
 		AllowedKnowledge []string `json:"allowed_knowledge"`
-		LiveReadTool     string   `json:"live_read_tool"`
-		PromptExamples   []string `json:"prompt_examples"`
 	} `json:"zuno"`
 }
 
@@ -160,7 +185,18 @@ func Parse(files Files) (*Bundle, error) {
 	if len(af.Zuno.UI) > 0 {
 		b.Unmapped = append(b.Unmapped, "zuno.ui: tile presentation has no UnifAI equivalent")
 	}
+	for _, kv := range []struct {
+		field string
+		v     map[string]any
+	}{{"zuno.models", af.Zuno.Models}, {"zuno.guardrails", af.Zuno.Guardrails}, {"zuno.limits", af.Zuno.Limits}} {
+		if len(kv.v) > 0 {
+			b.Unmapped = append(b.Unmapped, kv.field+": enforced platform-side (ai-gateway, quotas), not by UnifAI")
+		}
+	}
 	for _, t := range b.Tasks {
+		if len(t.Models) > 0 || len(t.Limits) > 0 {
+			b.Unmapped = append(b.Unmapped, fmt.Sprintf("tasks/%s models/limits: enforced platform-side (ai-gateway, quotas), not by UnifAI", t.Name))
+		}
 		if len(t.AllowedTools) > 0 {
 			b.Unmapped = append(b.Unmapped, fmt.Sprintf("tasks/%s allowed_tools %v: enforced by mcp-gateway, not filtered by UnifAI", t.Name, t.AllowedTools))
 		}
@@ -192,6 +228,17 @@ func parseTask(files Files, name string) (*Task, error) {
 		Name: name, Title: tf.Title, Body: string(body),
 		AllowedTools: tf.Zuno.AllowedTools, AllowedKnowledge: tf.Zuno.AllowedKnowledge,
 		LiveReadTool: tf.Zuno.LiveReadTool, PromptExamples: tf.Zuno.PromptExamples,
+		Models: tf.Zuno.Models, Limits: tf.Zuno.Limits,
+	}
+	for _, ref := range tf.Zuno.Skills {
+		sk, tools, knowledge, err := parseSkill(files, ref)
+		if err != nil {
+			return nil, fmt.Errorf("task %q: %w", name, err)
+		}
+		t.Skills = append(t.Skills, *sk)
+		// What a skill declares is declared by the task that uses it: the ceilings must cover it.
+		t.AllowedTools = appendMissing(t.AllowedTools, tools...)
+		t.AllowedKnowledge = appendMissing(t.AllowedKnowledge, knowledge...)
 	}
 	if pr, ok := files[path.Join("prompts", name+".md")]; ok {
 		_, pb, err := SplitFrontmatter(pr)
@@ -203,18 +250,63 @@ func parseTask(files Files, name string) (*Task, error) {
 	return t, nil
 }
 
+// skillPath maps a task's skill reference to its file in the bundle: `<name>` is skills/<name>.md, `corp/<name>`
+// is skills/corp/<name>.md (the corp skill is embedded in the agent artifact when it is built).
+func skillPath(ref string) string { return path.Join("skills", ref+".md") }
+
+func parseSkill(files Files, ref string) (*Skill, []string, []string, error) {
+	p := skillPath(ref)
+	raw, ok := files[p]
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("skill %q is declared but %s is missing from the bundle", ref, p)
+	}
+	front, body, err := SplitFrontmatter(raw)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%s: %w", p, err)
+	}
+	var sf skillFrontmatter
+	if err := yaml.Unmarshal(front, &sf); err != nil {
+		return nil, nil, nil, fmt.Errorf("%s frontmatter: %w", p, err)
+	}
+	if sf.Type != "skill" {
+		return nil, nil, nil, fmt.Errorf("%s: type is %q, want skill", p, sf.Type)
+	}
+	return &Skill{Name: ref, Body: string(body)}, sf.Zuno.AllowedTools, sf.Zuno.AllowedKnowledge, nil
+}
+
+func appendMissing(have []string, add ...string) []string {
+	seen := map[string]bool{}
+	for _, v := range have {
+		seen[v] = true
+	}
+	for _, v := range add {
+		if !seen[v] {
+			seen[v] = true
+			have = append(have, v)
+		}
+	}
+	return have
+}
+
 // SystemMessage is the task's system prompt: its prompts/<task>.md when present, else the agent description
 // followed by the task body.
 func (b *Bundle) SystemMessage(t Task) string {
+	var parts []string
 	if strings.TrimSpace(t.Prompt) != "" {
-		return t.Prompt
+		parts = append(parts, t.Prompt)
+	} else {
+		if b.Description != "" {
+			parts = append(parts, b.Description)
+		}
+		if t.Body != "" {
+			parts = append(parts, t.Body)
+		}
 	}
-	parts := []string{}
-	if b.Description != "" {
-		parts = append(parts, b.Description)
-	}
-	if t.Body != "" {
-		parts = append(parts, t.Body)
+	// ADR-0579: skill instructions are appended to the task's system prompt, in the order the task declares them.
+	for _, sk := range t.Skills {
+		if strings.TrimSpace(sk.Body) != "" {
+			parts = append(parts, sk.Body)
+		}
 	}
 	return strings.Join(parts, "\n\n")
 }

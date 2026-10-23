@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/startxfr/zuno-demo-agents/platform/okf/schema/zuno-okf-v0.3.schema.json",
+  "title": "Zuno Agent Definition (OKF v0.3 Markdown bundle frontmatter + Zuno extension)",
+  "description": "Schema for the YAML frontmatter block of agents/<name>/agent.okf.md (ADR-0038: OKF v0.2 Markdown bundles, superseding the earlier agent.okf.yaml Kubernetes-style document). Per ADR-0005, Open Knowledge Format (OKF) v0.2 is the base representation for agent knowledge/context and portability: it is document-oriented, expressed as Markdown with YAML frontmatter, and fixes a small set of standard fields (type, title, description, provenance, verification, freshness, sources) any OKF-consuming tool would recognize. Per ADR-0006, Zuno defines a profile on top of bare OKF for runtime concerns (tasks, tool authorization, model routing hints, UI presentation) namespaced entirely under the `zuno` key, which OKF v0.2 explicitly leaves to implementers. Fields are annotated below as [OKF CORE] or [ZUNO EXT]. This schema is the Track E contract other consumers (frontend portal rendering, Agent Runtime's AgentRegistry - ADR-0039, MCP Gateway's agent-declaration check - ADR-0036, evaluation harness) validate `agent.okf.md` frontmatter against. Tasks are individual linked Markdown documents under agents/<name>/tasks/<task>.md - see zuno-okf-task-v0.2.schema.json - not inlined here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "okf_version",
+    "type",
+    "title",
+    "description",
+    "zuno"
+  ],
+  "properties": {
+    "okf_version": {
+      "description": "[OKF CORE] OKF envelope version this document conforms to.",
+      "type": "string",
+      "const": "v0.3"
+    },
+    "type": {
+      "description": "[OKF CORE] Document kind. Always \"agent\" for agent.okf.md files.",
+      "type": "string",
+      "const": "agent"
+    },
+    "title": {
+      "description": "[OKF CORE] Human-readable agent name.",
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "description": "[OKF CORE] One or two sentence summary of what the agent does, independent of any particular UI.",
+      "type": "string",
+      "minLength": 1
+    },
+    "provenance": {
+      "description": "[OKF CORE] Who authored/maintains this bundle, for auditability (ADR-0038 Security considerations: provenance metadata must be preserved across ingestion).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maintainer": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "verification": {
+      "description": "[OKF CORE] Whether this bundle's factual/behavioral claims have been through a formal verification process. \"unverified\" is honest for this demo repository - no such process exists yet.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "unverified",
+            "reviewed",
+            "verified"
+          ]
+        }
+      }
+    },
+    "freshness": {
+      "description": "[OKF CORE] Last-reviewed marker so a consumer can judge whether this bundle's content may be stale.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "last_reviewed": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "sources": {
+      "description": "[OKF CORE] External knowledge sources this agent draws on, if any are worth naming at the bundle level (per-task tool declarations, below, are the operative authorization surface - this is descriptive provenance, not a capability grant).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "zuno": {
+      "description": "[ZUNO EXT] The Zuno profile: everything OKF v0.2 leaves unspecified that the Zuno Agent Runtime, BFF, portal and policy engine need at runtime.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "status",
+        "tasks",
+        "model",
+        "access",
+        "ui"
+      ],
+      "properties": {
+        "name": {
+          "description": "Stable, unique agent identifier. Matches the agents/<name> directory, the Keycloak OIDC client prefix (<name>-frontend), and the agent_<name> entitlement group (ADR-0040).",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "status": {
+          "description": "Lifecycle status of this agent instance in the current release. `active` means a real Agent Runtime task graph, FE and BFF are deployed and reachable. `placeholder` means only this declarative definition and a reserved namespace exist (ADR-0007): the portal renders an access-gated \"coming soon\" tile and no FE/BFF Deployment is applied. See platform/architecture/agent-platform-separation.md.",
+          "type": "string",
+          "enum": [
+            "active",
+            "placeholder"
+          ]
+        },
+        "tasks": {
+          "description": "Ordered list of task names this agent exposes, each resolved to agents/<name>/tasks/<task>.md (zuno-okf-task-v0.2.schema.json). A `placeholder` agent declares exactly one stub task with an empty tool list.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "uniqueItems": true
+        },
+        "graph_shape": {
+          "description": "[ZUNO EXT] ADR-0342: name of the Agent Runtime LangGraph workflow shape (components/agent-runtime/app/graph/shapes/<name>.py) this agent's active workflow executes - e.g. \"retrieve_reason_respond\". Not enforced `required` here (this schema checks *shape*, not business rules, per app/registry.py's own convention): Agent Runtime's AgentRegistry fail-fast startup validation requires it once `status` is `active`; a `placeholder` agent has no runtime workflow yet (ADR-0007) and may omit it.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "primary_task": {
+          "description": "[ZUNO EXT] ADR-0342/WP-33: which entry in `tasks` above this agent's chat route actually executes - required for GraphFactory to resolve the right task's prompt/allowed_tools/allowed_knowledge when two agents share one graph_shape (e.g. Comage reusing retrieve_reason_respond). An agent may declare more tasks than this (v1 catalog entries with no live route yet); this names only the one the shape is built against. Not enforced `required` here for the same reason as graph_shape - a `placeholder` agent may omit it.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "rag": {
+          "description": "ADR-0039: RAG retrieval parameters consumed by Agent Runtime's retrieve node - config, not code, so changing this changes runtime behavior without a source change.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "top_k": {
+              "description": "Number of RAG results the retrieve node requests per turn.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        },
+        "memory": {
+          "description": "ADR-0215: conversation-history behavior consumed by Agent Runtime's record_history node - config, not code, so tuning history/compaction behavior changes runtime behavior without a source change. Entirely optional; every field defaults in app/registry.py when omitted.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "history": {
+              "description": "Per-turn conversation history carried into this agent's model prompt, with budgeted compaction of older turns into a running summary.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "description": "Whether this agent carries conversation history into its prompts at all. Defaults true; the ZUNO_HISTORY_DISABLED env var can additionally force this off fleet-wide regardless of what any bundle declares.",
+                  "type": "boolean"
+                },
+                "max_turns": {
+                  "description": "Number of most recent user/assistant turn pairs kept verbatim in the prompt after compaction. Older turns are folded into the running summary instead of being dropped.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50
+                },
+                "token_budget": {
+                  "description": "Approximate token budget (character/4 heuristic, see app/graph/history.py) for the running summary plus verbatim history combined. Must leave headroom for this agent's system prompt, RAG context and generation - sized against the NARROWEST context window this agent's chain can reach, not the widest: the fleet-wide default qwen3.5-9b serves --max-model-len=8192, while qwen3.6-27b-instruct, gpt-oss-20b and qwen3.5-9b-wesh serve 32768 (gitops/charts/models/values.yaml). A budget sized against 32768 overflows whenever the chain falls back to the default model, which almost every chain can.",
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 32000
+                }
+              }
+            },
+            "project_context": {
+              "description": "ADR-0527: the standing engagement context of the project a conversation belongs to, injected into this agent's prompt as a delimited BACKGROUND block - never as instructions, so a user-editable field can never rewrite the task prompt this bundle declares (ADR-0039). Entirely optional, exactly like `history` above.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "description": "Whether this agent carries its conversation's project context into its prompts at all. Defaults true.",
+                  "type": "boolean"
+                },
+                "token_budget": {
+                  "description": "Approximate token budget (the same character/4 heuristic as history above, app/graph/history.py's truncate_to_token_budget) for the injected project context. Separate from the history budget on purpose, so a long engagement briefing can never crowd out the conversation itself. The project's 54000-character storage ceiling is an INPUT limit; this is what actually reaches the model.",
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 32000
+                }
+              }
+            }
+          }
+        },
+        "model": {
+          "description": "Model routing hint consumed by the AI/Inference Gateway (ADR-0009, ADR-0021): the data-classification ceiling this agent's tasks operate under, not a specific model name.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "preferred_classification"
+          ],
+          "properties": {
+            "preferred_classification": {
+              "description": "Highest data classification this agent is routed for. C1: SaaS model use allowed. C2: SaaS allowed with restrictions/context filtering. C3: local models only. See policies/data-classification/README.md.",
+              "type": "string",
+              "enum": [
+                "C1",
+                "C2",
+                "C3"
+              ]
+            },
+            "notes": {
+              "description": "Optional free-text routing guidance (e.g. sovereignty constraints on a subset of tasks).",
+              "type": "string"
+            },
+            "local_only": {
+              "description": "ADR-0416: unconditional, agent-declared restriction to local models only, regardless of what preferred_classification alone would otherwise permit - mirrored at the routing layer by the graph's own per-turn local_only_required flag (ADR-0035). Optional - absent means false. Documented here because it was already in real use (agents/finage/agent.okf.md), read by registry.py, with no schema entry for it - this schema is a documentation contract, not something anything runs jsonschema.validate() against today, so the gap was silent rather than a validation failure, but additionalProperties:false still meant the schema was actively describing a shape Finage does not have.",
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        "access": {
+          "description": "Authorization gate consumed by the portal and BFF: which Keycloak entitlement group may open this agent's tile / call its BFF (ADR-0040 - orthogonal to the business-role groups that gate tool/data permissions inside an already-authorized agent, see policies/tools/tool-policy.yaml).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "groups"
+          ],
+          "properties": {
+            "groups": {
+              "description": "Keycloak `zuno` realm agent-entitlement groups (JWT `groups` claim, e.g. \"/agent_tekos\") authorized to use this agent. One group per agent for v0; the schema allows more than one for forward compatibility.",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "pattern": "^agent_[a-z0-9_]+$"
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "ui": {
+          "description": "Presentation metadata the portal frontend uses to render this agent's tile, independent of whether the agent is active or placeholder.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "displayName",
+            "tileDescription",
+            "color",
+            "icon"
+          ],
+          "properties": {
+            "displayName": {
+              "description": "Short name shown on the portal tile (may differ from the bundle's fuller `title`).",
+              "type": "string",
+              "minLength": 1
+            },
+            "tileDescription": {
+              "description": "One-line description shown under the tile title.",
+              "type": "string",
+              "minLength": 1
+            },
+            "color": {
+              "description": "Hint for the tile's accent color. A CSS color keyword or #rrggbb hex value.",
+              "type": "string",
+              "pattern": "^(#[0-9a-fA-F]{6}|[a-zA-Z]+)$"
+            },
+            "icon": {
+              "description": "Hint for the tile's icon: a short keyword the frontend maps to a PatternFly/pf-icon glyph (e.g. \"code\", \"currency\", \"drafting-compass\", \"handshake\", \"calculator\"). Not a URL or file path.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "models": {
+          "description": "ADR-0579 clause 2: model preferences by architectural ROLE (policies/models/model-catalog.yaml `role`), never by model name. The ai-gateway keeps the final choice among the models eligible for the effective classification.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "preferred": {
+              "description": "Roles to try first, in order.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "uniqueItems": true
+            },
+            "forbidden": {
+              "description": "Roles never to use.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "guardrails": {
+          "description": "ADR-0579 clause 3: how guardrail detections act for this agent; at least the corp minimum for its classification (policies/guardrails/guardrails-policy.yaml).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "observe",
+                "block"
+              ]
+            },
+            "categories": {
+              "description": "Detection categories this agent cares about; a subset of the corp list.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "limits": {
+          "description": "ADR-0579 clause 4: per-agent (or per-task) bounds, each at most the corp ceiling in policies/limits/limits-policy.yaml.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_tokens": {
+              "description": "Generation ceiling per model call (ADR-0544); the task-level zuno.max_tokens stays valid as an alias.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8192
+            },
+            "max_concurrent_requests": {
+              "description": "Concurrent requests one user may have open on this agent.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "quota_class": {
+              "description": "A class of policies/quotas/quota-policy.yaml.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            "memory": {
+              "description": "ADR-0579 clause 4: conversation history (ADR-0215); zuno.memory stays valid as an alias. ADR-0215: conversation-history behavior consumed by Agent Runtime's record_history node - config, not code, so tuning history/compaction behavior changes runtime behavior without a source change. Entirely optional; every field defaults in app/registry.py when omitted.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "history": {
+                  "description": "Per-turn conversation history carried into this agent's model prompt, with budgeted compaction of older turns into a running summary.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "description": "Whether this agent carries conversation history into its prompts at all. Defaults true; the ZUNO_HISTORY_DISABLED env var can additionally force this off fleet-wide regardless of what any bundle declares.",
+                      "type": "boolean"
+                    },
+                    "max_turns": {
+                      "description": "Number of most recent user/assistant turn pairs kept verbatim in the prompt after compaction. Older turns are folded into the running summary instead of being dropped.",
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 50
+                    },
+                    "token_budget": {
+                      "description": "Approximate token budget (character/4 heuristic, see app/graph/history.py) for the running summary plus verbatim history combined. Must leave headroom for this agent's system prompt, RAG context and generation - sized against the NARROWEST context window this agent's chain can reach, not the widest: the fleet-wide default qwen3.5-9b serves --max-model-len=8192, while qwen3.6-27b-instruct, gpt-oss-20b and qwen3.5-9b-wesh serve 32768 (gitops/charts/models/values.yaml). A budget sized against 32768 overflows whenever the chain falls back to the default model, which almost every chain can.",
+                      "type": "integer",
+                      "minimum": 100,
+                      "maximum": 32000
+                    }
+                  }
+                },
+                "project_context": {
+                  "description": "ADR-0527: the standing engagement context of the project a conversation belongs to, injected into this agent's prompt as a delimited BACKGROUND block - never as instructions, so a user-editable field can never rewrite the task prompt this bundle declares (ADR-0039). Entirely optional, exactly like `history` above.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "description": "Whether this agent carries its conversation's project context into its prompts at all. Defaults true.",
+                      "type": "boolean"
+                    },
+                    "token_budget": {
+                      "description": "Approximate token budget (the same character/4 heuristic as history above, app/graph/history.py's truncate_to_token_budget) for the injected project context. Separate from the history budget on purpose, so a long engagement briefing can never crowd out the conversation itself. The project's 54000-character storage ceiling is an INPUT limit; this is what actually reaches the model.",
+                      "type": "integer",
+                      "minimum": 100,
+                      "maximum": 32000
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

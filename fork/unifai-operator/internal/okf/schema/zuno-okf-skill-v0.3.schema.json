@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/startxfr/zuno-demo-agents/platform/okf/schema/zuno-okf-skill-v0.3.schema.json",
+  "title": "Zuno Agent Skill (OKF v0.3 Markdown frontmatter)",
+  "description": "ADR-0579 clause 1: reusable instructions shared by tasks. The Markdown body is the instruction text, appended to the system prompt of every task that lists the skill. A skill needs a subset of its tasks' tools and knowledge, never more.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "okf_version",
+    "type",
+    "title",
+    "zuno"
+  ],
+  "properties": {
+    "okf_version": {
+      "type": "string",
+      "const": "v0.3"
+    },
+    "type": {
+      "type": "string",
+      "const": "skill"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "zuno": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "allowed_tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "allowed_knowledge": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

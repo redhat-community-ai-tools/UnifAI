@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/startxfr/zuno-demo-agents/platform/okf/schema/zuno-okf-tool-v0.3.schema.json",
+  "title": "Zuno Agent Tool Usage Note (OKF v0.3 Markdown bundle frontmatter)",
+  "description": "Schema for the YAML frontmatter block of agents/<name>/tools/<capability>.md (ADR-0513, promoting agents/<name>/tools/ from the ADR-0502 stub to real Stage-2 content). `rag`/`tool`/`policy` are Zuno-invented document kinds with no OKF-core meaning - every field below is [ZUNO EXT]. One file documents how this agent actually uses one MCP tool/capability it has already declared, i.e. present in some agents/<name>/tasks/*.md's `zuno.allowed_tools`. This document is descriptive only: it never grants tool-call authorization, which stays entirely `allowed_tools` (per task) intersect policies/tools/tool-policy.yaml intersect platform/bindings/tools/tool-bindings.yaml (ADR-0011, ADR-0116) - the same posture ADR-0503's generated Authorization matrix takes, and it must never become an enforcement input. Consumed today only by platform/supply-chain/validate_okf_bundle.py's cross-reference check; no runtime service reads this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "okf_version",
+    "type",
+    "title",
+    "zuno"
+  ],
+  "properties": {
+    "okf_version": {
+      "description": "[OKF CORE] OKF envelope version this document conforms to.",
+      "type": "string",
+      "const": "v0.3"
+    },
+    "type": {
+      "description": "[OKF CORE shape, ZUNO-defined kind] Document kind. Always \"tool\" for files under agents/<name>/tools/.",
+      "type": "string",
+      "const": "tool"
+    },
+    "title": {
+      "description": "[OKF CORE] Human-readable title, e.g. \"Confluence page search\".",
+      "type": "string",
+      "minLength": 1
+    },
+    "zuno": {
+      "description": "[ZUNO EXT] The tool/capability this note documents, and how this agent's tasks actually use it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability",
+        "used_by_tasks"
+      ],
+      "properties": {
+        "capability": {
+          "description": "MCP tool name this note documents, drawn from the same platform tool-policy vocabulary as zuno-okf-task-v0.2.schema.json's `allowed_tools` (legacy pre-ADR-0116 name or ADR-0116 canonical `<domain>.<resource>.<verb>` capability ID - this list is intentionally duplicated from the task schema rather than shared, following this repository's established convention of duplicating small, well-specified vocabulary across independent OKF documents, see platform/supply-chain/validate_okf_bundle.py's docstring). Must be one this agent can actually reach: present in at least one entry of `used_by_tasks` below's own `zuno.allowed_tools`.",
+          "type": "string",
+          "enum": [
+            "search_confluence",
+            "list_drive_files",
+            "read_gmail",
+            "web_search",
+            "send_technical_report_email",
+            "confluence.page.read",
+            "confluence.page.search",
+            "drive.document.create",
+            "drive.document.update",
+            "salesforce.opportunity.read",
+            "salesforce.opportunity.create",
+            "salesforce.opportunity.update",
+            "git.repository.read",
+            "git.repository.list",
+            "git.repository.private.read",
+            "git.repository.private.list",
+            "git.file.write",
+            "git.repository.create"
+          ]
+        },
+        "used_by_tasks": {
+          "description": "Which of this agent's tasks (agents/<name>/tasks/<task>.md) declare `capability` above in their `zuno.allowed_tools`. Documents an existing fact; adding a task name here grants nothing - the task's own frontmatter is the actual ceiling.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "uniqueItems": true
+        },
+        "live_read": {
+          "description": "Informational mirror of some task's `zuno.live_read_tool` pointing at this capability (ADR-0342/WP-33). Documentary only - the task frontmatter is the field Agent Runtime actually reads.",
+          "type": "boolean"
+        },
+        "usage_notes": {
+          "description": "Free-text: how this agent's tasks actually invoke this tool - typical inputs, expected outputs, when it is chosen over alternatives.",
+          "type": "string"
+        },
+        "known_limitations": {
+          "description": "Free-text list of known constraints or gotchas when this agent calls this tool (rate limits, partial coverage, demo-only behavior, etc.).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

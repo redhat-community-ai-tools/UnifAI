@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/startxfr/zuno-demo-agents/platform/okf/schema/zuno-okf-task-v0.3.schema.json",
+  "title": "Zuno Agent Task (OKF v0.3 Markdown bundle frontmatter + Zuno extension)",
+  "description": "Schema for the YAML frontmatter block of agents/<name>/tasks/<task>.md (ADR-0038). Each task referenced by an agent.okf.md's `zuno.tasks` list is its own linked Markdown document: the frontmatter carries the OKF core identity fields plus the Zuno tool-authorization declaration; the Markdown body is the human-readable task description that used to live inline in the Kubernetes-style agent.okf.yaml. Consumed by Agent Runtime's AgentRegistry (ADR-0039, allowed_tools ceiling + description) and MCP Gateway's task-rights check (ADR-0036, allowed_tools).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "okf_version",
+    "type",
+    "title",
+    "zuno"
+  ],
+  "properties": {
+    "okf_version": {
+      "description": "[OKF CORE] OKF envelope version this document conforms to.",
+      "type": "string",
+      "const": "v0.3"
+    },
+    "type": {
+      "description": "[OKF CORE] Document kind. Always \"task\" for files under agents/<name>/tasks/.",
+      "type": "string",
+      "const": "task"
+    },
+    "title": {
+      "description": "[OKF CORE] Human-readable task name.",
+      "type": "string",
+      "minLength": 1
+    },
+    "zuno": {
+      "description": "[ZUNO EXT] Tool-authorization and knowledge-authorization declarations for this task.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_tools"
+      ],
+      "properties": {
+        "allowed_tools": {
+          "description": "MCP tool names this task may invoke, drawn from the platform tool-policy vocabulary (policies/tools/README.md). Effective authorization is the intersection of this list with the user's group/task/data-classification policy (ADR-0011) - this field is a ceiling, not a grant on its own. Empty for placeholder agents' stub tasks. A task can only ever narrow, never widen, its parent agent's overall declared-tools union (ADR-0036 Security considerations). The vocabulary itself is policies/tools/tool-policy.yaml, checked by platform/supply-chain/validate_okf_bundle.py; this schema only constrains the name format, so a new tool is declared in one place.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$"
+          },
+          "uniqueItems": true
+        },
+        "live_read_tool": {
+          "description": "ADR-0342/WP-33: which single entry in allowed_tools above app/graph/nodes.py's tool_call_node conditional live-read branch invokes (Tekos: confluence.page.search; Comage: a Salesforce read) - explicit, git-reviewed configuration, never derived from caller/state data. Optional/omitted for tasks whose shape never attempts a live read (e.g. Arkos's plan_draft_write, which folds its own live Confluence call into retrieve_node instead - see that shape's own module).",
+          "type": "string"
+        },
+        "quota_class": {
+          "description": "ADR-0511 (WP-54): named quota class from policies/quotas/quota-policy.yaml this task's usage is limited under. Optional - absent means `standard`. Like allowed_tools/allowed_knowledge this selects among centrally-declared limits; it never defines limits locally (quota amounts live only in the policy file). v0.3: any class of the corp quota policy (checked by validate_okf_bundle.py, not by an enum).",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "project_required": {
+          "description": "ADR-0512 (WP-55): whether this task demands a Salesforce-verified project id as mandatory session context before any tool call, retrieval or model action. Optional - absent means false. Agent Runtime blocks execution fail-closed until the binding is verified via the MCP Gateway's salesforce.opportunity.read under the caller's own identity; a project_required task must declare at least one project-scopable resource in allowed_tools/allowed_knowledge (ADR-0504 contract test).",
+          "type": "boolean",
+          "default": false
+        },
+        "max_tokens": {
+          "description": "ADR-0544: generation ceiling for this task's model call, forwarded per-REQUEST (never per-provider config) as the X-Zuno-Max-Tokens header from components/agent-runtime/app/clients/model_router.py through to whichever candidate ai-gateway ends up trying. Optional - absent means no cap, today's exact behavior. Distinct from Agent Runtime's own zuno.memory.history/project_context token budgets (agents/<name>/agent.okf.md): those bound what goes INTO the prompt: this bounds what comes OUT. A declared value also becomes the prompt clamp's output reserve (components/agent-runtime/app/graph/prompt_budget.py) so the model's context window is never sized as if the whole thing were free for input.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8192
+        },
+        "allowed_knowledge": {
+          "description": "Logical knowledge-domain IDs (knowledge/<domain>/domain.yaml, ADR-0202) this task may retrieve from. Declared independently of allowed_tools (ADR-0203). Effective authorization is the intersection of this list with the agent's declared-knowledge ceiling (the union of every task's allowed_knowledge - see components/agent-runtime/app/registry.py:AgentDefinition.declared_knowledge()), the caller's group rights and policies/knowledge/knowledge-policy.yaml - this field is a ceiling, not a grant on its own. Optional/omitted for tasks that never call RAG retrieval.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^knowledge\\.[a-z][a-z0-9_-]*$"
+          },
+          "uniqueItems": true
+        },
+        "prompts": {
+          "description": "Extra prompt slots of this task for multi-stage graph shapes (ADR-0342): slot name -> slot settings. Each slot's text lives in prompts/<task>--<slot>.md (components/agent-runtime/app/registry.py).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "classification_ceiling": {
+                "type": "string",
+                "enum": [
+                  "C1",
+                  "C2",
+                  "C3"
+                ]
+              }
+            }
+          }
+        },
+        "prompt_examples": {
+          "description": "ADR-0515/WP-061: editable example prompts for this task, surfaced in two places by the agent frontend - the empty-state (\"Create new chat\") view when the caller has no conversation history yet, and the composer's slash menu, which lists every task carrying at least one example and drops the chosen text into the message box for the user to edit before sending. UX only - purely decorative, never parsed/enforced server-side, and choosing one does NOT select which task runs: the chat route always executes the agent's primary_task (ADR-0342). Optional/omitted simply drops this task from the slash menu.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "skills": {
+          "description": "ADR-0579 clause 1: skills whose instructions are appended to this task's system prompt, in order. `<name>` is agents/<agent>/skills/<name>.md; `corp/<name>` is policies/skills/<name>.md, shipped with the corp policies.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(corp/)?[a-z][a-z0-9-]*$"
+          },
+          "uniqueItems": true
+        },
+        "models": {
+          "description": "ADR-0579 clause 2: model preferences by architectural ROLE (policies/models/model-catalog.yaml `role`), never by model name. The ai-gateway keeps the final choice among the models eligible for the effective classification.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "preferred": {
+              "description": "Roles to try first, in order.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "uniqueItems": true
+            },
+            "forbidden": {
+              "description": "Roles never to use.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "uniqueItems": true
+            }
+          }
+        },
+        "limits": {
+          "description": "ADR-0579 clause 4: per-agent (or per-task) bounds, each at most the corp ceiling in policies/limits/limits-policy.yaml.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_tokens": {
+              "description": "Generation ceiling per model call (ADR-0544); the task-level zuno.max_tokens stays valid as an alias.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8192
+            },
+            "max_concurrent_requests": {
+              "description": "Concurrent requests one user may have open on this agent.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "quota_class": {
+              "description": "A class of policies/quotas/quota-policy.yaml.",
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          }
+        }
+      }
+    }
+  }
+}
