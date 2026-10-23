@@ -446,6 +446,7 @@ class AgentCapableMixin(Generic[T]):
         
         start_time = time.time()
         wrapped_up = False
+        last_error_recoverable = False
 
         try:
             for step in iterator:
@@ -457,11 +458,13 @@ class AgentCapableMixin(Generic[T]):
                     finish_data = step.data
                     result.update(finish_data.as_dict())
                     result["success"] = True
+                    result["error"] = None  # an earlier recoverable error was retried successfully
                     break
                     
                 elif step.type == StepType.ERROR:
                     result["error"] = str(step.data)
                     result["success"] = False
+                    last_error_recoverable = bool(step.metadata.get("recoverable"))
                     if config.early_stopping == "first_error":
                         break
                 
@@ -476,11 +479,14 @@ class AgentCapableMixin(Generic[T]):
             # If no output set and no error, the agent ran out of rounds (or stopped)
             # without answering: ask the model for a final answer from what it gathered
             # before giving up, so the user gets an explanation instead of nothing.
-            if result["output"] is None and not result["error"]:
+            # Recoverable errors that ran out of retries (e.g. the model kept answering with
+            # nothing after a tool result) get the same last chance.
+            if result["output"] is None and (not result["error"] or last_error_recoverable):
                 wrapped = self._wrap_up_answer(iterator, strategy)
                 if wrapped:
                     result["output"] = wrapped
                     result["success"] = True
+                    result["error"] = None
                     wrapped_up = True
                 else:
                     result["output"] = "Agent completed without producing output"
