@@ -745,7 +745,7 @@ func (r *AgentBundleReconciler) pullCredential(ctx context.Context, cr *unifaiv1
 
 // SetupWithManager registers the controller; changes to emitted objects re-trigger the bundle.
 func (r *AgentBundleReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiAgentBundle{}).
+	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiAgentBundle{}, specChanges).
 		Owns(&unifaiv1.UnifaiLLM{}).Owns(&unifaiv1.UnifaiAgent{}).
 		Owns(&unifaiv1.UnifaiCondition{}).Owns(&unifaiv1.UnifaiWorkflow{}).Owns(&unifaiv1.UnifaiProvider{}).Owns(&unifaiv1.UnifaiTeam{}).
 		Named("unifaiagentbundle").Complete(r)

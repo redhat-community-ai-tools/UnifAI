@@ -98,5 +98,5 @@ func (r *ChatReconciler) apply(ctx context.Context, api *unifai.Client, obj *uni
 
 // SetupWithManager registers the controller.
 func (r *ChatReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiChat{}).Named("unifaichat").Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiChat{}, specChanges).Named("unifaichat").Complete(r)
 }

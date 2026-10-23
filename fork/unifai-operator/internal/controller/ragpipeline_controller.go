@@ -231,5 +231,5 @@ func (r *RAGPipelineReconciler) remove(ctx context.Context, api *unifai.Client, 
 
 // SetupWithManager registers the controller.
 func (r *RAGPipelineReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiRAGPipeline{}).Named("unifairagpipeline").Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiRAGPipeline{}, specChanges).Named("unifairagpipeline").Complete(r)
 }

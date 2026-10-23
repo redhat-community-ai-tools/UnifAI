@@ -182,5 +182,5 @@ func (r *TeamReconciler) teamUsers(ctx context.Context, team *unifaiv1.UnifaiTea
 
 // SetupWithManager registers the controller.
 func (r *TeamReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiTeam{}).Named("unifaiteam").Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiTeam{}, specChanges).Named("unifaiteam").Complete(r)
 }

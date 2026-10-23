@@ -91,6 +91,10 @@ func (r *RestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 	res, err := r.step(ctx, rs, st)
+	if err == nil && (rs.Status.Phase == PhaseCompleted || rs.Status.Phase == PhaseFailed) {
+		// Its own status write does not trigger a reconcile: come back to drop the finalizer.
+		return ctrl.Result{RequeueAfter: time.Second}, nil
+	}
 	if err != nil {
 		log.FromContext(ctx).Error(err, "restore step", "phase", rs.Status.Phase)
 		rs.Status.Message = unifai.Truncate(err.Error(), 500)
@@ -405,6 +409,6 @@ func (r *RestoreReconciler) patchStatus(ctx context.Context, rs *unifaiv1.Unifai
 
 // SetupWithManager registers the controller.
 func (r *RestoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiRestore{}).Owns(&batchv1.Job{}).
+	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiRestore{}, specChanges).Owns(&batchv1.Job{}).
 		Named("unifairestore").Complete(r)
 }

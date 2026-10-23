@@ -96,5 +96,5 @@ func (r *ScheduleReconciler) apply(ctx context.Context, api *unifai.Client, obj 
 
 // SetupWithManager registers the controller.
 func (r *ScheduleReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiSchedule{}).Named("unifaischedule").Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiSchedule{}, specChanges).Named("unifaischedule").Complete(r)
 }

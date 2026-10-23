@@ -132,7 +132,7 @@ func kindOf(category string) string {
 
 // SetupWithManager registers the controller.
 func (r *ResourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(r.NewObj()).Named(strings.ToLower(r.Kind)).Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).For(r.NewObj(), specChanges).Named(strings.ToLower(r.Kind)).Complete(r)
 }
 
 // ResourceKinds lists the seven resource kinds with their constructors.

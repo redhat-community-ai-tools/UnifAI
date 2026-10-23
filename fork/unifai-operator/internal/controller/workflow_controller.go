@@ -134,7 +134,7 @@ const conditionDisplay = "DisplayStored"
 
 // SetupWithManager registers the controller.
 func (r *WorkflowReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiWorkflow{}).Named("unifaiworkflow").Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiWorkflow{}, specChanges).Named("unifaiworkflow").Complete(r)
 }
 
 // workflowID returns the blueprint id of the workflow named name (temporary error while it does not exist).

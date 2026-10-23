@@ -215,5 +215,5 @@ func (r *RAGSourceReconciler) refresh(ctx context.Context, api *unifai.Client, o
 
 // SetupWithManager registers the controller.
 func (r *RAGSourceReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiRAGSource{}).Named("unifairagsource").Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).For(&unifaiv1.UnifaiRAGSource{}, specChanges).Named("unifairagsource").Complete(r)
 }

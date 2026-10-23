@@ -7,19 +7,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/recorder"
 
@@ -312,7 +317,9 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 			requeue = resync
 		}
 	}
-	if uerr := b.Status().Patch(ctx, obj, client.MergeFrom(orig)); uerr != nil {
+	if !statusChanged(orig.(unifaiv1.Object).GetObjectStatus(), st) {
+		st.LastReconciled = orig.(unifaiv1.Object).GetObjectStatus().LastReconciled // nothing to write
+	} else if uerr := b.Status().Patch(ctx, obj, client.MergeFrom(orig)); uerr != nil {
 		return reconcile.Result{}, uerr
 	}
 	recordPhase(b.Recorder, obj, prev, st.Phase, st.Message)
@@ -354,3 +361,25 @@ func (b *Base) unifaiGone(ctx context.Context, ns string, err error) bool {
 	var st unifaiv1.UnifaiStack
 	return apierrors.IsNotFound(b.Get(ctx, types.NamespacedName{Namespace: ns, Name: unifaiv1.StackName}, &st))
 }
+
+// statusChanged reports whether the status must be written: anything but lastReconciled changed, or
+// lastReconciled is older than half the resync period (it paces the retries of permanent errors). Writing it at
+// every reconcile would make every reconcile an update event of the object.
+func statusChanged(old, cur *unifaiv1.ObjectStatus) bool {
+	if old.LastReconciled == nil || time.Since(old.LastReconciled.Time) > resync/2 {
+		return true
+	}
+	a, b := old.DeepCopy(), cur.DeepCopy()
+	a.LastReconciled, b.LastReconciled = nil, nil
+	return !equality.Semantic.DeepEqual(a, b)
+}
+
+// specChanges filters the update events of a reconciled kind down to those that matter: spec (generation),
+// labels, annotations, finalizers or deletion. Status-only updates (the controller's own status writes) do not
+// trigger a reconcile.
+var specChanges = builder.WithPredicates(predicate.Or(predicate.GenerationChangedPredicate{},
+	predicate.AnnotationChangedPredicate{}, predicate.LabelChangedPredicate{},
+	predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+		return !e.ObjectNew.GetDeletionTimestamp().Equal(e.ObjectOld.GetDeletionTimestamp()) ||
+			!slices.Equal(e.ObjectNew.GetFinalizers(), e.ObjectOld.GetFinalizers())
+	}}))
