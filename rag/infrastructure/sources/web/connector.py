@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import ipaddress
 import logging
 import re
+import socket
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -37,6 +39,25 @@ class WebPage:
 
 class WebError(RuntimeError):
     pass
+
+
+MAX_REDIRECTS = 5
+
+
+def resolve_public(host: str) -> None:
+    """Refuse a host that resolves to a non-public address (loopback, private, link-local, cluster, metadata).
+
+    The fetch runs in the RAG pod, which reaches internal services and, on a cloud, the instance
+    metadata endpoint: a source URL must never be a way to read them.
+    """
+    try:
+        infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise WebError(f"cannot resolve {host}: {exc}") from exc
+    for info in infos:
+        addr = ipaddress.ip_address(info[4][0].split("%")[0])
+        if not addr.is_global or addr.is_multicast:
+            raise WebError(f"{host} resolves to a non-public address ({addr})")
 
 
 class _Links(HTMLParser):
@@ -86,7 +107,10 @@ def in_scope(url: str, include: Sequence[str], exclude: Sequence[str]) -> bool:
 
 class WebConnector:
     def __init__(self, timeout: float = 60.0, min_interval: float = 0.2, verify_tls: bool = True,
-                 session: requests.Session | None = None, sleep=time.sleep) -> None:
+                 allowed_hosts: Sequence[str] = (), session: requests.Session | None = None, sleep=time.sleep,
+                 host_check=resolve_public) -> None:
+        self._allowed = tuple(h.lower() for h in allowed_hosts)
+        self._host_check = host_check
         self._session = session or requests.Session()
         self._session.verify = verify_tls
         self._session.headers.setdefault("User-Agent", USER_AGENT)
@@ -94,6 +118,26 @@ class WebConnector:
         self._interval = min_interval
         self._sleep = sleep
         self._last = 0.0
+
+    def _check(self, url: str) -> None:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme not in ("http", "https") or not host:
+            raise WebError(f"not an http(s) URL: {url}")
+        if self._allowed and not any(host == a or host.endswith("." + a) for a in self._allowed):
+            raise WebError(f"{host} is not in the allowed hosts")
+        self._host_check(host)
+
+    def _get(self, url: str, headers: dict):
+        """GET with the host check applied to the URL and to every redirect (no automatic redirect)."""
+        for _ in range(MAX_REDIRECTS + 1):
+            self._check(url)
+            resp = self._session.get(url, headers=headers, timeout=self._timeout, allow_redirects=False)
+            location = resp.headers.get("Location") if 300 <= resp.status_code < 400 and resp.status_code != 304 else None
+            if not location:
+                return resp
+            url = urljoin(url, location)
+        raise WebError(f"too many redirects from {url}")
 
     def fetch(self, url: str, known: dict | None = None) -> WebPage | None:
         """The page, or None when the server says it did not change (304)."""
@@ -105,7 +149,7 @@ class WebConnector:
         wait = self._interval - (time.monotonic() - self._last)
         if wait > 0:
             self._sleep(wait)
-        resp = self._session.get(url, headers=headers, timeout=self._timeout)
+        resp = self._get(url, headers)
         self._last = time.monotonic()
         if resp.status_code == 304:
             return None
