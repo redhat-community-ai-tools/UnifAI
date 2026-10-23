@@ -23,7 +23,7 @@ type ChatReconciler struct{ Base }
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaichats/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=unifai.startx.fr,resources=unifaichats/finalizers,verbs=update
 
-var chatTerminal = map[string]string{"COMPLETED": "Completed", "FAILED": "Failed", "CANCELLED": "Failed", "ERROR": "Failed"}
+var chatTerminal = map[string]string{"COMPLETED": PhaseCompleted, statusFailed: PhaseFailed, "CANCELLED": PhaseFailed, "ERROR": PhaseFailed}
 
 func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	obj := &unifaiv1.UnifaiChat{}
@@ -49,7 +49,7 @@ func (r *ChatReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 func (r *ChatReconciler) apply(ctx context.Context, api *unifai.Client, obj *unifaiv1.UnifaiChat) (time.Duration, error) {
 	st := &obj.Status
 	switch st.Phase {
-	case "Completed", "Failed":
+	case PhaseCompleted, PhaseFailed:
 		return 0, nil
 	}
 	if st.SessionID == "" {

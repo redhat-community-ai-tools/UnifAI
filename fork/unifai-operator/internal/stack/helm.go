@@ -32,7 +32,7 @@ type Engine struct {
 }
 
 // configuration returns the Helm configuration of a namespace (cached: building one runs API discovery).
-func (e *Engine) configuration(ctx context.Context, ns string) (*action.Configuration, error) {
+func (e *Engine) configuration(ns string) (*action.Configuration, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if cfg, ok := e.cfgs[ns]; ok {
@@ -101,7 +101,7 @@ const postRenderVersion = 5
 
 // Apply installs the release, or upgrades it; it repairs releases left pending by an interrupted operation.
 func (e *Engine) Apply(ctx context.Context, p *Plan, rr *Rendered) (*release.Release, error) {
-	cfg, err := e.configuration(ctx, p.Namespace)
+	cfg, err := e.configuration(p.Namespace)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (e *Engine) Apply(ctx context.Context, p *Plan, rr *Rendered) (*release.Rel
 
 // Get returns the deployed release, or nil.
 func (e *Engine) Get(ctx context.Context, ns, name string) (*release.Release, error) {
-	cfg, err := e.configuration(ctx, ns)
+	cfg, err := e.configuration(ns)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (e *Engine) Get(ctx context.Context, ns, name string) (*release.Release, er
 
 // Uninstall removes a release (no error when it does not exist).
 func (e *Engine) Uninstall(ctx context.Context, ns, name string) (*release.Release, error) {
-	cfg, err := e.configuration(ctx, ns)
+	cfg, err := e.configuration(ns)
 	if err != nil {
 		return nil, err
 	}

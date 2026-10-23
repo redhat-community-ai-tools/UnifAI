@@ -72,7 +72,7 @@ func WorkloadsReady(ctx context.Context, c client.Client, ns string, objs []Mani
 	for _, o := range objs {
 		key := types.NamespacedName{Namespace: ns, Name: o.Name}
 		switch o.Kind {
-		case "Deployment":
+		case kindDeployment:
 			var d appsv1.Deployment
 			if err := c.Get(ctx, key, &d); err != nil {
 				if apierrors.IsNotFound(err) {
@@ -90,7 +90,7 @@ func WorkloadsReady(ctx context.Context, c client.Client, ns string, objs []Mani
 				d.Status.Replicas > d.Status.UpdatedReplicas {
 				waiting = append(waiting, fmt.Sprintf("deployment/%s %d/%d", o.Name, d.Status.AvailableReplicas, want))
 			}
-		case "StatefulSet":
+		case kindStatefulSet:
 			var s appsv1.StatefulSet
 			if err := c.Get(ctx, key, &s); err != nil {
 				if apierrors.IsNotFound(err) {

@@ -62,6 +62,10 @@ func (f *fakeMAS) resourceByName(category, name string) map[string]any {
 	return nil
 }
 
+// visibilityShared is the visibility of a RAG source readable by its ACL groups.
+const visibilityShared = "shared"
+
+//nolint:gocyclo // one case per faked endpoint
 func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -242,7 +246,7 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if body["source_type"] == "confluence" {
 			// Mirrors the RAG service: idempotent registration per scope, shared sources for publishers only.
 			d := body["data"].([]any)[0].(map[string]any)
-			if d["visibility"] == "shared" && r.Header.Get("X-Authenticated-User") != "publisher" {
+			if d["visibility"] == visibilityShared && r.Header.Get("X-Authenticated-User") != "publisher" {
 				reply(w, 200, map[string]any{"registration": map[string]any{"issues": []any{map[string]any{
 					"error": "may not publish shared sources", "error_type": "ACCESS_DENIED"}}}})
 				return
@@ -311,8 +315,8 @@ func (f *fakeMAS) ragSourceNames() map[string]string {
 	defer f.mu.Unlock()
 	out := map[string]string{}
 	for _, s := range f.ragSources {
-		if md5, ok := s["type_data"].(map[string]any)["md5"].(string); ok {
-			out[s["source_name"].(string)] = md5
+		if sum, ok := s["type_data"].(map[string]any)["md5"].(string); ok {
+			out[s["source_name"].(string)] = sum
 		}
 	}
 	return out

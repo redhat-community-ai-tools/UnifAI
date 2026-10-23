@@ -35,7 +35,7 @@ func phaseOf(obj unifaiv1.Object) func() string {
 		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
 			return "get: " + err.Error()
 		}
-		if obj.GetObjectStatus().Phase == "Error" {
+		if obj.GetObjectStatus().Phase == PhaseError {
 			GinkgoWriter.Printf("%s %s: %s\n", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), obj.GetObjectStatus().Message)
 		}
 		return obj.GetObjectStatus().Phase
@@ -97,7 +97,7 @@ var _ = Describe("UnifAI object controllers", func() {
 			ConfigSpec: unifaiv1.ConfigSpec{Config: raw(map[string]any{"model_name": "m", "base_url": "nope"})},
 		}}
 		Expect(k8sClient.Create(ctx, bad)).To(Succeed())
-		Eventually(phaseOf(bad), timeout, interval).Should(Equal("Error"))
+		Eventually(phaseOf(bad), timeout, interval).Should(Equal(PhaseError))
 		Expect(bad.Status.Message).To(ContainSubstring("Schema validation failed"))
 		Expect(mas.resourceByName("llms", "bad-"+ns)).To(BeNil())
 	})
@@ -110,7 +110,7 @@ var _ = Describe("UnifAI object controllers", func() {
 		tool := &unifaiv1.UnifaiTool{ObjectMeta: metav1.ObjectMeta{Name: "fetch", Namespace: ns}, Spec: unifaiv1.UnifaiToolSpec{
 			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "ui-" + ns}, Type: "web_fetch"}}
 		Expect(k8sClient.Create(ctx, tool)).To(Succeed())
-		Eventually(phaseOf(tool), timeout, interval).Should(Equal("Error"))
+		Eventually(phaseOf(tool), timeout, interval).Should(Equal(PhaseError))
 		Expect(tool.Status.Message).To(ContainSubstring(unifaiv1.AdoptAnnotation))
 		tool.Annotations = map[string]string{unifaiv1.AdoptAnnotation: "true"}
 		Expect(k8sClient.Update(ctx, tool)).To(Succeed())

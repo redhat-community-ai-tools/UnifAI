@@ -267,8 +267,8 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 	}
 	// A permanent failure is retried when the spec changes, when the adopt annotation is added after a takeover
 	// refusal, or at the periodic resync (the cause may be outside the spec, e.g. UnifAI configuration).
-	if st.Phase == "Error" && st.ObservedGeneration == obj.GetGeneration() &&
-		!(adopting(obj) && strings.Contains(st.Message, unifaiv1.AdoptAnnotation)) &&
+	if st.Phase == PhaseError && st.ObservedGeneration == obj.GetGeneration() &&
+		(!adopting(obj) || !strings.Contains(st.Message, unifaiv1.AdoptAnnotation)) &&
 		st.LastReconciled != nil && time.Since(st.LastReconciled.Time) < resync {
 		return reconcile.Result{RequeueAfter: resync - time.Since(st.LastReconciled.Time)}, nil
 	}
@@ -277,7 +277,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 	orig := obj.DeepCopyObject().(client.Object)
 	var requeue time.Duration
 	err := b.stackGate(ctx, obj.GetNamespace())
-	if err != nil && (st.Phase == "Completed" || st.Phase == "Failed") {
+	if err != nil && (st.Phase == PhaseCompleted || st.Phase == PhaseFailed) {
 		return reconcile.Result{RequeueAfter: resync}, nil // finished one-shot runs do not depend on the stack
 	}
 	if err == nil {
@@ -303,7 +303,7 @@ func (b *Base) run(ctx context.Context, obj unifaiv1.Object, h Handlers) (reconc
 	default:
 		st.ObservedGeneration = obj.GetGeneration()
 		status := metav1.ConditionFalse
-		if st.Phase == "Ready" || st.Phase == "Completed" || st.Phase == "Suspended" {
+		if st.Phase == PhaseReady || st.Phase == PhaseCompleted || st.Phase == "Suspended" {
 			status = metav1.ConditionTrue
 		}
 		meta.SetStatusCondition(&st.Conditions, metav1.Condition{Type: "Ready", Status: status, Reason: strings.ReplaceAll(st.Phase, " ", ""),

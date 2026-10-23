@@ -94,14 +94,14 @@ var _ = Describe("UnifaiRAGSource controller", func() {
 	It("surfaces the RAG service refusing a shared source", func() {
 		ns := newNamespace("ragsrc-shared")
 		s := newSource(ns, "SX3", func(s *unifaiv1.UnifaiRAGSource) {
-			s.Spec.Owner, s.Spec.Visibility, s.Spec.ACLGroups = "mallory", "shared", []string{"agent_tekos"}
+			s.Spec.Owner, s.Spec.Visibility, s.Spec.ACLGroups = "mallory", visibilityShared, []string{"agent_tekos"}
 		})
 		Expect(k8sClient.Create(ctx, s)).To(Succeed())
-		Eventually(func() string { return get(s)().Phase }, timeout, interval).Should(Equal("Error"))
+		Eventually(func() string { return get(s)().Phase }, timeout, interval).Should(Equal(PhaseError))
 		Expect(get(s)().Message).To(ContainSubstring("ACCESS_DENIED"))
 
 		ok := newSource(newNamespace("ragsrc-shared-ok"), "SX4", func(s *unifaiv1.UnifaiRAGSource) {
-			s.Spec.Owner, s.Spec.Visibility, s.Spec.ACLGroups = "publisher", "shared", []string{"agent_tekos"}
+			s.Spec.Owner, s.Spec.Visibility, s.Spec.ACLGroups = "publisher", visibilityShared, []string{"agent_tekos"}
 		})
 		Expect(k8sClient.Create(ctx, ok)).To(Succeed())
 		Eventually(func() string { return get(ok)().Phase }, timeout, interval).Should(Equal("Ready"))
@@ -110,13 +110,13 @@ var _ = Describe("UnifaiRAGSource controller", func() {
 	It("never re-triggers an accepted sync whose response it cannot read", func() {
 		s := newSource(newNamespace("ragsrc-odd"), "ODDBODY", nil)
 		Expect(k8sClient.Create(ctx, s)).To(Succeed())
-		Eventually(func() string { return get(s)().Phase }, timeout, interval).Should(Equal("Error"))
+		Eventually(func() string { return get(s)().Phase }, timeout, interval).Should(Equal(PhaseError))
 		id := "conf-https://x.atlassian.net-ODDBODY-Procedures"
 		Consistently(func() int { return mas.ragSyncCount(id) }, 3*time.Second, interval).Should(Equal(1))
 	})
 
 	It("rejects a shared source without ACL groups at admission", func() {
-		s := newSource(newNamespace("ragsrc-cel"), "SX5", func(s *unifaiv1.UnifaiRAGSource) { s.Spec.Visibility = "shared" })
+		s := newSource(newNamespace("ragsrc-cel"), "SX5", func(s *unifaiv1.UnifaiRAGSource) { s.Spec.Visibility = visibilityShared })
 		err := k8sClient.Create(ctx, s)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("at least one ACL group"))

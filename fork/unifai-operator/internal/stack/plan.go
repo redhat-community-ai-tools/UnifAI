@@ -2,10 +2,10 @@ package stack
 
 import (
 	"encoding/json"
-
 	"fmt"
-	corev1 "k8s.io/api/core/v1"
 	"strings"
+
+	corev1 "k8s.io/api/core/v1"
 
 	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"
 )
@@ -172,11 +172,14 @@ func boolStr(b bool) string {
 	return "False"
 }
 
+// modeRemote is the docling/embedding mode using a service outside the stack.
+const modeRemote = "remote"
+
 // DeployDocling reports whether docling-serve runs in the stack namespace.
-func (p *Plan) DeployDocling() bool { return p.Spec.RAG.Docling.Mode != "remote" }
+func (p *Plan) DeployDocling() bool { return p.Spec.RAG.Docling.Mode != modeRemote }
 
 // DeployEmbedding reports whether the embedding service runs in the stack namespace.
-func (p *Plan) DeployEmbedding() bool { return p.Spec.RAG.Embedding.Mode != "remote" }
+func (p *Plan) DeployEmbedding() bool { return p.Spec.RAG.Embedding.Mode != modeRemote }
 
 // EmbeddingModel is the embedding model (default the upstream one).
 func (p *Plan) EmbeddingModel() string {

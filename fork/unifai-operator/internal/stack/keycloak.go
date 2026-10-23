@@ -31,6 +31,7 @@ const (
 	RHBKPackage       = "rhbk-operator"
 	// LabelOwnedOLM marks the OperatorGroup/Subscription created by the stack (removed with it).
 	LabelOwnedOLM = "unifai.startx.fr/olm-owned"
+	labelTrue     = "true"
 )
 
 // crunchyUserSchema makes Crunchy create a schema owned by each user in its databases: PostgreSQL 15+ no longer
@@ -156,7 +157,7 @@ func (k *Keycloak) ensureOperator(ctx context.Context, p *Plan, install bool, ch
 	switch len(ogs.Items) {
 	case 0:
 		og := newU(GVKOperatorGroup, p.Namespace, OperatorGroupName)
-		og.SetLabels(map[string]string{LabelOwnedOLM: "true", LabelPartOf: "unifai"})
+		og.SetLabels(map[string]string{LabelOwnedOLM: labelTrue, LabelPartOf: "unifai"})
 		_ = unstructured.SetNestedStringSlice(og.Object, []string{p.Namespace}, "spec", "targetNamespaces")
 		if err := k.Client.Create(ctx, og); err != nil && !apierrors.IsAlreadyExists(err) {
 			return "", err
@@ -175,7 +176,7 @@ func (k *Keycloak) ensureOperator(ctx context.Context, p *Plan, install bool, ch
 		if channel == "" {
 			channel = "stable-v26.6"
 		}
-		sub.SetLabels(map[string]string{LabelOwnedOLM: "true", LabelPartOf: "unifai"})
+		sub.SetLabels(map[string]string{LabelOwnedOLM: labelTrue, LabelPartOf: "unifai"})
 		sub.Object["spec"] = map[string]any{
 			"name": RHBKPackage, "channel": channel, "source": "redhat-operators",
 			"sourceNamespace": "openshift-marketplace", "installPlanApproval": "Automatic",
@@ -230,7 +231,7 @@ func (k *Keycloak) ensureCrunchy(ctx context.Context, p *Plan) (string, *corev1.
 			pvc["storageClassName"] = c
 		}
 		pg.SetLabels(map[string]string{LabelPartOf: "unifai", LabelManagedBy: "unifai-operator", LabelComponent: "keycloak"})
-		pg.SetAnnotations(map[string]string{crunchyUserSchema: "true"})
+		pg.SetAnnotations(map[string]string{crunchyUserSchema: labelTrue})
 		pg.Object["spec"] = map[string]any{
 			"postgresVersion": int64(16),
 			"instances":       []any{map[string]any{"name": "db", "replicas": int64(1), "dataVolumeClaimSpec": pvc}},
@@ -241,12 +242,12 @@ func (k *Keycloak) ensureCrunchy(ctx context.Context, p *Plan) (string, *corev1.
 		}
 	} else if err != nil {
 		return "", nil, nil, "", err
-	} else if pg.GetAnnotations()[crunchyUserSchema] != "true" {
+	} else if pg.GetAnnotations()[crunchyUserSchema] != labelTrue {
 		a := pg.GetAnnotations()
 		if a == nil {
 			a = map[string]string{}
 		}
-		a[crunchyUserSchema] = "true"
+		a[crunchyUserSchema] = labelTrue
 		pg.SetAnnotations(a)
 		if err := k.Client.Update(ctx, pg); err != nil {
 			return "", nil, nil, "", err
@@ -417,8 +418,9 @@ func (k *Keycloak) ensureRealm(ctx context.Context, p *Plan) error {
 	if ref := p.Spec.Identity.Keycloak.AdminPassword; ref != nil {
 		adminSecret = map[string]any{"name": ref.Name, "key": ref.Key}
 	}
-	var users []any
-	for _, u := range p.AdminUsers() {
+	admins := p.AdminUsers()
+	users := make([]any, 0, len(admins))
+	for _, u := range admins {
 		users = append(users, map[string]any{
 			"username": u, "enabled": true, "emailVerified": true, "email": u + "@unifai.invalid",
 			"firstName": u, "lastName": "UnifAI",
@@ -536,7 +538,7 @@ func (k *Keycloak) deleteOwnedOLM(ctx context.Context, ns string, gone *bool) er
 	}
 	sub := newU(GVKSubscription, ns, RHBKPackage)
 	err := k.Client.Get(ctx, client.ObjectKeyFromObject(sub), sub)
-	if err == nil && sub.GetLabels()[LabelOwnedOLM] == "true" {
+	if err == nil && sub.GetLabels()[LabelOwnedOLM] == labelTrue {
 		csv, _, _ := unstructured.NestedString(sub.Object, "status", "installedCSV")
 		if err := k.Client.Delete(ctx, sub); err != nil && !apierrors.IsNotFound(err) {
 			return err
@@ -551,7 +553,7 @@ func (k *Keycloak) deleteOwnedOLM(ctx context.Context, ns string, gone *bool) er
 		return err
 	}
 	og := newU(GVKOperatorGroup, ns, OperatorGroupName)
-	if err := k.Client.Get(ctx, client.ObjectKeyFromObject(og), og); err == nil && og.GetLabels()[LabelOwnedOLM] == "true" {
+	if err := k.Client.Get(ctx, client.ObjectKeyFromObject(og), og); err == nil && og.GetLabels()[LabelOwnedOLM] == labelTrue {
 		if err := k.Client.Delete(ctx, og); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}

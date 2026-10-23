@@ -304,6 +304,7 @@ func (r *StackReconciler) apply(ctx context.Context, st *unifaiv1.UnifaiStack, o
 	return err
 }
 
+//nolint:gocyclo // sequential deployment steps; each is a short, independent block
 func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) (time.Duration, error) {
 	p, err := r.plan(ctx, st)
 	if err != nil {
@@ -382,10 +383,6 @@ func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) 
 		}
 	}
 
-	prev := map[string]unifaiv1.ComponentStatus{}
-	for _, c := range st.Status.Components {
-		prev[c.Name] = c
-	}
 	var comps []unifaiv1.ComponentStatus
 	phaseReady := map[int]bool{0: true, 1: true, 2: true}
 	phaseInstalled := map[int]bool{0: true, 1: true, 2: true}
@@ -409,7 +406,7 @@ func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) 
 				comps = append(comps, cs)
 				continue
 			}
-			cs, err := r.applyRelease(ctx, p, rel, prev[rel.Name])
+			cs, err := r.applyRelease(ctx, p, rel)
 			if err != nil {
 				return 0, err
 			}
@@ -453,7 +450,7 @@ func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) 
 }
 
 // applyRelease installs/upgrades a release when its inputs changed, then reports its readiness.
-func (r *StackReconciler) applyRelease(ctx context.Context, p *stack.Plan, rel stack.Release, prev unifaiv1.ComponentStatus) (unifaiv1.ComponentStatus, error) {
+func (r *StackReconciler) applyRelease(ctx context.Context, p *stack.Plan, rel stack.Release) (unifaiv1.ComponentStatus, error) {
 	cs := unifaiv1.ComponentStatus{Name: rel.Name}
 	rr, err := stack.Render(p, rel)
 	if err != nil {

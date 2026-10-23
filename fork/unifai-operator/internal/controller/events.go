@@ -20,10 +20,23 @@ const PhaseDeleting = "Deleting"
 // PhaseReady is the phase of an object in sync with UnifAI.
 const PhaseReady = "Ready"
 
+// Terminal and error phases.
+const (
+	PhaseCompleted = "Completed"
+	PhaseFailed    = "Failed"
+	PhaseError     = "Error"
+)
+
+// UnifAI job statuses (RAG ingestion).
+const (
+	statusDone   = "DONE"
+	statusFailed = "FAILED"
+)
+
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // warningPhases are the phases recorded as Warning Events.
-var warningPhases = map[string]bool{"Error": true, "Failed": true}
+var warningPhases = map[string]bool{PhaseError: true, PhaseFailed: true}
 
 // recordPhase records an Event when an object moves to another phase (rec may be nil).
 // Only transitions are recorded: a periodic resync in the same phase stays silent.

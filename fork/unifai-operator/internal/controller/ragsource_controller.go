@@ -124,8 +124,8 @@ func (r *RAGSourceReconciler) apply(ctx context.Context, api *unifai.Client, obj
 	case syncing:
 		setReady(&st.ObjectStatus, "Syncing", fmt.Sprintf("pipeline %s", st.PipelineStatus))
 		return 30 * time.Second, nil
-	case st.PipelineStatus == "FAILED":
-		setReady(&st.ObjectStatus, "Failed", "the last sync failed; it is retried at the next interval or spec change")
+	case st.PipelineStatus == statusFailed:
+		setReady(&st.ObjectStatus, PhaseFailed, "the last sync failed; it is retried at the next interval or spec change")
 	default:
 		setReady(&st.ObjectStatus, "Ready", fmt.Sprintf("%d pages (%d changed, %d deleted at the last sync)",
 			st.Pages, st.PagesChanged, st.PagesDeleted))
@@ -194,7 +194,7 @@ func (r *RAGSourceReconciler) refresh(ctx context.Context, api *unifai.Client, o
 		return 0
 	}
 	st.Pages, st.PagesChanged, st.PagesDeleted = count("page_count"), count("pages_changed"), count("pages_deleted")
-	return st.PipelineStatus != "" && st.PipelineStatus != "DONE" && st.PipelineStatus != "FAILED", nil
+	return st.PipelineStatus != "" && st.PipelineStatus != statusDone && st.PipelineStatus != statusFailed, nil
 }
 
 // SetupWithManager registers the controller.

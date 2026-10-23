@@ -150,18 +150,18 @@ func (r *RAGPipelineReconciler) apply(ctx context.Context, api *unifai.Client, o
 		return 0, err
 	}
 	var stale []string
-	var files, data []map[string]any
+	files, data := make([]map[string]any, 0, len(docs)), make([]map[string]any, 0, len(docs))
 	done, failed, running := 0, []string{}, 0
 	for _, d := range docs {
 		name := d.data["source_name"].(string)
 		src, exists := sources[name]
 		switch {
-		case exists && src.TypeData.MD5 == d.md5 && src.Status == "DONE":
+		case exists && src.TypeData.MD5 == d.md5 && src.Status == statusDone:
 			done++
 			continue
 		case exists && src.TypeData.MD5 == d.md5 && obj.Status.Hash == h:
 			// Already submitted for this spec: report, do not resubmit.
-			if src.Status == "FAILED" {
+			if src.Status == statusFailed {
 				failed = append(failed, name)
 			} else {
 				running++
@@ -204,7 +204,7 @@ func (r *RAGPipelineReconciler) apply(ctx context.Context, api *unifai.Client, o
 	obj.Status.Hash = h
 	switch {
 	case len(failed) > 0:
-		setReady(&obj.Status, "Failed", fmt.Sprintf("ingestion failed for %v (change the spec or the "+unifaiv1.RetryAnnotation+" annotation to retry)", failed))
+		setReady(&obj.Status, PhaseFailed, fmt.Sprintf("ingestion failed for %v (change the spec or the "+unifaiv1.RetryAnnotation+" annotation to retry)", failed))
 		return 0, nil
 	case running > 0:
 		setReady(&obj.Status, "Ingesting", fmt.Sprintf("%d/%d documents ingested", done, len(docs)))

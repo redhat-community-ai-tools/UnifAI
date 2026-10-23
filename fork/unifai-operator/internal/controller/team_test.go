@@ -80,13 +80,13 @@ var _ = Describe("UnifaiTeam and teamRef", func() {
 		taken := &unifaiv1.UnifaiTeam{ObjectMeta: metav1.ObjectMeta{Name: "taken", Namespace: ns}, Spec: unifaiv1.UnifaiTeamSpec{
 			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "taken-" + ns}}}
 		Expect(k8sClient.Create(ctx, taken)).To(Succeed())
-		Eventually(phaseOf(taken), timeout, interval).Should(Equal("Error"))
+		Eventually(phaseOf(taken), timeout, interval).Should(Equal(PhaseError))
 		Expect(taken.Status.Message).To(ContainSubstring("another user"))
 
 		mine := &unifaiv1.UnifaiTeam{ObjectMeta: metav1.ObjectMeta{Name: "mine", Namespace: ns}, Spec: unifaiv1.UnifaiTeamSpec{
 			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "mine-" + ns}}}
 		Expect(k8sClient.Create(ctx, mine)).To(Succeed())
-		Eventually(phaseOf(mine), timeout, interval).Should(Equal("Error"))
+		Eventually(phaseOf(mine), timeout, interval).Should(Equal(PhaseError))
 		Expect(mine.Status.Message).To(ContainSubstring(unifaiv1.AdoptAnnotation))
 		mine.Annotations = map[string]string{unifaiv1.AdoptAnnotation: "true"}
 		Expect(k8sClient.Update(ctx, mine)).To(Succeed())
@@ -99,7 +99,7 @@ var _ = Describe("UnifaiTeam and teamRef", func() {
 		tool := &unifaiv1.UnifaiTool{ObjectMeta: metav1.ObjectMeta{Name: "t", Namespace: ns}, Spec: unifaiv1.UnifaiToolSpec{
 			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "t-" + ns, TeamID: "x", TeamRef: "y"}, Type: "web_fetch"}}
 		Expect(k8sClient.Create(ctx, tool)).To(Succeed())
-		Eventually(phaseOf(tool), timeout, interval).Should(Equal("Error"))
+		Eventually(phaseOf(tool), timeout, interval).Should(Equal(PhaseError))
 		Expect(tool.Status.Message).To(ContainSubstring("exclusive"))
 	})
 })

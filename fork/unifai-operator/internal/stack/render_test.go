@@ -17,6 +17,9 @@ import (
 	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"
 )
 
+// testSecret is a secret value that must never appear in rendered manifests.
+const testSecret = "s3cr3t"
+
 func testPlan(t *testing.T, mutate func(*unifaiv1.UnifaiStackSpec)) *Plan {
 	t.Helper()
 	st := &unifaiv1.UnifaiStack{ObjectMeta: metav1.ObjectMeta{Name: "unifai", Namespace: "team-a"}}
@@ -177,7 +180,7 @@ func TestIdentityForwarding(t *testing.T) {
 		}
 	}
 	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) { s.Identity.ForwardUserToken = true })
-	p.OIDCURL, p.OIDCRealm, p.OIDCClientID, p.OIDCClientSecret = "https://kc.example.com", "unifai", "unifai", "s3cr3t"
+	p.OIDCURL, p.OIDCRealm, p.OIDCClientID, p.OIDCClientSecret = "https://kc.example.com", "unifai", "unifai", testSecret
 	on := renderAll(t, p)
 	for _, rel := range []string{"unifai-multiagent-be", "unifai-multiagent-temporal-worker"} {
 		for _, want := range []string{"IDENTITY_FORWARDING_ENABLED", "https://kc.example.com", "KEYCLOAK_REALM", "CLIENT_ID"} {
@@ -185,11 +188,11 @@ func TestIdentityForwarding(t *testing.T) {
 				t.Errorf("%s lacks %s", rel, want)
 			}
 		}
-		if strings.Contains(on[rel], "s3cr3t") {
+		if strings.Contains(on[rel], testSecret) {
 			t.Errorf("%s: the client secret must come from multiagent-be-secret, not plain env", rel)
 		}
 	}
-	if multiagentSecret(p)["CLIENT_SECRET"] != "s3cr3t" {
+	if multiagentSecret(p)["CLIENT_SECRET"] != testSecret {
 		t.Errorf("multiagent-be-secret lacks CLIENT_SECRET")
 	}
 	pOff := testPlan(t, nil)
@@ -332,7 +335,7 @@ func TestInternalAuthAndExtraEnv(t *testing.T) {
 			"backend": {{Name: "RAG_URL", Value: "http://override:1"}},
 		}
 	})
-	p.Secrets[KeyInternalAuth] = "s3cr3t"
+	p.Secrets[KeyInternalAuth] = testSecret
 	out := renderAll(t, p)
 	ref := "name: " + KeyInternalAuth + "\n          valueFrom:\n            secretKeyRef:\n              key: " + KeyInternalAuth +
 		"\n              name: " + InternalAuthSecret
@@ -343,7 +346,7 @@ func TestInternalAuthAndExtraEnv(t *testing.T) {
 		}
 	}
 	for rel, m := range out {
-		if strings.Contains(m, "s3cr3t") {
+		if strings.Contains(m, testSecret) {
 			t.Errorf("%s: the internal secret must not be rendered in clear", rel)
 		}
 	}
@@ -382,7 +385,7 @@ func TestInternalAuthAndExtraEnv(t *testing.T) {
 	var found bool
 	for _, o := range BaseObjects(p) {
 		if s, ok := o.(*corev1.Secret); ok && s.Name == InternalAuthSecret {
-			found = s.StringData[KeyInternalAuth] == "s3cr3t" || string(s.Data[KeyInternalAuth]) == "s3cr3t"
+			found = s.StringData[KeyInternalAuth] == testSecret || string(s.Data[KeyInternalAuth]) == testSecret
 		}
 	}
 	if !found {

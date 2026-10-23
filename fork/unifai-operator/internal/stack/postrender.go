@@ -20,6 +20,15 @@ const (
 	LabelPartOf    = "app.kubernetes.io/part-of"
 	LabelManagedBy = "unifai.startx.fr/managed-by"
 	LabelComponent = "unifai.startx.fr/component"
+	// PartOf is the value of LabelPartOf.
+	PartOf = "unifai"
+)
+
+// Names used by the post-renderer.
+const (
+	uiRelease       = "unifai-ui"
+	kindDeployment  = "Deployment"
+	kindStatefulSet = "StatefulSet"
 )
 
 // devCaps are the request ceilings of the dev profile (limits are kept).
@@ -140,7 +149,7 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 	md := mapAt(obj, "metadata")
 	obj["metadata"] = md
 	labels := mapAt(md, "labels")
-	labels[LabelPartOf] = "unifai"
+	labels[LabelPartOf] = PartOf
 	labels[LabelManagedBy] = "unifai-operator"
 	labels[LabelComponent] = r.rel.Component
 	md["labels"] = labels
@@ -149,7 +158,7 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 	switch kind {
 	case "Route":
 		switch r.rel.Name {
-		case "unifai-ui":
+		case uiRelease:
 			r.setHost(md, spec, r.plan.UIHost)
 			// Re-encrypt (was passthrough) so the router sees, and strips, the request headers; the backend
 			// certificate is the service-ca one mounted below, trusted by the router without configuration.
@@ -165,7 +174,7 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 		}
 		stripInternalAuthHeader(spec)
 	case "Service":
-		if r.rel.Name == "unifai-ui" {
+		if r.rel.Name == uiRelease {
 			a := mapAt(md, "annotations")
 			a["service.beta.openshift.io/serving-cert-secret-name"] = UITLSSecret
 			md["annotations"] = a
@@ -177,8 +186,8 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 	case "PersistentVolumeClaim":
 		r.keepPVC(md)
 		r.liveVolume(spec, "pvc/"+name(obj))
-	case "Deployment", "StatefulSet":
-		if kind == "StatefulSet" {
+	case kindDeployment, kindStatefulSet:
+		if kind == kindStatefulSet {
 			for _, t := range asSlice(spec["volumeClaimTemplates"]) {
 				if tm, ok := t.(map[string]any); ok {
 					tmd := mapAt(tm, "metadata")
@@ -199,14 +208,14 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 			}
 		}
 		tpl := mapAt(spec, "template")
-		if kind == "Deployment" && r.plan.Dev() && spec["replicas"] == nil {
+		if kind == kindDeployment && r.plan.Dev() && spec["replicas"] == nil {
 			spec["replicas"] = 1 // no HPA in dev: never keep the replicas an HPA left behind
 		}
-		if kind == "Deployment" && r.usesRWO(tpl) {
+		if kind == kindDeployment && r.usesRWO(tpl) {
 			// rollingUpdate: null makes the upgrade patch drop the live rolling settings (rejected with Recreate).
 			spec["strategy"] = map[string]any{"type": "Recreate", "rollingUpdate": nil}
 		}
-		if kind == "Deployment" && r.rel.Name == "unifai-ui" {
+		if kind == kindDeployment && r.rel.Name == uiRelease {
 			mountUITLS(tpl)
 		}
 		if err := r.mutatePod(tpl); err != nil {
@@ -270,7 +279,7 @@ func asSlice(v any) []any {
 func (r *postRenderer) mutatePod(tpl map[string]any) error {
 	md := mapAt(tpl, "metadata")
 	labels := mapAt(md, "labels")
-	labels[LabelPartOf] = "unifai"
+	labels[LabelPartOf] = PartOf
 	labels[LabelComponent] = r.rel.Component
 	md["labels"] = labels
 	if r.plan.ConfigHash != "" {
@@ -418,8 +427,9 @@ func stripInternalAuthHeader(spec map[string]any) {
 	}
 	hh := mapAt(spec, "httpHeaders")
 	actions := mapAt(hh, "actions")
-	var req []any
-	for _, a := range asSlice(actions["request"]) {
+	cur := asSlice(actions["request"])
+	req := make([]any, 0, len(cur)+len(internalHeaders))
+	for _, a := range cur {
 		if am, ok := a.(map[string]any); ok && slices.Contains(internalHeaders, fmt.Sprint(am["name"])) {
 			continue
 		}
