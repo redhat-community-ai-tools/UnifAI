@@ -196,21 +196,10 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 		cond(ConditionValid, false, "ShapeNotImplemented", "no blueprint template for graph shape "+b.GraphShape)
 		return permanent("graph shape %q has no blueprint template in this operator: nothing emitted", b.GraphShape)
 	}
-	if cr.Spec.GroupTeam && (cr.Spec.TeamID != "" || cr.Spec.TeamRef != "") {
-		cond(ConditionValid, false, "TeamConflict", "spec.groupTeam is exclusive with spec.teamId and spec.teamRef")
-		return permanent("spec.groupTeam is exclusive with spec.teamId and spec.teamRef")
-	}
-	if cr.Spec.GroupTeam && len(b.AccessGroups) == 0 {
-		cond(ConditionValid, false, "NoAccessGroups", "spec.groupTeam needs zuno.access.groups in the bundle")
-		return permanent("spec.groupTeam is set but bundle %s declares no zuno.access.groups", b.Name)
-	}
-	covered, err := r.teamCoversGroups(ctx, cr, b)
-	if err != nil {
+	if reason, msg, err := r.checkTeamAndEntitlement(ctx, cr, b); err != nil {
 		return err
-	}
-	if len(b.AccessGroups) > 0 && cr.Spec.Entitlement != entitlementGatewayOnly && !covered {
-		msg := fmt.Sprintf("zuno.access.groups %v cannot be enforced by UnifAI visibility yet; set spec.groupTeam (or a spec.teamRef whose group members cover them), or spec.entitlement: GatewayOnly to rely on the gateways", b.AccessGroups)
-		cond(ConditionValid, false, "EntitlementUnsupported", msg)
+	} else if reason != "" {
+		cond(ConditionValid, false, reason, msg)
 		return permanent("%s", msg)
 	}
 	cond(ConditionValid, true, "Valid", fmt.Sprintf("OKF %s, %d tasks, shape %s", b.OKFVersion, len(b.Tasks), b.GraphShape))
@@ -245,6 +234,26 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 	st.Message = fmt.Sprintf("%d tasks, %d objects emitted", len(tasks), len(desired))
 	cond(ConditionEmitted, true, "Emitted", st.Message)
 	return nil
+}
+
+// checkTeamAndEntitlement checks the team workspace options against the bundle: groupTeam is exclusive with
+// teamId/teamRef and needs access groups, and access groups need an enforcing team (or GatewayOnly). It returns
+// the condition reason and message of a spec problem (reason "" when fine); err is a transient failure.
+func (r *AgentBundleReconciler) checkTeamAndEntitlement(ctx context.Context, cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) (reason, msg string, err error) {
+	if cr.Spec.GroupTeam && (cr.Spec.TeamID != "" || cr.Spec.TeamRef != "") {
+		return "TeamConflict", "spec.groupTeam is exclusive with spec.teamId and spec.teamRef", nil
+	}
+	if cr.Spec.GroupTeam && len(b.AccessGroups) == 0 {
+		return "NoAccessGroups", fmt.Sprintf("spec.groupTeam is set but bundle %s declares no zuno.access.groups", b.Name), nil
+	}
+	covered, err := r.teamCoversGroups(ctx, cr, b)
+	if err != nil {
+		return "", "", err
+	}
+	if len(b.AccessGroups) > 0 && cr.Spec.Entitlement != entitlementGatewayOnly && !covered {
+		return "EntitlementUnsupported", fmt.Sprintf("zuno.access.groups %v cannot be enforced by UnifAI visibility yet; set spec.groupTeam (or a spec.teamRef whose group members cover them), or spec.entitlement: GatewayOnly to rely on the gateways", b.AccessGroups), nil
+	}
+	return "", "", nil
 }
 
 // checkCeilings refuses any declared tool, knowledge domain or classification outside spec.ceilings.
