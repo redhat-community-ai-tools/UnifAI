@@ -592,7 +592,8 @@ def web_pipeline_handler():
 
     return WebPipelineHandler(
         connector_factory=lambda: WebConnector(timeout=cfg.web_timeout_seconds,
-                                               min_interval=cfg.web_request_interval_seconds),
+                                               min_interval=cfg.web_request_interval_seconds,
+                                               allowed_hosts=cfg.web_allowed_hosts),
         chunker=pdf_chunker(),
         embedder=embedding_generator(),
         data_source_service=data_source_service(),

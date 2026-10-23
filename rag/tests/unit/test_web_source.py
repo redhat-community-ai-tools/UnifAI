@@ -1,4 +1,5 @@
 """Web source: link discovery, conditional fetching, incremental sync, idempotent registration."""
+import socket
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -13,7 +14,13 @@ from core.data_sources.types.web.pipeline_handler import (
 )
 from core.data_sources.types.web.registration import WebRegistration
 from core.pipeline.domain.port import PipelineContext
-from infrastructure.sources.web.connector import WebConnector, discover_links, in_scope
+from infrastructure.sources.web.connector import (
+    WebConnector,
+    WebError,
+    discover_links,
+    in_scope,
+    resolve_public,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -62,7 +69,8 @@ def _session(site, calls):
     session = MagicMock()
     session.headers = {}
 
-    def get(url, headers=None, timeout=None):
+    def get(url, headers=None, timeout=None, allow_redirects=True):
+        assert allow_redirects is False
         calls.append((url, dict(headers or {})))
         status, body, hdrs = site[url]
         return SimpleNamespace(status_code=status, text=body, content=body.encode(), headers=hdrs)
@@ -72,7 +80,8 @@ def _session(site, calls):
 
 
 def _connector(site, calls):
-    return WebConnector(session=_session(site, calls), min_interval=0, sleep=lambda _s: None)
+    return WebConnector(session=_session(site, calls), min_interval=0, sleep=lambda _s: None,
+                        host_check=lambda _h: None)
 
 
 def test_connector_fetches_the_seed_unconditionally_and_the_rest_conditionally():
@@ -89,6 +98,44 @@ def test_connector_survives_an_unreadable_page():
     site = {SEED: (200, LANDING, {}), C1: (503, "", {}), SINGLE: (200, "<p>ok</p>", {})}
     out = dict(_connector(site, []).iter_pages([SEED], {}))
     assert out[C1] is None and out[SINGLE] is not None
+
+
+def test_redirects_are_followed_with_the_host_check_on_each_hop():
+    site = {SEED: (302, "", {"Location": "/en/final"}), "https://docs.example.com/en/final": (200, "<p>ok</p>", {})}
+    seen = []
+    conn = WebConnector(session=_session(site, []), min_interval=0, sleep=lambda _s: None, host_check=seen.append)
+    assert conn.fetch(SEED).html == "<p>ok</p>" and seen == ["docs.example.com", "docs.example.com"]
+
+
+def test_a_redirect_to_an_internal_host_is_refused():
+    site = {SEED: (302, "", {"Location": "http://169.254.169.254/latest/meta-data"})}
+    def check(host):
+        if host == "169.254.169.254":
+            raise WebError(f"{host} resolves to a non-public address")
+
+    conn = WebConnector(session=_session(site, []), min_interval=0, sleep=lambda _s: None, host_check=check)
+    with pytest.raises(WebError, match="non-public"):
+        conn.fetch(SEED)
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "10.0.0.5", "169.254.169.254", "172.30.0.1", "::1", "192.168.1.1"])
+def test_non_public_addresses_are_refused(host, monkeypatch):
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", (host, 0))])
+    with pytest.raises(WebError, match="non-public"):
+        resolve_public("whatever.example.com")
+
+
+def test_public_address_is_accepted(monkeypatch):
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *a, **k: [(0, 0, 0, "", ("23.220.75.245", 0))])
+    resolve_public("docs.redhat.com")
+
+
+def test_allowed_hosts_restrict_sources_to_listed_domains():
+    conn = WebConnector(session=_session({}, []), allowed_hosts=["redhat.com"], host_check=lambda _h: None)
+    conn._check("https://docs.redhat.com/x")
+    for bad in ("https://evil.com/x", "https://notredhat.com/x", "file:///etc/passwd"):
+        with pytest.raises(WebError):
+            conn._check(bad)
 
 
 # ── pipeline handler ─────────────────────────────────────────────────────────

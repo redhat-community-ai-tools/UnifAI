@@ -51,6 +51,8 @@ class AppConfig(SharedConfig):
     # Web source (public pages): per-request timeout and the pause between two requests to the same run.
     web_timeout_seconds: float = 60.0
     web_request_interval_seconds: float = 0.2
+    # Hosts (and their subdomains) a web source may fetch; empty = any host with a public address.
+    web_allowed_hosts: list[str] = []
 
     # Slack Configuration
     default_slack_bot_token: str = ""
