@@ -59,6 +59,11 @@ class CustomAgentNodeConfig(NodeBaseConfig):
         description="Custom system prompt",
     )
     strategy_type: str = Field(default=StrategyType.REACT.value, description="Agent strategy type")
+    retrieve_first: bool = Field(
+        default=False,
+        description="Always search the retriever with the user's message before the model reasons and put "
+                    "the result in the prompt (the retriever stays available as a tool for follow-up searches)",
+    )
     max_rounds: Optional[int] = Field(default=100, description="Maximum number of agent execution rounds")
     hitl_mode: HITLMode = Field(
         default=HITLMode.SKIP,

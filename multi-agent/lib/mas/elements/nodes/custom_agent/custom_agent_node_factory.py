@@ -35,6 +35,7 @@ class CustomAgentNodeFactory(BaseFactory[CustomAgentNodeConfig, CustomAgentNode]
                 system_message=cfg.system_message,
                 strategy_type=cfg.strategy_type,
                 max_rounds=cfg.max_rounds,
+                retrieve_first=cfg.retrieve_first,
                 retries=cfg.retries,
                 hitl_mode=cfg.hitl_mode,
                 execution_holder=execution_holder,
