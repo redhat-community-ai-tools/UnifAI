@@ -258,10 +258,10 @@ func ragValues(p *Plan, v map[string]any) map[string]any {
 			set(v, "env.OIDC_ISSUER_URL", strings.TrimRight(p.OIDCURL, "/")+"/realms/"+p.OIDCRealm)
 		}
 	}
+	// Celery workers consume one queue per source type; web sources need no stack setting, so every source type is
+	// always consumed (an idle queue costs nothing).
+	set(v, "env.CELERY_QUEUES", "slack_queue,document_queue,slack_events_queue,confluence_queue,web_queue")
 	if c := r.Confluence; c != nil {
-		// Celery workers consume one queue per source type (confluence and web sources share this switch:
-		// the default queues stay unchanged so existing stacks do not roll).
-		set(v, "env.CELERY_QUEUES", "slack_queue,document_queue,slack_events_queue,confluence_queue,web_queue")
 		if c.VerifyTLS != nil && !*c.VerifyTLS {
 			set(v, "env.CONFLUENCE_VERIFY_TLS", "false")
 		}

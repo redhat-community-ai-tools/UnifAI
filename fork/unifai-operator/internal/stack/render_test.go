@@ -242,10 +242,14 @@ func TestRenderOverrides(t *testing.T) {
 func TestRAGSettings(t *testing.T) {
 	off := renderAll(t, testPlan(t, nil))
 	for _, rel := range []string{"unifai-rag-server", "unifai-rag-celery"} {
-		for _, absent := range []string{"QDRANT_HYBRID_ENABLED", "RAG_SHARED_PUBLISHERS", "OIDC_ISSUER_URL", "confluence_queue"} {
+		for _, absent := range []string{"QDRANT_HYBRID_ENABLED", "RAG_SHARED_PUBLISHERS", "OIDC_ISSUER_URL"} {
 			if strings.Contains(off[rel], absent) {
 				t.Errorf("%s: %s must not be rendered by default (it would roll existing stacks)", rel, absent)
 			}
+		}
+		// Every source type is always consumed: a web source needs no stack setting.
+		if !strings.Contains(off[rel], "web_queue") || !strings.Contains(off[rel], "confluence_queue") {
+			t.Errorf("%s: the celery queues of the confluence and web sources are not consumed by default", rel)
 		}
 	}
 	if _, ok := ragSecret(map[string]string{})["CONFLUENCE_TOKEN"]; ok {
