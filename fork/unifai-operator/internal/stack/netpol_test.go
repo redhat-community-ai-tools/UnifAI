@@ -82,6 +82,14 @@ func TestInternalAPIsPolicy(t *testing.T) {
 	}
 }
 
+func TestNoChartNetworkPolicy(t *testing.T) {
+	for rel, manifest := range renderAll(t, testPlan(t, nil)) {
+		if strings.Contains(manifest, "kind: NetworkPolicy") {
+			t.Errorf("%s renders a NetworkPolicy of its chart (it would open the stack to other namespaces)", rel)
+		}
+	}
+}
+
 func TestRAGClientsPolicy(t *testing.T) {
 	if objs := BaseObjects(testPlan(t, nil)); hasObject(objs, RAGClientsPolicyName) {
 		t.Error("RAG clients policy without spec.exposure.ragClients")

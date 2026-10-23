@@ -611,8 +611,8 @@ open("/dev/termination-log", "w").write("; ".join(out))
 sys.exit(0 if ok else 1)
 `
 
-// ragClientProbe calls the RAG server and MAS of the stack in STACK_NS from another namespace: MAS must stay
-// unreachable, the RAG server must be reachable when EXPECT_RAG=open and unreachable otherwise.
+// ragClientProbe calls the RAG server and MAS of the stack in STACK_NS from another namespace: MAS and the data
+// stores must stay unreachable, the RAG server must be reachable when EXPECT_RAG=open and unreachable otherwise.
 const ragClientProbe = `
 import os, sys, urllib.request, urllib.error
 def reach(url):
@@ -622,12 +622,22 @@ def reach(url):
         return "http %d" % e.code
     except Exception as e:
         return "blocked (%s)" % type(e).__name__
+import socket
+def tcp(host, port):
+    try:
+        socket.create_connection((host, port), timeout=10).close()
+        return "open"
+    except Exception as e:
+        return "blocked (%s)" % type(e).__name__
 ns = os.environ["STACK_NS"]
 rag = reach("http://unifai-rag-server.%s.svc:13456/" % ns)
 mas = reach("http://unifai-multiagent-be.%s.svc:8003/" % ns)
+stores = {"mongodb": tcp("mongodb.%s.svc" % ns, 27017), "temporal": tcp("temporal.%s.svc" % ns, 7233),
+          "rabbitmq": tcp("rabbitmq.%s.svc" % ns, 5672)}
 want_open = os.environ["EXPECT_RAG"] == "open"
-ok = mas.startswith("blocked") and (rag.startswith("http") if want_open else rag.startswith("blocked"))
-open("/dev/termination-log", "w").write("rag %s; mas %s" % (rag, mas))
+ok = mas.startswith("blocked") and (rag.startswith("http") if want_open else rag.startswith("blocked")) and \
+    all(v.startswith("blocked") for v in stores.values())
+open("/dev/termination-log", "w").write("rag %s; mas %s; %s" % (rag, mas, "; ".join("%s %s" % kv for kv in stores.items())))
 sys.exit(0 if ok else 1)
 `
 

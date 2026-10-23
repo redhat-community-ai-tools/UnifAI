@@ -181,6 +181,10 @@ func (r *postRenderer) mutate(obj map[string]any) (bool, error) {
 			a["service.beta.openshift.io/serving-cert-secret-name"] = UITLSSecret
 			md["annotations"] = a
 		}
+	case "NetworkPolicy":
+		// The upstream charts admit their port from every namespace (MongoDB, RabbitMQ, docling) or everything
+		// (Temporal, Redis Insight): NetworkPolicies add up, so they would undo the stack ones.
+		return false, nil
 	case "HorizontalPodAutoscaler":
 		if r.plan.Dev() {
 			return false, nil
