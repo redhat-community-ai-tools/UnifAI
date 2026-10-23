@@ -330,15 +330,19 @@ func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) 
 			return 0, fmt.Errorf("%T %s: %w", o, o.GetName(), err)
 		}
 	}
+	stale := []string{}
 	if !networkIsolated(st) {
-		for _, name := range []string{stack.NetworkPolicyName, stack.InternalAPIsPolicyName} {
-			np := &unstructured.Unstructured{}
-			np.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"})
-			np.SetNamespace(st.Namespace)
-			np.SetName(name)
-			if err := r.Delete(ctx, np); client.IgnoreNotFound(err) != nil {
-				return 0, err
-			}
+		stale = append(stale, stack.NetworkPolicyName, stack.InternalAPIsPolicyName, stack.RAGClientsPolicyName)
+	} else if len(st.Spec.Exposure.RAGClients) == 0 {
+		stale = append(stale, stack.RAGClientsPolicyName)
+	}
+	for _, name := range stale {
+		np := &unstructured.Unstructured{}
+		np.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"})
+		np.SetNamespace(st.Namespace)
+		np.SetName(name)
+		if err := r.Delete(ctx, np); client.IgnoreNotFound(err) != nil {
+			return 0, err
 		}
 	}
 

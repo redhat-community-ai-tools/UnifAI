@@ -224,6 +224,33 @@ func TestUnifaiStack(t *testing.T) {
 		checkInternalAuth(t, ns)
 	})
 
+	t.Run("spec.exposure.ragClients opens the RAG server, and only it, to another namespace", func(t *testing.T) {
+		other := newNamespace(t, "ragclient")
+		env := []corev1.EnvVar{{Name: "STACK_NS", Value: ns}}
+		if ok, msg := runProbe(t, other, "e2e-rag-closed", ragClientProbe, nil,
+			append(env, corev1.EnvVar{Name: "EXPECT_RAG", Value: "blocked"})...); !ok {
+			t.Fatalf("another namespace reaches the stack APIs: %s", msg)
+		}
+		must(t, c.Get(ctx, client.ObjectKeyFromObject(st), st))
+		st.Spec.Exposure.RAGClients = []unifaiv1.RAGClient{{Namespace: other}}
+		must(t, c.Update(ctx, st))
+		eventually(t, "RAG clients policy", 3*time.Minute, func() (bool, string) {
+			err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: "unifai-rag-clients"}, &networkingv1.NetworkPolicy{})
+			return err == nil, fmt.Sprint(err)
+		})
+		if ok, msg := runProbe(t, other, "e2e-rag-open", ragClientProbe, nil,
+			append(env, corev1.EnvVar{Name: "EXPECT_RAG", Value: "open"})...); !ok {
+			t.Errorf("ragClients: %s", msg)
+		}
+		must(t, c.Get(ctx, client.ObjectKeyFromObject(st), st))
+		st.Spec.Exposure.RAGClients = nil
+		must(t, c.Update(ctx, st))
+		eventually(t, "RAG clients policy removed", 3*time.Minute, func() (bool, string) {
+			err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: "unifai-rag-clients"}, &networkingv1.NetworkPolicy{})
+			return apierrors.IsNotFound(err), fmt.Sprint(err)
+		})
+	})
+
 	t.Run("objects and a chat through the whole chain", func(t *testing.T) {
 		deployMockLLM(t, ns)
 		llm := &unifaiv1.UnifaiLLM{ObjectMeta: metav1.ObjectMeta{Name: "e2e-llm", Namespace: ns}, Spec: unifaiv1.UnifaiLLMSpec{
@@ -256,6 +283,13 @@ func TestUnifaiStack(t *testing.T) {
 		if !strings.Contains(chat.Status.Result, "pong") {
 			t.Errorf("unexpected chat result %s", chat.Status.Result)
 		}
+	})
+
+	t.Run("an agent bundle signed keyless is verified, another signer refused", func(t *testing.T) {
+		if os.Getenv("E2E_AGENTBUNDLE") == "0" {
+			t.Skip("E2E_AGENTBUNDLE=0: no access to quay.io/zuno/okf-tekos")
+		}
+		checkAgentBundleKeyless(t, ns)
 	})
 
 	t.Run("a team with a group member and an object in its workspace", func(t *testing.T) {
@@ -531,6 +565,26 @@ open("/dev/termination-log", "w").write("; ".join(out))
 sys.exit(0 if ok else 1)
 `
 
+// ragClientProbe calls the RAG server and MAS of the stack in STACK_NS from another namespace: MAS must stay
+// unreachable, the RAG server must be reachable when EXPECT_RAG=open and unreachable otherwise.
+const ragClientProbe = `
+import os, sys, urllib.request, urllib.error
+def reach(url):
+    try:
+        return "http %d" % urllib.request.urlopen(url, timeout=10).status
+    except urllib.error.HTTPError as e:
+        return "http %d" % e.code
+    except Exception as e:
+        return "blocked (%s)" % type(e).__name__
+ns = os.environ["STACK_NS"]
+rag = reach("http://unifai-rag-server.%s.svc:13456/" % ns)
+mas = reach("http://unifai-multiagent-be.%s.svc:8003/" % ns)
+want_open = os.environ["EXPECT_RAG"] == "open"
+ok = mas.startswith("blocked") and (rag.startswith("http") if want_open else rag.startswith("blocked"))
+open("/dev/termination-log", "w").write("rag %s; mas %s" % (rag, mas))
+sys.exit(0 if ok else 1)
+`
+
 // isolationProbe checks from a pod without the internal-client label that the UnifAI APIs are unreachable (the
 // connection times out) while another service of the namespace (Qdrant) still answers.
 const isolationProbe = `
@@ -557,14 +611,16 @@ sys.exit(0 if ok else 1)
 `
 
 // runProbe runs a Python script in a pod of the namespace and returns whether it succeeded and its message.
-func runProbe(t *testing.T, ns, name, script string, labels map[string]string) (bool, string) {
+func runProbe(t *testing.T, ns, name, script string, labels map[string]string, env ...corev1.EnvVar) (bool, string) {
 	t.Helper()
+	if env == nil {
+		env = []corev1.EnvVar{{Name: "INTERNAL_AUTH_SECRET", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "unifai-internal-auth"}, Key: "INTERNAL_AUTH_SECRET"}}}}
+	}
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels}, Spec: corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
 		Containers: []corev1.Container{{Name: "probe", Image: "registry.access.redhat.com/ubi9/python-312:latest",
-			Command: []string{"python", "-c", script},
-			Env: []corev1.EnvVar{{Name: "INTERNAL_AUTH_SECRET", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "unifai-internal-auth"}, Key: "INTERNAL_AUTH_SECRET"}}}}}},
+			Command: []string{"python", "-c", script}, Env: env}},
 	}}
 	must(t, c.Create(ctx, pod))
 	defer func() { _ = c.Delete(ctx, pod) }()

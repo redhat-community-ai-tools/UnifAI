@@ -8,6 +8,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/yaml"
+
+	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"
 )
 
 // renderedPods returns the pod template labels of every rendered workload, by "<release>/<kind>/<name>".
@@ -78,4 +80,38 @@ func TestInternalAPIsPolicy(t *testing.T) {
 	if !optIn.Matches(labels.Set{InternalClientLabel: "true"}) {
 		t.Error("the internal-client label does not admit a pod")
 	}
+}
+
+func TestRAGClientsPolicy(t *testing.T) {
+	if objs := BaseObjects(testPlan(t, nil)); hasObject(objs, RAGClientsPolicyName) {
+		t.Error("RAG clients policy without spec.exposure.ragClients")
+	}
+	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) {
+		s.Exposure.RAGClients = []unifaiv1.RAGClient{
+			{Namespace: "zuno-ai-run", PodLabels: map[string]string{"app": "mcp-gateway"}}, {Namespace: "ragas"}}
+	})
+	if !hasObject(BaseObjects(p), RAGClientsPolicyName) {
+		t.Fatal("no RAG clients policy")
+	}
+	np := ragClientsPolicy(p)
+	target, _ := metav1.LabelSelectorAsSelector(&np.Spec.PodSelector)
+	for name, l := range renderedPods(t, p) {
+		if target.Matches(l) != strings.HasPrefix(name, "unifai-rag-server/Deployment/") {
+			t.Errorf("%s: selected=%v, only the RAG server may be opened", name, target.Matches(l))
+		}
+	}
+	from := np.Spec.Ingress[0].From
+	if len(from) != 2 || from[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"] != "zuno-ai-run" ||
+		from[0].PodSelector.MatchLabels["app"] != "mcp-gateway" || from[1].PodSelector != nil {
+		t.Errorf("peers %+v", from)
+	}
+}
+
+func hasObject(objs []ctrlObject, name string) bool {
+	for _, o := range objs {
+		if o.GetName() == name {
+			return true
+		}
+	}
+	return false
 }

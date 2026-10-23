@@ -42,6 +42,22 @@ type ExposureSpec struct {
 	// +kubebuilder:default=true
 	// +optional
 	NetworkPolicy *bool `json:"networkPolicy,omitempty"`
+	// Callers outside the stack namespace admitted to the RAG server only (not MAS, identity or backend), e.g. a
+	// gateway using the RAG search API. Each entry admits the pods of a namespace, or those with the given labels.
+	// +listType=map
+	// +listMapKey=namespace
+	// +optional
+	RAGClients []RAGClient `json:"ragClients,omitempty"`
+}
+
+// RAGClient admits pods of another namespace to the RAG server.
+type RAGClient struct {
+	// Namespace of the callers.
+	// +kubebuilder:validation:MinLength=1
+	Namespace string `json:"namespace"`
+	// Labels the calling pods must carry (all pods of the namespace when empty).
+	// +optional
+	PodLabels map[string]string `json:"podLabels,omitempty"`
 }
 
 // ExternalOIDCSpec points the identity service to an existing Keycloak realm.

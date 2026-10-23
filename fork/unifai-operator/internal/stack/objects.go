@@ -160,6 +160,9 @@ func BaseObjects(p *Plan) []ctrlObject {
 	}
 	if p.Spec.Exposure.NetworkPolicy == nil || *p.Spec.Exposure.NetworkPolicy {
 		objs = append(objs, networkPolicy(p), internalAPIsPolicy(p))
+		if len(p.Spec.Exposure.RAGClients) > 0 {
+			objs = append(objs, ragClientsPolicy(p))
+		}
 	}
 	return objs
 }
@@ -188,6 +191,7 @@ func ServiceConfig(p *Plan, cmName, prefix, component string, svc *corev1.Servic
 const (
 	NetworkPolicyName      = "unifai-stack"
 	InternalAPIsPolicyName = "unifai-internal-apis"
+	RAGClientsPolicyName   = "unifai-rag-clients"
 	// InternalClientLabel admits a pod of the namespace to the UnifAI APIs (they still require the internal secret).
 	InternalClientLabel = "unifai.startx.fr/internal-client"
 )
@@ -250,6 +254,27 @@ func internalAPIsPolicy(p *Plan) *networkingv1.NetworkPolicy {
 		ObjectMeta: objMeta(p, InternalAPIsPolicyName, "shared"),
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: *nameSelector(metav1.LabelSelectorOpIn, internalAPIs),
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: peers}},
+		},
+	}
+}
+
+// ragClientsPolicy admits spec.exposure.ragClients to the RAG server pods only.
+func ragClientsPolicy(p *Plan) *networkingv1.NetworkPolicy {
+	peers := make([]networkingv1.NetworkPolicyPeer, 0, len(p.Spec.Exposure.RAGClients))
+	for _, rc := range p.Spec.Exposure.RAGClients {
+		peer := nsPeer(map[string]string{"kubernetes.io/metadata.name": rc.Namespace})
+		if len(rc.PodLabels) > 0 {
+			peer.PodSelector = &metav1.LabelSelector{MatchLabels: rc.PodLabels}
+		}
+		peers = append(peers, peer)
+	}
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: objMeta(p, RAGClientsPolicyName, "rag"),
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{
+				"app.kubernetes.io/name": "rag", "app.kubernetes.io/instance": "unifai-rag-server"}},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
 			Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: peers}},
 		},
