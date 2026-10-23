@@ -476,6 +476,9 @@ export function useGraphDisplay({
 
         setLoading(false);
       } catch (err: unknown) {
+        // A superseded run (the workspace or blueprint changed while its request was in flight, e.g. the team
+        // resolved after the first render) must not report its error over the run that replaced it.
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : "Failed to load workflow");
         setLoading(false);
       }
