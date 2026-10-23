@@ -5,7 +5,7 @@ from mas.blueprints.exceptions import InvalidMetadataKeysError
 from mas.blueprints.service import validate_client_metadata
 
 GOOD = {
-    "title": "Tekos", "displayName": "Tekos", "tileDescription": "Technical assistant",
+    "agent": "tekos", "title": "Tekos", "displayName": "Tekos", "tileDescription": "Technical assistant",
     "description": "Answers from the internal documentation.", "icon": "code", "color": "#0066cc",
     "state": "active", "classification": "C2", "maintainer": "platform team",
     "tasks": [{"name": "write-code", "title": "Write code"}],

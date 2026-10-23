@@ -39,7 +39,7 @@ _USAGE_SCOPES = frozenset({"public", "private"})
 # Descriptive sheet of a blueprint (public fields only). Anything else is refused, so a prompt, a tool list or
 # an access group can never be stored here by accident.
 DISPLAY_TEXT_FIELDS = {
-    "title": 200, "description": 2000, "displayName": 100, "tileDescription": 300, "maintainer": 200,
+    "agent": 100, "title": 200, "description": 2000, "displayName": 100, "tileDescription": 300, "maintainer": 200,
     "state": 40, "classification": 40,
 }
 _DISPLAY_TASK_FIELDS = {"name": 100, "title": 200}
