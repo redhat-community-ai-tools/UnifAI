@@ -358,6 +358,11 @@ func renderBundle(cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) ([]client.Objec
 		}
 		if len(t.AllowedKnowledge) > 0 && cr.Spec.Retriever != "" {
 			agent["retriever"] = "$ref:retriever/" + cr.Spec.Retriever
+			// Graph shape retrieve_reason_respond always retrieves before it reasons. In UnifAI retrieval is
+			// a tool the model may skip, so say so in the prompt.
+			if msg, ok := agent["system_message"].(string); ok {
+				agent["system_message"] = msg + retrieveFirstDirective
+			}
 		}
 		objs = append(objs, &unifaiv1.UnifaiAgent{ObjectMeta: childMeta(cr, name), Spec: unifaiv1.UnifaiAgentSpec{
 			CommonSpec: common, Type: "custom_agent_node", ConfigSpec: unifaiv1.ConfigSpec{Config: rawJSON(agent)}}})
@@ -497,6 +502,11 @@ func (r *AgentBundleReconciler) teamCoversGroups(ctx context.Context, cr *unifai
 
 // groupTeamName is the name of the UnifaiTeam a bundle emits for spec.groupTeam.
 func groupTeamName(cr *unifaiv1.UnifaiAgentBundle) string { return "agent-" + cr.Name }
+
+// retrieveFirstDirective is appended to the system prompt of an agent with a retriever (OKF graph shape
+// retrieve_reason_respond: retrieval is a fixed step before the model reasons, not an option).
+const retrieveFirstDirective = "\n\nBefore you answer, always search the knowledge base with your knowledge retrieval tool and " +
+	"ground the answer in what it returns, citing the pages you used. Use your other tools only after that."
 
 func childMeta(cr *unifaiv1.UnifaiAgentBundle, name string) metav1.ObjectMeta {
 	return metav1.ObjectMeta{Name: name, Namespace: cr.Namespace, Labels: map[string]string{unifaiv1.AgentBundleLabel: cr.Name}}

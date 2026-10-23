@@ -192,6 +192,7 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		Expect(acfg["providers"]).To(Equal([]any{"$ref:provider/mcp-gateway"}))
 		Expect(acfg["retriever"]).To(Equal("$ref:retriever/knowledge"))
 		Expect(acfg["system_message"]).To(HavePrefix("You are Tekos"))
+		Expect(acfg["system_message"]).To(HaveSuffix(retrieveFirstDirective), "an agent with a retriever is told to retrieve first")
 	})
 
 	It("emits a per-task MCP provider carrying the Zuno headers when spec.mcp is set", func() {
