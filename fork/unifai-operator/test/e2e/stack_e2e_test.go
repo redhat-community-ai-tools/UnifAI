@@ -507,7 +507,7 @@ func deployMockLLM(t *testing.T, ns string) {
 	})
 }
 
-// internalAuthProbe calls MAS, RAG and identity (through its Service, as the apps do) from inside the namespace (allowed by the stack NetworkPolicy) with the
+// internalAuthProbe calls MAS, RAG and identity (through its Service, as the apps do) from a pod of the namespace admitted by the stack NetworkPolicies with the
 // internal identity header, without and with the shared secret; it exits 0 when only the secret is accepted.
 const internalAuthProbe = `
 import os, sys, urllib.request, urllib.error
@@ -531,21 +531,45 @@ open("/dev/termination-log", "w").write("; ".join(out))
 sys.exit(0 if ok else 1)
 `
 
-// checkInternalAuth runs internalAuthProbe in a pod of the namespace and fails unless MAS, RAG and identity refuse the
-// internal identity header without the right X-Internal-Auth and accept it with the stack's secret.
-func checkInternalAuth(t *testing.T, ns string) {
+// isolationProbe checks from a pod without the internal-client label that the UnifAI APIs are unreachable (the
+// connection times out) while another service of the namespace (Qdrant) still answers.
+const isolationProbe = `
+import sys, urllib.request, urllib.error
+def reach(url):
+    try:
+        return "http %d" % urllib.request.urlopen(url, timeout=10).status
+    except urllib.error.HTTPError as e:
+        return "http %d" % e.code
+    except Exception as e:
+        return "blocked (%s)" % type(e).__name__
+apis = {"mas": "http://unifai-multiagent-be:8003/", "rag": "http://unifai-rag-server:13456/",
+        "identity": "http://identity:13456/", "backend": "http://unifai-backend:8005/"}
+out, ok = [], True
+for name, url in apis.items():
+    r = reach(url)
+    out.append("%s %s" % (name, r))
+    ok = ok and r.startswith("blocked")
+q = reach("http://qdrant:6333/")
+out.append("qdrant " + q)
+ok = ok and q.startswith("http")
+open("/dev/termination-log", "w").write("; ".join(out))
+sys.exit(0 if ok else 1)
+`
+
+// runProbe runs a Python script in a pod of the namespace and returns whether it succeeded and its message.
+func runProbe(t *testing.T, ns, name, script string, labels map[string]string) (bool, string) {
 	t.Helper()
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "e2e-internal-auth", Namespace: ns}, Spec: corev1.PodSpec{
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels}, Spec: corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
 		Containers: []corev1.Container{{Name: "probe", Image: "registry.access.redhat.com/ubi9/python-312:latest",
-			Command: []string{"python", "-c", internalAuthProbe},
+			Command: []string{"python", "-c", script},
 			Env: []corev1.EnvVar{{Name: "INTERNAL_AUTH_SECRET", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{Name: "unifai-internal-auth"}, Key: "INTERNAL_AUTH_SECRET"}}}}}},
 	}}
 	must(t, c.Create(ctx, pod))
 	defer func() { _ = c.Delete(ctx, pod) }()
 	var msg string
-	eventually(t, "internal auth probe finished", 5*time.Minute, func() (bool, string) {
+	eventually(t, name+" finished", 5*time.Minute, func() (bool, string) {
 		if err := c.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
 			return false, err.Error()
 		}
@@ -557,7 +581,19 @@ func checkInternalAuth(t *testing.T, ns string) {
 		return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed, string(pod.Status.Phase)
 	})
 	t.Log(msg)
-	if pod.Status.Phase != corev1.PodSucceeded {
+	return pod.Status.Phase == corev1.PodSucceeded, msg
+}
+
+// checkInternalAuth runs internalAuthProbe in a pod admitted to the APIs (internal-client label) and fails unless
+// MAS, RAG and identity refuse the identity header without the internal secret; then checks that a pod without
+// that label cannot reach the APIs at all (stack NetworkPolicies).
+func checkInternalAuth(t *testing.T, ns string) {
+	t.Helper()
+	if ok, msg := runProbe(t, ns, "e2e-internal-auth", internalAuthProbe,
+		map[string]string{"unifai.startx.fr/internal-client": "true"}); !ok {
 		t.Errorf("MAS/RAG must accept X-Authenticated-User only with the internal secret: %s", msg)
+	}
+	if ok, msg := runProbe(t, ns, "e2e-isolation", isolationProbe, nil); !ok {
+		t.Errorf("the UnifAI APIs must only be reachable from the UnifAI pods: %s", msg)
 	}
 }

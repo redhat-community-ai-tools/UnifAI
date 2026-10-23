@@ -36,7 +36,9 @@ type ExposureSpec struct {
 	// They have no authentication: keep false outside of debugging.
 	// +optional
 	ExposeInternal bool `json:"exposeInternal,omitempty"`
-	// Restrict ingress to the namespace, the OpenShift router and the operator (the internal APIs trust an identity header).
+	// Restrict ingress to the namespace, the OpenShift router and the operator, and the UnifAI APIs (MAS, RAG,
+	// identity, backend) to the UnifAI pods and the pods labelled unifai.startx.fr/internal-client=true.
+	// When false, the NetworkIsolated condition is False.
 	// +kubebuilder:default=true
 	// +optional
 	NetworkPolicy *bool `json:"networkPolicy,omitempty"`

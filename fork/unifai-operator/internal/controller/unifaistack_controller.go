@@ -104,12 +104,24 @@ func (r *StackReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
+// networkIsolated reports whether the stack NetworkPolicies are enabled (the default).
+func networkIsolated(st *unifaiv1.UnifaiStack) bool {
+	return st.Spec.Exposure.NetworkPolicy == nil || *st.Spec.Exposure.NetworkPolicy
+}
+
 func (r *StackReconciler) setStatus(ctx context.Context, st *unifaiv1.UnifaiStack, phase, msg string, ready metav1.ConditionStatus, reason string) error {
 	prev := st.Status.Phase
 	st.Status.Phase, st.Status.Message, st.Status.ObservedGeneration = phase, unifai.Truncate(msg, 1000), st.Generation
 	st.Status.OperatorVersion = OperatorVersion
 	meta.SetStatusCondition(&st.Status.Conditions, metav1.Condition{Type: "Ready", Status: ready, Reason: reason,
 		Message: unifai.Truncate(msg, 1000), ObservedGeneration: st.Generation})
+	isolation := metav1.Condition{Type: "NetworkIsolated", Status: metav1.ConditionTrue, Reason: "NetworkPolicy",
+		Message: "only the namespace reaches the stack, only the UnifAI pods reach its APIs", ObservedGeneration: st.Generation}
+	if !networkIsolated(st) {
+		isolation.Status, isolation.Reason = metav1.ConditionFalse, "Disabled"
+		isolation.Message = "spec.exposure.networkPolicy is false: any pod of the cluster can reach the UnifAI APIs and data stores"
+	}
+	meta.SetStatusCondition(&st.Status.Conditions, isolation)
 	// Merge patch from an empty status: no resourceVersion conflict (arrays such as components are replaced whole).
 	base := st.DeepCopy()
 	base.Status = unifaiv1.UnifaiStackStatus{}
@@ -317,13 +329,15 @@ func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) 
 			return 0, fmt.Errorf("%T %s: %w", o, o.GetName(), err)
 		}
 	}
-	if !(st.Spec.Exposure.NetworkPolicy == nil || *st.Spec.Exposure.NetworkPolicy) {
-		np := &unstructured.Unstructured{}
-		np.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"})
-		np.SetNamespace(st.Namespace)
-		np.SetName(stack.NetworkPolicyName)
-		if err := r.Delete(ctx, np); client.IgnoreNotFound(err) != nil {
-			return 0, err
+	if !networkIsolated(st) {
+		for _, name := range []string{stack.NetworkPolicyName, stack.InternalAPIsPolicyName} {
+			np := &unstructured.Unstructured{}
+			np.SetGroupVersionKind(schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"})
+			np.SetNamespace(st.Namespace)
+			np.SetName(name)
+			if err := r.Delete(ctx, np); client.IgnoreNotFound(err) != nil {
+				return 0, err
+			}
 		}
 	}
 

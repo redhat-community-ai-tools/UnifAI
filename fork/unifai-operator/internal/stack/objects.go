@@ -159,7 +159,7 @@ func BaseObjects(p *Plan) []ctrlObject {
 		objs = append(objs, secret(p, "gcp-vertex-credentials", "multiagent", map[string]string{"gcp-sa-key.json": key}))
 	}
 	if p.Spec.Exposure.NetworkPolicy == nil || *p.Spec.Exposure.NetworkPolicy {
-		objs = append(objs, networkPolicy(p))
+		objs = append(objs, networkPolicy(p), internalAPIsPolicy(p))
 	}
 	return objs
 }
@@ -184,29 +184,72 @@ func ServiceConfig(p *Plan, cmName, prefix, component string, svc *corev1.Servic
 	})
 }
 
-// NetworkPolicyName is the stack's ingress policy.
-const NetworkPolicyName = "unifai-stack"
+// NetworkPolicyName is the stack's ingress policy; InternalAPIsPolicyName restricts the UnifAI APIs further.
+const (
+	NetworkPolicyName      = "unifai-stack"
+	InternalAPIsPolicyName = "unifai-internal-apis"
+	// InternalClientLabel admits a pod of the namespace to the UnifAI APIs (they still require the internal secret).
+	InternalClientLabel = "unifai.startx.fr/internal-client"
+)
 
-// networkPolicy admits traffic from the namespace itself, the OpenShift router, the monitoring stack and the
-// operators (this one and the Crunchy/RHBK ones running in openshift-operators). The UnifAI internal APIs trust an
-// X-Authenticated-User header, so they must not be reachable from other namespaces.
-func networkPolicy(p *Plan) *networkingv1.NetworkPolicy {
-	nsSel := func(labels map[string]string) networkingv1.NetworkPolicyPeer {
-		return networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: labels}}
-	}
+// internalAPIs are the app.kubernetes.io/name of the UnifAI API pods (multiagent: backend and temporal worker);
+// apiClients are those of the UnifAI pods that call them.
+var (
+	internalAPIs = []string{"multiagent", "rag", "identity", "unifai-backend"}
+	apiClients   = []string{"ui", "multiagent", "rag", "unifai-rag-celery", "identity", "unifai-backend"}
+)
+
+func nsPeer(labels map[string]string) networkingv1.NetworkPolicyPeer {
+	return networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: labels}}
+}
+
+// clusterPeers are the namespaces admitted to every pod: the OpenShift router, the monitoring stack and the
+// operators (this one and the Crunchy/RHBK ones running in openshift-operators).
+func clusterPeers(p *Plan) []networkingv1.NetworkPolicyPeer {
 	peers := []networkingv1.NetworkPolicyPeer{
-		{PodSelector: &metav1.LabelSelector{}},
-		nsSel(map[string]string{"policy-group.network.openshift.io/ingress": ""}),
-		nsSel(map[string]string{"network.openshift.io/policy-group": "monitoring"}),
-		nsSel(map[string]string{"kubernetes.io/metadata.name": "openshift-operators"}),
+		nsPeer(map[string]string{"policy-group.network.openshift.io/ingress": ""}),
+		nsPeer(map[string]string{"network.openshift.io/policy-group": "monitoring"}),
+		nsPeer(map[string]string{"kubernetes.io/metadata.name": "openshift-operators"}),
 	}
 	if p.OperatorNamespace != "" && p.OperatorNamespace != "openshift-operators" && p.OperatorNamespace != p.Namespace {
-		peers = append(peers, nsSel(map[string]string{"kubernetes.io/metadata.name": p.OperatorNamespace}))
+		peers = append(peers, nsPeer(map[string]string{"kubernetes.io/metadata.name": p.OperatorNamespace}))
 	}
+	return peers
+}
+
+func nameSelector(op metav1.LabelSelectorOperator, names []string) *metav1.LabelSelector {
+	return &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{
+		{Key: "app.kubernetes.io/name", Operator: op, Values: names}}}
+}
+
+// networkPolicy admits traffic from the namespace itself and the cluster peers to every pod but the UnifAI APIs,
+// which internalAPIsPolicy covers. Other namespaces cannot reach the stack.
+func networkPolicy(p *Plan) *networkingv1.NetworkPolicy {
+	peers := append([]networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{}}}, clusterPeers(p)...)
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: objMeta(p, NetworkPolicyName, "shared"),
 		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{},
+			PodSelector: *nameSelector(metav1.LabelSelectorOpNotIn, internalAPIs),
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: peers}},
+		},
+	}
+}
+
+// internalAPIsPolicy admits to the UnifAI APIs (MAS, RAG, identity, backend) only the UnifAI pods, the pods labelled
+// InternalClientLabel=true and the cluster peers: tools, MCP servers or models deployed in the namespace cannot
+// call them, even though the APIs also require the internal secret with an identity header.
+func internalAPIsPolicy(p *Plan) *networkingv1.NetworkPolicy {
+	clients := nameSelector(metav1.LabelSelectorOpIn, apiClients)
+	clients.MatchLabels = map[string]string{"app.kubernetes.io/part-of": "unifai"}
+	peers := append([]networkingv1.NetworkPolicyPeer{
+		{PodSelector: clients},
+		{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{InternalClientLabel: "true"}}},
+	}, clusterPeers(p)...)
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: objMeta(p, InternalAPIsPolicyName, "shared"),
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: *nameSelector(metav1.LabelSelectorOpIn, internalAPIs),
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
 			Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: peers}},
 		},

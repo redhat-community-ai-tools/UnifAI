@@ -42,7 +42,10 @@ fork-specific is applied by the operator at render time:
   of the self-signed certificate baked in the image), and every TLS-terminating Route deletes the
   `X-Authenticated-User` request header: MAS and RAG trust it as the caller identity when no session cookie is sent;
 - `unifai-stack` NetworkPolicy: ingress only from the namespace, the OpenShift router, monitoring, the operator's
-  namespace and `openshift-operators` (the internal APIs trust an `X-Authenticated-User` header).
+  namespace and `openshift-operators`; `unifai-internal-apis`: MAS, RAG, identity and backend only from the UnifAI
+  pods, the pods labelled `unifai.startx.fr/internal-client=true` and those namespaces, so models, MCP servers or
+  tools deployed in the namespace cannot call them (they also require the internal secret with an identity header).
+  `spec.exposure.networkPolicy: false` removes both and sets the `NetworkIsolated` condition to False.
 
 RAG: the upstream `unifai-rag` image has neither docling nor sentence-transformers, so conversion and embeddings are
 always remote services. By default (`rag.docling.mode` / `rag.embedding.mode` = `deploy`, `local` is a synonym) the
@@ -278,7 +281,8 @@ namespaces to be gone before returning.
 
 e2e (`make test-e2e`, or `canary-e2e` against the canary) on the current cluster, throwaway namespaces
 `unifai-e2e-*`: stack Ready + invariants (singleton, routes, NetworkPolicy, secrets, Recreate on RWO volumes,
-replicas), the internal auth header refused through the UI route, LLM/agent/workflow/chat, no needless Helm upgrade,
+replicas), the internal auth header refused through the UI route and without the secret, the APIs unreachable
+from a pod without the internal-client label, LLM/agent/workflow/chat, no needless Helm upgrade,
 Delete-policy cleanup; `E2E_UPGRADE=1` (canary only): a stack deployed by the OLM instance is handed to the candidate
 (same encryption key, same UnifAI objects, chat); `E2E_KEYCLOAK=1`: managed Keycloak (RHBK install, realm import,
 removal); `E2E_FULL=1`: docling + TEI deployed; `E2E_KEEP=1` keeps the namespaces. Cluster-specific defaults
