@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 sources_bp = Blueprint("sources", __name__)
 
-SEARCHABLE_SOURCE_TYPES = frozenset({"DOCUMENT", "SLACK", "CONFLUENCE"})
+SEARCHABLE_SOURCE_TYPES = frozenset({"DOCUMENT", "SLACK", "CONFLUENCE", "WEB"})
 
 
 @sources_bp.route("/query.match", methods=["GET"])

@@ -48,6 +48,10 @@ class AppConfig(SharedConfig):
     confluence_token: str = ""
     confluence_verify_tls: bool = True
     
+    # Web source (public pages): per-request timeout and the pause between two requests to the same run.
+    web_timeout_seconds: float = 60.0
+    web_request_interval_seconds: float = 0.2
+
     # Slack Configuration
     default_slack_bot_token: str = ""
     default_slack_user_token: str = ""

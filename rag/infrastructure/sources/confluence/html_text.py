@@ -12,7 +12,7 @@ from html.parser import HTMLParser
 
 _BLOCK = {"p", "div", "li", "tr", "br", "section", "blockquote", "ul", "ol", "table", "dl", "dt", "dd"}
 _HEADINGS = {"h1": "#", "h2": "##", "h3": "###", "h4": "####", "h5": "#####", "h6": "######"}
-_SKIP = {"script", "style", "ac:parameter"}
+_SKIP = {"script", "style", "ac:parameter", "nav", "header", "footer"}
 
 
 class _Extractor(HTMLParser):
