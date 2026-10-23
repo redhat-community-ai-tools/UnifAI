@@ -13,6 +13,7 @@ const (
 // UnifaiRestoreSpec restores the MongoDB and/or Qdrant data of the namespace's stack from the backups written by
 // spec.backup. The UnifAI applications are stopped while the data is replaced, then restarted.
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="an UnifaiRestore is immutable: create a new one"
+// +kubebuilder:validation:XValidation:rule="!has(self.source) || !has(self.source.endpoint) || self.source.endpoint.startsWith('https://')",message="spec.source.endpoint must be https"
 type UnifaiRestoreSpec struct {
 	// Backup to restore: "latest", or a UTC time in the backup format (e.g. 20261023T020000Z); each store then
 	// uses its newest backup taken at or before that time.
@@ -27,9 +28,12 @@ type UnifaiRestoreSpec struct {
 	// Qdrant collections to restore (default: every collection of the backup).
 	// +optional
 	// +listType=set
+	// +kubebuilder:validation:MaxItems=100
+	// +kubebuilder:validation:items:Pattern=`^[A-Za-z0-9_.-]+$`
 	Collections []string `json:"collections,omitempty"`
 	// Backups to read; default: the stack's spec.backup.s3. Set it to restore another stack's backups (same
-	// bucket layout); its credentials Secret must be in this namespace.
+	// bucket layout): https only, and its credentials Secret must be the stack's backup one or a Secret of this
+	// namespace labelled unifai.startx.fr/backup-credentials=true.
 	// +optional
 	Source *BackupS3Spec `json:"source,omitempty"`
 	// Restore a MongoDB backup whose encryption-key fingerprint differs from this stack's

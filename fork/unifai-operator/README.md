@@ -232,8 +232,13 @@ The restore is immutable and runs once (`Pending`, `Stopping`, `Restoring`, `Sta
    collections from their snapshots, then MongoDB (`mongorestore --drop`, the dumped databases are replaced);
 3. the annotation is removed and the applications restart; `status.restored` lists `<store>/<timestamp>`.
 
-A failed restore restarts the applications too (the Job runs once: look at its pod before retrying with a new
-UnifaiRestore). One restore at a time per namespace; deleting an active one gives the applications back. UnifAI
+A restore that fails before changing any data (backup not found, key fingerprint missing or different without
+`spec.allowKeyMismatch`, download error) restarts the applications. A failure after data changed (a Qdrant collection
+or MongoDB being replaced) keeps them stopped, with the condition `ApplicationsStopped=True`: check the stores, then
+delete the UnifaiRestore to restart them. The Job runs once (look at its pod before retrying with a new
+UnifaiRestore); a restore older than 6 hours fails. `spec.source` (another stack's backups) must be https, and its
+credentials Secret must be the stack's backup one or labelled `unifai.startx.fr/backup-credentials=true`. Only
+`unifai-admin` may create an UnifaiRestore. One restore at a time per namespace; deleting an active one gives the applications back. UnifAI
 objects created after the backup are recreated by their custom resources at the next reconcile.
 
 ### Taking over a helmfile deployment

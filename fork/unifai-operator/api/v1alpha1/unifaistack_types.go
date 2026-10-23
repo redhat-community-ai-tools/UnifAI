@@ -354,10 +354,13 @@ type BackupSpec struct {
 // BackupS3Spec locates the bucket. The credentials Secret holds AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
 type BackupS3Spec struct {
 	// Endpoint URL of a non-AWS S3 service (e.g. https://s3.example.com); empty = AWS.
+	// +kubebuilder:validation:Pattern=`^https?://[A-Za-z0-9.:\[\]_-]+(/[A-Za-z0-9._~/-]*)?$`
 	// +optional
 	Endpoint string `json:"endpoint,omitempty"`
-	Bucket   string `json:"bucket"`
+	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`
+	Bucket string `json:"bucket"`
 	// Key prefix (default: unifai/<namespace>).
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/-]*$`
 	// +optional
 	Prefix string `json:"prefix,omitempty"`
 	// +kubebuilder:default=us-east-1

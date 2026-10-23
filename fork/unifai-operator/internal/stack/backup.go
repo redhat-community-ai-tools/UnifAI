@@ -8,6 +8,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -26,26 +27,26 @@ const (
 // BackupNames lists every backup CronJob the operator may own.
 var BackupNames = []string{BackupMongoName, BackupQdrantName}
 
-// The upload half shared by both jobs: $AWS is `aws` plus the endpoint, $DEST the store's S3 prefix.
+// The upload half shared by both jobs: s3 is `aws` plus the endpoint, $DEST the store's S3 prefix.
 // prune keeps the $KEEP newest entries (names sort by their UTC timestamp).
 const backupShellHelpers = `set -eu
 export HOME=/tmp
-AWS="aws ${S3_ENDPOINT:+--endpoint-url $S3_ENDPOINT}"
+s3() { if [ -n "${S3_ENDPOINT:-}" ]; then aws --endpoint-url "$S3_ENDPOINT" "$@"; else aws "$@"; fi; }
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 # Keeps the KEEP newest backups: a backup is every key starting with its timestamp (<ts>.archive.gz and
 # <ts>.meta.json, or the <ts>/ folder of snapshots).
 prune() {
-  $AWS s3 ls "$1/" | awk '{print $NF}' | sed 's#[./].*##' | sort -u | head -n "-$KEEP" | while read -r old; do
-    [ -n "$old" ] && $AWS s3 rm --recursive "$1/" --exclude "*" --include "$old*"
+  s3 s3 ls "$1/" | awk '{print $NF}' | sed 's#[./].*##' | sort -u | head -n "-$KEEP" | while read -r old; do
+    [ -n "$old" ] && s3 s3 rm --recursive "$1/" --exclude "*" --include "$old*"
   done
 }
 `
 
 // mongoUpload uploads the archive the init container dumped, then prunes.
 const mongoUpload = backupShellHelpers + `
-$AWS s3 cp /backup/mongodb.archive.gz "$DEST/$TS.archive.gz"
+s3 s3 cp /backup/mongodb.archive.gz "$DEST/$TS.archive.gz"
 printf '{"credentialKeyFingerprint":"%s"}' "$FINGERPRINT" > /backup/meta.json
-$AWS s3 cp /backup/meta.json "$DEST/$TS.meta.json"
+s3 s3 cp /backup/meta.json "$DEST/$TS.meta.json"
 prune "$DEST"
 echo "mongodb backup $DEST/$TS.archive.gz"
 `
@@ -58,7 +59,7 @@ cols=$(curl -sf "$Q/collections" | grep -o '"name":"[^"]*"' | cut -d'"' -f4)
 for c in $cols; do
   snap=$(curl -sf -X POST "$Q/collections/$c/snapshots?wait=true" | grep -o '"name":"[^"]*"' | head -1 | cut -d'"' -f4)
   curl -sf -o "/backup/$c.snapshot" "$Q/collections/$c/snapshots/$snap"
-  $AWS s3 cp "/backup/$c.snapshot" "$DEST/$TS/$c.snapshot"
+  s3 s3 cp "/backup/$c.snapshot" "$DEST/$TS/$c.snapshot"
   curl -sf -X DELETE "$Q/collections/$c/snapshots/$snap" >/dev/null
   rm -f "/backup/$c.snapshot"
 done
@@ -146,6 +147,7 @@ func cronJob(p *Plan, name string, b *unifaiv1.BackupSpec, pod corev1.PodSpec) *
 		schedule = "0 2 * * *"
 	}
 	meta := objMeta(p, name, "backup")
+	hardenJobPod(&pod)
 	return &batchv1.CronJob{ObjectMeta: meta, Spec: batchv1.CronJobSpec{
 		Schedule:                   schedule,
 		Suspend:                    ptr.To(b.Suspend),
@@ -167,7 +169,30 @@ func restricted() *corev1.SecurityContext {
 	return &corev1.SecurityContext{
 		AllowPrivilegeEscalation: ptr.To(false),
 		RunAsNonRoot:             ptr.To(true),
+		ReadOnlyRootFilesystem:   ptr.To(true),
 		Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 		SeccompProfile:           &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+	}
+}
+
+// jobWorkLimit bounds the scratch volume of the backup and restore jobs (an archive and the Qdrant snapshots).
+var jobWorkLimit = resource.MustParse("50Gi")
+
+// hardenJobPod gives a backup or restore pod a writable /tmp (read-only root filesystem), no API token (it holds
+// S3 credentials and needs no Kubernetes access) and bounded scratch volumes.
+func hardenJobPod(pod *corev1.PodSpec) {
+	pod.AutomountServiceAccountToken = ptr.To(false)
+	pod.SecurityContext = &corev1.PodSecurityContext{RunAsNonRoot: ptr.To(true),
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}}
+	for i := range pod.Volumes {
+		if ed := pod.Volumes[i].EmptyDir; ed != nil && ed.SizeLimit == nil {
+			ed.SizeLimit = &jobWorkLimit
+		}
+	}
+	pod.Volumes = append(pod.Volumes, corev1.Volume{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}})
+	for _, cs := range [][]corev1.Container{pod.InitContainers, pod.Containers} {
+		for i := range cs {
+			cs[i].VolumeMounts = append(cs[i].VolumeMounts, corev1.VolumeMount{Name: "tmp", MountPath: "/tmp"})
+		}
 	}
 }

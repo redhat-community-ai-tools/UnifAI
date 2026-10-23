@@ -76,24 +76,30 @@ spec:
                 description: 'Qdrant collections to restore (default: every collection
                   of the backup).'
                 items:
+                  pattern: ^[A-Za-z0-9_.-]+$
                   type: string
+                maxItems: 100
                 type: array
                 x-kubernetes-list-type: set
               source:
                 description: |-
                   Backups to read; default: the stack's spec.backup.s3. Set it to restore another stack's backups (same
-                  bucket layout); its credentials Secret must be in this namespace.
+                  bucket layout): https only, and its credentials Secret must be the stack's backup one or a Secret of this
+                  namespace labelled unifai.startx.fr/backup-credentials=true.
                 properties:
                   bucket:
+                    pattern: ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
                     type: string
                   credentialsSecret:
                     type: string
                   endpoint:
                     description: Endpoint URL of a non-AWS S3 service (e.g. https://s3.example.com);
                       empty = AWS.
+                    pattern: ^https?://[A-Za-z0-9.:\[\]_-]+(/[A-Za-z0-9._~/-]*)?$
                     type: string
                   prefix:
                     description: 'Key prefix (default: unifai/<namespace>).'
+                    pattern: ^[A-Za-z0-9._/-]*$
                     type: string
                   region:
                     default: us-east-1
@@ -117,6 +123,8 @@ spec:
             x-kubernetes-validations:
             - message: 'an UnifaiRestore is immutable: create a new one'
               rule: self == oldSelf
+            - message: spec.source.endpoint must be https
+              rule: '!has(self.source) || !has(self.source.endpoint) || self.source.endpoint.startsWith(''https://'')'
           status:
             description: UnifaiRestoreStatus reports the progress of a restore.
             properties:

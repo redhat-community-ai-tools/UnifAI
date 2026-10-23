@@ -16,56 +16,82 @@ import (
 var QuiescedDeployments = []string{"unifai-ui", "unifai-multiagent-be", "unifai-multiagent-temporal-worker",
 	"unifai-rag-server", "unifai-rag-celery", "unifai-backend", "unifai-identity"}
 
-// restoreFetch resolves the backups, checks the MongoDB key fingerprint, downloads the MongoDB archive and
-// restores the Qdrant collections (Qdrant keeps running). Its outcome goes to /restore/summary.
+// RestoreUntouched prefixes the failure message of a restore that stopped before changing any data: only then
+// does the operator restart the applications on its own.
+const RestoreUntouched = "untouched: "
+
+// restoreFetch resolves the backups, checks the MongoDB key fingerprint (fails closed), downloads the MongoDB
+// archive and restores the Qdrant collections (Qdrant keeps running). Its outcome goes to /restore/summary and
+// /restore/notes. The endpoint is an argument of aws, never word-split; object names are checked before use.
 const restoreFetch = `set -eu
 export HOME=/tmp
-AWS="aws ${S3_ENDPOINT:+--endpoint-url $S3_ENDPOINT}"
+s3() { if [ -n "${S3_ENDPOINT:-}" ]; then aws --endpoint-url "$S3_ENDPOINT" "$@"; else aws "$@"; fi; }
+# Failure before any data changed (the operator restarts the applications), and after (they stay stopped).
+untouched() { echo "` + RestoreUntouched + `$1" > /dev/termination-log; echo "$1" >&2; exit 1; }
 fail() { echo "$1" > /dev/termination-log; echo "$1" >&2; exit 1; }
 # Newest backup timestamp of a store at or before $BACKUP.
 pick() {
-  $AWS s3 ls "$1/" | awk '{print $NF}' | sed 's#[./].*##' | sort -u | awk -v b="$BACKUP" 'b == "latest" || $0 <= b' | tail -n 1
+  s3 s3 ls "$1/" | awk '{print $NF}' | sed 's#[./].*##' | grep -E '^[0-9]{8}T[0-9]{6}Z$' | sort -u |
+    awk -v b="$BACKUP" 'b == "latest" || $0 <= b' | tail -n 1
 }
 : > /restore/summary
+: > /restore/notes
+mongo_ts= qdrant_ts=
 if [ "$MONGODB" = true ]; then
-  ts=$(pick "$SRC/mongodb")
-  [ -n "$ts" ] || fail "no MongoDB backup at or before $BACKUP in $SRC/mongodb"
-  if $AWS s3 cp "$SRC/mongodb/$ts.meta.json" /restore/meta.json >/dev/null 2>&1; then
+  mongo_ts=$(pick "$SRC/mongodb")
+  [ -n "$mongo_ts" ] || untouched "no MongoDB backup at or before $BACKUP in $SRC/mongodb"
+  if s3 s3 ls "$SRC/mongodb/" | awk '{print $NF}' | grep -Fxq "$mongo_ts.meta.json"; then
+    s3 s3 cp --only-show-errors "$SRC/mongodb/$mongo_ts.meta.json" /restore/meta.json ||
+      untouched "cannot read $SRC/mongodb/$mongo_ts.meta.json"
     fp=$(sed -n 's/.*"credentialKeyFingerprint":"\([0-9a-f]*\)".*/\1/p' /restore/meta.json)
-    if [ "$fp" != "$FINGERPRINT" ] && [ "$ALLOW_KEY_MISMATCH" != true ]; then
-      fail "MongoDB backup $ts was taken with another credential encryption key ($fp, this stack $FINGERPRINT): set spec.allowKeyMismatch to restore it anyway"
+    if [ "$fp" != "$FINGERPRINT" ]; then
+      [ "$ALLOW_KEY_MISMATCH" = true ] ||
+        untouched "MongoDB backup $mongo_ts was taken with another credential encryption key ($fp, this stack $FINGERPRINT): set spec.allowKeyMismatch to restore it anyway"
+      echo "mongodb/$mongo_ts: other credential key ($fp), restored with allowKeyMismatch" >> /restore/notes
     fi
   else
-    echo "mongodb/$ts: key not verified (backup without fingerprint)" >> /restore/notes
+    [ "$ALLOW_KEY_MISMATCH" = true ] ||
+      untouched "MongoDB backup $mongo_ts has no key fingerprint (taken before operator 0.1.30): set spec.allowKeyMismatch to restore it anyway"
+    echo "mongodb/$mongo_ts: no key fingerprint, restored with allowKeyMismatch" >> /restore/notes
   fi
-  $AWS s3 cp --only-show-errors "$SRC/mongodb/$ts.archive.gz" /restore/mongodb.archive.gz
-  echo "mongodb/$ts" >> /restore/summary
+  s3 s3 cp --only-show-errors "$SRC/mongodb/$mongo_ts.archive.gz" /restore/mongodb.archive.gz ||
+    untouched "cannot download $SRC/mongodb/$mongo_ts.archive.gz"
 fi
 if [ "$QDRANT" = true ]; then
-  ts=$(pick "$SRC/qdrant")
-  [ -n "$ts" ] || fail "no Qdrant backup at or before $BACKUP in $SRC/qdrant"
+  qdrant_ts=$(pick "$SRC/qdrant")
+  [ -n "$qdrant_ts" ] || untouched "no Qdrant backup at or before $BACKUP in $SRC/qdrant"
+  s3 s3 ls "$SRC/qdrant/$qdrant_ts/" | awk '{print $NF}' > /restore/snapshots
+  # Downloaded first: a missing or unreadable snapshot stops the restore before any collection is replaced.
+  : > /restore/collections
+  while read -r f; do
+    c=${f%.snapshot}
+    case "$c" in *[!A-Za-z0-9_.-]*|"") untouched "unexpected Qdrant snapshot name: $f" ;; esac
+    if [ -n "$COLLECTIONS" ] && ! printf '%s\n' $COLLECTIONS | grep -Fxq "$c"; then continue; fi
+    s3 s3 cp --only-show-errors "$SRC/qdrant/$qdrant_ts/$f" "/restore/$c.snapshot" ||
+      untouched "cannot download the Qdrant snapshot $f"
+    echo "$c" >> /restore/collections
+  done < /restore/snapshots
   Q=${QDRANT_URL:-http://qdrant:6333}
   n=0
-  for f in $($AWS s3 ls "$SRC/qdrant/$ts/" | awk '{print $NF}'); do
-    c=${f%.snapshot}
-    if [ -n "$COLLECTIONS" ] && ! echo " $COLLECTIONS " | grep -q " $c "; then continue; fi
-    $AWS s3 cp --only-show-errors "$SRC/qdrant/$ts/$f" /restore/collection.snapshot
-    curl -sf -X POST "$Q/collections/$c/snapshots/upload?priority=snapshot&wait=true" \
-      -F snapshot=@/restore/collection.snapshot >/dev/null || fail "restore of the Qdrant collection $c failed"
-    rm -f /restore/collection.snapshot
+  while read -r c; do
+    curl -gsf -X POST "$Q/collections/$c/snapshots/upload?priority=snapshot&wait=true" \
+      -F "snapshot=@/restore/$c.snapshot" >/dev/null || fail "restore of the Qdrant collection $c failed"
+    rm -f "/restore/$c.snapshot"
     n=$((n + 1))
-  done
-  echo "qdrant/$ts" >> /restore/summary
-  echo "qdrant/$ts: $n collections" >> /restore/notes
+  done < /restore/collections
+  echo "qdrant/$qdrant_ts" >> /restore/summary
+  echo "qdrant/$qdrant_ts: $n collections" >> /restore/notes
 fi
+[ -z "$mongo_ts" ] || echo "mongodb/$mongo_ts" >> /restore/summary
 `
 
-// restoreMongo replaces the dumped databases, then reports the summary as the termination message.
+// restoreMongo replaces the dumped databases, then reports the restored backups and the notes as the termination
+// message (one per line).
 const restoreMongo = `set -eu
 if [ -f /restore/mongodb.archive.gz ]; then
   mongorestore --uri=mongodb://mongodb:27017 --archive=/restore/mongodb.archive.gz --gzip --drop --quiet
 fi
-cat /restore/summary > /dev/termination-log
+cat /restore/summary /restore/notes > /dev/termination-log
 `
 
 // RestoreSource returns the S3 location of the backups an UnifaiRestore reads, and the "s3://bucket/prefix" base.
@@ -122,7 +148,7 @@ func RestoreJob(p *Plan, r *unifaiv1.UnifaiRestore, src *unifaiv1.BackupS3Spec, 
 	}
 	mount := []corev1.VolumeMount{{Name: "restore", MountPath: "/restore"}}
 	meta := objMeta(p, RestoreJobName(r.Name), "restore")
-	return &batchv1.Job{ObjectMeta: meta, Spec: batchv1.JobSpec{
+	job := &batchv1.Job{ObjectMeta: meta, Spec: batchv1.JobSpec{
 		BackoffLimit:          ptr.To(int32(0)),
 		ActiveDeadlineSeconds: ptr.To(int64(4 * 3600)),
 		Template: corev1.PodTemplateSpec{
@@ -140,6 +166,8 @@ func RestoreJob(p *Plan, r *unifaiv1.UnifaiRestore, src *unifaiv1.BackupS3Spec, 
 			},
 		},
 	}}
+	hardenJobPod(&job.Spec.Template.Spec)
+	return job
 }
 
 // RestoreJobName is the Job of an UnifaiRestore.

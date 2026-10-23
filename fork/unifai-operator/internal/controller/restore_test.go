@@ -8,6 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,7 +25,7 @@ var _ = Describe("UnifaiRestore", func() {
 		st := &unifaiv1.UnifaiStack{ObjectMeta: metav1.ObjectMeta{Name: unifaiv1.StackName, Namespace: ns}, Spec: unifaiv1.UnifaiStackSpec{
 			Identity: unifaiv1.IdentitySpec{External: &unifaiv1.ExternalOIDCSpec{URL: "https://kc", ClientSecret: unifaiv1.SecretKeySelector{Name: "s", Key: "k"}}}}}
 		if backup {
-			st.Spec.Backup = &unifaiv1.BackupSpec{S3: unifaiv1.BackupS3Spec{Bucket: "b", CredentialsSecret: "s3"}}
+			st.Spec.Backup = &unifaiv1.BackupSpec{S3: unifaiv1.BackupS3Spec{Bucket: "backups", CredentialsSecret: "s3"}}
 		}
 		Expect(k8sClient.Create(ctx, st)).To(Succeed())
 		st.Status.CredentialKeyFingerprint = "0123456789abcdef"
@@ -115,7 +116,7 @@ var _ = Describe("UnifaiRestore", func() {
 		for _, e := range job.Spec.Template.Spec.InitContainers[0].Env {
 			env[e.Name] = e.Value
 		}
-		Expect(env).To(HaveKeyWithValue("SRC", "s3://b/unifai/"+ns))
+		Expect(env).To(HaveKeyWithValue("SRC", "s3://backups/unifai/"+ns))
 		Expect(env).To(HaveKeyWithValue("BACKUP", "20261023T020000Z"))
 		Expect(env).To(HaveKeyWithValue("FINGERPRINT", "0123456789abcdef"))
 		Expect(env).To(HaveKeyWithValue("MONGODB", "true"))
@@ -135,15 +136,16 @@ var _ = Describe("UnifaiRestore", func() {
 		Eventually(func() []string { restorePhase(rs)(); return rs.Finalizers }, timeout, interval).Should(BeEmpty())
 	})
 
-	It("restarts the applications when the restore fails, and fails without a backup location", func() {
+	It("restarts the applications after a failure that changed nothing, and fails without a backup location", func() {
 		ns := newNamespace("restorefail")
 		st := newStack(ns, true)
 		rs := &unifaiv1.UnifaiRestore{ObjectMeta: metav1.ObjectMeta{Name: "r2", Namespace: ns}}
 		Expect(k8sClient.Create(ctx, rs)).To(Succeed())
 		Eventually(restorePhase(rs), timeout, interval).Should(Equal(restoreRestoring))
-		finishJob(ns, "r2", "fetch", "MongoDB backup x was taken with another credential encryption key", 1, batchv1.JobFailed)
+		finishJob(ns, "r2", "fetch", stack.RestoreUntouched+"MongoDB backup x was taken with another credential encryption key", 1, batchv1.JobFailed)
 		Eventually(restorePhase(rs), timeout, interval).Should(Equal(PhaseFailed))
 		Expect(rs.Status.Message).To(ContainSubstring("another credential encryption key"))
+		Expect(rs.Status.Message).To(ContainSubstring("no data changed"))
 		Expect(quiescedBy(st)()).To(BeEmpty())
 
 		other := newNamespace("restorenosrc")
@@ -152,6 +154,52 @@ var _ = Describe("UnifaiRestore", func() {
 		Expect(k8sClient.Create(ctx, bad)).To(Succeed())
 		Eventually(restorePhase(bad), timeout, interval).Should(Equal(PhaseFailed))
 		Expect(bad.Status.Message).To(ContainSubstring("spec.backup"))
+	})
+
+	It("keeps the applications stopped after a failure that may have changed data, until the restore is deleted", func() {
+		ns := newNamespace("restorehalf")
+		st := newStack(ns, true)
+		rs := &unifaiv1.UnifaiRestore{ObjectMeta: metav1.ObjectMeta{Name: "r4", Namespace: ns}}
+		Expect(k8sClient.Create(ctx, rs)).To(Succeed())
+		Eventually(restorePhase(rs), timeout, interval).Should(Equal(restoreRestoring))
+		finishJob(ns, "r4", "mongorestore", "", 1, batchv1.JobFailed)
+		Eventually(restorePhase(rs), timeout, interval).Should(Equal(PhaseFailed))
+		Expect(rs.Status.Message).To(ContainSubstring("stay stopped"))
+		Expect(meta.IsStatusConditionTrue(rs.Status.Conditions, "ApplicationsStopped")).To(BeTrue())
+		Consistently(quiescedBy(st), 2*time.Second, interval).Should(Equal("r4"))
+
+		Expect(k8sClient.Delete(ctx, rs)).To(Succeed())
+		// envtest runs no garbage collector: its part of the foreground deletion (pod, then the Job's
+		// foregroundDeletion finalizer) is played by hand.
+		Consistently(quiescedBy(st), 2*time.Second, interval).Should(Equal("r4"), "released before the Job is gone")
+		Expect(k8sClient.Delete(ctx, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: stack.RestoreJobName("r4") + "-x", Namespace: ns}})).To(Succeed())
+		job := &batchv1.Job{}
+		Eventually(func() error {
+			if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: stack.RestoreJobName("r4")}, job); err != nil {
+				return err
+			}
+			job.Finalizers = nil
+			return k8sClient.Update(ctx, job)
+		}, timeout, interval).Should(Succeed())
+		Eventually(quiescedBy(st), timeout, interval).Should(BeEmpty())
+	})
+
+	It("refuses an S3 credentials Secret other than the stack's or a labelled one", func() {
+		ns := newNamespace("restorecreds")
+		newStack(ns, true)
+		Expect(k8sClient.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "app-db", Namespace: ns}})).To(Succeed())
+		rs := &unifaiv1.UnifaiRestore{ObjectMeta: metav1.ObjectMeta{Name: "r5", Namespace: ns}, Spec: unifaiv1.UnifaiRestoreSpec{
+			Source: &unifaiv1.BackupS3Spec{Endpoint: "https://s3.example.com", Bucket: "other", CredentialsSecret: "app-db"}}}
+		Expect(k8sClient.Create(ctx, rs)).To(Succeed())
+		Eventually(restorePhase(rs), timeout, interval).Should(Equal(PhaseFailed))
+		Expect(rs.Status.Message).To(ContainSubstring(BackupCredentialsLabel))
+
+		http := &unifaiv1.UnifaiRestore{ObjectMeta: metav1.ObjectMeta{Name: "r6", Namespace: ns}, Spec: unifaiv1.UnifaiRestoreSpec{
+			Source: &unifaiv1.BackupS3Spec{Endpoint: "http://attacker.example.com", Bucket: "other", CredentialsSecret: "s3"}}}
+		Expect(k8sClient.Create(ctx, http)).NotTo(Succeed(), "an http source endpoint is refused by the CRD")
+		inject := &unifaiv1.UnifaiRestore{ObjectMeta: metav1.ObjectMeta{Name: "r7", Namespace: ns}, Spec: unifaiv1.UnifaiRestoreSpec{
+			Collections: []string{"docs --debug"}}}
+		Expect(k8sClient.Create(ctx, inject)).NotTo(Succeed(), "a collection name with spaces is refused by the CRD")
 	})
 
 	It("runs one restore at a time per namespace", func() {
