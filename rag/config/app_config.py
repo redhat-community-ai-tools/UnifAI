@@ -35,6 +35,12 @@ class AppConfig(SharedConfig):
     # shared sources a search may return. Empty = forwarded tokens are ignored.
     oidc_issuer_url: str = ""
     oidc_verify_tls: bool = True
+    # Audience a Keycloak token must carry to search through /api/sources/query.bearer (every token of the
+    # zuno realm carries zuno-admin-api). Empty = the audience is not checked.
+    rag_bearer_audience: str = "zuno-admin-api"
+    # Accept opaque (OpenShift) tokens on /api/sources/query.bearer after a Kubernetes TokenReview. The
+    # service account needs the system:auth-delegator role.
+    rag_tokenreview_enabled: bool = False
 
     # Confluence source: one set of credentials per deployment (basic auth with an API
     # token, or a bearer token when only the token is set).
