@@ -23,6 +23,7 @@ class SearchResult:
 
 VISIBILITY_PRIVATE = "private"
 VISIBILITY_SHARED = "shared"
+VISIBILITY_PUBLIC = "public"
 
 
 @dataclass(frozen=True)

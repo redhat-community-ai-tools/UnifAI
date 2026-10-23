@@ -44,15 +44,16 @@ class BaseRegistration(RegistrationPort):
     def _access(self) -> Tuple[str, list]:
         """Visibility and ACL groups requested for the source.
 
-        Only users listed in RAG_SHARED_PUBLISHERS may publish a shared source: a
-        shared source is retrieved by other users, so anyone else could otherwise
-        inject content into their answers.
+        Only users listed in RAG_SHARED_PUBLISHERS may publish a shared or public source: such a
+        source is retrieved by other users, so anyone else could otherwise inject content into
+        their answers. A public source is retrieved by every authenticated caller, whatever
+        their groups.
         """
         visibility = (self.instance.get("visibility") or "private").strip().lower()
         groups = self.instance.get("aclGroups", self.instance.get("acl_groups")) or []
-        if visibility not in ("private", "shared"):
-            raise PermissionError(f"unknown visibility {visibility!r} (private or shared)")
-        if visibility == "shared" and self.upload_by not in self._shared_publishers:
+        if visibility not in ("private", "shared", "public"):
+            raise PermissionError(f"unknown visibility {visibility!r} (private, shared or public)")
+        if visibility != "private" and self.upload_by not in self._shared_publishers:
             raise PermissionError(f"{self.upload_by} may not publish shared sources")
         return visibility, sorted({str(g).lstrip("/") for g in groups if str(g).strip()})
 

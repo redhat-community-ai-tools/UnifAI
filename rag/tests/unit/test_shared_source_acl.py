@@ -37,6 +37,7 @@ def repo():
         _point("tech-corpus", "operator", "shared", ["agent_tekos", "consultants"]),
         _point("finance-corpus", "operator", "shared", ["finance"]),
         _point("shared-to-nobody", "operator", "shared", []),
+        _point("public-docs", "operator", "public"),
     ])
     return r
 
@@ -47,12 +48,13 @@ def _visible(repo, owner, groups=()):
 
 
 def test_owner_sees_only_own_sources_without_groups(repo):
-    assert _visible(repo, "alice") == {"alice-private"}
+    assert _visible(repo, "alice") == {"alice-private", "public-docs"}
 
 
 def test_group_member_also_sees_matching_shared_sources(repo):
-    assert _visible(repo, "alice", ["consultants"]) == {"alice-private", "tech-corpus"}
-    assert _visible(repo, "bob", ["finance", "agent_tekos"]) == {"bob-private", "tech-corpus", "finance-corpus"}
+    assert _visible(repo, "alice", ["consultants"]) == {"alice-private", "tech-corpus", "public-docs"}
+    assert _visible(repo, "bob", ["finance", "agent_tekos"]) == {
+        "bob-private", "tech-corpus", "finance-corpus", "public-docs"}
 
 
 def test_shared_source_without_groups_is_visible_to_nobody_else(repo):
@@ -89,6 +91,15 @@ def test_shared_registration_is_refused_for_non_publishers():
     source, issue = reg.register()
     assert source is None and issue["error_type"] == "ACCESS_DENIED"
     repo.save.assert_not_called()
+
+
+def test_public_registration_is_refused_for_non_publishers_and_needs_no_groups_for_publishers():
+    reg, repo = _registration("mallory", {"visibility": "public"})
+    assert reg.register()[1]["error_type"] == "ACCESS_DENIED"
+    repo.save.assert_not_called()
+    reg, repo = _registration("operator", {"visibility": "public"}, publishers=("operator",))
+    assert reg.register()[1] is None
+    assert repo.save.call_args.args[0].visibility == "public"
 
 
 def test_publisher_registers_a_shared_source_with_normalised_groups():
@@ -144,7 +155,7 @@ def test_resolver_without_groups_only_matches_own_sources():
     col = MagicMock()
     col.find.return_value = []
     SourceFilterResolver(col).resolve("DOCUMENT", "alice", doc_ids=["d1"])
-    assert col.find.call_args.args[0]["$and"][0]["$or"] == [{"upload_by": "alice"}]
+    assert col.find.call_args.args[0]["$and"][0]["$or"] == [{"upload_by": "alice"}, {"visibility": "public"}]
 
 
 # ── caller groups ────────────────────────────────────────────────────────────

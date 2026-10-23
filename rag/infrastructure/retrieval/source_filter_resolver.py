@@ -71,8 +71,8 @@ class SourceFilterResolver:
         if tags:
             conditions.append({"tags": {"$in": tags}})
         
-        # Own sources, plus shared sources of one of the caller's groups.
-        visible: List[Dict[str, Any]] = [{"upload_by": owner_id}]
+        # Own sources, public sources, plus shared sources of one of the caller's groups.
+        visible: List[Dict[str, Any]] = [{"upload_by": owner_id}, {"visibility": "public"}]
         if caller_groups:
             visible.append({"visibility": "shared", "acl_groups": {"$in": sorted(caller_groups)}})
         query: Dict[str, Any] = {
