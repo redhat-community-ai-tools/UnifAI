@@ -139,9 +139,10 @@ spec:
                     type: string
                   networkPolicy:
                     default: true
-                    description: Restrict ingress to the namespace, the OpenShift
-                      router and the operator (the internal APIs trust an identity
-                      header).
+                    description: |-
+                      Restrict ingress to the namespace, the OpenShift router and the operator, and the UnifAI APIs (MAS, RAG,
+                      identity, backend) to the UnifAI pods and the pods labelled unifai.startx.fr/internal-client=true.
+                      When false, the NetworkIsolated condition is False.
                     type: boolean
                   uiHost:
                     description: 'UI host. Default: unifai-ui-<namespace>.<domain>.'

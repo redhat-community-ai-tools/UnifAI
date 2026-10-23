@@ -45,7 +45,7 @@ are referenced, not duplicated. No secrets, no unpublished vulnerability details
 | Id | Item | Status | Owner |
 |---|---|---|---|
 | R-301 | Narrow the operator ClusterRole (rbac, OLM rights only for managed Keycloak); study a namespaced mode | todo | operator |
-| R-302 | NetworkPolicy: MAS/RAG/identity/backend reachable only from the UnifAI pods, the `internal-client` label and the operator, not the whole namespace; `NetworkIsolated` condition | doing (0.1.26) | operator |
+| R-302 | NetworkPolicy: MAS/RAG/identity/backend reachable only from the UnifAI pods, the `internal-client` label and the operator, not the whole namespace; `NetworkIsolated` condition | done (0.1.26) | operator |
 | R-303 | Restore from backups (annotation or CR running mongorestore + Qdrant snapshot restore) | todo | operator |
 | R-304 | CEL validation on the resource kinds; `v1beta1` once specs are stable | todo | operator |
 | R-305 | demo333: GPU nodes NotReady after the 2026-10-22 restart (models, embeddings, RAG ingestion of zuno) | done (nodes back the same evening; embeddings and RAG ingestion run) | user |
