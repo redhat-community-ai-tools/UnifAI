@@ -21,7 +21,7 @@ import (
 
 // Images of the restore test: an S3 service and the clients writing and reading the data.
 const (
-	minioImage  = "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
+	s3Image     = "docker.io/versity/versitygw:v1.0.13" // MinIO images are no longer public
 	awsImage    = "public.ecr.aws/aws-cli/aws-cli:2.22.35"
 	mongoImage  = "docker.io/library/mongo:7.0.16"
 	pythonImage = "registry.access.redhat.com/ubi9/python-312:latest"
@@ -65,7 +65,7 @@ func sh(t *testing.T, ns, name, image, script string, env ...corev1.EnvVar) stri
 	return out
 }
 
-// deployMinIO runs an S3 service (Deployment and Service e2e-minio) with the bucket e2e and the credentials Secret
+// deployMinIO runs an S3 service (versitygw on a posix directory; Deployment and Service e2e-minio) with the bucket e2e and the credentials Secret
 // e2e-s3 the backup and restore jobs read.
 func deployMinIO(t *testing.T, ns string) {
 	t.Helper()
@@ -75,8 +75,8 @@ func deployMinIO(t *testing.T, ns string) {
 	must(t, c.Create(ctx, &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "e2e-minio", Namespace: ns}, Spec: appsv1.DeploymentSpec{
 		Replicas: ptr.To(int32(1)), Selector: &metav1.LabelSelector{MatchLabels: labels},
 		Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels}, Spec: corev1.PodSpec{
-			Containers: []corev1.Container{{Name: "minio", Image: minioImage, Args: []string{"server", "/data"},
-				Env: []corev1.EnvVar{{Name: "MINIO_ROOT_USER", Value: minioUser}, {Name: "MINIO_ROOT_PASSWORD", Value: minioSecret}},
+			Containers: []corev1.Container{{Name: "s3", Image: s3Image,
+				Args:         []string{"--access", minioUser, "--secret", minioSecret, "--port", ":9000", "posix", "/data"},
 				Ports:        []corev1.ContainerPort{{ContainerPort: 9000}},
 				VolumeMounts: []corev1.VolumeMount{{Name: "data", MountPath: "/data"}}}},
 			Volumes: []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}}},
