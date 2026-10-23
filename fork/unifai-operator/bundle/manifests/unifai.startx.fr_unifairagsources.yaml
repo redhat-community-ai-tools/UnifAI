@@ -122,23 +122,77 @@ spec:
               type:
                 enum:
                 - confluence
+                - web
                 type: string
               unifaiName:
                 description: Name in UnifAI (defaults to metadata.name).
                 type: string
               visibility:
                 default: private
-                description: private (owner only) or shared (owner + members of aclGroups).
+                description: |-
+                  private (owner only), shared (owner + members of aclGroups) or public (every signed-in user; for
+                  public documentation). Shared and public need the owner in UnifaiStack.spec.rag.sharedPublishers.
                 enum:
                 - private
                 - shared
+                - public
                 type: string
+              web:
+                description: |-
+                  RAGWebSource scopes a web source: public pages fetched without credentials, from seed URLs and
+                  (optionally) the pages they link to.
+                properties:
+                  crawl:
+                    default: redhat-docs
+                    description: |-
+                      Discovery of linked pages: redhat-docs (same host, /html/ or /html-single/ book paths), generic
+                      (same host, under the seed's directory) or none (the seeds only).
+                    enum:
+                    - redhat-docs
+                    - generic
+                    - none
+                    type: string
+                  exclude:
+                    items:
+                      type: string
+                    type: array
+                  include:
+                    description: Shell-style patterns a discovered URL must match
+                      (empty = all) and must not match.
+                    items:
+                      type: string
+                    type: array
+                  maxPages:
+                    default: 50
+                    description: Limit on pages discovered per seed.
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+                  metadata:
+                    additionalProperties:
+                      type: string
+                    description: Fields stamped on every chunk of the source (e.g.
+                      product, version, language).
+                    type: object
+                  urls:
+                    description: |-
+                      Seed pages. Each is fetched on every sync (its links are the discovery input); the pages found
+                      from it are fetched only when the server says they changed.
+                    items:
+                      type: string
+                    minItems: 1
+                    type: array
+                required:
+                - urls
+                type: object
             required:
             - type
             type: object
             x-kubernetes-validations:
             - message: confluence settings are required for type confluence
               rule: self.type != 'confluence' || has(self.confluence)
+            - message: web settings are required for type web
+              rule: self.type != 'web' || has(self.web)
             - message: a shared source needs at least one ACL group
               rule: self.visibility != 'shared' || (has(self.aclGroups) && size(self.aclGroups)
                 > 0)

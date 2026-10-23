@@ -428,8 +428,8 @@ metadata:
       ]
     capabilities: Seamless Upgrades
     categories: AI/Machine Learning, Developer Tools
-    containerImage: quay.io/zuno/unifai-operator:v0.1.30
-    createdAt: '2026-10-23T19:32:15Z'
+    containerImage: quay.io/zuno/unifai-operator:v0.1.31
+    createdAt: '2026-10-23T21:05:52Z'
     description: Deploys UnifAI stacks and manages UnifAI agents, workflows and RAG pipelines declaratively.
     features.operators.openshift.io/disconnected: 'false'
     features.operators.openshift.io/fips-compliant: 'false'
@@ -443,7 +443,7 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/startxfr/UnifAI
     support: startx
-  name: unifai-operator.v0.1.30
+  name: unifai-operator.v0.1.31
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -549,7 +549,6 @@ spec:
           - ''
           resources:
           - configmaps
-          - endpoints
           - persistentvolumeclaims
           - secrets
           - serviceaccounts
@@ -647,22 +646,8 @@ spec:
           - update
           - watch
         - apiGroups:
-          - monitoring.coreos.com
-          resources:
-          - prometheusrules
-          - servicemonitors
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
-        - apiGroups:
           - networking.k8s.io
           resources:
-          - ingresses
           - networkpolicies
           verbs:
           - create
@@ -676,6 +661,14 @@ spec:
           - operators.coreos.com
           resources:
           - clusterserviceversions
+          verbs:
+          - delete
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - operators.coreos.com
+          resources:
           - operatorgroups
           - subscriptions
           verbs:
@@ -683,8 +676,6 @@ spec:
           - delete
           - get
           - list
-          - patch
-          - update
           - watch
         - apiGroups:
           - policy
@@ -726,19 +717,6 @@ spec:
           - clusterroles
           verbs:
           - bind
-        - apiGroups:
-          - rbac.authorization.k8s.io
-          resources:
-          - rolebindings
-          - roles
-          verbs:
-          - create
-          - delete
-          - get
-          - list
-          - patch
-          - update
-          - watch
         - apiGroups:
           - route.openshift.io
           resources:
@@ -887,7 +865,7 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.namespace
-                image: quay.io/zuno/unifai-operator:v0.1.30
+                image: quay.io/zuno/unifai-operator:v0.1.31
                 imagePullPolicy: Always
                 livenessProbe:
                   httpGet:
@@ -952,6 +930,13 @@ spec:
           verbs:
           - create
           - patch
+        - apiGroups:
+          - monitoring.coreos.com
+          resources:
+          - servicemonitors
+          verbs:
+          - get
+          - patch
         serviceAccountName: unifai-operator-controller-manager
     strategy: deployment
   installModes:
@@ -985,4 +970,4 @@ spec:
   provider:
     name: startx
     url: https://www.startx.fr
-  version: 0.1.30
+  version: 0.1.31

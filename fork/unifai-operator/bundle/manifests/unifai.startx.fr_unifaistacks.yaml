@@ -86,15 +86,18 @@ spec:
                       Secret holds AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY.
                     properties:
                       bucket:
+                        pattern: ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
                         type: string
                       credentialsSecret:
                         type: string
                       endpoint:
                         description: Endpoint URL of a non-AWS S3 service (e.g. https://s3.example.com);
                           empty = AWS.
+                        pattern: ^https?://[A-Za-z0-9.:\[\]_-]+(/[A-Za-z0-9._~/-]*)?$
                         type: string
                       prefix:
                         description: 'Key prefix (default: unifai/<namespace>).'
+                        pattern: ^[A-Za-z0-9._/-]*$
                         type: string
                       region:
                         default: us-east-1
