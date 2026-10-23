@@ -172,6 +172,22 @@ rules:
 - apiGroups:
   - rbac.authorization.k8s.io
   resources:
+  - clusterrolebindings
+  verbs:
+  - create
+  - delete
+  - patch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resourceNames:
+  - system:auth-delegator
+  resources:
+  - clusterroles
+  verbs:
+  - bind
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
   - rolebindings
   - roles
   verbs:

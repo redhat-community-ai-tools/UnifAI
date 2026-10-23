@@ -75,7 +75,13 @@ var Releases = []Release{
 	}},
 	{Name: "unifai-rag-server", IdentityEnv: "IDENTITY_HOST", Chart: "unifai-rag-server", Component: "rag", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("rag-resource-values.yaml", "unifai_rag_server")
-		return withGlobal(p, ragValues(p, v), err, false)
+		v = ragValues(p, v)
+		if v != nil && p.Spec.RAG.TokenReview {
+			set(v, "env.RAG_TOKENREVIEW_ENABLED", "true")
+			set(v, "serviceAccount.create", true)
+			set(v, "serviceAccount.name", RAGServiceAccount)
+		}
+		return withGlobal(p, v, err, false)
 	}},
 	{Name: "unifai-rag-celery", IdentityEnv: "IDENTITY_HOST", Chart: "unifai-rag-celery", Component: "ragCelery", Phase: 1, Traced: true, InternalAuth: true, Values: func(p *Plan) (map[string]any, error) {
 		v, err := valuesFile("rag-resource-values.yaml", "unifai_rag_celery")

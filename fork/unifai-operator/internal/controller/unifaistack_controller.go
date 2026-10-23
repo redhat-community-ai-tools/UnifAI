@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -68,6 +70,8 @@ const (
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies;ingresses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=create;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=bind,resourceNames="system:auth-delegator"
 // +kubebuilder:rbac:groups=route.openshift.io,resources=routes;routes/custom-host,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=config.openshift.io,resources=ingresses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors;prometheusrules,verbs=get;list;watch;create;update;patch;delete
@@ -349,6 +353,9 @@ func (r *StackReconciler) deploy(ctx context.Context, st *unifaiv1.UnifaiStack) 
 	if err := r.reconcileBackups(ctx, st, p); err != nil {
 		return 0, err
 	}
+	if err := r.reconcileTokenReview(ctx, p); err != nil {
+		return 0, err
+	}
 
 	waiting := []string{}
 	embedding := stack.EmbeddingObjects(p)
@@ -566,10 +573,37 @@ func (r *StackReconciler) finalize(ctx context.Context, st *unifaiv1.UnifaiStack
 			return ctrl.Result{}, err
 		}
 	}
+	if err := r.deleteTokenReviewBinding(ctx, st.Namespace); err != nil {
+		return ctrl.Result{}, err
+	}
 	r.Engine.Forget(st.Namespace)
 	stackReady.DeleteLabelValues(st.Namespace)
 	controllerutil.RemoveFinalizer(st, Finalizer)
 	return ctrl.Result{}, r.Update(ctx, st)
+}
+
+// reconcileTokenReview creates the system:auth-delegator binding of the RAG server when spec.rag.tokenReview is
+// set and removes it otherwise. It is cluster scoped (no owner reference): written without reading it back, so
+// the operator needs no cluster-wide ClusterRoleBinding informer.
+func (r *StackReconciler) reconcileTokenReview(ctx context.Context, p *stack.Plan) error {
+	if !p.Spec.RAG.TokenReview {
+		return r.deleteTokenReviewBinding(ctx, p.Namespace)
+	}
+	crb := stack.RAGTokenReviewBinding(p)
+	err := r.Create(ctx, crb)
+	if !apierrors.IsAlreadyExists(err) {
+		return err
+	}
+	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"labels": crb.Labels}, "subjects": crb.Subjects})
+	if err != nil {
+		return err
+	}
+	return r.Patch(ctx, crb, client.RawPatch(types.MergePatchType, patch))
+}
+
+func (r *StackReconciler) deleteTokenReviewBinding(ctx context.Context, ns string) error {
+	crb := &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: stack.RAGTokenReviewBindingName(ns)}}
+	return client.IgnoreNotFound(r.Delete(ctx, crb))
 }
 
 // reconcileBackups applies the backup CronJobs, or deletes them when spec.backup is unset. The backups

@@ -773,6 +773,13 @@ spec:
                     items:
                       type: string
                     type: array
+                  tokenReview:
+                    description: |-
+                      Let the RAG server validate OpenShift user tokens of bearer-only callers with the Kubernetes TokenReview
+                      API (RAG_TOKENREVIEW_ENABLED). The RAG server then runs as the unifai-rag-server ServiceAccount, bound
+                      to the cluster role system:auth-delegator (TokenReview and SubjectAccessReview on the whole cluster) by
+                      the ClusterRoleBinding unifai-rag-auth-delegator-<namespace>, removed with the stack or the option.
+                    type: boolean
                 type: object
               resources:
                 additionalProperties:

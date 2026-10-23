@@ -115,3 +115,29 @@ func hasObject(objs []ctrlObject, name string) bool {
 	}
 	return false
 }
+
+func TestRAGTokenReview(t *testing.T) {
+	off := renderAll(t, testPlan(t, nil))
+	if strings.Contains(off["unifai-rag-server"], "RAG_TOKENREVIEW_ENABLED") ||
+		strings.Contains(off["unifai-rag-server"], "serviceAccountName: "+RAGServiceAccount) {
+		t.Error("token review enabled by default")
+	}
+	p := testPlan(t, func(s *unifaiv1.UnifaiStackSpec) { s.RAG.TokenReview = true })
+	on := renderAll(t, p)
+	rag := on["unifai-rag-server"]
+	for _, want := range []string{"kind: ServiceAccount", "name: " + RAGServiceAccount, "serviceAccountName: " + RAGServiceAccount,
+		"RAG_TOKENREVIEW_ENABLED"} {
+		if !strings.Contains(rag, want) {
+			t.Errorf("rag-server manifest without %q", want)
+		}
+	}
+	if strings.Contains(on["unifai-rag-celery"], "serviceAccountName: "+RAGServiceAccount) || strings.Contains(on["unifai-rag-celery"], "RAG_TOKENREVIEW") {
+		t.Error("the celery workers get the token review identity")
+	}
+	crb := RAGTokenReviewBinding(p)
+	if crb.Name != "unifai-rag-auth-delegator-team-a" || crb.Namespace != "" || crb.RoleRef.Name != "system:auth-delegator" ||
+		len(crb.Subjects) != 1 || crb.Subjects[0].Name != RAGServiceAccount || crb.Subjects[0].Namespace != "team-a" ||
+		crb.Labels[LabelStackNamespace] != "team-a" {
+		t.Errorf("binding %+v", crb)
+	}
+}

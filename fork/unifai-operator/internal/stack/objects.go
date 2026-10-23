@@ -12,6 +12,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -278,6 +279,27 @@ func ragClientsPolicy(p *Plan) *networkingv1.NetworkPolicy {
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
 			Ingress:     []networkingv1.NetworkPolicyIngressRule{{From: peers}},
 		},
+	}
+}
+
+// RAGServiceAccount runs the RAG server when spec.rag.tokenReview is set (only it gets system:auth-delegator,
+// not the namespace's default ServiceAccount).
+const RAGServiceAccount = "unifai-rag-server"
+
+// RAGTokenReviewBindingName is the ClusterRoleBinding of spec.rag.tokenReview (cluster scoped: no owner
+// reference, deleted by the operator).
+func RAGTokenReviewBindingName(ns string) string { return "unifai-rag-auth-delegator-" + ns }
+
+// RAGTokenReviewBinding binds system:auth-delegator to the RAG server ServiceAccount of the stack.
+func RAGTokenReviewBinding(p *Plan) *rbacv1.ClusterRoleBinding {
+	meta := objMeta(p, RAGTokenReviewBindingName(p.Namespace), "rag")
+	meta.Namespace = ""
+	meta.Labels[LabelStackNamespace] = p.Namespace
+	return &rbacv1.ClusterRoleBinding{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "rbac.authorization.k8s.io/v1", Kind: "ClusterRoleBinding"},
+		ObjectMeta: meta,
+		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "system:auth-delegator"},
+		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: RAGServiceAccount, Namespace: p.Namespace}},
 	}
 }
 

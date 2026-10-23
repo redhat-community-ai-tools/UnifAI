@@ -175,6 +175,12 @@ type RAGSpec struct {
 	// Credentials of the Confluence source type.
 	// +optional
 	Confluence *ConfluenceSpec `json:"confluence,omitempty"`
+	// Let the RAG server validate OpenShift user tokens of bearer-only callers with the Kubernetes TokenReview
+	// API (RAG_TOKENREVIEW_ENABLED). The RAG server then runs as the unifai-rag-server ServiceAccount, bound
+	// to the cluster role system:auth-delegator (TokenReview and SubjectAccessReview on the whole cluster) by
+	// the ClusterRoleBinding unifai-rag-auth-delegator-<namespace>, removed with the stack or the option.
+	// +optional
+	TokenReview bool `json:"tokenReview,omitempty"`
 }
 
 // ConfluenceSpec holds the credentials the RAG service uses for Confluence sources: basic auth with an API

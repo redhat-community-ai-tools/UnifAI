@@ -21,6 +21,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -252,6 +253,48 @@ func TestUnifaiStack(t *testing.T) {
 			err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: "unifai-rag-clients"}, &networkingv1.NetworkPolicy{})
 			return apierrors.IsNotFound(err), fmt.Sprint(err)
 		})
+	})
+
+	t.Run("spec.rag.tokenReview binds system:auth-delegator to a dedicated RAG ServiceAccount", func(t *testing.T) {
+		crbName := "unifai-rag-auth-delegator-" + ns
+		must(t, c.Get(ctx, client.ObjectKeyFromObject(st), st))
+		st.Spec.RAG.TokenReview = true
+		must(t, c.Update(ctx, st))
+		if !st.Spec.RAG.TokenReview {
+			t.Skip("the installed CRD has no spec.rag.tokenReview (operator older than 0.1.29)")
+		}
+		eventually(t, "token review binding and RAG ServiceAccount", 5*time.Minute, func() (bool, string) {
+			crb := &rbacv1.ClusterRoleBinding{}
+			if err := c.Get(ctx, client.ObjectKey{Name: crbName}, crb); err != nil {
+				return false, err.Error()
+			}
+			if crb.RoleRef.Name != "system:auth-delegator" || len(crb.Subjects) != 1 ||
+				crb.Subjects[0].Name != "unifai-rag-server" || crb.Subjects[0].Namespace != ns {
+				return false, fmt.Sprintf("binding %+v %+v", crb.RoleRef, crb.Subjects)
+			}
+			d := &appsv1.Deployment{}
+			if err := c.Get(ctx, client.ObjectKey{Namespace: ns, Name: "unifai-rag-server"}, d); err != nil {
+				return false, err.Error()
+			}
+			pod := d.Spec.Template.Spec
+			env := ""
+			for _, e := range pod.Containers[0].Env {
+				if e.Name == "RAG_TOKENREVIEW_ENABLED" {
+					env = e.Value
+				}
+			}
+			return pod.ServiceAccountName == "unifai-rag-server" && env == "true",
+				fmt.Sprintf("serviceAccount %q, RAG_TOKENREVIEW_ENABLED=%q", pod.ServiceAccountName, env)
+		})
+		waitStackReady(t, st, 10*time.Minute, func() bool { return st.Status.ObservedGeneration == st.Generation })
+		must(t, c.Get(ctx, client.ObjectKeyFromObject(st), st))
+		st.Spec.RAG.TokenReview = false
+		must(t, c.Update(ctx, st))
+		eventually(t, "token review binding removed", 5*time.Minute, func() (bool, string) {
+			err := c.Get(ctx, client.ObjectKey{Name: crbName}, &rbacv1.ClusterRoleBinding{})
+			return apierrors.IsNotFound(err), fmt.Sprint(err)
+		})
+		waitStackReady(t, st, 10*time.Minute, func() bool { return st.Status.ObservedGeneration == st.Generation })
 	})
 
 	t.Run("objects and a chat through the whole chain", func(t *testing.T) {

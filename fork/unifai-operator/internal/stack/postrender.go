@@ -20,6 +20,8 @@ const (
 	LabelPartOf    = "app.kubernetes.io/part-of"
 	LabelManagedBy = "unifai.startx.fr/managed-by"
 	LabelComponent = "unifai.startx.fr/component"
+	// LabelStackNamespace marks the cluster-scoped objects of a stack.
+	LabelStackNamespace = "unifai.startx.fr/stack-namespace"
 	// PartOf is the value of LabelPartOf.
 	PartOf = "unifai"
 )
