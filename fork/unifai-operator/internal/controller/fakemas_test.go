@@ -67,6 +67,12 @@ func (f *fakeMAS) resourceByName(category, name string) map[string]any {
 // visibilityShared is the visibility of a RAG source readable by its ACL groups.
 const visibilityShared = "shared"
 
+// visibilityPublic is the visibility of a RAG source readable by every authenticated caller.
+const visibilityPublic = "public"
+
+// testPublisher is the only user the fake RAG lets publish shared or public sources.
+const testPublisher = "publisher"
+
 //nolint:gocyclo // one case per faked endpoint
 func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
@@ -258,16 +264,16 @@ func (f *fakeMAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		reply(w, 200, map[string]any{"message": "ok"})
 	case "/api/pipelines/embed":
-		if st, _ := body["source_type"].(string); st == "confluence" || st == "web" {
+		if st, _ := body["source_type"].(string); st == "confluence" || st == sourceTypeWeb {
 			// Mirrors the RAG service: idempotent registration per scope, shared sources for publishers only.
 			d := body["data"].([]any)[0].(map[string]any)
-			if (d["visibility"] == visibilityShared || d["visibility"] == "public") && r.Header.Get("X-Authenticated-User") != "publisher" {
+			if (d["visibility"] == visibilityShared || d["visibility"] == visibilityPublic) && r.Header.Get("X-Authenticated-User") != testPublisher {
 				reply(w, 200, map[string]any{"registration": map[string]any{"issues": []any{map[string]any{
 					"error": "may not publish shared sources", "error_type": "ACCESS_DENIED"}}}})
 				return
 			}
 			id := fmt.Sprintf("conf-%v-%v-%v", d["baseUrl"], d["spaceKey"], d["rootTitle"])
-			if st == "web" {
+			if st == sourceTypeWeb {
 				id = fmt.Sprintf("web-%v", d["urls"])
 			}
 			f.ragSyncs[id]++

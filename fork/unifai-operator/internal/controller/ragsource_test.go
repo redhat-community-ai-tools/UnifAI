@@ -67,8 +67,8 @@ var _ = Describe("UnifaiRAGSource controller", func() {
 
 	It("registers a public web source with its seeds, crawl scope and metadata", func() {
 		s := newSource("ns", "unused", func(s *unifaiv1.UnifaiRAGSource) {
-			s.Spec.Type, s.Spec.Confluence = "web", nil
-			s.Spec.Owner, s.Spec.Visibility = "publisher", "public"
+			s.Spec.Type, s.Spec.Confluence = sourceTypeWeb, nil
+			s.Spec.Owner, s.Spec.Visibility = testPublisher, visibilityPublic
 			s.Spec.Tags = []string{"knowledge.tech", "product:satellite"}
 			s.Spec.Web = &unifaiv1.RAGWebSource{
 				URLs: []string{"https://docs.example.com/en/documentation/satellite/6.17"}, Crawl: "redhat-docs", MaxPages: 50,
@@ -77,8 +77,8 @@ var _ = Describe("UnifaiRAGSource controller", func() {
 		})
 		typ, instance, err := ragSourceInstance(s)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(typ).To(Equal("web"))
-		Expect(instance).To(HaveKeyWithValue("visibility", "public"))
+		Expect(typ).To(Equal(sourceTypeWeb))
+		Expect(instance).To(HaveKeyWithValue("visibility", visibilityPublic))
 		Expect(instance).To(HaveKeyWithValue("crawl", "redhat-docs"))
 		Expect(instance["urls"]).To(Equal([]string{"https://docs.example.com/en/documentation/satellite/6.17"}))
 		Expect(instance["metadata"]).To(Equal(map[string]string{"product": "Satellite", "version": "6.17"}))
@@ -92,8 +92,8 @@ var _ = Describe("UnifaiRAGSource controller", func() {
 	It("ingests a web source and reports its pages", func() {
 		ns := newNamespace("ragsrc-web")
 		s := newSource(ns, "unused", func(s *unifaiv1.UnifaiRAGSource) {
-			s.Spec.Type, s.Spec.Confluence = "web", nil
-			s.Spec.Owner, s.Spec.Visibility = "publisher", "public"
+			s.Spec.Type, s.Spec.Confluence = sourceTypeWeb, nil
+			s.Spec.Owner, s.Spec.Visibility = testPublisher, visibilityPublic
 			s.Spec.Web = &unifaiv1.RAGWebSource{URLs: []string{"https://docs.example.com/en/book"}}
 		})
 		Expect(k8sClient.Create(ctx, s)).To(Succeed())
@@ -101,8 +101,8 @@ var _ = Describe("UnifaiRAGSource controller", func() {
 		Expect(get(s)().Pages).To(Equal(3))
 
 		denied := newSource(newNamespace("ragsrc-web-denied"), "unused", func(s *unifaiv1.UnifaiRAGSource) {
-			s.Spec.Type, s.Spec.Confluence = "web", nil
-			s.Spec.Owner, s.Spec.Visibility = "mallory", "public"
+			s.Spec.Type, s.Spec.Confluence = sourceTypeWeb, nil
+			s.Spec.Owner, s.Spec.Visibility = "mallory", visibilityPublic
 			s.Spec.Web = &unifaiv1.RAGWebSource{URLs: []string{"https://docs.example.com/en/other"}}
 		})
 		Expect(k8sClient.Create(ctx, denied)).To(Succeed())
@@ -157,7 +157,7 @@ var _ = Describe("UnifaiRAGSource controller", func() {
 		Expect(get(s)().Message).To(ContainSubstring("ACCESS_DENIED"))
 
 		ok := newSource(newNamespace("ragsrc-shared-ok"), "SX4", func(s *unifaiv1.UnifaiRAGSource) {
-			s.Spec.Owner, s.Spec.Visibility, s.Spec.ACLGroups = "publisher", visibilityShared, []string{"agent_tekos"}
+			s.Spec.Owner, s.Spec.Visibility, s.Spec.ACLGroups = testPublisher, visibilityShared, []string{"agent_tekos"}
 		})
 		Expect(k8sClient.Create(ctx, ok)).To(Succeed())
 		Eventually(func() string { return get(ok)().Phase }, timeout, interval).Should(Equal("Ready"))
