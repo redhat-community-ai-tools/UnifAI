@@ -583,6 +583,22 @@ def confluence_pipeline_handler():
     )
 
 
+def web_pipeline_handler():
+    """Web pipeline handler for public pages (no credentials)."""
+    from core.data_sources.types.web.pipeline_handler import WebPipelineHandler
+    from infrastructure.sources.web.connector import WebConnector
+    from config.app_config import AppConfig
+    cfg = AppConfig.get_instance()
+
+    return WebPipelineHandler(
+        connector_factory=lambda: WebConnector(timeout=cfg.web_timeout_seconds,
+                                               min_interval=cfg.web_request_interval_seconds),
+        chunker=pdf_chunker(),
+        embedder=embedding_generator(),
+        data_source_service=data_source_service(),
+    )
+
+
 def get_pipeline_handler(source_type: str):
     """
     Resolve the appropriate pipeline handler for a source type.
@@ -600,6 +616,7 @@ def get_pipeline_handler(source_type: str):
         "SLACK": slack_pipeline_handler,
         "DOCUMENT": document_pipeline_handler,
         "CONFLUENCE": confluence_pipeline_handler,
+        "WEB": web_pipeline_handler,
     }
     
     factory = handlers.get(source_type.upper())
