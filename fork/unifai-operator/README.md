@@ -273,6 +273,19 @@ second operator instance, namespace `unifai-operator-canary`, after applying its
 `bundle bundle-build bundle-push`, then `catalog-add CHANNELS=alpha catalog-build catalog-push`. Production is not
 touched before `make promote`.
 
+Release through GitHub (no quay credentials on the workstation for the bundle and the catalog):
+
+```bash
+make test docker-build-local docker-push canary-deploy canary-e2e canary-delete   # VERSION=x.y.z, on the cluster
+make release-files                                     # bundle + catalog-template/catalog on alpha and stable
+git commit ... && git tag operator-vx.y.z && git push origin devel operator-vx.y.z
+```
+
+The tag runs `.github/workflows/unifai-operator-release.yml` in the `quay-release` environment (approval required,
+quay robot `QUAY_USERNAME`/`QUAY_TOKEN`): it checks that the tag matches `VERSION`, the committed bundle and the
+catalog template, that the operator image tested by the canary exists (it is not rebuilt), then pushes the bundle and
+the catalog. Clusters subscribed to `stable` upgrade at the next catalog poll.
+
 Operator instances: `OPERATOR_INSTANCE` names an instance ("" = the OLM one). An UnifAI resource labelled
 `unifai.startx.fr/operator-instance=<name>` is cached and reconciled only by that instance; unlabelled resources only
 by the default one. Relabelling hands a stack over (that is how the upgrade test works). An instance must not be

@@ -29,7 +29,7 @@ are referenced, not duplicated. No secrets, no unpublished vulnerability details
 | R-102 | GitHub Actions `unifai-operator.yml`: charts drift, unit+envtest, generated files committed, build, e2e compile, lint (new issues), bundle/catalog validation | done (runs once `devel` is pushed) | operator |
 | R-103 | `make upstream-check` + `make -C fork/unifai-operator charts-check` | done | operator |
 | R-104 | Lint debt: existing golangci-lint findings fixed, CI lints the whole tree (`make lint`) | done | operator (+ zuno-demo-68 for okf/agentbundle) |
-| R-105 | Release from CI (image, bundle, catalog) with a quay robot secret; e2e stays on the cluster | todo (needs decision) | — |
+| R-105 | Release from CI: tag operator-vX.Y.Z publishes the bundle and the catalog (quay-release environment, approval, quay robot); the canary-tested image is not rebuilt; e2e stays on the cluster | done | operator |
 
 ## 2. Operator quality
 | Id | Item | Status | Owner |

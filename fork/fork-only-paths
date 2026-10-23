@@ -5,3 +5,4 @@ MEMORY.md
 fork/
 .fork/
 .github/workflows/unifai-operator.yml
+.github/workflows/unifai-operator-release.yml

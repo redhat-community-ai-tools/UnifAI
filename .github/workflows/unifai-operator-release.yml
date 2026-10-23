@@ -1,0 +1,62 @@
+# Fork-only (fork/fork-only-paths): publishes a release of the UnifAI operator (fork/unifai-operator) on quay.io.
+# Triggered by a tag operator-vX.Y.Z on a commit whose Makefile VERSION is X.Y.Z, after the canary e2e passed on the
+# cluster (the operator image quay.io/zuno/unifai-operator:vX.Y.Z is the one the canary tested: it is not rebuilt).
+# The quay-release environment requires an approval and holds the quay robot credentials.
+name: unifai-operator-release
+
+on:
+  push:
+    tags: ['operator-v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unifai-operator-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: fork/unifai-operator
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: quay-release
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: The tag matches the committed release files
+        run: |
+          version=${GITHUB_REF_NAME#operator-v}
+          grep -qx "VERSION ?= $version" Makefile || { echo "::error::$GITHUB_REF_NAME, but the Makefile VERSION differs"; exit 1; }
+          grep -q "image: quay.io/zuno/unifai-operator:v$version$" bundle/manifests/unifai-operator.clusterserviceversion.yaml ||
+            { echo "::error::the committed bundle is not v$version (make bundle)"; exit 1; }
+          grep -q "unifai-operator-bundle:v$version$" catalog-template.yaml ||
+            { echo "::error::v$version is not in catalog-template.yaml (make release-files)"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
+        run: echo "$QUAY_TOKEN" | docker login quay.io -u "$QUAY_USERNAME" --password-stdin
+
+      - name: The operator image tested by the canary exists
+        run: docker manifest inspect "quay.io/zuno/unifai-operator:v$VERSION" > /dev/null
+
+      - name: The committed catalog is the rendered template
+        run: |
+          make catalog
+          git diff --exit-code -- catalog
+
+      - name: Publish the bundle
+        run: make bundle-build bundle-push CONTAINER_TOOL=docker
+
+      - name: Publish the catalog
+        run: make catalog-build catalog-push CONTAINER_TOOL=docker
+
+      - name: Log out
+        if: always()
+        run: docker logout quay.io

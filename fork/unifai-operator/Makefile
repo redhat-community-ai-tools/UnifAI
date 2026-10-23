@@ -370,6 +370,11 @@ release: test docker-build-local docker-push canary-deploy canary-e2e canary-del
 	$(MAKE) catalog-add CHANNELS=alpha
 	$(MAKE) catalog-build catalog-push
 
+.PHONY: release-files
+release-files: bundle ## Write the release files of VERSION (bundle, catalog on alpha and stable): commit them, then tag operator-vVERSION (GitHub publishes after approval).
+	$(MAKE) catalog-add CHANNELS=alpha,stable
+	$(MAKE) catalog
+
 .PHONY: promote
 promote: ## Publish VERSION on stable (production).
 	$(MAKE) catalog-add CHANNELS=stable
