@@ -192,7 +192,7 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		Expect(acfg["providers"]).To(Equal([]any{"$ref:provider/mcp-gateway"}))
 		Expect(acfg["retriever"]).To(Equal("$ref:retriever/knowledge"))
 		Expect(acfg["system_message"]).To(HavePrefix("You are Tekos"))
-		Expect(acfg["retrieve_first"]).To(BeTrue(), "an agent with a retriever retrieves before the model reasons")
+		Expect(acfg).NotTo(HaveKey("retrieve_first"), "retrieve_first is opt-in: an older multiagent image rejects it")
 	})
 
 	It("emits a per-task MCP provider carrying the Zuno headers when spec.mcp is set", func() {
@@ -382,6 +382,79 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		none := newBundle(ns, "quay.io/zuno/okf-test@sha256:"+strings.Repeat("a", 64), nil)
 		none.Spec.Verify = unifaiv1.BundleVerify{}
 		Expect(k8sClient.Create(ctx, none)).To(MatchError(ContainSubstring("exactly one of publicKeyRef or keyless")))
+	})
+
+	It("sends retrieve_first to retriever-backed agents only when spec.retrieveFirst is set", func() {
+		ns := setup("bundle-retrievefirst")
+		files := tekosFiles()
+		b := newBundle(ns, fakeBundles.put(files, sign(key, files)), nil)
+		b.Spec.RetrieveFirst = true
+		Expect(k8sClient.Create(ctx, b)).To(Succeed())
+		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Ready"))
+		var with, without int
+		var agents unifaiv1.UnifaiAgentList
+		Expect(k8sClient.List(ctx, &agents, client.InNamespace(ns))).To(Succeed())
+		for _, a := range agents.Items {
+			cfg := map[string]any{}
+			Expect(json.Unmarshal(a.Spec.Config.Raw, &cfg)).To(Succeed())
+			_, hasRetriever := cfg["retriever"]
+			if hasRetriever {
+				Expect(cfg["retrieve_first"]).To(BeIdenticalTo(true), a.Name)
+				with++
+			} else {
+				Expect(cfg).NotTo(HaveKey("retrieve_first"), a.Name)
+				without++
+			}
+		}
+		Expect(with).To(BeNumerically(">", 0))
+		Expect(without).To(BeNumerically(">", 0))
+	})
+
+	placeholderFiles := func() okf.Files {
+		files := tekosFiles()
+		files["agent.okf.md"] = []byte(strings.Replace(string(files["agent.okf.md"]), "  status: active\n", "  status: placeholder\n", 1))
+		Expect(string(files["agent.okf.md"])).To(ContainSubstring("status: placeholder"))
+		return files
+	}
+
+	It("does not serve a placeholder agent (ADR-0007) and stays Pending", func() {
+		ns := setup("bundle-placeholder")
+		files := placeholderFiles()
+		Expect(k8sClient.Create(ctx, newBundle(ns, fakeBundles.put(files, sign(key, files)), nil))).To(Succeed())
+		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Pending"))
+		st := status(ns)()
+		Expect(st.Message).To(ContainSubstring("placeholder agent: not served"))
+		Expect(st.Verified).To(BeTrue(), "it is still verified, only not served")
+		Expect(st.Children).To(BeEmpty())
+		var agents unifaiv1.UnifaiAgentList
+		Expect(k8sClient.List(ctx, &agents, client.InNamespace(ns))).To(Succeed())
+		Expect(agents.Items).To(BeEmpty())
+		var wfs unifaiv1.UnifaiWorkflowList
+		Expect(k8sClient.List(ctx, &wfs, client.InNamespace(ns))).To(Succeed())
+		Expect(wfs.Items).To(BeEmpty())
+	})
+
+	It("serves a placeholder agent on spec.servePlaceholder and removes its objects when that is turned off", func() {
+		ns := setup("bundle-placeholder-serve")
+		files := placeholderFiles()
+		b := newBundle(ns, fakeBundles.put(files, sign(key, files)), nil)
+		b.Spec.ServePlaceholder = true
+		Expect(k8sClient.Create(ctx, b)).To(Succeed())
+		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Ready"))
+		var wfs unifaiv1.UnifaiWorkflowList
+		Expect(k8sClient.List(ctx, &wfs, client.InNamespace(ns))).To(Succeed())
+		Expect(wfs.Items).NotTo(BeEmpty())
+
+		var cur unifaiv1.UnifaiAgentBundle
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "tekos"}, &cur)).To(Succeed())
+		cur.Spec.ServePlaceholder = false
+		Expect(k8sClient.Update(ctx, &cur)).To(Succeed())
+		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Pending"))
+		Eventually(func() int {
+			var l unifaiv1.UnifaiWorkflowList
+			Expect(k8sClient.List(ctx, &l, client.InNamespace(ns))).To(Succeed())
+			return len(l.Items)
+		}, timeout, interval).Should(BeZero())
 	})
 
 	It("refuses a bundle below the classification floor", func() {

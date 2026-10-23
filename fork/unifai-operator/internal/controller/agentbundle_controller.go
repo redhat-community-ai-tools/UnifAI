@@ -64,8 +64,15 @@ const (
 
 	entitlementGatewayOnly = "GatewayOnly"
 	entitlementEnforced    = "Enforced"
+	statusPlaceholder      = "placeholder"
 	phaseReady             = "Ready"
+	phasePending           = "Pending"
 )
+
+// notServedError is not a failure: the bundle is valid but deliberately emits nothing (Pending, resynced).
+type notServedError struct{ msg string }
+
+func (e *notServedError) Error() string { return e.msg }
 
 func (r *AgentBundleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	cr := &unifaiv1.UnifaiAgentBundle{}
@@ -82,13 +89,18 @@ func (r *AgentBundleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	now := metav1.Now()
 	st.LastReconciled = &now
 	var perm *PermanentError
+	var notServed *notServedError
 	switch {
+	case errors.As(err, &notServed):
+		st.Phase, st.Message = phasePending, unifai.Truncate(notServed.Error(), 500)
+		st.ObservedGeneration = cr.Generation
+		requeue = resync
 	case errors.As(err, &perm):
 		st.Phase, st.Message = "Error", unifai.Truncate(perm.Error(), 500)
 		st.ObservedGeneration = cr.Generation
 		requeue = resync
 	case err != nil:
-		st.Phase, st.Message = "Pending", unifai.Truncate(err.Error(), 500)
+		st.Phase, st.Message = phasePending, unifai.Truncate(err.Error(), 500)
 		requeue = retry
 	default:
 		st.Phase, st.ObservedGeneration = phaseReady, cr.Generation
@@ -165,6 +177,16 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 		return permanent("invalid OKF bundle: %v", err)
 	}
 	st.OKFVersion = b.OKFVersion
+	if b.Status == statusPlaceholder && !cr.Spec.ServePlaceholder {
+		// ADR-0007: a placeholder agent is not served. Objects emitted while it was served are removed.
+		if err := r.prune(ctx, cr, nil); err != nil {
+			return err
+		}
+		st.Children, st.Tasks = nil, nil
+		cond(ConditionValid, true, "PlaceholderNotServed", "zuno.status is placeholder")
+		cond(ConditionEmitted, false, "PlaceholderNotServed", "placeholder agent: not served (set spec.servePlaceholder to serve it)")
+		return &notServedError{msg: "placeholder agent: not served (set spec.servePlaceholder to serve it)"}
+	}
 	switch b.GraphShape {
 	case okf.ShapeRetrieveReasonRespond:
 	case "":
@@ -359,8 +381,11 @@ func renderBundle(cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) ([]client.Objec
 		if len(t.AllowedKnowledge) > 0 && cr.Spec.Retriever != "" {
 			agent["retriever"] = "$ref:retriever/" + cr.Spec.Retriever
 			// Graph shape retrieve_reason_respond always retrieves before it reasons. In UnifAI the
-			// retriever is a tool the model may skip, so ask the node to retrieve first.
-			agent["retrieve_first"] = true
+			// retriever is a tool the model may skip, so ask the node to retrieve first (opt-in: a multiagent image
+			// that does not know the option rejects the config).
+			if cr.Spec.RetrieveFirst {
+				agent["retrieve_first"] = true
+			}
 		}
 		objs = append(objs, &unifaiv1.UnifaiAgent{ObjectMeta: childMeta(cr, name), Spec: unifaiv1.UnifaiAgentSpec{
 			CommonSpec: common, Type: "custom_agent_node", ConfigSpec: unifaiv1.ConfigSpec{Config: rawJSON(agent)}}})

@@ -204,10 +204,23 @@ spec:
                 items:
                   type: string
                 type: array
+              retrieveFirst:
+                description: |-
+                  RetrieveFirst makes every retriever-backed task agent search the retriever with the user's message
+                  before the model reasons (the OKF graph shape retrieve_reason_respond always retrieves first). It sends
+                  retrieve_first in the agent config, which only multiagent images that know that option accept: leave it
+                  off for older stacks.
+                type: boolean
               retriever:
                 description: UnifaiRetriever name attached to the tasks that declare
                   allowed_knowledge.
                 type: string
+              servePlaceholder:
+                description: |-
+                  ServePlaceholder serves a bundle whose OKF says zuno.status: placeholder (ADR-0007). By default such a
+                  bundle stays Pending, "placeholder agent: not served", and no object is emitted (objects it emitted
+                  before are removed).
+                type: boolean
               source:
                 description: BundleSource says where the bundle comes from.
                 properties:

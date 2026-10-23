@@ -99,8 +99,19 @@ type UnifaiAgentBundleSpec struct {
 	// visibility restricts the agent to those groups. It satisfies the Enforced entitlement. Exclusive with
 	// teamId and teamRef; the bundle must declare access groups.
 	// +optional
-	GroupTeam bool      `json:"groupTeam,omitempty"`
-	LLM       BundleLLM `json:"llm"`
+	GroupTeam bool `json:"groupTeam,omitempty"`
+	// ServePlaceholder serves a bundle whose OKF says zuno.status: placeholder (ADR-0007). By default such a
+	// bundle stays Pending, "placeholder agent: not served", and no object is emitted (objects it emitted
+	// before are removed).
+	// +optional
+	ServePlaceholder bool `json:"servePlaceholder,omitempty"`
+	// RetrieveFirst makes every retriever-backed task agent search the retriever with the user's message
+	// before the model reasons (the OKF graph shape retrieve_reason_respond always retrieves first). It sends
+	// retrieve_first in the agent config, which only multiagent images that know that option accept: leave it
+	// off for older stacks.
+	// +optional
+	RetrieveFirst bool      `json:"retrieveFirst,omitempty"`
+	LLM           BundleLLM `json:"llm"`
 	// MCP provider emitted per task that declares allowed_tools, carrying the Zuno headers. It is attached
 	// before `providers`.
 	// +optional
