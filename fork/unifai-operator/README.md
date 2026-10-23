@@ -293,14 +293,15 @@ Release through GitHub (no quay credentials on the workstation for the bundle an
 
 ```bash
 make test docker-build-local docker-push canary-deploy canary-e2e canary-delete   # VERSION=x.y.z, on the cluster
-make release-files                                     # bundle + catalog-template/catalog on alpha and stable
+make release-files                                     # bundle + catalog template on alpha and stable
 git commit ... && git tag operator-vx.y.z && git push origin devel operator-vx.y.z
 ```
 
 The tag runs `.github/workflows/unifai-operator-release.yml` in the `quay-release` environment (approval required,
 quay robot `QUAY_USERNAME`/`QUAY_TOKEN`): it checks that the tag matches `VERSION`, the committed bundle and the
 catalog template, that the operator image tested by the canary exists (it is not rebuilt), then pushes the bundle and
-the catalog. Clusters subscribed to `stable` upgrade at the next catalog poll.
+the catalog (rendered there: rendering reads the bundle from the registry). Clusters subscribed to `stable` upgrade at
+the next catalog poll. Afterwards, `make catalog` refreshes the committed `catalog/` (commit it with the next change).
 
 Operator instances: `OPERATOR_INSTANCE` names an instance ("" = the OLM one). An UnifAI resource labelled
 `unifai.startx.fr/operator-instance=<name>` is cached and reconciled only by that instance; unlabelled resources only

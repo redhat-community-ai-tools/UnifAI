@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.1.29
+VERSION ?= 0.1.30
 # Tag of the UnifAI images a stack deploys by default (spec.version overrides it).
 UNIFAI_VERSION ?= devel
 CHANNELS ?= alpha,stable
@@ -371,9 +371,8 @@ release: test docker-build-local docker-push canary-deploy canary-e2e canary-del
 	$(MAKE) catalog-build catalog-push
 
 .PHONY: release-files
-release-files: bundle ## Write the release files of VERSION (bundle, catalog on alpha and stable): commit them, then tag operator-vVERSION (GitHub publishes after approval).
+release-files: bundle ## Write the release files of VERSION (bundle, catalog template on alpha and stable): commit them, then tag operator-vVERSION (GitHub publishes after approval).
 	$(MAKE) catalog-add CHANNELS=alpha,stable
-	$(MAKE) catalog
 
 .PHONY: promote
 promote: ## Publish VERSION on stable (production).

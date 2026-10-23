@@ -46,14 +46,10 @@ jobs:
       - name: The operator image tested by the canary exists
         run: docker manifest inspect "quay.io/zuno/unifai-operator:v$VERSION" > /dev/null
 
-      - name: The committed catalog is the rendered template
-        run: |
-          make catalog
-          git diff --exit-code -- catalog
-
       - name: Publish the bundle
         run: make bundle-build bundle-push CONTAINER_TOOL=docker
 
+      # Rendering the catalog reads the bundle images from the registry: only once the bundle is pushed.
       - name: Publish the catalog
         run: make catalog-build catalog-push CONTAINER_TOOL=docker
 
