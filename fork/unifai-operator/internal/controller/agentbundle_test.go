@@ -490,6 +490,56 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		refused(setup("bundle-v03-skill-ceiling"), func(*unifaiv1.UnifaiAgentBundle) {}, files, ConditionWithinCeilings, "Widening")
 	})
 
+	It("emits the plan_draft_write shape as three chained agents, tools only on the draft stage", func() {
+		ns := setup("bundle-planshape")
+		files := tekosFiles()
+		files["agent.okf.md"] = []byte(strings.Replace(string(files["agent.okf.md"]), "graph_shape: retrieve_reason_respond", "graph_shape: plan_draft_write", 1))
+		Expect(string(files["agent.okf.md"])).To(ContainSubstring("graph_shape: plan_draft_write"))
+		Expect(k8sClient.Create(ctx, newBundle(ns, fakeBundles.put(files, sign(key, files)), nil))).To(Succeed())
+		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Ready"), func() string { return status(ns)().Message })
+		st := status(ns)()
+		Expect(st.Children).To(ContainElements("UnifaiAgent/tekos-answer-technical-question-plan",
+			"UnifaiAgent/tekos-answer-technical-question-draft", "UnifaiAgent/tekos-answer-technical-question-write"))
+		Expect(st.Children).NotTo(ContainElement("UnifaiAgent/tekos-answer-technical-question"))
+		Expect(strings.Join(st.Unmapped, "\n")).To(ContainSubstring("plan_draft_write"))
+
+		cfg := func(stage string) map[string]any {
+			var a unifaiv1.UnifaiAgent
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "tekos-answer-technical-question-" + stage}, &a)).To(Succeed())
+			m := map[string]any{}
+			Expect(json.Unmarshal(a.Spec.Config.Raw, &m)).To(Succeed())
+			return m
+		}
+		plan, draft, write := cfg("plan"), cfg("draft"), cfg("write")
+		Expect(draft).To(HaveKey("providers"))
+		Expect(draft).To(HaveKey("retriever"))
+		for _, a := range []map[string]any{plan, write} {
+			Expect(a).NotTo(HaveKey("providers"))
+			Expect(a).NotTo(HaveKey("retriever"))
+		}
+		Expect(plan["system_message"]).To(ContainSubstring("PLAN stage"))
+		Expect(draft["system_message"]).To(ContainSubstring("DRAFT stage"))
+		Expect(write["system_message"]).To(ContainSubstring("WRITE stage"))
+
+		var wf unifaiv1.UnifaiWorkflow
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: ns, Name: "tekos"}, &wf)).To(Succeed())
+		bp := map[string]any{}
+		Expect(json.Unmarshal(wf.Spec.Blueprint.Raw, &bp)).To(Succeed())
+		steps, _ := bp["plan"].([]any)
+		var uids []string
+		for _, s := range steps {
+			m := s.(map[string]any)
+			uids = append(uids, fmt.Sprint(m["uid"], "<-", m["after"]))
+		}
+		Expect(uids).To(Equal([]string{"ask<-<nil>", "agent<-<nil>", "agent-2<-agent", "agent-3<-agent-2", "finish<-agent-3"}))
+	})
+
+	It("refuses a graph shape the operator has no template for", func() {
+		files := tekosFiles()
+		files["agent.okf.md"] = []byte(strings.Replace(string(files["agent.okf.md"]), "graph_shape: retrieve_reason_respond", "graph_shape: something_else", 1))
+		refused(setup("bundle-shape-unknown"), func(*unifaiv1.UnifaiAgentBundle) {}, files, ConditionValid, "ShapeNotImplemented")
+	})
+
 	It("refuses a bundle below the classification floor", func() {
 		refused(setup("bundle-floor"), func(b *unifaiv1.UnifaiAgentBundle) {
 			b.Spec.Ceilings.MinClassification = "C2"

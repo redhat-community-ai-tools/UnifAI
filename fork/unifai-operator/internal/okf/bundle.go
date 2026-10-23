@@ -185,6 +185,9 @@ func Parse(files Files) (*Bundle, error) {
 	if len(af.Zuno.UI) > 0 {
 		b.Unmapped = append(b.Unmapped, "zuno.ui: tile presentation has no UnifAI equivalent")
 	}
+	if b.GraphShape == ShapePlanDraftWrite {
+		b.Unmapped = append(b.Unmapped, "graph_shape plan_draft_write: three chained agents (plan, draft, write); the plan and write stages run without tools, the draft stage carries the retriever and the tools")
+	}
 	for _, kv := range []struct {
 		field string
 		v     map[string]any

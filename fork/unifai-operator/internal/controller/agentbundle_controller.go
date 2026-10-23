@@ -188,7 +188,7 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 		return &notServedError{msg: "placeholder agent: not served (set spec.servePlaceholder to serve it)"}
 	}
 	switch b.GraphShape {
-	case okf.ShapeRetrieveReasonRespond:
+	case okf.ShapeRetrieveReasonRespond, okf.ShapePlanDraftWrite:
 	case "":
 		cond(ConditionValid, false, "ShapeMissing", "zuno.graph_shape is not declared")
 		return permanent("bundle %s declares no zuno.graph_shape: nothing emitted", b.Name)
@@ -387,8 +387,30 @@ func renderBundle(cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) ([]client.Objec
 				agent["retrieve_first"] = true
 			}
 		}
-		objs = append(objs, &unifaiv1.UnifaiAgent{ObjectMeta: childMeta(cr, name), Spec: unifaiv1.UnifaiAgentSpec{
-			CommonSpec: common, Type: "custom_agent_node", ConfigSpec: unifaiv1.ConfigSpec{Config: rawJSON(agent)}}})
+		stages := []string{name}
+		if b.GraphShape == okf.ShapePlanDraftWrite {
+			// plan_draft_write (ADR-0342): plan, then draft (retriever and tools), then write. The plan and
+			// write stages reason over the conversation only; the drafting stage carries the tools.
+			stages = nil
+			for _, stage := range planDraftWriteStages {
+				a := deepCopyMap(agent)
+				if stage.name != "draft" {
+					delete(a, "providers")
+					delete(a, "retriever")
+					delete(a, "retrieve_first")
+				}
+				if msg, ok := a["system_message"].(string); ok {
+					a["system_message"] = strings.TrimSpace(msg + "\n\n" + stage.directive)
+				}
+				stageName := name + "-" + stage.name
+				objs = append(objs, &unifaiv1.UnifaiAgent{ObjectMeta: childMeta(cr, stageName), Spec: unifaiv1.UnifaiAgentSpec{
+					CommonSpec: common, Type: "custom_agent_node", ConfigSpec: unifaiv1.ConfigSpec{Config: rawJSON(a)}}})
+				stages = append(stages, stageName)
+			}
+		} else {
+			objs = append(objs, &unifaiv1.UnifaiAgent{ObjectMeta: childMeta(cr, name), Spec: unifaiv1.UnifaiAgentSpec{
+				CommonSpec: common, Type: "custom_agent_node", ConfigSpec: unifaiv1.ConfigSpec{Config: rawJSON(agent)}}})
+		}
 
 		title := t.Title
 		if title == "" {
@@ -397,30 +419,60 @@ func renderBundle(cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) ([]client.Objec
 		objs = append(objs, &unifaiv1.UnifaiWorkflow{ObjectMeta: childMeta(cr, wfName), Spec: unifaiv1.UnifaiWorkflowSpec{
 			CommonSpec:  common,
 			Description: fmt.Sprintf("%s - %s (OKF bundle %s, %s)", b.Title, title, b.Name, level),
-			Blueprint:   *rawJSON(linearBlueprint(cond, name)),
+			Blueprint:   *rawJSON(stagedBlueprint(cond, stages)),
 		}})
 		tasks = append(tasks, unifaiv1.BundleTaskStatus{Name: t.Name, Classification: level.String(), Workflow: wfName})
 	}
 	return objs, tasks, nil
 }
 
-func linearBlueprint(cond, agent string) map[string]any {
+// planDraftWriteStages are the agents of the plan_draft_write graph shape, in order.
+var planDraftWriteStages = []struct{ name, directive string }{
+	{"plan", "You are in the PLAN stage of a three-stage task (plan, draft, write). Produce a concise numbered plan of " +
+		"what the final deliverable must contain and which sources you will need. Do not draft the deliverable yet and " +
+		"do not call any tool."},
+	{"draft", "You are in the DRAFT stage of a three-stage task (plan, draft, write). Follow the plan from the previous " +
+		"stage: gather what you need with your tools and the knowledge base, then produce the complete draft."},
+	{"write", "You are in the WRITE stage of a three-stage task (plan, draft, write). Take the draft from the previous " +
+		"stage and produce the final deliverable, complete and polished, in the language and format the user asked for. " +
+		"Answer with the deliverable only."},
+}
+
+// stagedBlueprint is the workflow question -> stage 1 -> ... -> stage n -> answer; a single stage gives the
+// linear workflow of retrieve_reason_respond.
+func stagedBlueprint(cond string, stages []string) map[string]any {
+	nodes := []any{
+		map[string]any{"name": "User Question Node", "rid": "user_question", "type": "user_question_node",
+			"config": map[string]any{"retries": 1, "type": "user_question_node"}},
+		map[string]any{"name": "Final Answer Node", "rid": "final_answer", "type": "final_answer_node",
+			"config": map[string]any{"retries": 1, "type": "final_answer_node"}},
+	}
+	plan := []any{
+		map[string]any{"uid": "ask", "node": "user_question", "branches": map[string]any{"agent": stageUID(0)},
+			"exit_condition": "$rid:condition/" + cond},
+	}
+	for i, stage := range stages {
+		nodes = append(nodes, map[string]any{"rid": "$ref:agent/" + stage})
+		step := map[string]any{"uid": stageUID(i), "node": "$rid:agent/" + stage}
+		if i > 0 {
+			step["after"] = stageUID(i - 1)
+		}
+		plan = append(plan, step)
+	}
+	plan = append(plan, map[string]any{"uid": "finish", "node": "final_answer", "after": stageUID(len(stages) - 1)})
 	return map[string]any{
 		"conditions": []any{map[string]any{"rid": "$ref:condition/" + cond}},
-		"nodes": []any{
-			map[string]any{"name": "User Question Node", "rid": "user_question", "type": "user_question_node",
-				"config": map[string]any{"retries": 1, "type": "user_question_node"}},
-			map[string]any{"name": "Final Answer Node", "rid": "final_answer", "type": "final_answer_node",
-				"config": map[string]any{"retries": 1, "type": "final_answer_node"}},
-			map[string]any{"rid": "$ref:agent/" + agent},
-		},
-		"plan": []any{
-			map[string]any{"uid": "ask", "node": "user_question", "branches": map[string]any{"agent": "agent"},
-				"exit_condition": "$rid:condition/" + cond},
-			map[string]any{"uid": "agent", "node": "$rid:agent/" + agent},
-			map[string]any{"uid": "finish", "node": "final_answer", "after": "agent"},
-		},
+		"nodes":      nodes,
+		"plan":       plan,
 	}
+}
+
+// stageUID names a plan step: the first (or only) stage keeps the historical "agent" uid.
+func stageUID(i int) string {
+	if i == 0 {
+		return "agent"
+	}
+	return fmt.Sprintf("agent-%d", i+1)
 }
 
 func hasTask(b *okf.Bundle, name string) bool {
