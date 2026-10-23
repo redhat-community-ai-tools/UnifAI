@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: quay.io/zuno/unifai-operator
-  newTag: v0.1.28
+  newTag: v0.1.29

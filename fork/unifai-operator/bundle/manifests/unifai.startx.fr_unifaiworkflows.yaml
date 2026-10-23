@@ -65,6 +65,51 @@ spec:
                 x-kubernetes-preserve-unknown-fields: true
               description:
                 type: string
+              display:
+                description: |-
+                  Display is the descriptive sheet stored in the blueprint's metadata, for a UI that shows one entry per
+                  workflow. Public fields only; the UnifAI API refuses anything else.
+                properties:
+                  agent:
+                    description: Agent is the agent's stable name, the key of its
+                      entry (/agents/<agent>).
+                    type: string
+                  classification:
+                    description: Classification ceiling.
+                    type: string
+                  color:
+                    description: 'A CSS color keyword or #rrggbb.'
+                    type: string
+                  description:
+                    type: string
+                  displayName:
+                    type: string
+                  icon:
+                    description: Short keyword for an icon, lower case letters, digits
+                      and hyphens.
+                    type: string
+                  maintainer:
+                    type: string
+                  state:
+                    description: Lifecycle state, such as active or placeholder.
+                    type: string
+                  tasks:
+                    items:
+                      description: DisplayTask is the public name of one task.
+                      properties:
+                        name:
+                          type: string
+                        title:
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  tileDescription:
+                    type: string
+                  title:
+                    type: string
+                type: object
               owner:
                 default: admin
                 description: UnifAI user owning the object (workspace identity).
