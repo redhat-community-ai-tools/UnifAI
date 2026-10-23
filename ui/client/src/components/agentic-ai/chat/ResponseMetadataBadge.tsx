@@ -6,6 +6,13 @@ interface ResponseMetadataBadgeProps {
   metadata: ResponseMetadata;
 }
 
+/**
+ * Open/closed state survives a remount: the chat re-renders its message list on every stream tick and sync,
+ * which recreated this component and snapped the panel shut about 300 ms after a click. The state is kept
+ * outside React, keyed by the message's identity.
+ */
+const openBadges = new Set<string>();
+
 /** Render any JSON value as a short string. */
 const display = (value: unknown): string =>
   typeof value === "string" ? value : JSON.stringify(value);
@@ -17,8 +24,15 @@ const display = (value: unknown): string =>
  * shows it; the browser never fetches anything itself.
  */
 export const ResponseMetadataBadge: React.FC<ResponseMetadataBadgeProps> = ({ metadata }) => {
-  const [open, setOpen] = useState(false);
   const fields = metadata.fields ?? {};
+  const badgeKey = metadata.response_id ?? JSON.stringify([metadata.model, metadata.routing, fields]);
+  const [open, setOpenState] = useState(() => openBadges.has(badgeKey));
+  const setOpen = (update: (v: boolean) => boolean) => {
+    const next = update(openBadges.has(badgeKey));
+    if (next) openBadges.add(badgeKey);
+    else openBadges.delete(badgeKey);
+    setOpenState(next);
+  };
   // Any field named "provider" or "<prefix>_provider" identifies the serving provider.
   const providerKey = Object.keys(fields).find((k) => k === "provider" || k.endsWith("_provider"));
   const provider = metadata.routing?.provider ?? (providerKey ? fields[providerKey] : undefined);
