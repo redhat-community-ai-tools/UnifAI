@@ -20,4 +20,4 @@ patches:
 images:
 - name: quay.io/zuno/unifai-operator
   newName: quay.io/zuno/unifai-operator
-  newTag: v0.1.31
+  newTag: v0.1.32
