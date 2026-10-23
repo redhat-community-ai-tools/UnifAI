@@ -60,6 +60,7 @@ class CustomAgentNode(
             max_rounds: Optional[int] = 15,
             strategy_type: str = StrategyType.REACT.value,
             include_builtin_tools: bool = True,
+            retrieve_first: bool = False,
             hitl_mode: HITLMode = HITLMode.SKIP,
             execution_holder=None,
             **kwargs: Any
@@ -73,6 +74,7 @@ class CustomAgentNode(
             **kwargs
         )
         self.mcp_providers = mcp_providers or []
+        self.retrieve_first = retrieve_first
         self.max_rounds = max_rounds
         self.strategy_type = strategy_type
 
@@ -223,8 +225,16 @@ class CustomAgentNode(
         if agent_results_context:
             context_messages.append(agent_results_context)
 
-        # 4. User prompt is always last
-        context_messages.append(ChatMessage(role=Role.USER, content=task.content))
+        # 4. User prompt is always last, with the retrieved context in front when the agent
+        #    must retrieve before it reasons (retrieve_first); a retrieval failure must not
+        #    fail the turn, the retriever is still a tool the model can call.
+        prompt = ChatMessage(role=Role.USER, content=task.content)
+        if self.retrieve_first and self.retriever is not None:
+            try:
+                prompt = self.augment_with_context(prompt)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("retrieve_first: retrieval failed, continuing without context: %s", exc)
+        context_messages.append(prompt)
 
         return context_messages
 
