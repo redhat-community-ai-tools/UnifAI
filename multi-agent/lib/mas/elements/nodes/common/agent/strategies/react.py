@@ -194,8 +194,11 @@ class ReActStrategy(AgentStrategy):
         Returns:
             True if execution should continue
         """
-        # Check for terminal steps
-        if history and history[-1].is_terminal:
+        # Check for terminal steps. An error step the strategy marked recoverable (the parse error
+        # feedback was already added to the conversation, e.g. an empty final answer after a tool
+        # result) is not terminal: the model gets another try, bounded by the consecutive error
+        # limit below.
+        if history and history[-1].is_terminal and not self._is_recoverable_error(history[-1]):
             return False
 
         # Check step limit
@@ -214,6 +217,10 @@ class ReActStrategy(AgentStrategy):
             return False
 
         return True
+
+    @staticmethod
+    def _is_recoverable_error(step: AgentStep) -> bool:
+        return step.type == StepType.ERROR and bool(step.metadata.get("recoverable"))
 
     def build_context(
             self,
