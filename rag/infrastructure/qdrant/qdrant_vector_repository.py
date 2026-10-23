@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 import qdrant_client
 from qdrant_client.http import models as qmodels
 
-from core.vector.domain.model import VISIBILITY_SHARED, AccessScope, VectorChunk, SearchResult
+from core.vector.domain.model import VISIBILITY_PUBLIC, VISIBILITY_SHARED, AccessScope, VectorChunk, SearchResult
 from core.vector.domain.repository import VectorRepository
 from infrastructure.qdrant.sparse_encoder import HashingBM25Encoder
 import logging
@@ -396,8 +396,11 @@ class QdrantVectorRepository(VectorRepository):
 
     @staticmethod
     def _with_access(base: Optional[qmodels.Filter], access: AccessScope) -> qmodels.Filter:
-        """Add "own points OR shared points of one of my groups" to a filter."""
-        visible: List[Any] = [qmodels.FieldCondition(key="metadata.owner_id", match=qmodels.MatchValue(value=access.owner_id))]
+        """Add "own points OR public points OR shared points of one of my groups" to a filter."""
+        visible: List[Any] = [
+            qmodels.FieldCondition(key="metadata.owner_id", match=qmodels.MatchValue(value=access.owner_id)),
+            qmodels.FieldCondition(key="metadata.visibility", match=qmodels.MatchValue(value=VISIBILITY_PUBLIC)),
+        ]
         if access.groups:
             visible.append(qmodels.Filter(must=[
                 qmodels.FieldCondition(key="metadata.visibility", match=qmodels.MatchValue(value=VISIBILITY_SHARED)),

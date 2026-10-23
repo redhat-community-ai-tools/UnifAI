@@ -16,7 +16,7 @@ class DataSource:
     last_sync_at: Optional[datetime] = None
     tags: List[str] = field(default_factory=list)
     type_data: Dict[str, Any] = field(default_factory=dict)
-    # "private" (owner only) or "shared" (owner + members of acl_groups, see AccessScope)
+    # "private" (owner only), "shared" (owner + members of acl_groups, see AccessScope) or "public" (every caller)
     visibility: str = "private"
     acl_groups: List[str] = field(default_factory=list)
 
