@@ -38,6 +38,10 @@ type UnifaiRAGSourceSpec struct {
 	// OIDC groups allowed to retrieve a shared source.
 	// +optional
 	ACLGroups []string `json:"aclGroups,omitempty"`
+	// Tags put on the source, so a search can be scoped to a domain (query tags=<tag>) instead of "every
+	// source the caller can see". Changing them registers the source again (no page is re-embedded).
+	// +optional
+	Tags []string `json:"tags,omitempty"`
 	// Time between incremental syncs (minimum 10m). Unset = sync only when the spec changes.
 	// +optional
 	SyncInterval *metav1.Duration `json:"syncInterval,omitempty"`

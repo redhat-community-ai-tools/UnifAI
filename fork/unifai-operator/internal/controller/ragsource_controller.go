@@ -75,11 +75,15 @@ func ragSourceInstance(obj *unifaiv1.UnifaiRAGSource) (string, map[string]any, e
 		if visibility == "" {
 			visibility = "private"
 		}
-		return sourceTypeConfluence, map[string]any{
+		instance := map[string]any{
 			"name": unifaiName(obj), "baseUrl": c.BaseURL, "spaceKey": c.SpaceKey, "rootTitle": c.RootTitle,
 			"excludeLabels": append([]string{}, c.ExcludeLabels...), "visibility": visibility,
 			"aclGroups": append([]string{}, obj.Spec.ACLGroups...),
-		}, nil
+		}
+		if len(obj.Spec.Tags) > 0 { // absent when unset, so a source without tags keeps its hash (no resync)
+			instance["tags"] = append([]string{}, obj.Spec.Tags...)
+		}
+		return sourceTypeConfluence, instance, nil
 	}
 	return "", nil, permanent("unsupported source type %q", obj.Spec.Type)
 }

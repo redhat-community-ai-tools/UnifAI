@@ -1487,6 +1487,11 @@ func (in *UnifaiRAGSourceSpec) DeepCopyInto(out *UnifaiRAGSourceSpec) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.Tags != nil {
+		in, out := &in.Tags, &out.Tags
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.SyncInterval != nil {
 		in, out := &in.SyncInterval, &out.SyncInterval
 		*out = new(metav1.Duration)

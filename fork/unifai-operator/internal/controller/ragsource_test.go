@@ -53,6 +53,18 @@ var _ = Describe("UnifaiRAGSource controller", func() {
 		}
 	}
 
+	It("registers the source tags only when set, so existing sources keep their hash", func() {
+		plain := newSource("ns", "SX9", nil)
+		_, without, err := ragSourceInstance(plain)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(without).NotTo(HaveKey("tags"))
+		tagged := newSource("ns", "SX9", func(s *unifaiv1.UnifaiRAGSource) { s.Spec.Tags = []string{"knowledge.tech"} })
+		_, with, err := ragSourceInstance(tagged)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(with["tags"]).To(Equal([]string{"knowledge.tech"}))
+		Expect(hash(with)).NotTo(Equal(hash(without)))
+	})
+
 	It("registers the source, reports its pages and resyncs only on spec change", func() {
 		ns := newNamespace("ragsrc")
 		s := newSource(ns, "SX1", nil)

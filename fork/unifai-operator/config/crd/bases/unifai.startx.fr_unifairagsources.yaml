@@ -103,6 +103,13 @@ spec:
                 description: Time between incremental syncs (minimum 10m). Unset =
                   sync only when the spec changes.
                 type: string
+              tags:
+                description: |-
+                  Tags put on the source, so a search can be scoped to a domain (query tags=<tag>) instead of "every
+                  source the caller can see". Changing them registers the source again (no page is re-embedded).
+                items:
+                  type: string
+                type: array
               teamId:
                 description: Team workspace to use instead of the user's personal
                   one.
