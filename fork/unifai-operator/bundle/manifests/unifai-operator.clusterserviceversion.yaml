@@ -120,6 +120,16 @@ metadata:
         },
         {
           "apiVersion": "unifai.startx.fr/v1alpha1",
+          "kind": "UnifaiRestore",
+          "metadata": {
+            "name": "restore-latest"
+          },
+          "spec": {
+            "backup": "latest"
+          }
+        },
+        {
+          "apiVersion": "unifai.startx.fr/v1alpha1",
           "kind": "UnifaiRetriever",
           "metadata": {
             "name": "demo-docs"
@@ -418,8 +428,8 @@ metadata:
       ]
     capabilities: Seamless Upgrades
     categories: AI/Machine Learning, Developer Tools
-    containerImage: quay.io/zuno/unifai-operator:v0.1.29
-    createdAt: '2026-10-23T17:28:51Z'
+    containerImage: quay.io/zuno/unifai-operator:v0.1.30
+    createdAt: '2026-10-23T19:32:15Z'
     description: Deploys UnifAI stacks and manages UnifAI agents, workflows and RAG pipelines declaratively.
     features.operators.openshift.io/disconnected: 'false'
     features.operators.openshift.io/fips-compliant: 'false'
@@ -433,7 +443,7 @@ metadata:
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/startxfr/UnifAI
     support: startx
-  name: unifai-operator.v0.1.29
+  name: unifai-operator.v0.1.30
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -474,6 +484,9 @@ spec:
       version: v1alpha1
     - kind: UnifaiRAGSource
       name: unifairagsources.unifai.startx.fr
+      version: v1alpha1
+    - kind: UnifaiRestore
+      name: unifairestores.unifai.startx.fr
       version: v1alpha1
     - description: UnifaiRetriever is an UnifAI Retriever (retrievers resource).
       displayName: Unifai Retriever
@@ -746,6 +759,7 @@ spec:
           - unifaichats
           - unifairagpipelines
           - unifairagsources
+          - unifairestores
           - unifairetrievers
           - unifaisandboxes
           - unifaischedules
@@ -769,6 +783,7 @@ spec:
           - unifaiproviders/finalizers
           - unifairagpipelines/finalizers
           - unifairagsources/finalizers
+          - unifairestores/finalizers
           - unifairetrievers/finalizers
           - unifaisandboxes/finalizers
           - unifaischedules/finalizers
@@ -790,6 +805,7 @@ spec:
           - unifaiproviders/status
           - unifairagpipelines/status
           - unifairagsources/status
+          - unifairestores/status
           - unifairetrievers/status
           - unifaisandboxes/status
           - unifaischedules/status
@@ -871,7 +887,7 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.namespace
-                image: quay.io/zuno/unifai-operator:v0.1.29
+                image: quay.io/zuno/unifai-operator:v0.1.30
                 imagePullPolicy: Always
                 livenessProbe:
                   httpGet:
@@ -969,4 +985,4 @@ spec:
   provider:
     name: startx
     url: https://www.startx.fr
-  version: 0.1.29
+  version: 0.1.30
