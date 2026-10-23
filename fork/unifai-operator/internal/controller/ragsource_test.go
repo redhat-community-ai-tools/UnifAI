@@ -65,6 +65,50 @@ var _ = Describe("UnifaiRAGSource controller", func() {
 		Expect(hash(with)).NotTo(Equal(hash(without)))
 	})
 
+	It("registers a public web source with its seeds, crawl scope and metadata", func() {
+		s := newSource("ns", "unused", func(s *unifaiv1.UnifaiRAGSource) {
+			s.Spec.Type, s.Spec.Confluence = "web", nil
+			s.Spec.Owner, s.Spec.Visibility = "publisher", "public"
+			s.Spec.Tags = []string{"knowledge.tech", "product:satellite"}
+			s.Spec.Web = &unifaiv1.RAGWebSource{
+				URLs: []string{"https://docs.example.com/en/documentation/satellite/6.17"}, Crawl: "redhat-docs", MaxPages: 50,
+				Exclude: []string{"*/release_notes/*"}, Metadata: map[string]string{"product": "Satellite", "version": "6.17"},
+			}
+		})
+		typ, instance, err := ragSourceInstance(s)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(typ).To(Equal("web"))
+		Expect(instance).To(HaveKeyWithValue("visibility", "public"))
+		Expect(instance).To(HaveKeyWithValue("crawl", "redhat-docs"))
+		Expect(instance["urls"]).To(Equal([]string{"https://docs.example.com/en/documentation/satellite/6.17"}))
+		Expect(instance["metadata"]).To(Equal(map[string]string{"product": "Satellite", "version": "6.17"}))
+		Expect(instance["tags"]).To(Equal([]string{"knowledge.tech", "product:satellite"}))
+
+		s.Spec.Web = nil
+		_, _, err = ragSourceInstance(s)
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("ingests a web source and reports its pages", func() {
+		ns := newNamespace("ragsrc-web")
+		s := newSource(ns, "unused", func(s *unifaiv1.UnifaiRAGSource) {
+			s.Spec.Type, s.Spec.Confluence = "web", nil
+			s.Spec.Owner, s.Spec.Visibility = "publisher", "public"
+			s.Spec.Web = &unifaiv1.RAGWebSource{URLs: []string{"https://docs.example.com/en/book"}}
+		})
+		Expect(k8sClient.Create(ctx, s)).To(Succeed())
+		Eventually(func() string { return get(s)().Phase }, timeout, interval).Should(Equal("Ready"))
+		Expect(get(s)().Pages).To(Equal(3))
+
+		denied := newSource(newNamespace("ragsrc-web-denied"), "unused", func(s *unifaiv1.UnifaiRAGSource) {
+			s.Spec.Type, s.Spec.Confluence = "web", nil
+			s.Spec.Owner, s.Spec.Visibility = "mallory", "public"
+			s.Spec.Web = &unifaiv1.RAGWebSource{URLs: []string{"https://docs.example.com/en/other"}}
+		})
+		Expect(k8sClient.Create(ctx, denied)).To(Succeed())
+		Eventually(func() string { return get(denied)().Phase }, timeout, interval).Should(Equal(PhaseError))
+	})
+
 	It("registers the source, reports its pages and resyncs only on spec change", func() {
 		ns := newNamespace("ragsrc")
 		s := newSource(ns, "SX1", nil)

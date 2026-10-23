@@ -18,20 +18,53 @@ type RAGConfluenceSource struct {
 	ExcludeLabels []string `json:"excludeLabels,omitempty"`
 }
 
+// RAGWebSource scopes a web source: public pages fetched without credentials, from seed URLs and
+// (optionally) the pages they link to.
+type RAGWebSource struct {
+	// Seed pages. Each is fetched on every sync (its links are the discovery input); the pages found
+	// from it are fetched only when the server says they changed.
+	// +kubebuilder:validation:MinItems=1
+	URLs []string `json:"urls"`
+	// Discovery of linked pages: redhat-docs (same host, /html/ or /html-single/ book paths), generic
+	// (same host, under the seed's directory) or none (the seeds only).
+	// +kubebuilder:validation:Enum=redhat-docs;generic;none
+	// +kubebuilder:default=redhat-docs
+	// +optional
+	Crawl string `json:"crawl,omitempty"`
+	// Shell-style patterns a discovered URL must match (empty = all) and must not match.
+	// +optional
+	Include []string `json:"include,omitempty"`
+	// +optional
+	Exclude []string `json:"exclude,omitempty"`
+	// Limit on pages discovered per seed.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=1000
+	// +kubebuilder:default=50
+	// +optional
+	MaxPages int `json:"maxPages,omitempty"`
+	// Fields stamped on every chunk of the source (e.g. product, version, language).
+	// +optional
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
 // UnifaiRAGSourceSpec is a RAG source kept in sync on a schedule. Credentials are stack-wide
 // (UnifaiStack.spec.rag.confluence).
 // +kubebuilder:validation:XValidation:rule="self.type != 'confluence' || has(self.confluence)",message="confluence settings are required for type confluence"
+// +kubebuilder:validation:XValidation:rule="self.type != 'web' || has(self.web)",message="web settings are required for type web"
 // +kubebuilder:validation:XValidation:rule="self.visibility != 'shared' || (has(self.aclGroups) && size(self.aclGroups) > 0)",message="a shared source needs at least one ACL group"
 type UnifaiRAGSourceSpec struct {
 	// Owner is the UnifAI user registering the source; a shared source needs it in
 	// UnifaiStack.spec.rag.sharedPublishers.
 	CommonSpec `json:",inline"`
-	// +kubebuilder:validation:Enum=confluence
+	// +kubebuilder:validation:Enum=confluence;web
 	Type string `json:"type"`
 	// +optional
 	Confluence *RAGConfluenceSource `json:"confluence,omitempty"`
-	// private (owner only) or shared (owner + members of aclGroups).
-	// +kubebuilder:validation:Enum=private;shared
+	// +optional
+	Web *RAGWebSource `json:"web,omitempty"`
+	// private (owner only), shared (owner + members of aclGroups) or public (every signed-in user; for
+	// public documentation). Shared and public need the owner in UnifaiStack.spec.rag.sharedPublishers.
+	// +kubebuilder:validation:Enum=private;shared;public
 	// +kubebuilder:default=private
 	// +optional
 	Visibility string `json:"visibility,omitempty"`

@@ -32,6 +32,7 @@ type RAGSourceReconciler struct {
 const (
 	minSyncInterval      = 10 * time.Minute
 	sourceTypeConfluence = "confluence"
+	sourceTypeWeb        = "web"
 )
 
 func (r *RAGSourceReconciler) now() time.Time {
@@ -65,25 +66,36 @@ func (r *RAGSourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 // instance is what the RAG service registers; its hash decides whether the spec changed.
 func ragSourceInstance(obj *unifaiv1.UnifaiRAGSource) (string, map[string]any, error) {
+	visibility := obj.Spec.Visibility
+	if visibility == "" {
+		visibility = "private"
+	}
+	instance := map[string]any{
+		"name": unifaiName(obj), "visibility": visibility, "aclGroups": append([]string{}, obj.Spec.ACLGroups...),
+	}
+	if len(obj.Spec.Tags) > 0 { // absent when unset, so a source without tags keeps its hash (no resync)
+		instance["tags"] = append([]string{}, obj.Spec.Tags...)
+	}
 	switch obj.Spec.Type {
 	case sourceTypeConfluence:
 		c := obj.Spec.Confluence
 		if c == nil {
 			return "", nil, permanent("spec.confluence is required for type confluence")
 		}
-		visibility := obj.Spec.Visibility
-		if visibility == "" {
-			visibility = "private"
-		}
-		instance := map[string]any{
-			"name": unifaiName(obj), "baseUrl": c.BaseURL, "spaceKey": c.SpaceKey, "rootTitle": c.RootTitle,
-			"excludeLabels": append([]string{}, c.ExcludeLabels...), "visibility": visibility,
-			"aclGroups": append([]string{}, obj.Spec.ACLGroups...),
-		}
-		if len(obj.Spec.Tags) > 0 { // absent when unset, so a source without tags keeps its hash (no resync)
-			instance["tags"] = append([]string{}, obj.Spec.Tags...)
-		}
+		instance["baseUrl"], instance["spaceKey"], instance["rootTitle"] = c.BaseURL, c.SpaceKey, c.RootTitle
+		instance["excludeLabels"] = append([]string{}, c.ExcludeLabels...)
 		return sourceTypeConfluence, instance, nil
+	case sourceTypeWeb:
+		w := obj.Spec.Web
+		if w == nil {
+			return "", nil, permanent("spec.web is required for type web")
+		}
+		instance["urls"] = append([]string{}, w.URLs...)
+		instance["crawl"] = w.Crawl
+		instance["include"], instance["exclude"] = append([]string{}, w.Include...), append([]string{}, w.Exclude...)
+		instance["maxPages"] = w.MaxPages
+		instance["metadata"] = w.Metadata
+		return sourceTypeWeb, instance, nil
 	}
 	return "", nil, permanent("unsupported source type %q", obj.Spec.Type)
 }
