@@ -3,7 +3,7 @@ import { useRoute } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BlueprintSummary, fetchBlueprintSummaries } from "@/api/blueprints";
-import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
+import { useView } from "@/contexts/ViewContext";
 
 /** Public, descriptive sheet of an agent, stored by the platform as `metadata.display` of its workflows. */
 export interface AgentDisplay {
@@ -38,17 +38,22 @@ const SAFE_COLOR = /^(#[0-9a-fA-F]{6}|[a-zA-Z]{3,30})$/;
 export default function AgentSheet() {
   const [, params] = useRoute("/agents/:agent");
   const agent = params?.agent ?? "";
-  const { teamId } = useWorkspaceIdentity();
+  const { teams, teamsReady } = useView();
   const [state, setState] = useState<"loading" | "found" | "notfound">("loading");
   const [sheet, setSheet] = useState<AgentDisplay | undefined>();
 
   useEffect(() => {
+    if (!teamsReady) return;
     let cancelled = false;
     setState("loading");
-    fetchBlueprintSummaries(teamId)
-      .then((summaries) => {
+    // The sheet lives on the agent's workflows, which are in the agent's team workspace: look in the personal
+    // workspace and in every team the caller belongs to. A workspace the caller cannot read is skipped, so an
+    // unknown agent and an agent the caller may not use give the same result.
+    const workspaces: (string | undefined)[] = [undefined, ...teams.map((t) => t.id)];
+    Promise.all(workspaces.map((w) => fetchBlueprintSummaries(w).catch(() => [] as BlueprintSummary[])))
+      .then((lists) => {
         if (cancelled) return;
-        const found = findAgentSheet(summaries, agent);
+        const found = findAgentSheet(lists.flat(), agent);
         setSheet(found);
         setState(found ? "found" : "notfound");
       })
@@ -58,7 +63,7 @@ export default function AgentSheet() {
     return () => {
       cancelled = true;
     };
-  }, [agent, teamId]);
+  }, [agent, teams, teamsReady]);
 
   if (state === "loading") {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
