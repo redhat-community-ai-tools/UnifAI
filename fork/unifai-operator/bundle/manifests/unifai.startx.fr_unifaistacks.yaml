@@ -144,6 +144,31 @@ spec:
                       identity, backend) to the UnifAI pods and the pods labelled unifai.startx.fr/internal-client=true.
                       When false, the NetworkIsolated condition is False.
                     type: boolean
+                  ragClients:
+                    description: |-
+                      Callers outside the stack namespace admitted to the RAG server only (not MAS, identity or backend), e.g. a
+                      gateway using the RAG search API. Each entry admits the pods of a namespace, or those with the given labels.
+                    items:
+                      description: RAGClient admits pods of another namespace to the
+                        RAG server.
+                      properties:
+                        namespace:
+                          description: Namespace of the callers.
+                          minLength: 1
+                          type: string
+                        podLabels:
+                          additionalProperties:
+                            type: string
+                          description: Labels the calling pods must carry (all pods
+                            of the namespace when empty).
+                          type: object
+                      required:
+                      - namespace
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - namespace
+                    x-kubernetes-list-type: map
                   uiHost:
                     description: 'UI host. Default: unifai-ui-<namespace>.<domain>.'
                     type: string
