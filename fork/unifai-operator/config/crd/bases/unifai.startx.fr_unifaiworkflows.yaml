@@ -70,6 +70,10 @@ spec:
                   Display is the descriptive sheet stored in the blueprint's metadata, for a UI that shows one entry per
                   workflow. Public fields only; the UnifAI API refuses anything else.
                 properties:
+                  agent:
+                    description: Agent is the agent's stable name, the key of its
+                      entry (/agents/<agent>).
+                    type: string
                   classification:
                     description: Classification ceiling.
                     type: string

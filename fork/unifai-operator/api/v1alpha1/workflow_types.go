@@ -26,6 +26,9 @@ type UnifaiWorkflowSpec struct {
 // AgentDisplay is the public, descriptive sheet of an agent or workflow. It never carries a prompt, a tool or
 // knowledge list, an access group, a digest or a signature.
 type AgentDisplay struct {
+	// Agent is the agent's stable name, the key of its entry (/agents/<agent>).
+	// +optional
+	Agent string `json:"agent,omitempty"`
 	// +optional
 	Title string `json:"title,omitempty"`
 	// +optional

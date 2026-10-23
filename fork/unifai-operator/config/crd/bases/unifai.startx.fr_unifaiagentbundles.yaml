@@ -401,6 +401,10 @@ spec:
                 description: Display is the public sheet built from the admitted bundle
                   (never from a field set by hand).
                 properties:
+                  agent:
+                    description: Agent is the agent's stable name, the key of its
+                      entry (/agents/<agent>).
+                    type: string
                   classification:
                     description: Classification ceiling.
                     type: string

@@ -39,7 +39,7 @@ func TestBundleDisplayCarriesPublicFieldsOnly(t *testing.T) {
 		t.Fatalf("a hidden field reached the sheet: %s", raw)
 	}
 	want := unifaiv1.AgentDisplay{
-		Title: "Demo agent", DisplayName: "Demo", Description: "Answers demo questions.", TileDescription: "A demo",
+		Agent: "demo", Title: "Demo agent", DisplayName: "Demo", Description: "Answers demo questions.", TileDescription: "A demo",
 		Maintainer: "platform team", State: "active", Classification: "C2", Icon: "code", Color: "#0066cc",
 		Tasks: []unifaiv1.DisplayTask{{Name: "t1", Title: "First task"}},
 	}
@@ -57,7 +57,7 @@ func TestAgentDisplayFieldsAreTheClosedPublicList(t *testing.T) {
 		got = append(got, strings.Split(typ.Field(i).Tag.Get("json"), ",")[0])
 	}
 	sort.Strings(got)
-	want := []string{"classification", "color", "description", "displayName", "icon", "maintainer", "state", "tasks", "tileDescription", "title"}
+	want := []string{"agent", "classification", "color", "description", "displayName", "icon", "maintainer", "state", "tasks", "tileDescription", "title"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("AgentDisplay fields %v, want %v", got, want)
 	}

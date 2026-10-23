@@ -756,7 +756,7 @@ func (r *AgentBundleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // rules, digests and signatures are never copied, and TestBundleDisplayCarriesPublicFieldsOnly keeps it so.
 func bundleDisplay(b *okf.Bundle) *unifaiv1.AgentDisplay {
 	d := &unifaiv1.AgentDisplay{
-		Title: b.Title, Description: b.Description, Maintainer: b.Maintainer, State: b.Status,
+		Agent: b.Name, Title: b.Title, Description: b.Description, Maintainer: b.Maintainer, State: b.Status,
 		Classification: b.Classification.String(),
 		DisplayName:    b.UI["displayName"], TileDescription: b.UI["tileDescription"], Icon: b.UI["icon"], Color: b.UI["color"],
 	}
