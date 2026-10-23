@@ -33,8 +33,55 @@ _VALID_METADATA_KEY = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_-]*$")
 
 
 # Metadata keys that API clients may set; everything else is server-managed.
-CLIENT_SETTABLE_METADATA_KEYS = frozenset({"usageScope"})
+CLIENT_SETTABLE_METADATA_KEYS = frozenset({"usageScope", "display"})
 _USAGE_SCOPES = frozenset({"public", "private"})
+
+# Descriptive sheet of a blueprint (public fields only). Anything else is refused, so a prompt, a tool list or
+# an access group can never be stored here by accident.
+DISPLAY_TEXT_FIELDS = {
+    "agent": 100, "title": 200, "description": 2000, "displayName": 100, "tileDescription": 300, "maintainer": 200,
+    "state": 40, "classification": 40,
+}
+_DISPLAY_TASK_FIELDS = {"name": 100, "title": 200}
+_DISPLAY_ICON = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+_DISPLAY_COLOR = re.compile(r"^(#[0-9a-fA-F]{6}|[a-zA-Z]{3,30})$")
+_RAW_HTML = re.compile(r"<\s*[a-zA-Z/!]")
+_DISPLAY_MAX_TASKS = 20
+
+
+def _display_text(field: str, value: Any, limit: int) -> None:
+    if not isinstance(value, str) or len(value) > limit or _RAW_HTML.search(value):
+        raise InvalidMetadataKeysError([f"display.{field}"])
+
+
+def validate_display(display: Any) -> None:
+    """Check a descriptive sheet: known fields only, bounded plain text (no raw HTML), icon and color from
+    allowlisted shapes, a bounded task list."""
+    if not isinstance(display, dict):
+        raise InvalidMetadataKeysError(["display"])
+    allowed = set(DISPLAY_TEXT_FIELDS) | {"icon", "color", "tasks"}
+    unknown = [f"display.{k}" for k in display if k not in allowed]
+    if unknown:
+        raise InvalidMetadataKeysError(unknown)
+    for field, limit in DISPLAY_TEXT_FIELDS.items():
+        if field in display:
+            _display_text(field, display[field], limit)
+    if "icon" in display and not (isinstance(display["icon"], str) and _DISPLAY_ICON.match(display["icon"])):
+        raise InvalidMetadataKeysError(["display.icon"])
+    if "color" in display and not (isinstance(display["color"], str) and _DISPLAY_COLOR.match(display["color"])):
+        raise InvalidMetadataKeysError(["display.color"])
+    tasks = display.get("tasks", [])
+    if not isinstance(tasks, list) or len(tasks) > _DISPLAY_MAX_TASKS:
+        raise InvalidMetadataKeysError(["display.tasks"])
+    for task in tasks:
+        if not isinstance(task, dict):
+            raise InvalidMetadataKeysError(["display.tasks"])
+        extra = [f"display.tasks.{k}" for k in task if k not in _DISPLAY_TASK_FIELDS]
+        if extra:
+            raise InvalidMetadataKeysError(extra)
+        for field, limit in _DISPLAY_TASK_FIELDS.items():
+            if field in task:
+                _display_text(f"tasks.{field}", task[field], limit)
 PUBLIC_VIEW_MAX_SHORTCUTS = 3
 
 
@@ -47,6 +94,8 @@ def validate_client_metadata(metadata: Dict[str, Any]) -> None:
     scope = metadata.get("usageScope")
     if "usageScope" in metadata and scope not in _USAGE_SCOPES:
         raise InvalidMetadataKeysError(["usageScope"])
+    if "display" in metadata:
+        validate_display(metadata["display"])
 
 
 def validate_metadata_keys(metadata: Dict[str, Any]) -> None:

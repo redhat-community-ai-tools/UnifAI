@@ -176,6 +176,9 @@ type UnifaiAgentBundleStatus struct {
 	// OKF content with no UnifAI equivalent.
 	// +optional
 	Unmapped []string `json:"unmapped,omitempty"`
+	// Display is the public sheet built from the admitted bundle (never from a field set by hand).
+	// +optional
+	Display *AgentDisplay `json:"display,omitempty"`
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }

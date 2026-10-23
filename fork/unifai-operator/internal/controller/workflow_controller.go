@@ -67,6 +67,9 @@ func (r *WorkflowReconciler) apply(ctx context.Context, api *unifai.Client, obj 
 		return err
 	}
 	h := hash(resolved)
+	if obj.Spec.Display != nil {
+		h = hash([]any{resolved, obj.Spec.Display})
+	}
 	raw, _ := json.Marshal(resolved)
 
 	existing, err := api.FindBlueprint(ctx, name)
@@ -77,8 +80,10 @@ func (r *WorkflowReconciler) apply(ctx context.Context, api *unifai.Client, obj 
 		return notManaged(fmt.Sprintf("workflow %s", name))
 	}
 	bid := existing
+	changed := true
 	switch {
 	case bid != "" && obj.Status.Hash == h && obj.Status.BlueprintID == bid:
+		changed = false
 	case bid != "":
 		err = api.Call(ctx, http.MethodPut, "/api/blueprints/blueprint.update", nil,
 			map[string]any{"blueprintId": bid, "blueprintRaw": string(raw)}, nil)
@@ -91,6 +96,13 @@ func (r *WorkflowReconciler) apply(ctx context.Context, api *unifai.Client, obj 
 	}
 	if err != nil {
 		return permanentOn(err, http.StatusBadRequest, http.StatusConflict, http.StatusUnprocessableEntity)
+	}
+	if changed && obj.Spec.Display != nil {
+		// Server side the key is validated: public fields only, bounded plain text (multi-agent blueprints service).
+		if err := api.Call(ctx, http.MethodPut, "/api/blueprints/blueprint.metadata.set", nil,
+			map[string]any{"blueprintId": bid, "metadata": map[string]any{"display": obj.Spec.Display}}, nil); err != nil {
+			return permanentOn(err, http.StatusBadRequest, http.StatusForbidden, http.StatusNotFound)
+		}
 	}
 	obj.Status.BlueprintID, obj.Status.Hash = bid, h
 	setReady(&obj.Status, "Ready", "blueprint "+name)

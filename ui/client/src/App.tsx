@@ -23,6 +23,7 @@ import DocumentsPage from "./features/docs/DocumentsPage";
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { AgenticAIProvider } from '@/contexts/AgenticAIContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import AgentSheet from '@/pages/AgentSheet';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import TermsApproval from '@/components/auth/TermsApproval';
 import SlackIntegration from "./features/slack/SlackIntegration";
@@ -40,13 +41,14 @@ function AppRoutes() {
   const [isAgenticChats] = useRoute("/agentic-chats");
   const [isAgenticChatsSession] = useRoute("/agentic-chats/:sessionId");
   const [isTemplates] = useRoute("/templates");
+  const [isAgentSheet] = useRoute("/agents/:agent");
   const [isScheduledWorkflows] = useRoute("/scheduled-workflows");
   const [isRagOverview] = useRoute("/rag-overview");
   const [isSlack] = useRoute("/slack");
   const [isDocuments] = useRoute("/documents");
   const [isSlackAddSource] = useRoute("/slack/add-source");
 
-  const isAgenticRoute = isAgenticOverview || isAgenticAI || isInventory || isAgenticChats || isAgenticChatsSession || isTemplates || isScheduledWorkflows;
+  const isAgenticRoute = isAgenticOverview || isAgenticAI || isInventory || isAgenticChats || isAgenticChatsSession || isTemplates || isAgentSheet || isScheduledWorkflows;
   const isTeamBlockedRagRoute =
     viewMode === "team" &&
     (isRagOverview || isSlack || isDocuments || isSlackAddSource);
@@ -71,6 +73,7 @@ function AppRoutes() {
             <Route path="/agentic-chats" component={AgenticChats} />
             <Route path="/scheduled-workflows" component={ScheduledWorkflows} />
             <Route path="/templates" component={AgenticTemplates} />
+            <Route path="/agents/:agent" component={AgentSheet} />
           </Switch>
         </AgenticLayout>
       </AgenticAIProvider>

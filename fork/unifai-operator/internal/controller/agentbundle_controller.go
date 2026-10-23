@@ -230,6 +230,7 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 		unmapped = append([]string{fmt.Sprintf("zuno.access.groups %v: enforced by the gateways only (spec.entitlement GatewayOnly)", b.AccessGroups)}, unmapped...)
 	}
 	st.Agent, st.Tasks, st.Unmapped = b.Name, tasks, unmapped
+	st.Display = bundleDisplay(b)
 	st.Children = childNames(desired)
 	st.Message = fmt.Sprintf("%d tasks, %d objects emitted", len(tasks), len(desired))
 	cond(ConditionEmitted, true, "Emitted", st.Message)
@@ -427,6 +428,7 @@ func renderBundle(cr *unifaiv1.UnifaiAgentBundle, b *okf.Bundle) ([]client.Objec
 		}
 		objs = append(objs, &unifaiv1.UnifaiWorkflow{ObjectMeta: childMeta(cr, wfName), Spec: unifaiv1.UnifaiWorkflowSpec{
 			CommonSpec:  common,
+			Display:     bundleDisplay(b),
 			Description: fmt.Sprintf("%s - %s (OKF bundle %s, %s)", b.Title, title, b.Name, level),
 			Blueprint:   *rawJSON(stagedBlueprint(cond, stages)),
 		}})
@@ -747,4 +749,23 @@ func (r *AgentBundleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&unifaiv1.UnifaiLLM{}).Owns(&unifaiv1.UnifaiAgent{}).
 		Owns(&unifaiv1.UnifaiCondition{}).Owns(&unifaiv1.UnifaiWorkflow{}).Owns(&unifaiv1.UnifaiProvider{}).Owns(&unifaiv1.UnifaiTeam{}).
 		Named("unifaiagentbundle").Complete(r)
+}
+
+// bundleDisplay builds the public sheet from the admitted bundle (ADR-0582 clause 3). It is a closed list of
+// fields: system prompts, tool and knowledge lists, retrieval settings, access groups, quota class, local-only
+// rules, digests and signatures are never copied, and TestBundleDisplayCarriesPublicFieldsOnly keeps it so.
+func bundleDisplay(b *okf.Bundle) *unifaiv1.AgentDisplay {
+	d := &unifaiv1.AgentDisplay{
+		Agent: b.Name, Title: b.Title, Description: b.Description, Maintainer: b.Maintainer, State: b.Status,
+		Classification: b.Classification.String(),
+		DisplayName:    b.UI["displayName"], TileDescription: b.UI["tileDescription"], Icon: b.UI["icon"], Color: b.UI["color"],
+	}
+	for _, t := range b.Tasks {
+		title := t.Title
+		if title == "" {
+			title = t.Name
+		}
+		d.Tasks = append(d.Tasks, unifaiv1.DisplayTask{Name: t.Name, Title: title})
+	}
+	return d
 }

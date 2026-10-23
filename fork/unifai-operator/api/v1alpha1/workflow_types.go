@@ -17,6 +17,49 @@ type UnifaiWorkflowSpec struct {
 	Blueprint runtime.RawExtension `json:"blueprint"`
 	// +optional
 	SecretRefs []SecretRef `json:"secretRefs,omitempty"`
+	// Display is the descriptive sheet stored in the blueprint's metadata, for a UI that shows one entry per
+	// workflow. Public fields only; the UnifAI API refuses anything else.
+	// +optional
+	Display *AgentDisplay `json:"display,omitempty"`
+}
+
+// AgentDisplay is the public, descriptive sheet of an agent or workflow. It never carries a prompt, a tool or
+// knowledge list, an access group, a digest or a signature.
+type AgentDisplay struct {
+	// Agent is the agent's stable name, the key of its entry (/agents/<agent>).
+	// +optional
+	Agent string `json:"agent,omitempty"`
+	// +optional
+	Title string `json:"title,omitempty"`
+	// +optional
+	DisplayName string `json:"displayName,omitempty"`
+	// +optional
+	Description string `json:"description,omitempty"`
+	// +optional
+	TileDescription string `json:"tileDescription,omitempty"`
+	// +optional
+	Maintainer string `json:"maintainer,omitempty"`
+	// Lifecycle state, such as active or placeholder.
+	// +optional
+	State string `json:"state,omitempty"`
+	// Classification ceiling.
+	// +optional
+	Classification string `json:"classification,omitempty"`
+	// Short keyword for an icon, lower case letters, digits and hyphens.
+	// +optional
+	Icon string `json:"icon,omitempty"`
+	// A CSS color keyword or #rrggbb.
+	// +optional
+	Color string `json:"color,omitempty"`
+	// +optional
+	Tasks []DisplayTask `json:"tasks,omitempty"`
+}
+
+// DisplayTask is the public name of one task.
+type DisplayTask struct {
+	Name string `json:"name"`
+	// +optional
+	Title string `json:"title,omitempty"`
 }
 
 // +kubebuilder:object:root=true
