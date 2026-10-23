@@ -64,6 +64,8 @@ spec:
           - --leader-elect
           - --health-probe-bind-address=:8081
         image: controller:latest
+        # Always: a release tag can be pushed again before it is published (canary rebuilds).
+        imagePullPolicy: Always
         name: manager
         env:
         - name: POD_NAMESPACE
