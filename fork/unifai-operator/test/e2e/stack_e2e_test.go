@@ -31,6 +31,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"
 )
@@ -471,10 +472,9 @@ func create(t *testing.T, obj client.Object) {
 
 // label assigns an UnifAI resource to an operator instance ("" = default).
 func label(obj client.Object, inst string) {
-	if _, ok := obj.(unifaiv1.Object); !ok {
-		if _, ok := obj.(*unifaiv1.UnifaiStack); !ok {
-			return
-		}
+	// Every kind of the operator's group belongs to one instance (UnifAI objects, stacks, bundles, restores...).
+	if gvk, err := apiutil.GVKForObject(obj, c.Scheme()); err != nil || gvk.Group != unifaiv1.GroupVersion.Group {
+		return
 	}
 	l := obj.GetLabels()
 	if l == nil {
