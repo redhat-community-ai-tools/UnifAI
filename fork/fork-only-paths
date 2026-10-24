@@ -6,3 +6,4 @@ fork/
 .fork/
 .github/workflows/unifai-operator.yml
 .github/workflows/unifai-operator-release.yml
+.github/workflows/publish-images.yml
