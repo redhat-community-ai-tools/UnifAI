@@ -35,7 +35,7 @@ def upload_docs(files):
     """
     try:
         storage = file_storage()
-        storage.save_files(files)
+        storage.save_files(files, owner=g.user_id)
         
         return jsonify({"message": "Files uploaded successfully"}), 200
 

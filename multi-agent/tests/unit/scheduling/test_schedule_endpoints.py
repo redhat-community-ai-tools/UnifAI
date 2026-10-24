@@ -190,13 +190,14 @@ class TestUpdateEndpoint:
         )
         assert resp.status_code == 404
 
-    def test_forbidden(self, client, mock_schedule_service, identity):
+    def test_forbidden_looks_like_not_found(self, client, mock_schedule_service, identity):
+        body = {"scheduleId": "x", "inputs": {"user_prompt": "y"}}
         mock_schedule_service.update.side_effect = SchedulePermissionError("x", identity)
-        resp = client.post(
-            "/api/schedules/schedule.update",
-            json={"scheduleId": "x", "inputs": {"user_prompt": "y"}},
-        )
-        assert resp.status_code == 403
+        denied = client.post("/api/schedules/schedule.update", json=body)
+        mock_schedule_service.update.side_effect = ScheduleNotFoundError("x")
+        missing = client.post("/api/schedules/schedule.update", json=body)
+        assert denied.status_code == missing.status_code == 404
+        assert denied.get_json() == missing.get_json()
 
 
 # ═══════════════════════════════════════════════════════════════════
