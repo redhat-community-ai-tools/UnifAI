@@ -1,0 +1,182 @@
+# Fork-only (fork/fork-only-paths): builds, pushes, signs and attests the five UnifAI application images
+# on quay.io, so that a cluster can verify them (zuno-demo ADR-0586, WP-176).
+#
+# - push to devel (when an image's code changed): quay.io/zuno/unifai-<component>:devel-<sha> and :devel,
+#   environment `quay-devel` (no approval, branch devel only);
+# - tag vX.Y.Z: quay.io/zuno/unifai-<component>:vX.Y.Z, environment `quay-release` (requires an approval);
+# - manual run: from devel or a v* tag only.
+#
+# Each image is signed KEYLESS by this workflow's GitHub OIDC identity and carries two attestations, a SLSA
+# provenance and an SPDX SBOM. The identity zuno accepts is
+#   https://github.com/startxfr/UnifAI/.github/workflows/publish-images.yml@refs/tags/v...   (releases)
+#   https://github.com/startxfr/UnifAI/.github/workflows/publish-images.yml@refs/heads/devel (development builds)
+# (zuno-demo platform/supply-chain/image-identities.yaml): renaming this file or its triggers changes that
+# identity and needs the zuno side to change with it.
+#
+# Actions are pinned by commit SHA (this job holds an OIDC token that signs): bump them deliberately, with the
+# version in the trailing comment. Images pushed by hand (`make images-devel`) are unsigned and are not accepted by a
+# cluster that verifies; they must not reuse the devel / devel-<sha> tags this workflow owns.
+name: publish-images
+
+on:
+  push:
+    branches: [devel]
+    tags: ['v*']
+    paths:
+      - rag/**
+      - multi-agent/**
+      - backend/**
+      - shared-resources/identity/**
+      - ui/**
+      - global_utils/**
+      - .github/workflows/publish-images.yml
+      - fork/ci/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: quay.io/zuno
+  IMAGE_PREFIX: unifai
+
+jobs:
+  images:
+    # Only the two refs zuno accepts an identity for; a manual run elsewhere would sign with an unaccepted one.
+    if: github.ref == 'refs/heads/devel' || startsWith(github.ref, 'refs/tags/v')
+    name: ${{ matrix.component }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'quay-release' || 'quay-devel' }}
+    permissions:
+      contents: read
+      id-token: write   # keyless signing with this run's OIDC token
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # component = quay image suffix (the Makefile's IMAGE_<component> mapping); same Dockerfiles and
+          # arguments as the Makefile's build-<component> targets.
+          - {component: rag,        dockerfile: rag/Dockerfile,                         prepare: "",                       build_args: ""}
+          - {component: multiagent, dockerfile: multi-agent/Dockerfile,                 prepare: "make multiagent-perms",  build_args: "--build-arg CERT_URL="}
+          - {component: backend,    dockerfile: backend/Dockerfile,                     prepare: "",                       build_args: ""}
+          - {component: identity,   dockerfile: shared-resources/identity/Dockerfile,   prepare: "",                       build_args: ""}
+          - {component: ui,         dockerfile: ui/deployment/Dockerfile,               prepare: "make ui-certs ui-perms", build_args: ""}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # The multiagent and rag images are large: the stock runner runs out of disk without this.
+      - name: Free disk space on the runner
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Work out the image tags
+        id: tags
+        env:
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          image="$REGISTRY/$IMAGE_PREFIX-$COMPONENT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tags="$GITHUB_REF_NAME"
+          else
+            tags="devel-$(git rev-parse --short=9 HEAD) devel"
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare the build context
+        if: matrix.prepare != ''
+        env:
+          PREPARE: ${{ matrix.prepare }}
+        run: $PREPARE
+
+      - name: Build
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          BUILD_ARGS: ${{ matrix.build_args }}
+        run: |
+          set -euo pipefail
+          first="${TAGS%% *}"
+          # BUILD_ARGS is deliberately unquoted: it holds zero or more `--build-arg K=V` words from the matrix.
+          docker build $BUILD_ARGS -t "$IMAGE:$first" -f "$DOCKERFILE" .
+          for t in $TAGS; do
+            docker tag "$IMAGE:$first" "$IMAGE:$t"
+          done
+
+      - name: Log in to quay.io
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
+        run: |
+          echo "$QUAY_TOKEN" | docker login quay.io -u "$QUAY_USERNAME" --password-stdin
+
+      - name: Push and read the digest
+        id: push
+        env:
+          IMAGE: ${{ steps.tags.outputs.image }}
+          TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          set -euo pipefail
+          for t in $TAGS; do
+            docker push "$IMAGE:$t"
+          done
+          first="${TAGS%% *}"
+          ref="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$IMAGE:$first")"
+          case "$ref" in *@sha256:*) ;; *) echo "no digest for $first: $ref" >&2; exit 1;; esac
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v2.4.1
+
+      - name: Sign the digest, keyless
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_TOKEN: ${{ secrets.QUAY_TOKEN }}
+          REF: ${{ steps.push.outputs.ref }}
+        run: |
+          set -euo pipefail
+          echo "$QUAY_TOKEN" | cosign login quay.io -u "$QUAY_USERNAME" --password-stdin
+          cosign sign --yes "$REF"
+
+      - name: SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ steps.push.outputs.ref }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest the build provenance and the SBOM
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          python3 fork/ci/slsa_provenance.py --component "$COMPONENT" --out provenance.json
+          cosign attest --yes --type slsaprovenance1 --predicate provenance.json "$REF"
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
+
+      - name: Record the signed reference
+        env:
+          REF: ${{ steps.push.outputs.ref }}
+          COMPONENT: ${{ matrix.component }}
+        run: |
+          {
+            echo "### $COMPONENT"
+            echo
+            echo '```'
+            echo "$REF"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
