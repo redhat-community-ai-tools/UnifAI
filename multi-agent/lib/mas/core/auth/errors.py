@@ -40,3 +40,7 @@ class FlowStateNotFoundError(AuthError):
 
 class ClientRegistrationError(AuthError):
     """Dynamic Client Registration (RFC 7591) failed."""
+
+
+class CredentialTargetError(AuthError):
+    """A stored credential was asked to authenticate a URL it was not issued for."""

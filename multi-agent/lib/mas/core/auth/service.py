@@ -14,7 +14,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, List, Optional, Union, TYPE_CHECKING
 
-from .errors import TokenExpiredError
+from .errors import CredentialTargetError, TokenExpiredError
+from .target_policy import credential_may_be_sent, origin_of
 from .credentials.models import (
     StoredCredential, TokenStatus, RecoveryResult, ClientConfig,
 )
@@ -64,12 +65,14 @@ class AuthHandle:
         server_identifier: str,
         scheme_type: str = "",
         config: Optional[Dict[str, Any]] = None,
+        target_url: str = "",
     ):
         self._svc = auth_service
         self._user_id_or_resolver = user_id
         self._server_id = server_identifier
         self._scheme_type = scheme_type
         self._config = config or {}
+        self._target_url = target_url
 
     @property
     def _user_id(self) -> str:
@@ -81,13 +84,24 @@ class AuthHandle:
         except RuntimeError:
             return ""
 
+    def _check_target(self) -> None:
+        """Fail closed when this credential is not meant for the URL it is about to authenticate."""
+        if self._target_url and not self._svc.credential_valid_for(
+            self._user_id, self._server_id, self._target_url, self._scheme_type,
+        ):
+            raise CredentialTargetError(
+                "The stored credential was not issued for this server URL; sign in again for it"
+            )
+
     async def get_headers(self) -> Dict[str, str]:
+        self._check_target()
         return await self._svc.get_headers(
             self._user_id, self._server_id, self._config,
             scheme_type=self._scheme_type,
         )
 
     async def get_token(self) -> str:
+        self._check_target()
         token = await self._svc.get_valid_token(
             self._user_id, self._server_id, self._config,
             scheme_type=self._scheme_type,
@@ -248,6 +262,7 @@ class AuthService:
                 expires_at=result.new_token_set.expires_at or cred.expires_at,
                 scopes=cred.scopes,
                 scheme_type=cred.scheme_type,
+                resource_origins=cred.resource_origins,
                 status=TokenStatus.ACTIVE,
             )
             self._store.upsert(updated)
@@ -287,7 +302,14 @@ class AuthService:
 
         result = await strategy.complete(raw_callback_data)
 
+        previous = self._store.find_by_server(result.user_id, result.server_identifier)
+        origins = list(previous.resource_origins) if previous else []
+        origin = origin_of(result.resource_origin)
+        if origin and origin not in origins:
+            origins.append(origin)
+
         self._store.upsert(StoredCredential(
+            resource_origins=origins,
             user_id=result.user_id,
             server_identifier=result.server_identifier,
             access_token=result.token_set.access_token,
@@ -319,12 +341,30 @@ class AuthService:
 
     # ── Binding ───────────────────────────────────────────────────────
 
+    def credential_valid_for(
+        self, user_id: str, server_identifier: str, target_url: str, scheme_type: str = "",
+    ) -> bool:
+        """Was the stored credential issued for the resource at ``target_url``?"""
+        cred = self.get_credential(user_id, server_identifier, scheme_type)
+        if cred is None:
+            return False
+        ok = credential_may_be_sent(cred.server_identifier, cred.resource_origins, target_url)
+        if not ok:
+            logger.warning(
+                "Credential of user=%s for server=%s refused for target %s",
+                user_id, server_identifier, origin_of(target_url) or "<invalid>",
+            )
+        return ok
+
     def bind(
         self, user_id: str, server_identifier: str, scheme_type: str = "",
+        target_url: str = "",
     ) -> Optional[AuthCredential]:
         if not user_id or not server_identifier:
             return None
         if not self.get_credential(user_id, server_identifier, scheme_type):
+            return None
+        if target_url and not self.credential_valid_for(user_id, server_identifier, target_url, scheme_type):
             return None
 
         config = self._resolve_config(user_id, server_identifier)
@@ -334,6 +374,7 @@ class AuthService:
             server_identifier=server_identifier,
             scheme_type=scheme_type,
             config=config,
+            target_url=target_url,
         )
 
     def bind_lazy(
@@ -341,6 +382,7 @@ class AuthService:
         user_id_resolver: Callable[[], str],
         server_identifier: str,
         scheme_type: str = "",
+        target_url: str = "",
     ) -> Optional[AuthCredential]:
         """Create a credential handle with deferred user_id resolution.
 
@@ -358,6 +400,7 @@ class AuthService:
             server_identifier=server_identifier,
             scheme_type=scheme_type,
             config=config,
+            target_url=target_url,
         )
 
     # ── Internals ─────────────────────────────────────────────────────

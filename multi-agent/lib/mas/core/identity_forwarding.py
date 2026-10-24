@@ -30,6 +30,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
+from mas.core.auth.target_policy import forwarding_target_allowed
 from mas.core.execution_context import SESSION_TAGS_TAG, ExecutionContextHolder
 
 logger = logging.getLogger(__name__)
@@ -153,9 +154,16 @@ class IdentityForwarder:
     submission (see :data:`SESSION_TAGS_TAG`).
     """
 
-    def __init__(self, token_source: IdentityTokenSource, ctx_holder: ExecutionContextHolder | None) -> None:
+    def __init__(
+        self,
+        token_source: IdentityTokenSource,
+        ctx_holder: ExecutionContextHolder | None,
+        target_urls: tuple[str, ...] | None = None,
+    ) -> None:
         self._source = token_source
         self._holder = ctx_holder
+        # URLs the forwarded token may reach. ``None`` = not restricted (header templates only).
+        self._targets = target_urls
 
     def variables(self) -> dict[str, str]:
         out: dict[str, str] = {}
@@ -180,6 +188,10 @@ class IdentityForwarder:
         return out
 
     def access_token(self) -> str:
+        if self._targets is not None and not all(forwarding_target_allowed(u) for u in self._targets):
+            raise IdentityTokenUnavailable(
+                "the user token is only forwarded to cluster-internal or allow-listed servers"
+            )
         if self._holder is None:
             raise IdentityTokenUnavailable("no execution context bound to this element")
         try:
@@ -208,14 +220,29 @@ class ForwardedIdentityCredential:
     per-server credential.
     """
 
-    def __init__(self, forwarder: IdentityForwarder, header_templates: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        forwarder: IdentityForwarder,
+        header_templates: Mapping[str, Any] | None = None,
+        target_url: str = "",
+    ) -> None:
         self._forwarder = forwarder
         self._templates = dict(header_templates or {})
+        self._target_url = target_url
+
+    def _check_target(self) -> None:
+        """The platform token goes only to cluster-internal or allow-listed servers (fail closed)."""
+        if not forwarding_target_allowed(self._target_url):
+            raise IdentityTokenUnavailable(
+                "the user token is only forwarded to cluster-internal or allow-listed servers"
+            )
 
     async def get_headers(self) -> dict[str, str]:
+        self._check_target()
         return await asyncio.to_thread(self._forwarder.headers, self._templates, True)
 
     async def get_token(self) -> str:
+        self._check_target()
         return await asyncio.to_thread(self._forwarder.access_token)
 
     async def attempt_recovery(self):

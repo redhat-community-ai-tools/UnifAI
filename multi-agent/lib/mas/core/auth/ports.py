@@ -85,6 +85,7 @@ class CompletionResult(BaseModel):
     server_identifier: str
     scheme_type: str
     scopes: List[str] = Field(default_factory=list)
+    resource_origin: str = ""
 
 
 # ── AuthChallenge — scheme-agnostic onboarding responses ─────────────

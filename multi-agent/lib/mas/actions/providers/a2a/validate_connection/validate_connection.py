@@ -124,6 +124,10 @@ class ValidateConnectionAction(BaseAction):
         # and make a public agent-card fetch look "green" while the session is dead.
         server_id = input_data.server_identifier or auth_method
         if self._auth and input_data.user_id and server_id:
+            if not self._auth.credential_valid_for(
+                input_data.user_id, server_id, str(input_data.base_url),
+            ):
+                return None, "Session expired — sign in again"
             token = await self._auth.get_valid_token(input_data.user_id, server_id)
             if token:
                 return token, None

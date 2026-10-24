@@ -132,6 +132,7 @@ class McpProviderValidator(BaseElementValidator):
             if lookup_user:
                 auth_cred = context.auth_service.bind(
                     lookup_user, lookup_id, scheme_type=scheme_type,
+                    target_url=str(config.mcp_url),
                 )
                 # The saved `server_identifier` can be empty or stale (e.g. it
                 # was never persisted back to the resource after sign-in, or
@@ -174,6 +175,7 @@ class McpProviderValidator(BaseElementValidator):
                             lookup_user,
                             detection.server_identifier,
                             scheme_type=detection.protocol_type or scheme_type,
+                            target_url=str(config.mcp_url),
                         )
 
         try:

@@ -124,6 +124,7 @@ class A2AAgentNodeValidator(BaseElementValidator):
             lookup_user,
             server_id,
             scheme_type=config.scheme_type or "",
+            target_url=str(config.base_url),
         )
         if not auth_cred:
             return None, "Session expired — sign in again"

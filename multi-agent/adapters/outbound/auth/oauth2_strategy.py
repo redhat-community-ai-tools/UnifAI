@@ -168,7 +168,7 @@ class OAuth2Strategy(AuthStrategy):
                 expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
                 extra={k: v for k, v in config.items() if k in (
                     "client_id", "client_secret", "token_endpoint",
-                    "authorization_endpoint", "scopes", "resource_uri",
+                    "authorization_endpoint", "scopes", "resource_uri", "resource_origin",
                 )},
             ))
 
@@ -235,6 +235,7 @@ class OAuth2Strategy(AuthStrategy):
             server_identifier=pending.server_identifier,
             scheme_type="oauth2",
             scopes=token_set.scope.split() if token_set.scope else [],
+            resource_origin=str(pending.extra.get("resource_origin") or ""),
         )
 
     # ── RFC 7591 Dynamic Client Registration ──────────────────────────

@@ -120,7 +120,10 @@ def test_forwarder_headers_without_token_do_not_touch_source():
 
 
 def test_forwarded_credential_is_async_auth_credential():
-    cred = ForwardedIdentityCredential(IdentityForwarder(StaticSource("t"), _holder()), {"X-U": "{user}"})
+    cred = ForwardedIdentityCredential(
+        IdentityForwarder(StaticSource("t"), _holder()), {"X-U": "{user}"},
+        target_url="http://mcp-gateway.zuno-ai-run.svc:8080/mcp",
+    )
     assert asyncio.run(cred.get_headers()) == {"X-U": "alice", "Authorization": "Bearer t"}
     assert asyncio.run(cred.get_token()) == "t"
     assert asyncio.run(cred.attempt_recovery()).recovered is True

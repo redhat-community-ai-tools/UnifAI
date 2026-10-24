@@ -77,6 +77,10 @@ class StoredCredential(BaseModel):
     scopes: List[str] = Field(default_factory=list)
     status: TokenStatus = TokenStatus.ACTIVE
     scheme_type: str = "oauth2"
+    resource_origins: List[str] = Field(
+        default_factory=list,
+        description="Origins of the resource URLs the user signed in for; the credential is presented only to these",
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

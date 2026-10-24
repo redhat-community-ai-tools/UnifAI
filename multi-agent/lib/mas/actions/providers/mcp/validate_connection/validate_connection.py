@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import time
+
+from mas.core.auth.target_policy import forwarding_target_allowed
 from typing import Any, Dict, Optional
 
 from pydantic import HttpUrl, Field
@@ -100,10 +102,16 @@ class ValidateConnectionAction(BaseAction):
         auth_cred = None
         is_sign_in = input_data.auth_method == "sign_in"
         if not credential and self._auth and input_data.user_id and server_id and is_sign_in:
-            auth_cred = self._auth.bind(input_data.user_id, server_id)
+            auth_cred = self._auth.bind(input_data.user_id, server_id, target_url=mcp_url)
 
         headers = input_data.additional_headers
         if input_data.auth_method == FORWARD_USER_TOKEN:
+            if not forwarding_target_allowed(mcp_url):
+                return ValidateConnectionOutput(
+                    success=False,
+                    message="The user token is only forwarded to cluster-internal or allow-listed servers",
+                    is_reachable=False,
+                )
             # No run is executing yet: validate with the caller's own sign-in
             # token, and drop header templates that need a running session.
             credential = credential or _caller_access_token()

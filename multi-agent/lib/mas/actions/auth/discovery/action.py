@@ -20,6 +20,7 @@ from pydantic import Field
 
 from mas.actions.common.base_action import BaseAction
 from mas.actions.common.action_models import BaseActionInput, BaseActionOutput, ActionType
+from mas.core.auth.target_policy import origin_of
 from mas.core.auth.service import AuthService
 from mas.core.enums import ResourceCategory, AuthStatus, AuthErrorCode
 from mas.elements.providers.mcp_server_client.identifiers import Identifier as McpIdentifier
@@ -132,6 +133,10 @@ class DiscoveryAction(BaseAction):
         # Step 3: Initiate sign-in
         config = self._auth.get_client_config("", server_id)
         login_config = config.model_dump() if config else {}
+        # The credential minted by this sign-in is presented only to the resource it was requested for.
+        resource_origin = origin_of(input_data.mcp_url or "")
+        if resource_origin:
+            login_config["resource_origin"] = resource_origin
 
         try:
             challenge = await self._auth.initiate(

@@ -134,6 +134,7 @@ class TestResolveHeaders:
             "user-1",
             "https://sso.example/realms/x",
             scheme_type="",
+            target_url="http://a2a.example:8000/",
         )
 
     def test_sso_missing_credential_returns_error(self):

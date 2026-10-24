@@ -14,6 +14,15 @@ from mas.core.identity_forwarding import (
 FORWARD_USER_TOKEN = "forward_user_token"
 
 
+def _target_url_of(cfg: Any) -> str:
+    """The URL an element connects to (MCP server, A2A agent, RAG service), or ``""``."""
+    for attr in ("mcp_url", "base_url", "url"):
+        value = getattr(cfg, attr, None)
+        if value:
+            return str(value)
+    return ""
+
+
 def _auth_method(cfg: Any) -> str:
     raw = cfg.get("auth_method", "") if isinstance(cfg, dict) else getattr(cfg, "auth_method", "")
     return str(getattr(raw, "value", raw) or "")
@@ -61,12 +70,14 @@ class CategoryBuilder(ABC):
         ``auth_method: forward_user_token`` binds the acting user's own token.
         Returns the credential or None.
         """
+        target_url = _target_url_of(cfg)
         if _auth_method(cfg) == FORWARD_USER_TOKEN:
             source = getattr(deps, "identity_token_source", None) or NullIdentityTokenSource()
             holder = getattr(deps, "execution_ctx", None)
             return ForwardedIdentityCredential(
                 IdentityForwarder(source, holder),
                 getattr(cfg, "additional_headers", None) or {},
+                target_url=target_url,
             )
 
         server_id = (getattr(cfg, "server_identifier", "") or "").rstrip("/")
@@ -86,7 +97,7 @@ class CategoryBuilder(ABC):
         def resolver(_h=ctx_holder) -> str:
             return _h.context.credential_user_id()
 
-        return deps.auth_service.bind_lazy(resolver, server_id, scheme_type)
+        return deps.auth_service.bind_lazy(resolver, server_id, scheme_type, target_url=target_url)
 
     def _category_name(self) -> str:
         return getattr(self.category, "value", str(self.category))

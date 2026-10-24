@@ -27,7 +27,9 @@ class OpenAICompatibleFactory(BaseFactory[OpenAICompatibleConfig, OpenAICompatib
             if cfg.forward_user_token or cfg.default_headers or cfg.metadata_lookup_url:
                 source = getattr(element_deps, "identity_token_source", None) or NullIdentityTokenSource()
                 holder = getattr(element_deps, "execution_ctx", None)
-                forwarder = IdentityForwarder(source, holder)
+                # The user's token may only reach the model endpoint and the routing lookup it names.
+                targets = tuple(u for u in (str(cfg.base_url), cfg.metadata_lookup_url) if u)
+                forwarder = IdentityForwarder(source, holder, target_urls=targets)
 
             llm = OpenAICompatibleLLM(
                 model_name=cfg.model_name,
