@@ -63,3 +63,32 @@ def test_retriever_passes_its_source_type():
     r._provider.query.return_value = MagicMock(matches=[])
     r.retrieve("q")
     assert r._provider.query.call_args.kwargs["source_type"] == "CONFLUENCE"
+
+
+def _match(score, text):
+    m = MagicMock(score=score)
+    m.model_dump.return_value = {"score": score, "text": text}
+    return m
+
+
+def test_extra_source_types_are_queried_and_merged_by_score():
+    cfg = DocsRagRetrieverConfig(source_type="CONFLUENCE", extra_source_types=["WEB"], top_k_results=3, threshold=0.3)
+    r = DocsRagRetrieverFactory().create(cfg, deps=_deps())
+    r._provider = MagicMock()
+    by_type = {
+        "CONFLUENCE": [_match(0.9, "c1"), _match(0.5, "c2"), _match(0.1, "low")],
+        "WEB": [_match(0.8, "w1"), _match(0.4, "w2")],
+    }
+    r._provider.query.side_effect = lambda **kw: MagicMock(matches=by_type[kw["source_type"]])
+    out = r.retrieve("q")
+    assert [m["text"] for m in out] == ["c1", "w1", "c2"]
+    assert [c.kwargs["source_type"] for c in r._provider.query.call_args_list] == ["CONFLUENCE", "WEB"]
+
+
+def test_without_extra_source_types_one_query_in_provider_order():
+    r = DocsRagRetrieverFactory().create(DocsRagRetrieverConfig(source_type="CONFLUENCE"), deps=_deps())
+    r._provider = MagicMock()
+    r._provider.query.return_value = MagicMock(matches=[_match(0.4, "a"), _match(0.9, "b")])
+    out = r.retrieve("q")
+    assert [m["text"] for m in out] == ["a", "b"]
+    assert r._provider.query.call_count == 1

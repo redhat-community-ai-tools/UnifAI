@@ -56,6 +56,15 @@ class DocsRagRetrieverConfig(BaseRetrieverConfig):
         description="RAG source type to search: DOCUMENT (uploaded files), CONFLUENCE, SLACK, ...",
     )
 
+    extra_source_types: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Further RAG source types searched next to source_type (for example WEB next to "
+            "CONFLUENCE). Each type is queried on its own, the matches of all types are merged "
+            "by score and the best top_k_results are kept."
+        ),
+    )
+
     forward_user_token: bool = Field(
         default=False,
         description=(

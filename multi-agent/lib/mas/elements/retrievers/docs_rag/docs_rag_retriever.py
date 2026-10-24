@@ -25,6 +25,7 @@ class DocsRagRetriever(BaseRetriever):
             identity: Optional[RetrievalIdentity] = None,
             forwarder: Optional[IdentityForwarder] = None,
             source_type: str = "DOCUMENT",
+            extra_source_types: Optional[List[str]] = None,
     ):
         self.threshold = threshold
         self.docs = docs
@@ -32,6 +33,10 @@ class DocsRagRetriever(BaseRetriever):
         self._identity = identity
         self._forwarder = forwarder
         self._source_type = source_type
+        self._source_types = [source_type] + [
+            s for s in (extra_source_types or []) if s != source_type
+        ]
+        self._top_k = top_k_results
         config = RagProviderConfig(
             top_k=top_k_results,
             timeout=timeout,
@@ -43,17 +48,20 @@ class DocsRagRetriever(BaseRetriever):
         user_id = self._identity.identity_id if self._identity else ""
         doc_ids = [doc['id'] for doc in self.docs] if self.docs else None
 
-        response = self._provider.query(
-            query=query,
-            doc_ids=doc_ids,
-            tags=self.tags,
-            authenticated_user=user_id,
-            extra_headers=self._forwarder.headers(forward_token=True) if self._forwarder else None,
-            source_type=self._source_type,
-        )
+        headers = self._forwarder.headers(forward_token=True) if self._forwarder else None
+        matches = []
+        for source_type in self._source_types:
+            response = self._provider.query(
+                query=query,
+                doc_ids=doc_ids,
+                tags=self.tags,
+                authenticated_user=user_id,
+                extra_headers=headers,
+                source_type=source_type,
+            )
+            matches.extend(m for m in response.matches if m.score >= self.threshold)
 
-        return [
-            match.model_dump()
-            for match in response.matches
-            if match.score >= self.threshold
-        ]
+        if len(self._source_types) > 1:
+            matches.sort(key=lambda m: m.score, reverse=True)
+            matches = matches[:self._top_k]
+        return [match.model_dump() for match in matches]

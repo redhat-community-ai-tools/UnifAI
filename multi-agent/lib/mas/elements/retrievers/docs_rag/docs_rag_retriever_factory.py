@@ -35,6 +35,7 @@ class DocsRagRetrieverFactory(BaseFactory[DocsRagRetrieverConfig, DocsRagRetriev
                 identity=deps.execution_ctx if deps else None,
                 forwarder=_forwarder(cfg, deps),
                 source_type=cfg.source_type,
+                extra_source_types=cfg.extra_source_types,
             )
         except Exception as e:
             raise PluginConfigurationError(
