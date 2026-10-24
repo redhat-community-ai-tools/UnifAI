@@ -320,6 +320,11 @@ make release-files                                     # bundle + catalog templa
 git commit ... && git tag operator-vx.y.z && git push origin devel operator-vx.y.z
 ```
 
+A release that touches RAG (pipeline, sources, docling, embedding), identity/Keycloak or teams runs
+`canary-e2e-full` instead of `canary-e2e`, and a failure blocks it. That run includes docling and TEI, the RAG pipeline,
+a web source crawled in the cluster and re-synced, one real Red Hat page, managed Keycloak and team access by group.
+It takes about 45 to 60 min more. `make e2e-full` runs the same suite against the OLM instance, on demand.
+
 The tag runs `.github/workflows/unifai-operator-release.yml` in the `quay-release` environment (approval required,
 quay robot `QUAY_USERNAME`/`QUAY_TOKEN`): it checks that the tag matches `VERSION`, the committed bundle and the
 catalog template, that the operator image tested by the canary exists (it is not rebuilt), then pushes the bundle and

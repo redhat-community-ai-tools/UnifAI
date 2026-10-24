@@ -373,6 +373,22 @@ func TestUnifaiStack(t *testing.T) {
 		}
 	})
 
+	t.Run("the CRDs refuse an invalid spec with the rule's message", func(t *testing.T) { checkAdmissionRules(t, ns) })
+
+	t.Run("a web source is crawled in the cluster and re-synced after a page change", func(t *testing.T) {
+		if os.Getenv("E2E_FULL") == "" {
+			t.Skip("E2E_FULL=1 required (embedding service)")
+		}
+		checkWebSource(t, ns)
+	})
+
+	t.Run("a real Red Hat documentation page is ingested", func(t *testing.T) {
+		if os.Getenv("E2E_FULL") == "" {
+			t.Skip("E2E_FULL=1 required (embedding service, Internet access)")
+		}
+		checkRedHatSource(t, ns)
+	})
+
 	t.Run("schedule, template and RAG pipeline on the real services", func(t *testing.T) {
 		sch := &unifaiv1.UnifaiSchedule{ObjectMeta: metav1.ObjectMeta{Name: "e2e-every", Namespace: ns}, Spec: unifaiv1.UnifaiScheduleSpec{
 			Workflow: "e2e-wf", Inputs: map[string]string{"user_prompt": "ping"}, Schedule: unifaiv1.ScheduleDefinition{Interval: "PT12H"}}}

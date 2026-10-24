@@ -122,15 +122,27 @@ E2E_TIMEOUT ?= 30m
 E2E_STORAGE_CLASS ?= gp3-csi
 E2E_SHARED_STORAGE_CLASS ?= nfs
 E2E_NODE_SELECTOR ?= workload=unifai
+E2E_GO_TIMEOUT ?= 90m
 
 .PHONY: test-e2e
-test-e2e: ## Run the e2e tests on the current cluster (E2E_STORAGE_CLASS, E2E_SHARED_STORAGE_CLASS, E2E_NODE_SELECTOR, E2E_VERSION, E2E_FULL=1, E2E_KEYCLOAK=1, E2E_INTERNAL_AUTH=0, E2E_KEEP=1).
+test-e2e: ## Run the e2e tests on the current cluster (E2E_STORAGE_CLASS, E2E_SHARED_STORAGE_CLASS, E2E_NODE_SELECTOR, E2E_VERSION, E2E_FULL=1, E2E_KEYCLOAK=1, E2E_TEAM_ACCESS=1, E2E_INTERNAL_AUTH=0, E2E_KEEP=1).
 	E2E_STORAGE_CLASS=$(E2E_STORAGE_CLASS) E2E_SHARED_STORAGE_CLASS=$(E2E_SHARED_STORAGE_CLASS) \
 	E2E_NODE_SELECTOR=$(E2E_NODE_SELECTOR) E2E_TIMEOUT=$(E2E_TIMEOUT) \
 	E2E_OPERATOR_INSTANCE=$(E2E_OPERATOR_INSTANCE) E2E_OPERATOR_NAMESPACE=$(E2E_OPERATOR_NAMESPACE) \
 	E2E_UPGRADE=$(E2E_UPGRADE) E2E_CANDIDATE_VERSION=$(E2E_CANDIDATE_VERSION) E2E_KEYCLOAK=$(E2E_KEYCLOAK) \
 	E2E_VERSION=$(E2E_VERSION) E2E_INTERNAL_AUTH=$(E2E_INTERNAL_AUTH) \
-	go test -tags e2e -count=1 -timeout 90m -v ./test/e2e/
+	E2E_FULL=$(E2E_FULL) E2E_TEAM_ACCESS=$(E2E_TEAM_ACCESS) \
+	go test -tags e2e -count=1 -timeout $(E2E_GO_TIMEOUT) -v ./test/e2e/
+
+# Full run: what the normal run skips (docling + embedding and the RAG pipeline and web sources, including one real
+# Red Hat page; managed Keycloak; team access by Keycloak group). Required before a release that touches RAG,
+# identity/Keycloak, teams or sources (`make canary-e2e-full` instead of canary-e2e), and on demand against the OLM
+# instance (`make e2e-full`).
+E2E_FULL_VARS = E2E_FULL=1 E2E_KEYCLOAK=1 E2E_TEAM_ACCESS=1 E2E_GO_TIMEOUT=180m
+
+.PHONY: e2e-full
+e2e-full: ## Run the full e2e suite (slow parts included) against the operator installed on the cluster.
+	$(MAKE) test-e2e $(E2E_FULL_VARS)
 
 .PHONY: validate-manifests
 validate-manifests: ## Check rendered manifests against the static rules of the UnifAI resources (FILES=a.yaml b.yaml, - for stdin).
@@ -364,6 +376,10 @@ canary-deploy: manifests kustomize ## Deploy IMG as a canary instance (only reco
 .PHONY: canary-e2e
 canary-e2e: ## Run the e2e suite against the canary instance (upgrade test from the OLM instance included).
 	$(MAKE) test-e2e E2E_OPERATOR_INSTANCE=canary E2E_OPERATOR_NAMESPACE=$(CANARY_NS) E2E_UPGRADE=1 E2E_CANDIDATE_VERSION=$(VERSION)
+
+.PHONY: canary-e2e-full
+canary-e2e-full: ## Run the full e2e suite against the canary instance (releases touching RAG, identity, teams or sources).
+	$(MAKE) canary-e2e $(E2E_FULL_VARS)
 
 .PHONY: canary-delete
 canary-delete: kustomize ## Remove the canary instance.
