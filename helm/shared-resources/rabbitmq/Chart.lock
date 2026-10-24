@@ -1,1 +1,6 @@
-
+dependencies:
+- name: common
+  repository: ""
+  version: 2.28.0
+digest: sha256:3cf376a00e762d94605004b810f15681a790ec753b9688e1afb0da5975082888
+generated: "2026-10-24T16:06:57.255047048+02:00"
