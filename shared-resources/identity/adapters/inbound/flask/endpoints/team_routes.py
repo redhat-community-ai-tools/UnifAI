@@ -23,6 +23,31 @@ def _can_access(svc, team, caller) -> bool:
     return caller.is_service or caller.is_admin or _is_member(svc, team, caller.username)
 
 
+def _is_owner(team, caller) -> bool:
+    """May change a team's name and member list: its creator, an admin, or the trusted service."""
+    return caller.is_service or caller.is_admin or team.created_by == caller.username
+
+
+def _vet_members(svc, members, caller):
+    """Members a session caller proposes are untrusted input.
+
+    A group snapshot (``group_members``) is computed by the server from the
+    directory, never taken from the client, and a caller may only reference
+    groups it belongs to. The trusted service and admins are not restricted.
+    """
+    if caller.is_service or caller.is_admin or not isinstance(members, list):
+        return members
+    own_groups = set(svc.cached_group_ids(caller.username) or [])
+    vetted = []
+    for item in members:
+        if isinstance(item, dict):
+            item = {k: v for k, v in item.items() if k != "group_members"}
+            if item.get("type") == "group" and item.get("id") not in own_groups:
+                raise ValueError("You can only add groups you belong to")
+        vetted.append(item)
+    return vetted
+
+
 def _serialize_team(team):
     d = team.model_dump(mode="json")
     d["effective_member_count"] = team.effective_member_count()
@@ -44,7 +69,7 @@ def create_team():
         return jsonify({"error": "name and createdBy are required"}), 400
 
     try:
-        team = svc.create(name=name, created_by=created_by, members=members)
+        team = svc.create(name=name, created_by=created_by, members=_vet_members(svc, members, caller))
         return jsonify(_serialize_team(team)), 201
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -122,12 +147,16 @@ def update_team():
         return jsonify({"error": "teamId is required"}), 400
 
     try:
-        if not _can_access(svc, svc.get(team_id), current_caller()):
+        caller = current_caller()
+        existing = svc.get(team_id)
+        if not _can_access(svc, existing, caller):
             return jsonify({"error": "Team not found"}), 404
+        if not _is_owner(existing, caller):
+            return jsonify({"error": "Only the team creator can change this team"}), 403
         team = svc.update(
             team_id=team_id,
             name=body.get("name"),
-            members=body.get("members"),
+            members=_vet_members(svc, body.get("members"), caller),
         )
         return jsonify(_serialize_team(team)), 200
     except KeyError:
@@ -154,6 +183,8 @@ def delete_team():
 
     try:
         team = svc.get(team_id)
+        if not _can_access(svc, team, caller):
+            return jsonify({"error": "Team not found"}), 404
         if team.created_by != requested_by and not caller.is_admin:
             return jsonify({"error": "Only the team creator can delete this team"}), 403
 

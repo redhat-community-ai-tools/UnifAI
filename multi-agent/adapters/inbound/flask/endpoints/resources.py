@@ -192,7 +192,8 @@ def update_resource(identity: Identity, resource_id: str, config: dict, name: st
     except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceAccessDeniedError:
-        return forbidden_response()
+        # Same answer as a missing id: a denial must not reveal that the resource exists.
+        return jsonify({"error": f"Resource not found: {KeyError(resource_id)}"}), 404
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except ValueError as e:
@@ -227,7 +228,8 @@ def delete_resource(identity: Identity, resource_id: str) -> tuple[Response, int
     except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceAccessDeniedError:
-        return forbidden_response()
+        # Same answer as a missing id: a denial must not reveal that the resource exists.
+        return jsonify({"error": f"Resource not found: {KeyError(resource_id)}"}), 404
     except ResourceInUseError as e:
         return jsonify({"error": str(e),
                         "blueprints": e.by_blueprints,

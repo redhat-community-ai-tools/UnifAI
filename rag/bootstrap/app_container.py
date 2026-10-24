@@ -13,10 +13,13 @@ Usage:
     svc.register(pipeline_id, source_type)
 """
 
+import logging
 from functools import lru_cache
 from pymongo import MongoClient
 
 from global_utils.utils.util import get_mongo_url
+
+logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -567,12 +570,21 @@ def document_pipeline_handler():
 def confluence_pipeline_handler():
     """Confluence pipeline handler; credentials come from CONFLUENCE_USERNAME / CONFLUENCE_TOKEN."""
     from core.data_sources.types.confluence.pipeline_handler import ConfluencePipelineHandler
-    from infrastructure.sources.confluence.connector import ConfluenceConnector
+    from infrastructure.sources.confluence.connector import ConfluenceConnector, credentials_allowed
     from config.app_config import AppConfig
     cfg = AppConfig.get_instance()
 
     def connector(base_url: str) -> ConfluenceConnector:
-        return ConfluenceConnector(base_url, username=cfg.confluence_username, token=cfg.confluence_token,
+        # The deployment credentials go only to the hosts the operator listed; any other baseUrl
+        # (typed by a session user) is fetched without them.
+        if cfg.confluence_allowed_hosts is None:
+            logger.warning("CONFLUENCE_ALLOWED_HOSTS is not set: the Confluence credentials are sent to %s", base_url)
+            username, token = cfg.confluence_username, cfg.confluence_token
+        elif credentials_allowed(base_url, cfg.confluence_allowed_hosts):
+            username, token = cfg.confluence_username, cfg.confluence_token
+        else:
+            username = token = ""
+        return ConfluenceConnector(base_url, username=username, token=token,
                                    verify_tls=cfg.confluence_verify_tls)
 
     return ConfluencePipelineHandler(

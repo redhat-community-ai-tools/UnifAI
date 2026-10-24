@@ -9,7 +9,7 @@ from functools import wraps
 import os
 import secrets
 import threading
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 import requests as _http
 from typing import Any
 import os, uuid, logging
@@ -26,6 +26,41 @@ config = AppConfig.get_instance()
 logger = logging.getLogger('auth_manager')
 
 
+
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def is_loopback_callback(url: Any) -> bool:
+    """The CLI login hands the session to a local listener, never to a remote host.
+
+    Only ``http://localhost|127.0.0.1|[::1][:port]/...`` without credentials is accepted: the
+    callback carries a signed session cookie, so any other target would hand a
+    victim's session to whoever crafted the login link.
+    """
+    if not isinstance(url, str):
+        return False
+    try:
+        parts = urlparse(url)
+        return (
+            parts.scheme == "http"
+            and parts.hostname in _LOOPBACK_HOSTS
+            and parts.username is None
+            and parts.password is None
+        )
+    except ValueError:
+        return False
+
+
+def _cli_callback_of(state: str):
+    """Return ``(is_cli_state, callback_url)`` for a login ``state`` value."""
+    try:
+        data = json.loads(base64.b64decode(state).decode())
+    except Exception:
+        return False, None
+    if isinstance(data, dict) and data.get("cli"):
+        return True, data.get("callbackUrl")
+    return False, None
 
 class AuthManager:
     def __init__(self, app=None, redis_store=None):
@@ -145,6 +180,10 @@ class AuthManager:
             
             if not client_state:
                 return jsonify({'error': 'State parameter is required'}), 400
+
+            is_cli, cli_target = _cli_callback_of(client_state)
+            if is_cli and not is_loopback_callback(cli_target):
+                return jsonify({'error': 'Invalid CLI callback'}), 400
             
             redirect_uri = self._oauth_callback_redirect_uri()
             # Pass the client-provided state through to Keycloak
@@ -160,12 +199,12 @@ class AuthManager:
 
             # Detect CLI flow: state is a base64 JSON with {"cli": true, "callbackUrl": "..."}
             cli_callback_url = None
-            try:
-                state_data = json.loads(base64.b64decode(request_state).decode())
-                if state_data.get('cli') and state_data.get('callbackUrl'):
-                    cli_callback_url = state_data['callbackUrl']
-            except Exception:
-                pass
+            is_cli, cli_target = _cli_callback_of(request_state)
+            if is_cli:
+                if not is_loopback_callback(cli_target):
+                    logger.warning("CLI auth callback refused: callback is not a loopback address")
+                    return jsonify({'error': 'Invalid CLI callback'}), 400
+                cli_callback_url = cli_target
 
             if cli_callback_url:
                 # CLI flow: exchange code directly with Keycloak and create a

@@ -175,11 +175,80 @@ def test_team_get_denied_without_group_membership():
     assert r.status_code == 404
 
 
-def test_team_update_allowed_for_group_member():
+def test_team_update_refused_for_a_mere_group_member():
     client, cache, team = _setup("bob")
     cache.data["bob"] = [_group(GROUP)]
     r = client.put("/api/teams/team.update", json={"teamId": team.team_id, "name": "renamed"})
+    assert r.status_code == 403
+    r = client.put("/api/teams/team.update", json={"teamId": team.team_id, "members": []})
+    assert r.status_code == 403
+
+
+def test_team_update_allowed_for_the_creator():
+    client, cache, team = _setup("alice")
+    r = client.put("/api/teams/team.update", json={"teamId": team.team_id, "name": "renamed"})
     assert r.status_code == 200
+
+
+def test_team_update_allowed_for_the_trusted_service():
+    client, cache, team = _setup()
+    r = client.put(
+        "/api/teams/team.update", json={"teamId": team.team_id, "name": "renamed"}, headers=_service_headers(),
+    )
+    assert r.status_code == 200
+
+
+def test_team_delete_is_not_found_for_a_non_member_like_a_missing_team():
+    client, cache, team = _setup("bob")
+    missing = client.delete("/api/teams/team.delete?teamId=nope")
+    denied = client.delete(f"/api/teams/team.delete?teamId={team.team_id}")
+    assert denied.status_code == missing.status_code == 404
+    assert denied.get_json() == missing.get_json()
+
+
+def test_member_who_is_not_creator_cannot_delete():
+    client, cache, team = _setup("bob")
+    cache.data["bob"] = [_group(GROUP)]
+    assert client.delete(f"/api/teams/team.delete?teamId={team.team_id}").status_code == 403
+
+
+def test_create_refuses_a_group_the_caller_is_not_in():
+    client, cache, team = _setup("mallory")
+    cache.data["mallory"] = [_group("mine")]
+    r = client.post("/api/teams/team.create", json={
+        "name": "t1", "members": [{"type": "group", "id": "finance-admins", "display_name": "x"}],
+    })
+    assert r.status_code == 400
+
+
+def test_create_drops_a_client_supplied_group_snapshot():
+    client, cache, team = _setup("mallory")
+    cache.data["mallory"] = [_group("mine")]
+    r = client.post("/api/teams/team.create", json={
+        "name": "t2",
+        "members": [{"type": "group", "id": "mine", "display_name": "mine", "group_members": ["alice", "bob"]}],
+    })
+    assert r.status_code == 201
+    group = [m for m in r.get_json()["members"] if m["type"] == "group"][0]
+    assert group["group_members"] == []
+
+
+def test_service_may_create_a_team_for_any_group():
+    client, cache, team = _setup()
+    r = client.post("/api/teams/team.create", headers=_service_headers(), json={
+        "name": "t3", "createdBy": "operator",
+        "members": [{"type": "group", "id": "agent_x", "display_name": "agent_x"}],
+    })
+    assert r.status_code == 201
+
+
+def test_update_refuses_a_group_the_creator_is_not_in():
+    client, cache, team = _setup("alice")
+    cache.data["alice"] = [_group("mine")]
+    r = client.put("/api/teams/team.update", json={
+        "teamId": team.team_id, "members": [{"type": "group", "id": "finance-admins", "display_name": "x"}],
+    })
+    assert r.status_code == 400
 
 
 def test_group_removal_after_cache_expiry_revokes_access():

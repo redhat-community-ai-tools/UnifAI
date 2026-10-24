@@ -10,6 +10,8 @@ import logging
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 
+from urllib.parse import urlparse
+
 import requests
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,15 @@ class ConfluencePage:
 
 class ConfluenceError(RuntimeError):
     pass
+
+
+def credentials_allowed(base_url: str, allowed_hosts: Sequence[str]) -> bool:
+    """True when the deployment credentials may be sent to ``base_url`` (exact host match)."""
+    try:
+        host = (urlparse(base_url).hostname or "").lower()
+    except ValueError:
+        return False
+    return bool(host) and host in {h.strip().lower() for h in allowed_hosts if h and h.strip()}
 
 
 class ConfluenceConnector:

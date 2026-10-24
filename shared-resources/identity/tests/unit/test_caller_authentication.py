@@ -140,11 +140,12 @@ def test_non_member_cannot_read_update_or_delete():
     assert team.team_id in svc.teams and svc.teams[team.team_id].name == "t"
 
 
-def test_member_can_update_but_only_creator_can_delete():
+def test_member_can_read_but_only_creator_can_update_or_delete():
     client, svc = make_client("bob")
     team = svc.create("t", "alice")
     team.members.append(TeamMember(type=TeamMemberType.USER, id="bob", display_name="bob"))
-    assert client.put("/api/teams/team.update", json={"teamId": team.team_id, "name": "x"}).status_code == 200
+    assert client.get(f"/api/teams/team.get?teamId={team.team_id}").status_code == 200
+    assert client.put("/api/teams/team.update", json={"teamId": team.team_id, "name": "x"}).status_code == 403
     r = client.delete(f"/api/teams/team.delete?teamId={team.team_id}&requestedBy=alice")
     assert r.status_code == 403
 
