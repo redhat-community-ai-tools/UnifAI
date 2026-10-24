@@ -70,6 +70,9 @@ spec:
                 type: string
               prompt:
                 type: string
+                x-kubernetes-validations:
+                - message: prompt is not empty
+                  rule: size(self.trim()) > 0
               teamId:
                 description: Team workspace to use instead of the user's personal
                   one.
@@ -96,6 +99,9 @@ spec:
             - message: 'UnifaiChat is a one-shot run: spec is immutable, create a
                 new one'
               rule: self == oldSelf
+            - message: teamId and teamRef are exclusive
+              rule: '!has(self.teamId) || !has(self.teamRef) || size(self.teamId)
+                == 0 || size(self.teamRef) == 0'
           status:
             description: ObjectStatus is the status of every UnifAI object kind.
             properties:

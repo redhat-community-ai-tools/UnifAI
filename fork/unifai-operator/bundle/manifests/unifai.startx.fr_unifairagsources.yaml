@@ -103,6 +103,9 @@ spec:
                 description: Time between incremental syncs (minimum 10m). Unset =
                   sync only when the spec changes.
                 type: string
+                x-kubernetes-validations:
+                - message: syncInterval is at least 10m
+                  rule: duration(self) >= duration('10m')
               tags:
                 description: |-
                   Tags put on the source, so a search can be scoped to a domain (query tags=<tag>) instead of "every
@@ -179,9 +182,15 @@ spec:
                       Seed pages. Each is fetched on every sync (its links are the discovery input); the pages found
                       from it are fetched only when the server says they changed.
                     items:
+                      maxLength: 2048
                       type: string
+                    maxItems: 500
                     minItems: 1
                     type: array
+                    x-kubernetes-validations:
+                    - message: web urls are http(s) URLs
+                      rule: self.all(u, isURL(u) && (u.startsWith('http://') || u.startsWith('https://'))
+                        && size(url(u).getHostname()) > 0)
                 required:
                 - urls
                 type: object
@@ -196,6 +205,9 @@ spec:
             - message: a shared source needs at least one ACL group
               rule: self.visibility != 'shared' || (has(self.aclGroups) && size(self.aclGroups)
                 > 0)
+            - message: teamId and teamRef are exclusive
+              rule: '!has(self.teamId) || !has(self.teamRef) || size(self.teamId)
+                == 0 || size(self.teamRef) == 0'
           status:
             description: UnifaiRAGSourceStatus reports the last sync.
             properties:
