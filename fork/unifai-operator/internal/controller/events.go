@@ -92,7 +92,7 @@ func specWarnings(rec recorder.EventRecorder, obj client.Object, conds *[]metav1
 	for _, v := range vs {
 		msgs = append(msgs, v.String())
 	}
-	msg := unifai.Truncate("refused at admission in a later release: "+strings.Join(msgs, "; "), 1000)
+	msg := unifai.Truncate("spec rules not met: "+strings.Join(msgs, "; "), 1000)
 	if prev := meta.FindStatusCondition(*conds, ConditionSpecWarnings); rec != nil && (prev == nil || prev.Message != msg) {
 		record(rec, obj, corev1.EventTypeWarning, "SpecInvalid", msg)
 	}

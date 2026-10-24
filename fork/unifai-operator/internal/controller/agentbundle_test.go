@@ -331,11 +331,11 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		Eventually(func() string { return status(ns)().Phase }, timeout, interval).Should(Equal("Ready"))
 	})
 
-	It("refuses spec.groupTeam together with spec.teamRef", func() {
-		refused(setup("bundle-groupteam-conflict"), func(b *unifaiv1.UnifaiAgentBundle) {
-			b.Spec.GroupTeam = true
-			b.Spec.TeamRef = "other"
-		}, tekosFiles(), ConditionValid, "TeamConflict")
+	It("refuses spec.groupTeam together with spec.teamRef at admission", func() {
+		b := newBundle(setup("bundle-groupteam-conflict"), "quay.io/x/b@sha256:"+strings.Repeat("0", 64), nil)
+		b.Spec.GroupTeam = true
+		b.Spec.TeamRef = "other"
+		Expect(k8sClient.Create(ctx, b)).To(MatchError(ContainSubstring("groupTeam is exclusive with teamId and teamRef")))
 	})
 
 	It("verifies a keyless-signed v2 artifact against the trusted root and records the signer", func() {

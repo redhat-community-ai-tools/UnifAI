@@ -1,6 +1,7 @@
 // Package validate holds the static rules of the UnifAI custom resources: what can be checked on an object alone
-// (no other object, UnifAI, registry or Secret). The operator reports violations as warnings (condition
-// SpecWarnings, Warning Event, metric) before the same rules become CEL validations of the CRDs (R-304).
+// (no other object, UnifAI, registry or Secret). The CRDs refuse them at admission (CEL rules carrying the same
+// messages); the operator still reports them (condition SpecWarnings, Warning Event, metric) for objects stored
+// before the rules existed and for the rules CEL cannot express (R-304).
 package validate
 
 import (
@@ -28,13 +29,25 @@ type Violation struct {
 
 func (v Violation) String() string { return v.Field + ": " + v.Message }
 
-// Rule is one static check. CEL is the expression the rule becomes in the CRD (on the type named by Field's root),
-// kept next to the Go check so both stay the same rule.
+// Rule is one static check. The CRD refuses it with Message (a CEL rule of api/v1alpha1), unless Refusal names the
+// API server's own answer or WarnOnly says the rule is only reported (CEL cannot read the field).
 type Rule struct {
-	Field   string
-	Message string
-	CEL     string
-	check   func(obj client.Object) bool // true when the object is valid
+	Field    string
+	Message  string
+	Refusal  string
+	WarnOnly bool
+	check    func(obj client.Object) bool // true when the object is valid
+}
+
+// Refused returns what the API server answers an object breaking the rule ("" for a reported-only rule).
+func (r Rule) Refused() string {
+	switch {
+	case r.WarnOnly:
+		return ""
+	case r.Refusal != "":
+		return r.Refusal
+	}
+	return r.Message
 }
 
 // Allowed component keys of the UnifaiStack maps.
@@ -154,15 +167,14 @@ func mapKeys[V any](m map[string]V) map[string]bool {
 var Rules = map[string][]Rule{
 	"*": {{
 		Field: "spec.teamRef", Message: "teamId and teamRef are exclusive",
-		CEL: "!(has(self.teamId) && has(self.teamRef))",
 		check: func(obj client.Object) bool {
 			c := common(obj)
 			return c == nil || c.TeamID == "" || c.TeamRef == ""
 		},
 	}},
 	"resource": {{
-		Field: "spec.config.type", Message: "config.type, when set, must equal spec.type",
-		CEL: "!has(self.config) || !has(self.config.type) || self.config.type == self.type",
+		// config is free-form (preserved unknown fields): CEL cannot read config.type.
+		Field: "spec.config.type", Message: "config.type, when set, must equal spec.type", WarnOnly: true,
 		check: func(obj client.Object) bool {
 			typ, cfg, _ := resourceType(obj)
 			t, ok := cfg["type"]
@@ -171,13 +183,11 @@ var Rules = map[string][]Rule{
 	}},
 	"UnifaiAgentBundle": {
 		{Field: "spec.groupTeam", Message: "groupTeam is exclusive with teamId and teamRef",
-			CEL: "!has(self.groupTeam) || !self.groupTeam || (!has(self.teamId) && !has(self.teamRef))",
 			check: func(obj client.Object) bool {
 				s := obj.(*unifaiv1.UnifaiAgentBundle).Spec
 				return !s.GroupTeam || (s.TeamID == "" && s.TeamRef == "")
 			}},
 		{Field: "spec.classificationOverrides", Message: "classification overrides are C1, C2 or C3",
-			CEL: "self.all(k, self[k] in ['C1', 'C2', 'C3'])",
 			check: func(obj client.Object) bool {
 				for _, v := range obj.(*unifaiv1.UnifaiAgentBundle).Spec.ClassificationOverrides {
 					if !slices.Contains(levels, v) {
@@ -187,7 +197,6 @@ var Rules = map[string][]Rule{
 				return true
 			}},
 		{Field: "spec.providers", Message: "providers are UnifaiProvider names (lower-case DNS labels)",
-			CEL: "self.all(p, p.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'))",
 			check: func(obj client.Object) bool {
 				for _, p := range obj.(*unifaiv1.UnifaiAgentBundle).Spec.Providers {
 					if !dnsName.MatchString(p) {
@@ -197,7 +206,6 @@ var Rules = map[string][]Rule{
 				return true
 			}},
 		{Field: "spec.retriever", Message: "retriever is an UnifaiRetriever name (lower-case DNS label)",
-			CEL: "self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",
 			check: func(obj client.Object) bool {
 				r := obj.(*unifaiv1.UnifaiAgentBundle).Spec.Retriever
 				return r == "" || dnsName.MatchString(r)
@@ -205,13 +213,11 @@ var Rules = map[string][]Rule{
 	},
 	"UnifaiRAGSource": {
 		{Field: "spec.syncInterval", Message: "syncInterval is at least 10m",
-			CEL: "!has(self.syncInterval) || duration(self.syncInterval) >= duration('10m')",
 			check: func(obj client.Object) bool {
 				i := obj.(*unifaiv1.UnifaiRAGSource).Spec.SyncInterval
 				return i == nil || i.Duration >= 10*time.Minute
 			}},
 		{Field: "spec.web.urls", Message: "web urls are http(s) URLs",
-			CEL: "self.all(u, isURL(u) && (u.startsWith('http://') || u.startsWith('https://')))",
 			check: func(obj client.Object) bool {
 				w := obj.(*unifaiv1.UnifaiRAGSource).Spec.Web
 				if w == nil {
@@ -226,20 +232,27 @@ var Rules = map[string][]Rule{
 			}},
 	},
 	"UnifaiRAGPipeline": {
-		{Field: "spec.documents", Message: "document names are unique and end in .pdf, .docx, .md or .pptx",
-			CEL: "listType=map on name; name.matches('(?i)\\\\.(pdf|docx|md|pptx)$')",
+		{Field: "spec.documents", Message: "document names are unique", Refusal: "Duplicate value",
 			check: func(obj client.Object) bool {
 				seen := map[string]bool{}
 				for _, d := range obj.(*unifaiv1.UnifaiRAGPipeline).Spec.Documents {
-					if seen[d.Name] || !docName.MatchString(d.Name) {
+					if seen[d.Name] {
 						return false
 					}
 					seen[d.Name] = true
 				}
 				return true
 			}},
+		{Field: "spec.documents.name", Message: "document names end in .pdf, .docx, .md or .pptx",
+			check: func(obj client.Object) bool {
+				for _, d := range obj.(*unifaiv1.UnifaiRAGPipeline).Spec.Documents {
+					if !docName.MatchString(d.Name) {
+						return false
+					}
+				}
+				return true
+			}},
 		{Field: "spec.documents.source.url", Message: "document urls are http(s) URLs",
-			CEL: "!has(self.url) || (isURL(self.url) && (self.url.startsWith('http://') || self.url.startsWith('https://')))",
 			check: func(obj client.Object) bool {
 				for _, d := range obj.(*unifaiv1.UnifaiRAGPipeline).Spec.Documents {
 					if d.Source.URL != "" && !httpURL(d.Source.URL) {
@@ -251,13 +264,11 @@ var Rules = map[string][]Rule{
 	},
 	"UnifaiSchedule": {
 		{Field: "spec.inputs", Message: "inputs needs user_prompt",
-			CEL: "'user_prompt' in self",
 			check: func(obj client.Object) bool {
 				_, ok := obj.(*unifaiv1.UnifaiSchedule).Spec.Inputs["user_prompt"]
 				return ok
 			}},
 		{Field: "spec.schedule.interval", Message: "interval is an ISO-8601 duration of at least PT1M",
-			CEL: "self.matches('^P(T(\\\\d+H)?(\\\\d+M)?(\\\\d+S)?|\\\\d+D(T(\\\\d+H)?(\\\\d+M)?(\\\\d+S)?)?)$')",
 			check: func(obj client.Object) bool {
 				i := obj.(*unifaiv1.UnifaiSchedule).Spec.Schedule.Interval
 				if i == "" {
@@ -267,19 +278,16 @@ var Rules = map[string][]Rule{
 				return ok && d >= time.Minute
 			}},
 		{Field: "spec.schedule.cron_expression", Message: "cron_expression has 5 fields",
-			CEL: "self.matches('^\\\\S+(\\\\s+\\\\S+){4}$')",
 			check: func(obj client.Object) bool {
 				c := obj.(*unifaiv1.UnifaiSchedule).Spec.Schedule.CronExpression
 				return c == "" || cronFields.MatchString(strings.TrimSpace(c))
 			}},
 		{Field: "spec.schedule.remaining_actions", Message: "remaining_actions is at least 1",
-			CEL: "Minimum=1",
 			check: func(obj client.Object) bool {
 				r := obj.(*unifaiv1.UnifaiSchedule).Spec.Schedule.RemainingActions
 				return r == nil || *r >= 1
 			}},
 		{Field: "spec.schedule.end_at", Message: "end_at is after start_at",
-			CEL: "!has(self.start_at) || !has(self.end_at) || timestamp(self.start_at) < timestamp(self.end_at)",
 			check: func(obj client.Object) bool {
 				s := obj.(*unifaiv1.UnifaiSchedule).Spec.Schedule
 				if s.StartAt == "" || s.EndAt == "" {
@@ -291,18 +299,16 @@ var Rules = map[string][]Rule{
 			}},
 	},
 	"UnifaiChat": {{
-		Field: "spec.prompt", Message: "prompt is not empty", CEL: "MinLength=1",
+		Field: "spec.prompt", Message: "prompt is not empty",
 		check: func(obj client.Object) bool { return strings.TrimSpace(obj.(*unifaiv1.UnifaiChat).Spec.Prompt) != "" },
 	}},
 	"UnifaiWorkflow": {
 		{Field: "spec.display.icon", Message: "icon is made of lower-case letters, digits and hyphens",
-			CEL: "Pattern=^[a-z0-9-]+$",
 			check: func(obj client.Object) bool {
 				d := obj.(*unifaiv1.UnifaiWorkflow).Spec.Display
 				return d == nil || d.Icon == "" || iconPattern.MatchString(d.Icon)
 			}},
 		{Field: "spec.display.color", Message: "color is a CSS colour keyword or #rrggbb",
-			CEL: "Pattern=^(#[0-9a-fA-F]{6}|[a-z]+)$",
 			check: func(obj client.Object) bool {
 				d := obj.(*unifaiv1.UnifaiWorkflow).Spec.Display
 				return d == nil || d.Color == "" || colorPattern.MatchString(d.Color)
@@ -310,17 +316,14 @@ var Rules = map[string][]Rule{
 	},
 	"UnifaiStack": {
 		{Field: "spec.images", Message: "images keys: " + strings.Join(ImageKeys, ", "),
-			CEL: "self.all(k, k in [...])",
 			check: func(obj client.Object) bool {
 				return keysIn(mapKeys(obj.(*unifaiv1.UnifaiStack).Spec.Images), ImageKeys)
 			}},
 		{Field: "spec.resources", Message: "resources keys: " + strings.Join(ResourceKeys, ", "),
-			CEL: "self.all(k, k in [...])",
 			check: func(obj client.Object) bool {
 				return keysIn(mapKeys(obj.(*unifaiv1.UnifaiStack).Spec.Resources), ResourceKeys)
 			}},
 		{Field: "spec.storage.sizes", Message: "sizes keys: " + strings.Join(SizeKeys, ", ") + "; values are quantities",
-			CEL: "self.all(k, k in [...] && isQuantity(self[k]))",
 			check: func(obj client.Object) bool {
 				sizes := obj.(*unifaiv1.UnifaiStack).Spec.Storage.Sizes
 				for _, v := range sizes {
@@ -331,12 +334,11 @@ var Rules = map[string][]Rule{
 				return keysIn(mapKeys(sizes), SizeKeys)
 			}},
 		{Field: "spec.backup.schedule", Message: "backup schedule is a 5-field cron expression",
-			CEL: "self.matches('^\\\\S+(\\\\s+\\\\S+){4}$')",
 			check: func(obj client.Object) bool {
 				b := obj.(*unifaiv1.UnifaiStack).Spec.Backup
 				return b == nil || b.Schedule == "" || cronFields.MatchString(strings.TrimSpace(b.Schedule))
 			}},
-		{Field: "spec.rag.embedding.dimension", Message: "embedding dimension is not negative", CEL: "Minimum=0",
+		{Field: "spec.rag.embedding.dimension", Message: "embedding dimension is not negative",
 			check: func(obj client.Object) bool { return obj.(*unifaiv1.UnifaiStack).Spec.RAG.Embedding.Dimension >= 0 }},
 	},
 }

@@ -66,7 +66,11 @@ spec:
                     name:
                       description: File name with a supported extension (pdf, docx,
                         md, pptx).
+                      maxLength: 255
                       type: string
+                      x-kubernetes-validations:
+                      - message: document names end in .pdf, .docx, .md or .pptx
+                        rule: self.matches('(?i)\\.(pdf|docx|md|pptx)$')
                     source:
                       description: DocumentSource is where a document's content comes
                         from (exactly one).
@@ -86,7 +90,12 @@ spec:
                         inline:
                           type: string
                         url:
+                          maxLength: 2048
                           type: string
+                          x-kubernetes-validations:
+                          - message: document urls are http(s) URLs
+                            rule: isURL(self) && (self.startsWith('http://') || self.startsWith('https://'))
+                              && size(url(self).getHostname()) > 0
                       type: object
                       x-kubernetes-validations:
                       - message: set exactly one of inline, url or configMapKeyRef
@@ -103,6 +112,9 @@ spec:
                 maxItems: 100
                 minItems: 1
                 type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               owner:
                 default: admin
                 description: UnifAI user owning the object (workspace identity).
@@ -124,6 +136,10 @@ spec:
             required:
             - documents
             type: object
+            x-kubernetes-validations:
+            - message: teamId and teamRef are exclusive
+              rule: '!has(self.teamId) || !has(self.teamRef) || size(self.teamId)
+                == 0 || size(self.teamRef) == 0'
           status:
             description: ObjectStatus is the status of every UnifAI object kind.
             properties:

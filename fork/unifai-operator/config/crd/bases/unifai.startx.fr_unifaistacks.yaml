@@ -110,6 +110,9 @@ spec:
                     default: 0 2 * * *
                     description: Cron schedule of both backup CronJobs.
                     type: string
+                    x-kubernetes-validations:
+                    - message: backup schedule is a 5-field cron expression
+                      rule: self.matches('^\\s*\\S+(\\s+\\S+){4}\\s*$')
                   suspend:
                     description: Suspend both CronJobs.
                     type: boolean
@@ -477,7 +480,14 @@ spec:
                 description: 'Full image overrides by component: mongodb, qdrant,
                   rabbitmq, redis, redisInsight, temporal, rag, multiagent, backend,
                   identity, ui, docling, embedding.'
+                maxProperties: 16
                 type: object
+                x-kubernetes-validations:
+                - message: 'images keys: mongodb, qdrant, rabbitmq, redis, redisInsight,
+                    temporal, rag, multiagent, backend, identity, ui, docling, embedding'
+                  rule: self.all(k, k in ['mongodb', 'qdrant', 'rabbitmq', 'redis',
+                    'redisInsight', 'temporal', 'rag', 'multiagent', 'backend', 'identity',
+                    'ui', 'docling', 'embedding'])
               integrations:
                 description: IntegrationsSpec groups optional third-party integrations.
                 properties:
@@ -739,6 +749,9 @@ spec:
                         description: Vector size of the model (Qdrant collections
                           are created with it).
                         type: integer
+                        x-kubernetes-validations:
+                        - message: embedding dimension is not negative
+                          rule: self >= 0
                       mode:
                         default: deploy
                         description: deploy (or local) = Text Embeddings Inference
@@ -847,7 +860,15 @@ spec:
                   type: object
                 description: Resource overrides by component (same keys as images,
                   plus ragCelery, multiagentWorker).
+                maxProperties: 16
                 type: object
+                x-kubernetes-validations:
+                - message: 'resources keys: mongodb, qdrant, rabbitmq, redis, redisInsight,
+                    temporal, rag, multiagent, backend, identity, ui, docling, embedding,
+                    ragCelery, multiagentWorker'
+                  rule: self.all(k, k in ['mongodb', 'qdrant', 'rabbitmq', 'redis',
+                    'redisInsight', 'temporal', 'rag', 'multiagent', 'backend', 'identity',
+                    'ui', 'docling', 'embedding', 'ragCelery', 'multiagentWorker'])
               secretsRef:
                 description: Secret whose keys override the generated ones (SECRET_KEY,
                   CREDENTIAL_ENCRYPTION_KEY, OAUTH_STATE_SECRET, REDIS_PASSWORD, ...).
@@ -881,7 +902,15 @@ spec:
                     description: 'Size overrides by volume: mongodb, qdrant, redis,
                       redisInsight, temporal, rabbitmq, ragShared, multiagentShared,
                       logging, docling, keycloakDb.'
+                    maxProperties: 16
                     type: object
+                    x-kubernetes-validations:
+                    - message: 'sizes keys: mongodb, qdrant, redis, redisInsight,
+                        temporal, rabbitmq, ragShared, multiagentShared, logging,
+                        docling, keycloakDb; values are quantities'
+                      rule: self.all(k, k in ['mongodb', 'qdrant', 'redis', 'redisInsight',
+                        'temporal', 'rabbitmq', 'ragShared', 'multiagentShared', 'logging',
+                        'docling', 'keycloakDb'] && isQuantity(self[k]))
                 type: object
               tolerations:
                 items:

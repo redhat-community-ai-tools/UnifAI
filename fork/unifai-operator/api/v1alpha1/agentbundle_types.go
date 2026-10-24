@@ -81,6 +81,8 @@ type BundleMCP struct {
 }
 
 // UnifaiAgentBundleSpec maps one signed OKF agent bundle onto UnifAI objects.
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
+// +kubebuilder:validation:XValidation:rule="!has(self.groupTeam) || !self.groupTeam || ((!has(self.teamId) || size(self.teamId) == 0) && (!has(self.teamRef) || size(self.teamRef) == 0))",message="groupTeam is exclusive with teamId and teamRef"
 type UnifaiAgentBundleSpec struct {
 	// Owner and team of the emitted objects.
 	CommonSpec `json:",inline"`
@@ -118,9 +120,13 @@ type UnifaiAgentBundleSpec struct {
 	MCP *BundleMCP `json:"mcp,omitempty"`
 	// UnifaiProvider names (MCP servers) attached to the tasks that declare allowed_tools, shared by all
 	// tasks and sent without the Zuno headers.
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule="self.all(p, p.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'))",message="providers are UnifaiProvider names (lower-case DNS labels)"
 	// +optional
 	Providers []string `json:"providers,omitempty"`
 	// UnifaiRetriever name attached to the tasks that declare allowed_knowledge.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="retriever is an UnifaiRetriever name (lower-case DNS label)"
 	// +optional
 	Retriever string `json:"retriever,omitempty"`
 	// Extra custom_agent_node settings merged under every emitted agent (e.g. max_rounds, hitl_mode).
@@ -129,6 +135,8 @@ type UnifaiAgentBundleSpec struct {
 	// +optional
 	AgentConfig *runtime.RawExtension `json:"agentConfig,omitempty"`
 	// Per-task classification override: C1, C2 or C3. It may only raise the bundle's level (ADR-0565).
+	// +kubebuilder:validation:XValidation:rule="self.all(k, self[k] in ['C1', 'C2', 'C3'])",message="classification overrides are C1, C2 or C3"
+	// +kubebuilder:validation:MaxProperties=256
 	// +optional
 	ClassificationOverrides map[string]string `json:"classificationOverrides,omitempty"`
 }

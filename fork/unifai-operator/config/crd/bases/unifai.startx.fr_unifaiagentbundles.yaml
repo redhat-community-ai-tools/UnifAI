@@ -100,7 +100,11 @@ spec:
                   type: string
                 description: 'Per-task classification override: C1, C2 or C3. It may
                   only raise the bundle''s level (ADR-0565).'
+                maxProperties: 256
                 type: object
+                x-kubernetes-validations:
+                - message: classification overrides are C1, C2 or C3
+                  rule: self.all(k, self[k] in ['C1', 'C2', 'C3'])
               entitlement:
                 default: Enforced
                 description: |-
@@ -202,8 +206,13 @@ spec:
                   UnifaiProvider names (MCP servers) attached to the tasks that declare allowed_tools, shared by all
                   tasks and sent without the Zuno headers.
                 items:
+                  maxLength: 253
                   type: string
+                maxItems: 64
                 type: array
+                x-kubernetes-validations:
+                - message: providers are UnifaiProvider names (lower-case DNS labels)
+                  rule: self.all(p, p.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'))
               retrieveFirst:
                 description: |-
                   RetrieveFirst makes every retriever-backed task agent search the retriever with the user's message
@@ -215,6 +224,9 @@ spec:
                 description: UnifaiRetriever name attached to the tasks that declare
                   allowed_knowledge.
                 type: string
+                x-kubernetes-validations:
+                - message: retriever is an UnifaiRetriever name (lower-case DNS label)
+                  rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
               servePlaceholder:
                 description: |-
                   ServePlaceholder serves a bundle whose OKF says zuno.status: placeholder (ADR-0007). By default such a
@@ -326,6 +338,14 @@ spec:
             - source
             - verify
             type: object
+            x-kubernetes-validations:
+            - message: teamId and teamRef are exclusive
+              rule: '!has(self.teamId) || !has(self.teamRef) || size(self.teamId)
+                == 0 || size(self.teamRef) == 0'
+            - message: groupTeam is exclusive with teamId and teamRef
+              rule: '!has(self.groupTeam) || !self.groupTeam || ((!has(self.teamId)
+                || size(self.teamId) == 0) && (!has(self.teamRef) || size(self.teamRef)
+                == 0))'
           status:
             description: UnifaiAgentBundleStatus reports verification and the emitted
               objects.

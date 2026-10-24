@@ -65,6 +65,9 @@ spec:
                   type: string
                 description: Workflow inputs; `user_prompt` is required by UnifAI.
                 type: object
+                x-kubernetes-validations:
+                - message: inputs needs user_prompt
+                  rule: '''user_prompt'' in self'
               owner:
                 default: admin
                 description: UnifAI user owning the object (workspace identity).
@@ -75,12 +78,22 @@ spec:
                 properties:
                   cron_expression:
                     description: 5-field cron expression.
+                    maxLength: 64
                     type: string
+                    x-kubernetes-validations:
+                    - message: cron_expression has 5 fields
+                      rule: self.matches('^\\s*\\S+(\\s+\\S+){4}\\s*$')
                   end_at:
+                    maxLength: 64
                     type: string
                   interval:
                     description: ISO-8601 duration, minimum PT1M.
+                    maxLength: 64
                     type: string
+                    x-kubernetes-validations:
+                    - message: interval is an ISO-8601 duration of at least PT1M
+                      rule: self.matches('^P(T(\\d+H)?(\\d+M)?(\\d+S)?|\\d+D(T(\\d+H)?(\\d+M)?(\\d+S)?)?)$')
+                        && !self.matches('^P(0+D)?(T(0+H)?(0+M)?(0*[0-5]?[0-9]S)?)?$')
                   overlap_policy:
                     enum:
                     - skip
@@ -89,7 +102,11 @@ spec:
                     type: string
                   remaining_actions:
                     type: integer
+                    x-kubernetes-validations:
+                    - message: remaining_actions is at least 1
+                      rule: self >= 1
                   start_at:
+                    maxLength: 64
                     type: string
                   timezone:
                     type: string
@@ -97,6 +114,10 @@ spec:
                 x-kubernetes-validations:
                 - message: set exactly one of interval or cron_expression
                   rule: has(self.interval) != has(self.cron_expression)
+                - message: end_at is after start_at
+                  rule: '!has(self.start_at) || !has(self.end_at) || !self.start_at.matches(''^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$'')
+                    || !self.end_at.matches(''^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$'')
+                    || timestamp(self.start_at) < timestamp(self.end_at)'
               suspend:
                 description: Pause the schedule.
                 type: boolean
@@ -120,6 +141,10 @@ spec:
             - schedule
             - workflow
             type: object
+            x-kubernetes-validations:
+            - message: teamId and teamRef are exclusive
+              rule: '!has(self.teamId) || !has(self.teamRef) || size(self.teamId)
+                == 0 || size(self.teamRef) == 0'
           status:
             description: ObjectStatus is the status of every UnifAI object kind.
             properties:

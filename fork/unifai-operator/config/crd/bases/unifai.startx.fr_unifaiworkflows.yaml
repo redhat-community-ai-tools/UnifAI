@@ -154,6 +154,16 @@ spec:
             required:
             - blueprint
             type: object
+            x-kubernetes-validations:
+            - message: teamId and teamRef are exclusive
+              rule: '!has(self.teamId) || !has(self.teamRef) || size(self.teamId)
+                == 0 || size(self.teamRef) == 0'
+            - message: display.icon is made of lower-case letters, digits and hyphens
+              rule: '!has(self.display) || !has(self.display.icon) || size(self.display.icon)
+                == 0 || self.display.icon.matches(''^[a-z0-9-]+$'')'
+            - message: 'display.color is a CSS colour keyword or #rrggbb'
+              rule: '!has(self.display) || !has(self.display.color) || size(self.display.color)
+                == 0 || self.display.color.matches(''^(#[0-9a-fA-F]{6}|[a-z]+)$'')'
           status:
             description: ObjectStatus is the status of every UnifAI object kind.
             properties:

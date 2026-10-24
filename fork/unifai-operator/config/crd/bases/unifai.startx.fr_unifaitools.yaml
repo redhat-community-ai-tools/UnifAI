@@ -116,6 +116,10 @@ spec:
             required:
             - type
             type: object
+            x-kubernetes-validations:
+            - message: teamId and teamRef are exclusive
+              rule: '!has(self.teamId) || !has(self.teamRef) || size(self.teamId)
+                == 0 || size(self.teamRef) == 0'
           status:
             description: ObjectStatus is the status of every UnifAI object kind.
             properties:

@@ -17,6 +17,8 @@ type StorageSpec struct {
 	// +optional
 	SharedClassName string `json:"sharedClassName,omitempty"`
 	// Size overrides by volume: mongodb, qdrant, redis, redisInsight, temporal, rabbitmq, ragShared, multiagentShared, logging, docling, keycloakDb.
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k in ['mongodb', 'qdrant', 'redis', 'redisInsight', 'temporal', 'rabbitmq', 'ragShared', 'multiagentShared', 'logging', 'docling', 'keycloakDb'] && isQuantity(self[k]))",message="sizes keys: mongodb, qdrant, redis, redisInsight, temporal, rabbitmq, ragShared, multiagentShared, logging, docling, keycloakDb; values are quantities"
+	// +kubebuilder:validation:MaxProperties=16
 	// +optional
 	Sizes map[string]string `json:"sizes,omitempty"`
 }
@@ -151,6 +153,7 @@ type EmbeddingSpec struct {
 	Model string `json:"model,omitempty"`
 	// Vector size of the model (Qdrant collections are created with it).
 	// +kubebuilder:default=384
+	// +kubebuilder:validation:XValidation:rule="self >= 0",message="embedding dimension is not negative"
 	// +optional
 	Dimension int `json:"dimension,omitempty"`
 }
@@ -260,11 +263,15 @@ type UnifaiStackSpec struct {
 	// +optional
 	ImagePullSecrets []corev1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 	// Full image overrides by component: mongodb, qdrant, rabbitmq, redis, redisInsight, temporal, rag, multiagent, backend, identity, ui, docling, embedding.
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k in ['mongodb', 'qdrant', 'rabbitmq', 'redis', 'redisInsight', 'temporal', 'rag', 'multiagent', 'backend', 'identity', 'ui', 'docling', 'embedding'])",message="images keys: mongodb, qdrant, rabbitmq, redis, redisInsight, temporal, rag, multiagent, backend, identity, ui, docling, embedding"
+	// +kubebuilder:validation:MaxProperties=16
 	// +optional
 	Images map[string]string `json:"images,omitempty"`
 	// +optional
 	Storage StorageSpec `json:"storage,omitempty"`
 	// Resource overrides by component (same keys as images, plus ragCelery, multiagentWorker).
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k in ['mongodb', 'qdrant', 'rabbitmq', 'redis', 'redisInsight', 'temporal', 'rag', 'multiagent', 'backend', 'identity', 'ui', 'docling', 'embedding', 'ragCelery', 'multiagentWorker'])",message="resources keys: mongodb, qdrant, rabbitmq, redis, redisInsight, temporal, rag, multiagent, backend, identity, ui, docling, embedding, ragCelery, multiagentWorker"
+	// +kubebuilder:validation:MaxProperties=16
 	// +optional
 	Resources map[string]corev1.ResourceRequirements `json:"resources,omitempty"`
 	// Extra environment variables by component (multiagent, multiagentWorker, rag, ragCelery, backend, identity, ui),
@@ -334,6 +341,7 @@ type OpenTelemetrySpec struct {
 // BackupSpec schedules backups to an S3-compatible bucket, under <prefix>/mongodb/ and <prefix>/qdrant/<timestamp>/.
 type BackupSpec struct {
 	// Cron schedule of both backup CronJobs.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^\\\\s*\\\\S+(\\\\s+\\\\S+){4}\\\\s*$')",message="backup schedule is a 5-field cron expression"
 	// +kubebuilder:default="0 2 * * *"
 	// +optional
 	Schedule string       `json:"schedule,omitempty"`

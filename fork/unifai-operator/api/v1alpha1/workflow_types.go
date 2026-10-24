@@ -6,6 +6,9 @@ import (
 )
 
 // UnifaiWorkflowSpec defines an agentic workflow (UnifAI blueprint).
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
+// +kubebuilder:validation:XValidation:rule="!has(self.display) || !has(self.display.icon) || size(self.display.icon) == 0 || self.display.icon.matches('^[a-z0-9-]+$')",message="display.icon is made of lower-case letters, digits and hyphens"
+// +kubebuilder:validation:XValidation:rule="!has(self.display) || !has(self.display.color) || size(self.display.color) == 0 || self.display.color.matches('^(#[0-9a-fA-F]{6}|[a-z]+)$')",message="display.color is a CSS colour keyword or #rrggbb"
 type UnifaiWorkflowSpec struct {
 	CommonSpec `json:",inline"`
 	// +optional
@@ -93,11 +96,16 @@ func (o *UnifaiWorkflow) GetObjectStatus() *ObjectStatus { return &o.Status }
 
 // ScheduleDefinition mirrors UnifAI's ScheduleDefinition: exactly one of interval or cron_expression.
 // +kubebuilder:validation:XValidation:rule="has(self.interval) != has(self.cron_expression)",message="set exactly one of interval or cron_expression"
+// +kubebuilder:validation:XValidation:rule="!has(self.start_at) || !has(self.end_at) || !self.start_at.matches('^\\\\d{4}-\\\\d{2}-\\\\d{2}T\\\\d{2}:\\\\d{2}:\\\\d{2}(\\\\.\\\\d+)?(Z|[+-]\\\\d{2}:\\\\d{2})$') || !self.end_at.matches('^\\\\d{4}-\\\\d{2}-\\\\d{2}T\\\\d{2}:\\\\d{2}:\\\\d{2}(\\\\.\\\\d+)?(Z|[+-]\\\\d{2}:\\\\d{2})$') || timestamp(self.start_at) < timestamp(self.end_at)",message="end_at is after start_at"
 type ScheduleDefinition struct {
 	// ISO-8601 duration, minimum PT1M.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^P(T(\\\\d+H)?(\\\\d+M)?(\\\\d+S)?|\\\\d+D(T(\\\\d+H)?(\\\\d+M)?(\\\\d+S)?)?)$') && !self.matches('^P(0+D)?(T(0+H)?(0+M)?(0*[0-5]?[0-9]S)?)?$')",message="interval is an ISO-8601 duration of at least PT1M"
+	// +kubebuilder:validation:MaxLength=64
 	// +optional
 	Interval string `json:"interval,omitempty"`
 	// 5-field cron expression.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^\\\\s*\\\\S+(\\\\s+\\\\S+){4}\\\\s*$')",message="cron_expression has 5 fields"
+	// +kubebuilder:validation:MaxLength=64
 	// +optional
 	CronExpression string `json:"cron_expression,omitempty"`
 	// +optional
@@ -105,20 +113,25 @@ type ScheduleDefinition struct {
 	// +kubebuilder:validation:Enum=skip;buffer_one;cancel_other
 	// +optional
 	OverlapPolicy string `json:"overlap_policy,omitempty"`
+	// +kubebuilder:validation:MaxLength=64
 	// +optional
 	StartAt string `json:"start_at,omitempty"`
+	// +kubebuilder:validation:MaxLength=64
 	// +optional
 	EndAt string `json:"end_at,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self >= 1",message="remaining_actions is at least 1"
 	// +optional
 	RemainingActions *int `json:"remaining_actions,omitempty"`
 }
 
 // UnifaiScheduleSpec defines a scheduled run of a workflow.
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiScheduleSpec struct {
 	CommonSpec `json:",inline"`
 	// UnifAI workflow (blueprint) name.
 	Workflow string `json:"workflow"`
 	// Workflow inputs; `user_prompt` is required by UnifAI.
+	// +kubebuilder:validation:XValidation:rule="'user_prompt' in self",message="inputs needs user_prompt"
 	Inputs map[string]string `json:"inputs"`
 	// Pause the schedule.
 	// +optional
@@ -157,6 +170,7 @@ func (o *UnifaiSchedule) GetCommon() *CommonSpec         { return &o.Spec.Common
 func (o *UnifaiSchedule) GetObjectStatus() *ObjectStatus { return &o.Status }
 
 // UnifaiTemplateSpec defines a catalog template (owner must be an UnifAI admin).
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiTemplateSpec struct {
 	CommonSpec `json:",inline"`
 	// BlueprintDraft with inline resources; secrets are PLACEHOLDER_* values listed in placeholders.
@@ -206,11 +220,13 @@ func (o *UnifaiTemplate) GetObjectStatus() *ObjectStatus { return &o.Status }
 
 // UnifaiChatSpec defines a one-shot chat: a session on the workflow with one prompt.
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="UnifaiChat is a one-shot run: spec is immutable, create a new one"
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiChatSpec struct {
 	CommonSpec `json:",inline"`
 	// UnifAI workflow (blueprint) name.
 	Workflow string `json:"workflow"`
-	Prompt   string `json:"prompt"`
+	// +kubebuilder:validation:XValidation:rule="size(self.trim()) > 0",message="prompt is not empty"
+	Prompt string `json:"prompt"`
 	// Session title (defaults to metadata.name).
 	// +optional
 	Title string `json:"title,omitempty"`
@@ -259,6 +275,8 @@ type ConfigMapKeySelector struct {
 type DocumentSource struct {
 	// +optional
 	Inline string `json:"inline,omitempty"`
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && (self.startsWith('http://') || self.startsWith('https://')) && size(url(self).getHostname()) > 0",message="document urls are http(s) URLs"
 	// +optional
 	URL string `json:"url,omitempty"`
 	// +optional
@@ -268,6 +286,8 @@ type DocumentSource struct {
 // RAGDocument is one document to ingest.
 type RAGDocument struct {
 	// File name with a supported extension (pdf, docx, md, pptx).
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:XValidation:rule="self.matches('(?i)\\\\.(pdf|docx|md|pptx)$')",message="document names end in .pdf, .docx, .md or .pptx"
 	Name string `json:"name"`
 	// +optional
 	Tags []string `json:"tags,omitempty"`
@@ -279,12 +299,15 @@ type RAGDocument struct {
 }
 
 // UnifaiRAGPipelineSpec declares documents to ingest through the RAG data pipeline.
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiRAGPipelineSpec struct {
 	CommonSpec `json:",inline"`
 	// +optional
 	SkipValidation bool `json:"skipValidation,omitempty"`
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=100
+	// +listType=map
+	// +listMapKey=name
 	Documents []RAGDocument `json:"documents"`
 }
 

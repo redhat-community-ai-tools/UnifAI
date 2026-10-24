@@ -22,7 +22,7 @@ var (
 	}, []string{"release", "result"})
 	specWarningsGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "unifai_operator_spec_warnings",
-		Help: "Static rules an object breaks (they will be refused at admission in a later release), by object.",
+		Help: "Static spec rules an object breaks (stored before the CRD refused them, or reported only), by object.",
 	}, []string{"namespace", "kind", "name"})
 )
 

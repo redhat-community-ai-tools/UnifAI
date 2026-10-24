@@ -24,6 +24,9 @@ type RAGWebSource struct {
 	// Seed pages. Each is fetched on every sync (its links are the discovery input); the pages found
 	// from it are fetched only when the server says they changed.
 	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=500
+	// +kubebuilder:validation:items:MaxLength=2048
+	// +kubebuilder:validation:XValidation:rule="self.all(u, isURL(u) && (u.startsWith('http://') || u.startsWith('https://')) && size(url(u).getHostname()) > 0)",message="web urls are http(s) URLs"
 	URLs []string `json:"urls"`
 	// Discovery of linked pages: redhat-docs (same host, /html/ or /html-single/ book paths), generic
 	// (same host, under the seed's directory) or none (the seeds only).
@@ -52,6 +55,7 @@ type RAGWebSource struct {
 // +kubebuilder:validation:XValidation:rule="self.type != 'confluence' || has(self.confluence)",message="confluence settings are required for type confluence"
 // +kubebuilder:validation:XValidation:rule="self.type != 'web' || has(self.web)",message="web settings are required for type web"
 // +kubebuilder:validation:XValidation:rule="self.visibility != 'shared' || (has(self.aclGroups) && size(self.aclGroups) > 0)",message="a shared source needs at least one ACL group"
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiRAGSourceSpec struct {
 	// Owner is the UnifAI user registering the source; a shared source needs it in
 	// UnifaiStack.spec.rag.sharedPublishers.
@@ -76,6 +80,7 @@ type UnifaiRAGSourceSpec struct {
 	// +optional
 	Tags []string `json:"tags,omitempty"`
 	// Time between incremental syncs (minimum 10m). Unset = sync only when the spec changes.
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('10m')",message="syncInterval is at least 10m"
 	// +optional
 	SyncInterval *metav1.Duration `json:"syncInterval,omitempty"`
 	// Stop scheduled syncs.

@@ -5,6 +5,7 @@ package v1alpha1
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // UnifaiLLMSpec defines an UnifAI LLM endpoint.
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiLLMSpec struct {
 	CommonSpec `json:",inline"`
 	// UnifAI element type. The accepted set is what the deployed UnifAI serves (GET /api/catalog/elements.list.get).
@@ -51,6 +52,7 @@ func init() {
 }
 
 // UnifaiProviderSpec defines an UnifAI Provider (MCP server).
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiProviderSpec struct {
 	CommonSpec `json:",inline"`
 	// UnifAI element type. The accepted set is what the deployed UnifAI serves (GET /api/catalog/elements.list.get).
@@ -97,6 +99,7 @@ func init() {
 }
 
 // UnifaiToolSpec defines an UnifAI Tool.
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiToolSpec struct {
 	CommonSpec `json:",inline"`
 	// UnifAI element type. The accepted set is what the deployed UnifAI serves (GET /api/catalog/elements.list.get).
@@ -143,6 +146,7 @@ func init() {
 }
 
 // UnifaiConditionSpec defines an UnifAI Workflow condition.
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiConditionSpec struct {
 	CommonSpec `json:",inline"`
 	// UnifAI element type. The accepted set is what the deployed UnifAI serves (GET /api/catalog/elements.list.get).
@@ -189,6 +193,7 @@ func init() {
 }
 
 // UnifaiRetrieverSpec defines an UnifAI Retriever.
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiRetrieverSpec struct {
 	CommonSpec `json:",inline"`
 	// UnifAI element type. The accepted set is what the deployed UnifAI serves (GET /api/catalog/elements.list.get).
@@ -235,6 +240,7 @@ func init() {
 }
 
 // UnifaiSandboxSpec defines an UnifAI Sandbox.
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiSandboxSpec struct {
 	CommonSpec `json:",inline"`
 	// UnifAI element type. The accepted set is what the deployed UnifAI serves (GET /api/catalog/elements.list.get).
@@ -281,6 +287,7 @@ func init() {
 }
 
 // UnifaiAgentSpec defines an UnifAI Agent (workflow node).
+// +kubebuilder:validation:XValidation:rule="!has(self.teamId) || !has(self.teamRef) || size(self.teamId) == 0 || size(self.teamRef) == 0",message="teamId and teamRef are exclusive"
 type UnifaiAgentSpec struct {
 	CommonSpec `json:",inline"`
 	// UnifAI element type. The accepted set is what the deployed UnifAI serves (GET /api/catalog/elements.list.get).

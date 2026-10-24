@@ -94,12 +94,10 @@ var _ = Describe("UnifaiTeam and teamRef", func() {
 		Expect(mine.Status.TeamID).To(Equal("mine-" + ns))
 	})
 
-	It("refuses teamId together with teamRef", func() {
+	It("refuses teamId together with teamRef at admission", func() {
 		ns := newNamespace("teamboth")
 		tool := &unifaiv1.UnifaiTool{ObjectMeta: metav1.ObjectMeta{Name: "t", Namespace: ns}, Spec: unifaiv1.UnifaiToolSpec{
 			CommonSpec: unifaiv1.CommonSpec{UnifaiName: "t-" + ns, TeamID: "x", TeamRef: "y"}, Type: "web_fetch"}}
-		Expect(k8sClient.Create(ctx, tool)).To(Succeed())
-		Eventually(phaseOf(tool), timeout, interval).Should(Equal(PhaseError))
-		Expect(tool.Status.Message).To(ContainSubstring("exclusive"))
+		Expect(k8sClient.Create(ctx, tool)).To(MatchError(ContainSubstring("teamId and teamRef are exclusive")))
 	})
 })

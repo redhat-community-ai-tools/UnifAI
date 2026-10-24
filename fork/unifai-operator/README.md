@@ -287,9 +287,15 @@ exclusive; resource `config.type` equal to `spec.type`; bundle `groupTeam` exclu
 URLs; RAG pipeline unique document names (pdf, docx, md, pptx) and http(s) URLs; schedule `user_prompt` input, ISO-8601
 `interval` >= PT1M, 5-field cron, `remaining_actions` >= 1, `start_at` < `end_at`; chat non-empty prompt; workflow
 `display` icon and colour; stack `images`/`resources`/`storage.sizes` keys and size quantities, 5-field backup cron.
-A violation is reported, not refused: condition `SpecWarnings`, a Warning Event `SpecInvalid` and the metric
-`unifai_operator_spec_warnings`. A later release refuses them at admission (CEL in the CRDs). Rendered manifests can
-be checked beforehand: `helm template ... | make validate-manifests FILES=-`.
+The CRDs refuse a violation at admission, with the rule's message (CEL rules in `api/v1alpha1`, bounded by
+`maxLength`/`maxItems`/`maxProperties` for their cost). `config.type` is the exception: `config` is free-form and CEL
+cannot read it, so that rule is only reported. An object stored before a rule existed stays updatable while its
+invalid field is unchanged (CRD validation ratcheting, Kubernetes >= 1.30): the API server answers with a warning,
+and the operator reports the violation (condition `SpecWarnings`, a Warning Event `SpecInvalid`, the metric
+`unifai_operator_spec_warnings`). Rendered manifests can be checked beforehand:
+`helm template ... | make validate-manifests FILES=-` (same rules, no cluster), or `kubectl apply --dry-run=server`.
+The envtest replays the valid and invalid fixtures of `internal/validate` against the API server, so the Go rules
+and the CEL rules cannot drift apart.
 
 ## Build and release
 
