@@ -110,7 +110,6 @@ spec:
                 - orchestrator_node
                 - deep_agent_node
                 - claude_agent_node
-                - a2a_agent_node
                 - branch_chooser_node
                 - mock_agent_node
                 type: string
