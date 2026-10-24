@@ -55,8 +55,8 @@ Order: smallest and least controversial first, each with `make contrib-check` / 
 (CODEOWNERS) before the first PR.
 | Id | Item | Status | Owner |
 |---|---|---|---|
-| R-401 | Chart defects: `helm/multiagent/be` template without extension, rabbitmq missing `common` dependency | todo | — |
-| R-402 | `fix/multiagent-optional-corp-ca` | todo | — |
+| R-401 | Chart defects: `helm/multiagent/be` template without extension, rabbitmq missing `common` dependency | doing: fixed in `devel` (branch `fix/helm-lint-errors`, `common` declared without a repository so helm never downloads it); upstream issue #272, draft PR #274 | operator |
+| R-402 | `fix/multiagent-optional-corp-ca` (already in `devel`) | doing: upstream issue #273, draft PR #275 | operator |
 | R-403 | Internal auth header trusted from outside: fixed in the fork (shared INTERNAL_AUTH_SECRET, object-level checks, secret only sent to stack hosts; images devel-8fb04e165, operator 0.1.22+, deployed on demo333 2026-10-22). User decision 2026-10-22: fork patch only, no upstream report | done | operator |
 | R-404 | forwardUserToken + validator without model probe (`feat/forward-user-token`, `fix/openai-compatible-validator-forwarded-token`); also candidates: team-session acting user (`fix/team-session-credential-user`), RAG groups for a team workspace (`fix/rag-team-workspace-groups`), final answer when an agent runs out of rounds (`fix/agent-wrap-up-at-round-limit`) | todo (all four live-proven on demo333) | zuno-demo-68 |
 | R-405 | Qdrant hybrid search, shared ACL, Confluence source, OTel instrumentation | todo | — |
