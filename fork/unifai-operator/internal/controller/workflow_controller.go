@@ -70,6 +70,9 @@ func (r *WorkflowReconciler) apply(ctx context.Context, api *unifai.Client, obj 
 	if err := rs.ExpandLibraryNodes(ctx, resolved); err != nil {
 		return err
 	}
+	if hasA2ANode(resolved) {
+		return a2aDisabled("the blueprint has an " + a2aNodeType + " node")
+	}
 	h := hash(resolved)
 	if obj.Spec.Display != nil {
 		h = hash([]any{resolved, obj.Spec.Display})

@@ -188,6 +188,13 @@ func (r *AgentBundleReconciler) reconcile(ctx context.Context, cr *unifaiv1.Unif
 		cond(ConditionEmitted, false, "PlaceholderNotServed", "placeholder agent: not served (set spec.servePlaceholder to serve it)")
 		return &notServedError{msg: "placeholder agent: not served (set spec.servePlaceholder to serve it)"}
 	}
+	if len(b.DelegationTargets) > 0 {
+		// zuno WP-173: no A2A node is emitted before the delegation contract ships (identity, limits, approval).
+		msg := fmt.Sprintf("zuno.delegation.targets %v: A2A delegation is not supported by this operator yet, nothing emitted",
+			b.DelegationTargets)
+		cond(ConditionValid, false, "DelegationUnsupported", msg)
+		return permanent("%s", msg)
+	}
 	switch b.GraphShape {
 	case okf.ShapeRetrieveReasonRespond, okf.ShapePlanDraftWrite:
 	case "":

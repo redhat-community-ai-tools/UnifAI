@@ -103,3 +103,19 @@ func containsAll(have []string, want ...string) bool {
 	}
 	return true
 }
+
+func TestParseDelegationTargets(t *testing.T) {
+	files := v03Tekos(t)
+	files["agent.okf.md"] = []byte(strings.Replace(string(files["agent.okf.md"]), "zuno:\n",
+		"zuno:\n  delegation:\n    targets:\n      - {agent: arkos, task: review-architecture}\n", 1))
+	if err := ValidateSchemas(files); err != nil {
+		t.Fatalf("zuno.delegation is part of OKF v0.3: %v", err)
+	}
+	b, err := Parse(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.DelegationTargets) != 1 || b.DelegationTargets[0].String() != "arkos/review-architecture" {
+		t.Fatalf("delegation targets: %v", b.DelegationTargets)
+	}
+}

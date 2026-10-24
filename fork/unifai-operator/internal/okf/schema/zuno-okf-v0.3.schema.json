@@ -382,6 +382,51 @@
                   }
                 }
               }
+            },
+            "delegation": {
+              "description": "zuno-demo ADR-0406: bounds on delegation chains this agent takes part in, at most the corp ceilings in policies/limits/limits-policy.yaml.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "max_depth": {
+                  "description": "Maximum number of delegation hops starting from this agent (default 1: it may call a target, the target may not call anyone). At most the corp `max_delegation_depth`.",
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        },
+        "delegation": {
+          "description": "zuno-demo ADR-0401 (ADR-0579 amendment 2026-10-24): the agents this agent may delegate to over A2A, each a {agent, task}. Absent means no delegation. Never inferred; every target must exist in the release and be `active` when called.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "targets"
+          ],
+          "properties": {
+            "targets": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "agent",
+                  "task"
+                ],
+                "properties": {
+                  "agent": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "task": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  }
+                }
+              }
             }
           }
         }

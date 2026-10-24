@@ -30,10 +30,18 @@ type Bundle struct {
 	AccessGroups   []string
 	Maintainer     string
 	// UI is the tile presentation (displayName, tileDescription, color, icon); string values only.
-	UI    map[string]string
-	Tasks []Task
+	UI map[string]string
+	// DelegationTargets are the agents this agent may delegate to over A2A (zuno.delegation.targets, ADR-0401).
+	DelegationTargets []DelegationTarget
+	Tasks             []Task
 	// Unmapped lists OKF content with no UnifAI equivalent, reported in the CR status instead of being dropped.
 	Unmapped []string
+}
+
+// DelegationTarget is one task of another agent this agent may call over A2A.
+type DelegationTarget struct {
+	Agent string `json:"agent"`
+	Task  string `json:"task"`
 }
 
 // Task is one `tasks/<name>.md` of the bundle.
@@ -81,7 +89,10 @@ type agentFrontmatter struct {
 		Access struct {
 			Groups []string `json:"groups"`
 		} `json:"access"`
-		UI map[string]any `json:"ui"`
+		UI         map[string]any `json:"ui"`
+		Delegation struct {
+			Targets []DelegationTarget `json:"targets"`
+		} `json:"delegation"`
 		// OKF v0.3 (ADR-0579): enforced by the platform (ai-gateway, quotas), not by UnifAI.
 		Models     map[string]any `json:"models"`
 		Guardrails map[string]any `json:"guardrails"`
@@ -164,6 +175,7 @@ func Parse(files Files) (*Bundle, error) {
 		Status: af.Zuno.Status, GraphShape: af.Zuno.GraphShape, PrimaryTask: af.Zuno.PrimaryTask,
 		Classification: cls, RAGTopK: af.Zuno.RAG.TopK, AccessGroups: af.Zuno.Access.Groups,
 		Maintainer: strings.TrimSpace(af.Provenance.Maintainer), UI: stringValues(af.Zuno.UI),
+		DelegationTargets: af.Zuno.Delegation.Targets,
 	}
 	if len(af.Zuno.Tasks) == 0 {
 		return nil, fmt.Errorf("agent.okf.md: zuno.tasks is empty")
@@ -366,3 +378,5 @@ func stringValues(m map[string]any) map[string]string {
 	}
 	return out
 }
+
+func (d DelegationTarget) String() string { return d.Agent + "/" + d.Task }

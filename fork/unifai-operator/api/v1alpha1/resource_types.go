@@ -291,7 +291,7 @@ func init() {
 type UnifaiAgentSpec struct {
 	CommonSpec `json:",inline"`
 	// UnifAI element type. The accepted set is what the deployed UnifAI serves (GET /api/catalog/elements.list.get).
-	// +kubebuilder:validation:Enum=custom_agent_node;orchestrator_node;deep_agent_node;claude_agent_node;a2a_agent_node;branch_chooser_node;mock_agent_node
+	// +kubebuilder:validation:Enum=custom_agent_node;orchestrator_node;deep_agent_node;claude_agent_node;branch_chooser_node;mock_agent_node
 	Type       string `json:"type"`
 	ConfigSpec `json:",inline"`
 }

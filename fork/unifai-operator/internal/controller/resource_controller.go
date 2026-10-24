@@ -53,6 +53,9 @@ func (r *ResourceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 func (r *ResourceReconciler) apply(ctx context.Context, api *unifai.Client, obj unifaiv1.ResourceObject) error {
 	st := obj.GetObjectStatus()
 	category, rtype, name := obj.Category(), obj.GetType(), unifaiName(obj)
+	if rtype == a2aNodeType {
+		return a2aDisabled("agent type " + a2aNodeType)
+	}
 	cfg, err := rawMap(obj.GetConfigSpec().Config)
 	if err != nil {
 		return err

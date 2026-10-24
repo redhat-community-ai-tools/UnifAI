@@ -49,6 +49,9 @@ func (r *TemplateReconciler) apply(ctx context.Context, api *unifai.Client, obj 
 	if err != nil {
 		return err
 	}
+	if hasA2ANode(draft) {
+		return a2aDisabled("the draft has an " + a2aNodeType + " node")
+	}
 	if err := r.applySecrets(ctx, obj.Namespace, obj.Spec.SecretRefs, draft); err != nil {
 		return err
 	}

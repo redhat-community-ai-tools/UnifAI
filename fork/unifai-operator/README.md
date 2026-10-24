@@ -279,6 +279,14 @@ The bundle ships a ServiceMonitor for these metrics (see "Install with OLM"). In
 operator's (target) namespace: the stack namespace of `unifai_operator_stack_ready` and
 `unifai_operator_keycloak_repairs_total` is `exported_namespace`.
 
+### A2A delegation (zuno WP-173)
+
+Delegation between agents over A2A is refused until its contract ships: the caller's identity, the delegation
+limits and the approval across hops. The CRD refuses an `UnifaiAgent` of type `a2a_agent_node`. A workflow or a
+template holding an A2A node, written inline or reached through `$ref` once the library nodes are expanded, goes to
+`Error`. An agent bundle declaring `zuno.delegation.targets` is `Valid=False` (`DelegationUnsupported`), and nothing is
+emitted. This guards the objects the operator manages; workflows built by hand in the UnifAI UI do not go through it.
+
 ### Spec rules (R-304)
 
 Static rules of the custom resources (checked on the object alone, `internal/validate`): `teamId`/`teamRef`

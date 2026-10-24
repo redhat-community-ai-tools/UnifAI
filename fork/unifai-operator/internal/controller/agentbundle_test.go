@@ -479,6 +479,16 @@ var _ = Describe("UnifaiAgentBundle controller", func() {
 		Expect(strings.Index(msg, "SKILL-TWO")).To(BeNumerically(">", strings.Index(msg, "SKILL-ONE")))
 	})
 
+	It("refuses a bundle declaring delegation targets until A2A delegation ships", func() {
+		files := okf.Files{}
+		for k, v := range tekosFiles() {
+			files[k] = []byte(strings.ReplaceAll(string(v), "okf_version: v0.2", "okf_version: v0.3"))
+		}
+		files["agent.okf.md"] = []byte(strings.Replace(string(files["agent.okf.md"]), "zuno:\n",
+			"zuno:\n  delegation:\n    targets:\n      - {agent: arkos, task: review-architecture}\n", 1))
+		refused(setup("bundle-delegation"), func(*unifaiv1.UnifaiAgentBundle) {}, files, ConditionValid, "DelegationUnsupported")
+	})
+
 	It("refuses a bundle whose skill declares a tool outside the ceilings", func() {
 		files := okf.Files{}
 		for k, v := range tekosFiles() {
