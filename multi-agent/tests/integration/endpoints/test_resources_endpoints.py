@@ -103,9 +103,9 @@ class TestUpdateResource:
         assert resp.status_code == 403
         resources_service.update.assert_not_called()
 
-    def test_update_idor_denied_returns_403(self, client, user_headers, resources_service):
+    def test_update_idor_denied_looks_like_not_found(self, client, user_headers, resources_service):
         """Regression test: a caller updating someone else's custom resource
-        must get 403 from the guard, not proceed to update()."""
+        must get the same 404 as for a missing one, not proceed to update()."""
         resources_service.guard_write_access.side_effect = ResourceAccessDeniedError("r1")
 
         resp = client.put(
@@ -114,7 +114,7 @@ class TestUpdateResource:
             headers=user_headers,
         )
 
-        assert resp.status_code == 403
+        assert resp.status_code == 404
         resources_service.update.assert_not_called()
 
     def test_update_not_found_returns_404(self, client, user_headers, resources_service):
@@ -198,7 +198,7 @@ class TestDeleteResource:
         assert body["lockedBy"]["userId"] == "other-admin"
         resources_service.delete.assert_not_called()
 
-    def test_delete_idor_denied_returns_403(self, client, user_headers, resources_service):
+    def test_delete_idor_denied_looks_like_not_found(self, client, user_headers, resources_service):
         resources_service.guard_write_access.side_effect = ResourceAccessDeniedError("r1")
 
         resp = client.delete(
@@ -206,7 +206,7 @@ class TestDeleteResource:
             headers=user_headers,
         )
 
-        assert resp.status_code == 403
+        assert resp.status_code == 404
         resources_service.delete.assert_not_called()
 
     def test_delete_in_use_returns_400_with_usage(self, client, user_headers, resources_service):
@@ -288,7 +288,7 @@ FORBIDDEN_BODY = {"error": "Forbidden", "error_type": "ACCESS_CONTROL_ERROR"}
 
 
 class TestUniformForbiddenBody:
-    """Object-level denials are a uniform 403 with no detail about the object."""
+    """Write denials answer exactly like a missing resource (no existence oracle)."""
 
     def test_update_and_delete_denied_use_uniform_body(
         self, client, user_headers, resources_service,
@@ -305,10 +305,20 @@ class TestUniformForbiddenBody:
             headers=user_headers,
         )
 
-        for resp in (upd, dele):
-            assert resp.status_code == 403
-            assert resp.get_json() == FORBIDDEN_BODY
-            assert "secret-rid" not in resp.get_data(as_text=True)
+        resources_service.guard_write_access.side_effect = KeyError("secret-rid")
+        upd_missing = client.put(
+            "/api/resources/resource.update",
+            json={"resourceId": "secret-rid", "config": {}},
+            headers=user_headers,
+        )
+        dele_missing = client.delete(
+            "/api/resources/resource.delete?resourceId=secret-rid",
+            headers=user_headers,
+        )
+
+        for denied, missing in ((upd, upd_missing), (dele, dele_missing)):
+            assert denied.status_code == missing.status_code == 404
+            assert denied.get_json() == missing.get_json()
         resources_service.update.assert_not_called()
         resources_service.delete.assert_not_called()
 

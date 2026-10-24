@@ -47,6 +47,11 @@ class AppConfig(SharedConfig):
     confluence_username: str = ""
     confluence_token: str = ""
     confluence_verify_tls: bool = True
+    # Hosts (exact match, no subdomains) that receive the deployment credentials above. When set (even
+    # to an empty list), a source whose baseUrl points anywhere else is fetched anonymously: the
+    # credentials are never sent to a host a session user typed. Unset = every host gets them (the
+    # historical behaviour, logged as a warning); set it on every deployment that has credentials.
+    confluence_allowed_hosts: list[str] | None = None
     
     # Web source (public pages): per-request timeout and the pause between two requests to the same run.
     web_timeout_seconds: float = 60.0

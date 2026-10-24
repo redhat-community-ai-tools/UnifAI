@@ -254,3 +254,4 @@ class TestRefreshTokenSuccess:
         assert r.status_code == 200
         assert (r.get_json() or {}).get("message") == "Token refreshed successfully"
         assert FAKE_REDIS.hget(sid).get("access_token") == "new-at"
+

@@ -1,6 +1,7 @@
 """Document registration implementation."""
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
 from typing import Any, Dict, Tuple
@@ -46,7 +47,10 @@ class DocumentRegistration(BaseRegistration):
         skip_validation: bool = False,
     ) -> None:
         super().__init__(data_source_repository, upload_by, instance, skip_validation)
-        self.upload_folder = upload_folder
+        # Files are stored per uploader (see infrastructure.storage.local_file_storage.user_upload_dir).
+        self.upload_folder = os.path.join(
+            upload_folder, hashlib.sha256(upload_by.encode()).hexdigest()[:24]
+        )
         # Create validators based on skip_validation flag
         self._validator = Validator(doc_validators.create_validators(skip_validation))
 

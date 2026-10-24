@@ -181,3 +181,17 @@ def test_same_scope_gives_the_same_source_id():
     r1 = ConfluenceRegistration(MagicMock(), "u", {"baseUrl": "https://c/", "spaceKey": "SX", "rootTitle": "R"})
     r2 = ConfluenceRegistration(MagicMock(), "u", {"baseUrl": "https://c", "spaceKey": "SX", "rootTitle": "R"})
     assert r1.source_data.source_id == r2.source_data.source_id
+
+
+def test_deployment_credentials_go_only_to_listed_hosts():
+    from infrastructure.sources.confluence.connector import credentials_allowed
+
+    allowed = ["startxfr.atlassian.net"]
+    assert credentials_allowed("https://startxfr.atlassian.net/wiki", allowed)
+    assert credentials_allowed("https://STARTXFR.atlassian.net", allowed)
+    assert not credentials_allowed("https://evil.example", allowed)
+    assert not credentials_allowed("https://evil.atlassian.net", allowed)
+    assert not credentials_allowed("https://startxfr.atlassian.net.evil.example", allowed)
+    assert not credentials_allowed("https://startxfr.atlassian.net@evil.example/", allowed)
+    assert not credentials_allowed("https://startxfr.atlassian.net", [])
+    assert not credentials_allowed("", allowed)

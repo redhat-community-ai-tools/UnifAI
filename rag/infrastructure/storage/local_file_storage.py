@@ -1,5 +1,6 @@
 """Local file system storage adapter for document uploads."""
 import base64
+import hashlib
 import os
 from typing import List, Dict
 
@@ -8,6 +9,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+
+def user_upload_dir(base: str, owner: str) -> str:
+    """Upload folder of one user: two users uploading the same file name never touch each other's file."""
+    return os.path.join(base, hashlib.sha256(owner.encode()).hexdigest()[:24])
 
 class LocalFileStorage:
     """
@@ -38,7 +44,7 @@ class LocalFileStorage:
         """Get the upload folder path."""
         return self._upload_folder
 
-    def save_files(self, files: List[Dict[str, str]]) -> List[str]:
+    def save_files(self, files: List[Dict[str, str]], owner: str = "") -> List[str]:
         """
         Save multiple base64-encoded files.
         
@@ -59,7 +65,7 @@ class LocalFileStorage:
                 raise ValueError("File must have 'name' and 'content' keys")
             self._reject_unsafe_name(file["name"])
             
-            path = self.save_base64(file["name"], file["content"])
+            path = self.save_base64(file["name"], file["content"], owner)
             saved_paths.append(path)
         
         return saved_paths
@@ -77,7 +83,7 @@ class LocalFileStorage:
         ):
             raise ValueError("Invalid file name")
 
-    def save_base64(self, filename: str, base64_content: str) -> str:
+    def save_base64(self, filename: str, base64_content: str, owner: str = "") -> str:
         """
         Save a single base64-encoded file.
         
@@ -89,9 +95,9 @@ class LocalFileStorage:
             Full path where the file was saved
         """
         content = base64.b64decode(base64_content)
-        return self.save(filename, content)
+        return self.save(filename, content, owner)
 
-    def save(self, filename: str, content: bytes) -> str:
+    def save(self, filename: str, content: bytes, owner: str = "") -> str:
         """
         Save raw bytes to a file.
         
@@ -103,7 +109,9 @@ class LocalFileStorage:
             Full path where the file was saved
         """
         safe_name = secure_filename(filename)
-        path = os.path.join(self._upload_folder, safe_name)
+        folder = user_upload_dir(self._upload_folder, owner) if owner else self._upload_folder
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, safe_name)
         root = os.path.realpath(self._upload_folder)
         if os.path.commonpath([root, os.path.realpath(path)]) != root:
             raise ValueError("Invalid file name")

@@ -192,7 +192,8 @@ def update_resource(identity: Identity, resource_id: str, config: dict, name: st
     except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceAccessDeniedError:
-        return forbidden_response()
+        # Same answer as a missing id: a denial must not reveal that the resource exists.
+        return jsonify({"error": f"Resource not found: {KeyError(resource_id)}"}), 404
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
     except ValueError as e:
@@ -227,7 +228,8 @@ def delete_resource(identity: Identity, resource_id: str) -> tuple[Response, int
     except BuiltInWriteProtectedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceAccessDeniedError:
-        return forbidden_response()
+        # Same answer as a missing id: a denial must not reveal that the resource exists.
+        return jsonify({"error": f"Resource not found: {KeyError(resource_id)}"}), 404
     except ResourceInUseError as e:
         return jsonify({"error": str(e),
                         "blueprints": e.by_blueprints,
@@ -264,7 +266,7 @@ def validate_resource(identity: Identity, resource_id: str, user_id: str, timeou
         result = svc.validate_resource(
             rid=resource_id,
             caller=resolve_caller_scope(identity),
-            user_id=user_id,
+            user_id=identity.id,  # verified workspace identity; the body's userId is never trusted
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,
         )
@@ -322,7 +324,7 @@ def validate_resources(identity: Identity, resource_ids: list[str], user_id: str
         results = svc.validate_resources(
             rids=resource_ids,
             caller=resolve_caller_scope(identity),
-            user_id=user_id,
+            user_id=identity.id,  # verified workspace identity; the body's userId is never trusted
             timeout_seconds=timeout_seconds,
             max_workers=max_workers,
             credential_user_id=authenticated_user,
@@ -397,6 +399,7 @@ def get_resource_cards(identity: Identity, resource_ids: list[str]) -> tuple[Res
 
 
 @resources_bp.route("/config.validate", methods=["POST"])
+@with_require_identity_authorization
 @from_body({
     "category": fields.Str(required=True),
     "type": fields.Str(required=True),
@@ -404,7 +407,7 @@ def get_resource_cards(identity: Identity, resource_ids: list[str]) -> tuple[Res
     "config": fields.Dict(required=True),
     "timeout_seconds": fields.Float(data_key="timeoutSeconds", load_default=10.0),
 })
-def validate_config(category, type, config, name=None, timeout_seconds=10.0):
+def validate_config(identity: Identity, category, type, config, name=None, timeout_seconds=10.0):
     """
     Validate a resource config before saving.
 
@@ -419,8 +422,11 @@ def validate_config(category, type, config, name=None, timeout_seconds=10.0):
             config=config,
             name=name,
             timeout_seconds=timeout_seconds,
+            caller=resolve_caller_scope(identity),
         )
         return jsonify(result.model_dump()), 200
+    except KeyError as e:
+        return jsonify({"error": f"Resource not found: {e}"}), 404
     except ValueError as e:
         return jsonify({"error": f"Schema validation failed: {e}"}), 400
     except ResourceAccessDeniedError:

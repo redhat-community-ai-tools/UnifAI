@@ -48,7 +48,8 @@ def create_schedule(identity, blueprint_id, inputs, source, schedule):
     except BlueprintNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "BLUEPRINT_NOT_FOUND"}), 404
     except SchedulePermissionError as e:
-        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
+        # Same answer as a missing blueprint: a denial must not reveal that the id exists.
+        return jsonify({"error": str(BlueprintNotFoundError(e.resource_id)), "error_type": "BLUEPRINT_NOT_FOUND"}), 404
     except ScheduleLimitExceededError as e:
         return jsonify({"error": str(e), "error_type": "LIMIT_EXCEEDED"}), 409
     except ValueError as e:
@@ -78,7 +79,8 @@ def update_schedule(identity, schedule_id, inputs, schedule):
     except ScheduleNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except SchedulePermissionError as e:
-        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
+        # Same answer as a missing schedule: a denial must not reveal that the id exists.
+        return jsonify({"error": str(ScheduleNotFoundError(e.resource_id)), "error_type": "NOT_FOUND"}), 404
     except ValueError as e:
         return jsonify({"error": str(e), "error_type": "VALIDATION_ERROR"}), 400
     except Exception:
@@ -114,7 +116,8 @@ def get_schedule(identity, schedule_id):
     except ScheduleNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except SchedulePermissionError as e:
-        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
+        # Same answer as a missing schedule: a denial must not reveal that the id exists.
+        return jsonify({"error": str(ScheduleNotFoundError(e.resource_id)), "error_type": "NOT_FOUND"}), 404
     except Exception:
         logger.exception("Unhandled error in get_schedule")
         return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
@@ -133,7 +136,8 @@ def pause_schedule(identity, schedule_id):
     except ScheduleNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except SchedulePermissionError as e:
-        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
+        # Same answer as a missing schedule: a denial must not reveal that the id exists.
+        return jsonify({"error": str(ScheduleNotFoundError(e.resource_id)), "error_type": "NOT_FOUND"}), 404
     except Exception:
         logger.exception("Unhandled error in pause_schedule")
         return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
@@ -152,7 +156,8 @@ def resume_schedule(identity, schedule_id):
     except ScheduleNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except SchedulePermissionError as e:
-        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
+        # Same answer as a missing schedule: a denial must not reveal that the id exists.
+        return jsonify({"error": str(ScheduleNotFoundError(e.resource_id)), "error_type": "NOT_FOUND"}), 404
     except Exception:
         logger.exception("Unhandled error in resume_schedule")
         return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
@@ -171,7 +176,8 @@ def trigger_schedule(identity, schedule_id):
     except ScheduleNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except SchedulePermissionError as e:
-        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
+        # Same answer as a missing schedule: a denial must not reveal that the id exists.
+        return jsonify({"error": str(ScheduleNotFoundError(e.resource_id)), "error_type": "NOT_FOUND"}), 404
     except ValueError as e:
         return jsonify({"error": str(e), "error_type": "VALIDATION_ERROR"}), 400
     except Exception:
@@ -192,7 +198,8 @@ def delete_schedule(identity, schedule_id):
     except ScheduleNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except SchedulePermissionError as e:
-        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
+        # Same answer as a missing schedule: a denial must not reveal that the id exists.
+        return jsonify({"error": str(ScheduleNotFoundError(e.resource_id)), "error_type": "NOT_FOUND"}), 404
     except Exception:
         logger.exception("Unhandled error in delete_schedule")
         return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500
@@ -212,7 +219,8 @@ def get_schedule_runs(identity, schedule_id, limit):
     except ScheduleNotFoundError as e:
         return jsonify({"error": str(e), "error_type": "NOT_FOUND"}), 404
     except SchedulePermissionError as e:
-        return jsonify({"error": str(e), "error_type": "FORBIDDEN"}), 403
+        # Same answer as a missing schedule: a denial must not reveal that the id exists.
+        return jsonify({"error": str(ScheduleNotFoundError(e.resource_id)), "error_type": "NOT_FOUND"}), 404
     except Exception:
         logger.exception("Unhandled error in get_schedule_runs")
         return jsonify({"error": "Internal server error", "error_type": "INTERNAL_ERROR"}), 500

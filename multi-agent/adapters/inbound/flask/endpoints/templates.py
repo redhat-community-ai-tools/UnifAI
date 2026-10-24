@@ -6,11 +6,16 @@ Provides REST API for template operations:
 - Input schema generation
 - Template instantiation and materialization
 """
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, jsonify, current_app, g
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 import logging
-from inbound.flask.decorators import with_require_identity_authorization, require_admin_access
+from inbound.flask.decorators import (
+    with_require_identity_authorization,
+    require_admin_access,
+    is_admin_user,
+    G_IDENTITY_USERNAME,
+)
 
 from mas.templates.errors import (
     TemplateNotFoundError,
@@ -23,10 +28,27 @@ logger = logging.getLogger(__name__)
 templates_bp = Blueprint("templates", __name__)
 
 
+def _is_admin() -> bool:
+    return is_admin_user(getattr(g, G_IDENTITY_USERNAME, ""))
+
+
+def _public_filter(is_public):
+    """Only admins may list or count unlisted (non-public) templates."""
+    return is_public if _is_admin() else True
+
+
+def _ensure_visible(svc, template_id: str) -> None:
+    """A non-public template is invisible to non-admins: same answer as a missing one."""
+    template = svc.get_template(template_id)
+    if not template.metadata.is_public and not _is_admin():
+        raise TemplateNotFoundError(template_id)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Template Listing & Discovery
 # ─────────────────────────────────────────────────────────────────────────────
 @templates_bp.route("/templates.list", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "is_public": fields.Bool(data_key="isPublic", load_default=True),
     "category": fields.Str(required=False, load_default=None),
@@ -34,7 +56,7 @@ templates_bp = Blueprint("templates", __name__)
     "skip": fields.Int(load_default=0),
     "limit": fields.Int(load_default=100),
 })
-def list_templates(is_public, category, tags, skip, limit):
+def list_templates(identity, is_public, category, tags, skip, limit):
     """
     List available templates with optional filtering.
     
@@ -48,7 +70,7 @@ def list_templates(is_public, category, tags, skip, limit):
     try:
         svc = current_app.container.template_service
         summaries = svc.list_template_summaries(
-            is_public=is_public,
+            is_public=_public_filter(is_public),
             category=category,
             tags=tags,
             skip=skip,
@@ -64,11 +86,12 @@ def list_templates(is_public, category, tags, skip, limit):
 
 
 @templates_bp.route("/templates.search", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "query": fields.Str(data_key="q", required=True),
     "limit": fields.Int(load_default=20),
 })
-def search_templates(query, limit):
+def search_templates(identity, query, limit):
     """
     Search templates by name/description.
     
@@ -89,17 +112,18 @@ def search_templates(query, limit):
 
 
 @templates_bp.route("/templates.count", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "is_public": fields.Bool(data_key="isPublic", load_default=True),
     "category": fields.Str(required=False, load_default=None),
 })
-def count_templates(is_public, category):
+def count_templates(identity, is_public, category):
     """
     Count templates matching criteria.
     """
     try:
         svc = current_app.container.template_service
-        count = svc.count_templates(is_public=is_public, category=category)
+        count = svc.count_templates(is_public=_public_filter(is_public), category=category)
         return jsonify({"count": count}), 200
     except Exception as e:
         logger.exception("Error counting templates")
@@ -110,15 +134,17 @@ def count_templates(is_public, category):
 #  Template CRUD
 # ─────────────────────────────────────────────────────────────────────────────
 @templates_bp.route("/template.get", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "template_id": fields.Str(data_key="templateId", required=True),
 })
-def get_template(template_id):
+def get_template(identity, template_id):
     """
     Get a template by ID.
     """
     try:
         svc = current_app.container.template_service
+        _ensure_visible(svc, template_id)
         template = svc.get_template(template_id)
         return jsonify(template.model_dump(mode="json")), 200
     except TemplateNotFoundError as e:
@@ -129,10 +155,11 @@ def get_template(template_id):
 
 
 @templates_bp.route("/template.summary.get", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "template_id": fields.Str(data_key="templateId", required=True),
 })
-def get_template_summary(template_id):
+def get_template_summary(identity, template_id):
     """
     Get a template summary for catalog display.
     
@@ -140,6 +167,7 @@ def get_template_summary(template_id):
     """
     try:
         svc = current_app.container.template_service
+        _ensure_visible(svc, template_id)
         summary = svc.get_template_summary(template_id)
         return jsonify(summary.model_dump(mode="json")), 200
     except TemplateNotFoundError as e:
@@ -217,10 +245,11 @@ def delete_template(template_id):
 #  Input Schema
 # ─────────────────────────────────────────────────────────────────────────────
 @templates_bp.route("/template.schema.get", methods=["GET"])
+@with_require_identity_authorization
 @from_query({
     "template_id": fields.Str(data_key="templateId", required=True),
 })
-def get_template_schema(template_id):
+def get_template_schema(identity, template_id):
     """
     Get the input schema for a template.
     
@@ -228,6 +257,7 @@ def get_template_schema(template_id):
     """
     try:
         svc = current_app.container.template_service
+        _ensure_visible(svc, template_id)
         schema = svc.get_input_schema(template_id)
         return jsonify(schema), 200
     except TemplateNotFoundError as e:
@@ -241,11 +271,12 @@ def get_template_schema(template_id):
 #  Input Validation
 # ─────────────────────────────────────────────────────────────────────────────
 @templates_bp.route("/template.input.validate", methods=["POST"])
+@with_require_identity_authorization
 @from_body({
     "template_id": fields.Str(data_key="templateId", required=True),
     "input": fields.Dict(required=True),
 })
-def validate_template_input(template_id, input):
+def validate_template_input(identity, template_id, input):
     """
     Validate user input against a template's input schema.
     
@@ -257,6 +288,7 @@ def validate_template_input(template_id, input):
     """
     try:
         svc = current_app.container.template_service
+        _ensure_visible(svc, template_id)
         result = svc.validate_input(template_id, input)
         return jsonify(result.model_dump(mode="json")), 200
     except TemplateNotFoundError as e:
@@ -270,11 +302,12 @@ def validate_template_input(template_id, input):
 #  Instantiation
 # ─────────────────────────────────────────────────────────────────────────────
 @templates_bp.route("/template.instantiate", methods=["POST"])
+@with_require_identity_authorization
 @from_body({
     "template_id": fields.Str(data_key="templateId", required=True),
     "input": fields.Dict(required=True),
 })
-def instantiate_template(template_id, input):
+def instantiate_template(identity, template_id, input):
     """
     Instantiate a template with user input.
     
@@ -282,6 +315,7 @@ def instantiate_template(template_id, input):
     """
     try:
         svc = current_app.container.template_service
+        _ensure_visible(svc, template_id)
         result = svc.instantiate(template_id, input)
         return jsonify(result.blueprint.model_dump(mode="json")), 200
     except TemplateNotFoundError as e:
@@ -325,6 +359,7 @@ def materialize_template(identity, template_id, input=None,
     """
     try:
         svc = current_app.container.template_service
+        _ensure_visible(svc, template_id)
         result = svc.materialize(
             template_id=template_id,
             identity=identity,
