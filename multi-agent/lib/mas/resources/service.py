@@ -329,6 +329,7 @@ class CoreResourceService:
         config: dict,
         name: Optional[str] = None,
         timeout_seconds: float = 10.0,
+        caller: CallerScope = CallerScope(),
     ) -> ElementValidationResult:
         """Validate an inline config before saving."""
         self._ensure_validation_service()
@@ -340,7 +341,7 @@ class CoreResourceService:
         nested_refs = list(RefWalker.external_rids(cfg_model))
         dep_rids = self._resolve_transitive_deps(nested_refs)
 
-        ordered_configs = self._build_configs_from_rids(dep_rids)
+        ordered_configs = self._build_configs_from_rids(dep_rids, caller=caller)
 
         ordered_configs.append(ElementConfigMeta(
             rid="inline",

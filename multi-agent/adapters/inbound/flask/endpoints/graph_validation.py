@@ -2,14 +2,18 @@ from flask import Blueprint, jsonify, current_app, request
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 from pydantic.json import pydantic_encoder
+from inbound.flask.decorators import with_require_identity_authorization, resolve_caller_scope
+from mas.core.identity import Identity
 import yaml
-import traceback
+import logging
 
 graph_validation_bp = Blueprint("graph_validation", __name__)
+logger = logging.getLogger(__name__)
 
 
 @graph_validation_bp.route("/names.get", methods=["GET"])
-def get_validation_names():
+@with_require_identity_authorization
+def get_validation_names(identity: Identity):
     """
     Returns the list of all available validation names.
     """
@@ -18,11 +22,13 @@ def get_validation_names():
         validation_names = validation_svc.get_validation_names()
         return jsonify({"validation_names": validation_names}), 200
     except Exception as e:
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+        logger.exception("graph validation failed")
+        return jsonify({"error": str(e)}), 500
 
 
 @graph_validation_bp.route("/channels.validate", methods=["POST"])
-def validate_channels():
+@with_require_identity_authorization
+def validate_channels(identity: Identity):
     """
     Validates channels for a blueprint draft YAML and returns validation report with fix suggestions.
     """
@@ -38,7 +44,7 @@ def validate_channels():
 
         # Parse YAML to dict and resolve blueprint
         draft_dict = yaml.safe_load(yaml_content)
-        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict)
+        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict, caller=resolve_caller_scope(identity))
 
         # Build graph plan and validate channels
         graph_plan = graph_svc.build_plan(blueprint_spec)
@@ -49,11 +55,13 @@ def validate_channels():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+        logger.exception("graph validation failed")
+        return jsonify({"error": str(e)}), 500
 
 
 @graph_validation_bp.route("/all.validate", methods=["POST"])
-def validate_all():
+@with_require_identity_authorization
+def validate_all(identity: Identity):
     """
     Runs all validations for a blueprint draft YAML and returns comprehensive validation results with fix suggestions.
     """
@@ -69,7 +77,7 @@ def validate_all():
 
         # Parse YAML to dict and resolve blueprint
         draft_dict = yaml.safe_load(yaml_content)
-        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict)
+        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict, caller=resolve_caller_scope(identity))
 
         # Build graph plan and validate
         graph_plan = graph_svc.build_plan(blueprint_spec)
@@ -80,11 +88,13 @@ def validate_all():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+        logger.exception("graph validation failed")
+        return jsonify({"error": str(e)}), 500
 
 
 @graph_validation_bp.route("/dependencies.validate", methods=["POST"])
-def validate_dependencies():
+@with_require_identity_authorization
+def validate_dependencies(identity: Identity):
     """
     Validates dependencies for a blueprint draft YAML.
     """
@@ -100,7 +110,7 @@ def validate_dependencies():
 
         # Parse YAML to dict and resolve blueprint
         draft_dict = yaml.safe_load(yaml_content)
-        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict)
+        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict, caller=resolve_caller_scope(identity))
 
         # Build graph plan and validate dependencies
         graph_plan = graph_svc.build_plan(blueprint_spec)
@@ -111,11 +121,13 @@ def validate_dependencies():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+        logger.exception("graph validation failed")
+        return jsonify({"error": str(e)}), 500
 
 
 @graph_validation_bp.route("/cycles.validate", methods=["POST"])
-def validate_cycles():
+@with_require_identity_authorization
+def validate_cycles(identity: Identity):
     """
     Validates cycles for a blueprint draft YAML.
     """
@@ -131,7 +143,7 @@ def validate_cycles():
 
         # Parse YAML to dict and resolve blueprint
         draft_dict = yaml.safe_load(yaml_content)
-        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict)
+        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict, caller=resolve_caller_scope(identity))
 
         # Build graph plan and validate cycles
         graph_plan = graph_svc.build_plan(blueprint_spec)
@@ -142,11 +154,13 @@ def validate_cycles():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+        logger.exception("graph validation failed")
+        return jsonify({"error": str(e)}), 500
 
 
 @graph_validation_bp.route("/orphans.validate", methods=["POST"])
-def validate_orphans():
+@with_require_identity_authorization
+def validate_orphans(identity: Identity):
     """
     Validates orphan nodes for a blueprint draft YAML.
     """
@@ -162,7 +176,7 @@ def validate_orphans():
 
         # Parse YAML to dict and resolve blueprint
         draft_dict = yaml.safe_load(yaml_content)
-        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict)
+        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict, caller=resolve_caller_scope(identity))
 
         # Build graph plan and validate orphans
         graph_plan = graph_svc.build_plan(blueprint_spec)
@@ -173,11 +187,13 @@ def validate_orphans():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+        logger.exception("graph validation failed")
+        return jsonify({"error": str(e)}), 500
 
 
 @graph_validation_bp.route("/required_nodes.validate", methods=["POST"])
-def validate_required_nodes():
+@with_require_identity_authorization
+def validate_required_nodes(identity: Identity):
     """
     Validates required nodes for a blueprint draft YAML.
     """
@@ -193,7 +209,7 @@ def validate_required_nodes():
 
         # Parse YAML to dict and resolve blueprint
         draft_dict = yaml.safe_load(yaml_content)
-        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict)
+        blueprint_spec = blueprint_svc.resolve_draft_dict(draft_dict, caller=resolve_caller_scope(identity))
 
         # Build graph plan and validate required nodes
         graph_plan = graph_svc.build_plan(blueprint_spec)
@@ -204,4 +220,5 @@ def validate_required_nodes():
             "fix_suggestions": [suggestion.model_dump(mode="json") for suggestion in suggestions]
         }), 200
     except Exception as e:
-        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+        logger.exception("graph validation failed")
+        return jsonify({"error": str(e)}), 500

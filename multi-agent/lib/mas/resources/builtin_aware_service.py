@@ -386,6 +386,7 @@ class BuiltinAwareResourceService:
         config: dict,
         name: Optional[str] = None,
         timeout_seconds: float = 10.0,
+        caller: CallerScope = CallerScope(),
     ) -> ElementValidationResult:
         self._inner._ensure_validation_service()
         category_enum = ResourceCategory(category)
@@ -393,7 +394,7 @@ class BuiltinAwareResourceService:
         cfg_model = model_cls(**config)
         nested_refs = list(RefWalker.external_rids(cfg_model))
         dep_rids = self._inner._dependency_resolver.resolve_all_with_deps(nested_refs)
-        ordered_configs = self._build_configs_from_rids(dep_rids)
+        ordered_configs = self._build_configs_from_rids(dep_rids, caller=caller)
         ordered_configs.append(ElementConfigMeta(
             rid="inline",
             category=category_enum,

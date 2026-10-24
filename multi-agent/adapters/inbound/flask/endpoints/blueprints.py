@@ -418,7 +418,7 @@ def validate_blueprint(
         result = svc.validate_blueprint(
             blueprint_id=blueprint_id,
             caller=resolve_caller_scope(identity),
-            user_id=user_id,
+            user_id=identity.id,  # verified workspace identity; the body userId is never trusted
             timeout_seconds=timeout_seconds,
             credential_user_id=authenticated_user,
         )
