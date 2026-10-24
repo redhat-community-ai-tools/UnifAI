@@ -19,12 +19,12 @@ import (
 	unifaiv1 "github.com/startxfr/unifai-operator/api/v1alpha1"
 )
 
-// docSitePages is the small site the web source crawls: an index linking a second page.
-func docSitePages(marker string) map[string]string {
+// docSitePages is a small site: an index linking a second page.
+func docSitePages() map[string]string {
 	return map[string]string{
 		"index.html": `<html><head><title>E2E docs</title></head><body><h1>E2E documentation</h1>
 <p>The UnifAI operator keeps this site in sync as a RAG web source.</p><a href="page2.html">Second page</a></body></html>`,
-		"page2.html": `<html><head><title>E2E page 2</title></head><body><h1>Second page</h1><p>Marker ` + marker + `.</p></body></html>`,
+		"page2.html": `<html><head><title>E2E page 2</title></head><body><h1>Second page</h1><p>Served in the cluster.</p></body></html>`,
 	}
 }
 
@@ -32,7 +32,7 @@ func docSitePages(marker string) map[string]string {
 func deployDocSite(t *testing.T, ns string) {
 	t.Helper()
 	labels := map[string]string{"app": "e2e-docs"}
-	must(t, c.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "e2e-docs", Namespace: ns}, Data: docSitePages("first")}))
+	must(t, c.Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "e2e-docs", Namespace: ns}, Data: docSitePages()}))
 	one := int32(1)
 	must(t, c.Create(ctx, &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "e2e-docs", Namespace: ns}, Spec: appsv1.DeploymentSpec{
 		Replicas: &one, Selector: &metav1.LabelSelector{MatchLabels: labels},
@@ -67,41 +67,43 @@ func waitSynced(t *testing.T, src *unifaiv1.UnifaiRAGSource, since time.Time, ti
 	})
 }
 
-// checkWebSource crawls the in-cluster site, then changes one page and checks the next sync re-fetches it.
-func checkWebSource(t *testing.T, ns string) {
+// checkWebSourceRefusesPrivateHosts points a web source at a site served in the cluster: the RAG service must not
+// fetch it (its host resolves to a non-public address, the SSRF guard), so the sync ends with no page.
+func checkWebSourceRefusesPrivateHosts(t *testing.T, ns string) {
 	deployDocSite(t, ns)
-	src := &unifaiv1.UnifaiRAGSource{ObjectMeta: metav1.ObjectMeta{Name: "e2e-web", Namespace: ns}, Spec: unifaiv1.UnifaiRAGSourceSpec{
+	src := &unifaiv1.UnifaiRAGSource{ObjectMeta: metav1.ObjectMeta{Name: "e2e-web-private", Namespace: ns}, Spec: unifaiv1.UnifaiRAGSourceSpec{
 		Type: "web", Tags: []string{"e2e"},
 		Web: &unifaiv1.RAGWebSource{URLs: []string{"http://e2e-docs:8080/docs/index.html"}, Crawl: "generic", MaxPages: 5}}}
 	start := time.Now()
 	create(t, src)
 	waitSynced(t, src, start, 15*time.Minute)
-	if src.Status.Pages < 2 {
-		t.Fatalf("first sync found %d pages, want the index and the linked page", src.Status.Pages)
+	if src.Status.Pages != 0 {
+		t.Fatalf("a web source on an in-cluster host ingested %d pages, want none (SSRF guard)", src.Status.Pages)
 	}
-	t.Logf("first sync: %s", src.Status.Message)
-
-	cm := &corev1.ConfigMap{}
-	must(t, c.Get(ctx, client.ObjectKey{Namespace: ns, Name: "e2e-docs"}, cm))
-	cm.Data = docSitePages("second")
-	must(t, c.Update(ctx, cm))
-	n := 0
-	eventually(t, "changed page served", 3*time.Minute, func() (bool, string) { // the kubelet refreshes ConfigMap volumes
-		n++
-		ok, out := runPod(t, ns, fmt.Sprintf("e2e-docs-check-%d", n), pythonImage, []string{"python", "-c",
-			`import urllib.request; print(urllib.request.urlopen("http://e2e-docs:8080/docs/page2.html", timeout=10).read().decode())`})
-		return ok && strings.Contains(out, "Marker second"), out
+	eventually(t, "the RAG workers log the refusal", 2*time.Minute, func() (bool, string) {
+		logs := podLogs(t, ns, "unifai-rag-celery")
+		return strings.Contains(logs, "e2e-docs resolves to a non-public address"), "no refusal logged yet"
 	})
+}
 
-	must(t, getObj(src))
-	src.Spec.Tags = []string{"e2e", "resync"} // a spec change queues a sync
-	start = time.Now()
-	must(t, c.Update(ctx, src))
-	waitSynced(t, src, start, 15*time.Minute)
-	if src.Status.PagesChanged < 1 {
-		t.Errorf("resync after a page change: %s, want at least one changed page", src.Status.Message)
+// podLogs returns the logs of the pods of the namespace whose name starts with prefix.
+func podLogs(t *testing.T, ns, prefix string) string {
+	t.Helper()
+	var pods corev1.PodList
+	must(t, c.List(ctx, &pods, client.InNamespace(ns)))
+	var out strings.Builder
+	for _, p := range pods.Items {
+		if !strings.HasPrefix(p.Name, prefix) {
+			continue
+		}
+		for _, ct := range p.Spec.Containers {
+			b, err := kc.CoreV1().Pods(ns).GetLogs(p.Name, &corev1.PodLogOptions{Container: ct.Name}).DoRaw(ctx)
+			if err == nil {
+				out.Write(b)
+			}
+		}
 	}
-	t.Logf("resync: %s", src.Status.Message)
+	return out.String()
 }
 
 // checkRedHatSource ingests one real Red Hat documentation page (needs Internet access from the cluster).
@@ -115,7 +117,16 @@ func checkRedHatSource(t *testing.T, ns string) {
 	create(t, src)
 	waitSynced(t, src, start, 20*time.Minute)
 	if src.Status.Pages != 1 {
-		t.Errorf("red hat page: %s, want 1 page", src.Status.Message)
+		t.Fatalf("red hat page: %s, want 1 page", src.Status.Message)
+	}
+
+	must(t, getObj(src))
+	src.Spec.Tags = append(src.Spec.Tags, "e2e") // a spec change queues a sync of the same page
+	start = time.Now()
+	must(t, c.Update(ctx, src))
+	waitSynced(t, src, start, 20*time.Minute)
+	if src.Status.Pages != 1 || src.Status.PagesChanged != 0 {
+		t.Errorf("resync of an unchanged page: %s, want 1 page and none changed (incremental sync)", src.Status.Message)
 	}
 }
 

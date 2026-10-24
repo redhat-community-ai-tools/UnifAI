@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -46,6 +47,7 @@ func env(key, def string) string {
 var (
 	ctx = context.Background()
 	c   client.Client
+	kc  *kubernetes.Clientset // pod logs
 	ns  string
 )
 
@@ -83,6 +85,10 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	if c, err = client.New(cfg, client.Options{Scheme: scheme}); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	if kc, err = kubernetes.NewForConfig(cfg); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
@@ -375,11 +381,11 @@ func TestUnifaiStack(t *testing.T) {
 
 	t.Run("the CRDs refuse an invalid spec with the rule's message", func(t *testing.T) { checkAdmissionRules(t, ns) })
 
-	t.Run("a web source is crawled in the cluster and re-synced after a page change", func(t *testing.T) {
+	t.Run("a web source on an in-cluster host is not fetched (SSRF guard)", func(t *testing.T) {
 		if os.Getenv("E2E_FULL") == "" {
-			t.Skip("E2E_FULL=1 required (embedding service)")
+			t.Skip("E2E_FULL=1 required (RAG workers)")
 		}
-		checkWebSource(t, ns)
+		checkWebSourceRefusesPrivateHosts(t, ns)
 	})
 
 	t.Run("a real Red Hat documentation page is ingested", func(t *testing.T) {
