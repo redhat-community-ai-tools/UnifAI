@@ -13,7 +13,9 @@
 # (zuno-demo platform/supply-chain/image-identities.yaml): renaming this file or its triggers changes that
 # identity and needs the zuno side to change with it.
 #
-# Images pushed by hand (`make images-devel`) are unsigned and are not accepted by a cluster that verifies.
+# Actions are pinned by commit SHA (this job holds an OIDC token that signs): bump them deliberately, with the
+# version in the trailing comment. Images pushed by hand (`make images-devel`) are unsigned and are not accepted by a
+# cluster that verifies; they must not reuse the devel / devel-<sha> tags this workflow owns.
 name: publish-images
 
 on:
@@ -65,7 +67,15 @@ jobs:
           - {component: identity,   dockerfile: shared-resources/identity/Dockerfile,   prepare: "",                       build_args: ""}
           - {component: ui,         dockerfile: ui/deployment/Dockerfile,               prepare: "make ui-certs ui-perms", build_args: ""}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # The multiagent and rag images are large: the stock runner runs out of disk without this.
+      - name: Free disk space on the runner
+        run: |
+          set -euo pipefail
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
 
       - name: Work out the image tags
         id: tags
@@ -125,7 +135,7 @@ jobs:
           case "$ref" in *@sha256:*) ;; *) echo "no digest for $first: $ref" >&2; exit 1;; esac
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
 
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with:
           cosign-release: v2.4.1
 
@@ -140,7 +150,7 @@ jobs:
           cosign sign --yes "$REF"
 
       - name: SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ steps.push.outputs.ref }}
           format: spdx-json

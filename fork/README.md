@@ -29,3 +29,8 @@ Fork-only files (never part of an upstream PR): `Makefile`, `fork.mk` (local, gi
   zuno-demo's `platform/supply-chain/image-identities.yaml`.
 - `make images-devel` stays for local development and quick test images. Those images are **unsigned**: a cluster that verifies
   its UnifAI images refuses them, so pin only digests taken from a CI run's summary.
+- Do not push `devel` or `devel-<sha>` by hand: those tags belong to this workflow, and a hand push would replace a signed
+  digest with an unsigned one (or the reverse). Use another prefix for local images.
+- The UI image bakes the self-signed nginx key and certificate that `make ui-certs` generates into a public image. That is the
+  existing behaviour and signing does not change it: the signature attests who built the image, not that it holds no secret.
+  Generating the pair when the container starts is the real fix (upstream code, later).
