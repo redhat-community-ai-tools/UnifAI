@@ -44,7 +44,7 @@ are referenced, not duplicated. No secrets, no unpublished vulnerability details
 ## 3. Security and operations
 | Id | Item | Status | Owner |
 |---|---|---|---|
-| R-301 | Narrow the operator ClusterRole (rbac, OLM rights only for managed Keycloak); study a namespaced mode | todo | operator |
+| R-301 | Narrow the operator ClusterRole (rbac, OLM rights only for managed Keycloak); study a namespaced mode | done (0.1.31: least privilege, cache restricted to UnifAI-labelled Secrets/ConfigMaps, unifai-view/edit/admin user roles); namespaced mode not studied yet | operator |
 | R-302 | NetworkPolicy: MAS/RAG/identity/backend reachable only from the UnifAI pods, the `internal-client` label and the operator, not the whole namespace; `NetworkIsolated` condition | done (0.1.26) | operator |
 | R-303 | Restore from backups: UnifaiRestore (applications stopped, key fingerprint checked, Qdrant + MongoDB restored, restart) | done (0.1.30) | operator |
 | R-304 | Static spec rules: reported as warnings (0.1.33), then CEL validation in the CRDs with ratcheting (0.1.34); `config.type` stays a warning. `v1beta1` deferred until the specs are stable | done | operator |
