@@ -21,7 +21,7 @@ Authentication uses the same hint-driven OAuth flow as MCP providers:
 
 from mas.elements.nodes.common.base_config import NodeBaseConfig
 from pydantic import Field, HttpUrl
-from typing import Optional, Literal
+from typing import Dict, Optional, Literal
 from a2a.types import AgentCard
 from .identifiers import Identifier
 from mas.core.ref.models import RetrieverRef
@@ -84,6 +84,14 @@ class A2AAgentNodeConfig(NodeBaseConfig):
                 constants={"category": "a2a"},
             ),
         ),
+    )
+
+    # With ``auth_method: forward_user_token`` the node presents the acting user's own platform
+    # token to the remote agent (ADR-0563 applied to A2A), together with these headers, whose
+    # values are rendered per call (``{session_id}``, ``{user}``, ``{tag.<key>}``...).
+    additional_headers: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Headers sent on every call; templates are rendered per call with forward_user_token",
     )
 
     sign_in: Optional[str] = Field(

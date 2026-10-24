@@ -18,6 +18,7 @@ import anyio
 from global_utils.utils.async_bridge import get_async_bridge
 from mas.core.auth.credentials.models import StaticAuthMethod
 from mas.core.auth.errors import AuthError
+from mas.core.identity_forwarding import FORWARD_USER_TOKEN
 from mas.core.ref.models import Ref
 from mas.elements.common.validator import (
     BaseElementValidator,
@@ -92,6 +93,10 @@ class A2AAgentNodeValidator(BaseElementValidator):
         auth_method = config.auth_method or StaticAuthMethod.NONE.value
 
         if auth_method == StaticAuthMethod.NONE.value:
+            return None, None
+
+        if auth_method == FORWARD_USER_TOKEN:
+            # The user's token only exists in a running session; the agent card is public.
             return None, None
 
         if auth_method == StaticAuthMethod.ACCESS_TOKEN.value:

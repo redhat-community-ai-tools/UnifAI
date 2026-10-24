@@ -20,6 +20,7 @@ from mas.actions.common.action_models import ActionType, BaseActionInput, BaseAc
 from mas.actions.common.base_action import BaseAction
 from mas.core.auth.credentials.models import StaticAuthMethod
 from mas.core.auth.service import AuthService
+from mas.core.identity_forwarding import FORWARD_USER_TOKEN
 from mas.core.enums import ResourceCategory
 from mas.elements.nodes.a2a_agent.identifiers import Identifier as NodeIdentifier
 from mas.elements.providers.a2a_client import A2AClient
@@ -110,6 +111,10 @@ class ValidateConnectionAction(BaseAction):
         auth_method = input_data.auth_method or StaticAuthMethod.NONE.value
 
         if auth_method == StaticAuthMethod.NONE.value:
+            return None, None
+
+        if auth_method == FORWARD_USER_TOKEN:
+            # Public agent card; the user's token only exists in a running session.
             return None, None
 
         if auth_method == StaticAuthMethod.ACCESS_TOKEN.value:

@@ -17,6 +17,7 @@ from mas.elements.nodes.common.workload import Task, AgentResult
 from mas.elements.providers.a2a_client import A2AProvider
 from mas.core.auth.credentials.credential import AuthCredential
 from mas.core.auth.errors import AuthError
+from mas.core.identity_forwarding import IdentityTokenUnavailable
 from global_utils.utils.async_bridge import get_async_bridge
 
 logger = logging.getLogger(__name__)
@@ -120,7 +121,7 @@ class A2AAgentNode(
                     headers = bridge.run(auth_credential.get_headers())
                 if headers:
                     return dict(headers)
-            except AuthError as exc:
+            except (AuthError, IdentityTokenUnavailable) as exc:
                 logger.warning(
                     "A2AAgentNode: auth headers unavailable at init (%s); "
                     "will refresh before delegation",

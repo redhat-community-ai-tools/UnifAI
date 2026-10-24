@@ -8,10 +8,10 @@ from mas.core.contracts import SessionRegistry
 from mas.core.element_deps import ElementBuildContext
 from mas.blueprints.models.blueprint import BlueprintSpec, ResourceSpec
 from mas.core.identity_forwarding import (
+    FORWARD_USER_TOKEN,
     ForwardedIdentityCredential, IdentityForwarder, NullIdentityTokenSource,
 )
 
-FORWARD_USER_TOKEN = "forward_user_token"
 
 
 def _target_url_of(cfg: Any) -> str:

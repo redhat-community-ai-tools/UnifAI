@@ -35,6 +35,9 @@ from mas.core.execution_context import SESSION_TAGS_TAG, ExecutionContextHolder
 
 logger = logging.getLogger(__name__)
 
+#: ``auth_method`` value that presents the acting user's own platform token to a downstream server.
+FORWARD_USER_TOKEN = "forward_user_token"
+
 
 class IdentityTokenUnavailable(RuntimeError):
     """No valid user token can be resolved for the running session."""
