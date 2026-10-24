@@ -165,8 +165,21 @@ jobs:
         run: |
           set -euo pipefail
           python3 fork/ci/slsa_provenance.py --component "$COMPONENT" --out provenance.json
-          cosign attest --yes --type slsaprovenance1 --predicate provenance.json "$REF"
-          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
+          ls -l provenance.json sbom.spdx.json
+          # Rekor is a public service: retry, and keep cosign's debug output so a
+          # rejected entry (size, validation) is visible instead of "giving up".
+          attest() {
+            for n in 1 2 3 4 5; do
+              if cosign attest --yes --verbose --type "$1" --predicate "$2" "$REF"; then
+                return 0
+              fi
+              echo "attest $1: attempt $n failed" >&2
+              sleep $((n * 20))
+            done
+            return 1
+          }
+          attest slsaprovenance1 provenance.json
+          attest spdxjson sbom.spdx.json
 
       - name: Record the signed reference
         env:
