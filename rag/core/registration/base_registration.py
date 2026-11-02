@@ -9,7 +9,9 @@ from core.registration.domain.port import RegistrationPort
 from core.registration.domain.model import BaseSourceData
 from core.data_sources.domain.model import DataSource
 from core.data_sources.domain.repository import DataSourceRepository
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class BaseRegistration(RegistrationPort):

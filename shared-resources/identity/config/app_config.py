@@ -56,12 +56,11 @@ class AppConfig(SharedConfig):
     # env var if the target directory schema changes.
     #
     # Environment-specific connection settings (directory_provider, directory_url,
-    # directory_verify_ssl) are injected at deploy time via the identity-config
-    # ConfigMap (see helm/scripts/identity-presync.sh).
+    # directory_verify_ssl, directory_ldap_bind_dn) are injected at deploy time via
+    # the identity-config ConfigMap (see helm/scripts/identity-presync.sh).
     #
-    # Bind credentials (directory_ldap_bind_dn, directory_ldap_bind_password)
-    # default to empty (anonymous bind). A future story will move these to a
-    # Kubernetes Secret.
+    # Bind password (directory_ldap_bind_password) is injected via identity-secret
+    # (Vault → Jenkins → identity-presync.sh), same pattern as client_secret.
     directory_provider: str = ""
     directory_url: str = ""
     directory_timeout: int = 10

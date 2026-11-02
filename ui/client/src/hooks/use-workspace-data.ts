@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "../http/axiosAgentConfig";
 import {
   ElementCategory,
@@ -13,6 +14,26 @@ import * as resourcesApi from "@/api/resources";
 import { useAgenticAI } from "@/contexts/AgenticAIContext";
 import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 import type { ResourceInstance } from "@/api/resources";
+
+const INSTANCES_PAGE_SIZE = 50;
+
+function toElementInstance(resource: ResourceInstance): ElementInstance {
+  return {
+    rid: resource.rid,
+    name: resource.name,
+    config: resource.cfg_dict,
+    category: resource.category,
+    type: resource.type,
+    version: resource.version,
+    created: resource.created,
+    updated: resource.updated,
+    nested_refs: resource.nested_refs,
+    contributed_by: resource.contributed_by,
+    ownership: resource.ownership || 'custom',
+    visibility: resource.visibility,
+    userConfigured: resource.user_configured ?? false,
+  };
+}
 
 /**
  * When a resource is made available to all, any aggregated elements it

@@ -1,7 +1,7 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Users, Trash2, Plus, MessageSquare, Network } from "lucide-react";
+import { Users, Trash2, Plus, MessageSquare, Network, Loader2 } from "lucide-react";
 import ChatInterface from "./chat/ChatInterface";
 import GraphDisplay from "./graphs/GraphDisplay";
 import { CollabAvatar } from "@/components/shared/CollabAvatar";
@@ -20,6 +20,8 @@ export interface CollaborationHubSessionSidebarProps {
   onDeleteChat: (session: ChatSession, event: React.MouseEvent) => void;
   onOpenAddFlow: () => void;
   getSessionParticipantMembers: (sessionId: string) => MemberDisplay[];
+  scrollRef?: React.RefObject<HTMLDivElement>;
+  isFetchingNextPage?: boolean;
 }
 
 export function CollaborationHubSessionSidebar({
@@ -30,6 +32,8 @@ export function CollaborationHubSessionSidebar({
   onDeleteChat,
   onOpenAddFlow,
   getSessionParticipantMembers,
+  scrollRef,
+  isFetchingNextPage,
 }: CollaborationHubSessionSidebarProps) {
   return (
     <div className="w-[280px] border-r border-gray-800 bg-background-card flex flex-col flex-shrink-0">
@@ -47,7 +51,7 @@ export function CollaborationHubSessionSidebar({
           <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" ref={scrollRef}>
         {chatSessions.length === 0 ? (
           <div className="p-4 text-center text-gray-500 text-xs">
             No sessions yet. Load a workflow to get started.
@@ -128,6 +132,11 @@ export function CollaborationHubSessionSidebar({
           ))
         )}
       </div>
+      {isFetchingNextPage && (
+        <div className="p-2 text-center flex-shrink-0">
+          <Loader2 className="h-4 w-4 animate-spin mx-auto text-primary" />
+        </div>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ Each provider simply implements the abstract methods to define its own phases.
 No over-engineering, no unnecessary abstractions.
 """
 
+import logging
 from typing import List, Set, Dict, Any
 from abc import ABC, abstractmethod
 from mas.elements.tools.common.base_tool import BaseTool
@@ -14,6 +15,8 @@ from .phase_protocols import PhaseState
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..primitives import AgentObservation
+
+logger = logging.getLogger(__name__)
 
 
 class PhaseProvider(ABC):
@@ -111,7 +114,7 @@ class PhaseProvider(ABC):
             
             return phase_tools
         except Exception as e:
-            print(f"Error getting tools for phase {phase}: {e}")
+            logger.warning("phase.validate_error", extra={"phase": phase, "error": str(e), "detail": "get_tools_for_phase"})
             return self._tools.copy()
     
     def _get_tool_category(self, tool: BaseTool) -> str:

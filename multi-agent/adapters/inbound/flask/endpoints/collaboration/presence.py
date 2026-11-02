@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify
 from global_utils.helpers.apiargs import from_body, from_query
 from webargs import fields
 
-from inbound.flask.decorators import with_authenticated_user
+from inbound.flask.decorators import bind_session_id_arg, with_authenticated_user
 from inbound.flask.endpoints._collaboration_shared import collaboration_service_or_error as _collab_service
 
 logger = logging.getLogger(__name__)
@@ -23,6 +23,7 @@ collaboration_bp = Blueprint("collaboration", __name__)
     "session_id": fields.Str(data_key="sessionId", required=True),
     "role": fields.Str(data_key="role", load_default="collaborator"),
 })
+@bind_session_id_arg
 def join_session(authenticated_user, session_id, role):
     svc, err = _collab_service()
     if err:
@@ -48,6 +49,7 @@ def join_session(authenticated_user, session_id, role):
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def leave_session(authenticated_user, session_id):
     svc, err = _collab_service()
     if err:
@@ -65,6 +67,7 @@ def leave_session(authenticated_user, session_id):
 @from_body({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def heartbeat(authenticated_user, session_id):
     svc, err = _collab_service()
     if err:
@@ -84,6 +87,7 @@ def heartbeat(authenticated_user, session_id):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def get_participants(authenticated_user, session_id):
     svc, err = _collab_service()
     if err:
@@ -141,6 +145,7 @@ def get_user_active_sessions(authenticated_user):
     "session_id": fields.Str(data_key="sessionId", required=True),
     "is_typing": fields.Bool(data_key="isTyping", load_default=True),
 })
+@bind_session_id_arg
 def set_typing(authenticated_user, session_id, is_typing):
     svc, err = _collab_service()
     if err:
@@ -161,6 +166,7 @@ def set_typing(authenticated_user, session_id, is_typing):
 @from_query({
     "session_id": fields.Str(data_key="sessionId", required=True),
 })
+@bind_session_id_arg
 def get_typing(authenticated_user, session_id):
     svc, err = _collab_service()
     if err:

@@ -125,11 +125,17 @@ volumes:
   - name: unifai-rag-shared-storage
     persistentVolumeClaim:
       claimName: unifai-rag-shared-storage
+  - name: unifai-logging-volume
+    persistentVolumeClaim:
+      claimName: unifai-logging-volume
 
 volumeMounts:
   - name: unifai-rag-shared-storage
     mountPath: /app/shared
-
+  - name: unifai-logging-volume
+    mountPath: /var/log/unifai
+    subPathExpr: rag-server/$(POD_NAME)/$(APP_VERSION)
+    readOnly: false
 nodeSelector: {}
 
 tolerations: []

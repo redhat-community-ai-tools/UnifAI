@@ -135,13 +135,17 @@ export const BuiltinConfigureModal: React.FC<BuiltinConfigureModalProps> = ({
 
   const configurableFields = useMemo(() => {
     if (!builtinSchema?.config_schema?.properties) return {};
+    // Sign-in MCP: admin sets additional_headers on the base resource;
+    // don't expose them in the per-user Configure modal (bearer keeps them).
+    const authMethod = element?.config?.auth_method;
     const fields: Record<string, SchemaProperty> = {};
     for (const [name, schema] of Object.entries(builtinSchema.config_schema.properties)) {
       if (!isUserConfigurable(schema)) continue;
+      if (authMethod === "sign_in" && name === "additional_headers") continue;
       fields[name] = schema as SchemaProperty;
     }
     return fields;
-  }, [builtinSchema]);
+  }, [builtinSchema, element?.config?.auth_method]);
 
   useEffect(() => {
     if (!isOpen || Object.keys(configurableFields).length === 0) return;

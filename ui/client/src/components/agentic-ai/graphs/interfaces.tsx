@@ -34,6 +34,7 @@ export interface LLMDefinition {
     max_tokens?: number;
     model_name?: string;
     temperature?: number;
+    reasoning_effort?: string;
     type: string;
     [key: string]: any;
   };

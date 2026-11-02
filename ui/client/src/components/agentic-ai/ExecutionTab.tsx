@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
-import { MessageSquare, Users, Clock, Trash2, Plus, DollarSign } from "lucide-react";
+import { MessageSquare, Users, Clock, Trash2, Plus, DollarSign, Loader2 } from "lucide-react";
 import ChatInterface from "./chat/ChatInterface";
 import ExecutionStream from "./ExecutionStream";
 import GraphDisplay from "./graphs/GraphDisplay";
@@ -14,6 +14,7 @@ import { useDefaultPrompts } from "@/hooks/use-default-prompts";
 import { AnimatedPanelLayout } from "@/components/shared/AnimatedPanelLayout";
 import { AddFlowModal, DeleteSessionModal } from "@/components/shared/SessionModals";
 import { ViewModeToggle } from "@/components/shared/ViewModeToggle";
+import { useScrollPagination } from "@/hooks/use-scroll-pagination";
 import type { PromptShortcut } from "@/api/blueprints";
 
 /**
@@ -46,6 +47,7 @@ const SessionMessagesLoader: React.FC = () => (
 
 export default function ExecutionTab({ runId, onSessionChange }: ExecutionTabProps): React.ReactElement {
   const hub = useSessionHub({ runId, onSessionChange });
+  const { scrollRef } = useScrollPagination(hub);
 
   const [showExecutionStream, setShowExecutionStream] = useState(false);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(15);
@@ -255,13 +257,16 @@ export default function ExecutionTab({ runId, onSessionChange }: ExecutionTabPro
               </div>
             </div>
             <div className="p-0 flex-grow min-h-0 overflow-hidden">
-              {hub.chatSessions.length === 0 ? (
-                <div className="p-4 text-center text-gray-400 text-sm">
-                  No chat sessions available
-                </div>
-              ) : (
-                <div className="h-full overflow-y-auto py-2">
-                  {hub.chatSessions.map((session) => (
+              {/* Keep the scroll node always mounted so usePaginationTrigger can
+                  attach its listener; swapping it in only after the first page
+                  left the effect stuck with scrollRef.current === null. */}
+              <div className="h-full overflow-y-auto py-2" ref={scrollRef}>
+                {hub.chatSessions.length === 0 ? (
+                  <div className="p-4 text-center text-gray-400 text-sm">
+                    No chat sessions available
+                  </div>
+                ) : (
+                  hub.chatSessions.map((session) => (
                     <motion.div
                       key={session.id}
                       className={`group px-4 py-3 border-l-2 cursor-pointer ${
@@ -322,10 +327,15 @@ export default function ExecutionTab({ runId, onSessionChange }: ExecutionTabPro
                         {session.preview}
                       </p>
                     </motion.div>
-                  ))}
-                </div>
-              )}
+                  ))
+                )}
+              </div>
             </div>
+            {hub.isFetchingNextPage && (
+              <div className="p-2 text-center flex-shrink-0">
+                <Loader2 className="h-4 w-4 animate-spin mx-auto text-primary" />
+              </div>
+            )}
           </Card>
         </div>
 

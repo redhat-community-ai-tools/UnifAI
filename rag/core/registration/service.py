@@ -4,7 +4,9 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from core.registration.factory import RegistrationFactory
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class RegistrationService:

@@ -180,10 +180,10 @@ class A2AAgentNode(
             # 5. Route response
             self._route_response(task, agent_result, packet)
 
-            print(f"A2AAgent {self.uid}: Delegated task to remote agent, received response")
+            logger.info("a2a.delegated", extra={"node_uid": self.uid})
 
         except Exception as e:
-            print(f"A2AAgent {self.uid}: Error processing task: {e}")
+            logger.error("a2a.task_error", extra={"node_uid": self.uid, "error": str(e)})
             # Create error agent result
             error_result = AgentResult(
                 content=f"Error delegating to remote agent: {str(e)}",
@@ -376,9 +376,7 @@ class A2AAgentNode(
         streaming_supported = getattr(agent_card.capabilities, 'streaming', False)
 
         if not streaming_supported:
-            # Log that we're falling back to non-streaming
-            print(
-                f"A2AAgent {self.uid}: Node is streaming but remote agent doesn't support streaming. Using non-streaming mode.")
+            logger.warning("a2a.streaming_fallback", extra={"node_uid": self.uid})
 
         return streaming_supported
 

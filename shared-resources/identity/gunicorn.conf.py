@@ -13,6 +13,9 @@ import os
 import sys
 import threading
 
+# Raise the HTTP request-line limit to accommodate long OAuth redirect URIs.
+limit_request_line = 8190
+
 
 def on_starting(server):
     """Register a fork-coordination handler in the master process."""

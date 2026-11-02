@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import axios from '@/http/axiosAgentConfig';
@@ -9,6 +10,7 @@ import { useSessionManagement } from '@/hooks/use-session-management';
 import { useSessionStream } from '@/hooks/use-session-stream';
 import { getBlueprintInfo } from '@/api/blueprints';
 import { createSessionError } from '@/components/agentic-ai/chat/types';
+import { createSession as createSessionApi, CreateSessionParams, listSessions } from '@/api/sessions';
 
 interface UsePublicChatReturn {
   sessions: ChatSession[];
@@ -30,15 +32,20 @@ interface UsePublicChatReturn {
   showDeleteModal: boolean;
   setShowDeleteModal: (open: boolean) => void;
   chatToDelete: ChatSession | null;
+  fetchNextPage: () => void;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  error: string | null;
 }
+
+const PAGE_SIZE = 50;
 
 export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn => {
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [selectedSession, setSelectedSession] = useState<ChatSession | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -48,6 +55,8 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
   const [isLiveRequest, setIsLiveRequest] = useState(false);
 
   const streamCompleteResolverRef = useRef<(() => void) | null>(null);
+  const currentScopeRef = useRef('');
+  currentScopeRef.current = `${blueprintId ?? ''}::${user?.username ?? ''}`;
 
   const { loadSessionMessages } = useSessionManagement();
 
@@ -101,110 +110,50 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     []
   );
 
-  // Load chat sessions for this user and blueprint
-  const fetchChatSessions = useCallback(async () => {
-    if (!isAuthenticated || !user || !blueprintId) {
-      return;
-    }
+const sessionsQueryKey = useMemo(
+  () => ['publicChatSessions', user?.username, blueprintId] as const,
+  [user?.username, blueprintId],
+);
 
-    setIsLoading(true);
-    try {
-      const response = await axios.get(`/sessions/session.user.list?userId=${user.username}`);
-      const allSessions: ChatSessionData[] = response.data;
-
-      // Filter sessions for this blueprint
-      const blueprintSessions = allSessions.filter(
-        (session) => session.blueprint_id === blueprintId && session.blueprint_exists
-      );
-
-      // Transform to ChatSession format
-      const transformedSessions = await transformApiDataToSessions(blueprintSessions);
-
-      // Sort by timestamp (most recent first)
-      const sortedSessions = sortSessionsByTimestamp(transformedSessions);
-
-      setSessions(sortedSessions);
-
-      // If no sessions exist, automatically create a new chat
-      if (sortedSessions.length === 0 && !selectedSession && !runId) {
-        // Auto-create a new chat session - do this synchronously without loading states
-        try {
-          const createResponse = await axios.post('/sessions/user.session.create', {
-            blueprintId: blueprintId,
-            userId: user.username,
-            metadata: { source: 'public_link' },
-          });
-
-          const newSessionId = createResponse.data;
-
-          // Validate that we got a session ID
-          if (!newSessionId || typeof newSessionId !== 'string') {
-            throw new Error('Invalid session ID received from server');
-          }
-
-          // Set runId immediately so the chat interface shows right away
-          setRunId(newSessionId);
-          setChatHistory([]);
-
-          // Create a temporary session object for the new session
-          const tempSession: ChatSession = {
-            id: newSessionId,
-            blueprintId: blueprintId,
-            title: 'New Chat',
-            lastActive: 'Just now',
-            timestamp: new Date(),
-            preview: 'New conversation',
-            messages: [],
-            blueprintExists: true,
-            fromSharedLink: true,
-          };
-
-          // Select the new session immediately
-          setSelectedSession(tempSession);
-
-          // Refresh sessions list to get proper data (do this in background, don't wait)
-          axios
-            .get(`/sessions/session.user.list?userId=${user.username}`)
-            .then(async (refreshResponse) => {
-              const refreshSessions: ChatSessionData[] = refreshResponse.data;
-              const refreshBlueprintSessions = refreshSessions.filter(
-                (session) => session.blueprint_id === blueprintId && session.blueprint_exists
-              );
-              const refreshTransformedSessions = await transformApiDataToSessions(refreshBlueprintSessions);
-              const refreshSortedSessions = sortSessionsByTimestamp(refreshTransformedSessions);
-
-              setSessions(refreshSortedSessions);
-
-              // Find the new session in the updated list and select it
-              const newSession = refreshSortedSessions.find((s) => s.id === newSessionId);
-              if (newSession) {
-                setSelectedSession(newSession);
-              }
-            })
-            .catch((refreshError) => {
-              // If refresh fails, that's okay - we already have the session selected
-              console.error('Error refreshing sessions list:', refreshError);
-            });
-        } catch (createError: any) {
-          console.error('Error auto-creating new chat:', createError);
-          // Don't show toast for auto-creation errors, just log
-        }
-      } else if (sortedSessions.length > 0 && !selectedSession) {
-        // Auto-select the first session if available and no session is selected
-        const firstSession = sortedSessions[0];
-        await handleSessionSelect(firstSession);
-      }
-    } catch (error: any) {
-      console.error('Error fetching chat sessions:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load chat sessions',
-        variant: 'destructive',
+  // Paginated session fetching
+  const {
+    data: sessionsData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError,
+    error: queryError,
+  } = useInfiniteQuery({
+    queryKey: sessionsQueryKey,
+    queryFn: async ({ pageParam = 0 }) => {
+      const params = new URLSearchParams({
+        userId: user!.username,
+        limit: String(PAGE_SIZE),
+        offset: String(pageParam),
       });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isAuthenticated, user, blueprintId, selectedSession, runId, transformApiDataToSessions, toast]);
+      params.set('filters', JSON.stringify({ blueprint_id: blueprintId }));
+
+      const { sessions: allSessions, pagination } = await listSessions(params);
+
+      const transformedSessions = await transformApiDataToSessions(allSessions);
+      const validSessions = transformedSessions.filter(s => s.blueprintExists !== false);
+      return {
+        sessions: sortSessionsByTimestamp(validSessions),
+        hasMore: pagination.has_more,
+        nextOffset: pagination.offset + pagination.limit,
+        total: pagination.total,
+      };
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      if (!lastPage.hasMore) return undefined;
+      return lastPage.nextOffset;
+    },
+    enabled: isAuthenticated && !!user && !!blueprintId,
+  });
+
+  const sessions = sessionsData?.pages.flatMap((page) => page.sessions) ?? [];
 
   // Handle session selection
   const handleSessionSelect = useCallback(
@@ -218,11 +167,6 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
         setSelectedSession(updatedSession);
         setChatHistory(updatedSession.messages);
         setRunId(session.id);
-
-        // Update the session in the list
-        setSessions((prevSessions) =>
-          prevSessions.map((s) => (s.id === session.id ? updatedSession : s))
-        );
       } else {
         setChatHistory([]);
         setRunId(session.id);
@@ -257,10 +201,6 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     try {
       await axios.delete(`/sessions/session.delete?sessionId=${chatToDelete.id}`);
 
-      // Remove the deleted session from the list
-      setSessions((prevSessions) => prevSessions.filter((session) => session.id !== chatToDelete.id));
-
-      // If the deleted session was selected, clear the selection
       if (selectedSession?.id === chatToDelete.id) {
         setSelectedSession(null);
         setChatHistory([]);
@@ -269,6 +209,8 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
 
       setShowDeleteModal(false);
       setChatToDelete(null);
+
+      queryClient.invalidateQueries({ queryKey: sessionsQueryKey });
 
       toast({
         title: 'Success',
@@ -284,62 +226,67 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     } finally {
       setIsDeleting(false);
     }
-  }, [chatToDelete, selectedSession, toast]);
+  }, [chatToDelete, selectedSession, queryClient, sessionsQueryKey, toast]);
 
   const cancelDeleteChat = useCallback(() => {
     setShowDeleteModal(false);
     setChatToDelete(null);
   }, []);
 
-  // Handle new chat creation
+  // Core session creation logic (shared by manual and auto-init)
+  const createSession = useCallback(async () => {
+    if (!blueprintId || !user) {
+      throw new Error('Blueprint ID and user are required');
+    }
+
+    const scope = currentScopeRef.current; // scope this session is being created for
+
+    const creationData: CreateSessionParams = {
+      blueprintId: blueprintId,
+      metadata: { source: 'public_link' },
+    };
+
+    const newSessionId = await createSessionApi(creationData);
+
+    if (!newSessionId || typeof newSessionId !== 'string') {
+      throw new Error('Invalid session ID received from server');
+    }
+
+    if (scope !== currentScopeRef.current) {
+      return null;
+    }
+
+    const tempSession: ChatSession = {
+      id: newSessionId,
+      blueprintId: blueprintId,
+      title: 'New Chat',
+      lastActive: 'Just now',
+      timestamp: new Date(),
+      preview: 'New conversation',
+      messages: [],
+      blueprintExists: true,
+      fromSharedLink: true,
+    };
+
+    setSelectedSession(tempSession);
+    setChatHistory([]);
+    setRunId(newSessionId);
+
+    // Invalidate to refresh with real data from server
+    queryClient.invalidateQueries({
+      queryKey: sessionsQueryKey,
+    });
+
+    return tempSession;
+  }, [blueprintId, user, queryClient, sessionsQueryKey]);
+
+  // Handle new chat creation (manual trigger with UI feedback)
   const handleNewChat = useCallback(async () => {
     if (!blueprintId || !user) return;
 
     setIsCreatingSession(true);
     try {
-      const response = await axios.post('/sessions/user.session.create', {
-        blueprintId: blueprintId,
-        userId: user.username,
-        metadata: { source: 'public_link' },
-      });
-
-      const newSessionId = response.data;
-
-      // Create a temporary session object for the new session
-      const tempSession: ChatSession = {
-        id: newSessionId,
-        blueprintId: blueprintId,
-        title: 'New Chat',
-        lastActive: 'Just now',
-        timestamp: new Date(),
-        preview: 'New conversation',
-        messages: [],
-        blueprintExists: true,
-        fromSharedLink: true,
-      };
-
-      // Select the new session immediately
-      setSelectedSession(tempSession);
-      setChatHistory([]);
-      setRunId(newSessionId);
-
-      // Refresh sessions list to get proper data (this will update the list but preserve selection)
-      const response2 = await axios.get(`/sessions/session.user.list?userId=${user.username}`);
-      const allSessions: ChatSessionData[] = response2.data;
-      const blueprintSessions = allSessions.filter(
-        (session) => session.blueprint_id === blueprintId && session.blueprint_exists
-      );
-      const transformedSessions = await transformApiDataToSessions(blueprintSessions);
-      const sortedSessions = sortSessionsByTimestamp(transformedSessions);
-
-      // Update sessions list, but keep the selected session if it matches
-      setSessions(sortedSessions);
-
-      // Find the new session in the updated list and select it
-      const newSession = sortedSessions.find((s) => s.id === newSessionId);
-      if (newSession) {
-        setSelectedSession(newSession);
-      }
+      await createSession();
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -349,7 +296,7 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     } finally {
       setIsCreatingSession(false);
     }
-  }, [blueprintId, user, transformApiDataToSessions, toast]);
+  }, [blueprintId, user, createSession, toast]);
 
   const handleCancelSession = useCallback(async () => {
     if (!runId) return;
@@ -428,12 +375,40 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     [runId, blueprintId, user, sessionStream]
   );
 
-  // Load chat sessions when authenticated and blueprint is available
+  const didAutoInitRef = useRef(false);
+
+  // Reset auto-init flag and chat state when blueprint or user changes.
+  const { cancelStream } = sessionStream;
   useEffect(() => {
-    if (isAuthenticated && user && blueprintId) {
-      fetchChatSessions();
+    didAutoInitRef.current = false;
+    cancelStream();
+    setIsLiveRequest(false);
+    setSelectedSession(null);
+    setChatHistory([]);
+    setRunId(null);
+  }, [blueprintId, user?.username, cancelStream]);
+
+  // Auto-create or auto-select session when data first loads
+  useEffect(() => {
+    if (isLoading || !sessionsData || didAutoInitRef.current) {
+      return;
     }
-  }, [isAuthenticated, user, blueprintId, fetchChatSessions]);
+
+    if (sessions.length === 0 && !selectedSession && !runId && blueprintId && user) {
+      didAutoInitRef.current = true;
+      (async () => {
+        try {
+          await createSession();
+        } catch (createError: any) {
+          console.error('Error auto-creating new chat:', createError);
+          // Don't show toast for auto-init failures (silent failure)
+        }
+      })();
+    } else if (sessions.length > 0 && !selectedSession) {
+      didAutoInitRef.current = true;
+      handleSessionSelect(sessions[0]);
+    }
+  }, [sessions.length, isLoading, sessionsData, blueprintId, user, selectedSession, runId, createSession, handleSessionSelect]);
 
   return {
     sessions,
@@ -455,6 +430,12 @@ export const usePublicChat = (blueprintId: string | null): UsePublicChatReturn =
     showDeleteModal,
     setShowDeleteModal,
     chatToDelete,
+    fetchNextPage,
+    hasNextPage: hasNextPage ?? false,
+    isFetchingNextPage,
+    error: isError
+      ? (queryError instanceof Error ? queryError.message : 'Failed to load chat sessions')
+      : null,
   };
 };
 

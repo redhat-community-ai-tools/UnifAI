@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.storage.volumeName }}
+  labels:
+    {{- include "logging.labels" . | nindent 4 }}
+    {{- with .Values.storage.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- $annotations := .Values.storage.annotations | default dict }}
+  {{- /* keepPvc owns helm.sh/resource-policy; drop any user duplicate of that key */ -}}
+  {{- if .Values.storage.keepPvc }}
+    {{- $annotations = omit $annotations "helm.sh/resource-policy" }}
+    {{- $_ := set $annotations "helm.sh/resource-policy" "keep" }}
+  {{- end }}
+  {{- if not (empty $annotations) }}
+  annotations:
+    {{- toYaml $annotations | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.storage }}
+  accessModes:
+    {{- toYaml .accessModes | nindent 4 }}
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: {{ .requestedSize }}
+  {{- if .className }}
+  storageClassName: {{ .className }}
+  {{- end }}
+  {{- end }}

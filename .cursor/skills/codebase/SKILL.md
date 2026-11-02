@@ -23,6 +23,7 @@ shared libraries, and infrastructure tooling.
 | `backend/` | Platform Backend | `domains/backend/SKILL.md` |
 | `rag/infrastructure/celery/` | Celery Workers | `domains/celery/SKILL.md` |
 | `temporal-worker/` | Temporal Workers | `domains/temporal-worker/SKILL.md` |
+| `helm/` | Helm / Deploy Charts | `domains/helm/SKILL.md` |
 
 Domain skills are auto-surfaced via `paths` when editing files in their scope.
 

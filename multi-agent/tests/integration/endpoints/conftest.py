@@ -71,17 +71,29 @@ def admin_edit_lock_service() -> Mock:
 
 
 @pytest.fixture
+def session_service() -> Mock:
+    svc = Mock()
+    # Default to no results so list/count-based tests that don't set their
+    # own return values still get a valid (empty) shape from jsonify(...).
+    svc.list_user_sessions.return_value = []
+    svc.count.return_value = 0
+    return svc
+
+
+@pytest.fixture
 def container(
     resources_service: Mock,
     builtin_resource_service: Mock,
     collaboration_service: Mock,
     admin_edit_lock_service: Mock,
+    session_service: Mock,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         resources_service=resources_service,
         builtin_resource_service=builtin_resource_service,
         collaboration_service=collaboration_service,
         admin_edit_lock_service=admin_edit_lock_service,
+        session_service=session_service,
         admin_config_reader=None,
     )
 

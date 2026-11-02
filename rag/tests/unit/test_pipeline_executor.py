@@ -242,7 +242,8 @@ class TestPipelineExecutor:
         executor.execute(mock_handler, ctx)
 
         mock_handler.cleanup.assert_called_once_with(ctx)
-        mock_monitoring_svc.finish_log_monitoring.assert_called_once()
+        handle = mock_monitoring_svc.start_log_monitoring.return_value
+        mock_monitoring_svc.finish_log_monitoring.assert_called_once_with(handle)
 
     def test_cleanup_always_called_on_failure(
         self, executor, mock_handler, mock_monitoring_svc, build_context,
@@ -259,7 +260,8 @@ class TestPipelineExecutor:
             executor.execute(mock_handler, ctx)
 
         mock_handler.cleanup.assert_called_once_with(ctx)
-        mock_monitoring_svc.finish_log_monitoring.assert_called_once()
+        handle = mock_monitoring_svc.start_log_monitoring.return_value
+        mock_monitoring_svc.finish_log_monitoring.assert_called_once_with(handle)
 
     # ── Exception propagation ─────────────────────────────────────────────
 

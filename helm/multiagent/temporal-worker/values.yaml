@@ -154,7 +154,9 @@ volumes:
     secret:
       secretName: gcp-vertex-credentials
       optional: true
-
+  - name: unifai-logging-volume
+    persistentVolumeClaim:
+      claimName: unifai-logging-volume
 # Additional volumeMounts on the output Deployment definition.
 volumeMounts:
   - name: unifai-multiagent-shared-storage
@@ -162,7 +164,11 @@ volumeMounts:
   - name: gcp-credentials
     mountPath: /opt/app-root/src/config/gcp
     readOnly: true
-
+  - name: unifai-logging-volume
+    mountPath: /var/log/unifai
+    subPathExpr: multi-agent-temporal-worker/$(POD_NAME)/$(APP_VERSION)
+    readOnly: false
+ 
 nodeSelector: {}
 
 tolerations: []

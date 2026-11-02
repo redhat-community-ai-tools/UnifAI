@@ -17,6 +17,11 @@ class Meta:
 
 META = Meta(
     name="OpenAI LLM",
-    description="Official OpenAI API configuration for LLM interactions",
-    tags=["llm", "openai", "api", "chat"],
+    description=(
+        "Official OpenAI API using the Responses endpoint (/v1/responses). "
+        "Supports GPT-5+ and o-series models with tool calling and configurable "
+        "reasoning effort. For older models or OpenAI-compatible servers (vLLM, etc.), "
+        "use the 'OpenAI Compatible LLM' provider instead."
+    ),
+    tags=["llm", "openai", "gpt-5", "responses-api", "reasoning"],
 )

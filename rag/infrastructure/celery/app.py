@@ -1,7 +1,9 @@
 """Celery app initialization for RAG workers."""
 from config.app_config import AppConfig
 from global_utils.celery_app import CeleryApp
+from global_utils.utils.logging_config import configure_logging
 
+configure_logging("rag-celery")
 config = AppConfig.get_instance()
 
 celery = CeleryApp(

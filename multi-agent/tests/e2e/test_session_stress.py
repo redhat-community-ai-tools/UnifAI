@@ -1,28 +1,87 @@
 """
-End-to-End Stress Test for Session Creation and Execution
+End-to-End Stress Test for session create + run under load.
 
-This test validates the system's ability to handle concurrent session
-creation and parallel execution under load.
+Common usage: build/run the UnifAI test image (repo tests/Dockerfile), deploy or
+exec into a pod on the cluster, then run pytest from that pod so the in-cluster
+service DNS and /api prefix work. For external routes use --stress-base-url and
+--stress-api-prefix=/api2.
 
-Test Phases:
-1. Blueprint Setup - Create/load a test blueprint
-2. Concurrent Creation - Create N sessions in parallel
-3. Parallel Execution - Execute M sessions concurrently
-4. Verification - Validate all sessions completed correctly
-5. Metrics - Report performance statistics
+Default API target is the in-cluster multi-agent service (run from an internal pod):
 
-Run with:
-    pytest tests/e2e/test_session_stress.py -v -s
-    pytest tests/e2e/test_session_stress.py -v -s --stress-sessions=50 --stress-concurrent=10
+  base_url   = http://unifai-multiagent-be:8003
+  api_prefix = /api
+
+In-cluster clients talk to the service on /api directly. External OpenShift
+routes expose /api2 and nginx rewrites that to /api, so when hitting a route
+you must use --stress-api-prefix=/api2 (not the in-cluster /api default).
+
+Default path is UI-aligned submit + status poll:
+
+  1. POST /sessions/user.session.submit  → HTTP 202 (Temporal starts in background)
+  2. Poll GET /sessions/session.status.get until COMPLETED | FAILED | CANCELLED
+  3. Assert final status == COMPLETED
+
+Switch to blocking/streaming execute with --stress-exec-mode=execute
+(and optional --use-streaming).
+
+Run with (from the multi-agent test image / pod):
+    export STRESS_LLM_API_KEY=...
+    pytest tests/e2e/test_session_stress.py::TestSessionStressSubmit::test_concurrent_session_creation_and_execution \
+        -v -s -o addopts= --import-mode=importlib \
+        --blueprint-id=<uuid> --stress-sessions=1 --stress-concurrent=1 \
+        --input-text="your question"
+
+    # Execute path (optional streaming)
+    ... --stress-exec-mode=execute
+    ... --stress-exec-mode=execute --use-streaming
+
+    # External route (nginx: /api2 → /api)
+    ... --stress-base-url=https://<external-route> --stress-api-prefix=/api2 --stress-insecure
+
+    # Localhost process (no nginx rewrite; use /api if the app serves it there)
+    ... --stress-base-url=http://localhost:8002 --stress-api-prefix=/api
+
+Ramp load (start at 1 concurrent, add 1 every 30s, up to 5):
+    ... --stress-sessions=20 --stress-concurrent=5 \
+        --stress-ramp-start=1 --stress-ramp-step=1 --stress-ramp-interval=30
+
+Advanced in-cluster load (defaults already point at unifai-multiagent-be:8003 + /api;
+requires pytest-timeout for --timeout):
+    pytest tests/e2e/test_session_stress.py::TestSessionStressSubmit::test_concurrent_session_creation_and_execution \
+      -v -s -o addopts= --import-mode=importlib \
+      --stress-ramp-interval=5 --stress-ramp-start=1 --stress-ramp-step=1 \
+      --timeout=2400 --stress-no-cleanup \
+      --blueprint-id=<uuid> \
+      --stress-sessions=20 --stress-concurrent=20 \
+      --input-text="$(cat <<'PROMPT_EOF'
+I want you to do these steps:
+1. check in the diablo game manual for the names of the prime evils
+2. From major news sites (BBC, CNN, Reuters, Bild, der spiegel, El País), get the 5 most important headlines per site.
+3. From those lists, produce one combined top-5 list (prefer headlines that repeat across sites).
+4. list all in progress tickets in jira assigned to user sfiresht under the Genie project with the component unifai
+5. give me a list of the last 5 emails.
+6. On staging, run only: oc get pods -n tag-ai--playground -o wide
+   Return the raw command output.
+7. After step 6 completes, on github-runner-2:
+   - Choose a NEW unique path: /tmp/test_${RANDOM}_$(date +%s).txt
+   - Write the EXACT step-6 text with one command: cat <<'EOF' > that_path ... EOF
+   - Always create a new file. Never reuse or overwrite an existing test_*.txt.
+   - Do not ls/find/grep /tmp. Do not check whether other test_*.txt exist.
+   - Do not run oc on the VM.
+   - Reply with the full path created.
+PROMPT_EOF)"
 """
 
+import os
 import pytest
 import requests
 import time
 import json
 import yaml
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Tuple, Optional
+import uuid
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
+from enum import Enum
+from typing import Any, Dict, List, Tuple, Optional, Union
 from dataclasses import dataclass, field
 import threading
 from collections import defaultdict
@@ -32,33 +91,107 @@ from collections import defaultdict
 # TEST CONFIGURATION
 # =============================================================================
 
+class ExecMode(str, Enum):
+    """Stress-test session run path: submit+poll or execute."""
+
+    SUBMIT = "submit"
+    EXECUTE = "execute"
+
+
+class LLMType(str, Enum):
+    """Supported catalog LLM providers for stress-test resource creation."""
+
+    GOOGLE_GENAI = "google_genai"
+    OPENAI = "openai"
+
+
+class SessionStatus(str, Enum):
+    """Session statuses returned by session.status.get (mirrors mas.session.domain.status)."""
+
+    PENDING = "PENDING"
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    LOCKED = "LOCKED"
+    IN_USE = "IN_USE"
+
+
+# Attempts when deleting an auto-created catalog LLM during fixture teardown.
+CATALOG_LLM_DELETE_ATTEMPTS = 2
+
+
+def _coerce_session_status(raw: object) -> Optional[SessionStatus]:
+    """Convert a server status value to SessionStatus; unknown values -> None."""
+    if isinstance(raw, SessionStatus):
+        return raw
+    try:
+        return SessionStatus(str(raw).strip())
+    except ValueError:
+        return None
+
+
 @dataclass
 class StressTestConfig:
     """Configuration for stress test parameters."""
-    # API Configuration
-    # base_url: str = "http://localhost:8002"
-    base_url: str = "http://unifai-multiagent-be-tag-ai--pipeline.apps.stc-ai-e1-pp.imap.p1.openshiftapps.com"
+    # API Configuration — default is in-cluster (internal pod → service DNS on /api).
+    # External routes: use /api2 (nginx rewrites /api2 → /api). Override via
+    # --stress-base-url / --stress-api-prefix.
+    base_url: str = "http://unifai-multiagent-be:8003"
     api_prefix: str = "/api"
+    # Set False only for clusters with self-signed certificates (--stress-insecure).
+    verify_ssl: bool = True
     
     # User Configuration
-    user_id: str = "stress_test_user"
-    
+    #user_id: str = "stress_test_user"
+    user_id: str = "sfiresht"
     # Blueprint Configuration
     blueprint_path: Optional[str] = None  # Path to YAML blueprint file
+    # Existing online blueprint ID — skip create/delete when set
+    blueprint_id: Optional[str] = None
     input_text: str = "What is 2+2?"  # Input text for execution
+
+    # -------------------------------------------------------------------------
+    # LLM Configuration (edit here — don't pass CLI flags for these)
+    # By default the test creates a temporary catalog LLM from llm_* below
+    # and wires it as $ref:<rid>. Override with --llm-ref to reuse an existing one.
+    # -------------------------------------------------------------------------
+    create_llm: bool = True
+    llm_ref: Optional[str] = None  # set / pass --llm-ref to skip create
+    llm_api_key: Optional[str] = None  # from STRESS_LLM_API_KEY / --llm-api-key
+    llm_type: LLMType = LLMType.GOOGLE_GENAI
+    llm_model: str = "gemini-2.5-flash"
+    llm_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    llm_name: str = "stress_test_llm"
     
     # Execution Configuration
-    use_streaming: bool = False  # Use streaming mode (prevents gateway timeouts)
+    exec_mode: ExecMode = ExecMode.SUBMIT
+    use_streaming: bool = False  # only used when exec_mode is ExecMode.EXECUTE
     
     # Load Configuration
     num_sessions: int = 20  # Total sessions to create
     concurrent_create: int = 5  # Concurrent session creations
-    concurrent_execute: int = 10  # Concurrent session executions
+    concurrent_execute: int = 10  # Max in-flight run workers at peak
+    
+    # Ramp-up: when ramp_interval > 0, start at ramp_start in-flight and
+    # increase by ramp_step every ramp_interval seconds until concurrent_execute.
+    # ramp_interval <= 0 disables ramp (run up to concurrent_execute immediately).
+    ramp_start: int = 1
+    ramp_step: int = 1
+    ramp_interval: float = 0.0
     
     # Timing Configuration
     creation_timeout: float = 30.0  # Per session creation
-    execution_timeout: float = 300.0  # Per session execution
-    total_timeout: float = 600.0  # Total test timeout
+    execution_timeout: float = 1800.0  # Max wait for one session to finish
+    total_timeout: float = 3600.0  # Total test timeout
+    status_timeout: float = 30.0  # Per session.status.get request
+    poll_interval: float = 5.0  # Seconds between session.status.get polls (submit mode)
+    terminal_statuses: Tuple[SessionStatus, ...] = (
+        SessionStatus.COMPLETED,
+        SessionStatus.FAILED,
+        SessionStatus.CANCELLED,
+    )
     
     # Retry Configuration
     max_retries: int = 3
@@ -67,6 +200,9 @@ class StressTestConfig:
     # Verification Configuration
     verify_state: bool = True
     verify_status: bool = True
+
+    # Cleanup: when False, leave sessions (chats) and created blueprints in place
+    cleanup_sessions: bool = True
 
 
 @dataclass
@@ -146,6 +282,10 @@ class SessionAPIClient:
         self.config = config
         self.base_url = f"{config.base_url}{config.api_prefix}"
         self.session = requests.Session()
+        self.session.verify = config.verify_ssl
+        self.session.headers.update({
+            "X-Authenticated-User": self.config.user_id
+        })
     
     def create_blueprint(self, blueprint_dict: Dict) -> str:
         """Create a blueprint and return its ID."""
@@ -189,71 +329,166 @@ class SessionAPIClient:
         session_id = response.json()
         return session_id
     
+    def submit_session(self, session_id: str, inputs: Dict) -> Dict:
+        """
+        Fire-and-forget submit (UI path). Returns immediately with HTTP 202.
+        """
+        url = f"{self.base_url}/sessions/user.session.submit"
+
+        payload = {
+            "sessionId": session_id,
+            "inputs": inputs,
+            "scope": "public",
+        }
+
+        response = self.session.post(
+            url,
+            json=payload,
+            timeout=self.config.creation_timeout,
+        )
+        if response.status_code >= 400:
+            detail = response.text[:500]
+            raise requests.exceptions.HTTPError(
+                f"{response.status_code} submitting session: {detail}",
+                response=response,
+            )
+        # Expect 202 Accepted
+        return response.json()
+
     def execute_session(self, session_id: str, inputs: Dict) -> Dict:
-        """Execute a session and return results."""
+        """Blocking execute (non-streaming)."""
         url = f"{self.base_url}/sessions/user.session.execute"
-        
+
         payload = {
             "sessionId": session_id,
             "inputs": inputs,
             "stream": False,
-            "scope": "public"
+            "scope": "public",
         }
-        
+
         response = self.session.post(
             url,
             json=payload,
-            timeout=self.config.execution_timeout
+            timeout=self.config.execution_timeout,
         )
         response.raise_for_status()
-        
         return response.json()
-    
+
     def execute_session_streaming(self, session_id: str, inputs: Dict) -> Dict:
-        """Execute a session with streaming and return final result."""
+        """Execute with streaming; consume chunks until the connection closes."""
         url = f"{self.base_url}/sessions/user.session.execute"
-        
+
         payload = {
             "sessionId": session_id,
             "inputs": inputs,
             "stream": True,
             "streamMode": ["custom"],
-            "scope": "public"
+            "scope": "public",
         }
-        
-        # Stream response with longer timeout between chunks
-        # (connect_timeout, read_timeout_between_chunks)
+
         response = self.session.post(
             url,
             json=payload,
-            stream=True,  # Enable response streaming
+            stream=True,
+            timeout=self.config.execution_timeout,
         )
         response.raise_for_status()
-        
-        # Just consume all chunks - don't parse, just let it finish
+
         chunk_count = 0
-        
+        deadline = time.time() + self.config.execution_timeout
         try:
             for line in response.iter_lines():
+                if time.time() > deadline:
+                    raise TimeoutError(
+                        f"Streaming session {session_id[:8]}... exceeded "
+                        f"{self.config.execution_timeout:.0f}s"
+                    )
                 if line:
                     chunk_count += 1
-                    # Just count chunks, don't parse
-                    # This keeps the connection alive and prevents timeouts
         finally:
             response.close()
-        
-        # Return simple success indicator
+
         return {"status": "completed", "chunks_received": chunk_count}
-    
-    def get_session_status(self, session_id: str) -> str:
-        """Get session status."""
+
+    def run_session(self, session_id: str, inputs: Dict) -> Dict:
+        """Run a session using config.exec_mode (submit | execute)."""
+        if self.config.exec_mode is ExecMode.EXECUTE:
+            if self.config.use_streaming:
+                return self.execute_session_streaming(session_id, inputs)
+            return self.execute_session(session_id, inputs)
+        return self.submit_and_wait(session_id, inputs)
+
+    def get_session_status(self, session_id: str) -> Optional[SessionStatus]:
+        """Get session status; unrecognized server values return None."""
         url = f"{self.base_url}/sessions/session.status.get"
         params = {"sessionId": session_id}
-        
-        response = self.session.get(url, params=params)
+
+        response = self.session.get(
+            url, params=params, timeout=self.config.status_timeout
+        )
         response.raise_for_status()
-        
-        return response.json()
+
+        status = response.json()
+        # jsonify(str) → JSON string; tolerate {"status": "..."} just in case
+        if isinstance(status, dict):
+            raw = status.get("status") or status.get("state") or status
+        else:
+            raw = status
+        return _coerce_session_status(raw)
+
+    def submit_and_wait(self, session_id: str, inputs: Dict) -> Dict:
+        """
+        Submit session then poll status until terminal or timeout.
+
+        Returns dict with sessionId, workflowId (if any), final status, and poll count.
+        Raises TimeoutError / RuntimeError on failure.
+        """
+        submit_result = self.submit_session(session_id, inputs)
+        workflow_id = submit_result.get("workflowId") or submit_result.get("workflow_id")
+        short_id = session_id[:8]
+        print(
+            f"    📤 Submitted {short_id}... "
+            f"(workflowId={workflow_id or 'n/a'}) — polling every "
+            f"{self.config.poll_interval}s",
+            flush=True,
+        )
+
+        deadline = time.time() + self.config.execution_timeout
+        started = time.time()
+        polls = 0
+        last_status: Optional[SessionStatus] = None
+
+        while time.time() < deadline:
+            polls += 1
+            last_status = self.get_session_status(session_id)
+            elapsed = time.time() - started
+            status_label = last_status.value if last_status else "UNKNOWN"
+            print(
+                f"    🔄 poll #{polls} {short_id}... status={status_label} "
+                f"elapsed={elapsed:.0f}s",
+                flush=True,
+            )
+            if last_status in self.config.terminal_statuses:
+                result = {
+                    "sessionId": session_id,
+                    "workflowId": workflow_id,
+                    "status": last_status,
+                    "polls": polls,
+                }
+                if last_status != SessionStatus.COMPLETED:
+                    raise RuntimeError(
+                        f"Session {short_id}... ended with status={last_status} "
+                        f"after {polls} polls"
+                    )
+                return result
+
+            time.sleep(self.config.poll_interval)
+
+        status_label = last_status.value if last_status else "UNKNOWN"
+        raise TimeoutError(
+            f"Session {short_id}... still {status_label} after "
+            f"{self.config.execution_timeout:.0f}s ({polls} polls)"
+        )
     
     def get_session_state(self, session_id: str) -> Dict:
         """Get session state."""
@@ -265,13 +500,91 @@ class SessionAPIClient:
         
         return response.json()
     
+    def create_llm_resource(
+        self,
+        *,
+        name: str,
+        llm_type: Union[str, LLMType],
+        model_name: str,
+        api_key: str,
+        base_url: Optional[str] = None,
+    ) -> str:
+        """Create a catalog LLM via /resources/resource.save and return its rid."""
+        url = f"{self.base_url}/resources/resource.save"
+        raw_type = llm_type.value if isinstance(llm_type, LLMType) else str(llm_type).strip().lower()
+        try:
+            llm_type = LLMType(raw_type)
+        except ValueError as exc:
+            raise ValueError(
+                f"Unsupported llm_type '{raw_type}'. Use "
+                f"'{LLMType.GOOGLE_GENAI.value}' or '{LLMType.OPENAI.value}'."
+            ) from exc
+
+        if llm_type == LLMType.GOOGLE_GENAI:
+            config = {
+                "type": LLMType.GOOGLE_GENAI.value,
+                "model_name": model_name,
+                "api_key": api_key,
+            }
+        elif llm_type == LLMType.OPENAI:
+            if not base_url:
+                raise ValueError(
+                    "base_url is required for openai llm_type "
+                    "(set StressTestConfig.llm_base_url or pass --llm-base-url)."
+                )
+            config = {
+                "type": LLMType.OPENAI.value,
+                "model_name": model_name,
+                "api_key": api_key,
+                "base_url": base_url,
+                "verify_ssl": True,
+            }
+
+        payload = {
+            "category": "llms",
+            "type": llm_type.value,
+            "name": name,
+            "config": config,
+            "userId": self.config.user_id,
+        }
+
+        response = self.session.post(url, json=payload, timeout=self.config.creation_timeout)
+        if response.status_code >= 400:
+            detail = response.text[:500]
+            raise requests.exceptions.HTTPError(
+                f"{response.status_code} creating LLM resource: {detail}",
+                response=response,
+            )
+        result = response.json()
+        rid = result.get("rid")
+        if not rid:
+            raise RuntimeError(f"resource.save returned no rid: {result}")
+        return rid
+
+    def delete_resource(self, resource_id: str) -> bool:
+        """Delete a catalog resource by id."""
+        url = f"{self.base_url}/resources/resource.delete"
+        params = {"resourceId": resource_id}
+
+        try:
+            response = self.session.delete(
+                url, params=params, timeout=self.config.creation_timeout
+            )
+            response.raise_for_status()
+            return True
+        except Exception as e:
+            print(f"  ⚠️  Warning: Failed to delete resource {resource_id[:8]}...: {e}")
+            return False
+
     def delete_blueprint(self, blueprint_id: str) -> bool:
         """Delete a blueprint."""
         url = f"{self.base_url}/blueprints/remove.blueprint"
         params = {"blueprintId": blueprint_id}
         
         try:
-            response = self.session.delete(url, params=params)
+            response = self.session.delete(
+                url, params=params, timeout=self.config.creation_timeout
+            )
             response.raise_for_status()
             return True
         except Exception as e:
@@ -284,7 +597,9 @@ class SessionAPIClient:
         params = {"sessionId": session_id}
         
         try:
-            response = self.session.delete(url, params=params)
+            response = self.session.delete(
+                url, params=params, timeout=self.config.creation_timeout
+            )
             response.raise_for_status()
             return True
         except Exception as e:
@@ -296,17 +611,94 @@ class SessionAPIClient:
 # SAMPLE BLUEPRINT
 # =============================================================================
 
-def get_stress_test_blueprint() -> Dict:
+def _normalize_llm_ref(llm_ref: str) -> str:
+    """Ensure catalog LLM refs use the $ref: prefix Temporal mini-blueprints require."""
+    ref = (llm_ref or "").strip()
+    if not ref:
+        raise ValueError("llm_ref must not be empty")
+    if not ref.startswith("$ref:"):
+        ref = f"$ref:{ref}"
+    return ref
+
+
+def resolve_blueprint_id(
+    api_client: "SessionAPIClient",
+    stress_config: StressTestConfig,
+    blueprint_dict: Optional[Dict],
+) -> Tuple[str, bool]:
+    """
+    Resolve which blueprint to use.
+
+    Returns:
+        (blueprint_id, created_by_test) — when created_by_test is False, do not delete it.
+    """
+    if stress_config.blueprint_id:
+        blueprint_id = stress_config.blueprint_id.strip()
+        print(f"📄 Using existing online blueprint: {blueprint_id}")
+        return blueprint_id, False
+
+    if blueprint_dict is None:
+        raise ValueError(
+            "No blueprint available. Pass --blueprint-id, --blueprint-path, "
+            "or use the default stress blueprint."
+        )
+
+    blueprint_id = api_client.create_blueprint(blueprint_dict)
+    print(f"✅ Blueprint created: {blueprint_id}")
+    return blueprint_id, True
+
+
+def cleanup_stress_resources(
+    api_client: "SessionAPIClient",
+    stress_config: StressTestConfig,
+    session_ids: List[str],
+    blueprint_id: Optional[str],
+    owns_blueprint: bool,
+) -> None:
+    """Clean up stress-test sessions and owned blueprints (honors --stress-no-cleanup)."""
+    print(f"\n{'=' * 80}")
+    print("🧹 CLEANUP PHASE")
+    print(f"{'=' * 80}")
+
+    if not stress_config.cleanup_sessions:
+        print(
+            f"  ⏭️  --stress-no-cleanup: leaving {len(session_ids)} "
+            "sessions/chats in place"
+        )
+        for session_id in session_ids:
+            print(f"     session: {session_id[:8]}...")
+        if blueprint_id:
+            print(f"  ⏭️  Leaving blueprint {blueprint_id[:8]}... in place")
+        print("✅ Cleanup skipped\n")
+        return
+
+    if session_ids:
+        print(f"Deleting {len(session_ids)} sessions...")
+        deleted_count = 0
+        for session_id in session_ids:
+            if api_client.delete_session(session_id):
+                deleted_count += 1
+        print(f"  ✅ Deleted {deleted_count}/{len(session_ids)} sessions")
+
+    if blueprint_id and owns_blueprint:
+        print(f"Deleting blueprint {blueprint_id[:8]}...")
+        if api_client.delete_blueprint(blueprint_id):
+            print("  ✅ Blueprint deleted")
+    elif blueprint_id:
+        print(f"  ⏭️  Leaving existing blueprint {blueprint_id[:8]}... in place")
+
+    print("✅ Cleanup complete\n")
+
+
+def get_stress_test_blueprint(llm_ref: str) -> Dict:
     """
     Returns a simple blueprint for stress testing.
-    
-    This blueprint is designed to be:
-    - Fast to execute (minimal external dependencies)
-    - Reliable (no flaky external calls)
-    - Deterministic (predictable outputs)
-    
-    Structure follows the standard blueprint format with rid-based references.
+
+    Uses a catalog LLM via `$ref:<rid>` (no inline LLM / api_key). This matches
+    playground Temporal execution, which only packs `$ref:` deps into worker
+    mini-blueprints.
     """
+    catalog_llm = _normalize_llm_ref(llm_ref)
     return {
         "description": "A simple agent pipeline for stress testing session creation and execution",
         "name": "Stress Test Blueprint",
@@ -317,21 +709,9 @@ def get_stress_test_blueprint() -> Dict:
         "providers": [],
         
         # ----------------------------
-        # LLM Definitions
+        # LLM Definitions (catalog $ref only — no inline credentials)
         # ----------------------------
-        "llms": [
-            {
-                "rid": "stress_test_llm_rid",
-                "name": "stress_test_llm",
-                "type": "openai",
-                "config": {
-                    "type": "openai",
-                    "model_name": "gemini-2.5-flash",
-                    "api_key": "",
-                    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai"
-                }
-            }
-        ],
+        "llms": [],
         
         # ----------------------------
         # Retriever
@@ -366,7 +746,7 @@ def get_stress_test_blueprint() -> Dict:
                 "type": "custom_agent_node",
                 "config": {
                     "type": "custom_agent_node",
-                    "llm": "stress_test_llm_rid",
+                    "llm": catalog_llm,
                     "system_message": "You are a helpful assistant. Answer the user's question directly and concisely in one or two sentences."
                 }
             },
@@ -489,8 +869,8 @@ class StressTestRunner:
         index: int
     ) -> Tuple[Optional[Dict], bool, float, Optional[str]]:
         """
-        Execute a session and track metrics.
-        
+        Run a session via config.exec_mode and track metrics.
+
         Returns: (result, success, duration, error_message)
         """
         start_time = time.time()
@@ -499,11 +879,7 @@ class StressTestRunner:
         error_msg = None
         
         try:
-            # Choose streaming or non-streaming based on config
-            if self.config.use_streaming:
-                result = self.client.execute_session_streaming(session_id, inputs)
-            else:
-                result = self.client.execute_session(session_id, inputs)
+            result = self.client.run_session(session_id, inputs)
             
             success = True
             duration = time.time() - start_time
@@ -512,6 +888,20 @@ class StressTestRunner:
                 self.metrics.add_execute_success(duration)
             
             return result, success, duration, None
+
+        except TimeoutError as e:
+            duration = time.time() - start_time
+            error_msg = str(e)
+            with self.lock:
+                self.metrics.add_execute_failure("timeout")
+            return None, False, duration, error_msg
+
+        except RuntimeError as e:
+            duration = time.time() - start_time
+            error_msg = str(e)
+            with self.lock:
+                self.metrics.add_execute_failure("terminal_not_completed")
+            return None, False, duration, error_msg
             
         except requests.exceptions.Timeout:
             duration = time.time() - start_time
@@ -572,34 +962,140 @@ class StressTestRunner:
         
         return session_ids
     
+    def _record_execution_future(
+        self,
+        future: Future[Any],
+        index: int,
+        session_id: str,
+        total: int,
+        results: List[Dict],
+        future_timeout: float,
+    ) -> None:
+        """Collect one completed run future and print outcome."""
+        try:
+            result, success, duration, error_msg = future.result(timeout=future_timeout)
+            if success and result:
+                results.append(result)
+                status = result.get("status", "?")
+                if "polls" in result:
+                    detail = f"{status} ({result.get('polls')} polls)"
+                elif "chunks_received" in result:
+                    detail = f"{status} ({result.get('chunks_received')} chunks)"
+                else:
+                    detail = str(status)
+                print(
+                    f"  ✅ Session {index + 1}/{total} "
+                    f"{session_id[:8]}... {detail} in {duration:.2f}s",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"  ❌ Session {index + 1}/{total} "
+                    f"{session_id[:8]}... failed: {error_msg}",
+                    flush=True,
+                )
+        except Exception as e:
+            print(
+                f"  ❌ Session {index + 1}/{total} "
+                f"{session_id[:8]}... error: {e}",
+                flush=True,
+            )
+
     def run_concurrent_execution(self, session_ids: List[str], inputs: Dict) -> List[Dict]:
         """
-        Execute multiple sessions concurrently.
-        
-        Returns: List of execution results
+        Run sessions (submit or execute) with optional concurrency ramp-up.
+
+        Returns: List of successful execution results
         """
-        results = []
-        
-        print(f"\n⚡ Executing {len(session_ids)} sessions with concurrency={self.config.concurrent_execute}")
-        
-        with ThreadPoolExecutor(max_workers=self.config.concurrent_execute) as executor:
-            futures = {
-                executor.submit(self.execute_session_with_metrics, session_id, inputs, i): (i, session_id)
-                for i, session_id in enumerate(session_ids)
-            }
-            
-            for future in as_completed(futures):
-                index, session_id = futures[future]
-                try:
-                    result, success, duration, error_msg = future.result(timeout=self.config.execution_timeout)
-                    if success and result:
-                        results.append(result)
-                        print(f"  ✅ Execution {index + 1}/{len(session_ids)} completed in {duration:.2f}s")
-                    else:
-                        print(f"  ❌ Execution {index + 1}/{len(session_ids)} failed: {error_msg}")
-                except Exception as e:
-                    print(f"  ❌ Execution {index + 1}/{len(session_ids)} error: {e}")
-        
+        results: List[Dict] = []
+        total = len(session_ids)
+        max_concurrent = max(1, self.config.concurrent_execute)
+        mode_label = (
+            f"execute{'+stream' if self.config.use_streaming else ''}"
+            if self.config.exec_mode is ExecMode.EXECUTE
+            else "submit+poll"
+        )
+        timing_detail = (
+            f"poll every {self.config.poll_interval}s, "
+            f"timeout {self.config.execution_timeout:.0f}s"
+            if self.config.exec_mode is ExecMode.SUBMIT
+            else f"timeout {self.config.execution_timeout:.0f}s"
+        )
+        ramp_enabled = self.config.ramp_interval > 0
+        if ramp_enabled:
+            current_limit = max(1, min(self.config.ramp_start, max_concurrent))
+            ramp_step = max(1, self.config.ramp_step)
+            print(
+                f"\n⚡ Running {total} sessions ({mode_label}) with RAMP-UP: "
+                f"start={current_limit}, step=+{ramp_step} every "
+                f"{self.config.ramp_interval:.0f}s, max={max_concurrent} "
+                f"({timing_detail})",
+                flush=True,
+            )
+        else:
+            current_limit = max_concurrent
+            print(
+                f"\n⚡ Running {total} sessions ({mode_label}) with concurrency="
+                f"{max_concurrent} (no ramp; {timing_detail})",
+                flush=True,
+            )
+
+        future_timeout = self.config.execution_timeout + 60.0
+        pending = list(enumerate(session_ids))
+        next_idx = 0
+        active: Dict[Future[Any], Tuple[int, str]] = {}
+        last_ramp_at = time.time()
+
+        with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+            def _fill_slots() -> None:
+                nonlocal next_idx
+                while next_idx < total and len(active) < current_limit:
+                    i, session_id = pending[next_idx]
+                    next_idx += 1
+                    fut = executor.submit(
+                        self.execute_session_with_metrics, session_id, inputs, i
+                    )
+                    active[fut] = (i, session_id)
+                    print(
+                        f"    🚀 started in-flight {len(active)}/{current_limit} "
+                        f"(queued remaining {total - next_idx}): "
+                        f"session {i + 1} {session_id[:8]}...",
+                        flush=True,
+                    )
+
+            _fill_slots()
+
+            while active or next_idx < total:
+                if (
+                    ramp_enabled
+                    and current_limit < max_concurrent
+                    and (time.time() - last_ramp_at) >= self.config.ramp_interval
+                ):
+                    current_limit = min(max_concurrent, current_limit + ramp_step)
+                    last_ramp_at = time.time()
+                    print(
+                        f"  📈 Ramped concurrency → {current_limit}/{max_concurrent}",
+                        flush=True,
+                    )
+                    _fill_slots()
+
+                if not active:
+                    _fill_slots()
+                    if not active:
+                        break
+
+                done, _ = wait(
+                    list(active.keys()),
+                    timeout=1.0,
+                    return_when=FIRST_COMPLETED,
+                )
+                for fut in done:
+                    index, session_id = active.pop(fut)
+                    self._record_execution_future(
+                        fut, index, session_id, total, results, future_timeout
+                    )
+                    _fill_slots()
+
         return results
     
     def print_metrics_summary(self):
@@ -642,7 +1138,7 @@ class StressTestRunner:
 
 @pytest.fixture
 def stress_config(request):
-    """Configuration fixture with CLI overrides."""
+    """Configuration fixture with CLI / env overrides."""
     config = StressTestConfig()
     
     # Allow CLI overrides
@@ -650,12 +1146,67 @@ def stress_config(request):
         config.num_sessions = request.config.option.stress_sessions
     if hasattr(request.config.option, 'stress_concurrent'):
         config.concurrent_execute = request.config.option.stress_concurrent
+    if getattr(request.config.option, 'stress_concurrent_create', None) is not None:
+        config.concurrent_create = request.config.option.stress_concurrent_create
+    if getattr(request.config.option, 'stress_ramp_start', None) is not None:
+        config.ramp_start = request.config.option.stress_ramp_start
+    if getattr(request.config.option, 'stress_ramp_step', None) is not None:
+        config.ramp_step = request.config.option.stress_ramp_step
+    if getattr(request.config.option, 'stress_ramp_interval', None) is not None:
+        config.ramp_interval = request.config.option.stress_ramp_interval
+    if hasattr(request.config.option, 'stress_base_url') and request.config.option.stress_base_url:
+        config.base_url = request.config.option.stress_base_url
+    if getattr(request.config.option, 'stress_api_prefix', None):
+        config.api_prefix = request.config.option.stress_api_prefix
     if hasattr(request.config.option, 'blueprint_path'):
         config.blueprint_path = request.config.option.blueprint_path
+    if getattr(request.config.option, 'blueprint_id', None):
+        config.blueprint_id = request.config.option.blueprint_id.strip()
+        # Existing online blueprint already has its own LLM wiring
+        config.create_llm = False
     if hasattr(request.config.option, 'input_text'):
         config.input_text = request.config.option.input_text
+    if getattr(request.config.option, 'stress_exec_mode', None):
+        config.exec_mode = ExecMode(request.config.option.stress_exec_mode)
     if hasattr(request.config.option, 'use_streaming'):
         config.use_streaming = request.config.option.use_streaming
+
+    # Optional CLI overrides for LLM fields (config defaults are the normal path)
+    if getattr(request.config.option, 'llm_type', None):
+        raw_llm_type = request.config.option.llm_type.strip().lower()
+        try:
+            config.llm_type = LLMType(raw_llm_type)
+        except ValueError as exc:
+            raise pytest.UsageError(
+                f"Unsupported --llm-type '{raw_llm_type}'. Use "
+                f"'{LLMType.GOOGLE_GENAI.value}' or '{LLMType.OPENAI.value}'."
+            ) from exc
+    if getattr(request.config.option, 'llm_model', None):
+        config.llm_model = request.config.option.llm_model
+    if getattr(request.config.option, 'llm_base_url', None):
+        config.llm_base_url = request.config.option.llm_base_url
+    if getattr(request.config.option, 'llm_name', None):
+        config.llm_name = request.config.option.llm_name
+
+    # --llm-ref wins: reuse existing catalog LLM, do not create
+    if getattr(request.config.option, 'llm_ref', None):
+        config.llm_ref = _normalize_llm_ref(request.config.option.llm_ref)
+        config.create_llm = False
+    elif getattr(request.config.option, 'create_llm', False):
+        config.create_llm = True
+
+    # API key: CLI > STRESS_LLM_API_KEY > LLM_API_KEY
+    cli_key = getattr(request.config.option, 'llm_api_key', None)
+    config.llm_api_key = (
+        cli_key
+        or os.environ.get("STRESS_LLM_API_KEY")
+        or os.environ.get("LLM_API_KEY")
+    )
+
+    if getattr(request.config.option, 'stress_no_cleanup', False):
+        config.cleanup_sessions = False
+    if getattr(request.config.option, 'stress_insecure', False):
+        config.verify_ssl = False
     
     return config
 
@@ -667,10 +1218,80 @@ def api_client(stress_config):
 
 
 @pytest.fixture
-def test_blueprint(stress_config):
-    """Test blueprint fixture - loads from file if path provided."""
+def catalog_llm(stress_config, api_client):
+    """
+    Resolve the catalog LLM `$ref` for the default stress blueprint.
+
+    - `--create-llm`: POST /resources/resource.save, wire `$ref:<rid>`, delete on teardown
+    - `--llm-ref`: reuse an existing catalog LLM
+    - skipped when `--blueprint-path` or `--blueprint-id` supplies the workflow
+    """
+    if stress_config.blueprint_path or stress_config.blueprint_id:
+        yield None
+        return
+
+    created_rid: Optional[str] = None
+
+    if stress_config.create_llm:
+        if not stress_config.llm_api_key:
+            pytest.fail(
+                "LLM create is enabled (StressTestConfig.create_llm=True) but no API key "
+                "was found. Set STRESS_LLM_API_KEY / LLM_API_KEY or pass --llm-api-key, "
+                "or reuse an existing LLM with --llm-ref."
+            )
+        unique_name = f"{stress_config.llm_name}_{uuid.uuid4().hex[:8]}"
+        print(f"🧠 Creating catalog LLM '{unique_name}' "
+              f"(type={stress_config.llm_type}, model={stress_config.llm_model})")
+        created_rid = api_client.create_llm_resource(
+            name=unique_name,
+            llm_type=stress_config.llm_type,
+            model_name=stress_config.llm_model,
+            api_key=stress_config.llm_api_key,
+            base_url=stress_config.llm_base_url,
+        )
+        llm_ref = _normalize_llm_ref(created_rid)
+        stress_config.llm_ref = llm_ref
+        print(f"   ✅ Created catalog LLM: {llm_ref}")
+    elif stress_config.llm_ref:
+        llm_ref = _normalize_llm_ref(stress_config.llm_ref)
+        stress_config.llm_ref = llm_ref
+        print(f"📄 Using existing catalog LLM: {llm_ref}")
+    else:
+        pytest.fail(
+            "No LLM configured. Set StressTestConfig.create_llm=True with an API key, "
+            "or pass --llm-ref <catalog-rid>."
+        )
+
+    yield llm_ref
+
+    if created_rid:
+        if stress_config.cleanup_sessions:
+            print(f"🧹 Deleting auto-created catalog LLM {created_rid[:8]}...")
+            deleted = False
+            for _ in range(CATALOG_LLM_DELETE_ATTEMPTS):
+                if api_client.delete_resource(created_rid):
+                    deleted = True
+                    break
+            if deleted:
+                print("  ✅ Catalog LLM deleted")
+            else:
+                pytest.fail(
+                    f"Failed to delete auto-created catalog LLM {created_rid}"
+                )
+        else:
+            print(
+                f"  ⏭️  --stress-no-cleanup: leaving catalog LLM "
+                f"{created_rid[:8]}... in place"
+            )
+
+
+@pytest.fixture
+def test_blueprint(stress_config, catalog_llm) -> Optional[Dict]:
+    """Blueprint dict to upload, or None when using --blueprint-id."""
+    if stress_config.blueprint_id:
+        return None
+
     if stress_config.blueprint_path:
-        # Load from YAML file
         from pathlib import Path
         
         blueprint_file = Path(stress_config.blueprint_path)
@@ -684,9 +1305,8 @@ def test_blueprint(stress_config):
         blueprint_name = blueprint.get('name', 'Unknown')
         print(f"   Blueprint: {blueprint_name}")
         return blueprint
-    else:
-        # Use default stress test blueprint
-        return get_stress_test_blueprint()
+
+    return get_stress_test_blueprint(catalog_llm)
 
 
 @pytest.fixture
@@ -704,48 +1324,67 @@ def stress_runner(stress_config, api_client):
 @pytest.mark.e2e
 @pytest.mark.stress
 @pytest.mark.session_management
-class TestSessionStress:
-    """End-to-end stress tests for session creation and execution."""
+class TestSessionStressSubmit:
+    """E2E stress tests; default submit+poll, switchable via --stress-exec-mode."""
     
     def test_concurrent_session_creation_and_execution(
         self,
         stress_config: StressTestConfig,
         api_client: SessionAPIClient,
-        test_blueprint: Dict,
+        test_blueprint: Optional[Dict],
         stress_runner: StressTestRunner
     ):
         """
-        Test concurrent session creation and parallel execution.
-        
-        This test validates:
-        1. System can handle multiple concurrent session creations
-        2. Sessions can be executed in parallel
-        3. All sessions complete successfully
-        4. Performance meets acceptable thresholds
+        Concurrent create + run (submit/poll or execute) until complete.
         """
         blueprint_id = None
+        owns_blueprint = False
         session_ids = []
+        mode_label = (
+            f"execute{'+stream' if stress_config.use_streaming else ''}"
+            if stress_config.exec_mode is ExecMode.EXECUTE
+            else "submit + status poll"
+        )
         
         try:
             print(f"\n{'=' * 80}")
-            print("🧪 STARTING E2E SESSION STRESS TEST")
+            print(f"🧪 STARTING E2E SESSION STRESS TEST ({mode_label})")
             print(f"{'=' * 80}")
-            print(f"Configuration:")
+            print("Configuration:")
             print(f"  • Total Sessions: {stress_config.num_sessions}")
             print(f"  • Concurrent Creates: {stress_config.concurrent_create}")
-            print(f"  • Concurrent Executes: {stress_config.concurrent_execute}")
-            print(f"  • Streaming Mode: {'ENABLED ✓' if stress_config.use_streaming else 'DISABLED'}")
-            print(f"  • API: {stress_config.base_url}")
+            print(f"  • Max concurrent runs: {stress_config.concurrent_execute}")
+            if stress_config.ramp_interval > 0:
+                print(
+                    f"  • Ramp-up: start={stress_config.ramp_start}, "
+                    f"step=+{stress_config.ramp_step} every "
+                    f"{stress_config.ramp_interval:.0f}s"
+                )
+            else:
+                print("  • Ramp-up: disabled (immediate full concurrency)")
+            print(f"  • Mode: {mode_label}")
+            if stress_config.exec_mode is ExecMode.SUBMIT:
+                print(f"  • Poll interval: {stress_config.poll_interval}s")
+            print(f"  • Per-session timeout: {stress_config.execution_timeout:.0f}s")
+            print(f"  • API: {stress_config.base_url}{stress_config.api_prefix}")
+            print(f"  • User: {stress_config.user_id}")
+            if stress_config.blueprint_id:
+                print(f"  • Blueprint ID: {stress_config.blueprint_id}")
+            if stress_config.create_llm:
+                print(f"  • LLM mode: create ({stress_config.llm_type}/{stress_config.llm_model})")
+            if stress_config.llm_ref:
+                print(f"  • Catalog LLM: {stress_config.llm_ref}")
             
             stress_runner.metrics.total_start_time = time.time()
             
-            # PHASE 1: Create Blueprint
+            # PHASE 1: Blueprint Setup
             print(f"\n{'=' * 80}")
             print("📋 PHASE 1: Blueprint Setup")
             print(f"{'=' * 80}")
             
-            blueprint_id = api_client.create_blueprint(test_blueprint)
-            print(f"✅ Blueprint created: {blueprint_id}")
+            blueprint_id, owns_blueprint = resolve_blueprint_id(
+                api_client, stress_config, test_blueprint
+            )
             
             # PHASE 2: Concurrent Session Creation
             print(f"\n{'=' * 80}")
@@ -759,12 +1398,11 @@ class TestSessionStress:
             creation_success_rate = len(session_ids) / stress_config.num_sessions
             print(f"\n✅ Created {len(session_ids)}/{stress_config.num_sessions} sessions ({creation_success_rate * 100:.1f}% success)")
             
-            # PHASE 3: Parallel Session Execution
+            # PHASE 3: Run sessions to completion
             print(f"\n{'=' * 80}")
-            print("📋 PHASE 3: Parallel Session Execution")
+            print(f"📋 PHASE 3: Run Until Complete ({mode_label})")
             print(f"{'=' * 80}")
             
-            # ✅ CORRECTED INPUT FORMAT - matches run_test_new_version
             test_inputs = {
                 "user_prompt": stress_config.input_text
             }
@@ -772,27 +1410,41 @@ class TestSessionStress:
             results = stress_runner.run_concurrent_execution(session_ids, test_inputs)
             
             # Assert execution success
-            assert len(results) > 0, "No sessions executed successfully"
+            assert len(results) > 0, "No sessions completed successfully"
             execution_success_rate = len(results) / len(session_ids)
-            print(f"\n✅ Executed {len(results)}/{len(session_ids)} sessions ({execution_success_rate * 100:.1f}% success)")
+            print(f"\n✅ Completed {len(results)}/{len(session_ids)} sessions ({execution_success_rate * 100:.1f}% success)")
             
             stress_runner.metrics.total_end_time = time.time()
             
-            # PHASE 4: Verification
+            # PHASE 4: Verification — tolerate partial failure (same bar as execution_success_rate)
             if stress_config.verify_status:
                 print(f"\n{'=' * 80}")
                 print("📋 PHASE 4: Session Status Verification")
                 print(f"{'=' * 80}")
                 
                 completed_count = 0
-                for i, session_id in enumerate(session_ids[:5]):  # Sample first 5
+                for i, session_id in enumerate(session_ids):
                     try:
                         status = api_client.get_session_status(session_id)
-                        print(f"  • Session {i + 1}: {status}")
-                        if status == "COMPLETED":
+                        if status is None:
+                            status_label = "UNKNOWN"
+                        elif status in stress_config.terminal_statuses:
+                            status_label = status.value
+                        else:
+                            status_label = f"{status.value} (non-terminal)"
+                        print(
+                            f"  • Session {i + 1} ({session_id[:8]}...): {status_label}"
+                        )
+                        if status == SessionStatus.COMPLETED:
                             completed_count += 1
                     except Exception as e:
-                        print(f"  • Session {i + 1}: Error getting status - {e}")
+                        print(f"  • Session {i + 1} ({session_id[:8]}...): Error getting status - {e}")
+
+                completed_rate = completed_count / len(session_ids)
+                assert completed_rate >= 0.8, (
+                    f"COMPLETED rate too low: {completed_count}/{len(session_ids)} "
+                    f"({completed_rate * 100:.1f}%)"
+                )
             
             # PHASE 5: Metrics Report
             stress_runner.print_metrics_summary()
@@ -802,37 +1454,19 @@ class TestSessionStress:
             assert execution_success_rate >= 0.8, f"Execution success rate too low: {execution_success_rate * 100:.1f}%"
             
             print("\n" + "=" * 80)
-            print("✅ STRESS TEST PASSED")
+            print(f"✅ STRESS TEST PASSED ({mode_label})")
             print("=" * 80 + "\n")
             
         finally:
-            # CLEANUP PHASE
-            print(f"\n{'=' * 80}")
-            print("🧹 CLEANUP PHASE")
-            print(f"{'=' * 80}")
-            
-            # Delete sessions
-            if session_ids:
-                print(f"Deleting {len(session_ids)} sessions...")
-                deleted_count = 0
-                for session_id in session_ids:
-                    if api_client.delete_session(session_id):
-                        deleted_count += 1
-                print(f"  ✅ Deleted {deleted_count}/{len(session_ids)} sessions")
-            
-            # Delete blueprint
-            if blueprint_id:
-                print(f"Deleting blueprint {blueprint_id[:8]}...")
-                if api_client.delete_blueprint(blueprint_id):
-                    print(f"  ✅ Blueprint deleted")
-            
-            print("✅ Cleanup complete\n")
+            cleanup_stress_resources(
+                api_client, stress_config, session_ids, blueprint_id, owns_blueprint
+            )
     
     def test_rapid_sequential_sessions(
         self,
         stress_config: StressTestConfig,
         api_client: SessionAPIClient,
-        test_blueprint: Dict
+        test_blueprint: Optional[Dict]
     ):
         """
         Test rapid sequential session creation and execution.
@@ -843,6 +1477,7 @@ class TestSessionStress:
         - Maintains performance consistency
         """
         blueprint_id = None
+        owns_blueprint = False
         session_ids = []
         
         try:
@@ -850,9 +1485,9 @@ class TestSessionStress:
             print("🧪 RAPID SEQUENTIAL SESSION TEST")
             print(f"{'=' * 80}")
             
-            # Create blueprint
-            blueprint_id = api_client.create_blueprint(test_blueprint)
-            print(f"✅ Blueprint created: {blueprint_id}")
+            blueprint_id, owns_blueprint = resolve_blueprint_id(
+                api_client, stress_config, test_blueprint
+            )
             
             num_rapid_sessions = 10
             # ✅ CORRECTED INPUT FORMAT
@@ -869,13 +1504,21 @@ class TestSessionStress:
                 session_id = api_client.create_session(blueprint_id)
                 session_ids.append(session_id)
                 
-                # Execute
-                result = api_client.execute_session(session_id, test_inputs)
+                result = api_client.run_session(session_id, test_inputs)
                 
                 duration = time.time() - start
                 timings.append(duration)
                 
-                print(f"  ✅ Session {i + 1}/{num_rapid_sessions}: {duration:.2f}s")
+                if "polls" in result:
+                    detail = f"{result.get('status')}, {result.get('polls')} polls"
+                elif "chunks_received" in result:
+                    detail = f"{result.get('status')}, {result.get('chunks_received')} chunks"
+                else:
+                    detail = str(result.get("status", "ok"))
+                print(
+                    f"  ✅ Session {i + 1}/{num_rapid_sessions}: {duration:.2f}s "
+                    f"({detail})"
+                )
             
             avg_time = sum(timings) / len(timings)
             print(f"\n📊 Average time per session: {avg_time:.2f}s")
@@ -894,27 +1537,9 @@ class TestSessionStress:
             print("\n✅ RAPID SEQUENTIAL TEST PASSED\n")
             
         finally:
-            # CLEANUP PHASE
-            print(f"\n{'=' * 80}")
-            print("🧹 CLEANUP PHASE")
-            print(f"{'=' * 80}")
-            
-            # Delete sessions
-            if session_ids:
-                print(f"Deleting {len(session_ids)} sessions...")
-                deleted_count = 0
-                for session_id in session_ids:
-                    if api_client.delete_session(session_id):
-                        deleted_count += 1
-                print(f"  ✅ Deleted {deleted_count}/{len(session_ids)} sessions")
-            
-            # Delete blueprint
-            if blueprint_id:
-                print(f"Deleting blueprint {blueprint_id[:8]}...")
-                if api_client.delete_blueprint(blueprint_id):
-                    print(f"  ✅ Blueprint deleted")
-            
-            print("✅ Cleanup complete\n")
+            cleanup_stress_resources(
+                api_client, stress_config, session_ids, blueprint_id, owns_blueprint
+            )
 
 
 # =============================================================================
@@ -924,18 +1549,21 @@ class TestSessionStress:
 @pytest.mark.e2e
 @pytest.mark.stress
 @pytest.mark.custom_blueprint
-class TestCustomBlueprintStress:
-    """Stress tests using your custom blueprint."""
+class TestCustomBlueprintStressSubmit:
+    """Stress tests using your custom blueprint (mode via --stress-exec-mode)."""
     
     @pytest.fixture
-    def custom_blueprint(self, stress_config):
+    def custom_blueprint(self, stress_config, catalog_llm) -> Optional[Dict]:
         """
         Load your custom blueprint - from file or default.
         
-        Uses --blueprint-path CLI option if provided, otherwise uses default.
+        None when --blueprint-id is set. Otherwise --blueprint-path or the
+        default stress blueprint wired to catalog_llm.
         """
+        if stress_config.blueprint_id:
+            return None
+
         if stress_config.blueprint_path:
-            # Load from file specified in CLI
             from pathlib import Path
             
             blueprint_file = Path(stress_config.blueprint_path)
@@ -949,9 +1577,8 @@ class TestCustomBlueprintStress:
             blueprint_name = blueprint.get('name', 'Unknown')
             print(f"   Blueprint: {blueprint_name}")
             return blueprint
-        else:
-            # Default to stress test blueprint
-            return get_stress_test_blueprint()
+
+        return get_stress_test_blueprint(catalog_llm)
     
     @pytest.fixture
     def custom_inputs(self, stress_config):
@@ -966,7 +1593,7 @@ class TestCustomBlueprintStress:
         self,
         stress_config: StressTestConfig,
         api_client: SessionAPIClient,
-        custom_blueprint: Dict,
+        custom_blueprint: Optional[Dict],
         custom_inputs: Dict,
         stress_runner: StressTestRunner
     ):
@@ -976,6 +1603,7 @@ class TestCustomBlueprintStress:
         Modify this test to match your blueprint's specific needs.
         """
         blueprint_id = None
+        owns_blueprint = False
         session_ids = []
         
         try:
@@ -985,9 +1613,9 @@ class TestCustomBlueprintStress:
             
             stress_runner.metrics.total_start_time = time.time()
             
-            # Create blueprint
-            blueprint_id = api_client.create_blueprint(custom_blueprint)
-            print(f"✅ Custom blueprint created: {blueprint_id}")
+            blueprint_id, owns_blueprint = resolve_blueprint_id(
+                api_client, stress_config, custom_blueprint
+            )
             
             # Create sessions concurrently
             session_ids = stress_runner.run_concurrent_creation(blueprint_id)
@@ -1012,25 +1640,7 @@ class TestCustomBlueprintStress:
             print("\n✅ CUSTOM BLUEPRINT STRESS TEST PASSED\n")
             
         finally:
-            # CLEANUP PHASE
-            print(f"\n{'=' * 80}")
-            print("🧹 CLEANUP PHASE")
-            print(f"{'=' * 80}")
-            
-            # Delete sessions
-            if session_ids:
-                print(f"Deleting {len(session_ids)} sessions...")
-                deleted_count = 0
-                for session_id in session_ids:
-                    if api_client.delete_session(session_id):
-                        deleted_count += 1
-                print(f"  ✅ Deleted {deleted_count}/{len(session_ids)} sessions")
-            
-            # Delete blueprint
-            if blueprint_id:
-                print(f"Deleting blueprint {blueprint_id[:8]}...")
-                if api_client.delete_blueprint(blueprint_id):
-                    print(f"  ✅ Blueprint deleted")
-            
-            print("✅ Cleanup complete\n")
+            cleanup_stress_resources(
+                api_client, stress_config, session_ids, blueprint_id, owns_blueprint
+            )
 

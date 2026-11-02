@@ -52,7 +52,7 @@ http {
         server_name  _;
         
         # SSL Configuration 
-        ssl_certificate /etc/nginx/ssl/unifai.crt; # Path to your .pem file
+        ssl_certificate /etc/nginx/ssl/unifai_bundle.pem; # Path to your .pem file
         ssl_certificate_key /etc/nginx/ssl/unifai.key; # Use the same .pem file
 
         ssl_protocols TLSv1.2 TLSv1.3;

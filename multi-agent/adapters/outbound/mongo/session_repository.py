@@ -7,6 +7,8 @@ import logging
 from mas.session.repository.repository import SessionRepository
 from mas.session.domain.session_record import SessionRecord
 from mas.session.domain.models import SessionChat, TimeSeriesPoint, SystemAnalyticsData
+from mas.session.domain.dto import SessionListFilter
+from mas.session.domain.constants import DEFAULT_SESSION_PAGE_SIZE
 from mas.blueprints.models.blueprint import BlueprintExecutionStats
 from mas.session.domain.status import SessionStatus, NON_RUNNABLE_STATUSES
 from mas.core.identity import Identity, IdentityFieldKey
@@ -121,13 +123,14 @@ class MongoSessionRepository(SessionRepository):
         doc = self._col.find_one(
             {self._RUN_ID_FIELD: run_id},
             {"_id": 0, "graph_state.messages": 1, "graph_state.output": 1,
-             "status": 1, "metadata.status_message": 1},
+             "status": 1, "metadata.status_message": 1, self._BLUEPRINT_FIELD: 1},
         )
         if not doc:
             raise KeyError(f"No session for {run_id}")
         gs = doc.get("graph_state", {})
         gs["status"] = doc.get("status")
         gs["status_message"] = doc.get("metadata", {}).get("status_message")
+        gs["blueprint_id"] = doc.get(self._BLUEPRINT_FIELD)
         return SessionChat.model_validate(gs)
 
     def list_runs(self, identity: Identity) -> List[str]:
@@ -137,9 +140,37 @@ class MongoSessionRepository(SessionRepository):
         )
         return [d[self._RUN_ID_FIELD] for d in cursor]
 
-    def list_docs(self, identity: Identity) -> List[Mapping[str, Any]]:
-        """Return all session documents for a user in a single query."""
-        return list(self._col.find(identity_q(identity), {"_id": 0}))
+    def list_docs(self, identity: Identity, filters: Optional[SessionListFilter] = None) -> List[Mapping[str, Any]]:
+        """Return all session documents for a user in a single query.
+
+        Intentionally unsorted — callers that need ordering use
+        list_docs_paginated instead. The only consumer is the legacy
+        (non-paginated) API path where order is not guaranteed.
+        """
+        match = filters.to_query() if filters else {}
+        return list(self._col.find({**identity_q(identity), **match}, {"_id": 0}))
+
+    def list_docs_paginated(
+        self,
+        identity: Identity,
+        skip: int = 0,
+        limit: int = DEFAULT_SESSION_PAGE_SIZE,
+        filters: Optional[SessionListFilter] = None,
+    ) -> List[Mapping[str, Any]]:
+        """Return paginated session documents sorted by most recent activity, with newest sessions first."""
+        match = filters.to_query() if filters else {}
+        pipeline = [
+            {"$match": {**match, **identity_q(identity)}},
+            {"$addFields": {"_sort_date": self._ACTIVITY_DATE_EXPR}},
+            # run_id is a deterministic tiebreaker (unique index) so sessions
+            # with equal activity dates keep a stable order across page
+            # requests — without it skip pagination can duplicate/omit rows.
+            {"$sort": {"_sort_date": pymongo.DESCENDING, self._RUN_ID_FIELD: pymongo.DESCENDING}},
+            {"$skip": skip},
+            {"$limit": limit},
+            {"$project": {"_id": 0, "_sort_date": 0}},
+        ]
+        return list(self._col.aggregate(pipeline, allowDiskUse=True))
 
     def delete(self, run_id: str) -> bool:
         """Delete a session by run_id. Returns True if deleted, False if not found."""
@@ -161,9 +192,10 @@ class MongoSessionRepository(SessionRepository):
 
     # ---------- Owner-scoped Statistics ----------
 
-    def count(self, identity: Identity, filter: Dict[str, Any]) -> int:
+    def count(self, identity: Identity, filter: Optional[SessionListFilter] = None) -> int:
         # Identity keys must not be overridden by caller-supplied filter.
-        query = {**filter, **identity_q(identity)}
+        match = filter.to_query() if filter else {}
+        query = {**match, **identity_q(identity)}
         return self._col.count_documents(query)
 
     def group_count(

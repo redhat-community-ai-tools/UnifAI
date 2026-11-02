@@ -3,7 +3,9 @@ from typing import List, Optional, Set, Dict, Any
 
 from pymongo.collection import Collection
 
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SourceFilterResolver:

@@ -6,7 +6,9 @@ from pymongo.collection import Collection
 
 from core.pipeline.domain.model import PipelineRecord, PipelineStatus
 from core.pipeline.domain.repository import PipelineRepository
-from shared.logger import logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class MongoPipelineRepository(PipelineRepository):
