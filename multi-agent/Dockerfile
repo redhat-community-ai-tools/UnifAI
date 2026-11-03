@@ -33,12 +33,15 @@ RUN ARCH=$(uname -m) && \
 
 # 'update-ca-trust enable' was removed in RHEL 10 — it is enabled by default
 
+# Corporate CA. Build outside the corporate network with --build-arg CERT_URL="" to skip it.
 ARG CERT_URL="https://certs.corp.redhat.com/certs/Current-IT-Root-CAs.pem"
 ARG CERT_NAME="Current-IT-Root-CAs.pem"
 
 # Download and add the certificate to the system trust store
-RUN curl -fSL "$CERT_URL" -o /etc/pki/ca-trust/source/anchors/$CERT_NAME && \
-    update-ca-trust extract
+RUN if [ -n "$CERT_URL" ]; then \
+      curl -fSL "$CERT_URL" -o /etc/pki/ca-trust/source/anchors/$CERT_NAME && \
+      update-ca-trust extract; \
+    fi
 
 # Ensure the CA bundle is readable by all users
 RUN chmod 644 /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
