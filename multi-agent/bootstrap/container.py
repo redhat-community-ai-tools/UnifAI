@@ -150,35 +150,6 @@ class AppContainer(metaclass=SingletonMeta):
 
         self.blueprint_ref_service = BlueprintRefService(repo=self.blueprint_repo)
 
-        resource_registry = ResourcesRegistry(
-            repo=self.resource_repo,
-            bp_repo=self.blueprint_repo,
-        )
-
-        self.resources_service = ResourcesService(
-            resource_registry=resource_registry,
-            element_registry=self.element_registry,
-            validation_service=self.validation_service,
-            card_service=self.card_service,
-        )
-
-        self.deletion_service = ResourceDeletionService(
-            registry=resource_registry,
-            bp_refs=self.blueprint_ref_service,
-        )
-
-        self.blueprint_resolver = BlueprintResolver(
-            resource_registry=resource_registry,
-            element_registry=self.element_registry
-        )
-
-        self.blueprint_service = BlueprintService(
-            self.blueprint_repo,
-            resolver=self.blueprint_resolver,
-            validation_service=self.validation_service,
-            card_service=self.card_service,
-        )
-
         # ── Auth layer ────────────────────────────────────────────────
 
         http_client = HttpxClient()
@@ -285,6 +256,11 @@ class AppContainer(metaclass=SingletonMeta):
         )
 
         # ── Application services ─────────────────────────────────────
+
+        self.deletion_service = ResourceDeletionService(
+            registry=resource_registry,
+            bp_refs=self.blueprint_ref_service,
+        )
 
         field_encryption = ResourceFieldEncryption(self.element_registry, field_cipher)
 

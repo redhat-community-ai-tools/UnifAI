@@ -74,7 +74,7 @@ class MongoBlueprintRepository(BlueprintRepository):
             raise BlueprintDuplicateNameError(spec.name) from None
         return res.modified_count == 1
 
-    def update_raw(self, *, blueprint_id: str, spec_dict: Dict[str, Any],
+    def update_raw(self, *, blueprint_id: str, spec_dict: dict[str, Any],
                    rid_refs: list[str]) -> bool:
         existing = self._col.find_one({"blueprint_id": blueprint_id})
         if existing is None:

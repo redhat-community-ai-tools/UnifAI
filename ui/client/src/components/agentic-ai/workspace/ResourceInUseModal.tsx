@@ -9,8 +9,12 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, ArrowRightLeft, Unlink, Trash2, Eye, FileText, Check } from "lucide-react";
+import { FaProjectDiagram } from "react-icons/fa";
 import { getCategorySingularDisplayName } from "@/components/shared/helpers";
 import { cn } from "@/lib/utils";
+import GraphDisplay from "@/components/agentic-ai/graphs/GraphDisplay";
+import { getBlueprintInfo } from "@/api/blueprints";
+import { useToast } from "@/hooks/use-toast";
 
 export interface InUseData {
   category: string;
@@ -35,9 +39,11 @@ interface ResourceInUseModalProps {
   /** While a dependent resource preview is loading (e.g. after clicking the eye icon). */
   isLoadingResourcePreview?: boolean;
   onForceDelete: (mode: "replace" | "detach" | "cascade", replacementId?: string) => Promise<void>;
-  onBlueprintClick?: (id: string) => void;
   onResourceClick?: (id: string, category?: string, type?: string) => void;
 }
+
+const OPAQUE_MODAL =
+  "bg-zinc-800 border-zinc-600 text-zinc-100 shadow-2xl";
 
 type DeleteMode = "replace" | "detach" | "cascade";
 
@@ -56,20 +62,26 @@ function DependentList({
   return (
     <div className="mt-3">
       <p className="text-sm text-gray-400 mb-1.5">{label}:</p>
-      <ul className="space-y-1 max-h-40 overflow-y-auto pr-1">
+      <ul className="space-y-1 max-h-40 overflow-y-auto overflow-x-hidden pr-1">
         {items.map((item) => (
           <li
             key={item.id}
-            className="text-sm bg-background-dark rounded-md px-3 py-1.5 border border-white/10 flex items-center justify-between"
+            className="text-sm bg-background-dark rounded-md px-3 py-1.5 border border-white/10 flex items-center gap-2 min-w-0"
           >
-            <span>{item.name}</span>
+            <span className="truncate min-w-0 flex-1" title={item.name}>
+              {item.name}
+            </span>
             {onItemClick && (
               <button
                 type="button"
                 aria-label={`View details for ${item.name}`}
                 disabled={isActionDisabled}
-                onClick={() => onItemClick(item)}
-                className="text-gray-500 hover:text-gray-300 flex-shrink-0 ml-2 rounded-sm p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-40 disabled:pointer-events-none"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onItemClick(item);
+                }}
+                className="text-gray-400 hover:text-gray-100 flex-shrink-0 rounded-sm p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary disabled:opacity-40 disabled:pointer-events-none"
               >
                 <Eye className="h-3.5 w-3.5" />
               </button>
@@ -90,21 +102,60 @@ export function ResourceInUseModal({
   isLoadingReplacements,
   isLoadingResourcePreview = false,
   onForceDelete,
-  onBlueprintClick,
   onResourceClick,
 }: ResourceInUseModalProps) {
+  const { toast } = useToast();
   const [selectedReplacement, setSelectedReplacement] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [preview, setPreview] = useState<{
+    blueprintId: string;
+    name: string;
+    specDict: Record<string, unknown>;
+  } | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
   const mode = inUseData.allowed_mode;
   const label = getCategorySingularDisplayName(inUseData.category);
+  const previewOpen = isLoadingPreview || preview !== null;
 
   useEffect(() => {
     if (!open) {
       setSelectedReplacement("");
       setIsProcessing(false);
+      setPreview(null);
+      setIsLoadingPreview(false);
     }
   }, [open]);
+
+  const handleBlueprintClick = async (blueprintId: string) => {
+    setPreview(null);
+    setIsLoadingPreview(true);
+    try {
+      const info = await getBlueprintInfo(blueprintId);
+      if (!info?.spec_dict) {
+        toast({
+          title: "Not Found",
+          description: "Blueprint not found",
+          variant: "destructive",
+        });
+        return;
+      }
+      setPreview({
+        blueprintId: info.blueprint_id,
+        name: info.spec_dict?.name || info.blueprint_id,
+        specDict: info.spec_dict,
+      });
+    } catch (err) {
+      console.error("Error loading blueprint preview:", err);
+      toast({
+        title: "Error",
+        description: "Failed to load blueprint preview",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
 
   const handleConfirm = async () => {
     setIsProcessing(true);
@@ -121,71 +172,137 @@ export function ResourceInUseModal({
   const hasNoReplacements =
     mode === "replace" && !isLoadingReplacements && replacementOptions.length === 0;
 
+  const closePreview = () => {
+    setPreview(null);
+    setIsLoadingPreview(false);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-background-card border-white/10 max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-yellow-500" />
-            Cannot Delete {label}
-          </DialogTitle>
-          <DialogDescription className="pt-2">
-            <span className="font-medium text-gray-200">"{elementName}"</span>{" "}
-            is currently in use.
-          </DialogDescription>
-        </DialogHeader>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) {
+          if (previewOpen) {
+            closePreview();
+            return;
+          }
+          onClose();
+        }
+      }}
+    >
+      <DialogContent
+        overlayClassName="bg-black/90"
+        className={cn(
+          OPAQUE_MODAL,
+          "overflow-hidden min-w-0",
+          previewOpen
+            ? "max-w-6xl w-[90vw] h-[85vh] max-h-[85vh] flex flex-col p-0 gap-0"
+            : "max-w-md max-h-[90vh] flex flex-col",
+        )}
+        onPointerDownOutside={(event) => {
+          if (previewOpen) event.preventDefault();
+        }}
+        onInteractOutside={(event) => {
+          if (previewOpen) event.preventDefault();
+        }}
+      >
+        {previewOpen ? (
+          <>
+            <DialogHeader className="px-6 py-4 border-b border-zinc-700 flex-shrink-0 space-y-0">
+              <DialogTitle className="text-xl flex items-center gap-2 min-w-0 pr-8">
+                <FaProjectDiagram className="text-primary flex-shrink-0" />
+                <span className="truncate">{preview?.name || "Workflow View"}</span>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 min-h-0 overflow-hidden p-6">
+              {isLoadingPreview && (
+                <div className="h-full w-full flex items-center justify-center text-sm text-zinc-400">
+                  Loading workflow preview...
+                </div>
+              )}
+              {!isLoadingPreview && preview && (
+                <div className="h-full w-full min-h-0 overflow-hidden rounded-2xl isolate">
+                  <GraphDisplay
+                    key={preview.blueprintId}
+                    blueprintId={preview.blueprintId}
+                    specDict={preview.specDict}
+                    height="100%"
+                    className="h-full max-h-full overflow-hidden"
+                    showBackground={true}
+                    interactive={true}
+                    centerInView={true}
+                    animated={true}
+                  />
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <DialogHeader className="flex-shrink-0">
+              <DialogTitle className="flex items-center gap-2 min-w-0 pr-8">
+                <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0" />
+                <span className="truncate">Cannot Delete {label}</span>
+              </DialogTitle>
+              <DialogDescription className="pt-2 break-words">
+                <span className="font-medium text-gray-200">"{elementName}"</span>{" "}
+                is currently in use.
+              </DialogDescription>
+            </DialogHeader>
 
-        <div className="py-2">
-          {mode === "replace" && (
-            <ReplaceFlow
-              label={label}
-              resources={inUseData.resources}
-              blueprints={inUseData.blueprints}
-              replacementOptions={replacementOptions}
-              isLoadingReplacements={isLoadingReplacements}
-              isLoadingResourcePreview={isLoadingResourcePreview}
-              selectedReplacement={selectedReplacement}
-              onSelectReplacement={setSelectedReplacement}
-              onBlueprintClick={onBlueprintClick}
-              onResourceClick={onResourceClick}
-            />
-          )}
+            <div className="py-2 min-h-0 overflow-y-auto overflow-x-hidden">
+              {mode === "replace" && (
+                <ReplaceFlow
+                  label={label}
+                  resources={inUseData.resources}
+                  blueprints={inUseData.blueprints}
+                  replacementOptions={replacementOptions}
+                  isLoadingReplacements={isLoadingReplacements}
+                  isLoadingResourcePreview={isLoadingResourcePreview}
+                  selectedReplacement={selectedReplacement}
+                  onSelectReplacement={setSelectedReplacement}
+                  onBlueprintClick={handleBlueprintClick}
+                  onResourceClick={onResourceClick}
+                />
+              )}
 
-          {mode === "detach" && (
-            <DetachFlow
-              label={label}
-              resources={inUseData.resources}
-              isLoadingResourcePreview={isLoadingResourcePreview}
-              onResourceClick={onResourceClick}
-            />
-          )}
+              {mode === "detach" && (
+                <DetachFlow
+                  label={label}
+                  resources={inUseData.resources}
+                  isLoadingResourcePreview={isLoadingResourcePreview}
+                  onResourceClick={onResourceClick}
+                />
+              )}
 
-          {mode === "cascade" && (
-            <CascadeFlow
-              blueprints={inUseData.blueprints}
-              onBlueprintClick={onBlueprintClick}
-            />
-          )}
-        </div>
+              {mode === "cascade" && (
+                <CascadeFlow
+                  blueprints={inUseData.blueprints}
+                  onBlueprintClick={handleBlueprintClick}
+                />
+              )}
+            </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            disabled={isProcessing}
-            className="border-gray-700 hover:bg-background-dark"
-          >
-            {hasNoReplacements ? "Close" : "Cancel"}
-          </Button>
-          {!hasNoReplacements && (
-            <ConfirmButton
-              mode={mode}
-              canConfirm={!!canConfirm}
-              isProcessing={isProcessing}
-              onClick={handleConfirm}
-            />
-          )}
-        </DialogFooter>
+            <DialogFooter className="gap-2 sm:gap-0 flex-shrink-0">
+              <Button
+                variant="outline"
+                onClick={onClose}
+                disabled={isProcessing}
+                className="border-gray-700 hover:bg-background-dark"
+              >
+                {hasNoReplacements ? "Close" : "Cancel"}
+              </Button>
+              {!hasNoReplacements && (
+                <ConfirmButton
+                  mode={mode}
+                  canConfirm={!!canConfirm}
+                  isProcessing={isProcessing}
+                  onClick={handleConfirm}
+                />
+              )}
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

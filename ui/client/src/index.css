@@ -263,9 +263,11 @@
   .workflow-graph-wrap .joint-paper {
     border-radius: 1rem;
     background: transparent !important;
+    overflow: hidden;
   }
   .workflow-graph-wrap svg {
     border-radius: 1rem;
+    overflow: hidden;
   }
 
   /* Subtle animation for workflow graph */

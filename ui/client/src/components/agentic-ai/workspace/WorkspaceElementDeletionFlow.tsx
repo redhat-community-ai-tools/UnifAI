@@ -4,7 +4,6 @@ import React, {
   useImperativeHandle,
   useState,
 } from "react";
-import { FaProjectDiagram } from "react-icons/fa";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,12 +14,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ElementData } from "@/components/agentic-ai/workspace/ElementData";
 import { ResourceInUseModal, type InUseData } from "@/components/agentic-ai/workspace/ResourceInUseModal";
-import GraphDisplay from "@/components/agentic-ai/graphs/GraphDisplay";
-import { fetchResolvedBlueprint, WorkflowBlueprint } from "@/api/blueprints";
-import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import type { ElementCategory, ElementInstance, ElementType } from "@/types/workspace";
 
@@ -89,7 +84,6 @@ export const WorkspaceElementDeletionFlow = forwardRef<
   ref,
 ) {
   const { toast } = useToast();
-  const { user } = useAuth();
   const {
     fetchElementInstances,
     fetchResourceById,
@@ -109,9 +103,6 @@ export const WorkspaceElementDeletionFlow = forwardRef<
     Array<{ rid: string; name: string; type: string }>
   >([]);
   const [isLoadingReplacements, setIsLoadingReplacements] = useState(false);
-
-  const [previewWorkflow, setPreviewWorkflow] = useState<WorkflowBlueprint | null>(null);
-  const [isWorkflowPreviewOpen, setIsWorkflowPreviewOpen] = useState(false);
 
   const [previewResource, setPreviewResource] = useState<ElementInstance | null>(null);
   const [previewResourceType, setPreviewResourceType] = useState<ElementType | null>(null);
@@ -232,32 +223,6 @@ export const WorkspaceElementDeletionFlow = forwardRef<
     setReplacementOptions([]);
   }, []);
 
-  const handleBlueprintClick = useCallback(
-    async (blueprintId: string) => {
-      try {
-        const bp = await fetchResolvedBlueprint(blueprintId, user?.username);
-        if (!bp) {
-          toast({
-            title: "Not Found",
-            description: "Blueprint not found",
-            variant: "destructive",
-          });
-          return;
-        }
-        setPreviewWorkflow(bp);
-        setIsWorkflowPreviewOpen(true);
-      } catch (err) {
-        console.error("Error loading blueprint preview:", err);
-        toast({
-          title: "Error",
-          description: "Failed to load blueprint preview",
-          variant: "destructive",
-        });
-      }
-    },
-    [toast, user?.username],
-  );
-
   const handleDependentResourceClick = useCallback(
     async (resourceId: string, resourceCategory?: string, resourceType?: string) => {
       setIsLoadingResourcePreview(true);
@@ -316,7 +281,10 @@ export const WorkspaceElementDeletionFlow = forwardRef<
   return (
     <>
       <AlertDialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
-        <AlertDialogContent className="bg-background-card border-gray-800">
+        <AlertDialogContent
+          overlayClassName="bg-black/90"
+          className="bg-zinc-800 border-zinc-600 text-zinc-100 shadow-2xl overflow-hidden max-h-[90vh]"
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>
               Delete {selectedElementType?.name || "Element"}
@@ -352,51 +320,19 @@ export const WorkspaceElementDeletionFlow = forwardRef<
       {inUseData && (
         <ResourceInUseModal
           open={showInUseModal}
-          onClose={closeInUseModal}
+          onClose={() => {
+            if (isResourcePreviewOpen) return;
+            closeInUseModal();
+          }}
           elementName={elementToDelete?.name || "Element"}
           inUseData={inUseData}
           replacementOptions={replacementOptions}
           isLoadingReplacements={isLoadingReplacements}
           isLoadingResourcePreview={isLoadingResourcePreview}
           onForceDelete={handleForceDelete}
-          onBlueprintClick={handleBlueprintClick}
           onResourceClick={handleDependentResourceClick}
         />
       )}
-
-      <Dialog
-        open={isWorkflowPreviewOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setIsWorkflowPreviewOpen(false);
-            setPreviewWorkflow(null);
-          }
-        }}
-      >
-        <DialogContent className="bg-background-card border-gray-800 max-w-6xl w-[90vw] h-[85vh] flex flex-col p-0 overflow-hidden">
-          <DialogHeader className="px-6 py-4 border-b border-gray-800 flex-shrink-0">
-            <DialogTitle className="text-xl flex items-center gap-2">
-              <FaProjectDiagram className="text-primary" />
-              {previewWorkflow?.spec_dict?.name || "Workflow View"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-hidden p-6 min-h-0">
-            {previewWorkflow && (
-              <div className="h-full w-full">
-                <GraphDisplay
-                  blueprintId={previewWorkflow.blueprint_id}
-                  specDict={previewWorkflow.spec_dict}
-                  height="100%"
-                  showBackground={true}
-                  interactive={true}
-                  centerInView={true}
-                  animated={true}
-                />
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {previewResourceType && (
         <ElementData
