@@ -13,8 +13,9 @@ import { FaProjectDiagram } from "react-icons/fa";
 import { getCategorySingularDisplayName } from "@/components/shared/helpers";
 import { cn } from "@/lib/utils";
 import GraphDisplay from "@/components/agentic-ai/graphs/GraphDisplay";
-import { getBlueprintInfo } from "@/api/blueprints";
+import { fetchResolvedBlueprint } from "@/api/blueprints";
 import { useToast } from "@/hooks/use-toast";
+import { useWorkspaceIdentity } from "@/hooks/use-workspace-identity";
 
 export interface InUseData {
   category: string;
@@ -105,6 +106,7 @@ export function ResourceInUseModal({
   onResourceClick,
 }: ResourceInUseModalProps) {
   const { toast } = useToast();
+  const { teamId } = useWorkspaceIdentity();
   const [selectedReplacement, setSelectedReplacement] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [preview, setPreview] = useState<{
@@ -131,8 +133,10 @@ export function ResourceInUseModal({
     setPreview(null);
     setIsLoadingPreview(true);
     try {
-      const info = await getBlueprintInfo(blueprintId);
-      if (!info?.spec_dict) {
+      // Resolved spec inlines nested resource names. The draft from
+      // getBlueprintInfo only has $ref IDs, which the graph would show instead.
+      const blueprint = await fetchResolvedBlueprint(blueprintId, teamId);
+      if (!blueprint?.spec_dict) {
         toast({
           title: "Not Found",
           description: "Blueprint not found",
@@ -141,9 +145,9 @@ export function ResourceInUseModal({
         return;
       }
       setPreview({
-        blueprintId: info.blueprint_id,
-        name: info.spec_dict?.name || info.blueprint_id,
-        specDict: info.spec_dict,
+        blueprintId: blueprint.blueprint_id,
+        name: blueprint.spec_dict?.name || blueprint.blueprint_id,
+        specDict: blueprint.spec_dict,
       });
     } catch (err) {
       console.error("Error loading blueprint preview:", err);
