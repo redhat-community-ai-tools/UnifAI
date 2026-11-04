@@ -374,18 +374,107 @@ export const useWorkspaceData = () => {
     [toast, teamId],
   );
 
-  // Delete element using Resources API
+  // Check whether a resource is in use without deleting it.
+  const checkElementUsage = useCallback(
+    async (rid: string): Promise<
+      | { inUse: false }
+      | { inUse: true; category: string; allowed_mode: string; blueprints: any[]; resources: any[] }
+    > => {
+      try {
+        const data = await resourcesApi.checkResourceUsage(rid, teamId);
+        if (data.in_use) {
+          return {
+            inUse: true,
+            category: data.category!,
+            allowed_mode: data.allowed_mode!,
+            blueprints: data.blueprints || [],
+            resources: data.resources || [],
+          };
+        }
+        return { inUse: false };
+      } catch (err: any) {
+        console.error("Error checking element usage:", err);
+        throw err;
+      }
+    },
+    [teamId],
+  );
+
+  // Delete element using Resources API.
+  // Returns { deleted: true } on success, or { inUse: true, ...data } when the
+  // resource is still referenced by other elements/workflows.
   const deleteElement = useCallback(
-    async (rid: string) => {
+    async (rid: string): Promise<
+      | { deleted: true }
+      | { deleted: false; inUse: true; category: string; allowed_mode: string; blueprints: any[]; resources: any[] }
+      | { deleted: false; inUse: false }
+    > => {
       try {
         setIsLoading(true);
         setError(null);
 
-        await resourcesApi.deleteResource(rid);
+        await resourcesApi.deleteResource(rid, teamId);
 
         removeResource(rid);
 
-        toast({ title: "Success", description: "Element deleted successfully" });
+        toast({
+          title: "Success",
+          description: "Element deleted successfully",
+        });
+        return { deleted: true };
+      } catch (err: any) {
+        if (err.response?.status === 409 && err.response?.data?.code === "RESOURCE_IN_USE") {
+          return {
+            deleted: false,
+            inUse: true,
+            category: err.response.data.category,
+            allowed_mode: err.response.data.allowed_mode,
+            blueprints: err.response.data.blueprints || [],
+            resources: err.response.data.resources || [],
+          };
+        }
+
+        const errorMessage =
+          err.response?.data?.error || "Failed to delete element";
+        setError(errorMessage);
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        console.error("Error deleting element:", err);
+        return { deleted: false, inUse: false };
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [toast, removeResource, teamId],
+  );
+
+  // Force-delete an element that is in use, using one of three modes.
+  const forceDeleteElement = useCallback(
+    async (
+      rid: string,
+      mode: "replace" | "detach" | "cascade",
+      replacementId?: string,
+    ) => {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        await resourcesApi.forceDeleteResource({
+          resourceId: rid,
+          mode,
+          replacementId,
+          teamId,
+        });
+
+        removeResource(rid);
+
+        toast({
+          title: "Success",
+          description: "Element deleted successfully",
+        });
         return true;
       } catch (err: any) {
         const errorMessage =
@@ -396,13 +485,13 @@ export const useWorkspaceData = () => {
           description: errorMessage,
           variant: "destructive",
         });
-        console.error("Error deleting element:", err);
+        console.error("Error force-deleting element:", err);
         return false;
       } finally {
         setIsLoading(false);
       }
     },
-    [toast],
+    [toast, removeResource, teamId],
   );
 
   // Fetch the annotated schema for a built-in resource (same schema as inventory,
@@ -710,11 +799,13 @@ export const useWorkspaceData = () => {
     fetchElementActions,
     fetchResourcesForCategory,
     fetchResourceById,
+    checkElementUsage,
     fetchBuiltinSchema,
     fetchBuiltinUserConfig,
     configureBuiltin,
     saveElement,
     deleteElement,
+    forceDeleteElement,
     saveBuiltinElement,
     toggleBuiltinStatus,
     deleteBuiltinElement,

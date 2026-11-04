@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Header from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
-import { Plus } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Plus, Search, X } from 'lucide-react';
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
 import { CategorySidebar } from '../components/agentic-ai/workspace/CategorySidebar';
 import { ElementGrid } from '../components/agentic-ai/workspace/ElementGrid';
 import { ElementForm } from '../components/agentic-ai/workspace/ElementForm';
+import {
+  WorkspaceElementDeletionFlow,
+  type WorkspaceElementDeletionFlowHandle,
+} from '../components/agentic-ai/workspace/WorkspaceElementDeletionFlow';
 import { ElementType, ElementInstance } from '../types/workspace';
 import { UmamiTrack } from '@/components/ui/umamitrack';
 import { UmamiEvents } from '@/config/umamiEvents';
@@ -21,12 +24,12 @@ export default function UserWorkspace() {
   const [selectedElementType, setSelectedElementType] = useState<ElementType | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingElement, setEditingElement] = useState<ElementInstance | null>(null);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [elementToDelete, setElementToDelete] = useState<ElementInstance | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [resourceFilter, setResourceFilter] = useState<ResourceFilter>("all");
+  const deletionFlowRef = useRef<WorkspaceElementDeletionFlowHandle>(null);
   const { viewMode, selectedTeam } = useView();
   const isTeam = viewMode === "team";
+
   const {
     categories,
     elementInstances,
@@ -37,22 +40,52 @@ export default function UserWorkspace() {
     fetchElementInstances,
     fetchElementSchema,
     fetchElementActions,
+    fetchResourcesForCategory,
+    fetchResourceById,
+    checkElementUsage,
     saveElement,
     deleteElement,
+    forceDeleteElement,
     configureBuiltin,
   } = useWorkspaceData();
 
-  const filteredInstances = useMemo(() => {
-    if (resourceFilter === "all") return elementInstances;
-    if (resourceFilter === "built-in") return elementInstances.filter(el => el.ownership === 'builtin');
-    return elementInstances.filter(el => el.ownership !== 'builtin');
-  }, [elementInstances, resourceFilter]);
+  const deletionWorkspace = useMemo(
+    () => ({
+      fetchElementInstances,
+      fetchResourceById,
+      checkElementUsage,
+      deleteElement,
+      forceDeleteElement,
+      fetchResourcesForCategory,
+    }),
+    [
+      fetchElementInstances,
+      fetchResourceById,
+      checkElementUsage,
+      deleteElement,
+      forceDeleteElement,
+      fetchResourcesForCategory,
+    ],
+  );
 
   const filterCounts = useMemo(() => ({
     all: elementInstances.length,
     "built-in": elementInstances.filter(el => el.ownership === 'builtin').length,
     personal: elementInstances.filter(el => el.ownership !== 'builtin').length,
   }), [elementInstances]);
+
+  const filteredInstances = useMemo(() => {
+    let instances = elementInstances;
+    if (resourceFilter === "built-in") {
+      instances = instances.filter(el => el.ownership === 'builtin');
+    } else if (resourceFilter === "personal") {
+      instances = instances.filter(el => el.ownership !== 'builtin');
+    }
+
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return instances;
+    return instances.filter(el => el.name?.toLowerCase().includes(query));
+  }, [elementInstances, resourceFilter, searchQuery]);
 
   useEffect(() => {
     if (selectedElementType) {
@@ -64,6 +97,7 @@ export default function UserWorkspace() {
   const handleElementTypeSelect = async (category: string, elementType: ElementType) => {
     setSelectedCategory(category);
     setSelectedElementType(elementType);
+    setSearchQuery("");
     await Promise.all([
       fetchElementSchema(category, elementType.type),
       fetchElementActions(category, elementType.type)
@@ -100,34 +134,6 @@ export default function UserWorkspace() {
       fetchElementInstances(selectedElementType.category, selectedElementType.type);
     }
     return result;
-  };
-
-  const handleDeleteElement = (rid: string) => {
-    const element = elementInstances.find(el => el.rid === rid);
-    if (element) {
-      setElementToDelete(element);
-      setShowDeleteModal(true);
-    }
-  };
-
-  const confirmDeleteElement = async () => {
-    if (!elementToDelete || !selectedElementType) return;
-    setIsDeleting(true);
-    try {
-      await deleteElement(elementToDelete.rid);
-      await fetchElementInstances(selectedElementType.category, selectedElementType.type);
-      setShowDeleteModal(false);
-      setElementToDelete(null);
-    } catch (error) {
-      console.error('Error deleting element:', error);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const cancelDeleteElement = () => {
-    setShowDeleteModal(false);
-    setElementToDelete(null);
   };
 
   return (
@@ -179,7 +185,7 @@ export default function UserWorkspace() {
                   </div>
 
                   {/* Resource filter tabs */}
-                  <div className="flex items-center gap-1 mt-4 p-1 bg-background-card rounded-lg border border-gray-800 w-fit">
+                  <div className="flex items-center gap-1 mt-4 p-1 bg-background-card rounded-lg border border-white/10 w-fit">
                     {([
                       { key: "all" as const, label: "All" },
                       { key: "built-in" as const, label: "Built-in" },
@@ -208,24 +214,61 @@ export default function UserWorkspace() {
                 </div>
               )}
 
-              <div className="flex-1">
-                {selectedElementType ? (
-                  <ElementGrid
-                    elements={filteredInstances}
-                    elementType={selectedElementType}
-                    isLoading={isLoadingInstances}
-                    onEditElement={handleEditElement}
-                    onDeleteElement={handleDeleteElement}
-                    onConfigureBuiltin={configureBuiltin}
-                    elementSchema={elementSchema}
+              {selectedElementType && elementInstances.length > 0 && (
+                <div className="relative mb-4">
+                  <Search
+                    aria-hidden="true"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500"
                   />
-                ) : (
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={`Search ${selectedElementType.name.toLowerCase()}s by name...`}
+                    aria-label={`Search ${selectedElementType.name} instances by name`}
+                    className="w-full pl-9 pr-9 py-2 text-sm bg-background-card border border-white/10 rounded-md text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/25 transition-colors"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      aria-label={`Clear ${selectedElementType.name} search`}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                    >
+                      <X aria-hidden="true" className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="flex-1">
+                {!selectedElementType ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="text-center text-gray-400">
                       <p className="text-lg font-medium mb-2">Select an element type</p>
                       <p className="text-sm">Choose a category and element type from the sidebar to view instances</p>
                     </div>
                   </div>
+                ) : searchQuery && filteredInstances.length === 0 && !isLoadingInstances ? (
+                  <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+                    <Search className="h-12 w-12 mb-4 opacity-50" />
+                    <h3 className="text-lg font-medium mb-2">No matches found</h3>
+                    <p className="text-sm">
+                      No {selectedElementType.name.toLowerCase()}s matching "{searchQuery}"
+                    </p>
+                  </div>
+                ) : (
+                  <ElementGrid
+                    elements={filteredInstances}
+                    elementType={selectedElementType}
+                    isLoading={isLoadingInstances}
+                    onEditElement={handleEditElement}
+                    onDeleteElement={(rid) =>
+                      deletionFlowRef.current?.handleDeleteElement(rid)
+                    }
+                    onConfigureBuiltin={configureBuiltin}
+                    elementSchema={elementSchema}
+                  />
                 )}
               </div>
             </div>
@@ -246,33 +289,13 @@ export default function UserWorkspace() {
         )}
       </main>
 
-      <AlertDialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
-        <AlertDialogContent className="bg-background-card border-gray-800">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {selectedElementType?.name || 'Element'}</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{elementToDelete?.name || `${selectedElementType?.name || 'Element'} Instance`}"?
-              <br /><br />
-              <strong>Be aware that this action is irreversible.</strong>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={cancelDeleteElement}
-              className="bg-background-dark border-gray-700 hover:bg-background-surface"
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDeleteElement}
-              disabled={isDeleting}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
-              {isDeleting ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <WorkspaceElementDeletionFlow
+        ref={deletionFlowRef}
+        selectedElementType={selectedElementType}
+        elementInstances={elementInstances}
+        categories={categories}
+        workspace={deletionWorkspace}
+      />
     </>
   );
 }

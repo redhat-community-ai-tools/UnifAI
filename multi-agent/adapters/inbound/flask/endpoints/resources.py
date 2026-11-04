@@ -200,6 +200,42 @@ def update_resource(identity: Identity, resource_id: str, config: dict, name: st
         return jsonify({"error": str(e)}), 500
 
 
+@resources_bp.route("/resource.check-usage", methods=["GET"])
+@with_require_identity_authorization
+@from_query({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+})
+def check_resource_usage(identity: Identity, resource_id: str) -> tuple[Response, int]:
+    """Check whether a resource is in use without deleting it."""
+    svc = current_app.container.resources_service
+    deletion_svc = current_app.container.deletion_service
+    try:
+        caller = resolve_caller_scope(identity)
+        svc.guard_write_access(
+            resource_id, caller,
+            username=getattr(g, G_IDENTITY_USERNAME, ""),
+        )
+        result = deletion_svc.check_usage(resource_id)
+        return jsonify(result.model_dump(mode="json")), 200
+    except ResourceLockedError as e:
+        return jsonify({
+            "error": str(e),
+            "lockedBy": {
+                "userId": e.locked_by_user_id,
+                "displayName": e.locked_by_display_name,
+            },
+        }), 409
+    except BuiltInWriteProtectedError as e:
+        return jsonify({"error": str(e)}), 403
+    except ResourceAccessDeniedError as e:
+        return jsonify({"error": str(e)}), 403
+    except KeyError:
+        return jsonify({"error": f"Resource not found: {resource_id}"}), 404
+    except Exception:
+        logger.exception("Failed to check usage for resource '%s'", resource_id)
+        return jsonify({"error": "Internal server error"}), 500
+
+
 @resources_bp.route("/resource.delete", methods=["DELETE"])
 @with_require_identity_authorization
 @from_query({
@@ -228,11 +264,69 @@ def delete_resource(identity: Identity, resource_id: str) -> tuple[Response, int
     except ResourceAccessDeniedError as e:
         return jsonify({"error": str(e)}), 403
     except ResourceInUseError as e:
-        return jsonify({"error": str(e),
-                        "blueprints": e.by_blueprints,
-                        "resources": e.by_resources}), 400
+        deletion_svc = current_app.container.deletion_service
+        usage = deletion_svc.usage_payload_for_in_use(resource_id, e)
+        return jsonify({
+            "error": "Resource is in use",
+            "code": "RESOURCE_IN_USE",
+            **usage.model_dump(mode="json"),
+        }), 409
+    except KeyError:
+        return jsonify({"error": f"Resource not found: {resource_id}"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@resources_bp.route("/resource.force-delete", methods=["POST"])
+@with_require_identity_authorization
+@from_body({
+    "resource_id": fields.Str(data_key="resourceId", required=True),
+    "mode": fields.Str(required=True),
+    "replacement_id": fields.Str(data_key="replacementId", required=False, load_default=None),
+})
+def force_delete_resource(identity: Identity, resource_id: str, mode: str, replacement_id: str | None = None) -> tuple[Response, int]:
+    """
+    Force-delete a resource that is currently in use.
+
+    Modes:
+      - replace:  swap all references to replacementId, then delete (LLMs, Conditions)
+      - detach:   remove all references from dependents, then delete (Tools, Providers, Retrievers, Sandboxes)
+      - cascade:  delete the resource and all blueprints that reference it (Agents)
+    """
+    deletion_svc = current_app.container.deletion_service
+    try:
+        caller = resolve_caller_scope(identity)
+        deletion_svc.force_delete(
+            resource_id,
+            mode,
+            replacement_id,
+            caller=caller,
+            username=getattr(g, G_IDENTITY_USERNAME, ""),
+        )
+        return jsonify({"status": "deleted"}), 200
+    except ResourceLockedError as e:
+        return jsonify({
+            "error": str(e),
+            "lockedBy": {
+                "userId": e.locked_by_user_id,
+                "displayName": e.locked_by_display_name,
+            },
+        }), 409
+    except BuiltInWriteProtectedError as e:
+        return jsonify({"error": str(e)}), 403
+    except ResourceAccessDeniedError as e:
+        return jsonify({"error": str(e)}), 403
+    except ResourceInUseError as e:
+        usage = deletion_svc.usage_payload_for_in_use(resource_id, e)
+        return jsonify({
+            "error": "Resource is in use",
+            "code": "RESOURCE_IN_USE",
+            **usage.model_dump(mode="json"),
+        }), 409
     except KeyError as e:
         return jsonify({"error": f"Resource not found: {e}"}), 404
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

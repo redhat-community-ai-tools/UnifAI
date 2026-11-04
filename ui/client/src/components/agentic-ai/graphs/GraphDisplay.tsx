@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useRef, useState, useCallback, useMemo } 
 import { dia } from "@joint/core";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { safeFlushSync } from "@/lib/reactUtils";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useWorkspaceData } from "@/hooks/use-workspace-data";
@@ -120,6 +121,8 @@ export type GraphDisplayProps = {
   isGraphVisible?: boolean;
   /** When true, nodes with hitl_mode "dynamic" show the HITL tag. */
   hitlEnabled?: boolean;
+  /** Extra classes for the graph viewport (e.g. overflow clipping in modals). */
+  className?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -140,6 +143,7 @@ export default function GraphDisplay({
   isCancelled = false,
   isGraphVisible = true,
   hitlEnabled = false,
+  className,
 }: GraphDisplayProps): React.ReactElement {
   // ── JointJS graph hook (imperative init, layout, SVG injection) ─────
   const { primaryHex } = useTheme();
@@ -467,7 +471,7 @@ export default function GraphDisplay({
 
   return (
     <>
-      <div className="relative overflow-auto" style={{ height }}>
+      <div className={cn("relative overflow-auto", className)} style={{ height }}>
         {/* Live Tracking / Execution Complete Indicator */}
         {streamingContext && (isLiveRequest || executionComplete) && (
           <div className="absolute top-2 left-2 z-50 bg-black bg-opacity-70 text-white px-2 py-1 rounded text-xs flex items-center gap-2">
@@ -523,13 +527,13 @@ export default function GraphDisplay({
         )}
 
         <div
-          className={`workflow-graph-wrap h-full min-h-[280px] rounded-2xl relative ${
+          className={`workflow-graph-wrap h-full min-h-[280px] max-h-full overflow-hidden rounded-2xl relative ${
             animated ? "workflow-graph-animated" : ""
           }`}
         >
           <div
             ref={containerRef}
-            className="min-h-full min-w-full h-full"
+            className="h-full w-full overflow-hidden"
             style={{ height }}
           />
 
