@@ -6,9 +6,6 @@ import {
   CanvasNode,
   CanvasEdge,
   YamlFlowState,
-  YamlFlowNode,
-  YamlFlowCondition,
-  YamlFlowPlanStep,
 } from "@/types/graph";
 import { getCategoryDisplay } from "@/components/shared/helpers";
 import { useAuth } from "@/contexts/AuthContext";
@@ -57,59 +54,6 @@ const defaultYamlState: YamlFlowState = {
     },
   ],
 };
-
-function isLiveRef(rid: unknown): boolean {
-  return typeof rid === "string" && rid.startsWith("$ref:");
-}
-
-/** Keep only BlueprintDraft-legal fields. Live `$ref:` entries must not send config. */
-function sanitizeResourceEntry(entry: YamlFlowNode | YamlFlowCondition) {
-  const sanitized: { rid: string; name?: string; type?: string; config?: unknown } = {
-    rid: entry.rid,
-  };
-  if (entry.name) sanitized.name = entry.name;
-  if (entry.type) sanitized.type = entry.type;
-  if (!isLiveRef(entry.rid) && entry.config && typeof entry.config === "object") {
-    sanitized.config = entry.config;
-  }
-  return sanitized;
-}
-
-function sanitizePlanStep(step: YamlFlowPlanStep & { meta?: unknown }) {
-  const sanitized: Record<string, unknown> = {
-    uid: step.uid,
-    node: step.node,
-  };
-  if (step.after != null) sanitized.after = step.after;
-  if (step.branches && Object.keys(step.branches).length > 0) {
-    sanitized.branches = step.branches;
-  }
-  if (step.exit_condition) sanitized.exit_condition = step.exit_condition;
-  if (step.meta && typeof step.meta === "object") sanitized.meta = step.meta;
-  return sanitized;
-}
-
-function toBlueprintDraftPayload(
-  yamlFlow: YamlFlowState,
-  extras: Record<string, unknown> = {},
-) {
-  return {
-    name: yamlFlow.name || "Untitled blueprint",
-    description: yamlFlow.description || "default",
-    nodes: (yamlFlow.nodes || []).map(sanitizeResourceEntry),
-    conditions: (yamlFlow.conditions || []).map(sanitizeResourceEntry),
-    plan: (yamlFlow.plan || []).map(sanitizePlanStep),
-    ...extras,
-  };
-}
-
-function validationErrorMessage(error: unknown): string {
-  const apiMessage = (error as { response?: { data?: { error?: string } } })
-    ?.response?.data?.error;
-  if (apiMessage) return apiMessage;
-  if (error instanceof Error && error.message) return error.message;
-  return "Workflow validation request failed.";
-}
 
 export interface SavedBlueprintInfo {
   blueprintId: string;
@@ -170,7 +114,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
   const [validationResult, setValidationResult] = useState<any>(null);
   const [fixSuggestions, setFixSuggestions] = useState<any[]>([]);
   const [isValidating, setIsValidating] = useState(false);
-  const [validationError, setValidationError] = useState<string | null>(null);
 
   // Save modal state
   const [saveModalOpen, setSaveModalOpen] = useState(false);
@@ -210,15 +153,21 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
       setIsGraphValid(false);
       setValidationResult(null);
       setFixSuggestions([]);
-      setValidationError(null);
       return;
     }
 
     try {
       setIsValidating(true);
-      setValidationError(null);
 
-      const yamlString = yaml.dump(toBlueprintDraftPayload(yamlFlow), {
+      const yamlFlowForValidation = {
+        name: yamlFlow.name || "Untitled blueprint",
+        description: yamlFlow.description || "default",
+        conditions: yamlFlow.conditions || [],
+        nodes: yamlFlow.nodes || [],
+        plan: yamlFlow.plan || [],
+      };
+
+      const yamlString = yaml.dump(yamlFlowForValidation, {
         indent: 2,
         lineWidth: -1,
         noRefs: true,
@@ -245,7 +194,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
       setIsGraphValid(false);
       setValidationResult(null);
       setFixSuggestions([]);
-      setValidationError(validationErrorMessage(error));
     } finally {
       setIsValidating(false);
     }
@@ -909,7 +857,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     setValidationResult(null);
     setFixSuggestions([]);
     setIsValidating(false);
-    setValidationError(null);
   }, [yamlFlow, validateGraph]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -1029,7 +976,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
           const newYamlNode = {
             rid: nodeRid,
             name: block.workspaceData?.name || block.label,
-            type: block.workspaceData?.type || block.type,
             config: block.workspaceData?.config || {},
           };
 
@@ -1133,7 +1079,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     setIsGraphValid(false);
     setValidationResult(null);
     setFixSuggestions([]);
-    setValidationError(null);
 
     setCurrentGraph((prev) => ({
       ...prev,
@@ -1181,17 +1126,13 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
 
         setYamlFlow(updatedYamlFlow);
 
-        const yamlString = yaml.dump(
-          toBlueprintDraftPayload(updatedYamlFlow, {
-            prompt_shortcuts: updatedYamlFlow.prompt_shortcuts,
-          }),
-          {
-            indent: 2,
-            lineWidth: -1,
-            noRefs: true,
-            sortKeys: false,
-          },
-        );
+        // Convert to YAML string using js-yaml library
+        const yamlString = yaml.dump(updatedYamlFlow, {
+          indent: 2,
+          lineWidth: -1,
+          noRefs: true,
+          sortKeys: false,
+        });
 
         let response;
         let blueprintId;
@@ -1525,7 +1466,6 @@ export const useGraphCreationLogic = (options: UseGraphCreationLogicOptions = {}
     isDraggingCondition,
     isGraphValid,
     validationResult,
-    validationError,
     fixSuggestions,
     isValidating,
     validateGraph,

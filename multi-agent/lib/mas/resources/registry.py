@@ -9,6 +9,8 @@ from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 from mas.core.ref import RefRemapper
 from mas.core.ref.raw_blueprint_spec import remove_resource_ref_from_nested_dict
+
+
 class ResourcesRegistry:
     """
     Low-level CRUD + business rules for the resource aggregate (no Pydantic parsing).

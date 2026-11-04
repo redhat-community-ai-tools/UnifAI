@@ -35,7 +35,6 @@ export default function NewGraph({ onBack, editBlueprintId }: NewGraphProps) {
     onDragEnd,
     isGraphValid,
     validationResult,
-    validationError,
     fixSuggestions,
     isValidating,
     isSaving,
@@ -138,7 +137,6 @@ export default function NewGraph({ onBack, editBlueprintId }: NewGraphProps) {
       <div className="w-80 h-full">
         <GraphValidationPanel
           validationResult={validationResult}
-          validationError={validationError}
           fixSuggestions={fixSuggestions}
           isValidating={isValidating}
           isLoadingBlueprint={isLoadingBlueprint}

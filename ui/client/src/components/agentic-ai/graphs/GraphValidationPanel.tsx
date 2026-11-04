@@ -46,7 +46,6 @@ interface GraphValidationPanelProps {
   fixSuggestions: FixSuggestion[];
   isValidating: boolean;
   isLoadingBlueprint?: boolean;
-  validationError?: string | null;
 }
 
 const getValidatorIcon = (validatorName: string) => {
@@ -111,7 +110,6 @@ const GraphValidationPanel: React.FC<GraphValidationPanelProps> = ({
   fixSuggestions,
   isValidating,
   isLoadingBlueprint = false,
-  validationError = null,
 }) => {
   if (isLoadingBlueprint) {
     return (
@@ -140,24 +138,6 @@ const GraphValidationPanel: React.FC<GraphValidationPanelProps> = ({
             Validating Workflow...
           </CardTitle>
         </CardHeader>
-      </Card>
-    );
-  }
-
-  if (validationError) {
-    return (
-      <Card className="bg-background-card border-gray-800">
-        <CardHeader className="py-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <XCircle className="h-4 w-4 text-red-500" />
-            Validation Failed
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4">
-          <p className="text-sm text-gray-300 break-words">
-            {validationError}
-          </p>
-        </CardContent>
       </Card>
     );
   }
