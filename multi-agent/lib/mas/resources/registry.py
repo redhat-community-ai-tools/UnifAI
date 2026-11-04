@@ -61,10 +61,6 @@ class ResourcesRegistry:
                                      by_resources=nested_res)
         self._repo.delete(rid)
 
-    def delete_unchecked(self, rid: str) -> None:
-        """Delete after an orchestrator has removed all inbound references."""
-        self._repo.delete(rid)
-
     def remap_nested_refs(self, rid: str, mapping: Dict[str, str]) -> None:
         """In resources that nest rid in their config, swap old->new refs."""
         for dep_rid in self._repo.list_nested_usage(rid):
@@ -82,10 +78,8 @@ class ResourcesRegistry:
             self._bump_and_save(doc)
 
     def _bump_and_save(self, doc: Resource) -> None:
-        """Increment version, stamp updated-at, and persist."""
-        doc.version += 1
-        doc.updated = datetime.now(timezone.utc)
-        self._repo.update(doc)
+        """Persist a mutated resource through the normal versioned update."""
+        self.update(doc)
 
     def list_nested_usage(self, rid: str) -> List[str]:
         """Return resource IDs whose `nested_refs` array contains *rid*."""

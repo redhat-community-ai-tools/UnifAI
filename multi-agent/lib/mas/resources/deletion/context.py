@@ -19,6 +19,5 @@ class DeletionContext:
     resource: Resource
     replacement_rid: Optional[str]
     blueprint_ids: List[str]
-    resource_ids: List[str]
     registry: ResourcesRegistry
     bp_refs: BlueprintRefService

@@ -60,6 +60,7 @@ export const getCategorySingularDisplayName = (category: string): string => {
     retrievers: "Retriever",
     providers: "Provider",
     conditions: "Condition",
+    sandboxes: "Sandbox",
   };
   return (
     nameMap[category] || category.charAt(0).toUpperCase() + category.slice(1)

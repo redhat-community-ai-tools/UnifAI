@@ -690,14 +690,13 @@ export const FieldPopulation: React.FC<FieldPopulationProps> = ({
                 <Badge
                   key={index}
                   variant="secondary"
-                  className="flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/30 hover:bg-primary/15 hover:border-primary/50 transition-colors"
+                  className="flex items-center gap-1 bg-gray-700 text-white border-gray-600 hover:bg-gray-600"
                 >
                   {getDisplayLabel(selectedValue)}
                   <button
                     type="button"
                     onClick={() => removeSelectedValue(selectedValue)}
-                    className="ml-0.5 text-xs text-primary/70 hover:text-red-400 transition-colors"
-                    aria-label={`Remove ${getDisplayLabel(selectedValue)}`}
+                    className="ml-1 text-xs text-gray-300 hover:text-red-400 transition-colors"
                   >
                     ×
                   </button>

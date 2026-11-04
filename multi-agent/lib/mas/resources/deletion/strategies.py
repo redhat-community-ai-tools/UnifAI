@@ -25,7 +25,7 @@ class DeleteStrategy(ABC):
 
     @abstractmethod
     def execute(self, ctx: DeletionContext) -> None:
-        """Perform the force-delete."""
+        """Rewrite inbound references. The service deletes the resource afterwards."""
         ...
 
     @classmethod
@@ -46,7 +46,7 @@ class DeleteStrategy(ABC):
 
 
 class ReplaceStrategy(DeleteStrategy):
-    """Swap all references to a replacement, then delete."""
+    """Swap all references to a replacement."""
 
     mode = DeleteMode.REPLACE
     categories = frozenset({ResourceCategory.LLM, ResourceCategory.CONDITION})
@@ -64,15 +64,16 @@ class ReplaceStrategy(DeleteStrategy):
             )
 
     def execute(self, ctx: DeletionContext) -> None:
+        if not ctx.replacement_rid:
+            raise ValueError("replacementId is required for replace mode")
         mapping = {ctx.resource.rid: ctx.replacement_rid}
         ctx.registry.remap_nested_refs(ctx.resource.rid, mapping)
         for bp_id in ctx.blueprint_ids:
             ctx.bp_refs.remap_refs(bp_id, mapping)
-        ctx.registry.delete_unchecked(ctx.resource.rid)
 
 
 class DetachStrategy(DeleteStrategy):
-    """Remove all references from dependents, then delete."""
+    """Remove all references from dependents."""
 
     mode = DeleteMode.DETACH
     categories = frozenset(
@@ -80,16 +81,16 @@ class DetachStrategy(DeleteStrategy):
             ResourceCategory.TOOL,
             ResourceCategory.PROVIDER,
             ResourceCategory.RETRIEVER,
+            ResourceCategory.SANDBOX,
         }
     )
 
     def execute(self, ctx: DeletionContext) -> None:
         _strip_all_refs(ctx, blueprint_ids=ctx.blueprint_ids)
-        ctx.registry.delete_unchecked(ctx.resource.rid)
 
 
 class CascadeStrategy(DeleteStrategy):
-    """Delete dependent blueprints, clean remaining refs, then delete."""
+    """Delete dependent blueprints and clean remaining references."""
 
     mode = DeleteMode.CASCADE
     categories = frozenset({ResourceCategory.NODE})
@@ -99,7 +100,6 @@ class CascadeStrategy(DeleteStrategy):
             ctx.bp_refs.delete(bp_id)
         # Blueprints that referenced rid are gone; only strip nested resources.
         _strip_all_refs(ctx, blueprint_ids=[])
-        ctx.registry.delete_unchecked(ctx.resource.rid)
 
 
 def _strip_all_refs(

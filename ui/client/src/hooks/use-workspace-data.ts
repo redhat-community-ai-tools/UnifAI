@@ -381,7 +381,7 @@ export const useWorkspaceData = () => {
       | { inUse: true; category: string; allowed_mode: string; blueprints: any[]; resources: any[] }
     > => {
       try {
-        const data = await resourcesApi.checkResourceUsage(rid);
+        const data = await resourcesApi.checkResourceUsage(rid, teamId);
         if (data.in_use) {
           return {
             inUse: true,
@@ -397,7 +397,7 @@ export const useWorkspaceData = () => {
         throw err;
       }
     },
-    [],
+    [teamId],
   );
 
   // Delete element using Resources API.
@@ -413,7 +413,7 @@ export const useWorkspaceData = () => {
         setIsLoading(true);
         setError(null);
 
-        await resourcesApi.deleteResource(rid);
+        await resourcesApi.deleteResource(rid, teamId);
 
         removeResource(rid);
 
@@ -448,7 +448,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast, removeResource],
+    [toast, removeResource, teamId],
   );
 
   // Force-delete an element that is in use, using one of three modes.
@@ -466,6 +466,7 @@ export const useWorkspaceData = () => {
           resourceId: rid,
           mode,
           replacementId,
+          teamId,
         });
 
         removeResource(rid);
@@ -490,7 +491,7 @@ export const useWorkspaceData = () => {
         setIsLoading(false);
       }
     },
-    [toast, removeResource],
+    [toast, removeResource, teamId],
   );
 
   // Fetch the annotated schema for a built-in resource (same schema as inventory,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from mas.blueprints.ref_service import BlueprintRefService
+from mas.core.caller_scope import CallerScope
 from mas.core.enums import ResourceCategory
 from mas.resources.deletion.context import DeletionContext
 from mas.resources.deletion.mode import DeleteMode
@@ -13,6 +14,7 @@ from mas.resources.deletion.models import (
 )
 from mas.resources.deletion.strategies import DeleteStrategy
 from mas.resources.errors import ResourceInUseError
+from mas.resources.ports import ResourceServicePort
 from mas.resources.registry import ResourcesRegistry
 
 
@@ -28,9 +30,11 @@ class ResourceDeletionService:
         self,
         registry: ResourcesRegistry,
         bp_refs: BlueprintRefService,
+        resources: ResourceServicePort,
     ):
         self._registry = registry
         self._bp_refs = bp_refs
+        self._resources = resources
         self._strategies = DeleteStrategy.build_strategy_map()
 
     def check_usage(self, rid: str) -> UsageCheckResult:
@@ -51,57 +55,28 @@ class ResourceDeletionService:
         )
 
     def usage_payload_for_in_use(self, rid: str, err: ResourceInUseError) -> UsageCheckResult:
-        """
-        Build a UsageCheckResult for a 409 response, merging live usage data
-        with IDs from ResourceInUseError when enrichment is incomplete.
-        """
+        """Build the 409 body from a fresh usage check, or from *err* if that misses."""
         try:
-            base = self.check_usage(rid)
+            current = self.check_usage(rid)
         except KeyError:
-            base = None
+            current = None
 
-        if base is None or not base.in_use:
-            return self._usage_from_in_use_error(rid, err)
-
-        bp_by_id = {b.id: b for b in base.blueprints}
-        res_by_id = {r.id: r for r in base.resources}
-
-        for bid in err.by_blueprints:
-            if bid not in bp_by_id:
-                try:
-                    summary = self._bp_refs.get_summary(bid)
-                    bp_by_id[bid] = BlueprintUsageDetail(**summary)
-                except KeyError:
-                    bp_by_id[bid] = BlueprintUsageDetail(id=bid, name=bid)
-
-        for rsid in err.by_resources:
-            if rsid not in res_by_id:
-                try:
-                    r = self._registry.get(rsid)
-                    res_by_id[rsid] = ResourceUsageDetail(
-                        id=rsid,
-                        name=r.name,
-                        category=r.category,
-                        type=r.type,
-                    )
-                except KeyError:
-                    res_by_id[rsid] = ResourceUsageDetail(id=rsid, name=rsid)
-
-        return UsageCheckResult(
-            in_use=True,
-            category=base.category,
-            allowed_mode=base.allowed_mode,
-            blueprints=list(bp_by_id.values()),
-            resources=list(res_by_id.values()),
-        )
+        if current is not None and current.in_use:
+            return current
+        return self._usage_from_in_use_error(rid, err)
 
     def force_delete(
         self,
         rid: str,
         mode: str,
         replacement_rid: Optional[str] = None,
+        *,
+        caller: CallerScope,
+        username: str = "",
     ) -> None:
-        """Validate mode against category policy, then execute strategy."""
+        """Authorize the caller, rewrite references, then delete through the resource facade."""
+        self._resources.guard_write_access(rid, caller, username=username)
+
         requested_mode = self._parse_mode(mode)
         resource = self._registry.get(rid)
         strategy = self._strategy_for(ResourceCategory(resource.category))
@@ -112,18 +87,23 @@ class ResourceDeletionService:
                 f"resources. Use '{strategy.mode.value}' instead."
             )
 
-        bp_ids, res_ids = self._registry.check_usage(rid)
+        if requested_mode == DeleteMode.REPLACE and replacement_rid:
+            self._resources.get_visible(replacement_rid, caller=caller)
+
+        bp_ids, _res_ids = self._registry.check_usage(rid)
         ctx = DeletionContext(
             resource=resource,
             replacement_rid=replacement_rid,
             blueprint_ids=bp_ids,
-            resource_ids=res_ids,
             registry=self._registry,
             bp_refs=self._bp_refs,
         )
 
         strategy.validate(ctx)
         strategy.execute(ctx)
+        # Facade delete re-checks that references are gone, then cleans up
+        # credentials and built-in descriptors. Strategies must not delete.
+        self._resources.delete(rid)
 
     def _strategy_for(self, category: ResourceCategory) -> DeleteStrategy:
         if category not in self._strategies:
@@ -154,13 +134,8 @@ class ResourceDeletionService:
             in_use=True,
             category=category,
             allowed_mode=allowed_mode,
-            blueprints=[
-                BlueprintUsageDetail(id=bid, name=bid) for bid in err.by_blueprints
-            ],
-            resources=[
-                ResourceUsageDetail(id=r, name=r, category=None, type=None)
-                for r in err.by_resources
-            ],
+            blueprints=self._enrich_blueprints(list(err.by_blueprints)),
+            resources=self._enrich_resources(list(err.by_resources)),
         )
 
     def _enrich_blueprints(self, bp_ids: list) -> list[BlueprintUsageDetail]:

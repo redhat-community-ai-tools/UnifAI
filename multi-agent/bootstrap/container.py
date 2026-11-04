@@ -136,20 +136,6 @@ class AppContainer(metaclass=SingletonMeta):
             element_registry=self.element_registry
         )
 
-        self.blueprint_repo = MongoBlueprintRepository(
-            db_name=cfg.mongo_db,
-            coll_name=cfg.blueprint_coll
-        )
-
-        self.resource_repo = MongoResourceRepository(
-            cfg.mongodb_port,
-            mongodb_ip=cfg.mongodb_ip,
-            db_name=cfg.mongo_db,
-            coll_name=cfg.resources_coll,
-        )
-
-        self.blueprint_ref_service = BlueprintRefService(repo=self.blueprint_repo)
-
         # ── Auth layer ────────────────────────────────────────────────
 
         http_client = HttpxClient()
@@ -228,6 +214,8 @@ class AppContainer(metaclass=SingletonMeta):
             coll_name=cfg.resources_coll,
         )
 
+        self.blueprint_ref_service = BlueprintRefService(repo=self.blueprint_repo)
+
         self.admin_config_reader: AdminConfigReaderPort = MongoAdminConfigReader(
             mongodb_ip=cfg.mongodb_ip,
             mongodb_port=cfg.mongodb_port,
@@ -256,11 +244,6 @@ class AppContainer(metaclass=SingletonMeta):
         )
 
         # ── Application services ─────────────────────────────────────
-
-        self.deletion_service = ResourceDeletionService(
-            registry=resource_registry,
-            bp_refs=self.blueprint_ref_service,
-        )
 
         field_encryption = ResourceFieldEncryption(self.element_registry, field_cipher)
 
@@ -297,6 +280,12 @@ class AppContainer(metaclass=SingletonMeta):
             descriptor_repo=self.builtin_resource_descriptor_repo,
             builtin_user_config_repo=self.builtin_user_config_repo,
             admin_lock_reader=self.admin_edit_lock_service,
+        )
+
+        self.deletion_service = ResourceDeletionService(
+            registry=resource_registry,
+            bp_refs=self.blueprint_ref_service,
+            resources=self.resources_service,
         )
 
         self.blueprint_resolver = BlueprintResolver(

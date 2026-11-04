@@ -37,14 +37,23 @@ def _scan_refs(node: Any, bucket: set[str]) -> None:
 
 
 def remove_resource_ref_from_nested_dict(d: dict, rid: str) -> dict:
-    """Remove ``$ref:rid`` from a nested dict (resource cfg_dict style)."""
+    """Remove ``$ref:rid`` from a nested dict (resource cfg_dict style).
+
+    A field whose entire value is that reference is dropped. Leaving ``None``
+    would persist a null config key that later schema validation rejects.
+    """
     ref_str = f"$ref:{rid}"
 
     def walk(node):
         if isinstance(node, str):
             return None if node == ref_str else node
         if isinstance(node, dict):
-            return {k: walk(v) for k, v in node.items()}
+            cleaned = {}
+            for key, value in node.items():
+                if isinstance(value, str) and value == ref_str:
+                    continue
+                cleaned[key] = walk(value)
+            return cleaned
         if isinstance(node, list):
             return [walk(v) for v in node if not (isinstance(v, str) and v == ref_str)]
         return node
@@ -62,7 +71,10 @@ def remove_resource_ref_from_catalogue(spec_dict: dict, rid: str) -> dict:
             result[cat_key] = [
                 e
                 for e in entries
-                if not (isinstance(e, dict) and e.get("rid") == ref_str)
+                if not (
+                    isinstance(e, dict)
+                    and e.get("rid") in (ref_str, rid)
+                )
             ]
     return result
 

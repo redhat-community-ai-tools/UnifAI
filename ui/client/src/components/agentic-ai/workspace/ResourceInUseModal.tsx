@@ -270,8 +270,10 @@ export function ResourceInUseModal({
                 <DetachFlow
                   label={label}
                   resources={inUseData.resources}
+                  blueprints={inUseData.blueprints}
                   isLoadingResourcePreview={isLoadingResourcePreview}
                   onResourceClick={onResourceClick}
+                  onBlueprintClick={handleBlueprintClick}
                 />
               )}
 
@@ -468,20 +470,33 @@ function ReplaceFlow({
 function DetachFlow({
   label,
   resources,
+  blueprints,
   isLoadingResourcePreview,
   onResourceClick,
+  onBlueprintClick,
 }: {
   label: string;
   resources: InUseData["resources"];
+  blueprints: InUseData["blueprints"];
   isLoadingResourcePreview: boolean;
   onResourceClick?: (id: string, category?: string, type?: string) => void;
+  onBlueprintClick?: (id: string) => void;
 }) {
   return (
     <>
       <p className="text-sm text-gray-300">
-        This {label.toLowerCase()} will be removed from the following agents. They will
-        continue to work without it.
+        This {label.toLowerCase()} will be removed from the places that use it. Those
+        workflows and agents will keep working without it.
       </p>
+      <DependentList
+        items={blueprints}
+        label="Used by these workflows"
+        onItemClick={
+          onBlueprintClick
+            ? (item) => onBlueprintClick(item.id)
+            : undefined
+        }
+      />
       <DependentList
         items={resources}
         label="Used by these agents"

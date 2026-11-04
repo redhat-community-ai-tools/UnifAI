@@ -71,6 +71,22 @@ def admin_edit_lock_service() -> Mock:
 
 
 @pytest.fixture
+def deletion_service() -> Mock:
+    svc = Mock()
+    payload = Mock()
+    payload.model_dump.return_value = {
+        "in_use": True,
+        "category": "llms",
+        "allowed_mode": "replace",
+        "blueprints": [],
+        "resources": [],
+    }
+    svc.usage_payload_for_in_use.return_value = payload
+    svc.check_usage.return_value = payload
+    return svc
+
+
+@pytest.fixture
 def session_service() -> Mock:
     svc = Mock()
     # Default to no results so list/count-based tests that don't set their
@@ -87,6 +103,7 @@ def container(
     collaboration_service: Mock,
     admin_edit_lock_service: Mock,
     session_service: Mock,
+    deletion_service: Mock,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         resources_service=resources_service,
@@ -94,6 +111,7 @@ def container(
         collaboration_service=collaboration_service,
         admin_edit_lock_service=admin_edit_lock_service,
         session_service=session_service,
+        deletion_service=deletion_service,
         admin_config_reader=None,
     )
 

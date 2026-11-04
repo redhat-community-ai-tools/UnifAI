@@ -75,7 +75,7 @@ function sanitizeResourceEntry(entry: YamlFlowNode | YamlFlowCondition) {
   return sanitized;
 }
 
-function sanitizePlanStep(step: YamlFlowPlanStep) {
+function sanitizePlanStep(step: YamlFlowPlanStep & { meta?: unknown }) {
   const sanitized: Record<string, unknown> = {
     uid: step.uid,
     node: step.node,
@@ -85,6 +85,7 @@ function sanitizePlanStep(step: YamlFlowPlanStep) {
     sanitized.branches = step.branches;
   }
   if (step.exit_condition) sanitized.exit_condition = step.exit_condition;
+  if (step.meta && typeof step.meta === "object") sanitized.meta = step.meta;
   return sanitized;
 }
 

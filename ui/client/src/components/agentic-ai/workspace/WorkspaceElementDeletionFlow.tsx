@@ -109,6 +109,41 @@ export const WorkspaceElementDeletionFlow = forwardRef<
   const [isResourcePreviewOpen, setIsResourcePreviewOpen] = useState(false);
   const [isLoadingResourcePreview, setIsLoadingResourcePreview] = useState(false);
 
+  const presentInUse = useCallback(
+    async (
+      element: ElementInstance,
+      usage: {
+        category: string;
+        allowed_mode: string;
+        blueprints: unknown[];
+        resources: unknown[];
+      },
+    ) => {
+      setInUseData({
+        category: usage.category,
+        allowed_mode: usage.allowed_mode as "replace" | "detach" | "cascade",
+        blueprints: usage.blueprints as InUseData["blueprints"],
+        resources: usage.resources as InUseData["resources"],
+      });
+      setShowDeleteModal(false);
+      setShowInUseModal(true);
+      setReplacementOptions([]);
+
+      if (usage.allowed_mode !== "replace") {
+        return;
+      }
+
+      setIsLoadingReplacements(true);
+      try {
+        const options = await fetchResourcesForCategory(usage.category);
+        setReplacementOptions(options.filter((option) => option.rid !== element.rid));
+      } finally {
+        setIsLoadingReplacements(false);
+      }
+    },
+    [fetchResourcesForCategory],
+  );
+
   const handleDeleteElement = useCallback(
     async (rid: string) => {
       const element = elementInstances.find((el) => el.rid === rid);
@@ -119,23 +154,7 @@ export const WorkspaceElementDeletionFlow = forwardRef<
       try {
         const usage = await checkElementUsage(rid);
         if ("inUse" in usage && usage.inUse) {
-          setInUseData({
-            category: usage.category,
-            allowed_mode: usage.allowed_mode as "replace" | "detach" | "cascade",
-            blueprints: usage.blueprints as InUseData["blueprints"],
-            resources: usage.resources as InUseData["resources"],
-          });
-          setShowInUseModal(true);
-
-          if (usage.allowed_mode === "replace") {
-            setIsLoadingReplacements(true);
-            try {
-              const options = await fetchResourcesForCategory(usage.category);
-              setReplacementOptions(options.filter((o) => o.rid !== element.rid));
-            } finally {
-              setIsLoadingReplacements(false);
-            }
-          }
+          await presentInUse(element, usage);
         } else {
           setShowDeleteModal(true);
         }
@@ -149,7 +168,7 @@ export const WorkspaceElementDeletionFlow = forwardRef<
         setElementToDelete(null);
       }
     },
-    [checkElementUsage, elementInstances, fetchResourcesForCategory, toast],
+    [checkElementUsage, elementInstances, presentInUse, toast],
   );
 
   useImperativeHandle(ref, () => ({ handleDeleteElement }), [handleDeleteElement]);
@@ -165,23 +184,7 @@ export const WorkspaceElementDeletionFlow = forwardRef<
         setShowDeleteModal(false);
         setElementToDelete(null);
       } else if ("inUse" in result && result.inUse) {
-        setShowDeleteModal(false);
-        setInUseData({
-          category: result.category,
-          allowed_mode: result.allowed_mode as "replace" | "detach" | "cascade",
-          blueprints: result.blueprints as InUseData["blueprints"],
-          resources: result.resources as InUseData["resources"],
-        });
-        setShowInUseModal(true);
-        if (result.allowed_mode === "replace") {
-          setIsLoadingReplacements(true);
-          try {
-            const options = await fetchResourcesForCategory(result.category);
-            setReplacementOptions(options.filter((o) => o.rid !== elementToDelete.rid));
-          } finally {
-            setIsLoadingReplacements(false);
-          }
-        }
+        await presentInUse(elementToDelete, result);
       }
     } catch (error) {
       console.error("Error deleting element:", error);
@@ -192,7 +195,7 @@ export const WorkspaceElementDeletionFlow = forwardRef<
     deleteElement,
     elementToDelete,
     fetchElementInstances,
-    fetchResourcesForCategory,
+    presentInUse,
     selectedElementType,
   ]);
 
