@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Optional
 
+from pydantic import ValidationError
+
 from mas.blueprints.ref_service import BlueprintRefService
 from mas.core.caller_scope import CallerScope
 from mas.core.enums import ResourceCategory
@@ -97,13 +99,16 @@ class ResourceDeletionService:
             blueprint_ids=bp_ids,
             registry=self._registry,
             bp_refs=self._bp_refs,
+            commit_delete=lambda: self._resources.delete(rid),
         )
 
         strategy.validate(ctx)
         strategy.execute(ctx)
-        # Facade delete re-checks that references are gone, then cleans up
-        # credentials and built-in descriptors. Strategies must not delete.
-        self._resources.delete(rid)
+        # ReplaceStrategy deletes through commit_delete so a failure can
+        # restore remaps and the original resource. Other strategies only
+        # rewrite; the facade delete (credential and built-in cleanup) stays here.
+        if requested_mode != DeleteMode.REPLACE:
+            self._resources.delete(rid)
 
     def _strategy_for(self, category: ResourceCategory) -> DeleteStrategy:
         if category not in self._strategies:
@@ -143,8 +148,8 @@ class ResourceDeletionService:
         for bp_id in bp_ids:
             try:
                 summary = self._bp_refs.get_summary(bp_id)
-                result.append(BlueprintUsageDetail(**summary))
-            except KeyError:
+                result.append(BlueprintUsageDetail(id=summary.id, name=summary.name))
+            except (KeyError, ValidationError):
                 result.append(BlueprintUsageDetail(id=bp_id, name=bp_id))
         return result
 

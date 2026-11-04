@@ -216,20 +216,26 @@ export default function UserWorkspace() {
 
               {selectedElementType && elementInstances.length > 0 && (
                 <div className="relative mb-4">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                  <Search
+                    aria-hidden="true"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500"
+                  />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder={`Search ${selectedElementType.name.toLowerCase()}s by name...`}
+                    aria-label={`Search ${selectedElementType.name} instances by name`}
                     className="w-full pl-9 pr-9 py-2 text-sm bg-background-card border border-white/10 rounded-md text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/25 transition-colors"
                   />
                   {searchQuery && (
                     <button
+                      type="button"
                       onClick={() => setSearchQuery("")}
+                      aria-label={`Clear ${selectedElementType.name} search`}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
                     >
-                      <X className="h-4 w-4" />
+                      <X aria-hidden="true" className="h-4 w-4" />
                     </button>
                   )}
                 </div>

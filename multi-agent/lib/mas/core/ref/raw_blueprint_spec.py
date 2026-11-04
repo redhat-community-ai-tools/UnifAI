@@ -18,10 +18,37 @@ _REF_PREFIX = "$ref:"
 
 
 def extract_ref_ids_from_raw_spec(node: Any) -> set[str]:
-    """Collect resource IDs referenced via ``$ref:`` strings anywhere under *node*."""
+    """Collect resource IDs referenced under *node*.
+
+    Includes ``$ref:`` strings anywhere in the tree, plus raw ``rid`` values on
+    the root catalogue lists (with or without the ``$ref:`` prefix). Bare
+    catalogue IDs stay in ``rid_refs`` when a spec is rewritten.
+    """
     bucket: set[str] = set()
     _scan_refs(node, bucket)
+    if isinstance(node, dict):
+        _collect_catalogue_rids(node, bucket)
     return bucket
+
+
+def _collect_catalogue_rids(spec: dict, bucket: set[str]) -> None:
+    """Add IDs stored on catalogue entry ``rid`` fields."""
+    for cat_key in _CATALOGUE_KEYS:
+        entries = spec.get(cat_key)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            rid = entry.get("rid")
+            if not isinstance(rid, str) or not rid:
+                continue
+            if rid.startswith(_REF_PREFIX):
+                bare = rid[len(_REF_PREFIX) :]
+                if bare:
+                    bucket.add(bare)
+            else:
+                bucket.add(rid)
 
 
 def _scan_refs(node: Any, bucket: set[str]) -> None:

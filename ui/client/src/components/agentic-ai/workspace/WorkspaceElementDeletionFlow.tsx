@@ -230,24 +230,8 @@ export const WorkspaceElementDeletionFlow = forwardRef<
     async (resourceId: string, resourceCategory?: string, resourceType?: string) => {
       setIsLoadingResourcePreview(true);
       try {
-        let resource;
-        try {
-          resource = await fetchResourceById(resourceId);
-        } catch (err) {
-          console.error("Error loading dependent resource:", err);
-          toast({
-            title: "Error",
-            description: "Failed to load resource preview. Please try again.",
-            variant: "destructive",
-          });
-          return;
-        }
+        const resource = await fetchResourceById(resourceId);
         if (!resource) {
-          toast({
-            title: "Not Found",
-            description: "That resource could not be loaded.",
-            variant: "destructive",
-          });
           return;
         }
 
@@ -278,7 +262,7 @@ export const WorkspaceElementDeletionFlow = forwardRef<
         setIsLoadingResourcePreview(false);
       }
     },
-    [categories, fetchResourceById, toast],
+    [categories, fetchResourceById],
   );
 
   return (

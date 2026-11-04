@@ -76,10 +76,6 @@ class MongoBlueprintRepository(BlueprintRepository):
 
     def update_raw(self, *, blueprint_id: str, spec_dict: dict[str, Any],
                    rid_refs: list[str]) -> bool:
-        existing = self._col.find_one({"blueprint_id": blueprint_id})
-        if existing is None:
-            raise KeyError(f"No blueprint with id={blueprint_id}")
-
         res = self._col.update_one(
             {"blueprint_id": blueprint_id},
             {"$set": {
@@ -88,7 +84,8 @@ class MongoBlueprintRepository(BlueprintRepository):
                 "updated_at": datetime.now(timezone.utc),
             }}
         )
-
+        if res.matched_count == 0:
+            raise KeyError(f"No blueprint with id={blueprint_id}")
         return res.modified_count == 1
 
     def set_metadata(self, *, blueprint_id: str, metadata: dict[str, Any]) -> bool:

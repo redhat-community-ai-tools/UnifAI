@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import ClassVar, Dict, FrozenSet
 
 from mas.core.enums import ResourceCategory
 from mas.resources.deletion.context import DeletionContext
 from mas.resources.deletion.mode import DeleteMode
+from mas.resources.models import Resource
+
+logger = logging.getLogger(__name__)
 
 
 class DeleteStrategy(ABC):
@@ -25,7 +30,11 @@ class DeleteStrategy(ABC):
 
     @abstractmethod
     def execute(self, ctx: DeletionContext) -> None:
-        """Rewrite inbound references. The service deletes the resource afterwards."""
+        """Rewrite inbound references.
+
+        Detach and cascade leave deletion to the service. Replace deletes
+        inside execute so that step can roll back with the remaps.
+        """
         ...
 
     @classmethod
@@ -64,12 +73,27 @@ class ReplaceStrategy(DeleteStrategy):
             )
 
     def execute(self, ctx: DeletionContext) -> None:
+        """Remap dependents and delete the target, restoring snapshots on failure.
+
+        Repositories do not share a transaction. Completed remaps are written
+        back from pre-images when a later remap or ``commit_delete`` fails,
+        including reinserting the original resource if the delete removed it.
+        """
         if not ctx.replacement_rid:
             raise ValueError("replacementId is required for replace mode")
+        if ctx.commit_delete is None:
+            raise RuntimeError("replace mode requires commit_delete")
+
         mapping = {ctx.resource.rid: ctx.replacement_rid}
-        ctx.registry.remap_nested_refs(ctx.resource.rid, mapping)
-        for bp_id in ctx.blueprint_ids:
-            ctx.bp_refs.remap_refs(bp_id, mapping)
+        snapshots = _capture_replace_snapshots(ctx)
+        try:
+            ctx.registry.remap_nested_refs(ctx.resource.rid, mapping)
+            for bp_id in ctx.blueprint_ids:
+                ctx.bp_refs.remap_refs(bp_id, mapping)
+            ctx.commit_delete()
+        except Exception:
+            _restore_replace_snapshots(ctx, snapshots)
+            raise
 
 
 class DetachStrategy(DeleteStrategy):
@@ -111,3 +135,50 @@ def _strip_all_refs(
     ctx.registry.strip_nested_refs(ctx.resource.rid)
     for bp_id in blueprint_ids:
         ctx.bp_refs.strip_refs(bp_id, ctx.resource.rid)
+
+
+@dataclass(frozen=True)
+class _ReplaceSnapshots:
+    target: Resource
+    resources: tuple[Resource, ...]
+    blueprints: tuple[tuple[str, dict, list[str]], ...]
+
+
+def _capture_replace_snapshots(ctx: DeletionContext) -> _ReplaceSnapshots:
+    resources = tuple(
+        ctx.registry.get(dep_id).model_copy(deep=True)
+        for dep_id in ctx.registry.list_nested_usage(ctx.resource.rid)
+    )
+    blueprints = tuple(
+        (bp_id, *ctx.bp_refs.capture_spec(bp_id))
+        for bp_id in ctx.blueprint_ids
+    )
+    return _ReplaceSnapshots(
+        target=ctx.resource.model_copy(deep=True),
+        resources=resources,
+        blueprints=blueprints,
+    )
+
+
+def _restore_replace_snapshots(ctx: DeletionContext, snapshots: _ReplaceSnapshots) -> None:
+    for doc in snapshots.resources:
+        try:
+            ctx.registry.restore_snapshot(doc)
+        except Exception:
+            logger.exception(
+                "Failed to restore resource %s during replace rollback", doc.rid
+            )
+    for bp_id, spec_dict, rid_refs in snapshots.blueprints:
+        try:
+            ctx.bp_refs.restore_spec(bp_id, spec_dict, rid_refs)
+        except Exception:
+            logger.exception(
+                "Failed to restore blueprint %s during replace rollback", bp_id
+            )
+    try:
+        ctx.registry.restore_snapshot(snapshots.target)
+    except Exception:
+        logger.exception(
+            "Failed to restore resource %s during replace rollback",
+            snapshots.target.rid,
+        )

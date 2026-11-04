@@ -269,6 +269,20 @@ class TestForceDeleteResource:
         assert resp.status_code == 403
         deletion_service.check_usage.assert_not_called()
 
+    def test_check_usage_unexpected_error_hides_details(
+        self, client, user_headers, deletion_service,
+    ):
+        deletion_service.check_usage.side_effect = RuntimeError("mongo uri secret")
+
+        resp = client.get(
+            "/api/resources/resource.check-usage?resourceId=r1",
+            headers=user_headers,
+        )
+
+        assert resp.status_code == 500
+        assert resp.get_json()["error"] == "Internal server error"
+        assert "secret" not in resp.get_data(as_text=True)
+
     def test_force_delete_passes_caller(
         self, client, user_headers, deletion_service,
     ):

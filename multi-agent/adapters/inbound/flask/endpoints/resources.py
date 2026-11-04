@@ -231,8 +231,9 @@ def check_resource_usage(identity: Identity, resource_id: str) -> tuple[Response
         return jsonify({"error": str(e)}), 403
     except KeyError:
         return jsonify({"error": f"Resource not found: {resource_id}"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.exception("Failed to check usage for resource '%s'", resource_id)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @resources_bp.route("/resource.delete", methods=["DELETE"])

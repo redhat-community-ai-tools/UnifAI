@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -21,3 +22,4 @@ class DeletionContext:
     blueprint_ids: List[str]
     registry: ResourcesRegistry
     bp_refs: BlueprintRefService
+    commit_delete: Optional[Callable[[], None]] = None

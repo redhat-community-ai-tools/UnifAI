@@ -79,6 +79,14 @@ class ResourcesRegistry:
             doc.nested_refs = [r for r in doc.nested_refs if r != rid]
             self._bump_and_save(doc)
 
+    def restore_snapshot(self, doc: Resource) -> None:
+        """Persist *doc* exactly. Inserts it when a failed delete already removed it."""
+        stored = doc.model_copy(deep=True)
+        if self._repo.exists(stored.rid):
+            self._repo.update(stored)
+        else:
+            self._repo.save(stored)
+
     def _bump_and_save(self, doc: Resource) -> None:
         """Persist a mutated resource through the normal versioned update."""
         self.update(doc)
