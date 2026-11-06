@@ -41,7 +41,7 @@ export default function SharedPanel({ isOpen, onClose }: SharedPanelProps) {
   } = useShared();
 
   const { viewMode, selectedTeam, teams } = useView();
-  const { user, accessToken } = useAuth();
+  const { user } = useAuth();
 
   const [sendForm, setSendForm] = useState({
     recipientUserId: '',
@@ -286,7 +286,6 @@ export default function SharedPanel({ isOpen, onClose }: SharedPanelProps) {
             onSelect={handleRecipientSelect}
             onInputChange={handleRecipientInputChange}
             clearOnSelect={false}
-            accessToken={accessToken}
             placeholder="Search for a user..."
             inputClassName="bg-gray-800 border-gray-600 input-dark-theme-text-white placeholder:!text-gray-400"
           />

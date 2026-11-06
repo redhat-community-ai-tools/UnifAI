@@ -33,7 +33,7 @@ interface TeamSettingsModalProps {
 }
 
 export default function TeamSettingsModal({ open, onOpenChange, team }: TeamSettingsModalProps) {
-  const { user, accessToken } = useAuth();
+  const { user } = useAuth();
   const { refreshTeams } = useView();
   const [teamName, setTeamName] = useState("");
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -128,7 +128,7 @@ export default function TeamSettingsModal({ open, onOpenChange, team }: TeamSett
 
     setLoadingGroupMembers((prev) => new Set(prev).add(groupId));
     try {
-      const group = await getDirectoryGroup(groupId, accessToken);
+      const group = await getDirectoryGroup(groupId);
       setGroupMembersCache((prev) => ({ ...prev, [groupId]: group.members }));
       setMembers((prev) =>
         prev.map((m) =>
@@ -250,7 +250,6 @@ export default function TeamSettingsModal({ open, onOpenChange, team }: TeamSett
                   onSelect={addMemberFromDirectory}
                   onSelectGroup={addGroupAsReference}
                   excludeUserIds={userMemberIds}
-                  accessToken={accessToken}
                   inputClassName="bg-background-dark border-gray-700 text-gray-100 placeholder:text-gray-500"
                 />
               </div>
