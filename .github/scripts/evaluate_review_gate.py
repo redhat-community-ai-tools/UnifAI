@@ -290,6 +290,23 @@ def main() -> int:
 
     reconstructed_pass = (arch_pass or not arch_ran) and (code_pass or not code_ran)
 
+    # Guard: at least one scoring dimension must have produced a result.
+    # Without this, a run where both JSON and text scoring fail would
+    # vacuously pass (not-ran => not-failed).
+    if not code_ran and not arch_ran:
+        print(
+            "::error::Neither JSON nor text scoring produced usable results. "
+            "Gate cannot pass with zero evaluated dimensions."
+        )
+        summary_path = Path(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"))
+        with summary_path.open("a") as summary:
+            summary.write("\n---\n\n## Review Gate Results\n\n")
+            summary.write(
+                "❌ **No usable scoring data.** "
+                "Neither JSON nor text scoring produced results.\n"
+            )
+        return 1
+
     if use_pipeline_pass:
         gate_pass = pipeline_pass and reconstructed_pass
         if pipeline_pass != reconstructed_pass:
