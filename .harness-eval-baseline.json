@@ -1,0 +1,60 @@
+{
+  "version": "1.0",
+  "findings": [
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/architecture/SKILL.md",
+      "message_hash": "4d6e44dc1babc6fa"
+    },
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/codebase/SKILL.md",
+      "message_hash": "f34550aa888a5ea7"
+    },
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/codebase/domains/backend/SKILL.md",
+      "message_hash": "d1780a5eaf1ef0b7"
+    },
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/codebase/domains/celery/SKILL.md",
+      "message_hash": "85c5cc09fd787eff"
+    },
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/codebase/domains/global-utils/SKILL.md",
+      "message_hash": "1399de40707f7e12"
+    },
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/codebase/domains/helm/SKILL.md",
+      "message_hash": "733d65a07e837807"
+    },
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/codebase/domains/identity/SKILL.md",
+      "message_hash": "e224264f0ff6e8c8"
+    },
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/codebase/domains/multi-agent/SKILL.md",
+      "message_hash": "e551a16fda952e49"
+    },
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/codebase/domains/rag/SKILL.md",
+      "message_hash": "ea578b45c25bcf4e"
+    },
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/codebase/domains/temporal-worker/SKILL.md",
+      "message_hash": "607e01d95b57f6f3"
+    },
+    {
+      "rule_id": "frontmatter/format-valid",
+      "file": ".cursor/skills/codebase/domains/ui/SKILL.md",
+      "message_hash": "7cee2e157049d743"
+    }
+  ]
+}
