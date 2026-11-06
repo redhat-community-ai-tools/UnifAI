@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Optional, Any, List, ClassVar, Set, Dict
 from copy import deepcopy
 from mas.graph.state.state_view import StateView
@@ -84,7 +85,43 @@ class CustomAgentNode(
         """Main entry point - process all incoming TaskPackets."""
 
         # Build complete tools list (domain + builtin + mcp)
-        self.tools = self._get_all_tools()
+        init_started = time.monotonic()
+        logger.info(
+            "agent.init_start",
+            extra={
+                "node_uid": self.uid,
+                "agent_name": self.display_name,
+                "domain_tools_count": len(self._domain_tools),
+                "mcp_provider_count": len(self.mcp_providers),
+                "builtin_tools_enabled": self._include_builtin_tools,
+            },
+        )
+        try:
+            self.tools = self._get_all_tools()
+        except Exception as exc:
+            logger.error(
+                "agent.init_failed",
+                extra={
+                    "node_uid": self.uid,
+                    "agent_name": self.display_name,
+                    "reason": "tool_context_unavailable",
+                    "exception_type": type(exc).__name__,
+                    "exception_message": str(exc),
+                    "duration_ms": round((time.monotonic() - init_started) * 1000),
+                },
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+            raise
+        logger.info(
+            "agent.init_complete",
+            extra={
+                "node_uid": self.uid,
+                "agent_name": self.display_name,
+                "duration_ms": round((time.monotonic() - init_started) * 1000),
+                "tools_count": len(self.tools),
+                "tools_loaded": [tool.name for tool in self.tools],
+            },
+        )
 
         # Process all incoming packets
         self.process_packets(state)
