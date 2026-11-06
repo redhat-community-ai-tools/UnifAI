@@ -17,6 +17,7 @@ def _reset_logging():
     lc._CONFIGURED = False
     lc.set_request_id(None)
     lc.set_session_id(None)
+    os.environ.pop("OTEL_LOGS_ENABLED", None)
     yield
     lc._CONFIGURED = False
     lc.set_request_id(None)
