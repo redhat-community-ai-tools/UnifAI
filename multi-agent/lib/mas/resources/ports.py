@@ -133,3 +133,20 @@ class AdminEditLockReader(Protocol):
     """
 
     def get_admin_edit_lock(self, entity_id: str) -> Optional[TeamEditLockHolder]: ...
+
+
+@runtime_checkable
+class DependentEditLockReader(Protocol):
+    """Read team edit locks on blueprints/resources rewritten by force-delete.
+
+    ``ResourceDeletionService`` uses this so replace/detach/cascade cannot
+    silently mutate a workflow or resource another teammate has open.
+    Satisfied structurally by ``CollaborationStore``.
+    """
+
+    def get_team_edit_locks_batch(
+        self,
+        team_id: str,
+        entity_kind: str,
+        entity_ids: List[str],
+    ) -> Dict[str, Optional[TeamEditLockHolder]]: ...

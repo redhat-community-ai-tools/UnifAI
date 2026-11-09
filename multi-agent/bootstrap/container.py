@@ -286,6 +286,7 @@ class AppContainer(metaclass=SingletonMeta):
             registry=resource_registry,
             bp_refs=self.blueprint_ref_service,
             resources=self.resources_service,
+            lock_reader=self._collab_store,
         )
 
         self.blueprint_resolver = BlueprintResolver(

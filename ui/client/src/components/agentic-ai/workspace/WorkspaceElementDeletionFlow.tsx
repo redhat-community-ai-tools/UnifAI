@@ -2,6 +2,7 @@ import React, {
   forwardRef,
   useCallback,
   useImperativeHandle,
+  useRef,
   useState,
 } from "react";
 import {
@@ -19,20 +20,22 @@ import { ResourceInUseModal, type InUseData } from "@/components/agentic-ai/work
 import { useToast } from "@/hooks/use-toast";
 import type { ElementCategory, ElementInstance, ElementType } from "@/types/workspace";
 
+type FetchedResource = {
+  rid: string;
+  name: string;
+  cfg_dict: unknown;
+  category: string;
+  type: string;
+  version: number;
+  created: string;
+  updated: string;
+  nested_refs: string[];
+};
+
 /** Subset of `useWorkspaceData` needed for delete / in-use / preview flows. */
 export interface WorkspaceElementDeletionWorkspaceApis {
   fetchElementInstances: (category: string, type: string) => Promise<void>;
-  fetchResourceById: (resourceId: string) => Promise<{
-    rid: string;
-    name: string;
-    cfg_dict: unknown;
-    category: string;
-    type: string;
-    version: number;
-    created: string;
-    updated: string;
-    nested_refs: string[];
-  } | null>;
+  fetchResourceById: (resourceId: string) => Promise<FetchedResource | null>;
   checkElementUsage: (rid: string) => Promise<
     | { inUse: false }
     | {
@@ -108,6 +111,7 @@ export const WorkspaceElementDeletionFlow = forwardRef<
   const [previewResourceType, setPreviewResourceType] = useState<ElementType | null>(null);
   const [isResourcePreviewOpen, setIsResourcePreviewOpen] = useState(false);
   const [isLoadingResourcePreview, setIsLoadingResourcePreview] = useState(false);
+  const resourcePreviewCache = useRef(new Map<string, FetchedResource>());
 
   const presentInUse = useCallback(
     async (
@@ -209,6 +213,7 @@ export const WorkspaceElementDeletionFlow = forwardRef<
       if (!elementToDelete || !selectedElementType) return;
       const success = await forceDeleteElement(elementToDelete.rid, mode, replacementId);
       if (success) {
+        resourcePreviewCache.current.clear();
         setShowInUseModal(false);
         setInUseData(null);
         setElementToDelete(null);
@@ -220,49 +225,67 @@ export const WorkspaceElementDeletionFlow = forwardRef<
   );
 
   const closeInUseModal = useCallback(() => {
+    resourcePreviewCache.current.clear();
     setShowInUseModal(false);
     setInUseData(null);
     setElementToDelete(null);
     setReplacementOptions([]);
   }, []);
 
+  const showResourcePreview = useCallback(
+    (
+      resource: FetchedResource,
+      resourceCategory?: string,
+      resourceType?: string,
+    ) => {
+      const matchedCategory = categories.find(
+        (c) => c.category === (resourceCategory || resource.category),
+      );
+      const elType: ElementType =
+        matchedCategory?.elements.find((e) => e.type === (resourceType || resource.type)) || {
+          type: resource.type,
+          name: resource.type,
+          category: resource.category,
+        };
+
+      setPreviewResource({
+        rid: resource.rid,
+        name: resource.name,
+        config: resource.cfg_dict,
+        category: resource.category,
+        type: resource.type,
+        version: resource.version,
+        created: resource.created,
+        updated: resource.updated,
+        nested_refs: resource.nested_refs,
+      });
+      setPreviewResourceType(elType);
+      setIsResourcePreviewOpen(true);
+    },
+    [categories],
+  );
+
   const handleDependentResourceClick = useCallback(
     async (resourceId: string, resourceCategory?: string, resourceType?: string) => {
+      const cached = resourcePreviewCache.current.get(resourceId);
+      if (cached) {
+        showResourcePreview(cached, resourceCategory, resourceType);
+        return;
+      }
+
       setIsLoadingResourcePreview(true);
       try {
         const resource = await fetchResourceById(resourceId);
         if (!resource) {
           return;
         }
-
-        const matchedCategory = categories.find(
-          (c) => c.category === (resourceCategory || resource.category),
-        );
-        const elType: ElementType =
-          matchedCategory?.elements.find((e) => e.type === (resourceType || resource.type)) || {
-            type: resource.type,
-            name: resource.type,
-            category: resource.category,
-          };
-
-        setPreviewResource({
-          rid: resource.rid,
-          name: resource.name,
-          config: resource.cfg_dict,
-          category: resource.category,
-          type: resource.type,
-          version: resource.version,
-          created: resource.created,
-          updated: resource.updated,
-          nested_refs: resource.nested_refs,
-        });
-        setPreviewResourceType(elType);
-        setIsResourcePreviewOpen(true);
+        resourcePreviewCache.current.set(resourceId, resource);
+        showResourcePreview(resource, resourceCategory, resourceType);
       } finally {
         setIsLoadingResourcePreview(false);
       }
     },
-    [categories, fetchResourceById],
+    [fetchResourceById, showResourcePreview],
   );
 
   return (

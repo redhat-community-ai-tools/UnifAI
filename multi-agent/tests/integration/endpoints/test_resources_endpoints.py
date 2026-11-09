@@ -237,7 +237,7 @@ class TestDeleteResource:
 
 
 class TestForceDeleteResource:
-    """Verifies /resource.force-delete and /resource.check-usage stay behind write access."""
+    """Verifies /resource.force.delete and /resource.check.usage stay behind write access."""
 
     def test_check_usage_checks_write_access(
         self, client, user_headers, resources_service, deletion_service,
@@ -247,7 +247,7 @@ class TestForceDeleteResource:
         deletion_service.check_usage.return_value = payload
 
         resp = client.get(
-            "/api/resources/resource.check-usage?resourceId=r1",
+            "/api/resources/resource.check.usage?resourceId=r1",
             headers=user_headers,
         )
 
@@ -262,7 +262,7 @@ class TestForceDeleteResource:
         resources_service.guard_write_access.side_effect = ResourceAccessDeniedError("r1")
 
         resp = client.get(
-            "/api/resources/resource.check-usage?resourceId=r1",
+            "/api/resources/resource.check.usage?resourceId=r1",
             headers=user_headers,
         )
 
@@ -275,7 +275,7 @@ class TestForceDeleteResource:
         deletion_service.check_usage.side_effect = RuntimeError("mongo uri secret")
 
         resp = client.get(
-            "/api/resources/resource.check-usage?resourceId=r1",
+            "/api/resources/resource.check.usage?resourceId=r1",
             headers=user_headers,
         )
 
@@ -287,7 +287,7 @@ class TestForceDeleteResource:
         self, client, user_headers, deletion_service,
     ):
         resp = client.post(
-            "/api/resources/resource.force-delete",
+            "/api/resources/resource.force.delete",
             json={"resourceId": "r1", "mode": "detach"},
             headers=user_headers,
         )
@@ -306,12 +306,30 @@ class TestForceDeleteResource:
         deletion_service.force_delete.side_effect = ResourceAccessDeniedError("r1")
 
         resp = client.post(
-            "/api/resources/resource.force-delete",
+            "/api/resources/resource.force.delete",
             json={"resourceId": "r1", "mode": "detach"},
             headers=user_headers,
         )
 
         assert resp.status_code == 403
+
+    def test_force_delete_locked_dependent_returns_409(
+        self, client, user_headers, deletion_service,
+    ):
+        deletion_service.force_delete.side_effect = ResourceLockedError(
+            locked_by_user_id="alice", locked_by_display_name="Alice",
+        )
+
+        resp = client.post(
+            "/api/resources/resource.force.delete",
+            json={"resourceId": "r1", "mode": "detach"},
+            headers=user_headers,
+        )
+
+        assert resp.status_code == 409
+        body = resp.get_json()
+        assert body["lockedBy"]["userId"] == "alice"
+        assert body["lockedBy"]["displayName"] == "Alice"
 
 
 class TestValidateResource:

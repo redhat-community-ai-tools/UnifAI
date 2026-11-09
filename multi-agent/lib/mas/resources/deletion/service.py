@@ -5,6 +5,7 @@ from typing import Optional
 from pydantic import ValidationError
 
 from mas.blueprints.ref_service import BlueprintRefService
+from mas.collaboration.service import EditLockKind
 from mas.core.caller_scope import CallerScope
 from mas.core.enums import ResourceCategory
 from mas.resources.deletion.context import DeletionContext
@@ -15,8 +16,8 @@ from mas.resources.deletion.models import (
     UsageCheckResult,
 )
 from mas.resources.deletion.strategies import DeleteStrategy
-from mas.resources.errors import ResourceInUseError
-from mas.resources.ports import ResourceServicePort
+from mas.resources.errors import ResourceInUseError, ResourceLockedError
+from mas.resources.ports import DependentEditLockReader, ResourceServicePort
 from mas.resources.registry import ResourcesRegistry
 
 
@@ -33,11 +34,23 @@ class ResourceDeletionService:
         registry: ResourcesRegistry,
         bp_refs: BlueprintRefService,
         resources: ResourceServicePort,
+        lock_reader: Optional[DependentEditLockReader] = None,
     ):
         self._registry = registry
         self._bp_refs = bp_refs
         self._resources = resources
+        self._lock_reader = lock_reader
         self._strategies = DeleteStrategy.build_strategy_map()
+
+    @staticmethod
+    def _parse_mode(mode: str) -> DeleteMode:
+        try:
+            return DeleteMode(mode)
+        except ValueError:
+            raise ValueError(
+                f"Unknown mode: {mode}. "
+                f"Must be one of: {', '.join(m.value for m in DeleteMode)}"
+            ) from None
 
     def check_usage(self, rid: str) -> UsageCheckResult:
         """Check whether a resource is in use and how it can be force-deleted."""
@@ -92,7 +105,7 @@ class ResourceDeletionService:
         if requested_mode == DeleteMode.REPLACE and replacement_rid:
             self._resources.get_visible(replacement_rid, caller=caller)
 
-        bp_ids, _res_ids = self._registry.check_usage(rid)
+        bp_ids, res_ids = self._registry.check_usage(rid)
         ctx = DeletionContext(
             resource=resource,
             replacement_rid=replacement_rid,
@@ -103,6 +116,12 @@ class ResourceDeletionService:
         )
 
         strategy.validate(ctx)
+        self._reject_if_dependents_locked(
+            caller=caller,
+            username=username,
+            blueprint_ids=bp_ids,
+            resource_ids=res_ids,
+        )
         strategy.execute(ctx)
         # ReplaceStrategy deletes through commit_delete so a failure can
         # restore remaps and the original resource. Other strategies only
@@ -115,15 +134,38 @@ class ResourceDeletionService:
             raise ValueError(f"No delete strategy registered for category: {category.value}")
         return self._strategies[category]
 
-    @staticmethod
-    def _parse_mode(mode: str) -> DeleteMode:
-        try:
-            return DeleteMode(mode)
-        except ValueError:
-            raise ValueError(
-                f"Unknown mode: {mode}. "
-                f"Must be one of: {', '.join(m.value for m in DeleteMode)}"
-            ) from None
+    def _reject_if_dependents_locked(
+        self,
+        *,
+        caller: CallerScope,
+        username: str,
+        blueprint_ids: list[str],
+        resource_ids: list[str],
+    ) -> None:
+        """Block rewrite when a teammate holds an edit lock on a dependent."""
+        if self._lock_reader is None:
+            return
+        identity = caller.identity
+        if identity is None or not identity.is_team:
+            return
+
+        team_id = identity.id
+        for kind, ids in (
+            (EditLockKind.BLUEPRINT.value, blueprint_ids),
+            (EditLockKind.RESOURCE.value, resource_ids),
+        ):
+            if not ids:
+                continue
+            holders = self._lock_reader.get_team_edit_locks_batch(team_id, kind, ids)
+            for holder in holders.values():
+                if holder is None:
+                    continue
+                if username and holder.user_id.casefold() == username.casefold():
+                    continue
+                raise ResourceLockedError(
+                    locked_by_user_id=holder.user_id,
+                    locked_by_display_name=holder.display_name,
+                )
 
     def _usage_from_in_use_error(self, rid: str, err: ResourceInUseError) -> UsageCheckResult:
         category: Optional[str] = None

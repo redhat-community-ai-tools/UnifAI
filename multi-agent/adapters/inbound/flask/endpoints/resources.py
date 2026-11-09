@@ -200,7 +200,7 @@ def update_resource(identity: Identity, resource_id: str, config: dict, name: st
         return jsonify({"error": str(e)}), 500
 
 
-@resources_bp.route("/resource.check-usage", methods=["GET"])
+@resources_bp.route("/resource.check.usage", methods=["GET"])
 @with_require_identity_authorization
 @from_query({
     "resource_id": fields.Str(data_key="resourceId", required=True),
@@ -277,7 +277,7 @@ def delete_resource(identity: Identity, resource_id: str) -> tuple[Response, int
         return jsonify({"error": str(e)}), 500
 
 
-@resources_bp.route("/resource.force-delete", methods=["POST"])
+@resources_bp.route("/resource.force.delete", methods=["POST"])
 @with_require_identity_authorization
 @from_body({
     "resource_id": fields.Str(data_key="resourceId", required=True),

@@ -24,19 +24,6 @@ class DeleteStrategy(ABC):
     mode: ClassVar[DeleteMode]
     categories: ClassVar[FrozenSet[ResourceCategory]]
 
-    def validate(self, ctx: DeletionContext) -> None:
-        """Pre-execution validation. Override for strategy-specific checks."""
-        pass
-
-    @abstractmethod
-    def execute(self, ctx: DeletionContext) -> None:
-        """Rewrite inbound references.
-
-        Detach and cascade leave deletion to the service. Replace deletes
-        inside execute so that step can roll back with the remaps.
-        """
-        ...
-
     @classmethod
     def build_strategy_map(cls) -> Dict[ResourceCategory, "DeleteStrategy"]:
         """Auto-discover concrete subclasses and build {category -> strategy}."""
@@ -52,6 +39,19 @@ class DeleteStrategy(ABC):
                     )
                 mapping[cat] = instance
         return mapping
+
+    def validate(self, ctx: DeletionContext) -> None:
+        """Pre-execution validation. Override for strategy-specific checks."""
+        pass
+
+    @abstractmethod
+    def execute(self, ctx: DeletionContext) -> None:
+        """Rewrite inbound references.
+
+        Detach and cascade leave deletion to the service. Replace deletes
+        inside execute so that step can roll back with the remaps.
+        """
+        ...
 
 
 class ReplaceStrategy(DeleteStrategy):
@@ -97,7 +97,12 @@ class ReplaceStrategy(DeleteStrategy):
 
 
 class DetachStrategy(DeleteStrategy):
-    """Remove all references from dependents."""
+    """Remove all references from dependents.
+
+    No snapshot/rollback: a mid-loop failure can leave partial strips.
+    That is accepted — unlike replace, the target is not deleted inside
+    execute, and a partial strip is still a valid (if incomplete) detach.
+    """
 
     mode = DeleteMode.DETACH
     categories = frozenset(
@@ -114,7 +119,12 @@ class DetachStrategy(DeleteStrategy):
 
 
 class CascadeStrategy(DeleteStrategy):
-    """Delete dependent blueprints and clean remaining references."""
+    """Delete dependent blueprints and clean remaining references.
+
+    No snapshot/rollback: a mid-loop failure can leave some blueprints
+    already deleted. Same rationale as detach — the target delete stays
+    in the service, after this rewrite.
+    """
 
     mode = DeleteMode.CASCADE
     categories = frozenset({ResourceCategory.NODE})

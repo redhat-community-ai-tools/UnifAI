@@ -152,7 +152,7 @@ export async function checkResourceUsage(
   const query = new URLSearchParams({ resourceId });
   if (teamId) query.set("teamId", teamId);
   const { data } = await axios.get<ResourceUsageResponse>(
-    `/resources/resource.check-usage?${query.toString()}`,
+    `/resources/resource.check.usage?${query.toString()}`,
   );
   return data;
 }
@@ -163,7 +163,7 @@ export async function forceDeleteResource(payload: {
   replacementId?: string;
   teamId?: string;
 }): Promise<void> {
-  await axios.post("/resources/resource.force-delete", {
+  await axios.post("/resources/resource.force.delete", {
     resourceId: payload.resourceId,
     mode: payload.mode,
     ...(payload.replacementId ? { replacementId: payload.replacementId } : {}),

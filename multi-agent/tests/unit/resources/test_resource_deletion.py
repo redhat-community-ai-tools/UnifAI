@@ -17,10 +17,12 @@ from mas.core.ref.raw_blueprint_spec import (
     remove_resource_ref_from_catalogue,
     remove_resource_ref_from_nested_dict,
 )
+from mas.collaboration.models import TeamEditLockHolder
+from mas.collaboration.service import EditLockKind
 from mas.resources.deletion.models import BlueprintUsageDetail
 from mas.resources.deletion.service import ResourceDeletionService
 from mas.resources.deletion.strategies import DeleteStrategy
-from mas.resources.errors import ResourceAccessDeniedError
+from mas.resources.errors import ResourceAccessDeniedError, ResourceLockedError
 from mas.resources.models import Resource
 from mas.resources.ports import ResourceServicePort
 from mas.resources.registry import ResourcesRegistry
@@ -120,6 +122,8 @@ def _service(
     nested: list[Resource] | None = None,
     blueprints: list[tuple[str, dict, list[str]]] | None = None,
     bp_repo: MemoryBlueprintRepository | None = None,
+    lock_reader: Mock | None = None,
+    identity: Identity | None = None,
 ) -> _DeletionHarness:
     resource_repo = FakeResourceRepository()
     resource_repo.save(target)
@@ -143,8 +147,10 @@ def _service(
         resource_repo.delete(rid)
 
     resources.delete.side_effect = _delete
-    service = ResourceDeletionService(registry, bp_refs, resources)
-    caller = CallerScope(identity=Identity.user("bob"))
+    service = ResourceDeletionService(
+        registry, bp_refs, resources, lock_reader=lock_reader,
+    )
+    caller = CallerScope(identity=identity or Identity.user("bob"))
     return _DeletionHarness(service, resources, caller, resource_repo, repo, bp_refs)
 
 
@@ -542,4 +548,110 @@ class TestForceDelete:
         restored_bp = harness.bp_repo.load("bp-1")
         assert restored_bp.spec_dict == before_bp.spec_dict
         assert restored_bp.rid_refs == before_bp.rid_refs
+        harness.resources.delete.assert_called_once_with("old")
+
+
+def _alice_lock() -> TeamEditLockHolder:
+    return TeamEditLockHolder(user_id="alice", display_name="Alice")
+
+
+def _lock_reader_for(
+    *,
+    blueprint_holders: dict[str, TeamEditLockHolder | None] | None = None,
+    resource_holders: dict[str, TeamEditLockHolder | None] | None = None,
+) -> Mock:
+    blueprint_holders = blueprint_holders or {}
+    resource_holders = resource_holders or {}
+
+    def _batch(team_id: str, kind: str, ids: list[str]) -> dict[str, TeamEditLockHolder | None]:
+        source = (
+            blueprint_holders if kind == EditLockKind.BLUEPRINT.value else resource_holders
+        )
+        return {eid: source.get(eid) for eid in ids}
+
+    reader = Mock()
+    reader.get_team_edit_locks_batch.side_effect = _batch
+    return reader
+
+
+class TestDependentEditLocks:
+    def test_rejects_when_dependent_blueprint_locked_by_other(self):
+        target = _resource("old", ResourceCategory.TOOL)
+        spec = {"name": "Workflow", "tools": [{"rid": "$ref:old"}]}
+        harness = _service(
+            target,
+            blueprints=[("bp-1", spec, ["old"])],
+            lock_reader=_lock_reader_for(blueprint_holders={"bp-1": _alice_lock()}),
+            identity=Identity.team("team-eng"),
+        )
+        before = harness.bp_repo.load("bp-1")
+
+        with pytest.raises(ResourceLockedError) as exc_info:
+            harness.service.force_delete(
+                "old", "detach", caller=harness.caller, username="bob",
+            )
+
+        assert exc_info.value.locked_by_user_id == "alice"
+        assert harness.bp_repo.load("bp-1").spec_dict == before.spec_dict
+        harness.resources.delete.assert_not_called()
+
+    def test_rejects_when_nested_resource_locked_by_other(self):
+        target = _resource("old", ResourceCategory.LLM)
+        replacement = _resource("new", ResourceCategory.LLM)
+        parent = _resource(
+            "parent",
+            ResourceCategory.NODE,
+            cfg_dict={"llm": "$ref:old"},
+            nested_refs=["old"],
+        )
+        harness = _service(
+            target,
+            replacement,
+            nested=[parent],
+            lock_reader=_lock_reader_for(resource_holders={"parent": _alice_lock()}),
+            identity=Identity.team("team-eng"),
+        )
+        before = harness.resource_repo.get("parent")
+
+        with pytest.raises(ResourceLockedError):
+            harness.service.force_delete(
+                "old", "replace", "new", caller=harness.caller, username="bob",
+            )
+
+        assert harness.resource_repo.get("parent").model_dump() == before.model_dump()
+        harness.resources.delete.assert_not_called()
+
+    def test_allows_when_lock_held_by_caller(self):
+        target = _resource("old", ResourceCategory.TOOL)
+        harness = _service(
+            target,
+            blueprints=[
+                ("bp-1", {"name": "Flow", "tools": [{"rid": "$ref:old"}]}, ["old"]),
+            ],
+            lock_reader=_lock_reader_for(blueprint_holders={"bp-1": _alice_lock()}),
+            identity=Identity.team("team-eng"),
+        )
+
+        harness.service.force_delete(
+            "old", "detach", caller=harness.caller, username="alice",
+        )
+
+        harness.resources.delete.assert_called_once_with("old")
+        with pytest.raises(KeyError):
+            harness.resource_repo.get("old")
+
+    def test_skips_lock_check_in_personal_workspace(self):
+        target = _resource("old", ResourceCategory.TOOL)
+        lock_reader = _lock_reader_for(blueprint_holders={"bp-1": _alice_lock()})
+        harness = _service(
+            target,
+            blueprints=[
+                ("bp-1", {"name": "Flow", "tools": [{"rid": "$ref:old"}]}, ["old"]),
+            ],
+            lock_reader=lock_reader,
+        )
+
+        harness.service.force_delete("old", "detach", caller=harness.caller, username="bob")
+
+        lock_reader.get_team_edit_locks_batch.assert_not_called()
         harness.resources.delete.assert_called_once_with("old")

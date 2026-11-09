@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +47,12 @@ const OPAQUE_MODAL =
   "bg-zinc-800 border-zinc-600 text-zinc-100 shadow-2xl";
 
 type DeleteMode = "replace" | "detach" | "cascade";
+
+type BlueprintPreview = {
+  blueprintId: string;
+  name: string;
+  specDict: Record<string, unknown>;
+};
 
 function DependentList({
   items,
@@ -109,12 +115,9 @@ export function ResourceInUseModal({
   const { teamId } = useWorkspaceIdentity();
   const [selectedReplacement, setSelectedReplacement] = useState<string>("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [preview, setPreview] = useState<{
-    blueprintId: string;
-    name: string;
-    specDict: Record<string, unknown>;
-  } | null>(null);
+  const [preview, setPreview] = useState<BlueprintPreview | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const blueprintPreviewCache = useRef(new Map<string, BlueprintPreview>());
 
   const mode = inUseData.allowed_mode;
   const label = getCategorySingularDisplayName(inUseData.category);
@@ -130,6 +133,12 @@ export function ResourceInUseModal({
   }, [open]);
 
   const handleBlueprintClick = async (blueprintId: string) => {
+    const cached = blueprintPreviewCache.current.get(blueprintId);
+    if (cached) {
+      setPreview(cached);
+      return;
+    }
+
     setPreview(null);
     setIsLoadingPreview(true);
     try {
@@ -144,11 +153,13 @@ export function ResourceInUseModal({
         });
         return;
       }
-      setPreview({
+      const next = {
         blueprintId: blueprint.blueprint_id,
         name: blueprint.spec_dict?.name || blueprint.blueprint_id,
         specDict: blueprint.spec_dict,
-      });
+      };
+      blueprintPreviewCache.current.set(blueprintId, next);
+      setPreview(next);
     } catch (err) {
       console.error("Error loading blueprint preview:", err);
       toast({
