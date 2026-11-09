@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,11 @@ import { CardField } from '@/lib/cardFields';
 import { CardFieldList } from './CardFieldList';
 import { ValidationStatusBadge } from './validation/ValidationStatusBadge';
 import { cn } from "@/lib/utils";
+
+/** Keep header/footer controls from activating the card's click-to-open-details handler. */
+function isolateFromCard(e: React.SyntheticEvent) {
+  e.stopPropagation();
+}
 
 interface RegularElementCardProps {
   element: ElementInstance;
@@ -46,18 +51,33 @@ export const RegularElementCard: React.FC<RegularElementCardProps> = ({
   onValidationClick,
 }) => {
   const isLocked = lockedByOther || lockUnknown;
+  // Ignore a card click if an action control was the pointer-down target.
+  // Hover/tap transforms can retarget mouseup onto the card instead of the button.
+  const ignoreCardClickRef = useRef(false);
+
+  const handleCardClick = () => {
+    if (ignoreCardClickRef.current) return;
+    onViewDetails();
+  };
+
+  const handleActionPointerDown = (e: React.PointerEvent) => {
+    isolateFromCard(e);
+    ignoreCardClickRef.current = true;
+    window.setTimeout(() => {
+      ignoreCardClickRef.current = false;
+    }, 400);
+  };
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0, transition: { duration: 0.3, delay: Math.min(index, 10) * 0.1 } }}
-      whileHover={{ y: -8, scale: 1.03, transition: { duration: 0.15, delay: 0 } }}
-      whileTap={{ scale: 0.97, transition: { duration: 0.1, delay: 0 } }}
-      className="h-full"
+      whileHover={{ y: -6, scale: 1.02, transition: { duration: 0.2, delay: 0 } }}
+      className="h-full origin-top"
     >
       <Card
         className="group relative bg-background-card border border-white/10 h-full flex flex-col cursor-pointer transition-all duration-300 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10"
-        onClick={onViewDetails}
+        onClick={handleCardClick}
       >
         <CardHeader className="py-3.5 px-4 border-b border-white/5">
           <div className="flex items-start justify-between gap-2">
@@ -69,25 +89,38 @@ export const RegularElementCard: React.FC<RegularElementCardProps> = ({
                 {element.name || `${elementType.name} Instance`}
               </CardTitle>
             </div>
-            <div className="flex items-center gap-0.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="relative z-10 flex items-center gap-0.5 flex-shrink-0"
+              onClick={isolateFromCard}
+              onMouseDown={isolateFromCard}
+              onPointerDown={handleActionPointerDown}
+            >
               <ValidationStatusBadge status={validationStatus} onClick={onValidationClick} />
               <SimpleTooltip content={<p>Share this resource</p>}>
                 <Button
+                  type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0 text-gray-400 hover:text-[var(--share-icon-accent)] hover:bg-primary/10"
+                  className="relative h-9 w-9 p-0 text-gray-400 hover:text-[var(--share-icon-accent)] hover:bg-primary/10"
                   style={{ '--share-icon-accent': primaryLight } as React.CSSProperties}
-                  onClick={onShare}
+                  onClick={(e) => {
+                    isolateFromCard(e);
+                    onShare();
+                  }}
                 >
                   <Users className="h-4 w-4" />
                 </Button>
               </SimpleTooltip>
               <SimpleTooltip content={<p>Delete this resource</p>}>
                 <Button
+                  type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0 text-gray-400 hover:text-red-400"
-                  onClick={onDelete}
+                  className="relative h-9 w-9 p-0 text-gray-400 hover:text-red-400 hover:bg-red-400/10"
+                  onClick={(e) => {
+                    isolateFromCard(e);
+                    onDelete();
+                  }}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -119,7 +152,12 @@ export const RegularElementCard: React.FC<RegularElementCardProps> = ({
           )}
         </CardContent>
 
-        <CardFooter className="px-4 py-3 border-t border-white/5" onClick={(e) => e.stopPropagation()}>
+        <CardFooter
+          className="px-4 py-3 border-t border-white/5"
+          onClick={isolateFromCard}
+          onMouseDown={isolateFromCard}
+          onPointerDown={handleActionPointerDown}
+        >
           <div className="flex gap-2 w-full">
             <SimpleTooltip
               collisionPadding={12}

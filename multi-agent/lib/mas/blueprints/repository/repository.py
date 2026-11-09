@@ -15,8 +15,35 @@ class BlueprintRepository(ABC):
     @abstractmethod
     def update(self, *, blueprint_id: str, spec: BlueprintDraft,
                rid_refs: list[str]) -> bool:
-        """Replace an existing draft.  Return True if a document was modified."""
-        
+        """
+        Replace an existing draft with a **validated** ``BlueprintDraft``.
+
+        The implementation should serialize ``spec`` to JSON-compatible data
+        (e.g. ``model_dump``). Call this from product code paths where the dict
+        is known to match the current Pydantic schema.
+        """
+
+    @abstractmethod
+    def update_raw(self, *, blueprint_id: str, spec_dict: Dict[str, Any],
+                   rid_refs: list[str]) -> bool:
+        """
+        Replace the persisted ``spec_dict`` **without** constructing or validating
+        a ``BlueprintDraft``.
+
+        **Why two APIs:** ``update`` is the strict, editor-facing path: invalid
+        or unknown keys are rejected at validation time. ``update_raw`` exists
+        for **mechanical** persistence (resource ref remap/detach/cascade, share
+        cloning, migrations) where the document on disk may still contain legacy
+        keys or shapes that the *current* ``BlueprintDraft`` model would drop or
+        forbid. Forcing those blobs through Pydantic would either lose data or
+        raise spurious errors, so we persist the dict as-is and only maintain
+        ``rid_refs`` consistency.
+
+        ``spec_dict`` is typed as ``Dict[str, Any]`` (not ``BlueprintDraft``)
+        because it is intentionally **unvalidated** JSON-shaped data.
+        """
+
+
     @abstractmethod
     def set_metadata(self, *, blueprint_id: str, metadata: Dict[str, Any]) -> bool:
         """Merge keys into the metadata sub-document (key-level upsert, not full replace)."""

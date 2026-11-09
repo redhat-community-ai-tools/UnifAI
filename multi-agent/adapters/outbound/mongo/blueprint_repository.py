@@ -73,7 +73,21 @@ class MongoBlueprintRepository(BlueprintRepository):
         except DuplicateKeyError:
             raise BlueprintDuplicateNameError(spec.name) from None
         return res.modified_count == 1
-    
+
+    def update_raw(self, *, blueprint_id: str, spec_dict: dict[str, Any],
+                   rid_refs: list[str]) -> bool:
+        res = self._col.update_one(
+            {"blueprint_id": blueprint_id},
+            {"$set": {
+                "spec_dict": spec_dict,
+                "rid_refs": rid_refs,
+                "updated_at": datetime.now(timezone.utc),
+            }}
+        )
+        if res.matched_count == 0:
+            raise KeyError(f"No blueprint with id={blueprint_id}")
+        return res.modified_count == 1
+
     def set_metadata(self, *, blueprint_id: str, metadata: dict[str, Any]) -> bool:
         """Set individual metadata keys using dot-notation (key-level merge)."""
         if not isinstance(metadata, dict):

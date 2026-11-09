@@ -21,12 +21,14 @@ if TYPE_CHECKING:
 from mas.catalog.element_registry import ElementRegistry
 from mas.catalog.service import CatalogService
 from mas.catalog.card_service import ElementCardService
+from mas.blueprints.ref_service import BlueprintRefService
 from mas.blueprints.service import BlueprintService
 from mas.blueprints.resolver import BlueprintResolver
 from mas.session.building import WorkflowSessionFactory
 from mas.session.management import UserSessionManager
 from mas.session.execution import SessionLifecycle, ForegroundSessionRunner, SessionInputProjector
 from mas.session.service import SessionService
+from mas.resources.deletion.service import ResourceDeletionService
 from mas.resources.registry import ResourcesRegistry
 from mas.resources.service import CoreResourceService
 from mas.resources.builtin_aware_service import BuiltinAwareResourceService
@@ -212,6 +214,8 @@ class AppContainer(metaclass=SingletonMeta):
             coll_name=cfg.resources_coll,
         )
 
+        self.blueprint_ref_service = BlueprintRefService(repo=self.blueprint_repo)
+
         self.admin_config_reader: AdminConfigReaderPort = MongoAdminConfigReader(
             mongodb_ip=cfg.mongodb_ip,
             mongodb_port=cfg.mongodb_port,
@@ -276,6 +280,13 @@ class AppContainer(metaclass=SingletonMeta):
             descriptor_repo=self.builtin_resource_descriptor_repo,
             builtin_user_config_repo=self.builtin_user_config_repo,
             admin_lock_reader=self.admin_edit_lock_service,
+        )
+
+        self.deletion_service = ResourceDeletionService(
+            registry=resource_registry,
+            bp_refs=self.blueprint_ref_service,
+            resources=self.resources_service,
+            lock_reader=self._collab_store,
         )
 
         self.blueprint_resolver = BlueprintResolver(

@@ -12,7 +12,6 @@ from mas.resources.errors import (
     ResourceLockedError,
 )
 
-
 def _fake_resource_dump() -> Mock:
     """A stand-in for a ``Resource`` returned by the service. Endpoints now
     serialize via ``resources_service.to_dict(doc)`` rather than
@@ -209,19 +208,128 @@ class TestDeleteResource:
         assert resp.status_code == 403
         resources_service.delete.assert_not_called()
 
-    def test_delete_in_use_returns_400_with_usage(self, client, user_headers, resources_service):
+    def test_delete_in_use_returns_409_with_usage(
+        self, client, user_headers, resources_service, deletion_service,
+    ):
         resources_service.delete.side_effect = ResourceInUseError(
             by_blueprints=["bp1"], by_resources=[],
         )
+        payload = Mock()
+        payload.model_dump.return_value = {
+            "in_use": True,
+            "category": "nodes",
+            "allowed_mode": "cascade",
+            "blueprints": [{"id": "bp1", "name": "Workflow"}],
+            "resources": [],
+        }
+        deletion_service.usage_payload_for_in_use.return_value = payload
 
         resp = client.delete(
             "/api/resources/resource.delete?resourceId=r1",
             headers=user_headers,
         )
 
-        assert resp.status_code == 400
+        assert resp.status_code == 409
         body = resp.get_json()
-        assert body["blueprints"] == ["bp1"]
+        assert body["code"] == "RESOURCE_IN_USE"
+        assert body["blueprints"] == [{"id": "bp1", "name": "Workflow"}]
+        deletion_service.usage_payload_for_in_use.assert_called_once()
+
+
+class TestForceDeleteResource:
+    """Verifies /resource.force.delete and /resource.check.usage stay behind write access."""
+
+    def test_check_usage_checks_write_access(
+        self, client, user_headers, resources_service, deletion_service,
+    ):
+        payload = Mock()
+        payload.model_dump.return_value = {"in_use": False}
+        deletion_service.check_usage.return_value = payload
+
+        resp = client.get(
+            "/api/resources/resource.check.usage?resourceId=r1",
+            headers=user_headers,
+        )
+
+        assert resp.status_code == 200
+        assert resp.get_json()["in_use"] is False
+        resources_service.guard_write_access.assert_called_once()
+        deletion_service.check_usage.assert_called_once_with("r1")
+
+    def test_check_usage_denied_returns_403(
+        self, client, user_headers, resources_service, deletion_service,
+    ):
+        resources_service.guard_write_access.side_effect = ResourceAccessDeniedError("r1")
+
+        resp = client.get(
+            "/api/resources/resource.check.usage?resourceId=r1",
+            headers=user_headers,
+        )
+
+        assert resp.status_code == 403
+        deletion_service.check_usage.assert_not_called()
+
+    def test_check_usage_unexpected_error_hides_details(
+        self, client, user_headers, deletion_service,
+    ):
+        deletion_service.check_usage.side_effect = RuntimeError("mongo uri secret")
+
+        resp = client.get(
+            "/api/resources/resource.check.usage?resourceId=r1",
+            headers=user_headers,
+        )
+
+        assert resp.status_code == 500
+        assert resp.get_json()["error"] == "Internal server error"
+        assert "secret" not in resp.get_data(as_text=True)
+
+    def test_force_delete_passes_caller(
+        self, client, user_headers, deletion_service,
+    ):
+        resp = client.post(
+            "/api/resources/resource.force.delete",
+            json={"resourceId": "r1", "mode": "detach"},
+            headers=user_headers,
+        )
+
+        assert resp.status_code == 200
+        deletion_service.force_delete.assert_called_once()
+        args, kwargs = deletion_service.force_delete.call_args
+        assert args[0] == "r1"
+        assert args[1] == "detach"
+        assert kwargs["caller"].identity.id == "bob"
+        assert kwargs["username"] == "bob"
+
+    def test_force_delete_denied_returns_403(
+        self, client, user_headers, deletion_service,
+    ):
+        deletion_service.force_delete.side_effect = ResourceAccessDeniedError("r1")
+
+        resp = client.post(
+            "/api/resources/resource.force.delete",
+            json={"resourceId": "r1", "mode": "detach"},
+            headers=user_headers,
+        )
+
+        assert resp.status_code == 403
+
+    def test_force_delete_locked_dependent_returns_409(
+        self, client, user_headers, deletion_service,
+    ):
+        deletion_service.force_delete.side_effect = ResourceLockedError(
+            locked_by_user_id="alice", locked_by_display_name="Alice",
+        )
+
+        resp = client.post(
+            "/api/resources/resource.force.delete",
+            json={"resourceId": "r1", "mode": "detach"},
+            headers=user_headers,
+        )
+
+        assert resp.status_code == 409
+        body = resp.get_json()
+        assert body["lockedBy"]["userId"] == "alice"
+        assert body["lockedBy"]["displayName"] == "Alice"
 
 
 class TestValidateResource:

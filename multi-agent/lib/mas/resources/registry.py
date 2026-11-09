@@ -7,10 +7,18 @@ from mas.blueprints.repository.repository import BlueprintRepository
 from mas.resources.errors import ResourceInUseError
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
+from mas.core.ref import RefRemapper
+from mas.core.ref.raw import extract_external_ref_ids
+from mas.core.ref.raw_blueprint_spec import remove_resource_ref_from_nested_dict
 
 
 class ResourcesRegistry:
-    """Low-level CRUD + business rules (no Pydantic parsing)."""
+    """
+    Low-level CRUD + business rules for the resource aggregate (no Pydantic parsing).
+
+    ``bp_repo`` is used read-only for usage checks. Blueprint mutations belong
+    in BlueprintRefService.
+    """
 
     def __init__(
             self,
@@ -42,14 +50,49 @@ class ResourcesRegistry:
         self._repo.update(doc)
         return doc
 
-    def delete(self, rid: str) -> None:
+    def check_usage(self, rid: str) -> Tuple[List[str], List[str]]:
+        """Return (blueprint_ids, resource_ids) that reference *rid*."""
         direct_bps = self._bp_repo.list_direct_usage(rid)
         nested_res = self._repo.list_nested_usage(rid)
+        return direct_bps, nested_res
+
+    def delete(self, rid: str) -> None:
+        direct_bps, nested_res = self.check_usage(rid)
 
         if direct_bps or nested_res:
             raise ResourceInUseError(by_blueprints=direct_bps,
                                      by_resources=nested_res)
         self._repo.delete(rid)
+
+    def remap_nested_refs(self, rid: str, mapping: Dict[str, str]) -> None:
+        """In resources that nest rid in their config, swap old->new refs."""
+        for dep_rid in self._repo.list_nested_usage(rid):
+            doc = self._repo.get(dep_rid)
+            doc.cfg_dict = RefRemapper.remap(doc.cfg_dict, mapping)
+            # Also repairs legacy documents whose config has explicit refs but
+            # whose materialized dependency index was missing or stale.
+            doc.nested_refs = sorted(extract_external_ref_ids(doc.cfg_dict))
+            self._bump_and_save(doc)
+
+    def strip_nested_refs(self, rid: str) -> None:
+        """In resources that nest rid in their config, remove all traces."""
+        for dep_rid in self._repo.list_nested_usage(rid):
+            doc = self._repo.get(dep_rid)
+            doc.cfg_dict = remove_resource_ref_from_nested_dict(doc.cfg_dict, rid)
+            doc.nested_refs = sorted(extract_external_ref_ids(doc.cfg_dict))
+            self._bump_and_save(doc)
+
+    def restore_snapshot(self, doc: Resource) -> None:
+        """Persist *doc* exactly. Inserts it when a failed delete already removed it."""
+        stored = doc.model_copy(deep=True)
+        if self._repo.exists(stored.rid):
+            self._repo.update(stored)
+        else:
+            self._repo.save(stored)
+
+    def _bump_and_save(self, doc: Resource) -> None:
+        """Persist a mutated resource through the normal versioned update."""
+        self.update(doc)
 
     def list_nested_usage(self, rid: str) -> List[str]:
         """Return resource IDs whose `nested_refs` array contains *rid*."""

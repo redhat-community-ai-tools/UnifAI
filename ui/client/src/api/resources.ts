@@ -131,8 +131,44 @@ export async function updateResource(payload: {
   return data;
 }
 
-export async function deleteResource(resourceId: string): Promise<void> {
-  await axios.delete(`/resources/resource.delete?resourceId=${encodeURIComponent(resourceId)}`);
+export async function deleteResource(resourceId: string, teamId?: string): Promise<void> {
+  const query = new URLSearchParams({ resourceId });
+  if (teamId) query.set("teamId", teamId);
+  await axios.delete(`/resources/resource.delete?${query.toString()}`);
+}
+
+export interface ResourceUsageResponse {
+  in_use: boolean;
+  category?: string;
+  allowed_mode?: "replace" | "detach" | "cascade";
+  blueprints?: Array<{ id: string; name: string }>;
+  resources?: Array<{ id: string; name: string; category?: string; type?: string }>;
+}
+
+export async function checkResourceUsage(
+  resourceId: string,
+  teamId?: string,
+): Promise<ResourceUsageResponse> {
+  const query = new URLSearchParams({ resourceId });
+  if (teamId) query.set("teamId", teamId);
+  const { data } = await axios.get<ResourceUsageResponse>(
+    `/resources/resource.check.usage?${query.toString()}`,
+  );
+  return data;
+}
+
+export async function forceDeleteResource(payload: {
+  resourceId: string;
+  mode: "replace" | "detach" | "cascade";
+  replacementId?: string;
+  teamId?: string;
+}): Promise<void> {
+  await axios.post("/resources/resource.force.delete", {
+    resourceId: payload.resourceId,
+    mode: payload.mode,
+    ...(payload.replacementId ? { replacementId: payload.replacementId } : {}),
+    ...(payload.teamId ? { teamId: payload.teamId } : {}),
+  });
 }
 
 export async function getResourceSchema(): Promise<any> {
