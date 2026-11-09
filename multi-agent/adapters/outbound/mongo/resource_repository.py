@@ -5,6 +5,7 @@ from mas.resources.models import Resource, ResourceQuery
 from mas.resources.repository.base import ResourceRepository
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
+from mas.core.ref.raw import extract_external_ref_ids
 from outbound.mongo.helpers import identity_q
 
 logger = logging.getLogger(__name__)
@@ -134,8 +135,26 @@ class MongoResourceRepository(ResourceRepository):
         return self.col.count_documents({"cfg_dict": {"$regex": rid}})
 
     def list_nested_usage(self, rid: str) -> List[str]:
+        """Return indexed usages plus explicit legacy refs missing the index.
+
+        ``nested_refs`` is the indexed, normal path.  Older resources can
+        still contain a valid ``$ref:<rid>`` in ``cfg_dict`` without a matching
+        ``nested_refs`` entry, which would otherwise allow a referenced
+        resource to be deleted.  Deletion is rare, so a projected fallback
+        scan is preferable to silently losing that dependency.
+        """
         cur = self.col.find({"nested_refs": rid}, {"_id": 1})
-        return [doc["_id"] for doc in cur]
+        usage_ids = [doc["_id"] for doc in cur]
+
+        legacy = self.col.find(
+            {"nested_refs": {"$ne": rid}},
+            {"_id": 1, "cfg_dict": 1},
+        )
+        for doc in legacy:
+            if rid in extract_external_ref_ids(doc.get("cfg_dict", {})):
+                usage_ids.append(doc["_id"])
+
+        return usage_ids
 
     def exists(self, rid: str) -> bool:
         return self.col.count_documents({"_id": rid}, limit=1) == 1

@@ -27,6 +27,7 @@ from mas.resources.models import Resource
 from mas.resources.ports import ResourceServicePort
 from mas.resources.registry import ResourcesRegistry
 from tests.unit.resources.conftest import FakeResourceRepository
+from adapters.outbound.mongo.resource_repository import MongoResourceRepository
 
 
 def _resource(
@@ -160,6 +161,22 @@ class TestDeleteStrategyMap:
         assert set(mapping) == set(ResourceCategory)
 
 
+class TestMongoUsageLookup:
+    def test_finds_explicit_legacy_ref_missing_from_nested_refs(self):
+        repo = MongoResourceRepository.__new__(MongoResourceRepository)
+        repo.col = Mock()
+        repo.col.find.side_effect = [
+            iter([{"_id": "indexed-agent"}]),
+            iter([
+                {"_id": "legacy-agent", "cfg_dict": {"llm": "$ref:old"}},
+                {"_id": "unrelated", "cfg_dict": {"llm": "$ref:other"}},
+            ]),
+        ]
+
+        assert repo.list_nested_usage("old") == ["indexed-agent", "legacy-agent"]
+        assert repo.col.find.call_args_list[1].args[0] == {"nested_refs": {"$ne": "old"}}
+
+
 class TestRawSpecRefRemoval:
     def test_nested_ref_field_is_dropped_not_nulled(self):
         cleaned = remove_resource_ref_from_nested_dict(
@@ -255,6 +272,29 @@ class TestBlueprintSummaries:
 
 
 class TestForceDelete:
+    def test_replace_detects_and_repairs_unindexed_agent_llm_reference(self):
+        target = _resource("old", ResourceCategory.LLM, type_="openai_compatible")
+        replacement = _resource("new", ResourceCategory.LLM, type_="openai_compatible")
+        agent = _resource(
+            "agent",
+            ResourceCategory.NODE,
+            cfg_dict={"llm": "$ref:old"},
+            # Simulates a resource saved before nested_refs was maintained.
+            nested_refs=[],
+        )
+        harness = _service(target, replacement, nested=[agent])
+
+        usage = harness.service.check_usage("old")
+
+        assert usage.in_use is True
+        assert [(item.id, item.name) for item in usage.resources] == [("agent", "agent")]
+
+        harness.service.force_delete("old", "replace", "new", caller=harness.caller)
+
+        stored_agent = harness.resource_repo.get("agent")
+        assert stored_agent.cfg_dict == {"llm": "$ref:new"}
+        assert stored_agent.nested_refs == ["new"]
+
     def test_replace_persists_rewrites_dedupes_and_deletes(self):
         target = _resource("old", ResourceCategory.LLM)
         replacement = _resource("new", ResourceCategory.LLM)

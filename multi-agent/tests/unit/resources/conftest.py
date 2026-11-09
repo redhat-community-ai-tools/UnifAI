@@ -13,6 +13,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from mas.core.enums import ResourceCategory, ResourceOwnership, ResourceVisibility
+from mas.core.ref.raw import extract_external_ref_ids
 from mas.core.identity import Identity
 from mas.core.field_hints import SecretHint, ReadOnlyHint, CardHint, CardContext, HiddenHint, combine_hints
 from mas.resources.models import Resource, ResourceQuery
@@ -180,7 +181,11 @@ class FakeResourceRepository:
         return 0
 
     def list_nested_usage(self, rid: str) -> List[str]:
-        return [doc.rid for doc in self._docs.values() if rid in doc.nested_refs]
+        return [
+            doc.rid
+            for doc in self._docs.values()
+            if rid in doc.nested_refs or rid in extract_external_ref_ids(doc.cfg_dict)
+        ]
 
     def exists(self, rid: str) -> bool:
         return rid in self._docs

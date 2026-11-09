@@ -8,6 +8,7 @@ from mas.resources.errors import ResourceInUseError
 from mas.core.identity import Identity
 from mas.core.dto import GroupedCount
 from mas.core.ref import RefRemapper
+from mas.core.ref.raw import extract_external_ref_ids
 from mas.core.ref.raw_blueprint_spec import remove_resource_ref_from_nested_dict
 
 
@@ -68,7 +69,9 @@ class ResourcesRegistry:
         for dep_rid in self._repo.list_nested_usage(rid):
             doc = self._repo.get(dep_rid)
             doc.cfg_dict = RefRemapper.remap(doc.cfg_dict, mapping)
-            doc.nested_refs = list({mapping.get(r, r) for r in doc.nested_refs})
+            # Also repairs legacy documents whose config has explicit refs but
+            # whose materialized dependency index was missing or stale.
+            doc.nested_refs = sorted(extract_external_ref_ids(doc.cfg_dict))
             self._bump_and_save(doc)
 
     def strip_nested_refs(self, rid: str) -> None:
@@ -76,7 +79,7 @@ class ResourcesRegistry:
         for dep_rid in self._repo.list_nested_usage(rid):
             doc = self._repo.get(dep_rid)
             doc.cfg_dict = remove_resource_ref_from_nested_dict(doc.cfg_dict, rid)
-            doc.nested_refs = [r for r in doc.nested_refs if r != rid]
+            doc.nested_refs = sorted(extract_external_ref_ids(doc.cfg_dict))
             self._bump_and_save(doc)
 
     def restore_snapshot(self, doc: Resource) -> None:
