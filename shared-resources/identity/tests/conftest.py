@@ -46,6 +46,7 @@ os.environ.setdefault("KEYCLOAK_REALM", "testrealm")
 os.environ.setdefault("FRONTEND_URL", "http://127.0.0.1:5000")
 os.environ.setdefault("BACKEND_ENV", "development")
 os.environ["PYTEST_IDENTITY"] = "1"
+os.environ.setdefault("SECRET_KEY", "identity-unit-test-only-secret")
 
 
 # -----------------------------------------------------------------------------
@@ -103,8 +104,10 @@ def identity_app() -> "Flask":
     p_oauth = patch(
         "authlib.integrations.flask_client.OAuth.register", return_value=KEYCLOAK_MOCK
     )
+    p_teams = patch("bootstrap.factories.build_team_service")
     p_redis.start()
     p_oauth.start()
+    p_teams.start()
     try:
         from config.app_config import AppConfig
 
@@ -117,6 +120,7 @@ def identity_app() -> "Flask":
     finally:
         p_redis.stop()
         p_oauth.stop()
+        p_teams.stop()
 
 
 @pytest.fixture
@@ -167,7 +171,9 @@ def login_client(
     """
     Set Flask session cookie and Redis payload so protected routes can resolve the user.
     """
-    FAKE_REDIS.hset(session_id, session_data or valid_session_data())
+    from global_utils.redis.constants import identity_session_key
+
+    FAKE_REDIS.hset(identity_session_key(session_id), session_data or valid_session_data())
     with test_client.session_transaction() as sess:  # type: ignore[union-attr]
         sess["session_id"] = session_id
         sess.permanent = True

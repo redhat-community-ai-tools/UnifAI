@@ -27,7 +27,14 @@ def resolve_identity():
 
         if identity_type == "user":
             if svc.has_directory:
-                token = request.headers.get("X-User-Token")
+                auth_manager = current_app.extensions.get('auth_manager')
+                token = None
+                if auth_manager:
+                    sd = auth_manager._get_server_session()
+                    if sd:
+                        token = sd.get('access_token')
+                if not token:
+                    token = request.headers.get("X-User-Token")  # ponytail: backward compat fallback
                 user = svc.get_directory_user(identity_id, user_token=token)
                 if user:
                     identity = Identity.user(
