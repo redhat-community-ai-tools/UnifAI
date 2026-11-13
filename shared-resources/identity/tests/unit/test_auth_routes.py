@@ -282,3 +282,15 @@ def test_directory_uses_server_session_token(client, identity_app, monkeypatch, 
     assert response.status_code == 200
     assert getattr(service, method).call_args.kwargs["user_token"] == "access-test-token"
     assert "access-test-token" not in response.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("session_data", [None, {}, {"user_id": "alice"}, {"access_token": ""}, {"access_token": None}])
+def test_directory_token_falls_back_when_session_token_missing(identity_app, monkeypatch, session_data):
+    from unittest.mock import MagicMock
+    from adapters.inbound.flask.endpoints.directory_routes import _user_token
+
+    auth_manager = MagicMock()
+    auth_manager._get_server_session.return_value = session_data
+    monkeypatch.setitem(identity_app.extensions, "auth_manager", auth_manager)
+    with identity_app.test_request_context(headers={"X-User-Token": "legacy-token"}):
+        assert _user_token() == "legacy-token"

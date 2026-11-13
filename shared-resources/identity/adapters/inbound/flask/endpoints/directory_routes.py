@@ -23,7 +23,9 @@ def _user_token():
     if auth_manager:
         session_data = auth_manager._get_server_session()
         if session_data:
-            return session_data.get('access_token')
+            access_token = session_data.get('access_token')
+            if access_token:
+                return access_token
     return request.headers.get("X-User-Token")  # ponytail: fallback for backward compat
 
 
