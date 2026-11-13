@@ -279,7 +279,12 @@ pipeline {
                             string(credentialsId: "${ClusterCredsId}", variable: 'token'),
                         ]){
                             echo("Creating helm deployment pod")
-                            sh('oc login --token=$token --server=' + ClusterAddress)
+                            withEnv(["UNIFAI_CLUSTER_ADDRESS=${ClusterAddress}"]) {
+                                sh('''
+                                    set +x
+                                    oc login --token="$token" --server="$UNIFAI_CLUSTER_ADDRESS"
+                                ''')
+                            }
                             sh("oc project ${NameSpace}")
                             echo("Deploy Helm container")
                             sh("podman run --replace -dt --env-file=${vaultEnvFile} --env-file=${configEnvFile} --workdir /helm/charts -v .:/helm/charts:Z -v ~/.kube/:/helm/.kube:Z --name helmfile ghcr.io/helmfile/helmfile:latest bash")
