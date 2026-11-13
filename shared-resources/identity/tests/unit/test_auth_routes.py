@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from flask import redirect
+from global_utils.redis.constants import identity_session_key
 from tests.conftest import FAKE_REDIS, KEYCLOAK_MOCK, login_client, valid_session_data
 
 pytestmark = pytest.mark.unit
@@ -95,16 +96,19 @@ class TestUserAndLogout:
         assert data.get("authenticated") is True
         assert data.get("user", {}).get("username") == "Alice"
         assert "is_admin" in (data.get("user") or {})
+        assert "access_token" not in data
+        assert "access-test-token" not in r.get_data(as_text=True)
+        assert FAKE_REDIS.hget(identity_session_key(sid))["access_token"] == "access-test-token"
 
     def test_logout_clears_session_in_redis(self, client) -> None:
         sid = "logout-session-001"
         login_client(client, sid, valid_session_data())
-        assert FAKE_REDIS.hget(sid) != {}
+        assert FAKE_REDIS.hget(identity_session_key(sid)) != {}
         r = client.post("/api/auth/logout")
         assert r.status_code == 200
         # Redis key removed or session id cleared; implementation deletes redis key
         # when session has session_id
-        assert FAKE_REDIS.hget(sid) == {}
+        assert FAKE_REDIS.hget(identity_session_key(sid)) == {}
 
 
 class TestTokenRefresh:
@@ -118,7 +122,7 @@ class TestTokenRefresh:
         sid = "s-no-rt"
         d = valid_session_data()
         d.pop("refresh_token", None)  # type: ignore[typeddict-ignored]
-        FAKE_REDIS.hset(sid, d)
+        FAKE_REDIS.hset(identity_session_key(sid), d)
         with client.session_transaction() as sess:  # type: ignore[union-attr]
             sess["session_id"] = sid
         r = client.post("/api/auth/refresh")
@@ -130,7 +134,7 @@ def test_expired_server_session_get_user_returns_401(client) -> None:
     sid = "expired-1"
     d = valid_session_data()
     d["session_expires_at"] = (datetime.now() - timedelta(hours=1)).timestamp()
-    FAKE_REDIS.hset(sid, d)
+    FAKE_REDIS.hset(identity_session_key(sid), d)
     with client.session_transaction() as sess:  # type: ignore[union-attr]
         sess["session_id"] = sid
     r = client.get("/api/auth/user")
@@ -239,13 +243,13 @@ class TestRefreshTokenSuccess:
     ) -> None:
         sid = "refresh-ok-1"
         d = valid_session_data()
-        FAKE_REDIS.hset(sid, d)
+        FAKE_REDIS.hset(identity_session_key(sid), d)
         with client.session_transaction() as sess:  # type: ignore[union-attr]
             sess["session_id"] = sid
 
         def _refresh_ok() -> bool:
             new_d = {**d, "access_token": "new-at", "token_expires_at": d["token_expires_at"]}
-            FAKE_REDIS.hset(sid, new_d, ttl_seconds=60)
+            FAKE_REDIS.hset(identity_session_key(sid), new_d, ttl_seconds=60)
             return True
 
         auth_mgr = identity_app.extensions["auth_manager"]
@@ -253,4 +257,28 @@ class TestRefreshTokenSuccess:
         r = client.post("/api/auth/refresh")
         assert r.status_code == 200
         assert (r.get_json() or {}).get("message") == "Token refreshed successfully"
-        assert FAKE_REDIS.hget(sid).get("access_token") == "new-at"
+        assert FAKE_REDIS.hget(identity_session_key(sid)).get("access_token") == "new-at"
+
+
+@pytest.mark.parametrize(
+    "route, method",
+    [
+        ("/api/directory/directory.search_users?q=Alice", "search_directory_users"),
+        ("/api/identity/identity.resolve?id=alice&type=user", "get_directory_user"),
+    ],
+)
+def test_directory_uses_server_session_token(client, identity_app, monkeypatch, route, method):
+    from unittest.mock import MagicMock
+
+    service = MagicMock()
+    service.has_directory = True
+    getattr(service, method).return_value = [] if method == "search_directory_users" else None
+    monkeypatch.setitem(identity_app.extensions, "team_service", service)
+    monkeypatch.setitem(identity_app.extensions, "directory_cache", None)
+    login_client(client, "directory-session", valid_session_data())
+
+    response = client.get(route, headers={"X-User-Token": "untrusted-client-token"})
+
+    assert response.status_code == 200
+    assert getattr(service, method).call_args.kwargs["user_token"] == "access-test-token"
+    assert "access-test-token" not in response.get_data(as_text=True)
